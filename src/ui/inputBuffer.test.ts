@@ -4,6 +4,7 @@ import {
   clampScrollToCursor,
   createInputViewport,
   deleteInputBackward,
+  deleteInputForward,
   insertInputText,
   locateCursor,
   moveCursorLeft,
@@ -47,6 +48,9 @@ test("uses code-point-safe cursor movement and deletion", () => {
 
   const deleted = deleteInputBackward({ value: text, cursorOffset: 3 });
   assert.deepEqual(deleted, { value: "AB", cursorOffset: 1 });
+
+  const forwardDeleted = deleteInputForward({ value: text, cursorOffset: 1 });
+  assert.deepEqual(forwardDeleted, { value: "AB", cursorOffset: 1 });
 });
 
 test("creates a bounded input viewport for large pasted content", () => {

@@ -10,6 +10,7 @@ import {
   completeRunEvent,
   createRunEvent,
   detectAgentQuestion,
+  extractAssistantActionRequired,
   reduceUIState,
   guardConfigMutation,
   isCurrentRun,
@@ -146,6 +147,22 @@ test("ignores stale run callbacks after cancellation", () => {
 test("detects explicit and heuristic agent questions", () => {
   assert.equal(detectAgentQuestion("Done.\n[QUESTION]: Which file should I update?"), "Which file should I update?");
   assert.equal(detectAgentQuestion("Need one detail first.\nShould I use Redis?"), "Should I use Redis?");
+});
+
+test("extracts ACTION REQUIRED blocks and removes them from assistant output", () => {
+  const message = [
+    "Implemented the requested updates.",
+    "",
+    "**=========================================**",
+    "**[ACTION REQUIRED]**",
+    "**Verification Question:**",
+    "**Are you satisfied with the visual updates to bolding and visibility? (y/n)**",
+    "**=========================================**",
+  ].join("\n");
+
+  const parsed = extractAssistantActionRequired(message);
+  assert.equal(parsed.content, "Implemented the requested updates.");
+  assert.equal(parsed.question, "Are you satisfied with the visual updates to bolding and visibility? (y/n)");
 });
 
 test("builds a staged follow-up prompt from original task and answer", () => {

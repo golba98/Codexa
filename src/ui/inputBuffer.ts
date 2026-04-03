@@ -85,14 +85,33 @@ export function deleteInputBackward(params: {
 }): { value: string; cursorOffset: number } {
   const value = normalizeInputText(params.value);
   const safeCursor = normalizeCursorOffset(value, params.cursorOffset);
-  const previousCursor = moveCursorLeft(value, safeCursor);
-  if (previousCursor === safeCursor) {
-    return { value, cursorOffset: safeCursor };
+  
+  if (safeCursor <= 0) {
+    return { value, cursorOffset: 0 };
   }
 
+  const previousCursor = moveCursorLeft(value, safeCursor);
   return {
     value: value.slice(0, previousCursor) + value.slice(safeCursor),
     cursorOffset: previousCursor,
+  };
+}
+
+export function deleteInputForward(params: {
+  value: string;
+  cursorOffset: number;
+}): { value: string; cursorOffset: number } {
+  const value = normalizeInputText(params.value);
+  const safeCursor = normalizeCursorOffset(value, params.cursorOffset);
+
+  if (safeCursor >= value.length) {
+    return { value, cursorOffset: safeCursor };
+  }
+
+  const nextCursor = moveCursorRight(value, safeCursor);
+  return {
+    value: value.slice(0, safeCursor) + value.slice(nextCursor),
+    cursorOffset: safeCursor,
   };
 }
 

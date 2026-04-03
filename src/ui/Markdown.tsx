@@ -1,6 +1,8 @@
 import React, { useMemo } from "react";
 import { Box, Text } from "ink";
 import { useTheme } from "./theme.js";
+import { Panel } from "./Panel.js";
+import { getUsableShellWidth } from "./layout.js";
 
 type InlinePart =
   | { kind: "text"; text: string }
@@ -167,7 +169,7 @@ function isTreeLine(line: string): boolean {
   return /^[│├└─\s]+/.test(line);
 }
 
-export function MarkdownContent({ content }: { content: string }) {
+export function MarkdownContent({ content, cols }: { content: string; cols?: number }) {
   const theme = useTheme();
   const segments = useMemo(() => parseMarkdown(content), [content]);
 
@@ -190,21 +192,40 @@ export function MarkdownContent({ content }: { content: string }) {
           }
 
           const looksLikeTree = segment.lines.some((line) => isTreeLine(line));
+          
+          let title = segment.lang || "code";
+          let codeLines = segment.lines;
+          const firstLine = codeLines[0]?.trim() || "";
+          if (/^[a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+$/.test(firstLine)) {
+            title = firstLine;
+            codeLines = codeLines.slice(1);
+          }
+
+          const rightTitle = segment.lang ? `${segment.lang.toUpperCase()} ⎘ Copy Code` : "⎘ Copy Code";
+          const panelWidth = cols ? Math.max(10, getUsableShellWidth(cols, 6)) : 80;
+
           return (
             <Box
               key={index}
               marginTop={marginTop}
               flexDirection="column"
               paddingLeft={2}
+              width="100%"
             >
-              {segment.lang && (
-                <Text color={theme.ACCENT} bold>{segment.lang}</Text>
-              )}
-              {segment.lines.map((line, lineIndex) => (
-                looksLikeTree
-                  ? <TreeLine key={lineIndex} line={line || " "} />
-                  : <Text key={lineIndex} color={theme.MUTED} wrap="wrap">{line || " "}</Text>
-              ))}
+              <Panel cols={panelWidth} title={title} rightTitle={rightTitle}>
+                {codeLines.map((line, lineIndex) => (
+                  looksLikeTree ? (
+                    <TreeLine key={lineIndex} line={line || " "} />
+                  ) : (
+                    <Box key={lineIndex}>
+                      <Box width={3} flexShrink={0} marginRight={1} justifyContent="flex-end">
+                        <Text color={theme.DIM}>{lineIndex + 1}</Text>
+                      </Box>
+                      <Text color={theme.MUTED} wrap="wrap">{line || " "}</Text>
+                    </Box>
+                  )
+                ))}
+              </Panel>
             </Box>
           );
         }

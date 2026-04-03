@@ -51,6 +51,18 @@ function sleep(ms = 50): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getLastComposerValue(output: string): string | null {
+  const lines = output.match(/value:[^\n]*/g) ?? [];
+  const lastLine = lines[lines.length - 1];
+  if (!lastLine) return null;
+
+  try {
+    return JSON.parse(lastLine.slice("value:".length)) as string;
+  } catch {
+    return null;
+  }
+}
+
 function createInkHarness(node: React.ReactElement) {
   const stdin = new TestInput();
   const stdout = new TestOutput();
@@ -287,6 +299,46 @@ test("ctrl+j inserts a newline without submitting the composer", async () => {
     assert.match(output, /value:"a\\nb"/);
     assert.match(output, /a/);
     assert.match(output, /b/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("treats raw DEL (\\u007f) as backspace in the composer", async () => {
+  const harness = createInkHarness(<PasteComposerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("H");
+    await sleep(20);
+    harness.stdin.write("=");
+    await sleep(20);
+    harness.stdin.write("\u007f");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.equal(getLastComposerValue(output), "H");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("keeps ANSI delete (ESC[3~) as forward delete behavior", async () => {
+  const harness = createInkHarness(<PasteComposerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("a");
+    await sleep(20);
+    harness.stdin.write("b");
+    await sleep(20);
+    harness.stdin.write("\u001b[D");
+    await sleep(20);
+    harness.stdin.write("\u001b[3~");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.equal(getLastComposerValue(output), "a");
   } finally {
     await harness.cleanup();
   }

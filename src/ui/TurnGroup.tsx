@@ -5,6 +5,9 @@ import { AgentBlock } from "./AgentBlock.js";
 import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
 import { useTheme } from "./theme.js";
+import { getUsableShellWidth } from "./layout.js";
+
+import { Panel } from "./Panel.js";
 
 export type TurnOpacity = "active" | "recent" | "dim";
 
@@ -33,34 +36,44 @@ function UserSummary({
   turnIndex,
   dim,
   run,
+  cols,
 }: {
   prompt: string;
   createdAt: number;
   turnIndex: number;
   dim: boolean;
   run: RunEvent | null;
+  cols: number;
 }) {
   const theme = useTheme();
   const metaColor = dim ? theme.DIM : theme.MUTED;
   const textColor = dim ? theme.DIM : theme.TEXT;
 
-  const durationText =
-    run?.durationMs != null && run.status !== "running"
-      ? `${formatDuration(run.durationMs)}`
-      : null;
+  const statusText = run
+    ? run.status === "running"
+      ? "running"
+      : run.status === "completed"
+        ? "complete"
+        : run.status
+    : "queued";
+  const durationText = run?.durationMs != null && run.status !== "running"
+    ? formatDuration(run.durationMs)
+    : null;
+  const rightMeta = durationText ? `${statusText} • ${durationText}` : statusText;
 
   return (
     <Box flexDirection="column" marginBottom={1} width="100%">
-      <Box width="100%" overflow="hidden" justifyContent="space-between">
-        <Box flexShrink={1}>
-          <Text color={dim ? theme.DIM : theme.ACCENT} bold>{"❯ "}</Text>
-          <Text color={textColor} bold wrap="wrap">{prompt}</Text>
-        </Box>
-        <Box flexShrink={0} marginLeft={2}>
-          {durationText && <Text color={theme.DIM}>{`${durationText}  `}</Text>}
-          <Text color={metaColor}>{formatTime(createdAt)}</Text>
-        </Box>
-      </Box>
+      <Panel
+        cols={Math.max(1, getUsableShellWidth(cols, 2))}
+        title="USER INPUT"
+        rightTitle={rightMeta}
+        borderColor={dim ? theme.BORDER_SUBTLE : theme.BORDER_ACTIVE}
+        titleColor={metaColor}
+      >
+        <Text color={textColor} bold wrap="wrap">
+          {`> ${prompt}`}
+        </Text>
+      </Panel>
     </Box>
   );
 }
@@ -82,6 +95,7 @@ export function TurnGroup({ cols, turnIndex, user, run, assistant, uiState, opac
         turnIndex={turnIndex}
         dim={opacity === "dim"}
         run={run}
+        cols={cols}
       />
 
       {run && isThinking && <ThinkingBlock cols={cols} run={run} turnIndex={turnIndex} />}

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, useFocus, useInput } from "ink";
+import { Box, Text, useFocus, useInput, useStdin } from "ink";
 import { formatModeLabel } from "../config/settings.js";
 import type { ModelSpec } from "../core/modelSpecs.js";
 import type { UIState } from "../session/types.js";
@@ -7,6 +7,7 @@ import { FOCUS_IDS } from "./focus.js";
 import {
   createInputViewport,
   deleteInputBackward,
+  deleteInputForward,
   getComposerBodyWidth,
   insertInputText,
   moveCursorLeft,
@@ -20,10 +21,24 @@ import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { getTextWidth, splitTextAtColumn } from "./textLayout.js";
 
 type ComposerPersona = "idle" | "busy" | "answer" | "error";
+type DeleteIntent = "backspace" | "delete";
 
 const BRACKETED_PASTE_START = /(?:\u001B)?\[200~/;
 const BRACKETED_PASTE_END = /(?:\u001B)?\[201~/;
+const DELETE_ESCAPE_SEQUENCE = /^\u001b\[3(?:;\d+)?~$/;
 const MAX_VISIBLE_INPUT_ROWS = 5;
+
+function resolveDeleteIntentFromRawInput(raw: string): DeleteIntent | null {
+  if (raw === "\b" || raw === "\x08" || raw === "\u007f" || raw === "\u001b\u007f") {
+    return "backspace";
+  }
+
+  if (DELETE_ESCAPE_SEQUENCE.test(raw)) {
+    return "delete";
+  }
+
+  return null;
+}
 
 function formatApprox(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -116,7 +131,7 @@ function getStatusLine(uiState: UIState): string | null {
 function getPlaceholder(persona: ComposerPersona): string {
   switch (persona) {
     case "answer":
-      return "Type your answer";
+      return "Type your answer...";
     case "error":
       return "Ask again or use /command";
     case "busy":
@@ -153,6 +168,7 @@ export function BottomComposer({
   onCycleMode,
   onQuit,
 }: BottomComposerProps) {
+  const { stdin } = useStdin();
   const theme = useTheme();
   const { cols, mode: layoutMode } = layout;
   const { isFocused } = useFocus({ id: FOCUS_IDS.composer, autoFocus: true });
@@ -169,7 +185,10 @@ export function BottomComposer({
   const promptWidth = Math.max(4, composerBodyWidth - getTextWidth(promptPrefix));
   const valueRef = useRef(value);
   const cursorRef = useRef(cursor);
+  const lastPropsValueRef = useRef(value);
+  const lastPropsCursorRef = useRef(cursor);
   const pasteBufferRef = useRef<string | null>(null);
+  const deleteIntentRef = useRef<DeleteIntent | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCursorVisible((visible) => !visible), 520);
@@ -177,8 +196,29 @@ export function BottomComposer({
   }, []);
 
   useEffect(() => {
-    valueRef.current = value;
-    cursorRef.current = cursor;
+    const handleRawInput = (chunk: Buffer | string) => {
+      const raw = typeof chunk === "string" ? chunk : chunk.toString();
+      const intent = resolveDeleteIntentFromRawInput(raw);
+      if (intent) {
+        deleteIntentRef.current = intent;
+      }
+    };
+
+    stdin.on("data", handleRawInput);
+    return () => {
+      stdin.off("data", handleRawInput);
+    };
+  }, [stdin]);
+
+  // Sync from props only when props actually change from an external source
+  // or after a render cycle has confirmed our local change.
+  useEffect(() => {
+    if (value !== lastPropsValueRef.current || cursor !== lastPropsCursorRef.current) {
+      valueRef.current = value;
+      cursorRef.current = cursor;
+      lastPropsValueRef.current = value;
+      lastPropsCursorRef.current = cursor;
+    }
   }, [cursor, value]);
 
   const isCmdPrefix = allowCommands && value.startsWith("/");
@@ -216,8 +256,13 @@ export function BottomComposer({
   const commitInputChange = (nextValue: string, nextCursor: number) => {
     const normalizedValue = normalizeInputText(nextValue);
     const normalizedCursor = normalizeCursorOffset(normalizedValue, nextCursor);
+
+    // Update refs immediately to avoid race conditions with fast input events
     valueRef.current = normalizedValue;
     cursorRef.current = normalizedCursor;
+    lastPropsValueRef.current = normalizedValue;
+    lastPropsCursorRef.current = normalizedCursor;
+
     onChangeInput(normalizedValue, normalizedCursor);
   };
 
@@ -354,7 +399,8 @@ export function BottomComposer({
       return;
     }
 
-    if (key.backspace) {
+    if (key.backspace || input === "\b" || (input === "\u007f" && !key.delete)) {
+      deleteIntentRef.current = null;
       const next = deleteInputBackward({
         value: valueRef.current,
         cursorOffset: cursorRef.current,
@@ -363,18 +409,28 @@ export function BottomComposer({
       return;
     }
 
-    if (key.delete) {
-      const currentCursor = normalizeCursorOffset(valueRef.current, cursorRef.current);
-      const nextCursor = moveCursorRight(valueRef.current, currentCursor);
-      if (nextCursor === currentCursor) return;
-      commitInputChange(
-        valueRef.current.slice(0, currentCursor) + valueRef.current.slice(nextCursor),
-        currentCursor,
-      );
+    if (key.delete || (input === "\u007f" && key.delete)) {
+      const deleteIntent = deleteIntentRef.current;
+      deleteIntentRef.current = null;
+
+      if (deleteIntent === "backspace") {
+        const next = deleteInputBackward({
+          value: valueRef.current,
+          cursorOffset: cursorRef.current,
+        });
+        commitInputChange(next.value, next.cursorOffset);
+        return;
+      }
+
+      const next = deleteInputForward({
+        value: valueRef.current,
+        cursorOffset: cursorRef.current,
+      });
+      commitInputChange(next.value, next.cursorOffset);
       return;
     }
 
-    if (!key.ctrl && !key.meta && !key.escape && input && input.length > 0) {
+    if (!key.ctrl && !key.meta && !key.escape && input && input.length > 0 && input !== "\u007f" && input !== "\b") {
       handlePastedInput(input);
     }
   }, { isActive: isFocused });
@@ -444,9 +500,11 @@ export function BottomComposer({
           flexDirection="column"
           width="100%"
           paddingX={1}
+          borderStyle="single"
+          borderColor={theme.WARNING}
         >
           <Box width="100%" justifyContent="space-between" overflow="hidden" marginBottom={1}>
-            <Text color={theme.WARNING} bold>{"⚡ ANSWER AGENT"}</Text>
+            <Text color={theme.TEXT} bold>{"ANSWER AGENT"}</Text>
           </Box>
           {promptLine}
         </Box>

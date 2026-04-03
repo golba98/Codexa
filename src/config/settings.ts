@@ -2,13 +2,13 @@ import { homedir } from "os";
 import { join } from "path";
 
 export const APP_NAME = "Codexa";
-export const APP_VERSION = "1.0.0";
+export const APP_VERSION = "1.0.1";
 export const DEFAULT_BACKEND = "codex-subprocess";
 export const DEFAULT_MODEL = "gpt-5.4";
 export const DEFAULT_MODE = "full-auto";
 export const DEFAULT_REASONING_LEVEL = "high";
 export const DEFAULT_LAYOUT_STYLE = "gemini-shell";
-export const DEFAULT_THEME = "purple";
+export const DEFAULT_THEME = "mono";
 export const DEFAULT_AUTH_PREFERENCE = "chatgpt-login-goal";
 export const CODEX_EXECUTABLE = process.env.CODEX_EXECUTABLE || "codex";
 export const MAX_CHAT_LINES = 2000;

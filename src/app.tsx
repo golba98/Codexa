@@ -56,7 +56,7 @@ import type { AssistantEvent, RunEvent, Screen, ShellEvent, TimelineEvent, UISta
 import {
   buildFollowUpPrompt,
   createRunEvent,
-  detectAgentQuestion,
+  extractAssistantActionRequired,
   guardConfigMutation,
   isCurrentRun,
 } from "./session/chatLifecycle.js";
@@ -79,7 +79,6 @@ import {
   shouldBumpComposerInstance,
   type ThemeSelectionState,
 } from "./ui/themeFlow.js";
-import { StatusBar } from "./ui/StatusBar.js";
 import { Timeline } from "./ui/Timeline.js";
 import { TopHeader } from "./ui/TopHeader.js";
 import { isBusy as isUiBusy } from "./session/types.js";
@@ -424,26 +423,30 @@ export function App() {
     cleanupRef.current = null;
     activeRunIdRef.current = null;
     activeTurnIdRef.current = null;
+    focusManager.focus(FOCUS_IDS.composer);
     cleanup?.();
+    const parsed = status === "completed" && response?.trim()
+      ? extractAssistantActionRequired(response)
+      : { content: response ?? "", question: null as string | null };
     dispatchSession({
       type: "FINALIZE_RUN",
       runId,
       turnId,
       status,
       message,
-      response,
-      question: status === "completed" && response?.trim() ? detectAgentQuestion(response) : null,
+      response: parsed.content,
+      question: status === "completed" ? parsed.question : null,
       assistantFactory: () => ({
         id: createEventId(),
         type: "assistant",
         createdAt: Date.now(),
-        content: response?.trim() ? response : "",
+        content: parsed.content?.trim() ? parsed.content : "",
         turnId,
       }),
     });
 
     return true;
-  }, [dispatchSession]);
+  }, [dispatchSession, focusManager]);
 
   const cancelActiveRun = useCallback((retainHistory = true) => {
     const runId = activeRunIdRef.current;
@@ -458,6 +461,7 @@ export function App() {
     cleanupRef.current = null;
     activeRunIdRef.current = null;
     activeTurnIdRef.current = null;
+    focusManager.focus(FOCUS_IDS.composer);
     cleanup?.();
 
     if (retainHistory) {
@@ -493,7 +497,7 @@ export function App() {
     }
 
     return true;
-  }, [activeEvents, dispatchSession, finalizePromptRun, uiState.kind]);
+  }, [activeEvents, dispatchSession, finalizePromptRun, focusManager, uiState.kind]);
 
   const handleCancel = useCallback(() => {
     if (busy) {
@@ -585,6 +589,7 @@ export function App() {
       if (activeRunIdRef.current !== shellId) return;
       activeRunIdRef.current = null;
       cleanupRef.current = null;
+      focusManager.focus(FOCUS_IDS.composer);
 
       const finalEvent: ShellEvent = {
         ...initialEvent,
@@ -952,6 +957,7 @@ export function App() {
     buildFollowUpPrompt,
     dispatchSession,
     findUserPromptForTurn,
+    focusManager,
     handleCopy,
     handleClear,
     handleQuit,
@@ -986,28 +992,16 @@ export function App() {
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
       <Box flexDirection="column" width={shellWidth} height={shellHeight}>
         {screen === "main" && (
-          <Box marginBottom={1}>
-            {staticEvents.length === 0 ? (
-              <TopHeader
-                authState={authStatus.state}
-                workspaceRoot={workspaceRoot}
-                layout={terminalLayout}
-              />
-            ) : (
-              <StatusBar
-                authState={authStatus.state}
-                workspaceRoot={workspaceRoot}
-                layout={terminalLayout}
-                model={model}
-                mode={mode}
-                tokensUsed={estimateTokens(conversationChars)}
-                modelSpec={currentModelSpec}
-              />
-            )}
+          <Box flexDirection="column" borderBottom={true}>
+            <TopHeader
+              authState={authStatus.state}
+              workspaceRoot={workspaceRoot}
+              layout={terminalLayout}
+            />
           </Box>
         )}
 
-        <Box flexGrow={1} flexShrink={1} flexDirection="column" overflow="hidden" justifyContent="flex-end" paddingBottom={1}>
+        <Box flexGrow={1} flexShrink={1} flexDirection="column" overflowY="hidden" justifyContent="flex-end" paddingBottom={1}>
           <Timeline events={[...staticEvents, ...activeEvents]} layout={terminalLayout} uiState={uiState} />
         </Box>
 

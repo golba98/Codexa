@@ -4,6 +4,7 @@ import { summarizeRunActivity, type RunFileActivity } from "../core/workspaceAct
 import type { RunEvent, RunToolActivity, TimelineEvent, UIState } from "./types.js";
 
 export const RUN_OUTPUT_TRUNCATION_NOTICE = "Older output was truncated to keep the UI responsive.";
+const ACTION_REQUIRED_BLOCK_PATTERN = /\*{0,2}=+\*{0,2}\s*\n\*{0,2}\[ACTION REQUIRED\]\*{0,2}\s*\n\*{0,2}Verification Question:\*{0,2}\s*\n([\s\S]*?)\n\*{0,2}=+\*{0,2}/i;
 
 export type ConfigMutationKind = "backend" | "model" | "mode" | "reasoning" | "theme";
 export type UIStateAction =
@@ -44,6 +45,34 @@ export function detectAgentQuestion(text: string): string | null {
   }
 
   return null;
+}
+
+function stripBoldMarkers(text: string): string {
+  return text.replace(/\*\*/g, "").trim();
+}
+
+export function extractAssistantActionRequired(text: string): { content: string; question: string | null } {
+  const normalized = text ?? "";
+  const blockMatch = ACTION_REQUIRED_BLOCK_PATTERN.exec(normalized);
+
+  if (blockMatch) {
+    const question = stripBoldMarkers(blockMatch[1] ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+    const content = normalized.replace(blockMatch[0], "").trim();
+    return {
+      content,
+      question: question || null,
+    };
+  }
+
+  return {
+    content: normalized,
+    question: detectAgentQuestion(normalized),
+  };
 }
 
 export function buildFollowUpPrompt(params: {

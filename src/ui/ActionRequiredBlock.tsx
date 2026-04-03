@@ -12,30 +12,23 @@ interface ActionRequiredBlockProps {
 
 export function ActionRequiredBlock({ cols, turnIndex, question }: ActionRequiredBlockProps) {
   const theme = useTheme();
-  const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
+  const contentWidth = Math.max(1, getUsableShellWidth(cols, 6));
 
-  // First line treated as a bold title if there are multiple lines, or the
-  // question has no trailing "?" on the first line (it's a header, not the question).
-  const lines = question.split("\n").filter(Boolean);
-  const hasTitle = lines.length > 1 || (lines[0] && !lines[0].trimEnd().endsWith("?"));
-  const titleLine = hasTitle ? lines[0] : null;
-  const contentLines = hasTitle ? lines.slice(1) : lines;
-  const wrappedTitle = titleLine ? wrapPlainText(titleLine, contentWidth) : [];
-  const wrappedContent = contentLines.flatMap((line) => {
-    const rows = wrapPlainText(line, contentWidth);
-    return rows.length > 0 ? rows : [""];
-  });
+  const wrappedContent = question
+    .split("\n")
+    .flatMap((line) => {
+      const rows = wrapPlainText(line, contentWidth);
+      return rows.length > 0 ? rows : [""];
+    });
 
   return (
-    <Box flexDirection="column" marginBottom={1} width="100%">
-      <Box width="100%" overflow="hidden">
-        <Text color={theme.WARNING} bold>{"⚡ "}</Text>
-        <Text color={theme.WARNING} bold>{"Action required"}</Text>
+    <Box borderStyle="single" borderColor={theme.BORDER_ACTIVE} flexDirection="column" marginBottom={1} width="100%">
+      <Box width="100%" justifyContent="space-between" overflow="hidden" paddingX={1}>
+        <Text color={theme.TEXT} bold>{`[${turnIndex}] ACTION REQUIRED`}</Text>
+        <Text color={theme.TEXT} bold>{"⚡"}</Text>
       </Box>
-      <Box flexDirection="column" paddingLeft={2} marginTop={1} width="100%">
-        {wrappedTitle.map((row, index) => (
-          <Text key={`title-${index}`} color={theme.TEXT} bold>{row || " "}</Text>
-        ))}
+      <Box flexDirection="column" paddingX={2} marginTop={1} marginBottom={1} width="100%">
+        <Text color={theme.TEXT} bold>{"Verification Question"}</Text>
         {wrappedContent.map((row, index) => (
           <Text key={`content-${index}`} color={theme.TEXT}>{row || " "}</Text>
         ))}
