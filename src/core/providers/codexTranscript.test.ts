@@ -1,0 +1,139 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { RunToolActivity } from "../../session/types.js";
+import { createCodexTranscriptStreamParser, sanitizeCodexTranscript } from "./codexTranscript.js";
+
+test("extracts the assistant reply from noisy codex transcript output", () => {
+  const raw = [
+    "Reading additional input from stdin...",
+    "OpenAI Codex v0.118.0 (research preview)",
+    "--------",
+    "workdir: C:\\Development\\1-JavaScript\\13-Custom CLI",
+    "model: gpt-5.4",
+    "provider: openai",
+    "approval: never",
+    "sandbox: read-only",
+    "reasoning effort: xhigh",
+    "reasoning summaries: none",
+    "session id: 019d4984-90c0-7402-80c9-3d55a8e0373f",
+    "--------",
+    "user",
+    "Hello",
+    "codex",
+    "Hello. What do you need help with?",
+    "tokens used",
+    "1,390",
+    "Hello. What do you need help with?",
+  ].join("\n");
+
+  assert.equal(sanitizeCodexTranscript(raw), "Hello. What do you need help with?");
+});
+
+test("falls back to filtered plain output when no labeled assistant block exists", () => {
+  const raw = [
+    "\u001b[32mOpenAI Codex v0.118.0\u001b[0m",
+    "--------",
+    "workdir: C:\\repo",
+    "",
+    "First useful line",
+    "Second useful line",
+  ].join("\n");
+
+  assert.equal(sanitizeCodexTranscript(raw), "First useful line\nSecond useful line");
+});
+
+test("returns a readable fallback when only noise is present", () => {
+  const raw = [
+    "Reading additional input from stdin...",
+    "OpenAI Codex v0.118.0",
+    "--------",
+    "model: gpt-5.4",
+    "provider: openai",
+  ].join("\n");
+
+  assert.match(
+    sanitizeCodexTranscript(raw),
+    /no assistant response text was detected/i,
+  );
+});
+
+test("streams thinking lines separately from assistant deltas", () => {
+  const thinking: string[] = [];
+  const assistant: string[] = [];
+  const parser = createCodexTranscriptStreamParser({
+    onThinkingLine: (line) => thinking.push(line),
+    onAssistantDelta: (chunk) => assistant.push(chunk),
+  });
+
+  parser.feed([
+    "OpenAI Codex v0.118.0",
+    "Checking src/app.tsx",
+    "Task:",
+    "Refactor the CLI",
+    "",
+    "assistant",
+    "First line",
+    "Second line",
+  ].join("\n"));
+  parser.flush();
+
+  assert.deepEqual(thinking, ["Checking src/app.tsx"]);
+  assert.deepEqual(assistant, ["First line", "\nSecond line"]);
+});
+
+test("keeps multi-line assistant formatting when streaming", () => {
+  const assistant: string[] = [];
+  const parser = createCodexTranscriptStreamParser({
+    onAssistantDelta: (chunk) => assistant.push(chunk),
+  });
+
+  parser.feed("assistant\n```ts\n");
+  parser.feed("const value = 1;\n");
+  parser.feed("```\n");
+  parser.flush();
+
+  assert.deepEqual(assistant, ["```ts", "\nconst value = 1;", "\n```"]);
+});
+
+test("emits tool activity separately from assistant prose while streaming", () => {
+  const assistant: string[] = [];
+  const toolActivity: RunToolActivity[] = [];
+  const parser = createCodexTranscriptStreamParser({
+    onAssistantDelta: (chunk) => assistant.push(chunk),
+    onToolActivity: (activity) => toolActivity.push(activity),
+  });
+
+  parser.feed([
+    "assistant",
+    "$ rg --files",
+    "src/app.tsx",
+    "src/ui/BottomComposer.tsx",
+    "",
+    "I found the relevant files.",
+  ].join("\n"));
+  parser.flush();
+
+  assert.deepEqual(assistant, ["I found the relevant files."]);
+  assert.equal(toolActivity.length, 2);
+  assert.equal(toolActivity[0]?.command, "rg --files");
+  assert.equal(toolActivity[0]?.status, "running");
+  assert.equal(toolActivity[1]?.command, "rg --files");
+  assert.equal(toolActivity[1]?.status, "completed");
+  assert.equal(toolActivity[1]?.summary, "Found 2 files");
+});
+
+test("removes tool execution stdout from the finalized assistant transcript", () => {
+  const raw = [
+    "assistant",
+    "$ rg --files",
+    "src/app.tsx",
+    "src/ui/BottomComposer.tsx",
+    "",
+    "I found the relevant files and updated the composer.",
+  ].join("\n");
+
+  assert.equal(
+    sanitizeCodexTranscript(raw),
+    "I found the relevant files and updated the composer.",
+  );
+});

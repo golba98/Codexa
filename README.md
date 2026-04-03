@@ -1,13 +1,14 @@
 # Codexa
 
-Terminal UI wrapper around the local Codex CLI, built with TypeScript, Bun, and Ink.
+Terminal UI wrapper around the Codexa neural network, built with TypeScript, Bun, and Ink.
+
 
 ## Install on Windows
 
 From the repo root:
 
 ```powershell
-cd "C:\Development\1-JavaScript\13-Custom CLI"
+cd "<path-to-your-clone>"
 npm link
 where codexa
 ```
@@ -19,7 +20,7 @@ where codexa
 Start `codexa` from the folder you want locked as the workspace:
 
 ```powershell
-cd "C:\Users\jorda\OneDrive\Desktop\3-Python\Programs\2-Personal\20-Tester"
+cd "<path-to-your-workspace>"
 codexa
 ```
 
@@ -38,7 +39,7 @@ Examples:
 
 ```text
 /workspace relaunch .
-/workspace relaunch C:\Users\jorda\OneDrive\Desktop\3-Python\Programs\2-Personal\20-Tester
+/workspace relaunch <workspace-path>
 ```
 
 `/workspace relaunch` restarts the TUI in the target directory. It does not switch workspaces live in the current process.
@@ -50,3 +51,12 @@ bun run dev
 ```
 
 Repo/dev launches lock the session to the directory that launched Bun. For the normal user flow, prefer `npm link` and then run `codexa` from the intended workspace.
+
+## Repo Hygiene
+
+This repository is set up to keep local-only files out of GitHub, including:
+
+- `node_modules/`
+- `.claude/`
+- `.env` and other local secret files
+- editor, OS, and cache files

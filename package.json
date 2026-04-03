@@ -1,0 +1,25 @@
+{
+  "name": "codexa",
+  "version": "1.0.1",
+  "description": "Terminal UI for Codexa — TypeScript + Bun + Ink",
+  "type": "module",
+  "bin": {
+    "codexa": "./bin/codexa.js"
+  },
+  "scripts": {
+    "start": "bun run --silent src/index.tsx",
+    "dev": "bun --watch --silent src/index.tsx",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "ink": "^5.2.0",
+    "ink-select-input": "^5.0.0",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "typescript": "^5.5.0"
+  }
+}
