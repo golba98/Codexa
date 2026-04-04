@@ -19,6 +19,8 @@ interface TurnGroupProps {
   assistant: AssistantEvent | null;
   uiState: UIState;
   opacity: TurnOpacity;
+  streamPreviewRows: number;
+  streamMode: "assistant-first";
 }
 
 function formatTime(createdAt: number): string {
@@ -78,14 +80,26 @@ function UserSummary({
   );
 }
 
-export function TurnGroup({ cols, turnIndex, user, run, assistant, uiState, opacity }: TurnGroupProps) {
-  const isThinking = run !== null && run.status === "running" && uiState.kind === "THINKING" && uiState.turnId === user.turnId;
-  const isStreaming = uiState.kind === "RESPONDING" && uiState.turnId === user.turnId;
+export function TurnGroup({
+  cols,
+  turnIndex,
+  user,
+  run,
+  assistant,
+  uiState,
+  opacity,
+  streamPreviewRows,
+  streamMode,
+}: TurnGroupProps) {
+  const runPhase = resolveTurnRunPhase(run, assistant, uiState, user.turnId);
+  const isThinking = runPhase === "thinking";
+  const isStreaming = runPhase === "streaming";
+  const agentRunPhase = runPhase === "streaming" ? "streaming" : "final";
   const question = uiState.kind === "AWAITING_USER_ACTION" && uiState.turnId === user.turnId
     ? uiState.question
     : null;
   const dim = opacity !== "active";
-  const shouldShowAgentBlock = run !== null && (assistant !== null || run.status !== "running" || isStreaming);
+  const shouldShowAgentBlock = run !== null && (runPhase !== "thinking");
 
   return (
     <Box flexDirection="column" width="100%">
@@ -98,20 +112,54 @@ export function TurnGroup({ cols, turnIndex, user, run, assistant, uiState, opac
         cols={cols}
       />
 
-      {run && isThinking && <ThinkingBlock cols={cols} run={run} turnIndex={turnIndex} />}
-
-      {shouldShowAgentBlock && run && (
-        <AgentBlock
-          cols={cols}
-          assistant={assistant}
-          run={run}
-          streaming={isStreaming}
-          turnIndex={turnIndex}
-          dim={dim}
-        />
+      {run && (
+        <Box key={`run-phase-${user.turnId}-${runPhase}`} width="100%">
+          {isThinking ? (
+            <ThinkingBlock cols={cols} run={run} turnIndex={turnIndex} />
+          ) : shouldShowAgentBlock ? (
+            <AgentBlock
+              cols={cols}
+              assistant={assistant}
+              run={run}
+              streaming={isStreaming}
+              turnIndex={turnIndex}
+              dim={dim}
+              runPhase={agentRunPhase}
+              streamingPreviewRows={streamPreviewRows}
+              streamingMode={streamMode}
+            />
+          ) : null}
+        </Box>
       )}
 
       {question && <ActionRequiredBlock cols={cols} turnIndex={turnIndex} question={question} />}
     </Box>
   );
+}
+
+export type TurnRunPhase = "none" | "thinking" | "streaming" | "final";
+
+export function resolveTurnRunPhase(
+  run: RunEvent | null,
+  assistant: AssistantEvent | null,
+  uiState: UIState,
+  turnId: number,
+): TurnRunPhase {
+  if (!run) return "none";
+  if (run.status !== "running") return "final";
+
+  if (uiState.kind === "RESPONDING" && uiState.turnId === turnId) {
+    return "streaming";
+  }
+
+  if (uiState.kind === "THINKING" && uiState.turnId === turnId) {
+    return "thinking";
+  }
+
+  // Defensive fallback to prevent blank/stale turn cards during rapid state churn.
+  if (assistant?.content?.trim()) {
+    return "streaming";
+  }
+
+  return "thinking";
 }

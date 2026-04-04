@@ -241,6 +241,7 @@ export function Timeline({ events, layout, uiState }: TimelineProps) {
     .map((item) => item.turnId);
   const activeTurnId = getActiveTurnId(uiState);
   const standaloneWidth = Math.max(1, getUsableShellWidth(layout.cols, 2));
+  const streamPreviewRows = layout.mode === "micro" ? 5 : layout.mode === "compact" ? 8 : 12;
 
   if (visibleItems.length === 0) return null;
 
@@ -257,6 +258,8 @@ export function Timeline({ events, layout, uiState }: TimelineProps) {
               assistant={item.assistant}
               uiState={uiState}
               opacity={resolveTurnOpacity(visibleTurnIds, item.turnId, activeTurnId)}
+              streamPreviewRows={streamPreviewRows}
+              streamMode="assistant-first"
             />
           ) : item.type === "event" ? (
             <StandaloneEventLine event={item.event} width={standaloneWidth} />

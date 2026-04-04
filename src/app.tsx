@@ -68,6 +68,7 @@ import { getShellHeight, getShellWidth, useLayout as useTerminalLayout } from ".
 import { ModelPicker } from "./ui/ModelPicker.js";
 import { ModePicker } from "./ui/ModePicker.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
+import { RunFooter } from "./ui/RunFooter.js";
 import { ThemePicker } from "./ui/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
 import { ThemeProvider, THEMES } from "./ui/theme.js";
@@ -85,6 +86,7 @@ import { isBusy as isUiBusy } from "./session/types.js";
 
 let nextEventId = 0;
 let nextTurnId = 0;
+const ASSISTANT_DELTA_FLUSH_MS = 45;
 
 function createEventId(): number {
   return nextEventId++;
@@ -139,6 +141,7 @@ export function App() {
   const isMountedRef = useRef(true);
   const activeRunIdRef = useRef<number | null>(null);
   const activeTurnIdRef = useRef<number | null>(null);
+  const uiStateRef = useRef<UIState>({ kind: "IDLE" });
   const previousScreenRef = useRef<Screen>("main");
   const themePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeThemeName = getDisplayedThemeName(themeSelection);
@@ -171,6 +174,10 @@ export function App() {
       cleanupRef.current?.();
     };
   }, []);
+
+  useEffect(() => {
+    uiStateRef.current = uiState;
+  }, [uiState]);
 
   useEffect(() => {
     const previousScreen = previousScreenRef.current;
@@ -716,38 +723,76 @@ export function App() {
       ? createWorkspaceActivityTracker({
         rootDir: workspaceRoot,
         onActivity: (activity) => {
+          if (!isCurrentRun(activeRunIdRef.current, runId)) return;
           dispatchSession({ type: "RUN_APPEND_ACTIVITY", runId, activity });
         },
       })
       : null;
+
+    let pendingAssistantDelta = "";
+    let hasAssistantDelta = false;
+    let assistantFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushAssistantDelta = () => {
+      if (!pendingAssistantDelta || !isCurrentRun(activeRunIdRef.current, runId)) {
+        pendingAssistantDelta = "";
+        return;
+      }
+
+      const chunk = pendingAssistantDelta;
+      pendingAssistantDelta = "";
+      dispatchSession({
+        type: "RUN_APPEND_ASSISTANT_DELTA",
+        turnId,
+        chunk,
+        eventFactory: () => ({
+          id: createEventId(),
+          type: "assistant",
+          createdAt: Date.now(),
+          content: chunk,
+          turnId,
+        }),
+      });
+    };
+
+    const flushAssistantDeltaNow = () => {
+      if (assistantFlushTimer) {
+        clearTimeout(assistantFlushTimer);
+        assistantFlushTimer = null;
+      }
+      flushAssistantDelta();
+    };
+
+    const scheduleAssistantFlush = () => {
+      if (assistantFlushTimer) return;
+      assistantFlushTimer = setTimeout(() => {
+        assistantFlushTimer = null;
+        flushAssistantDelta();
+      }, ASSISTANT_DELTA_FLUSH_MS);
+    };
 
     const stopProviderRun = provider.run(
       providerPrompt,
       { model, mode: effectiveMode, reasoningLevel, workspaceRoot },
       {
         onAssistantDelta: (chunk) => {
-          if (!chunk) return;
-          dispatchSession({
-            type: "RUN_APPEND_ASSISTANT_DELTA",
-            turnId,
-            chunk,
-            eventFactory: () => ({
-              id: createEventId(),
-              type: "assistant",
-              createdAt: Date.now(),
-              content: chunk,
-              turnId,
-            }),
-          });
+          if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) return;
+          hasAssistantDelta = true;
+          pendingAssistantDelta += chunk;
+          scheduleAssistantFlush();
         },
         onToolActivity: (activity) => {
+          if (!isCurrentRun(activeRunIdRef.current, runId)) return;
           dispatchSession({ type: "RUN_UPSERT_TOOL_ACTIVITY", runId, activity });
         },
         onResponse: (response) => {
+          if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+          flushAssistantDeltaNow();
           setConversationChars((count) => count + response.length);
           void finalizePromptRun(runId, turnId, "completed", undefined, response);
         },
         onError: (message, rawOutput) => {
+          if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+          flushAssistantDeltaNow();
           const combinedOutput = [message, rawOutput].filter(Boolean).join("\n");
           const errorMessage = isLikelyAuthFailure(combinedOutput)
             ? [
@@ -767,12 +812,17 @@ export function App() {
         },
         onProgress: (line) => {
           if (isNoiseLine(line)) return;
+          if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+          const currentUiState = uiStateRef.current;
+          const isRespondingForTurn = currentUiState.kind === "RESPONDING" && currentUiState.turnId === turnId;
+          if (hasAssistantDelta || isRespondingForTurn) return;
           dispatchSession({ type: "RUN_APPEND_PROGRESS", runId, lines: [line] });
         },
       },
     );
 
     cleanupRef.current = () => {
+      flushAssistantDeltaNow();
       activityTracker?.stop();
       stopProviderRun?.();
     };
@@ -987,6 +1037,8 @@ export function App() {
   // scrollbar when the shell content lands exactly on the terminal edge.
   const shellWidth = getShellWidth(terminalLayout.cols);
   const shellHeight = getShellHeight(terminalLayout.rows);
+  const showComposer = screen === "main" && !busy;
+  const showBusyFooter = screen === "main" && busy;
 
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
@@ -1084,7 +1136,7 @@ export function App() {
           />
         )}
 
-        {screen === "main" && (
+        {showComposer && (
           <BottomComposer
             key={composerInstanceKey}
             layout={terminalLayout}
@@ -1110,6 +1162,14 @@ export function App() {
             onOpenAuthPanel={openAuthPanel}
             onClear={handleClear}
             onCycleMode={cycleModeWithNotice}
+            onQuit={handleQuit}
+          />
+        )}
+
+        {showBusyFooter && (
+          <RunFooter
+            uiState={uiState}
+            onCancel={handleCancel}
             onQuit={handleQuit}
           />
         )}
