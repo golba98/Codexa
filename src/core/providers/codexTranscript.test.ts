@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { RunToolActivity } from "../../session/types.js";
-import { createCodexTranscriptStreamParser, sanitizeCodexTranscript } from "./codexTranscript.js";
+import {
+  createCodexTranscriptStreamParser,
+  sanitizeCodexTranscript,
+  stripNonPrintableControls,
+} from "./codexTranscript.js";
 
 test("extracts the assistant reply from noisy codex transcript output", () => {
   const raw = [
@@ -136,4 +140,18 @@ test("removes tool execution stdout from the finalized assistant transcript", ()
     sanitizeCodexTranscript(raw),
     "I found the relevant files and updated the composer.",
   );
+});
+
+test("strips control characters from streamed and finalized assistant text", () => {
+  const assistant: string[] = [];
+  const parser = createCodexTranscriptStreamParser({
+    onAssistantDelta: (chunk) => assistant.push(chunk),
+  });
+
+  parser.feed("assistant\nHello\u0007 world\u0001\n");
+  parser.flush();
+
+  assert.deepEqual(assistant, ["Hello world"]);
+  assert.equal(stripNonPrintableControls("A\u0000B\u001fC"), "ABC");
+  assert.equal(sanitizeCodexTranscript("assistant\nDone\u0007\n"), "Done");
 });

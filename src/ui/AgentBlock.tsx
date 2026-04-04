@@ -9,6 +9,7 @@ import { wrapPlainText } from "./textLayout.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
 
 const FLUSH_INTERVAL_MS = 60;
+const DEFAULT_STREAMING_PREVIEW_ROWS = 10;
 
 function useStreamBuffer(streaming: boolean) {
   const bufferRef = useRef("");
@@ -58,9 +59,37 @@ interface AgentBlockProps {
   streaming: boolean;
   turnIndex: number;
   dim?: boolean;
+  runPhase?: "streaming" | "final";
+  streamingPreviewRows?: number;
+  streamingMode?: "assistant-first";
 }
 
-export function AgentBlock({ cols, assistant, run, streaming, turnIndex, dim = false }: AgentBlockProps) {
+export interface StreamingPreview {
+  rows: string[];
+  hiddenRows: number;
+}
+
+export function buildStreamingPreviewRows(rows: string[], maxRows: number): StreamingPreview {
+  const safeMax = Math.max(1, maxRows);
+  if (rows.length <= safeMax) {
+    return { rows, hiddenRows: 0 };
+  }
+  return {
+    rows: rows.slice(-safeMax),
+    hiddenRows: rows.length - safeMax,
+  };
+}
+
+export function AgentBlock({
+  cols,
+  assistant,
+  run,
+  streaming,
+  turnIndex,
+  dim = false,
+  runPhase = streaming ? "streaming" : "final",
+  streamingPreviewRows = DEFAULT_STREAMING_PREVIEW_ROWS,
+}: AgentBlockProps) {
   const theme = useTheme();
   const cursorVisible = useStreamingCursor();
   const prevContentRef = useRef("");
@@ -87,14 +116,18 @@ export function AgentBlock({ cols, assistant, run, streaming, turnIndex, dim = f
   const textColor = dim ? theme.DIM : theme.TEXT;
   const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
   const streamingRows = useMemo(() => wrapPlainText(content, contentWidth), [content, contentWidth]);
+  const streamPreview = useMemo(
+    () => buildStreamingPreviewRows(streamingRows, streamingPreviewRows),
+    [streamingPreviewRows, streamingRows],
+  );
   const failureMessage = run?.status === "failed" ? (run.errorMessage ?? run.summary) : null;
   const cancelMessage = run?.status === "canceled" ? run.summary : null;
-  const runStatus = streaming
+  const runStatus = runPhase === "streaming"
     ? "streaming"
     : run?.status === "completed"
       ? "complete"
       : run?.status ?? "running";
-  const rightMeta = run?.durationMs != null && !streaming
+  const rightMeta = run?.durationMs != null && runPhase !== "streaming"
     ? `${runStatus} • ${formatDuration(run.durationMs)}`
     : runStatus;
   const heading = run?.model ? run.model.toUpperCase().replace(/-/g, " ") : `AGENT RESPONSE`;
@@ -119,15 +152,20 @@ export function AgentBlock({ cols, assistant, run, streaming, turnIndex, dim = f
         {content.length > 0 && (
           <Box flexDirection="column" marginTop={1} width="100%">
             {streaming ? (
-              streamingRows.map((row, index) => {
-                const isLastRow = index === streamingRows.length - 1;
-                return (
-                  <Box key={`stream-${index}`} width="100%">
-                    <Text color={textColor}>{row || " "}</Text>
-                    {isLastRow && cursorVisible && <Text color={theme.ACCENT}>{"▌"}</Text>}
-                  </Box>
-                );
-              })
+              <>
+                {streamPreview.hiddenRows > 0 && (
+                  <Text color={metadataColor}>{`... ${streamPreview.hiddenRows} earlier line${streamPreview.hiddenRows === 1 ? "" : "s"} hidden`}</Text>
+                )}
+                {streamPreview.rows.map((row, index) => {
+                  const isLastRow = index === streamPreview.rows.length - 1;
+                  return (
+                    <Box key={`stream-${index}`} width="100%">
+                      <Text color={textColor}>{row || " "}</Text>
+                      {isLastRow && cursorVisible && <Text color={theme.ACCENT}>{"▌"}</Text>}
+                    </Box>
+                  );
+                })}
+              </>
             ) : (
               <MarkdownContent content={content} cols={cols} />
             )}

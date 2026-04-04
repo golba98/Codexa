@@ -41,6 +41,11 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_ESCAPE_PATTERN, "");
 }
 
+// Keep line breaks but drop control bytes that can move or corrupt terminal cursor/layout.
+export function stripNonPrintableControls(text: string): string {
+  return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+}
+
 type TranscriptSection = "preamble" | "task" | "user" | "assistant" | "tool_output" | "postlude";
 
 export interface CodexTranscriptStreamHandlers {
@@ -50,7 +55,7 @@ export interface CodexTranscriptStreamHandlers {
 }
 
 export function normalizeLines(raw: string): string[] {
-  return stripAnsi(raw)
+  return stripNonPrintableControls(stripAnsi(raw))
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .split("\n")
@@ -218,7 +223,7 @@ export function createCodexTranscriptStreamParser(handlers: CodexTranscriptStrea
   };
 
   const processLine = (rawLine: string) => {
-    const line = stripAnsi(rawLine).replace(/\r/g, "");
+    const line = stripNonPrintableControls(stripAnsi(rawLine)).replace(/\r/g, "");
     const trimmed = line.trim();
     const lower = trimmed.toLowerCase();
 
