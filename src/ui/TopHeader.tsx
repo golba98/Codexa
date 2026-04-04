@@ -11,15 +11,6 @@ interface TopHeaderProps {
   layout: Layout;
 }
 
-const WORDMARK = [
-  " ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗ █████╗ ",
-  "██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝██╔══██╗",
-  "██║     ██║   ██║██║  ██║█████╗   ╚███╔╝ ███████║",
-  "██║     ██║   ██║██║  ██║██╔══╝   ██╔██╗ ██╔══██║",
-  "╚██████╗╚██████╔╝██████╔╝███████╗██╔╝ ██╗██║  ██║",
-  " ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝",
-];
-
 /** Truncate a path to fit within maxWidth, replacing the middle with "…" */
 function truncatePath(path: string, maxWidth: number): string {
   // Use double backslashes for visual consistency with reference image
@@ -68,7 +59,7 @@ export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) 
   }
 
   // ── FULL (≥110 cols): hero with large wordmark ────────────────────────────
-  const wordmarkWidth = 56;
+  const wordmarkWidth = 24;
   const gap = 3;
   const metaWidth = Math.max(30, cols - wordmarkWidth - gap - 4);
   const fullWorkspaceDisplay = truncatePath(workspaceRoot, Math.max(16, metaWidth - 11));
@@ -77,9 +68,8 @@ export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) 
     <Box flexDirection="column" width="100%" paddingX={1} marginBottom={1}>
       <Box flexDirection="row" paddingY={0} alignItems="flex-start" width="100%">
         <Box width={wordmarkWidth} flexShrink={0} overflow="hidden">
-          {WORDMARK.map((line, index) => (
-            <Text key={`${index}-${line}`} color={theme.TEXT} bold>{line}</Text>
-          ))}
+          <Text color={theme.TEXT} bold>CODEXA</Text>
+          <Text color={theme.MUTED}>Terminal UI</Text>
         </Box>
 
         <Box flexDirection="column" marginLeft={gap} marginTop={1} width={metaWidth}>

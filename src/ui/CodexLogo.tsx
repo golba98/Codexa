@@ -3,14 +3,12 @@ import { Box, Text } from "ink";
 import { useTheme } from "./theme.js";
 import type { LayoutMode } from "./layout.js";
 
-// Full 6-line Unicode banner — rendered only in "full" mode.
+// Full 4-line ASCII banner — rendered only in "full" mode.
 const BANNER = [
-  " ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗ █████╗ ",
-  "██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝██╔══██╗",
-  "██║     ██║   ██║██║  ██║█████╗   ╚███╔╝ ███████║",
-  "██║     ██║   ██║██║  ██║██╔══╝   ██╔██╗ ██╔══██║",
-  "╚██████╗╚██████╔╝██████╔╝███████╗██╔╝ ██╗██║  ██║",
-  " ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝",
+  "  ____   ___  ____  _____ _  __    _    ",
+  " / ___| / _ \\|  _ \\| ____| |/ /   / \\   ",
+  "| |    | | | | | | |  _| | ' /   / _ \\  ",
+  "|_|     \\___/|_| |_|_____|_|\\_\\ /_/ \\_\\ ",
 ];
 
 
@@ -44,8 +42,7 @@ export function CodexLogo({ layout = "full" }: CodexLogoProps) {
     );
   }
 
-  // Full mode — 6-line Unicode banner, truncated (never wrapped) so block
-  // characters can't collide across lines and create the smeared-block glitch.
+  // Full mode — ASCII banner to stay stable across terminals/codepages.
   return (
     <Box flexDirection="column" overflow="hidden">
       {BANNER.map((line, index) => (
