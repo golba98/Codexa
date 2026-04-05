@@ -91,7 +91,12 @@ export function buildCodexExecArgs(
   cwd: string,
   reasoningLevel?: string,
 ): string[] {
-  const args: string[] = ["exec", "--skip-git-repo-check", "--cd", cwd, "--model", model];
+  // Ensure cwd is safe to pass as a single command-line argument.
+  let safeCwd = cwd;
+  if (safeCwd.includes("\n") || safeCwd.includes("\r") || safeCwd.includes("\0")) {
+    safeCwd = process.cwd();
+  }
+  const args: string[] = ["exec", "--skip-git-repo-check", "--cd", safeCwd, "--model", model];
 
   if (reasoningLevel) {
     args.push("--config", `reasoning.effort=${reasoningLevel}`);
