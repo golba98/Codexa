@@ -1,7 +1,12 @@
 import { parse, resolve } from "path";
 
 export function normalizeWorkspaceRoot(pathValue: string): string {
-  const resolved = resolve(pathValue.trim());
+  let candidate = pathValue.trim();
+  // Guard against obviously unsafe values that could break command-line parsing.
+  if (candidate.includes("\n") || candidate.includes("\r") || candidate.includes("\0")) {
+    candidate = process.cwd();
+  }
+  const resolved = resolve(candidate);
   const { root } = parse(resolved);
 
   let normalized = resolved;
