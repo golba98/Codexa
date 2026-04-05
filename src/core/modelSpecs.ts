@@ -81,7 +81,7 @@ export function parseTokenCount(rawValue: string): number | null {
 
 export function stripHtmlToText(html: string): string {
   return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<script\b[\s\S]*?<\/script[^>]*>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;|&#160;/gi, " ")
