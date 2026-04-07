@@ -6,6 +6,7 @@ import type {
   ReasoningLevel,
 } from "../config/settings.js";
 import type { RunActivitySummary, RunFileActivity } from "../core/workspaceActivity.js";
+import type { PanelState, TaskType } from "../orchestration/panelState.js";
 
 export type Screen = "main" | "model-picker" | "mode-picker" | "backend-picker" | "auth-panel" | "reasoning-picker" | "theme-picker";
 
@@ -112,4 +113,24 @@ export interface ShellEvent extends TimelineBaseEvent {
   durationMs: number | null;
 }
 
-export type TimelineEvent = UserPromptEvent | AssistantEvent | SystemEvent | ErrorEvent | RunEvent | ShellEvent;
+// ─── Staged Run Event ─────────────────────────────────────────────────────────
+// New event type for the staged rendering pipeline
+
+export interface StagedRunEvent extends TimelineBaseEvent {
+  type: "staged-run";
+  backendId: AvailableBackend;
+  backendLabel: string;
+  mode: AvailableMode;
+  model: AvailableModel;
+  prompt: string;
+  taskType: TaskType;
+  status: "running" | "completed" | "failed" | "canceled";
+  startedAt: number;
+  durationMs: number | null;
+  /** Links this run to its user prompt for TurnGroup rendering. */
+  turnId: number;
+  /** Panel state snapshot for rendering */
+  panelState: PanelState;
+}
+
+export type TimelineEvent = UserPromptEvent | AssistantEvent | SystemEvent | ErrorEvent | RunEvent | ShellEvent | StagedRunEvent;

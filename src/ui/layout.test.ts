@@ -43,6 +43,12 @@ test("keeps breakpoint modes stable at the edges", () => {
   assert.equal(createLayoutSnapshot(59, 24).mode, "micro");
 });
 
+test("marks undersized terminals for composer-only fallback", () => {
+  assert.equal(createLayoutSnapshot(47, 24).tooSmall, true);
+  assert.equal(createLayoutSnapshot(80, 11).tooSmall, true);
+  assert.equal(createLayoutSnapshot(80, 24).tooSmall, false);
+});
+
 test("preserves the previous layout when resize values are invalid", () => {
   const previous = createLayoutSnapshot(80, 30);
   const next = createLayoutSnapshot(0, -1, previous);

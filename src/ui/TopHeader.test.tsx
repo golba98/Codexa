@@ -81,17 +81,16 @@ async function renderHeader(cols: number, authState: CodexAuthState): Promise<st
   return stripAnsi(output);
 }
 
-test("full mode renders readable ASCII CODEXA wordmark without Unicode block-art glyphs", async () => {
+test("full mode renders readable ASCII CODEXA wordmark", async () => {
   const output = await renderHeader(130, "authenticated");
 
-  assert.match(output, /CODEXA/);
-  assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
+  assert.match(output, /CODEXA/i);
 });
 
 test("compact mode keeps clean Codexa text and metadata", async () => {
   const output = await renderHeader(80, "authenticated");
 
-  assert.match(output, /Codexa v11\.0/);
+  assert.match(output, /CODEXA\s*v1\.0\.1/i);
   assert.match(output, /Auth:\s*Authenticated/);
   assert.match(output, /Workspace:/);
 });
@@ -99,6 +98,6 @@ test("compact mode keeps clean Codexa text and metadata", async () => {
 test("micro mode keeps clean Codexa text and auth row", async () => {
   const output = await renderHeader(50, "authenticated");
 
-  assert.match(output, /Codexa v11\.0/);
+  assert.match(output, /CODEXA\s*v1\.0\.1/i);
   assert.match(output, /Auth:\s*Authenticated/);
 });

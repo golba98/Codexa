@@ -12,7 +12,7 @@ export const DEFAULT_THEME = "mono";
 export const DEFAULT_AUTH_PREFERENCE = "chatgpt-login-goal";
 export const CODEX_EXECUTABLE = process.env.CODEX_EXECUTABLE || "codex";
 export const MAX_CHAT_LINES = 2000;
-export const MAX_VISIBLE_EVENTS = 8;
+export const MAX_VISIBLE_EVENTS = 1000; // Effectively unlimited - viewport clipping handles visibility
 export const SETTINGS_FILE = join(homedir(), ".codexa-settings.json");
 export const MODEL_SPECS_FILE = join(homedir(), ".codexa-model-specs.json");
 

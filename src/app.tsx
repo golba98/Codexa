@@ -52,15 +52,23 @@ import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProvider } from "./core/providers/types.js";
-import type { AssistantEvent, RunEvent, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
+import type { AssistantEvent, RunEvent, Screen, ShellEvent, StagedRunEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
 import {
   buildFollowUpPrompt,
   createRunEvent,
+  createStagedRunEvent,
   extractAssistantActionRequired,
   guardConfigMutation,
   isCurrentRun,
 } from "./session/chatLifecycle.js";
 import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
+import {
+  classifyTask,
+  createInitialPanelState,
+  getResultContent,
+  RunOrchestrator,
+  type PanelState,
+} from "./orchestration/index.js";
 import { AuthPanel } from "./ui/AuthPanel.js";
 import { BackendPicker } from "./ui/BackendPicker.js";
 import { BottomComposer } from "./ui/BottomComposer.js";
@@ -79,9 +87,14 @@ import {
   shouldBumpComposerInstance,
   type ThemeSelectionState,
 } from "./ui/themeFlow.js";
+import { StatusBar } from "./ui/StatusBar.js";
 import { Timeline } from "./ui/Timeline.js";
 import { TopHeader } from "./ui/TopHeader.js";
 import { isBusy as isUiBusy } from "./session/types.js";
+
+// Feature flag for staged response pipeline
+// Set to true to enable progressive panel rendering, false for legacy blob rendering
+const USE_STAGED_PIPELINE = true;
 
 let nextEventId = 0;
 let nextTurnId = 0;
@@ -147,8 +160,9 @@ export function App() {
       ? { ...THEMES.purple, ...customTheme }
       : (THEMES[activeThemeName] ?? THEMES.purple);
   const currentModelSpec = modelSpecs[model] ?? createLoadingModelSpec(model);
-  const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
+  const { staticEvents, activeEvents, uiState, inputValue, cursor, inputEpoch } = sessionState;
   const busy = isUiBusy(uiState);
+  const activeScreen = terminalLayout.tooSmall ? "main" : screen;
 
   const provider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
 
@@ -181,8 +195,8 @@ export function App() {
   }, [screen]);
 
   useEffect(() => {
-    focusManager.focus(getFocusTargetForScreen(screen));
-  }, [composerInstanceKey, focusManager, screen]);
+    focusManager.focus(getFocusTargetForScreen(activeScreen));
+  }, [activeScreen, composerInstanceKey, focusManager, inputEpoch, terminalLayout.epoch]);
 
   useEffect(() => {
     const currentSpec = modelSpecs[model];
@@ -794,6 +808,150 @@ export function App() {
     workspaceRoot,
   ]);
 
+  // ─── Staged Response Pipeline ─────────────────────────────────────────────────
+  // Uses RunOrchestrator for progressive panel rendering instead of blob streaming
+
+  const startStagedPromptRun = useCallback((displayPrompt: string, providerPrompt: string) => {
+    const executionModeDecision = resolveExecutionMode(mode, providerPrompt);
+    const effectiveMode = executionModeDecision.mode;
+    if (executionModeDecision.autoUpgraded) {
+      appendSystemEvent(
+        "Mode auto-upgraded",
+        "This prompt looks like a file-editing request, so the run is using AUTO-EDIT instead of SUGGEST.",
+      );
+    }
+
+    if (!provider.run) {
+      appendErrorEvent(
+        "Backend unavailable",
+        `${provider.label} is a planned provider placeholder. Use Codexa Core for runnable execution in v1.`,
+      );
+      return false;
+    }
+
+    if (backend === "codex-subprocess") {
+      const decision = getRunGateDecision(authStatus.state);
+      if (!decision.allowRun) {
+        appendErrorEvent("Authentication required", decision.blockMessage ?? "Please sign in with `codex login`.");
+        return false;
+      }
+      if (decision.warningMessage) {
+        appendSystemEvent("Auth warning", decision.warningMessage);
+      }
+    }
+
+    const turnId = createTurnId();
+    const userEvent: UserPromptEvent = {
+      id: createEventId(),
+      type: "user",
+      createdAt: Date.now(),
+      prompt: displayPrompt,
+      turnId,
+    };
+    appendStaticEvent(userEvent);
+    setConversationChars((count) => count + providerPrompt.length);
+
+    // Classify task for staged rendering
+    const taskType = classifyTask(providerPrompt);
+    const runId = createEventId();
+    activeRunIdRef.current = runId;
+    activeTurnIdRef.current = turnId;
+    dispatchSession({ type: "UI_ACTION", action: { type: "PROMPT_RUN_STARTED", turnId } });
+
+    // Create staged run event with initial panel state
+    const initialPanelState = createInitialPanelState();
+    const stagedRunEvent = createStagedRunEvent({
+      id: runId,
+      backendId: backend,
+      backendLabel: provider.label,
+      mode: effectiveMode,
+      model,
+      prompt: providerPrompt,
+      taskType,
+      turnId,
+      initialPanelState,
+    });
+    dispatchSession({ type: "SET_ACTIVE_EVENTS", events: [stagedRunEvent] });
+
+    // Create orchestrator with state change subscription
+    const orchestrator = new RunOrchestrator({
+      workspaceRoot,
+      model,
+      mode: effectiveMode,
+      reasoningLevel,
+      onStateChange: (panelState: PanelState) => {
+        dispatchSession({ type: "STAGED_RUN_UPDATE", runId, panelState });
+      },
+    });
+
+    // Subscribe to state changes for completion detection
+    const unsubscribe = orchestrator.subscribe((panelState: PanelState) => {
+      if (panelState.runPhase === "complete" || panelState.runPhase === "failed" || panelState.runPhase === "canceled") {
+        if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+
+        const cleanup = cleanupRef.current;
+        cleanupRef.current = null;
+        activeRunIdRef.current = null;
+        activeTurnIdRef.current = null;
+        focusManager.focus(FOCUS_IDS.composer);
+        cleanup?.();
+        unsubscribe();
+
+        // Extract question from result content if present
+        const resultContent = getResultContent(panelState);
+        const parsed = panelState.runPhase === "complete" && resultContent?.trim()
+          ? extractAssistantActionRequired(resultContent)
+          : { content: resultContent ?? "", question: null as string | null };
+
+        if (panelState.runPhase === "complete" && resultContent) {
+          setConversationChars((count) => count + resultContent.length);
+        }
+
+        const status: "completed" | "failed" | "canceled" =
+          panelState.runPhase === "complete" ? "completed" :
+          panelState.runPhase === "failed" ? "failed" : "canceled";
+
+        dispatchSession({
+          type: "FINALIZE_STAGED_RUN",
+          runId,
+          turnId,
+          status,
+          panelState,
+          question: status === "completed" ? parsed.question : null,
+        });
+      }
+    });
+
+    // Start the orchestrated run
+    orchestrator.startRun(providerPrompt, provider.run).catch((error) => {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      if (isLikelyAuthFailure(message)) {
+        setRuntimeUnauthenticated("Auth/session failure detected in neural link.");
+      }
+    });
+
+    cleanupRef.current = () => {
+      unsubscribe();
+      orchestrator.cancel();
+    };
+
+    return true;
+  }, [
+    appendErrorEvent,
+    appendStaticEvent,
+    appendSystemEvent,
+    authStatus.state,
+    backend,
+    focusManager,
+    model,
+    mode,
+    provider,
+    reasoningLevel,
+    dispatchSession,
+    setRuntimeUnauthenticated,
+    workspaceRoot,
+  ]);
+
   const handleSubmit = useCallback(() => {
     const value = inputValue.trim();
     if (!value) return;
@@ -807,11 +965,16 @@ export function App() {
       }
 
       resetComposer();
-      startPromptRun(value, buildFollowUpPrompt({
+      const followUpPrompt = buildFollowUpPrompt({
         originalPrompt: originalUserEvent.prompt,
         assistantQuestion: uiState.question,
         userAnswer: value,
-      }));
+      });
+      if (USE_STAGED_PIPELINE) {
+        startStagedPromptRun(value, followUpPrompt);
+      } else {
+        startPromptRun(value, followUpPrompt);
+      }
       return;
     }
 
@@ -948,7 +1111,11 @@ export function App() {
       appendErrorEvent("Workspace boundary", workspaceGuardMessage);
       return;
     }
-    startPromptRun(value, value);
+    if (USE_STAGED_PIPELINE) {
+      startStagedPromptRun(value, value);
+    } else {
+      startPromptRun(value, value);
+    }
   }, [
     appendErrorEvent,
     appendSystemEvent,
@@ -977,6 +1144,7 @@ export function App() {
     setModelWithNotice,
     setReasoningWithNotice,
     startPromptRun,
+    startStagedPromptRun,
     themeSelection.committedTheme,
     uiState,
     workspaceCommandContext,
@@ -985,14 +1153,15 @@ export function App() {
 
   // Keep a small gutter so wide bordered cards don't trip a horizontal
   // scrollbar when the shell content lands exactly on the terminal edge.
-  const shellWidth = getShellWidth(terminalLayout.cols);
-  const shellHeight = getShellHeight(terminalLayout.rows);
+  const shellWidth = terminalLayout.shellWidth;
+  const shellHeight = terminalLayout.shellHeight;
+  const fallbackNotice = `Terminal too small - enlarge window (${terminalLayout.cols}x${terminalLayout.rows})`;
 
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
-      <Box flexDirection="column" width={shellWidth} height={shellHeight}>
-        {screen === "main" && (
-          <Box flexDirection="column" borderBottom={true}>
+      <Box key={`layout-${terminalLayout.epoch}`} flexDirection="column" width={shellWidth} height={shellHeight}>
+        {activeScreen === "main" && !terminalLayout.tooSmall && (
+          <Box flexDirection="column" flexShrink={0}>
             <TopHeader
               authState={authStatus.state}
               workspaceRoot={workspaceRoot}
@@ -1001,11 +1170,17 @@ export function App() {
           </Box>
         )}
 
-        <Box flexGrow={1} flexShrink={1} flexDirection="column" overflowY="hidden" justifyContent="flex-end" paddingBottom={1}>
-          <Timeline events={[...staticEvents, ...activeEvents]} layout={terminalLayout} uiState={uiState} />
-        </Box>
+        {terminalLayout.tooSmall ? (
+          <Box flexGrow={1} flexShrink={1} flexDirection="column" justifyContent="flex-end" paddingX={1} paddingBottom={1}>
+            <Text color={activeTheme.WARNING}>{fallbackNotice}</Text>
+          </Box>
+        ) : (
+          <Box flexGrow={1} flexShrink={1} flexDirection="column" overflowY="hidden" justifyContent="flex-end" paddingBottom={0}>
+            <Timeline events={[...staticEvents, ...activeEvents]} layout={terminalLayout} uiState={uiState} scrollOffset={sessionState.transcriptScrollOffset} />
+          </Box>
+        )}
 
-        {screen === "backend-picker" && (
+        {!terminalLayout.tooSmall && activeScreen === "backend-picker" && (
           <BackendPicker
             currentBackend={backend}
             onSelect={(value) => setBackendWithNotice(value as AvailableBackend)}
@@ -1013,7 +1188,7 @@ export function App() {
           />
         )}
 
-        {screen === "model-picker" && (
+        {!terminalLayout.tooSmall && activeScreen === "model-picker" && (
           <ModelPicker
             currentModel={model}
             onSelect={(value) => setModelWithNotice(value as AvailableModel)}
@@ -1021,7 +1196,7 @@ export function App() {
           />
         )}
 
-        {screen === "mode-picker" && (
+        {!terminalLayout.tooSmall && activeScreen === "mode-picker" && (
           <ModePicker
             currentMode={mode}
             onSelect={(value) => setModeWithNotice(value as AvailableMode)}
@@ -1029,7 +1204,7 @@ export function App() {
           />
         )}
 
-        {screen === "reasoning-picker" && (
+        {!terminalLayout.tooSmall && activeScreen === "reasoning-picker" && (
           <ReasoningPicker
             currentModel={model}
             currentReasoning={reasoningLevel}
@@ -1038,7 +1213,7 @@ export function App() {
           />
         )}
 
-        {screen === "auth-panel" && (
+        {!terminalLayout.tooSmall && activeScreen === "auth-panel" && (
           <AuthPanel
             focusId={FOCUS_IDS.authPanel}
             provider={provider}
@@ -1053,7 +1228,7 @@ export function App() {
           />
         )}
 
-        {screen === "theme-picker" && (
+        {!terminalLayout.tooSmall && activeScreen === "theme-picker" && (
           <ThemePicker
             currentTheme={themeSelection.committedTheme}
             onSelect={(value) => {
@@ -1084,37 +1259,36 @@ export function App() {
           />
         )}
 
-        {screen === "main" && (
-          <BottomComposer
-            key={composerInstanceKey}
-            layout={terminalLayout}
-            uiState={uiState}
-            mode={mode}
-            model={model}
-            reasoningLevel={reasoningLevel}
-            tokensUsed={estimateTokens(conversationChars)}
-            modelSpec={currentModelSpec}
-            value={inputValue}
-            cursor={cursor}
-            onChangeInput={(value, nextCursor) => dispatchSession({ type: "SET_INPUT", value, cursor: nextCursor })}
-            onSubmit={handleSubmit}
-            onCancel={handleCancel}
-            onChangeValue={(value) => dispatchSession({ type: "SET_INPUT", value, cursor })}
-            onChangeCursor={(nextCursor) => dispatchSession({ type: "SET_INPUT", value: inputValue, cursor: nextCursor })}
-            onHistoryUp={handleHistoryUp}
-            onHistoryDown={handleHistoryDown}
-            onOpenBackendPicker={openBackendPicker}
-            onOpenModelPicker={openModelPicker}
-            onOpenModePicker={openModePicker}
-            onOpenThemePicker={openThemePicker}
-            onOpenAuthPanel={openAuthPanel}
-            onClear={handleClear}
-            onCycleMode={cycleModeWithNotice}
-            onQuit={handleQuit}
-          />
+        {activeScreen === "main" && (
+          <Box flexShrink={0} flexDirection="column">
+            <BottomComposer
+              key={`${composerInstanceKey}-${inputEpoch}-${terminalLayout.epoch}`}
+              layout={terminalLayout}
+              uiState={uiState}
+              value={inputValue}
+              cursor={cursor}
+              onChangeInput={(value, nextCursor) => dispatchSession({ type: "SET_INPUT", value, cursor: nextCursor })}
+              onSubmit={handleSubmit}
+              onCancel={handleCancel}
+              onHistoryUp={handleHistoryUp}
+              onHistoryDown={handleHistoryDown}
+              onTranscriptUp={() => dispatchSession({ type: "TRANSCRIPT_SCROLL_UP", amount: 5, maxHeight: 9999 })}
+              onTranscriptDown={() => dispatchSession({ type: "TRANSCRIPT_SCROLL_DOWN", amount: 5 })}
+              onQuit={handleQuit}
+            />
+            <StatusBar
+              layout={terminalLayout}
+              model={model}
+              mode={mode}
+              reasoningLevel={reasoningLevel}
+              tokensUsed={estimateTokens(conversationChars)}
+              modelSpec={currentModelSpec}
+            />
+          </Box>
         )}
 
-        {screen !== "main" && (
+
+        {!terminalLayout.tooSmall && activeScreen !== "main" && (
           <Box marginTop={1} paddingX={1}>
             <Text color={activeTheme.DIM}>Close the active panel with Esc to return to the composer.</Text>
           </Box>

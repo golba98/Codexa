@@ -4,6 +4,8 @@ import React from "react";
 import { PassThrough } from "node:stream";
 import { Box, Text, render, useFocus, useFocusManager } from "ink";
 import { normalizeReasoningForModel, type AvailableModel, type ReasoningLevel } from "../config/settings.js";
+import { createMouseInputFilter } from "../core/terminalMouse.js";
+import type { UIState } from "../session/types.js";
 import { BottomComposer } from "./BottomComposer.js";
 import { getFocusTargetForScreen } from "./focus.js";
 import { ModelPicker } from "./ModelPicker.js";
@@ -67,10 +69,57 @@ function createInkHarness(node: React.ReactElement) {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
+  const originalEmit = stdin.emit.bind(stdin);
+  const mouseFilter = createMouseInputFilter();
+  let pendingFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   stdout.on("data", (chunk) => {
     output += chunk.toString();
   });
+
+  const flushPending = () => {
+    if (pendingFlushTimer) {
+      clearTimeout(pendingFlushTimer);
+      pendingFlushTimer = null;
+    }
+    const flushed = mouseFilter.flushPending();
+    if (flushed) {
+      originalEmit("data", Buffer.from(flushed, "utf8"));
+    }
+  };
+
+  stdin.emit = function (event: string | symbol, ...args: any[]) {
+    if (event === "data" && args[0]) {
+      if (pendingFlushTimer) {
+        clearTimeout(pendingFlushTimer);
+        pendingFlushTimer = null;
+      }
+
+      const raw = Buffer.isBuffer(args[0]) ? args[0].toString("utf8") : String(args[0]);
+      const filtered = mouseFilter.filterChunk(raw);
+
+      for (const mouseEvent of filtered.events) {
+        originalEmit(mouseEvent === "scroll-up" ? "codexa-scroll-up" : "codexa-scroll-down");
+      }
+
+      if (filtered.hasPending) {
+        pendingFlushTimer = setTimeout(() => {
+          pendingFlushTimer = null;
+          const flushed = mouseFilter.flushPending();
+          if (flushed) {
+            originalEmit("data", Buffer.from(flushed, "utf8"));
+          }
+        }, 0);
+      }
+
+      if (filtered.output !== raw) {
+        if (filtered.output.length === 0) return false;
+        args[0] = Buffer.from(filtered.output, "utf8");
+      }
+    }
+
+    return originalEmit(event, ...args);
+  };
 
   const instance = render(node, {
     stdin: stdin as unknown as NodeJS.ReadStream,
@@ -89,6 +138,7 @@ function createInkHarness(node: React.ReactElement) {
       return stripAnsi(output);
     },
     async cleanup() {
+      flushPending();
       instance.cleanup();
       await sleep(20);
     },
@@ -165,17 +215,10 @@ function ModelPickerComposerHarness() {
           }}
           onSubmit={() => {}}
           onCancel={() => {}}
-          onChangeValue={setValue}
-          onChangeCursor={setCursor}
           onHistoryUp={() => {}}
           onHistoryDown={() => {}}
-          onOpenBackendPicker={() => {}}
-          onOpenModelPicker={() => {}}
-          onOpenModePicker={() => {}}
-          onOpenThemePicker={() => {}}
-          onOpenAuthPanel={() => {}}
-          onClear={() => {}}
-          onCycleMode={() => {}}
+          onTranscriptUp={() => {}}
+          onTranscriptDown={() => {}}
           onQuit={() => {}}
         />
       )}
@@ -204,20 +247,61 @@ function PasteComposerHarness() {
             setSubmitCount((count) => count + 1);
           }}
           onCancel={() => {}}
-          onChangeValue={setValue}
-          onChangeCursor={setCursor}
           onHistoryUp={() => {}}
           onHistoryDown={() => {}}
-          onOpenBackendPicker={() => {}}
-          onOpenModelPicker={() => {}}
-          onOpenModePicker={() => {}}
-          onOpenThemePicker={() => {}}
-          onOpenAuthPanel={() => {}}
-          onClear={() => {}}
-          onCycleMode={() => {}}
+          onTranscriptUp={() => {}}
+          onTranscriptDown={() => {}}
           onQuit={() => {}}
         />
         <Text>{`submit:${submitCount}`}</Text>
+        <Text>{`value:${JSON.stringify(value)}`}</Text>
+      </Box>
+    </ThemeProvider>
+  );
+}
+
+function CompletionComposerHarness() {
+  const focusManager = useFocusManager();
+  const [value, setValue] = React.useState("");
+  const [cursor, setCursor] = React.useState(0);
+  const [inputEpoch, setInputEpoch] = React.useState(0);
+  const [uiState, setUiState] = React.useState<UIState>({ kind: "THINKING", turnId: 1 });
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setUiState({ kind: "IDLE" });
+      setInputEpoch(1);
+    }, 80);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  React.useEffect(() => {
+    focusManager.focus("composer");
+  }, [focusManager, inputEpoch]);
+
+  return (
+    <ThemeProvider theme="purple">
+      <Box flexDirection="column">
+        <BottomComposer
+          key={`completion-${inputEpoch}`}
+          layout={TEST_LAYOUT}
+          uiState={uiState}
+          inputEpoch={inputEpoch}
+          value={value}
+          cursor={cursor}
+          onChangeInput={(nextValue, nextCursor) => {
+            setValue(nextValue);
+            setCursor(nextCursor);
+          }}
+          onSubmit={() => {}}
+          onCancel={() => {}}
+          onHistoryUp={() => {}}
+          onHistoryDown={() => {}}
+          onTranscriptUp={() => {}}
+          onTranscriptDown={() => {}}
+          onQuit={() => {}}
+        />
         <Text>{`value:${JSON.stringify(value)}`}</Text>
       </Box>
     </ThemeProvider>
@@ -259,6 +343,24 @@ test("model picker hands focus back to the composer so typing works immediately"
     const output = harness.getOutput();
     assert.match(output, /gpt-5\.4-mini/);
     assert.match(output, /❯ xyz/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("typing works immediately after a run completes and the composer remounts", async () => {
+  const harness = createInkHarness(<CompletionComposerHarness />);
+
+  try {
+    await sleep(160);
+    harness.stdin.write("o");
+    await sleep(20);
+    harness.stdin.write("k");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.equal(getLastComposerValue(output), "ok");
+    assert.match(output, /❯ ok/);
   } finally {
     await harness.cleanup();
   }
@@ -339,6 +441,29 @@ test("keeps ANSI delete (ESC[3~) as forward delete behavior", async () => {
 
     const output = harness.getOutput();
     assert.equal(getLastComposerValue(output), "a");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("ignores split mouse click packets instead of leaking them into the composer", async () => {
+  const harness = createInkHarness(<PasteComposerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\u001b");
+    await sleep(5);
+    harness.stdin.write("[<0;35;26M");
+    await sleep(5);
+    harness.stdin.write("\u001b");
+    await sleep(5);
+    harness.stdin.write("[<0;35;26m");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.equal(getLastComposerValue(output), "");
+    assert.doesNotMatch(output, /\[<0;35;26[mM]/);
+    assert.match(output, /submit:0/);
   } finally {
     await harness.cleanup();
   }

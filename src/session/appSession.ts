@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
-import type { AssistantEvent, RunEvent, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./types.js";
+import type { AssistantEvent, RunEvent, ShellEvent, StagedRunEvent, TimelineEvent, UIState, UserPromptEvent } from "./types.js";
+import type { PanelState } from "../orchestration/panelState.js";
 import {
   appendRunActivity,
   appendRunThinking,
@@ -18,10 +19,13 @@ export interface SessionState {
   staticEvents: TimelineEvent[];
   activeEvents: TimelineEvent[];
   uiState: UIState;
+  inputEpoch: number;
   inputValue: string;
   cursor: number;
   history: string[];
   historyIndex: number;
+  transcriptScrollOffset: number;
+  followBottom: boolean; // Auto-scroll to bottom when new content arrives
 }
 
 export type SessionAction =
@@ -32,8 +36,12 @@ export type SessionAction =
   | { type: "PUSH_HISTORY"; value: string }
   | { type: "HISTORY_UP" }
   | { type: "HISTORY_DOWN" }
+  | { type: "TRANSCRIPT_SCROLL_UP"; amount: number; maxHeight: number }
+  | { type: "TRANSCRIPT_SCROLL_DOWN"; amount: number }
+  | { type: "TRANSCRIPT_SCROLL_RESET" }
   | { type: "CLEAR_TRANSCRIPT" }
   | { type: "SET_ACTIVE_EVENTS"; events: TimelineEvent[] }
+  | { type: "AUTO_SCROLL_TO_BOTTOM" } // New: explicit auto-scroll action
   | { type: "RUN_APPEND_ACTIVITY"; runId: number; activity: RunFileActivity[] }
   | { type: "RUN_APPEND_PROGRESS"; runId: number; lines: string[] }
   | { type: "RUN_UPSERT_TOOL_ACTIVITY"; runId: number; activity: RunToolActivity }
@@ -51,18 +59,35 @@ export type SessionAction =
   | { type: "FINALIZE_SHELL"; shellId: number; finalEvent: ShellEvent }
   | { type: "UPDATE_SHELL_LINES"; shellId: number; stream: "stdout" | "stderr"; lines: string[] }
   | { type: "REMOVE_ACTIVE_RUNTIME"; runId: number; turnId?: number | null }
-  | { type: "UI_ACTION"; action: UIStateAction };
+  | { type: "UI_ACTION"; action: UIStateAction }
+  // Staged run actions
+  | { type: "STAGED_RUN_UPDATE"; runId: number; panelState: PanelState }
+  | {
+    type: "FINALIZE_STAGED_RUN";
+    runId: number;
+    turnId: number;
+    status: "completed" | "failed" | "canceled";
+    panelState: PanelState;
+    question?: string | null;
+  };
 
 export function createInitialSessionState(): SessionState {
   return {
     staticEvents: [],
     activeEvents: [],
     uiState: { kind: "IDLE" },
+    inputEpoch: 0,
     inputValue: "",
     cursor: 0,
     history: [],
     historyIndex: -1,
+    transcriptScrollOffset: 0,
+    followBottom: true, // Start following bottom by default
   };
+}
+
+function bumpInputEpoch(state: SessionState): number {
+  return state.inputEpoch + 1;
 }
 
 function updateShellLines(event: ShellEvent, action: Extract<SessionAction, { type: "UPDATE_SHELL_LINES" }>): ShellEvent {
@@ -79,15 +104,29 @@ export function findUserPrompt(events: TimelineEvent[], turnId: number): UserPro
 
 export function reduceSessionState(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
-    case "APPEND_STATIC_EVENT":
-      return { ...state, staticEvents: appendStaticEvents(state.staticEvents, [action.event]) };
-    case "APPEND_STATIC_EVENTS":
-      return { ...state, staticEvents: appendStaticEvents(state.staticEvents, action.events) };
+    case "APPEND_STATIC_EVENT": {
+      const nextState = { ...state, staticEvents: appendStaticEvents(state.staticEvents, [action.event]) };
+      // Auto-scroll to bottom if following
+      if (state.followBottom) {
+        nextState.transcriptScrollOffset = 0;
+      }
+      return nextState;
+    }
+    case "APPEND_STATIC_EVENTS": {
+      const nextState = { ...state, staticEvents: appendStaticEvents(state.staticEvents, action.events) };
+      // Auto-scroll to bottom if following
+      if (state.followBottom) {
+        nextState.transcriptScrollOffset = 0;
+      }
+      return nextState;
+    }
     case "SET_INPUT":
       return {
         ...state,
         inputValue: action.value,
         cursor: Math.max(0, Math.min(action.cursor ?? action.value.length, action.value.length)),
+        transcriptScrollOffset: 0,
+        followBottom: true, // Typing resets to follow mode
       };
     case "RESET_INPUT":
       return { ...state, inputValue: "", cursor: 0, historyIndex: -1 };
@@ -111,15 +150,40 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       const nextValue = state.history[nextIndex] ?? "";
       return { ...state, historyIndex: nextIndex, inputValue: nextValue, cursor: nextValue.length };
     }
+    case "TRANSCRIPT_SCROLL_UP":
+      return { 
+        ...state, 
+        transcriptScrollOffset: Math.min(action.maxHeight, state.transcriptScrollOffset + action.amount),
+        followBottom: false, // Manual scroll disables auto-follow
+      };
+    case "TRANSCRIPT_SCROLL_DOWN": {
+      const nextOffset = Math.max(0, state.transcriptScrollOffset - action.amount);
+      return { 
+        ...state, 
+        transcriptScrollOffset: nextOffset,
+        followBottom: nextOffset === 0, // Re-enable follow when scrolled to bottom
+      };
+    }
+    case "TRANSCRIPT_SCROLL_RESET":
+      return { ...state, transcriptScrollOffset: 0, followBottom: true };
     case "CLEAR_TRANSCRIPT":
       return {
         ...state,
         staticEvents: [],
         activeEvents: [],
         uiState: reduceUIState(state.uiState, { type: "DISMISS_TRANSIENT" }),
+        inputEpoch: bumpInputEpoch(state),
       };
-    case "SET_ACTIVE_EVENTS":
-      return { ...state, activeEvents: action.events };
+    case "SET_ACTIVE_EVENTS": {
+      const nextState = { ...state, activeEvents: action.events };
+      // Auto-scroll to bottom if following and new active events arrive
+      if (state.followBottom) {
+        nextState.transcriptScrollOffset = 0;
+      }
+      return nextState;
+    }
+    case "AUTO_SCROLL_TO_BOTTOM":
+      return { ...state, transcriptScrollOffset: 0, followBottom: true };
     case "RUN_APPEND_ACTIVITY":
       return {
         ...state,
@@ -187,6 +251,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         return {
           ...state,
           activeEvents: remainingEvents,
+          inputEpoch: bumpInputEpoch(state),
           uiState: action.status === "completed"
             ? action.question
               ? reduceUIState(state.uiState, { type: "AWAITING_USER_ACTION", turnId: action.turnId, question: action.question })
@@ -222,6 +287,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ...state,
         staticEvents: appendStaticEvents(state.staticEvents, additions),
         activeEvents: remainingEvents,
+        inputEpoch: bumpInputEpoch(state),
         uiState: action.status === "completed"
           ? action.question
             ? reduceUIState(state.uiState, { type: "AWAITING_USER_ACTION", turnId: action.turnId, question: action.question })
@@ -236,6 +302,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ...state,
         staticEvents: appendStaticEvents(state.staticEvents, [action.finalEvent]),
         activeEvents: state.activeEvents.filter((event) => !(event.type === "shell" && event.id === action.shellId)),
+        inputEpoch: bumpInputEpoch(state),
         uiState: reduceUIState(state.uiState, { type: "SHELL_FINISHED", shellId: action.shellId }),
       };
     case "UPDATE_SHELL_LINES":
@@ -252,12 +319,85 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ...state,
         activeEvents: state.activeEvents.filter((event) =>
           !(event.type === "run" && event.id === action.runId)
+          && !(event.type === "staged-run" && event.id === action.runId)
           && !(event.type === "assistant" && action.turnId !== null && action.turnId !== undefined && event.turnId === action.turnId)
           && !(event.type === "shell" && event.id === action.runId),
         ),
       };
-    case "UI_ACTION":
-      return { ...state, uiState: reduceUIState(state.uiState, action.action) };
+    case "UI_ACTION": {
+      const nextUiState = reduceUIState(state.uiState, action.action);
+      const shouldBump =
+        action.action.type === "RUN_COMPLETED"
+        || action.action.type === "RUN_FAILED"
+        || action.action.type === "RUN_CANCELED"
+        || action.action.type === "AWAITING_USER_ACTION"
+        || action.action.type === "DISMISS_TRANSIENT"
+        || action.action.type === "SHELL_FINISHED";
+
+      return {
+        ...state,
+        uiState: nextUiState,
+        inputEpoch: shouldBump ? bumpInputEpoch(state) : state.inputEpoch,
+      };
+    }
+
+    // ─── Staged Run Actions ─────────────────────────────────────────────────
+    case "STAGED_RUN_UPDATE":
+      return {
+        ...state,
+        activeEvents: state.activeEvents.map((event) =>
+          event.id === action.runId && event.type === "staged-run"
+            ? { ...event, panelState: action.panelState } as StagedRunEvent
+            : event
+        ),
+      };
+
+    case "FINALIZE_STAGED_RUN": {
+      const stagedRun = state.activeEvents.find(
+        (event): event is StagedRunEvent => event.type === "staged-run" && event.id === action.runId,
+      );
+
+      const remainingEvents = state.activeEvents.filter(
+        (event) => !(event.type === "staged-run" && event.id === action.runId),
+      );
+
+      if (!stagedRun) {
+        return {
+          ...state,
+          activeEvents: remainingEvents,
+          inputEpoch: bumpInputEpoch(state),
+          uiState: action.status === "completed"
+            ? action.question
+              ? reduceUIState(state.uiState, { type: "AWAITING_USER_ACTION", turnId: action.turnId, question: action.question })
+              : reduceUIState(state.uiState, { type: "RUN_COMPLETED", turnId: action.turnId })
+            : action.status === "failed"
+              ? reduceUIState(state.uiState, { type: "RUN_FAILED", turnId: action.turnId, message: action.panelState.error ?? "Run failed" })
+              : reduceUIState(state.uiState, { type: "RUN_CANCELED", turnId: action.turnId }),
+        };
+      }
+
+      const finalizedStagedRun: StagedRunEvent = {
+        ...stagedRun,
+        status: action.status,
+        panelState: action.panelState,
+        durationMs: action.panelState.durationMs,
+      };
+
+      return {
+        ...state,
+        staticEvents: appendStaticEvents(state.staticEvents, [finalizedStagedRun]),
+        activeEvents: remainingEvents,
+        inputEpoch: bumpInputEpoch(state),
+        uiState: action.status === "completed"
+          ? action.question
+            ? reduceUIState(state.uiState, { type: "AWAITING_USER_ACTION", turnId: action.turnId, question: action.question })
+            : reduceUIState(state.uiState, { type: "RUN_COMPLETED", turnId: action.turnId })
+          : action.status === "failed"
+            ? reduceUIState(state.uiState, { type: "RUN_FAILED", turnId: action.turnId, message: action.panelState.error ?? "Run failed" })
+            : reduceUIState(state.uiState, { type: "RUN_CANCELED", turnId: action.turnId }),
+      };
+    }
+
     default:
       return state;
   }

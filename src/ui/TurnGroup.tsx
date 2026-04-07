@@ -1,13 +1,13 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { AssistantEvent, RunEvent, UIState, UserPromptEvent } from "../session/types.js";
+import type { AssistantEvent, RunEvent, StagedRunEvent, UIState, UserPromptEvent } from "../session/types.js";
 import { AgentBlock } from "./AgentBlock.js";
 import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
+import { StagedRunView } from "./StagedRunView.js";
 import { useTheme } from "./theme.js";
 import { getUsableShellWidth } from "./layout.js";
-
-import { Panel } from "./Panel.js";
+import { wrapPlainText } from "./textLayout.js";
 
 export type TurnOpacity = "active" | "recent" | "dim";
 
@@ -16,91 +16,88 @@ interface TurnGroupProps {
   turnIndex: number;
   user: UserPromptEvent;
   run: RunEvent | null;
+  stagedRun: StagedRunEvent | null;
   assistant: AssistantEvent | null;
   uiState: UIState;
   opacity: TurnOpacity;
 }
 
-function formatTime(createdAt: number): string {
-  return new Date(createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
-
-function UserSummary({
-  prompt,
-  createdAt,
-  turnIndex,
-  dim,
-  run,
-  cols,
+function EventCard({
+  title,
+  metadata,
+  children,
+  borderColor,
+  opacity,
 }: {
-  prompt: string;
-  createdAt: number;
-  turnIndex: number;
-  dim: boolean;
-  run: RunEvent | null;
-  cols: number;
+  title: string;
+  metadata?: string;
+  children: React.ReactNode;
+  borderColor: string;
+  opacity: TurnOpacity;
 }) {
   const theme = useTheme();
-  const metaColor = dim ? theme.DIM : theme.MUTED;
-  const textColor = dim ? theme.DIM : theme.TEXT;
-
-  const statusText = run
-    ? run.status === "running"
-      ? "running"
-      : run.status === "completed"
-        ? "complete"
-        : run.status
-    : "queued";
-  const durationText = run?.durationMs != null && run.status !== "running"
-    ? formatDuration(run.durationMs)
-    : null;
-  const rightMeta = durationText ? `${statusText} • ${durationText}` : statusText;
-
+  const isDim = opacity === "dim";
+  
   return (
-    <Box flexDirection="column" marginBottom={1} width="100%">
-      <Panel
-        cols={Math.max(1, getUsableShellWidth(cols, 2))}
-        title="USER INPUT"
-        rightTitle={rightMeta}
-        borderColor={dim ? theme.BORDER_SUBTLE : theme.BORDER_ACTIVE}
-        titleColor={metaColor}
-      >
-        <Text color={textColor} bold wrap="wrap">
-          {`> ${prompt}`}
-        </Text>
-      </Panel>
+    <Box 
+      flexDirection="column" 
+      width="100%" 
+      borderStyle="round" 
+      borderColor={isDim ? theme.BORDER_SUBTLE : borderColor}
+      paddingX={1}
+      marginBottom={1}
+    >
+      <Box flexDirection="row" justifyContent="space-between" width="100%" marginBottom={1}>
+        <Text color={isDim ? theme.DIM : theme.TEXT} bold>{title}</Text>
+        {metadata && <Text color={theme.DIM}>{metadata}</Text>}
+      </Box>
+      <Box flexDirection="column" width="100%">
+        {children}
+      </Box>
     </Box>
   );
 }
 
-export function TurnGroup({ cols, turnIndex, user, run, assistant, uiState, opacity }: TurnGroupProps) {
+export function TurnGroup({ cols, turnIndex, user, run, stagedRun, assistant, uiState, opacity }: TurnGroupProps) {
+  const theme = useTheme();
   const isThinking = run !== null && run.status === "running" && uiState.kind === "THINKING" && uiState.turnId === user.turnId;
   const isStreaming = uiState.kind === "RESPONDING" && uiState.turnId === user.turnId;
   const question = uiState.kind === "AWAITING_USER_ACTION" && uiState.turnId === user.turnId
     ? uiState.question
     : null;
   const dim = opacity !== "active";
-  const shouldShowAgentBlock = run !== null && (assistant !== null || run.status !== "running" || isStreaming);
+  const hasStagedRun = stagedRun !== null;
 
+  const timestamp = new Date(user.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const turnTitle = `Turn [${turnIndex}] USER INPUT`;
+  
   return (
     <Box flexDirection="column" width="100%">
-      <UserSummary
-        prompt={user.prompt}
-        createdAt={user.createdAt}
-        turnIndex={turnIndex}
-        dim={opacity === "dim"}
-        run={run}
-        cols={cols}
-      />
+      <EventCard 
+        title={turnTitle} 
+        metadata={timestamp} 
+        borderColor={theme.BORDER_ACTIVE} 
+        opacity={opacity}
+      >
+        <Text color={opacity === "dim" ? theme.DIM : theme.TEXT}>{user.prompt}</Text>
+      </EventCard>
 
-      {run && isThinking && <ThinkingBlock cols={cols} run={run} turnIndex={turnIndex} />}
+      {/* Staged run view (new pipeline) */}
+      {hasStagedRun && (
+        <StagedRunView
+          cols={cols}
+          state={stagedRun.panelState}
+          model={stagedRun.model}
+        />
+      )}
 
-      {shouldShowAgentBlock && run && (
+      {/* Legacy: ThinkingBlock for old runs */}
+      {!hasStagedRun && run && isThinking && (
+        <ThinkingBlock cols={cols} run={run} turnIndex={turnIndex} />
+      )}
+
+      {/* Legacy: AgentBlock for old runs */}
+      {!hasStagedRun && run && (assistant !== null || run.status !== "running" || isStreaming) && (
         <AgentBlock
           cols={cols}
           assistant={assistant}
@@ -115,3 +112,4 @@ export function TurnGroup({ cols, turnIndex, user, run, assistant, uiState, opac
     </Box>
   );
 }
+

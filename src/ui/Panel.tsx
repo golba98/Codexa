@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
+import { fitLeftRightRow, getDisplayWidth } from "./displayText.js";
 import { useTheme } from "./theme.js";
 
 interface PanelProps {
@@ -15,32 +16,33 @@ export function Panel({ cols, title, rightTitle, borderColor, titleColor, childr
   const theme = useTheme();
   const cBorder = borderColor || theme.BORDER_ACTIVE;
   const cTitle = titleColor || theme.TEXT;
-
-  const leftLabel = ` ${title} `;
-  const rightLabel = rightTitle ? ` ${rightTitle} ` : "";
-
-  // ╭─ TITLE ─── RIGHTTITLE ╮
-  // Calculate remaining dashes
-  // total length = 2 (╭─) + leftLabel + dashes + rightLabel + 1 (╮) = cols
-  // dashes = cols - 3 - leftLabel.length - rightLabel.length
-  const maxDashes = cols - 3 - leftLabel.length - rightLabel.length;
-  const dashCount = Math.max(0, maxDashes);
+  const safeCols = Math.max(4, cols);
+  const prefix = "╭─";
+  const suffix = "╮";
+  const innerWidth = Math.max(0, safeCols - getDisplayWidth(prefix) - getDisplayWidth(suffix));
+  const fitted = fitLeftRightRow({
+    left: ` ${title} `,
+    right: rightTitle ? ` ${rightTitle} ` : "",
+    width: innerWidth,
+    gap: 0,
+  });
+  const fillCount = Math.max(0, innerWidth - getDisplayWidth(fitted.left) - getDisplayWidth(fitted.right));
 
   return (
-    <Box flexDirection="column" width={cols} overflow="hidden">
+    <Box flexDirection="column" width={safeCols} overflow="hidden">
       <Text color={cBorder}>
-        {"╭─"}
-        <Text color={cTitle}>{leftLabel}</Text>
-        {"─".repeat(dashCount)}
-        {rightTitle && <Text color={theme.DIM}>{rightLabel}</Text>}
-        {"╮"}
+        {prefix}
+        <Text color={cTitle}>{fitted.left}</Text>
+        {"─".repeat(fillCount)}
+        {fitted.right && <Text color={theme.DIM}>{fitted.right}</Text>}
+        {suffix}
       </Text>
       <Box
         flexDirection="column"
         borderStyle="round"
         borderTop={false}
         borderColor={cBorder}
-        width={cols}
+        width={safeCols}
         paddingX={1}
         paddingY={0}
       >

@@ -1,0 +1,188 @@
+bun test v1.3.11 (af24e281)
+
+src\commands\handler.test.ts:
+(pass) parses /login command
+(pass) parses /logout command
+(pass) parses /auth status as auth_status action
+(pass) keeps existing /model command behavior
+(pass) resolves canonical and aliased /mode commands
+(pass) opens the reasoning picker when /reasoning has no argument
+(pass) accepts explicit reasoning levels
+(pass) accepts extra high reasoning aliases
+(pass) documents mode aliases in help
+(pass) shows the active locked workspace
+(pass) parses workspace relaunch commands
+(pass) parses workspace relaunch with relative target
+(pass) requires a target path for workspace relaunch
+(pass) parses /theme command
+(pass) parses /themes command to open picker
+
+src\config\settings.test.ts:
+(pass) builds suggest exec args with read-only sandbox
+(pass) passes reasoning effort through codex exec args
+(pass) builds auto-edit exec args with workspace-write sandbox
+(pass) builds full-auto exec args with full-auto flag
+(pass) normalizes gpt-5.4-mini reasoning to medium
+(pass) keeps reasoning unchanged for non-mini models
+(pass) builds extra high exec args through codex exec args
+(pass) formats codex-style mode labels
+(pass) cycles modes in the same order as Ctrl+Y
+(pass) defaults to full-auto mode
+
+src\core\codexPrompt.test.ts:
+(pass) detects write intent for build requests
+(pass) does not force write mode for general questions
+(pass) auto-upgrades suggest mode for editing prompts
+(pass) keeps explicit full-auto mode unchanged
+(pass) builds a write-enabled codex prompt for auto-edit
+(pass) builds a suggest-mode prompt that avoids generic readiness replies
+
+src\core\launchContext.test.ts:
+(pass) uses installed launcher metadata when available
+(pass) falls back to bun repo launch metadata when no installed launcher env exists
+(pass) creates an installed-bin relaunch plan with normalized target cwd and env
+(pass) rejects relaunch targets that do not exist
+(pass) rejects relaunch targets that are files instead of directories
+(pass) blocks workspace relaunch while busy
+(pass) describes dev launch mode with install guidance
+
+src\core\modelSpecs.test.ts:
+(pass) parses token counts with commas and suffixes
+(pass) extracts verified model specs from official-doc-like text
+(pass) returns null for ambiguous or incomplete model spec text
+(pass) strips HTML before parsing model specs
+(pass) cache round-trip preserves verified values
+(pass) background refresh updates specs and dedupes concurrent requests
+(pass) refresh returns unknown when a fetch fails even if cache exists
+(pass) refresh returns unknown when there is no cache and verification fails
+(pass) reports equality across verified and unknown specs
+
+src\core\workspaceActivity.test.ts:
+(pass) detects created files in the workspace snapshot diff [15.00ms]
+(pass) detects modified files with diff preview
+(pass) detects deleted files
+(pass) ignores excluded directories like node_modules and .git
+(pass) skips inline diff previews for oversized files [16.00ms]
+(pass) creates green/red diff excerpts for mixed edits
+
+src\core\workspaceGuard.test.ts:
+(pass) allows absolute paths inside the locked workspace
+(pass) blocks absolute paths outside the locked workspace
+(pass) parses quoted windows paths with spaces
+(pass) resolves relative paths inside the workspace
+(pass) blocks explicit relative paths that escape the workspace
+(pass) treats same-path drive letter case differences as inside the workspace
+(pass) returns a prompt guard message before a run starts
+(pass) blocks directory-changing shell commands
+(pass) blocks shell commands that reference outside absolute paths
+(pass) blocks shell commands that reference escaping relative paths
+
+src\core\workspaceRoot.test.ts:
+(pass) prefers CODEX_WORKSPACE_ROOT when provided
+(pass) falls back to process.cwd when no workspace override exists
+
+src\session\chatLifecycle.test.ts:
+(pass) creates a running run event
+(pass) caps streamed run output and marks truncation [15.00ms]
+(pass) completes and cancels runs with stable terminal statuses
+(pass) appends structured file activity and tracks unique touched files
+(pass) trims static history to the newest visible events
+(pass) blocks config changes while a run is active
+(pass) ignores stale run callbacks after cancellation
+(pass) detects explicit and heuristic agent questions
+(pass) extracts ACTION REQUIRED blocks and removes them from assistant output
+(pass) builds a staged follow-up prompt from original task and answer
+(pass) reduces ui state across thinking responding awaiting and shell states
+
+src\ui\BottomComposer.test.ts:
+(pass) maps the idle state to the idle composer persona
+(pass) maps busy, answer, and error states to the right personas
+
+src\ui\displayText.test.ts:
+(pass) strips ansi codes before measuring display width
+(pass) truncates text by visible width rather than raw byte length
+(pass) keeps right-aligned labels within the width budget
+(pass) middle truncates paths while preserving the useful tail
+
+src\ui\focusFlow.test.tsx:
+(pass) focus manager targets the active panel and returns to the composer [172.00ms]
+(pass) model picker hands focus back to the composer so typing works immediately [422.00ms]
+(pass) typing works immediately after a run completes and the composer remounts [328.00ms]
+(pass) bracketed multi-line paste stays in the composer and preserves layout [187.00ms]
+(pass) ctrl+j inserts a newline without submitting the composer [250.00ms]
+(pass) treats raw DEL (\u007f) as backspace in the composer [250.00ms]
+(pass) keeps ANSI delete (ESC[3~) as forward delete behavior [282.00ms]
+
+src\ui\inputBuffer.test.ts:
+(pass) normalizes windows line endings for the composer buffer
+(pass) wraps multiline input into stable viewport rows
+(pass) keeps the cursor visible by scrolling the composer viewport
+(pass) keeps cursor mapping stable at hard newlines and soft wrap boundaries
+(pass) uses code-point-safe cursor movement and deletion
+(pass) creates a bounded input viewport for large pasted content
+(pass) reclamps scroll state when resize reduces the wrapped row count
+
+src\ui\layout.test.ts:
+(pass) leaves a one-column gutter to avoid edge-triggered scrollbars
+(pass) keeps a sensible minimum shell width on tiny terminals
+(pass) derives usable shell width from the guttered viewport width
+(pass) leaves a one-row gutter to avoid edge-triggered bottom scrolling
+(pass) keeps a sensible minimum shell height on tiny terminals
+(pass) keeps breakpoint modes stable at the edges
+(pass) marks undersized terminals for composer-only fallback
+(pass) preserves the previous layout when resize values are invalid
+(pass) measures visual width instead of raw string length
+(pass) clamps text to a visual width budget
+
+src\ui\modeColor.test.ts:
+(pass) maps suggest mode to green
+(pass) maps auto-edit mode to yellow
+(pass) maps full-auto mode to red
+
+src\ui\runActivityView.test.ts:
+(pass) does not surface raw output fallback while a run is active
+(pass) keeps raw output hidden even when no structured activity exists yet
+(pass) keeps only the compact recent activity for completed runs
+(pass) formats touched-file stats for the run card header
+
+src\ui\themeFlow.test.ts:
+(pass) uses the preview theme for rendering without mutating the committed theme
+(pass) commits a selected theme and clears the preview
+(pass) canceling the picker restores the committed theme
+(pass) bumps the composer instance when returning to the main screen
+
+src\ui\Timeline.test.ts:
+(pass) groups user, run, and assistant events into a single turn item
+(pass) derives active, recent, and dim turn opacity from ordered turn ids
+
+src\ui\TopHeader.test.tsx:
+(pass) full mode renders readable ASCII CODEXA wordmark without Unicode block-art glyphs [94.00ms]
+(pass) compact mode keeps clean Codexa text and metadata [94.00ms]
+(pass) micro mode keeps clean Codexa text and auth row [94.00ms]
+
+src\core\auth\codexAuth.test.ts:
+(pass) infers authenticated from successful probe exit
+(pass) infers unauthenticated from signed-out probe output
+(pass) infers unknown from ambiguous probe output
+(pass) blocks runs when unauthenticated
+(pass) warns but allows runs when auth state is unknown
+(pass) allows runs when authenticated
+(pass) detects runtime auth failure messages
+
+src\core\process\CommandRunner.test.ts:
+(pass) summarizes ripgrep file listings without flooding the UI
+(pass) keeps a concise fallback summary for generic successful commands
+(pass) preserves the failure message for unsuccessful commands
+
+src\core\providers\codexTranscript.test.ts:
+(pass) extracts the assistant reply from noisy codex transcript output
+(pass) falls back to filtered plain output when no labeled assistant block exists
+(pass) returns a readable fallback when only noise is present
+(pass) streams thinking lines separately from assistant deltas
+(pass) keeps multi-line assistant formatting when streaming
+(pass) emits tool activity separately from assistant prose while streaming
+(pass) removes tool execution stdout from the finalized assistant transcript
+
+ 139 pass
+ 0 fail
+Ran 139 tests across 22 files. [2.67s]

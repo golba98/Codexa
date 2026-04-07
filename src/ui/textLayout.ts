@@ -1,4 +1,11 @@
 import stringWidth from "string-width";
+import {
+  getDisplayWidth,
+  stripAnsi,
+  truncateEnd,
+  truncateMiddle,
+  truncatePath as truncatePathDisplay,
+} from "./displayText.js";
 
 interface WindowSlice {
   text: string;
@@ -20,7 +27,7 @@ export interface WrappedTextRow {
 }
 
 export function getCharWidth(char: string): number {
-  return Math.max(1, stringWidth(char));
+  return Math.max(1, stringWidth(stripAnsi(char)));
 }
 
 export function normalizeLineBreaks(text: string): string {
@@ -46,8 +53,11 @@ export function getTextUnits(text: string): TextUnit[] {
 }
 
 export function getTextWidth(text: string): number {
-  return stringWidth(text);
+  return getDisplayWidth(text);
 }
+
+export { stripAnsi, truncateEnd, truncateMiddle };
+export const truncatePath = truncatePathDisplay;
 
 function trimToWidthFromEnd(text: string, maxWidth: number): string {
   if (maxWidth <= 0) return "";

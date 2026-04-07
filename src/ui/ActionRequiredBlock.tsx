@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import { getUsableShellWidth } from "./layout.js";
 import { wrapPlainText } from "./textLayout.js";
 import { useTheme } from "./theme.js";
+import { Section } from "./Section.js";
 
 interface ActionRequiredBlockProps {
   cols: number;
@@ -12,7 +13,8 @@ interface ActionRequiredBlockProps {
 
 export function ActionRequiredBlock({ cols, turnIndex, question }: ActionRequiredBlockProps) {
   const theme = useTheme();
-  const contentWidth = Math.max(1, getUsableShellWidth(cols, 6));
+  const sectionCols = Math.max(1, getUsableShellWidth(cols, 2));
+  const contentWidth = Math.max(1, sectionCols - 4);
 
   const wrappedContent = question
     .split("\n")
@@ -22,17 +24,23 @@ export function ActionRequiredBlock({ cols, turnIndex, question }: ActionRequire
     });
 
   return (
-    <Box borderStyle="single" borderColor={theme.BORDER_ACTIVE} flexDirection="column" marginBottom={1} width="100%">
-      <Box width="100%" justifyContent="space-between" overflow="hidden" paddingX={1}>
-        <Text color={theme.TEXT} bold>{`[${turnIndex}] ACTION REQUIRED`}</Text>
-        <Text color={theme.TEXT} bold>{"⚡"}</Text>
-      </Box>
-      <Box flexDirection="column" paddingX={2} marginTop={1} marginBottom={1} width="100%">
-        <Text color={theme.TEXT} bold>{"Verification Question"}</Text>
-        {wrappedContent.map((row, index) => (
-          <Text key={`content-${index}`} color={theme.TEXT}>{row || " "}</Text>
-        ))}
-      </Box>
+    <Box flexDirection="column" marginBottom={1} width="100%">
+      <Section
+        cols={sectionCols}
+        title={`[${turnIndex}] ACTION REQUIRED`}
+        rightBadge="⚡"
+        borderColor={theme.WARNING}
+        titleColor={theme.WARNING}
+        badgeColor={theme.WARNING}
+        variant="boxed"
+      >
+        <Box flexDirection="column" width="100%">
+          <Text color={theme.TEXT} bold>{"Verification Question"}</Text>
+          {wrappedContent.map((row, index) => (
+            <Text key={`content-${index}`} color={theme.TEXT}>{row || " "}</Text>
+          ))}
+        </Box>
+      </Section>
     </Box>
   );
 }

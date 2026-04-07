@@ -1,7 +1,8 @@
 import { MAX_CHAT_LINES } from "../config/settings.js";
 import type { AvailableBackend, AvailableMode, AvailableModel } from "../config/settings.js";
 import { summarizeRunActivity, type RunFileActivity } from "../core/workspaceActivity.js";
-import type { RunEvent, RunToolActivity, TimelineEvent, UIState } from "./types.js";
+import { createInitialPanelState, type PanelState, type TaskType } from "../orchestration/panelState.js";
+import type { RunEvent, RunToolActivity, StagedRunEvent, TimelineEvent, UIState } from "./types.js";
 
 export const RUN_OUTPUT_TRUNCATION_NOTICE = "Older output was truncated to keep the UI responsive.";
 const ACTION_REQUIRED_BLOCK_PATTERN = /\*{0,2}=+\*{0,2}\s*\n\*{0,2}\[ACTION REQUIRED\]\*{0,2}\s*\n\*{0,2}Verification Question:\*{0,2}\s*\n([\s\S]*?)\n\*{0,2}=+\*{0,2}/i;
@@ -174,6 +175,36 @@ export function createRunEvent(params: {
     touchedFileCount: 0,
     errorMessage: null,
     turnId: params.turnId,
+  };
+}
+
+export function createStagedRunEvent(params: {
+  id: number;
+  backendId: AvailableBackend;
+  backendLabel: string;
+  mode: AvailableMode;
+  model: AvailableModel;
+  prompt: string;
+  taskType: TaskType;
+  turnId: number;
+  initialPanelState?: PanelState;
+}): StagedRunEvent {
+  const now = Date.now();
+  return {
+    id: params.id,
+    type: "staged-run",
+    createdAt: now,
+    startedAt: now,
+    durationMs: null,
+    backendId: params.backendId,
+    backendLabel: params.backendLabel,
+    mode: params.mode,
+    model: params.model,
+    prompt: params.prompt,
+    taskType: params.taskType,
+    status: "running",
+    turnId: params.turnId,
+    panelState: params.initialPanelState ?? createInitialPanelState(),
   };
 }
 

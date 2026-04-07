@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Box, Text } from "ink";
 import type { AssistantEvent, RunEvent } from "../session/types.js";
 import { MarkdownContent } from "./Markdown.js";
-import { Panel } from "./Panel.js";
 import { getUsableShellWidth } from "./layout.js";
 import { useTheme } from "./theme.js";
 import { wrapPlainText } from "./textLayout.js";
@@ -83,41 +82,49 @@ export function AgentBlock({ cols, assistant, run, streaming, turnIndex, dim = f
   }, [resetBuffer, streaming]);
 
   const content = streaming ? displayText : (assistant?.content ?? "");
-  const metadataColor = dim ? theme.DIM : theme.MUTED;
   const textColor = dim ? theme.DIM : theme.TEXT;
-  const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
+  const sectionCols = Math.max(1, getUsableShellWidth(cols, 2));
+  const contentWidth = Math.max(1, sectionCols - 6);
   const streamingRows = useMemo(() => wrapPlainText(content, contentWidth), [content, contentWidth]);
   const failureMessage = run?.status === "failed" ? (run.errorMessage ?? run.summary) : null;
-  const cancelMessage = run?.status === "canceled" ? run.summary : null;
-  const runStatus = streaming
+
+  const rightBadge = streaming
     ? "streaming"
-    : run?.status === "completed"
-      ? "complete"
-      : run?.status ?? "running";
-  const rightMeta = run?.durationMs != null && !streaming
-    ? `${runStatus} • ${formatDuration(run.durationMs)}`
-    : runStatus;
-  const heading = run?.model ? run.model.toUpperCase().replace(/-/g, " ") : `AGENT RESPONSE`;
+    : run?.durationMs != null
+      ? `complete • ${formatDuration(run.durationMs)}`
+      : run?.status === "completed"
+        ? "complete"
+        : run?.status ?? "";
+
+  const heading = `codexa [${turnIndex}]`;
 
   return (
-    <Box flexDirection="column" marginBottom={1} width="100%">
-      <Panel
-        cols={Math.max(1, getUsableShellWidth(cols, 2))}
-        title={heading}
-        rightTitle={rightMeta}
-        borderColor={dim ? theme.BORDER_SUBTLE : theme.BORDER_ACTIVE}
-        titleColor={metadataColor}
-      >
+    <Box 
+      flexDirection="column" 
+      width="100%" 
+      borderStyle="round" 
+      borderColor={dim ? theme.BORDER_SUBTLE : theme.BORDER}
+      paddingX={1}
+      marginBottom={1}
+    >
+      <Box flexDirection="row" justifyContent="space-between" width="100%" marginBottom={1}>
+        <Text color={dim ? theme.DIM : theme.TEXT} bold>{heading}</Text>
+        <Text color={theme.DIM}>{rightBadge}</Text>
+      </Box>
+
+      <Box flexDirection="column" width="100%">
+        {/* Failure message */}
         {!streaming && failureMessage && (
-          <Box flexDirection="column" marginTop={1} width="100%">
+          <Box flexDirection="column" width="100%" marginBottom={1}>
             {wrapPlainText(failureMessage, contentWidth).map((row, index) => (
-              <Text key={index} color={theme.ERROR}>{index === 0 ? `✕ ${row || " "}` : row || " "}</Text>
+              <Text key={index} color={theme.ERROR}>{index === 0 ? `✕ ${row || " "}` : `  ${row || " "}`}</Text>
             ))}
           </Box>
         )}
 
+        {/* Main content */}
         {content.length > 0 && (
-          <Box flexDirection="column" marginTop={1} width="100%">
+          <Box flexDirection="column" width="100%">
             {streaming ? (
               streamingRows.map((row, index) => {
                 const isLastRow = index === streamingRows.length - 1;
@@ -134,21 +141,18 @@ export function AgentBlock({ cols, assistant, run, streaming, turnIndex, dim = f
           </Box>
         )}
 
+        {/* Footer status */}
         {!streaming && run && run.status !== "running" && (
-          <Box
-            flexDirection="column"
-            marginTop={content.length > 0 ? 1 : 0}
-            width="100%"
-          >
+          <Box flexDirection="column" marginTop={content.length > 0 ? 1 : 0} width="100%">
             {run.touchedFileCount > 0 ? (
               <Text color={dim ? theme.DIM : theme.SUCCESS}>
                 {"✓ "}
-                <Text color={metadataColor}>
+                <Text color={dim ? theme.DIM : theme.MUTED}>
                   {run.touchedFileCount} file{run.touchedFileCount === 1 ? "" : "s"} modified
                 </Text>
               </Text>
             ) : run.status === "canceled" ? (
-              <Text color={theme.WARNING}>{cancelMessage}</Text>
+              <Text color={theme.WARNING}>{run.summary}</Text>
             ) : run.status === "completed" && content.length === 0 ? (
               <Text color={theme.DIM}>{"(no output)"}</Text>
             ) : null}
@@ -157,7 +161,8 @@ export function AgentBlock({ cols, assistant, run, streaming, turnIndex, dim = f
             )}
           </Box>
         )}
-      </Panel>
+      </Box>
     </Box>
   );
 }
+

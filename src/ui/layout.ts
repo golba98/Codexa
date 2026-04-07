@@ -10,10 +10,12 @@
 
 import { useEffect, useState } from "react";
 import { useStdout } from "ink";
-import stringWidth from "string-width";
+import { getDisplayWidth, truncateEnd } from "./displayText.js";
 
 export const BREAKPOINT_FULL    = 110; // ≥ this → full
 export const BREAKPOINT_COMPACT =  60; // ≥ this → compact; below → micro
+export const MIN_SUPPORTED_COLS = 48;
+export const MIN_SUPPORTED_ROWS = 12;
 const DEFAULT_COLUMNS = 120;
 const DEFAULT_ROWS = 24;
 
@@ -23,6 +25,12 @@ export interface Layout {
   cols: number;
   rows: number;
   mode: LayoutMode;
+  shellWidth: number;
+  shellHeight: number;
+  contentWidth: number;
+  contentHeight: number;
+  tooSmall: boolean;
+  epoch: number;
 }
 
 function isValidDimension(value: number | undefined): value is number {
@@ -58,25 +66,11 @@ export function getShellHeight(rows: number | undefined): number {
 }
 
 export function getVisualWidth(text: string): number {
-  return stringWidth(text);
+  return getDisplayWidth(text);
 }
 
 export function clampVisualText(text: string, maxWidth: number): string {
-  if (maxWidth <= 0) return "";
-  if (getVisualWidth(text) <= maxWidth) return text;
-
-  const ellipsis = maxWidth > 1 ? "…" : "";
-  const suffixWidth = getVisualWidth(ellipsis);
-  let output = "";
-
-  for (const char of Array.from(text)) {
-    if (getVisualWidth(output + char) + suffixWidth > maxWidth) {
-      break;
-    }
-    output += char;
-  }
-
-  return output + ellipsis;
+  return truncateEnd(text, maxWidth);
 }
 
 function computeMode(cols: number): LayoutMode {
@@ -92,15 +86,29 @@ export function createLayoutSnapshot(
     cols: DEFAULT_COLUMNS,
     rows: DEFAULT_ROWS,
     mode: computeMode(DEFAULT_COLUMNS),
+    shellWidth: getShellWidth(DEFAULT_COLUMNS),
+    shellHeight: getShellHeight(DEFAULT_ROWS),
+    contentWidth: getUsableShellWidth(DEFAULT_COLUMNS, 2),
+    contentHeight: Math.max(1, getShellHeight(DEFAULT_ROWS) - 2),
+    tooSmall: false,
+    epoch: 0,
   },
 ): Layout {
   const nextCols = normalizeDimension(cols, fallback.cols);
   const nextRows = normalizeDimension(rows, fallback.rows);
+  const shellWidth = getShellWidth(nextCols);
+  const shellHeight = getShellHeight(nextRows);
 
   return {
     cols: nextCols,
     rows: nextRows,
     mode: computeMode(nextCols),
+    shellWidth,
+    shellHeight,
+    contentWidth: Math.max(1, shellWidth - 2),
+    contentHeight: Math.max(1, shellHeight - 2),
+    tooSmall: nextCols < MIN_SUPPORTED_COLS || nextRows < MIN_SUPPORTED_ROWS,
+    epoch: fallback.epoch ?? 0,
   };
 }
 
@@ -125,7 +133,10 @@ export function useLayout(): Layout {
           return current;
         }
 
-        return nextLayout;
+        return {
+          ...nextLayout,
+          epoch: current.epoch + 1,
+        };
       });
     };
     stdout.on("resize", onResize);
