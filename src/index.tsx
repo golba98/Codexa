@@ -2,7 +2,12 @@ import React from "react";
 import { render } from "ink";
 import { App } from "./app.js";
 
-if (!process.stdin.isTTY || !process.stdout.isTTY) {
+// Check for TTY - support piped stdin if parent has real TTY
+const hasLocalTTY = process.stdin.isTTY && process.stdout.isTTY;
+const hasParentTTY = process.env.CODEXA_PARENT_HAS_TTY === "1";
+const isTTY = hasLocalTTY || hasParentTTY;
+
+if (!isTTY || !process.stdout.isTTY) {
   console.error("This UI requires an interactive terminal.");
   process.exitCode = 1;
 } else {
