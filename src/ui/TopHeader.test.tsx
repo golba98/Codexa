@@ -7,6 +7,7 @@ import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { ThemeProvider } from "./theme.js";
 import { TopHeader } from "./TopHeader.js";
+import { APP_VERSION } from "../config/settings.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -81,17 +82,18 @@ async function renderHeader(cols: number, authState: CodexAuthState): Promise<st
   return stripAnsi(output);
 }
 
-test("full mode renders readable ASCII CODEXA wordmark without Unicode block-art glyphs", async () => {
+test("full mode renders stylized block-art Codexa wordmark", async () => {
   const output = await renderHeader(130, "authenticated");
 
-  assert.match(output, /CODEXA/);
-  assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
+  // Should contain box-drawing and block characters
+  assert.match(output, /[█╔╗╚╝═║]/);
+  assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/\./g, "\\.")}`));
 });
 
 test("compact mode keeps clean Codexa text and metadata", async () => {
   const output = await renderHeader(80, "authenticated");
 
-  assert.match(output, /Codexa v11\.0/);
+  assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/\./g, "\\.")}`));
   assert.match(output, /Auth:\s*Authenticated/);
   assert.match(output, /Workspace:/);
 });
@@ -99,6 +101,6 @@ test("compact mode keeps clean Codexa text and metadata", async () => {
 test("micro mode keeps clean Codexa text and auth row", async () => {
   const output = await renderHeader(50, "authenticated");
 
-  assert.match(output, /Codexa v11\.0/);
+  assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/\./g, "\\.")}`));
   assert.match(output, /Auth:\s*Authenticated/);
 });

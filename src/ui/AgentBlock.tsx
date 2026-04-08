@@ -1,15 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text } from "ink";
 import type { AssistantEvent, RunEvent } from "../session/types.js";
-import { MarkdownContent } from "./Markdown.js";
+import { RenderMessage } from "./Markdown.js";
 import { Panel } from "./Panel.js";
 import { getUsableShellWidth } from "./layout.js";
 import { useTheme } from "./theme.js";
 import { wrapPlainText } from "./textLayout.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
+import {
+  sanitizeOutput,
+  sanitizeStreamChunk,
+  normalizeOutput,
+  classifyOutput,
+  formatForBox,
+} from "./outputPipeline.js";
 
 const FLUSH_INTERVAL_MS = 60;
-const DEFAULT_STREAMING_PREVIEW_ROWS = 10;
 
 function useStreamBuffer(streaming: boolean) {
   const bufferRef = useRef("");
@@ -64,31 +70,13 @@ interface AgentBlockProps {
   streamingMode?: "assistant-first";
 }
 
-export interface StreamingPreview {
-  rows: string[];
-  hiddenRows: number;
-}
-
-export function buildStreamingPreviewRows(rows: string[], maxRows: number): StreamingPreview {
-  const safeMax = Math.max(1, maxRows);
-  if (rows.length <= safeMax) {
-    return { rows, hiddenRows: 0 };
-  }
-  return {
-    rows: rows.slice(-safeMax),
-    hiddenRows: rows.length - safeMax,
-  };
-}
-
 export function AgentBlock({
   cols,
   assistant,
   run,
   streaming,
-  turnIndex,
   dim = false,
   runPhase = streaming ? "streaming" : "final",
-  streamingPreviewRows = DEFAULT_STREAMING_PREVIEW_ROWS,
 }: AgentBlockProps) {
   const theme = useTheme();
   const cursorVisible = useStreamingCursor();
@@ -112,14 +100,17 @@ export function AgentBlock({
   }, [resetBuffer, streaming]);
 
   const content = streaming ? displayText : (assistant?.content ?? "");
-  const metadataColor = dim ? theme.DIM : theme.MUTED;
-  const textColor = dim ? theme.DIM : theme.TEXT;
   const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
-  const streamingRows = useMemo(() => wrapPlainText(content, contentWidth), [content, contentWidth]);
-  const streamPreview = useMemo(
-    () => buildStreamingPreviewRows(streamingRows, streamingPreviewRows),
-    [streamingPreviewRows, streamingRows],
-  );
+
+  const pipelineState = useMemo(() => {
+    const sanitized = streaming ? sanitizeStreamChunk(content) : sanitizeOutput(content);
+    const normalized = normalizeOutput(sanitized);
+    const classified = classifyOutput(normalized);
+    const formatted = formatForBox(classified, contentWidth);
+    return { length: normalized.length, formatted };
+  }, [content, streaming, contentWidth]);
+
+  const metadataColor = dim ? theme.DIM : theme.MUTED;
   const failureMessage = run?.status === "failed" ? (run.errorMessage ?? run.summary) : null;
   const cancelMessage = run?.status === "canceled" ? run.summary : null;
   const runStatus = runPhase === "streaming"
@@ -149,33 +140,22 @@ export function AgentBlock({
           </Box>
         )}
 
-        {content.length > 0 && (
+        {pipelineState.length > 0 && (
           <Box flexDirection="column" marginTop={1} width="100%">
-            {streaming ? (
-              <>
-                {streamPreview.hiddenRows > 0 && (
-                  <Text color={metadataColor}>{`... ${streamPreview.hiddenRows} earlier line${streamPreview.hiddenRows === 1 ? "" : "s"} hidden`}</Text>
-                )}
-                {streamPreview.rows.map((row, index) => {
-                  const isLastRow = index === streamPreview.rows.length - 1;
-                  return (
-                    <Box key={`stream-${index}`} width="100%">
-                      <Text color={textColor}>{row || " "}</Text>
-                      {isLastRow && cursorVisible && <Text color={theme.ACCENT}>{"▌"}</Text>}
-                    </Box>
-                  );
-                })}
-              </>
-            ) : (
-              <MarkdownContent content={content} cols={cols} />
-            )}
+            <RenderMessage segments={pipelineState.formatted} cols={cols} />
+          </Box>
+        )}
+
+        {streaming && cursorVisible && (
+          <Box width="100%" marginTop={pipelineState.length > 0 ? 1 : 0} paddingLeft={2}>
+            <Text color={theme.ACCENT}>{"▌"}</Text>
           </Box>
         )}
 
         {!streaming && run && run.status !== "running" && (
           <Box
             flexDirection="column"
-            marginTop={content.length > 0 ? 1 : 0}
+            marginTop={pipelineState.length > 0 ? 1 : 0}
             width="100%"
           >
             {run.touchedFileCount > 0 ? (
@@ -187,7 +167,7 @@ export function AgentBlock({
               </Text>
             ) : run.status === "canceled" ? (
               <Text color={theme.WARNING}>{cancelMessage}</Text>
-            ) : run.status === "completed" && content.length === 0 ? (
+            ) : run.status === "completed" && pipelineState.length === 0 ? (
               <Text color={theme.DIM}>{"(no output)"}</Text>
             ) : null}
             {run.truncatedOutput && (

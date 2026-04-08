@@ -86,3 +86,27 @@ test("reclamps scroll state when resize reduces the wrapped row count", () => {
   assert.equal(wideViewport.scrollRow, 0);
   assert.deepEqual(wideViewport.visibleRows.map((row) => row.text), ["alpha beta gamma delta epsilon"]);
 });
+
+test("robustness: rapid sequential typing and deletion", () => {
+  let state = { value: "", cursorOffset: 0 };
+  
+  // Simulate typing "hello"
+  for (const char of "hello") {
+    state = insertInputText({ ...state, text: char });
+  }
+  assert.deepEqual(state, { value: "hello", cursorOffset: 5 });
+
+  // Simulate backspacing "o" and "l"
+  state = deleteInputBackward(state);
+  state = deleteInputBackward(state);
+  assert.deepEqual(state, { value: "hel", cursorOffset: 3 });
+
+  // Simulate inserting "p" in the middle
+  state.cursorOffset = 2; // after "e"
+  state = insertInputText({ ...state, text: "p" });
+  assert.deepEqual(state, { value: "hepl", cursorOffset: 3 });
+
+  // Simulate forward delete of "l"
+  state = deleteInputForward(state);
+  assert.deepEqual(state, { value: "hep", cursorOffset: 3 });
+});

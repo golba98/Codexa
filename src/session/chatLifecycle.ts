@@ -167,7 +167,7 @@ export function createRunEvent(params: {
     prompt: params.prompt,
     thinkingLines: [],
     status: "running",
-    summary: "Launching backend process",
+    summary: "starting...",
     truncatedOutput: false,
     toolActivities: [],
     activity: [],
@@ -250,8 +250,8 @@ export function appendRunActivity(event: RunEvent, additions: RunFileActivity[])
     touchedFileCount,
     activitySummary: summarizeRunActivity(activity),
     summary: touchedFileCount > 0
-      ? `Tracking workspace activity across ${touchedFileCount} file${touchedFileCount === 1 ? "" : "s"}`
-      : "Tracking workspace activity",
+      ? `${touchedFileCount} file${touchedFileCount === 1 ? "" : "s"} modified`
+      : "working...",
   };
 }
 
@@ -271,7 +271,7 @@ export function appendRunThinking(event: RunEvent, newLines: string[]): RunEvent
     ...event,
     thinkingLines,
     truncatedOutput,
-    summary: "Codexa is thinking...",
+    summary: "processing...",
   };
 }
 

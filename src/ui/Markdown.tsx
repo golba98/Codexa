@@ -26,12 +26,12 @@ function parseInline(text: string): InlinePart[] {
   return parts.length > 0 ? parts : [{ kind: "text", text }];
 }
 
-type CodeSegment = { type: "code"; lang: string; lines: string[] };
-type HeaderSegment = { type: "header"; level: 1 | 2 | 3; parts: InlinePart[] };
-type ListItem = { num: number; parts: InlinePart[] };
-type ListSegment = { type: "list"; ordered: boolean; items: ListItem[] };
-type ParaSegment = { type: "para"; lines: InlinePart[][] };
-type Segment = CodeSegment | HeaderSegment | ListSegment | ParaSegment;
+export type CodeSegment = { type: "code"; lang: string; lines: string[] };
+export type HeaderSegment = { type: "header"; level: 1 | 2 | 3; parts: InlinePart[] };
+export type ListItem = { num: number; parts: InlinePart[] };
+export type ListSegment = { type: "list"; ordered: boolean; items: ListItem[] };
+export type ParaSegment = { type: "para"; lines: InlinePart[][] };
+export type Segment = CodeSegment | HeaderSegment | ListSegment | ParaSegment;
 
 const FENCE_RE = /^```(.*)$/;
 const HEADER_RE = /^(#{1,3})\s+(.+)/;
@@ -169,9 +169,8 @@ function isTreeLine(line: string): boolean {
   return /^[│├└─\s]+/.test(line);
 }
 
-export function MarkdownContent({ content, cols }: { content: string; cols?: number }) {
+export function RenderMessage({ segments, cols }: { segments: Segment[]; cols?: number }) {
   const theme = useTheme();
-  const segments = useMemo(() => parseMarkdown(content), [content]);
 
   return (
     <Box flexDirection="column" width="100%">

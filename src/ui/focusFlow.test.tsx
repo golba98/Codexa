@@ -258,7 +258,7 @@ test("model picker hands focus back to the composer so typing works immediately"
 
     const output = harness.getOutput();
     assert.match(output, /gpt-5\.4-mini/);
-    assert.match(output, /❯ xyz/);
+    assert.match(output, /CODEXA AGENT   › xyz/);
   } finally {
     await harness.cleanup();
   }

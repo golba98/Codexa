@@ -63,8 +63,8 @@ import {
 import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
 import { AuthPanel } from "./ui/AuthPanel.js";
 import { BackendPicker } from "./ui/BackendPicker.js";
-import { BottomComposer } from "./ui/BottomComposer.js";
-import { getShellHeight, getShellWidth, useLayout as useTerminalLayout } from "./ui/layout.js";
+import { MemoizedBottomComposer } from "./ui/BottomComposer.js";
+import { getShellWidth, useLayout as useTerminalLayout } from "./ui/layout.js";
 import { ModelPicker } from "./ui/ModelPicker.js";
 import { ModePicker } from "./ui/ModePicker.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
@@ -81,7 +81,7 @@ import {
   type ThemeSelectionState,
 } from "./ui/themeFlow.js";
 import { Timeline } from "./ui/Timeline.js";
-import { TopHeader } from "./ui/TopHeader.js";
+import { MemoizedTopHeader } from "./ui/TopHeader.js";
 import { isBusy as isUiBusy } from "./session/types.js";
 
 let nextEventId = 0;
@@ -1036,16 +1036,14 @@ export function App() {
   // Keep a small gutter so wide bordered cards don't trip a horizontal
   // scrollbar when the shell content lands exactly on the terminal edge.
   const shellWidth = getShellWidth(terminalLayout.cols);
-  const shellHeight = getShellHeight(terminalLayout.rows);
-  const showComposer = screen === "main" && !busy;
-  const showBusyFooter = screen === "main" && busy;
+  const showComposer = screen === "main";
 
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
-      <Box flexDirection="column" width={shellWidth} height={shellHeight}>
+      <Box flexDirection="column" width={shellWidth} height={terminalLayout.rows - 1}>
         {screen === "main" && (
-          <Box flexDirection="column" borderBottom={true}>
-            <TopHeader
+          <Box flexDirection="column" borderBottom={true} flexShrink={0}>
+            <MemoizedTopHeader
               authState={authStatus.state}
               workspaceRoot={workspaceRoot}
               layout={terminalLayout}
@@ -1053,7 +1051,7 @@ export function App() {
           </Box>
         )}
 
-        <Box flexGrow={1} flexShrink={1} flexDirection="column" overflowY="hidden" justifyContent="flex-end" paddingBottom={1}>
+        <Box flexDirection="column" flexGrow={1} overflow="hidden" paddingBottom={1}>
           <Timeline events={[...staticEvents, ...activeEvents]} layout={terminalLayout} uiState={uiState} />
         </Box>
 
@@ -1137,41 +1135,35 @@ export function App() {
         )}
 
         {showComposer && (
-          <BottomComposer
-            key={composerInstanceKey}
-            layout={terminalLayout}
-            uiState={uiState}
-            mode={mode}
-            model={model}
-            reasoningLevel={reasoningLevel}
-            tokensUsed={estimateTokens(conversationChars)}
-            modelSpec={currentModelSpec}
-            value={inputValue}
-            cursor={cursor}
-            onChangeInput={(value, nextCursor) => dispatchSession({ type: "SET_INPUT", value, cursor: nextCursor })}
-            onSubmit={handleSubmit}
-            onCancel={handleCancel}
-            onChangeValue={(value) => dispatchSession({ type: "SET_INPUT", value, cursor })}
-            onChangeCursor={(nextCursor) => dispatchSession({ type: "SET_INPUT", value: inputValue, cursor: nextCursor })}
-            onHistoryUp={handleHistoryUp}
-            onHistoryDown={handleHistoryDown}
-            onOpenBackendPicker={openBackendPicker}
-            onOpenModelPicker={openModelPicker}
-            onOpenModePicker={openModePicker}
-            onOpenThemePicker={openThemePicker}
-            onOpenAuthPanel={openAuthPanel}
-            onClear={handleClear}
-            onCycleMode={cycleModeWithNotice}
-            onQuit={handleQuit}
-          />
-        )}
-
-        {showBusyFooter && (
-          <RunFooter
-            uiState={uiState}
-            onCancel={handleCancel}
-            onQuit={handleQuit}
-          />
+          <Box flexDirection="column" flexShrink={0}>
+            <MemoizedBottomComposer
+              key={composerInstanceKey}
+              layout={terminalLayout}
+              uiState={uiState}
+              mode={mode}
+              model={model}
+              reasoningLevel={reasoningLevel}
+              tokensUsed={estimateTokens(conversationChars)}
+              modelSpec={currentModelSpec}
+              value={inputValue}
+              cursor={cursor}
+              onChangeInput={(value, nextCursor) => dispatchSession({ type: "SET_INPUT", value, cursor: nextCursor })}
+              onSubmit={handleSubmit}
+              onCancel={handleCancel}
+              onChangeValue={(value) => dispatchSession({ type: "SET_INPUT", value, cursor })}
+              onChangeCursor={(nextCursor) => dispatchSession({ type: "SET_INPUT", value: inputValue, cursor: nextCursor })}
+              onHistoryUp={handleHistoryUp}
+              onHistoryDown={handleHistoryDown}
+              onOpenBackendPicker={openBackendPicker}
+              onOpenModelPicker={openModelPicker}
+              onOpenModePicker={openModePicker}
+              onOpenThemePicker={openThemePicker}
+              onOpenAuthPanel={openAuthPanel}
+              onClear={handleClear}
+              onCycleMode={cycleModeWithNotice}
+              onQuit={handleQuit}
+            />
+          </Box>
         )}
 
         {screen !== "main" && (

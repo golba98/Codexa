@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 import type { AssistantEvent, RunEvent, UIState, UserPromptEvent } from "../session/types.js";
 import { AgentBlock } from "./AgentBlock.js";
@@ -136,6 +136,30 @@ export function TurnGroup({
     </Box>
   );
 }
+
+// Memoized wrapper to prevent re-renders of finalized turns
+export const MemoizedTurnGroup = memo(TurnGroup, (prev, next) => {
+  // Always re-render if the run is still active or changing
+  const prevPhase = resolveTurnRunPhase(prev.run, prev.assistant, prev.uiState, prev.user.turnId);
+  const nextPhase = resolveTurnRunPhase(next.run, next.assistant, next.uiState, next.user.turnId);
+  
+  // If either is actively running, allow normal React comparison
+  if (prevPhase !== "final" || nextPhase !== "final") {
+    return false; // Don't skip, allow re-render
+  }
+  
+  // For finalized turns, skip re-render if key props are equal
+  return (
+    prev.cols === next.cols &&
+    prev.turnIndex === next.turnIndex &&
+    prev.opacity === next.opacity &&
+    prev.user.id === next.user.id &&
+    prev.run?.id === next.run?.id &&
+    prev.run?.status === next.run?.status &&
+    prev.assistant?.id === next.assistant?.id &&
+    prev.assistant?.content === next.assistant?.content
+  );
+});
 
 export type TurnRunPhase = "none" | "thinking" | "streaming" | "final";
 

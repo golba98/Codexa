@@ -19,6 +19,15 @@ const NOISE_EXACT_LINES = new Set([
   "after doing the work, summarize what changed.",
   "you are in read-only mode, so inspect files and answer carefully, but do not claim to have edited files unless you actually could.",
   "task:",
+  // Section headers that may leak from internal prompt scaffolding
+  "analysis",
+  "analysis:",
+  "suggestions",
+  "suggestions:",
+  "summary",
+  "summary:",
+  "no code changes are needed",
+  "no code changes are needed.",
 ]);
 
 const NOISE_PREFIXES = [
@@ -35,6 +44,12 @@ const NOISE_PREFIXES = [
   "tokens used",     // catches "tokens used", "tokens used:", "tokens used1,969", etc.
   "act with strong autonomy",
   "act like a coding agent",
+  // Additional internal scaffolding patterns
+  "use these markers to structure",
+  "hidden workflow",
+  "internal rubric",
+  "prompt-management",
+  "tool-selection rationale",
 ];
 
 function stripAnsi(text: string): string {

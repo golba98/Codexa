@@ -31,13 +31,13 @@ export function ThinkingBlock({ cols, run, turnIndex }: ThinkingBlockProps) {
   const latestTool = run.toolActivities[run.toolActivities.length - 1] ?? null;
   const activityLabel = latestTool
     ? latestTool.status === "running"
-      ? `Executing: ${latestTool.command}`
+      ? `running: ${latestTool.command}`
       : latestTool.summary ?? latestTool.command
     : run.activitySummary
       ? `${run.touchedFileCount} file${run.touchedFileCount === 1 ? "" : "s"} touched`
       : run.summary;
   const detailWidth = Math.max(1, getUsableShellWidth(cols, 4));
-  const detailRows = wrapPlainText(activityLabel || "Analysing request…", detailWidth);
+  const detailRows = wrapPlainText(activityLabel || "thinking...", detailWidth);
 
   return (
     <Box flexDirection="column" marginBottom={1} width="100%">

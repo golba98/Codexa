@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
 import { formatModeLabel } from "../config/settings.js";
 import type { ModelSpec } from "../core/modelSpecs.js";
@@ -120,10 +120,10 @@ export function getComposerPersona(uiState: UIState): ComposerPersona {
 }
 
 function getStatusLine(uiState: UIState): string | null {
-  if (uiState.kind === "THINKING") return "✧ Analysing request…";
-  if (uiState.kind === "RESPONDING") return "✧ Streaming response…";
-  if (uiState.kind === "SHELL_RUNNING") return "✧ Executing shell command…";
-  if (uiState.kind === "AWAITING_USER_ACTION") return "✧ Assistant needs one more answer";
+  if (uiState.kind === "THINKING") return "✧ Analysing request...";
+  if (uiState.kind === "RESPONDING") return "✧ Streaming response...";
+  if (uiState.kind === "SHELL_RUNNING") return "✧ Executing shell command...";
+  if (uiState.kind === "AWAITING_USER_ACTION") return "✧ waiting for your answer";
   if (uiState.kind === "ERROR") return uiState.message;
   return null;
 }
@@ -179,7 +179,7 @@ export function BottomComposer({
   const inputLocked = persona === "busy";
   const allowCommands = persona !== "answer";
   const allowHistory = persona === "idle" || persona === "error";
-  const promptPrefix = "❯ ";
+  const promptPrefix = "CODEXA AGENT   › ";
   const composerWidth = getShellWidth(cols);
   const composerBodyWidth = getComposerBodyWidth(composerWidth);
   const promptWidth = Math.max(4, composerBodyWidth - getTextWidth(promptPrefix));
@@ -448,103 +448,150 @@ export function BottomComposer({
 
   // The prompt line is shared between bordered and non-bordered layouts.
   const promptLine = (
-    <Box flexDirection="column" width="100%">
-      {value.length === 0 && !inputLocked ? (
-        <Box width="100%" overflow="hidden">
-          <Text color={isAnswerMode ? theme.WARNING : theme.PROMPT} bold>{promptPrefix}</Text>
-          <Text backgroundColor={cursorVisible ? theme.TEXT : undefined} color={cursorVisible ? theme.PANEL : undefined}>{" "}</Text>
-          <Text color={theme.DIM}>{placeholderText}</Text>
-        </Box>
-      ) : inputLocked ? (
-        <Box width="100%" overflow="hidden">
-          <Text color={isAnswerMode ? theme.WARNING : theme.PROMPT} bold>{promptPrefix}</Text>
-          <Text color={theme.DIM}>{" "}</Text>
-        </Box>
-      ) : (
-        promptViewport.visibleRows.map((row, index) => {
-          const visibleCursorRow = promptViewport.cursorRow - promptViewport.scrollRow;
-          const isCursorRow = index === visibleCursorRow;
-          const segments = isCursorRow
-            ? splitTextAtColumn(row.text, promptViewport.cursorColumn)
-            : null;
-
-          return (
+    <Box flexDirection="row" width="100%">
+      <Text color={theme.TEXT} bold>{promptPrefix}</Text>
+      <Box flexDirection="column" flexGrow={1}>
+        {value.length === 0 && !inputLocked ? (
+          <Box width="100%" overflow="hidden">
+            <Text backgroundColor={cursorVisible ? theme.TEXT : undefined} color={cursorVisible ? theme.PANEL : undefined}>{" "}</Text>
+            <Text color={theme.DIM}>{placeholderText}</Text>
+          </Box>
+        ) : inputLocked ? (
+          promptViewport.visibleRows.map((row, index) => (
             <Box key={`${row.start}-${row.end}-${index}`} width="100%" overflow="hidden">
-              <Text color={isAnswerMode ? theme.WARNING : theme.PROMPT} bold>{index === 0 ? promptPrefix : "  "}</Text>
-              {isCursorRow && segments ? (
-                <>
-                  <Text color={theme.TEXT}>{segments.before}</Text>
-                  <Text backgroundColor={cursorVisible ? theme.TEXT : undefined} color={cursorVisible ? theme.PANEL : undefined}>
-                    {segments.current || " "}
-                  </Text>
-                  <Text color={theme.TEXT}>{segments.after}</Text>
-                </>
-              ) : (
-                <Text color={theme.TEXT}>{row.text || " "}</Text>
-              )}
+              <Text color={theme.DIM}>{row.text || " "}</Text>
             </Box>
-          );
-        })
-      )}
+          ))
+        ) : (
+          promptViewport.visibleRows.map((row, index) => {
+            const visibleCursorRow = promptViewport.cursorRow - promptViewport.scrollRow;
+            const isCursorRow = index === visibleCursorRow;
+            const segments = isCursorRow
+              ? splitTextAtColumn(row.text, promptViewport.cursorColumn)
+              : null;
+
+            return (
+              <Box key={`${row.start}-${row.end}-${index}`} width="100%" overflow="hidden">
+                {isCursorRow && segments ? (
+                  <>
+                    <Text color={theme.TEXT}>{segments.before}</Text>
+                    <Text backgroundColor={cursorVisible ? theme.TEXT : undefined} color={cursorVisible ? theme.PANEL : undefined}>
+                      {segments.current || " "}
+                    </Text>
+                    <Text color={theme.TEXT}>{segments.after}</Text>
+                  </>
+                ) : (
+                  <Text color={theme.TEXT}>{row.text || " "}</Text>
+                )}
+              </Box>
+            );
+          })
+        )}
+      </Box>
     </Box>
   );
 
   return (
     <Box flexDirection="column" paddingBottom={layoutMode === "micro" ? 0 : 1} width="100%">
-      {/* Divider line between history and composer */}
-      <Box borderStyle="single" borderTop={true} borderBottom={false} borderLeft={false} borderRight={false} borderColor={theme.BORDER_SUBTLE} marginBottom={1} />
-
       {isAnswerMode ? (
-        // Answer mode: Highlighted prompt with lightning bolt
+        // Answer mode: Highlighted prompt
         <Box
           flexDirection="column"
           width="100%"
           paddingX={1}
-          borderStyle="single"
+          paddingY={0}
+          borderStyle="round"
           borderColor={theme.WARNING}
         >
-          <Box width="100%" justifyContent="space-between" overflow="hidden" marginBottom={1}>
-            <Text color={theme.TEXT} bold>{"ANSWER AGENT"}</Text>
-          </Box>
           {promptLine}
         </Box>
       ) : (
-        // Normal mode: clean prompt
+        // Normal mode: clean prompt in rounded border
         <Box
           flexDirection="column"
           width="100%"
           paddingX={1}
+          paddingY={0}
+          borderStyle="round"
+          borderColor={theme.BORDER_SUBTLE}
         >
           {promptLine}
         </Box>
       )}
 
       {showSuggestions && suggestionText && (
-        <Box paddingLeft={3} marginTop={1} width="100%" overflow="hidden">
+        <Box paddingLeft={1} marginTop={0} width="100%" overflow="hidden">
           <Text color={theme.DIM} wrap="truncate">{suggestionText}</Text>
         </Box>
       )}
 
       {statusLine && !isAnswerMode && (
-        <Box paddingLeft={3} marginTop={showSuggestions && suggestionText ? 0 : 1} width="100%" overflow="hidden">
+        <Box paddingX={1} marginTop={0} width="100%" justifyContent="space-between" overflow="hidden">
           <Text color={persona === "error" ? theme.ERROR : theme.INFO} wrap="truncate">{statusLine}</Text>
+          {inputLocked && (
+            <Text color={theme.DIM}>Esc cancel  Ctrl+C quit</Text>
+          )}
         </Box>
       )}
 
       {layoutMode !== "micro" && (
-        <Box paddingLeft={2} marginTop={1} width="100%" justifyContent="space-between">
+        <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
           <Box flexGrow={1} flexShrink={1} overflow="hidden">
-            <Text color={modeColor} bold>{metadataLine}</Text>
+            <Text color={theme.TEXT} bold>{modeLabel}</Text>
+            <Text color={theme.DIM}>{"  "}{model}{reasoningSuffix}{"  Ctrl+M"}</Text>
           </Box>
           <Box flexShrink={0}>
-            <Text color={tokenColor} bold>{tokenDisplay.usedText}</Text>
-            <Text color={theme.DIM}>{"/"}{tokenDisplay.limitText}</Text>
-            {tokenDisplay.percentage !== null && (
-              <Text color={theme.DIM}>{` ctx ${tokenDisplay.percentage}%`}</Text>
-            )}
+            <Text color={theme.TEXT}>{tokenDisplay.usedText}</Text>
+            <Text color={theme.DIM}>{"/"}{tokenDisplay.limitText}{" ctx "}{tokenDisplay.percentage ?? 0}{"%"}</Text>
           </Box>
         </Box>
       )}
     </Box>
   );
 }
+
+// Helper to extract the relevant uiState kind for comparison
+function getUiStateKey(uiState: UIState): string {
+  // Only re-render when the kind changes to a different persona-relevant state
+  // THINKING/RESPONDING/AWAITING_USER_ACTION are all "busy" states
+  // We don't need to re-render for every streaming update within RESPONDING
+  if (uiState.kind === "THINKING" || uiState.kind === "RESPONDING") {
+    return "busy";
+  }
+  if (uiState.kind === "AWAITING_USER_ACTION") {
+    return "answer";
+  }
+  if (uiState.kind === "ERROR") {
+    return "error";
+  }
+  return "idle";
+}
+
+// Memoize to prevent re-renders during streaming when props haven't meaningfully changed
+export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
+  // Always re-render if the uiState kind changes to a different persona
+  const prevKey = getUiStateKey(prev.uiState);
+  const nextKey = getUiStateKey(next.uiState);
+  if (prevKey !== nextKey) return false;
+  
+  // Re-render if input-related props change
+  if (prev.value !== next.value) return false;
+  if (prev.cursor !== next.cursor) return false;
+  
+  // Re-render if display props change
+  if (prev.mode !== next.mode) return false;
+  if (prev.model !== next.model) return false;
+  if (prev.reasoningLevel !== next.reasoningLevel) return false;
+  if (prev.tokensUsed !== next.tokensUsed) return false;
+  
+  // Re-render if layout changes
+  if (prev.layout.cols !== next.layout.cols) return false;
+  if (prev.layout.mode !== next.layout.mode) return false;
+  
+  // Re-render if model spec status changes
+  if (prev.modelSpec?.status !== next.modelSpec?.status) return false;
+  if (prev.modelSpec?.contextWindow !== next.modelSpec?.contextWindow) return false;
+  
+  // Skip re-render - streaming updates within RESPONDING don't affect composer
+  return true;
+});

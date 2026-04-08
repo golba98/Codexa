@@ -74,16 +74,12 @@ const workspaceRoot = process.cwd();
 // Detect if parent process has a real TTY
 const parentHasTTY = process.stdin.isTTY && process.stdout.isTTY;
 
-// Create mouse filter for stdin
-const mouseFilter = createMouseFilter();
-let filteredChunk = "";
-
 const child = spawn(
   bunExecutable,
   ["run", "--silent", appEntry],
   {
     cwd: workspaceRoot,
-    stdio: ["pipe", "inherit", "inherit"],
+    stdio: [parentHasTTY ? "inherit" : "pipe", "inherit", "inherit"],
     env: {
       ...process.env,
       CODEX_WORKSPACE_ROOT: workspaceRoot,
@@ -93,37 +89,35 @@ const child = spawn(
       CODEXA_RELAUNCH_EXECUTABLE: process.execPath,
       CODEXA_RELAUNCH_ARGS: JSON.stringify([currentFile]),
       CODEXA_PARENT_HAS_TTY: parentHasTTY ? "1" : "0",
-      CODEXA_PARENT_RAW_MODE: "1",
     },
   },
 );
 
-// Pipe stdin with mouse filtering
-if (process.stdin.isTTY) {
-  process.stdin.setRawMode(true);
+if (!parentHasTTY) {
+  const mouseFilter = createMouseFilter();
+
+  process.stdin.on("data", (data) => {
+    const filtered = mouseFilter(data);
+    if (filtered) {
+      child.stdin.write(filtered);
+    }
+  });
+
+  process.stdin.on("end", () => {
+    child.stdin.end();
+  });
+
+  process.stdin.on("error", (error) => {
+    console.error(`stdin error: ${error.message}`);
+  });
+
+  child.stdin.on("error", (error) => {
+    // Ignore broken pipe errors
+    if (error.code !== "EPIPE") {
+      console.error(`child stdin error: ${error.message}`);
+    }
+  });
 }
-
-process.stdin.on("data", (data) => {
-  const filtered = mouseFilter(data);
-  if (filtered) {
-    child.stdin.write(filtered);
-  }
-});
-
-process.stdin.on("end", () => {
-  child.stdin.end();
-});
-
-process.stdin.on("error", (error) => {
-  console.error(`stdin error: ${error.message}`);
-});
-
-child.stdin.on("error", (error) => {
-  // Ignore broken pipe errors
-  if (error.code !== "EPIPE") {
-    console.error(`child stdin error: ${error.message}`);
-  }
-});
 
 child.on("error", (error) => {
   console.error(`Failed to launch Bun: ${error.message}`);
@@ -131,9 +125,6 @@ child.on("error", (error) => {
 });
 
 child.on("close", (code, signal) => {
-  if (process.stdin.isTTY) {
-    process.stdin.setRawMode(false);
-  }
   if (signal) {
     process.kill(process.pid, signal);
     return;

@@ -1,5 +1,6 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
+import { APP_VERSION } from "../config/settings.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../core/auth/codexAuth.js";
 import { useTheme } from "./theme.js";
@@ -11,13 +12,20 @@ interface TopHeaderProps {
   layout: Layout;
 }
 
-/** Truncate a path to fit within maxWidth, replacing the middle with "…" */
+const WORDMARK = [
+  " ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗ █████╗ ",
+  "██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝██╔══██╗",
+  "██║     ██║   ██║██║  ██║█████╗   ╚███╔╝ ███████║",
+  "██║     ██║   ██║██║  ██║██╔══╝   ██╔██╗ ██╔══██║",
+  "╚██████╗╚██████╔╝██████╔╝███████╗██╔╝ ██╗██║  ██║",
+  " ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝ ╚═╝  ╚═╝",
+];
+
+/** Truncate a path to fit within maxWidth, keeping the end and prefixing with "... " if needed */
 function truncatePath(path: string, maxWidth: number): string {
-  // Use double backslashes for visual consistency with reference image
-  const displayPath = path.replace(/\\/g, "\\\\");
-  if (maxWidth <= 3 || displayPath.length <= maxWidth) return displayPath;
-  const half = Math.floor((maxWidth - 1) / 2);
-  return displayPath.slice(0, half) + "…" + displayPath.slice(displayPath.length - (maxWidth - half - 1));
+  if (maxWidth <= 4 || path.length <= maxWidth) return path;
+  // Prefix with "... " (4 chars) and take the last (maxWidth - 4) chars
+  return "... " + path.slice(path.length - (maxWidth - 4));
 }
 
 export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) {
@@ -33,7 +41,7 @@ export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) 
   if (mode === "micro") {
     return (
       <Box flexDirection="column" paddingX={1} paddingY={0} width="100%">
-        <Text color={theme.TEXT} bold>{`Codexa v11.0`}</Text>
+        <Text color={theme.TEXT} bold>{`Codexa v${APP_VERSION}`}</Text>
         <Text color={theme.MUTED}>{`Auth: ${authLabel}`}</Text>
       </Box>
     );
@@ -45,7 +53,7 @@ export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) 
 
     return (
       <Box flexDirection="column" paddingX={1} width="100%">
-        <Text color={theme.TEXT} bold>{`Codexa v11.0`}</Text>
+        <Text color={theme.TEXT} bold>{`Codexa v${APP_VERSION}`}</Text>
         <Box flexDirection="row">
           <Text color={theme.MUTED}>Auth: </Text>
           <Text color={theme.TEXT} bold>{authLabel}</Text>
@@ -59,7 +67,7 @@ export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) 
   }
 
   // ── FULL (≥110 cols): hero with large wordmark ────────────────────────────
-  const wordmarkWidth = 24;
+  const wordmarkWidth = 56;
   const gap = 3;
   const metaWidth = Math.max(30, cols - wordmarkWidth - gap - 4);
   const fullWorkspaceDisplay = truncatePath(workspaceRoot, Math.max(16, metaWidth - 11));
@@ -67,13 +75,16 @@ export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) 
   return (
     <Box flexDirection="column" width="100%" paddingX={1} marginBottom={1}>
       <Box flexDirection="row" paddingY={0} alignItems="flex-start" width="100%">
-        <Box width={wordmarkWidth} flexShrink={0} overflow="hidden">
-          <Text color={theme.TEXT} bold>CODEXA</Text>
-          <Text color={theme.MUTED}>Terminal UI</Text>
+        <Box flexDirection="column" width={wordmarkWidth} flexShrink={0} overflow="hidden">
+          {WORDMARK.map((line, index) => (
+            <Box key={`${index}-box`} overflow="hidden">
+              <Text color={theme.TEXT} bold wrap="truncate">{line}</Text>
+            </Box>
+          ))}
         </Box>
 
         <Box flexDirection="column" marginLeft={gap} marginTop={1} width={metaWidth}>
-          <Text color={theme.TEXT} bold>{`Codexa v11.0`}</Text>
+          <Text color={theme.TEXT} bold>{`Codexa v${APP_VERSION}`}</Text>
           <Box flexDirection="row">
             <Text color={theme.MUTED}>Auth: </Text>
             <Text color={theme.TEXT} bold>{authLabel}</Text>
@@ -87,3 +98,13 @@ export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) 
     </Box>
   );
 }
+
+// Memoize to prevent re-renders during streaming when props haven't changed
+export const MemoizedTopHeader = memo(TopHeader, (prev, next) => {
+  return (
+    prev.authState === next.authState &&
+    prev.workspaceRoot === next.workspaceRoot &&
+    prev.layout.cols === next.layout.cols &&
+    prev.layout.mode === next.layout.mode
+  );
+});

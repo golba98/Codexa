@@ -1,6 +1,5 @@
-import React from "react";
-import { Box, Text } from "ink";
-import { MAX_VISIBLE_EVENTS } from "../config/settings.js";
+import React, { useMemo, useState } from "react";
+import { Box, Text, useInput } from "ink";
 import type {
   AssistantEvent,
   ErrorEvent,
@@ -11,7 +10,7 @@ import type {
   UIState,
   UserPromptEvent,
 } from "../session/types.js";
-import { TurnGroup, type TurnOpacity } from "./TurnGroup.js";
+import { MemoizedTurnGroup, type TurnOpacity, resolveTurnRunPhase } from "./TurnGroup.js";
 import { getUsableShellWidth, type Layout } from "./layout.js";
 import { getTextWidth, wrapPlainText } from "./textLayout.js";
 import { useTheme } from "./theme.js";
@@ -235,7 +234,20 @@ function StandaloneEventLine({ event, width }: { event: StandaloneTimelineEvent;
 
 export function Timeline({ events, layout, uiState }: TimelineProps) {
   const items = buildTimelineItems(events);
-  const visibleItems = items.slice(-MAX_VISIBLE_EVENTS);
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  useInput((input, key) => {
+    if (key.pageUp) {
+      setScrollOffset((prev) => prev + 10);
+    } else if (key.pageDown) {
+      setScrollOffset((prev) => Math.max(0, prev - 10));
+    }
+  });
+
+  // Render all timeline items. The parent layout in app.tsx hides overflow.
+  // We use justifyContent="flex-end" to auto-follow the bottom, and paddingTop
+  // to push items down when the user scrolls up.
+  const visibleItems = items;
   const visibleTurnIds = visibleItems
     .filter((item): item is TurnTimelineItem => item.type === "turn")
     .map((item) => item.turnId);
@@ -246,26 +258,28 @@ export function Timeline({ events, layout, uiState }: TimelineProps) {
   if (visibleItems.length === 0) return null;
 
   return (
-    <Box flexDirection="column" paddingX={1} width="100%">
-      {visibleItems.map((item, index) => (
-        <Box key={item.type === "turn" ? `turn-${item.turnId}` : `event-${item.event.id}`} marginBottom={index === visibleItems.length - 1 ? 0 : 1} width="100%">
-          {item.type === "turn" && item.user ? (
-            <TurnGroup
-              cols={layout.cols}
-              turnIndex={item.turnIndex}
-              user={item.user}
-              run={item.run}
-              assistant={item.assistant}
-              uiState={uiState}
-              opacity={resolveTurnOpacity(visibleTurnIds, item.turnId, activeTurnId)}
-              streamPreviewRows={streamPreviewRows}
-              streamMode="assistant-first"
-            />
-          ) : item.type === "event" ? (
-            <StandaloneEventLine event={item.event} width={standaloneWidth} />
-          ) : null}
-        </Box>
-      ))}
+    <Box flexDirection="column" overflow="hidden" flexGrow={1} justifyContent="flex-end" width="100%">
+      <Box flexShrink={0} flexDirection="column" marginBottom={-scrollOffset} paddingX={1} width="100%">
+        {visibleItems.map((item, index) => (
+          <Box key={item.type === "turn" ? `turn-${item.turnId}` : `event-${item.event.id}`} marginBottom={index === visibleItems.length - 1 ? 0 : 1} width="100%" flexShrink={0}>
+            {item.type === "turn" && item.user ? (
+              <MemoizedTurnGroup
+                cols={layout.cols}
+                turnIndex={item.turnIndex}
+                user={item.user}
+                run={item.run}
+                assistant={item.assistant}
+                uiState={uiState}
+                opacity={resolveTurnOpacity(visibleTurnIds, item.turnId, activeTurnId)}
+                streamPreviewRows={streamPreviewRows}
+                streamMode="assistant-first"
+              />
+            ) : item.type === "event" ? (
+              <StandaloneEventLine event={item.event} width={standaloneWidth} />
+            ) : null}
+          </Box>
+        ))}
+      </Box>
     </Box>
   );
 }
