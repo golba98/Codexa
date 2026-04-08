@@ -153,7 +153,7 @@ test("hard-repaints once when resize recovers from invalid dimensions", async ()
 
   assert.equal(harness.stdout.clearCalls, 1);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
-  assert.match(harness.stdout.writes, /\x1b\[2J\x1b\[H/);
+  assert.match(harness.stdout.writes, /\x1b\[2J\x1b\[3J\x1b\[H/);
 
   harness.resolveExit();
   await flushMicrotasks();
@@ -170,7 +170,7 @@ test("hard-repaints when resize occurs without invalid dimensions", async () => 
   harness.stdout.emit("resize");
 
   // The clear sequence must be written immediately (before debounce fires)
-  assert.match(harness.stdout.writes.slice(writesBefore.length), /\x1b\[2J\x1b\[H/);
+  assert.match(harness.stdout.writes.slice(writesBefore.length), /\x1b\[2J\x1b\[3J\x1b\[H/);
 
   // After debounce fires, Ink.clear() is also called
   await new Promise((resolve) => setTimeout(resolve, 200));
@@ -193,6 +193,34 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
   assert.match(harness.stdout.writes, /\x1b\[\?2004l/);
 
   // Resolving after explicit cleanup should be idempotent.
+  harness.resolveExit();
+  await flushMicrotasks();
+});
+
+test("scheduled repaint clears screen and calls renderHandle.clear when inkInstance is null", async () => {
+  const harness = createSupportedHarness();
+  startApp(harness.deps);
+
+  // Reset counters after initial render
+  harness.stdout.clearCalls = 0;
+  harness.stdout.writes = "";
+
+  // Emit a normal resize — triggers performHardRepaint + scheduleRepaint
+  harness.stdout.columns = 80;
+  harness.stdout.emit("resize");
+
+  // Wait for the 150ms debounce to fire
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  // In test mocks, inkInstance is null so scheduleRepaint uses the fallback
+  // path that calls renderHandle.clear().  The immediate performHardRepaint
+  // also calls clear(), so we expect at least 2.
+  assert.ok(harness.stdout.clearCalls >= 2, `expected >=2 clear calls, got ${harness.stdout.clearCalls}`);
+
+  // The scheduled repaint should also write a hard-clear sequence
+  const repaintMatches = harness.stdout.writes.match(/\x1b\[2J\x1b\[3J\x1b\[H/g);
+  assert.ok(repaintMatches && repaintMatches.length >= 1, "expected at least one hard repaint sequence");
+
   harness.resolveExit();
   await flushMicrotasks();
 });
