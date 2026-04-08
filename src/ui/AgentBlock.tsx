@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Box, Text } from "ink";
 import type { AssistantEvent, RunEvent } from "../session/types.js";
 import { RenderMessage } from "./Markdown.js";
-import { Panel } from "./Panel.js";
 import { getUsableShellWidth } from "./layout.js";
 import { useTheme } from "./theme.js";
 import { wrapPlainText } from "./textLayout.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
+import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 import {
   sanitizeOutput,
   sanitizeStreamChunk,
@@ -100,7 +100,7 @@ export function AgentBlock({
   }, [resetBuffer, streaming]);
 
   const content = streaming ? displayText : (assistant?.content ?? "");
-  const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
+  const contentWidth = Math.max(1, getUsableShellWidth(cols, 2));
 
   const pipelineState = useMemo(() => {
     const sanitized = streaming ? sanitizeStreamChunk(content) : sanitizeOutput(content);
@@ -111,8 +111,10 @@ export function AgentBlock({
   }, [content, streaming, contentWidth]);
 
   const metadataColor = dim ? theme.DIM : theme.MUTED;
-  const failureMessage = run?.status === "failed" ? (run.errorMessage ?? run.summary) : null;
-  const cancelMessage = run?.status === "canceled" ? run.summary : null;
+  const failureMessage = run?.status === "failed"
+    ? sanitizeTerminalOutput(run.errorMessage ?? run.summary)
+    : null;
+  const cancelMessage = run?.status === "canceled" ? sanitizeTerminalOutput(run.summary) : null;
   const runStatus = runPhase === "streaming"
     ? "streaming"
     : run?.status === "completed"
@@ -124,58 +126,55 @@ export function AgentBlock({
   const heading = run?.model ? run.model.toUpperCase().replace(/-/g, " ") : `AGENT RESPONSE`;
 
   return (
-    <Box flexDirection="column" marginBottom={1} width="100%">
-      <Panel
-        cols={Math.max(1, getUsableShellWidth(cols, 2))}
-        title={heading}
-        rightTitle={rightMeta}
-        borderColor={dim ? theme.BORDER_SUBTLE : theme.BORDER_ACTIVE}
-        titleColor={metadataColor}
-      >
-        {!streaming && failureMessage && (
-          <Box flexDirection="column" marginTop={1} width="100%">
-            {wrapPlainText(failureMessage, contentWidth).map((row, index) => (
-              <Text key={index} color={theme.ERROR}>{index === 0 ? `✕ ${row || " "}` : row || " "}</Text>
-            ))}
-          </Box>
-        )}
+    <Box flexDirection="column" marginBottom={1} width="100%" paddingLeft={2}>
+      <Box flexDirection="row" justifyContent="space-between" marginBottom={0}>
+        <Text color={metadataColor} bold>{heading}</Text>
+        <Text color={theme.DIM}>{rightMeta}</Text>
+      </Box>
 
-        {pipelineState.length > 0 && (
-          <Box flexDirection="column" marginTop={1} width="100%">
-            <RenderMessage segments={pipelineState.formatted} cols={cols} />
-          </Box>
-        )}
+      {!streaming && failureMessage && (
+        <Box flexDirection="column" marginTop={1} width="100%">
+          {wrapPlainText(failureMessage, contentWidth).map((row, index) => (
+            <Text key={index} color={theme.ERROR}>{index === 0 ? `✕ ${row || " "}` : row || " "}</Text>
+          ))}
+        </Box>
+      )}
 
-        {streaming && cursorVisible && (
-          <Box width="100%" marginTop={pipelineState.length > 0 ? 1 : 0} paddingLeft={2}>
-            <Text color={theme.ACCENT}>{"▌"}</Text>
-          </Box>
-        )}
+      {pipelineState.length > 0 && (
+        <Box flexDirection="column" marginTop={1} width="100%">
+          <RenderMessage segments={pipelineState.formatted} width={contentWidth} />
+        </Box>
+      )}
 
-        {!streaming && run && run.status !== "running" && (
-          <Box
-            flexDirection="column"
-            marginTop={pipelineState.length > 0 ? 1 : 0}
-            width="100%"
-          >
-            {run.touchedFileCount > 0 ? (
-              <Text color={dim ? theme.DIM : theme.SUCCESS}>
-                {"✓ "}
-                <Text color={metadataColor}>
-                  {run.touchedFileCount} file{run.touchedFileCount === 1 ? "" : "s"} modified
-                </Text>
+      {streaming && cursorVisible && (
+        <Box width="100%" marginTop={pipelineState.length > 0 ? 1 : 0} paddingLeft={2}>
+          <Text color={theme.ACCENT}>{"▌"}</Text>
+        </Box>
+      )}
+
+      {!streaming && run && run.status !== "running" && (
+        <Box
+          flexDirection="column"
+          marginTop={pipelineState.length > 0 ? 1 : 0}
+          width="100%"
+        >
+          {run.touchedFileCount > 0 ? (
+            <Text color={dim ? theme.DIM : theme.SUCCESS}>
+              {"✓ "}
+              <Text color={metadataColor}>
+                {run.touchedFileCount} file{run.touchedFileCount === 1 ? "" : "s"} modified
               </Text>
-            ) : run.status === "canceled" ? (
-              <Text color={theme.WARNING}>{cancelMessage}</Text>
-            ) : run.status === "completed" && pipelineState.length === 0 ? (
-              <Text color={theme.DIM}>{"(no output)"}</Text>
-            ) : null}
-            {run.truncatedOutput && (
-              <Text color={theme.DIM}>{RUN_OUTPUT_TRUNCATION_NOTICE}</Text>
-            )}
-          </Box>
-        )}
-      </Panel>
+            </Text>
+          ) : run.status === "canceled" ? (
+            <Text color={theme.WARNING}>{cancelMessage}</Text>
+          ) : run.status === "completed" && pipelineState.length === 0 ? (
+            <Text color={theme.DIM}>{"(no output)"}</Text>
+          ) : null}
+          {run.truncatedOutput && (
+            <Text color={theme.DIM}>{RUN_OUTPUT_TRUNCATION_NOTICE}</Text>
+          )}
+        </Box>
+      )}
     </Box>
   );
 }

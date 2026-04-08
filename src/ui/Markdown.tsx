@@ -1,8 +1,7 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { Box, Text } from "ink";
 import { useTheme } from "./theme.js";
 import { Panel } from "./Panel.js";
-import { getUsableShellWidth } from "./layout.js";
 
 type InlinePart =
   | { kind: "text"; text: string }
@@ -169,7 +168,25 @@ function isTreeLine(line: string): boolean {
   return /^[│├└─\s]+/.test(line);
 }
 
-export function RenderMessage({ segments, cols }: { segments: Segment[]; cols?: number }) {
+function isDiffLine(line: string): boolean {
+  return line.startsWith("+")
+    || line.startsWith("-")
+    || line.startsWith("@@")
+    || line.startsWith("diff --")
+    || line.startsWith("index ")
+    || line.startsWith("+++ ")
+    || line.startsWith("--- ");
+}
+
+function getDiffColor(line: string, theme: ReturnType<typeof useTheme>): string {
+  if (line.startsWith("+") && !line.startsWith("+++")) return theme.SUCCESS;
+  if (line.startsWith("-") && !line.startsWith("---")) return theme.ERROR;
+  if (line.startsWith("@@")) return theme.ACCENT;
+  if (line.startsWith("diff --") || line.startsWith("index ") || line.startsWith("+++ ") || line.startsWith("--- ")) return theme.INFO;
+  return theme.MUTED;
+}
+
+export function RenderMessage({ segments, width }: { segments: Segment[]; width: number }) {
   const theme = useTheme();
 
   return (
@@ -178,20 +195,10 @@ export function RenderMessage({ segments, cols }: { segments: Segment[]; cols?: 
         const marginTop = index > 0 ? 1 : 0;
 
         if (segment.type === "code") {
-          // Collapse tool execution blocks into a single breadcrumb line
-          const execLangs = new Set(["ex", "shell", "bash", "powershell", "cmd", "output", "sh"]);
-          const isExecBlock = execLangs.has((segment.lang || "").toLowerCase());
-          if (isExecBlock) {
-            const firstLine = segment.lines.find((l) => l.trim()) ?? segment.lang;
-            return (
-              <Box key={index} marginTop={marginTop} paddingLeft={2} width="100%" overflow="hidden">
-                <Text color={theme.DIM} wrap="truncate">{`✧ Executed: ${firstLine}`}</Text>
-              </Box>
-            );
-          }
-
+          const lang = (segment.lang || "").toLowerCase();
+          const isDiffBlock = lang === "diff" || segment.lines.some((line) => isDiffLine(line));
           const looksLikeTree = segment.lines.some((line) => isTreeLine(line));
-          
+
           let title = segment.lang || "code";
           let codeLines = segment.lines;
           const firstLine = codeLines[0]?.trim() || "";
@@ -201,7 +208,7 @@ export function RenderMessage({ segments, cols }: { segments: Segment[]; cols?: 
           }
 
           const rightTitle = segment.lang ? `${segment.lang.toUpperCase()} ⎘ Copy Code` : "⎘ Copy Code";
-          const panelWidth = cols ? Math.max(10, getUsableShellWidth(cols, 6)) : 80;
+          const panelWidth = Math.max(10, width);
 
           return (
             <Box
@@ -215,6 +222,10 @@ export function RenderMessage({ segments, cols }: { segments: Segment[]; cols?: 
                 {codeLines.map((line, lineIndex) => (
                   looksLikeTree ? (
                     <TreeLine key={lineIndex} line={line || " "} />
+                  ) : isDiffBlock ? (
+                    <Text key={lineIndex} color={getDiffColor(line, theme)} wrap="wrap">
+                      {line || " "}
+                    </Text>
                   ) : (
                     <Box key={lineIndex}>
                       <Box width={3} flexShrink={0} marginRight={1} justifyContent="flex-end">

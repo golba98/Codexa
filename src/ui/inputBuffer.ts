@@ -1,5 +1,6 @@
 import type { WrappedTextRow } from "./textLayout.js";
 import { getTextWidth, normalizeLineBreaks, wrapTextRows } from "./textLayout.js";
+import { sanitizeTerminalInput } from "../core/terminalSanitize.js";
 
 export type WrappedInputRow = WrappedTextRow;
 
@@ -20,7 +21,7 @@ function isLowSurrogate(code: number): boolean {
 }
 
 export function normalizeInputText(text: string): string {
-  return normalizeLineBreaks(text);
+  return normalizeLineBreaks(sanitizeTerminalInput(text));
 }
 
 export function normalizeCursorOffset(text: string, cursorOffset: number): number {

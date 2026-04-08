@@ -52,6 +52,7 @@ import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProvider } from "./core/providers/types.js";
+import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
 import type { AssistantEvent, RunEvent, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
 import {
   buildFollowUpPrompt,
@@ -64,7 +65,7 @@ import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
 import { AuthPanel } from "./ui/AuthPanel.js";
 import { BackendPicker } from "./ui/BackendPicker.js";
 import { MemoizedBottomComposer } from "./ui/BottomComposer.js";
-import { getShellWidth, useLayout as useTerminalLayout } from "./ui/layout.js";
+import { useTerminalViewport } from "./ui/layout.js";
 import { ModelPicker } from "./ui/ModelPicker.js";
 import { ModePicker } from "./ui/ModePicker.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
@@ -80,9 +81,8 @@ import {
   shouldBumpComposerInstance,
   type ThemeSelectionState,
 } from "./ui/themeFlow.js";
-import { Timeline } from "./ui/Timeline.js";
-import { MemoizedTopHeader } from "./ui/TopHeader.js";
 import { isBusy as isUiBusy } from "./session/types.js";
+import { AppShell } from "./ui/AppShell.js";
 
 let nextEventId = 0;
 let nextTurnId = 0;
@@ -116,7 +116,7 @@ export function App() {
     [launchContext],
   );
   const modelSpecService = useMemo(() => createModelSpecService(), []);
-  const terminalLayout = useTerminalLayout();
+  const terminalLayout = useTerminalViewport();
 
   const [backend, setBackend] = useState<AvailableBackend>(initialSettings.current.backend);
   const [model, setModel] = useState<AvailableModel>(initialSettings.current.model);
@@ -225,22 +225,26 @@ export function App() {
   }, [dispatchSession]);
 
   const appendSystemEvent = useCallback((title: string, content: string) => {
+    const safeTitle = sanitizeTerminalOutput(title);
+    const safeContent = sanitizeTerminalOutput(content, { preserveTabs: false, tabSize: 2 });
     appendStaticEvent({
       id: createEventId(),
       type: "system",
       createdAt: Date.now(),
-      title,
-      content,
+      title: safeTitle,
+      content: safeContent,
     });
   }, [appendStaticEvent]);
 
   const appendErrorEvent = useCallback((title: string, content: string) => {
+    const safeTitle = sanitizeTerminalOutput(title);
+    const safeContent = sanitizeTerminalOutput(content, { preserveTabs: false, tabSize: 2 });
     appendStaticEvent({
       id: createEventId(),
       type: "error",
       createdAt: Date.now(),
-      title,
-      content,
+      title: safeTitle,
+      content: safeContent,
     });
   }, [appendStaticEvent]);
 
@@ -432,15 +436,17 @@ export function App() {
     activeTurnIdRef.current = null;
     focusManager.focus(FOCUS_IDS.composer);
     cleanup?.();
-    const parsed = status === "completed" && response?.trim()
-      ? extractAssistantActionRequired(response)
-      : { content: response ?? "", question: null as string | null };
+    const safeMessage = message ? sanitizeTerminalOutput(message) : undefined;
+    const safeResponse = response ? sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 }) : "";
+    const parsed = status === "completed" && safeResponse.trim()
+      ? extractAssistantActionRequired(safeResponse)
+      : { content: safeResponse, question: null as string | null };
     dispatchSession({
       type: "FINALIZE_RUN",
       runId,
       turnId,
       status,
-      message,
+      message: safeMessage,
       response: parsed.content,
       question: status === "completed" ? parsed.question : null,
       assistantFactory: () => ({
@@ -543,7 +549,8 @@ export function App() {
   }, [cancelActiveRun, dispatchSession, resetComposer]);
 
   const handleShellExecute = useCallback((command: string) => {
-    const guardMessage = getShellWorkspaceGuardMessage(command, workspaceRoot);
+    const safeCommand = sanitizeTerminalInput(command).trim();
+    const guardMessage = getShellWorkspaceGuardMessage(safeCommand, workspaceRoot);
     if (guardMessage) {
       appendErrorEvent("Shell command blocked", guardMessage);
       return;
@@ -556,10 +563,10 @@ export function App() {
       id: shellId,
       createdAt: startTime,
       type: "shell",
-      command,
+      command: safeCommand,
       lines: [],
       stderrLines: [],
-      summary: `Executing shell: ${command}`,
+      summary: `Executing shell: ${safeCommand}`,
       status: "running",
       exitCode: null,
       durationMs: null,
@@ -571,16 +578,16 @@ export function App() {
     dispatchSession({ type: "UI_ACTION", action: { type: "SHELL_STARTED", shellId } });
 
     const runner = runCommand(
-      { executable: command, args: [], shell: true, cwd: workspaceRoot },
+      { executable: safeCommand, args: [], shell: true, cwd: workspaceRoot },
       {
         onStdout: (text) => {
-          const lines = text.split(/\r?\n/).filter(Boolean);
+          const lines = sanitizeTerminalLines(text.split(/\r?\n/));
           if (lines.length > 0) {
             dispatchSession({ type: "UPDATE_SHELL_LINES", shellId, stream: "stdout", lines });
           }
         },
         onStderr: (text) => {
-          const lines = text.split(/\r?\n/).filter(Boolean);
+          const lines = sanitizeTerminalLines(text.split(/\r?\n/));
           if (lines.length > 0) {
             dispatchSession({ type: "UPDATE_SHELL_LINES", shellId, stream: "stderr", lines });
           }
@@ -600,9 +607,9 @@ export function App() {
 
       const finalEvent: ShellEvent = {
         ...initialEvent,
-        lines: result.stdout.split(/\r?\n/).filter(Boolean),
-        stderrLines: result.stderr.split(/\r?\n/).filter(Boolean),
-        summary: summarizeCommandResult(command, result),
+        lines: sanitizeTerminalLines(result.stdout.split(/\r?\n/)),
+        stderrLines: sanitizeTerminalLines(result.stderr.split(/\r?\n/)),
+        summary: sanitizeTerminalOutput(summarizeCommandResult(safeCommand, result)),
         status: result.status === "completed" ? "completed" : "failed",
         exitCode: result.exitCode,
         durationMs: result.durationMs,
@@ -610,7 +617,7 @@ export function App() {
 
       dispatchSession({ type: "FINALIZE_SHELL", shellId, finalEvent });
     });
-  }, [dispatchSession, workspaceRoot]);
+  }, [appendErrorEvent, dispatchSession, focusManager, workspaceRoot]);
 
   const handleWorkspaceRelaunch = useCallback((targetPath: string) => {
     const gate = guardWorkspaceRelaunch(busy);
@@ -660,7 +667,14 @@ export function App() {
   }, [activeEvents, staticEvents]);
 
   const startPromptRun = useCallback((displayPrompt: string, providerPrompt: string) => {
-    const executionModeDecision = resolveExecutionMode(mode, providerPrompt);
+    const safeDisplayPrompt = sanitizeTerminalInput(displayPrompt).trim();
+    const safeProviderPrompt = sanitizeTerminalInput(providerPrompt).trim();
+    if (!safeDisplayPrompt || !safeProviderPrompt) {
+      appendErrorEvent("Prompt blocked", "The prompt only contained non-printable/control characters after sanitization.");
+      return false;
+    }
+
+    const executionModeDecision = resolveExecutionMode(mode, safeProviderPrompt);
     const effectiveMode = executionModeDecision.mode;
     if (executionModeDecision.autoUpgraded) {
       appendSystemEvent(
@@ -693,12 +707,12 @@ export function App() {
       id: createEventId(),
       type: "user",
       createdAt: Date.now(),
-      prompt: displayPrompt,
+      prompt: safeDisplayPrompt,
       turnId,
     };
     appendStaticEvent(userEvent);
 
-    setConversationChars((count) => count + providerPrompt.length);
+    setConversationChars((count) => count + safeProviderPrompt.length);
 
     const runId = createEventId();
     activeRunIdRef.current = runId;
@@ -712,7 +726,7 @@ export function App() {
           backendLabel: provider.label,
           mode: effectiveMode,
           model,
-          prompt: providerPrompt,
+          prompt: safeProviderPrompt,
           turnId,
         }),
         summary: "Codexa is thinking...",
@@ -771,13 +785,15 @@ export function App() {
     };
 
     const stopProviderRun = provider.run(
-      providerPrompt,
+      safeProviderPrompt,
       { model, mode: effectiveMode, reasoningLevel, workspaceRoot },
       {
         onAssistantDelta: (chunk) => {
           if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) return;
+          const safeChunk = sanitizeTerminalOutput(chunk, { preserveTabs: false, tabSize: 2 });
+          if (!safeChunk) return;
           hasAssistantDelta = true;
-          pendingAssistantDelta += chunk;
+          pendingAssistantDelta += safeChunk;
           scheduleAssistantFlush();
         },
         onToolActivity: (activity) => {
@@ -787,22 +803,25 @@ export function App() {
         onResponse: (response) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
           flushAssistantDeltaNow();
-          setConversationChars((count) => count + response.length);
-          void finalizePromptRun(runId, turnId, "completed", undefined, response);
+          const safeResponse = sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 });
+          setConversationChars((count) => count + safeResponse.length);
+          void finalizePromptRun(runId, turnId, "completed", undefined, safeResponse);
         },
         onError: (message, rawOutput) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
           flushAssistantDeltaNow();
-          const combinedOutput = [message, rawOutput].filter(Boolean).join("\n");
+          const safeMessage = sanitizeTerminalOutput(message);
+          const safeRawOutput = sanitizeTerminalOutput(rawOutput ?? "");
+          const combinedOutput = [safeMessage, safeRawOutput].filter(Boolean).join("\n");
           const errorMessage = isLikelyAuthFailure(combinedOutput)
             ? [
               "Codexa reported an authentication/session error.",
               "Recovery:",
               "  codex login",
               "",
-              `Raw error: ${message}`,
+              `Raw error: ${safeMessage}`,
             ].join("\n")
-            : message;
+            : safeMessage;
 
           if (isLikelyAuthFailure(combinedOutput)) {
             setRuntimeUnauthenticated("Auth/session failure detected in neural link.");
@@ -811,12 +830,14 @@ export function App() {
           void finalizePromptRun(runId, turnId, "failed", errorMessage);
         },
         onProgress: (line) => {
-          if (isNoiseLine(line)) return;
+          const safeLine = sanitizeTerminalOutput(line);
+          if (!safeLine) return;
+          if (isNoiseLine(safeLine)) return;
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
           const currentUiState = uiStateRef.current;
           const isRespondingForTurn = currentUiState.kind === "RESPONDING" && currentUiState.turnId === turnId;
           if (hasAssistantDelta || isRespondingForTurn) return;
-          dispatchSession({ type: "RUN_APPEND_PROGRESS", runId, lines: [line] });
+          dispatchSession({ type: "RUN_APPEND_PROGRESS", runId, lines: [safeLine] });
         },
       },
     );
@@ -845,7 +866,7 @@ export function App() {
   ]);
 
   const handleSubmit = useCallback(() => {
-    const value = inputValue.trim();
+    const value = sanitizeTerminalInput(inputValue).trim();
     if (!value) return;
 
     if (uiState.kind === "AWAITING_USER_ACTION") {
@@ -1033,145 +1054,142 @@ export function App() {
     workspaceRoot,
   ]);
 
-  // Keep a small gutter so wide bordered cards don't trip a horizontal
-  // scrollbar when the shell content lands exactly on the terminal edge.
-  const shellWidth = getShellWidth(terminalLayout.cols);
-  const showComposer = screen === "main";
-
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
-      <Box flexDirection="column" width={shellWidth} height={terminalLayout.rows - 1}>
-        {screen === "main" && (
-          <Box flexDirection="column" borderBottom={true} flexShrink={0}>
-            <MemoizedTopHeader
-              authState={authStatus.state}
-              workspaceRoot={workspaceRoot}
-              layout={terminalLayout}
-            />
-          </Box>
-        )}
+      <AppShell
+        layout={terminalLayout}
+        screen={screen}
+        authState={authStatus.state}
+        workspaceRoot={workspaceRoot}
+        events={[...staticEvents, ...activeEvents]}
+        uiState={uiState}
+        panel={
+          <>
+            {screen === "backend-picker" && (
+              <BackendPicker
+                currentBackend={backend}
+                onSelect={(value) => setBackendWithNotice(value as AvailableBackend)}
+                onCancel={() => setScreen("main")}
+              />
+            )}
 
-        <Box flexDirection="column" flexGrow={1} overflow="hidden" paddingBottom={1}>
-          <Timeline events={[...staticEvents, ...activeEvents]} layout={terminalLayout} uiState={uiState} />
-        </Box>
+              {screen === "model-picker" && (
+                <ModelPicker
+                  currentModel={model}
+                  onSelect={(value) => setModelWithNotice(value as AvailableModel)}
+                  onCancel={() => setScreen("main")}
+                />
+              )}
 
-        {screen === "backend-picker" && (
-          <BackendPicker
-            currentBackend={backend}
-            onSelect={(value) => setBackendWithNotice(value as AvailableBackend)}
-            onCancel={() => setScreen("main")}
-          />
-        )}
+              {screen === "mode-picker" && (
+                <ModePicker
+                  currentMode={mode}
+                  onSelect={(value) => setModeWithNotice(value as AvailableMode)}
+                  onCancel={() => setScreen("main")}
+                />
+              )}
 
-        {screen === "model-picker" && (
-          <ModelPicker
-            currentModel={model}
-            onSelect={(value) => setModelWithNotice(value as AvailableModel)}
-            onCancel={() => setScreen("main")}
-          />
-        )}
+              {screen === "reasoning-picker" && (
+                <ReasoningPicker
+                  currentModel={model}
+                  currentReasoning={reasoningLevel}
+                  onSelect={(value) => setReasoningWithNotice(value as ReasoningLevel)}
+                  onCancel={() => setScreen("main")}
+                />
+              )}
 
-        {screen === "mode-picker" && (
-          <ModePicker
-            currentMode={mode}
-            onSelect={(value) => setModeWithNotice(value as AvailableMode)}
-            onCancel={() => setScreen("main")}
-          />
-        )}
+              {screen === "auth-panel" && (
+                <AuthPanel
+                  focusId={FOCUS_IDS.authPanel}
+                  provider={provider}
+                  authPreference={authPreference}
+                  authStatus={authStatus}
+                  authStatusBusy={authStatusBusy}
+                  onSetPreference={(value) => setAuthPreferenceWithNotice(value as AuthPreference)}
+                  onRefreshAuthStatus={() => {
+                    void refreshAuthStatus(false);
+                  }}
+                  onClose={() => setScreen("main")}
+                />
+              )}
 
-        {screen === "reasoning-picker" && (
-          <ReasoningPicker
-            currentModel={model}
-            currentReasoning={reasoningLevel}
-            onSelect={(value) => setReasoningWithNotice(value as ReasoningLevel)}
-            onCancel={() => setScreen("main")}
-          />
-        )}
-
-        {screen === "auth-panel" && (
-          <AuthPanel
-            focusId={FOCUS_IDS.authPanel}
-            provider={provider}
-            authPreference={authPreference}
-            authStatus={authStatus}
-            authStatusBusy={authStatusBusy}
-            onSetPreference={(value) => setAuthPreferenceWithNotice(value as AuthPreference)}
-            onRefreshAuthStatus={() => {
-              void refreshAuthStatus(false);
+              {screen === "theme-picker" && (
+                <ThemePicker
+                  currentTheme={themeSelection.committedTheme}
+                  onSelect={(value) => {
+                    setThemeSelection((currentTheme) => commitThemeSelection(currentTheme, value));
+                    setScreen("main");
+                    appendSystemEvent("Theme updated", `Visual theme switched to ${formatThemeLabel(value)}.`);
+                    if (value === "custom") {
+                      if (!customTheme) {
+                        setCustomTheme({ ...THEMES.purple });
+                      }
+                      appendSystemEvent(
+                        "Custom Theme",
+                        "Add a \"custom_theme\" object to ~/.codexa-settings.json with any of these keys: BG, PANEL, PANEL_ALT, PANEL_SOFT, BORDER, BORDER_ACTIVE, BORDER_SUBTLE, TEXT, MUTED, DIM, ACCENT, PROMPT, SUCCESS, WARNING, ERROR, INFO, STAR. Unset keys fall back to Midnight Purple defaults.",
+                      );
+                    }
+                  }}
+                  onHighlight={(value) => {
+                    if (themePreviewTimerRef.current) clearTimeout(themePreviewTimerRef.current);
+                    themePreviewTimerRef.current = setTimeout(() => {
+                      setThemeSelection((currentTheme) => previewThemeSelection(currentTheme, value));
+                    }, 120);
+                  }}
+                  onCancel={() => {
+                    if (themePreviewTimerRef.current) clearTimeout(themePreviewTimerRef.current);
+                    setThemeSelection((currentTheme) => cancelThemeSelection(currentTheme));
+                    setScreen("main");
+                  }}
+                />
+              )}
+          </>
+        }
+        composer={(
+          <MemoizedBottomComposer
+            key={composerInstanceKey}
+            layout={terminalLayout}
+            uiState={uiState}
+            mode={mode}
+            model={model}
+            reasoningLevel={reasoningLevel}
+            tokensUsed={estimateTokens(conversationChars)}
+            modelSpec={currentModelSpec}
+            value={inputValue}
+            cursor={cursor}
+            onChangeInput={(value, nextCursor) => {
+              const safeValue = sanitizeTerminalInput(value);
+              dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(nextCursor, safeValue.length) });
             }}
-            onClose={() => setScreen("main")}
+            onSubmit={handleSubmit}
+            onCancel={handleCancel}
+            onChangeValue={(value) => {
+              const safeValue = sanitizeTerminalInput(value);
+              dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(cursor, safeValue.length) });
+            }}
+            onChangeCursor={(nextCursor) => {
+              const safeValue = sanitizeTerminalInput(inputValue);
+              dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(nextCursor, safeValue.length) });
+            }}
+            onHistoryUp={handleHistoryUp}
+            onHistoryDown={handleHistoryDown}
+            onOpenBackendPicker={openBackendPicker}
+            onOpenModelPicker={openModelPicker}
+            onOpenModePicker={openModePicker}
+            onOpenThemePicker={openThemePicker}
+            onOpenAuthPanel={openAuthPanel}
+            onClear={handleClear}
+            onCycleMode={cycleModeWithNotice}
+            onQuit={handleQuit}
           />
         )}
-
-        {screen === "theme-picker" && (
-          <ThemePicker
-            currentTheme={themeSelection.committedTheme}
-            onSelect={(value) => {
-              setThemeSelection((currentTheme) => commitThemeSelection(currentTheme, value));
-              setScreen("main");
-              appendSystemEvent("Theme updated", `Visual theme switched to ${formatThemeLabel(value)}.`);
-              if (value === "custom") {
-                if (!customTheme) {
-                  setCustomTheme({ ...THEMES.purple });
-                }
-                appendSystemEvent(
-                  "Custom Theme",
-                  "Add a \"custom_theme\" object to ~/.codexa-settings.json with any of these keys: BG, PANEL, PANEL_ALT, PANEL_SOFT, BORDER, BORDER_ACTIVE, BORDER_SUBTLE, TEXT, MUTED, DIM, ACCENT, PROMPT, SUCCESS, WARNING, ERROR, INFO, STAR. Unset keys fall back to Midnight Purple defaults.",
-                );
-              }
-            }}
-            onHighlight={(value) => {
-              if (themePreviewTimerRef.current) clearTimeout(themePreviewTimerRef.current);
-              themePreviewTimerRef.current = setTimeout(() => {
-                setThemeSelection((currentTheme) => previewThemeSelection(currentTheme, value));
-              }, 120);
-            }}
-            onCancel={() => {
-              if (themePreviewTimerRef.current) clearTimeout(themePreviewTimerRef.current);
-              setThemeSelection((currentTheme) => cancelThemeSelection(currentTheme));
-              setScreen("main");
-            }}
-          />
-        )}
-
-        {showComposer && (
-          <Box flexDirection="column" flexShrink={0}>
-            <MemoizedBottomComposer
-              key={composerInstanceKey}
-              layout={terminalLayout}
-              uiState={uiState}
-              mode={mode}
-              model={model}
-              reasoningLevel={reasoningLevel}
-              tokensUsed={estimateTokens(conversationChars)}
-              modelSpec={currentModelSpec}
-              value={inputValue}
-              cursor={cursor}
-              onChangeInput={(value, nextCursor) => dispatchSession({ type: "SET_INPUT", value, cursor: nextCursor })}
-              onSubmit={handleSubmit}
-              onCancel={handleCancel}
-              onChangeValue={(value) => dispatchSession({ type: "SET_INPUT", value, cursor })}
-              onChangeCursor={(nextCursor) => dispatchSession({ type: "SET_INPUT", value: inputValue, cursor: nextCursor })}
-              onHistoryUp={handleHistoryUp}
-              onHistoryDown={handleHistoryDown}
-              onOpenBackendPicker={openBackendPicker}
-              onOpenModelPicker={openModelPicker}
-              onOpenModePicker={openModePicker}
-              onOpenThemePicker={openThemePicker}
-              onOpenAuthPanel={openAuthPanel}
-              onClear={handleClear}
-              onCycleMode={cycleModeWithNotice}
-              onQuit={handleQuit}
-            />
-          </Box>
-        )}
-
-        {screen !== "main" && (
+        runFooter={<RunFooter uiState={uiState} onCancel={handleCancel} onQuit={handleQuit} />}
+        panelHint={screen !== "main" ? (
           <Box marginTop={1} paddingX={1}>
             <Text color={activeTheme.DIM}>Close the active panel with Esc to return to the composer.</Text>
           </Box>
-        )}
-      </Box>
+        ) : null}
+      />
     </ThemeProvider>
   );
 }

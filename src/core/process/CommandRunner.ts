@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process";
+import { sanitizeTerminalOutput } from "../terminalSanitize.js";
 
 export interface CommandSpec {
   executable: string;
@@ -28,14 +29,8 @@ export interface CommandStreamHandlers {
   onStderr?: (text: string) => void;
 }
 
-const ANSI_PATTERN = /\u001B\[[0-?]*[ -/]*[@-~]/g;
-
-function stripAnsi(text: string): string {
-  return text.replace(ANSI_PATTERN, "");
-}
-
 function splitOutputLines(text: string): string[] {
-  return stripAnsi(text)
+  return sanitizeTerminalOutput(text)
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .split("\n")
@@ -59,7 +54,7 @@ function buildUserMessage(result: {
   signal: NodeJS.Signals | null;
   status: CommandResult["status"];
 }): string {
-  const stderrLine = stripAnsi(result.stderr).split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+  const stderrLine = sanitizeTerminalOutput(result.stderr).split(/\r?\n/).map((line) => line.trim()).find(Boolean);
   if (result.status === "spawn_error" && result.code === "ENOENT") {
     return `\`${result.executable}\` is not installed or not available on PATH.`;
   }
@@ -144,8 +139,8 @@ export function runCommand(
       const endedAt = partial.endedAt ?? Date.now();
       resolve({
         ...partial,
-        stdout: stripAnsi(stdout),
-        stderr: stripAnsi(stderr),
+        stdout: sanitizeTerminalOutput(stdout),
+        stderr: sanitizeTerminalOutput(stderr),
         startedAt,
         endedAt,
         durationMs: endedAt - startedAt,
@@ -163,13 +158,13 @@ export function runCommand(
     child.stdout?.on("data", (buffer: Buffer) => {
       const text = buffer.toString("utf8");
       stdout += text;
-      handlers.onStdout?.(stripAnsi(text));
+      handlers.onStdout?.(sanitizeTerminalOutput(text));
     });
 
     child.stderr?.on("data", (buffer: Buffer) => {
       const text = buffer.toString("utf8");
       stderr += text;
-      handlers.onStderr?.(stripAnsi(text));
+      handlers.onStderr?.(sanitizeTerminalOutput(text));
     });
 
     child.once("error", (error: NodeJS.ErrnoException) => {

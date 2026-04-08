@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TimelineEvent } from "../session/types.js";
-import { buildTimelineItems, resolveTurnOpacity } from "./Timeline.js";
+import { buildTimelineItems, buildTimelineWindow, getTimelinePageSize, resolveTurnOpacity } from "./Timeline.js";
 
 test("groups user, run, and assistant events into a single turn item", () => {
   const events: TimelineEvent[] = [
@@ -73,4 +73,24 @@ test("derives active, recent, and dim turn opacity from ordered turn ids", () =>
 
   assert.equal(resolveTurnOpacity(turnIds, 3, null), "recent");
   assert.equal(resolveTurnOpacity(turnIds, 1, null), "dim");
+});
+
+test("uses layout-driven page sizes", () => {
+  assert.equal(getTimelinePageSize("full"), 6);
+  assert.equal(getTimelinePageSize("compact"), 5);
+  assert.equal(getTimelinePageSize("micro"), 4);
+  assert.equal(getTimelinePageSize("full", 40), 8);
+  assert.equal(getTimelinePageSize("compact", 18), 4);
+  assert.equal(getTimelinePageSize("micro", 10), 3);
+});
+
+test("builds stable viewport windows from anchor index", () => {
+  const atTail = buildTimelineWindow(20, 6, 19);
+  assert.deepEqual(atTail, { startIndex: 14, endIndex: 20, anchorIndex: 19 });
+
+  const atHead = buildTimelineWindow(20, 6, 0);
+  assert.deepEqual(atHead, { startIndex: 0, endIndex: 1, anchorIndex: 0 });
+
+  const clamped = buildTimelineWindow(4, 6, 99);
+  assert.deepEqual(clamped, { startIndex: 0, endIndex: 4, anchorIndex: 3 });
 });

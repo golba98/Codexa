@@ -19,6 +19,8 @@ import { getModeColor } from "./modeColor.js";
 import { useTheme } from "./theme.js";
 import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { getTextWidth, splitTextAtColumn } from "./textLayout.js";
+import { useThrottledValue } from "./useThrottledValue.js";
+import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 
 type ComposerPersona = "idle" | "busy" | "answer" | "error";
 type DeleteIntent = "backspace" | "delete";
@@ -171,6 +173,7 @@ export function BottomComposer({
   const { stdin } = useStdin();
   const theme = useTheme();
   const { cols, mode: layoutMode } = layout;
+  const crampedViewport = layout.rows <= 24;
   const { isFocused } = useFocus({ id: FOCUS_IDS.composer, autoFocus: true });
   const [cursorVisible, setCursorVisible] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -179,7 +182,7 @@ export function BottomComposer({
   const inputLocked = persona === "busy";
   const allowCommands = persona !== "answer";
   const allowHistory = persona === "idle" || persona === "error";
-  const promptPrefix = "CODEXA AGENT   › ";
+  const promptPrefix = "❯ ";
   const composerWidth = getShellWidth(cols);
   const composerBodyWidth = getComposerBodyWidth(composerWidth);
   const promptWidth = Math.max(4, composerBodyWidth - getTextWidth(promptPrefix));
@@ -230,7 +233,7 @@ export function BottomComposer({
   const suggestionText = suggestions
     .map((suggestion, index) => `${index === selectedIndex ? "›" : "·"} ${suggestion.cmd}`)
     .join("   ");
-  const statusLine = getStatusLine(uiState);
+  const statusLine = useThrottledValue(sanitizeTerminalOutput(getStatusLine(uiState) ?? ""), 80);
   const promptViewport = useMemo(
     () => createInputViewport({
       text: value,
@@ -443,7 +446,6 @@ export function BottomComposer({
     : tokenDisplay.percentage >= 70 ? theme.WARNING
     : theme.SUCCESS;
   const reasoningSuffix = reasoningLevel ? ` (${reasoningLevel})` : "";
-  const metadataLine = `${modeLabel}  ${model}${reasoningSuffix}  Ctrl+M`;
   const isAnswerMode = persona === "answer";
 
   // The prompt line is shared between bordered and non-bordered layouts.
@@ -492,7 +494,7 @@ export function BottomComposer({
   );
 
   return (
-    <Box flexDirection="column" paddingBottom={layoutMode === "micro" ? 0 : 1} width="100%">
+    <Box flexDirection="column" paddingBottom={layoutMode === "micro" || crampedViewport ? 0 : 1} width="100%">
       {isAnswerMode ? (
         // Answer mode: Highlighted prompt
         <Box
@@ -525,7 +527,7 @@ export function BottomComposer({
         </Box>
       )}
 
-      {statusLine && !isAnswerMode && (
+      {statusLine.length > 0 && !isAnswerMode && (
         <Box paddingX={1} marginTop={0} width="100%" justifyContent="space-between" overflow="hidden">
           <Text color={persona === "error" ? theme.ERROR : theme.INFO} wrap="truncate">{statusLine}</Text>
           {inputLocked && (
@@ -534,7 +536,7 @@ export function BottomComposer({
         </Box>
       )}
 
-      {layoutMode !== "micro" && (
+      {layoutMode !== "micro" && !crampedViewport && (
         <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
           <Box flexGrow={1} flexShrink={1} overflow="hidden">
             <Text color={theme.TEXT} bold>{modeLabel}</Text>
@@ -555,7 +557,7 @@ function getUiStateKey(uiState: UIState): string {
   // Only re-render when the kind changes to a different persona-relevant state
   // THINKING/RESPONDING/AWAITING_USER_ACTION are all "busy" states
   // We don't need to re-render for every streaming update within RESPONDING
-  if (uiState.kind === "THINKING" || uiState.kind === "RESPONDING") {
+  if (uiState.kind === "THINKING" || uiState.kind === "RESPONDING" || uiState.kind === "SHELL_RUNNING") {
     return "busy";
   }
   if (uiState.kind === "AWAITING_USER_ACTION") {
@@ -586,6 +588,7 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   
   // Re-render if layout changes
   if (prev.layout.cols !== next.layout.cols) return false;
+  if (prev.layout.rows !== next.layout.rows) return false;
   if (prev.layout.mode !== next.layout.mode) return false;
   
   // Re-render if model spec status changes

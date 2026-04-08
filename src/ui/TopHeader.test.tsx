@@ -82,25 +82,34 @@ async function renderHeader(cols: number, authState: CodexAuthState): Promise<st
   return stripAnsi(output);
 }
 
-test("full mode renders stylized block-art Codexa wordmark", async () => {
+test("full mode renders wordmark at wide terminal", async () => {
   const output = await renderHeader(130, "authenticated");
 
-  // Should contain box-drawing and block characters
   assert.match(output, /[█╔╗╚╝═║]/);
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/\./g, "\\.")}`));
+  assert.match(output, /Authenticated/);
 });
 
-test("compact mode keeps clean Codexa text and metadata", async () => {
+test("compact mode renders version and auth", async () => {
   const output = await renderHeader(80, "authenticated");
 
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/\./g, "\\.")}`));
-  assert.match(output, /Auth:\s*Authenticated/);
-  assert.match(output, /Workspace:/);
+  assert.match(output, /Authenticated/);
+  assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
 });
 
-test("micro mode keeps clean Codexa text and auth row", async () => {
+test("micro mode renders version and auth", async () => {
   const output = await renderHeader(50, "authenticated");
 
+  assert.match(output, /Codexa/);
+  assert.match(output, /Authenticat/);
+  assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
+});
+
+test("full mode always shows wordmark regardless of activity", async () => {
+  const output = await renderHeader(130, "authenticated");
+
+  assert.match(output, /[█╔╗╚╝═║]/);
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/\./g, "\\.")}`));
-  assert.match(output, /Auth:\s*Authenticated/);
+  assert.match(output, /Authenticated/);
 });

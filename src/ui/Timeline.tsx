@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type {
   AssistantEvent,
@@ -10,10 +10,11 @@ import type {
   UIState,
   UserPromptEvent,
 } from "../session/types.js";
-import { MemoizedTurnGroup, type TurnOpacity, resolveTurnRunPhase } from "./TurnGroup.js";
+import { MemoizedTurnGroup, type TurnOpacity } from "./TurnGroup.js";
 import { getUsableShellWidth, type Layout } from "./layout.js";
 import { getTextWidth, wrapPlainText } from "./textLayout.js";
 import { useTheme } from "./theme.js";
+import { sanitizeTerminalLines, sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 
 interface TimelineProps {
   events: TimelineEvent[];
@@ -38,8 +39,15 @@ interface EventTimelineItem {
 }
 
 export type TimelineItem = TurnTimelineItem | EventTimelineItem;
+export interface TimelineViewportState {
+  anchorIndex: number;
+  followTail: boolean;
+  unseenItems: number;
+}
 
 const MAX_SHELL_FAILURE_EXCERPT_LINES = 3;
+const MIN_TIMELINE_PAGE_SIZE = 3;
+const DEFAULT_TIMELINE_ROWS = 24;
 
 function isStandaloneEvent(event: TimelineEvent): event is StandaloneTimelineEvent {
   return event.type === "system" || event.type === "error" || event.type === "shell";
@@ -106,6 +114,49 @@ export function resolveTurnOpacity(turnIds: number[], turnId: number, activeTurn
   return "dim";
 }
 
+export function getTimelinePageSize(layoutMode: Layout["mode"], rows = DEFAULT_TIMELINE_ROWS): number {
+  const base = layoutMode === "micro" ? 4 : layoutMode === "compact" ? 5 : 6;
+  const delta = rows >= DEFAULT_TIMELINE_ROWS
+    ? Math.floor((rows - DEFAULT_TIMELINE_ROWS) / 8)
+    : -Math.ceil((DEFAULT_TIMELINE_ROWS - rows) / 6);
+  return Math.max(MIN_TIMELINE_PAGE_SIZE, base + delta);
+}
+
+export function buildTimelineWindow(totalItems: number, pageSize: number, anchorIndex: number): {
+  startIndex: number;
+  endIndex: number;
+  anchorIndex: number;
+} {
+  if (totalItems <= 0) {
+    return { startIndex: 0, endIndex: 0, anchorIndex: 0 };
+  }
+
+  const safePageSize = Math.max(MIN_TIMELINE_PAGE_SIZE, pageSize);
+  const normalizedAnchor = Math.max(0, Math.min(anchorIndex, totalItems - 1));
+  const endIndex = normalizedAnchor + 1;
+  const startIndex = Math.max(0, endIndex - safePageSize);
+
+  return {
+    startIndex,
+    endIndex,
+    anchorIndex: normalizedAnchor,
+  };
+}
+
+function findPreviousTurnBoundaryIndex(items: TimelineItem[], fromIndex: number): number | null {
+  for (let index = Math.min(items.length - 1, fromIndex); index >= 0; index -= 1) {
+    if (items[index]?.type === "turn") return index;
+  }
+  return null;
+}
+
+function findNextTurnBoundaryIndex(items: TimelineItem[], fromIndex: number): number | null {
+  for (let index = Math.max(0, fromIndex); index < items.length; index += 1) {
+    if (items[index]?.type === "turn") return index;
+  }
+  return null;
+}
+
 function PrefixedRows({
   marker,
   text,
@@ -134,8 +185,8 @@ function PrefixedRows({
 
 function getShellFailureExcerpt(event: ShellEvent): string[] {
   const source = event.stderrLines.length > 0 ? event.stderrLines : event.lines;
-  const summary = event.summary?.trim().toLowerCase();
-  return source
+  const summary = sanitizeTerminalOutput(event.summary ?? "").trim().toLowerCase();
+  return sanitizeTerminalLines(source)
     .map((line) => line.trim())
     .filter(Boolean)
     .filter((line, index) => !(index === 0 && summary && line.toLowerCase() === summary))
@@ -146,6 +197,8 @@ function StandaloneEventLine({ event, width }: { event: StandaloneTimelineEvent;
   const theme = useTheme();
 
   if (event.type === "shell") {
+    const command = sanitizeTerminalOutput(event.command);
+    const summary = sanitizeTerminalOutput(event.summary ?? "");
     const marker = event.status === "failed" ? "✕ " : "✧ ";
     const verb = event.status === "running" ? "Executing shell"
       : event.status === "completed" ? "Executed shell"
@@ -154,9 +207,9 @@ function StandaloneEventLine({ event, width }: { event: StandaloneTimelineEvent;
       event.exitCode !== null && event.status !== "running" ? `exit ${event.exitCode}` : null,
       event.durationMs !== null ? `${(event.durationMs / 1000).toFixed(2)}s` : null,
     ].filter(Boolean).join(" • ");
-    const heading = `${verb}: ${event.command}${statusBits ? `  •  ${statusBits}` : ""}`;
-    const summaryRows = event.summary && event.status !== "running"
-      ? wrapPlainText(event.summary, Math.max(1, width - 2))
+    const heading = `${verb}: ${command}${statusBits ? `  •  ${statusBits}` : ""}`;
+    const summaryRows = summary && event.status !== "running"
+      ? wrapPlainText(summary, Math.max(1, width - 2))
       : [];
     const failureExcerpt = event.status === "failed"
       ? getShellFailureExcerpt(event)
@@ -190,12 +243,12 @@ function StandaloneEventLine({ event, width }: { event: StandaloneTimelineEvent;
   }
 
   if (event.type === "error") {
-    const content = event.content.split("\n").find((line) => line.trim()) ?? "";
+    const content = sanitizeTerminalOutput(event.content).split("\n").find((line) => line.trim()) ?? "";
     return (
       <Box flexDirection="column" width="100%">
         <PrefixedRows
           marker="✕ "
-          text={event.title}
+          text={sanitizeTerminalOutput(event.title)}
           width={width}
           markerColor={theme.ERROR}
           textColor={theme.ERROR}
@@ -211,12 +264,12 @@ function StandaloneEventLine({ event, width }: { event: StandaloneTimelineEvent;
     );
   }
 
-  const firstLine = event.content.split("\n").find((line) => line.trim()) ?? "";
+  const firstLine = sanitizeTerminalOutput(event.content).split("\n").find((line) => line.trim()) ?? "";
   return (
     <Box flexDirection="column" width="100%">
       <PrefixedRows
         marker="• "
-        text={event.title}
+        text={sanitizeTerminalOutput(event.title)}
         width={width}
         markerColor={theme.INFO}
         textColor={theme.TEXT}
@@ -233,21 +286,119 @@ function StandaloneEventLine({ event, width }: { event: StandaloneTimelineEvent;
 }
 
 export function Timeline({ events, layout, uiState }: TimelineProps) {
-  const items = buildTimelineItems(events);
-  const [scrollOffset, setScrollOffset] = useState(0);
+  const theme = useTheme();
+  const items = useMemo(() => buildTimelineItems(events), [events]);
+  const pageSize = useMemo(
+    () => Math.max(MIN_TIMELINE_PAGE_SIZE, getTimelinePageSize(layout.mode, layout.rows)),
+    [layout.mode, layout.rows],
+  );
+  const lastIndex = items.length - 1;
+  const [viewport, setViewport] = useState<TimelineViewportState>({
+    anchorIndex: Math.max(0, lastIndex),
+    followTail: true,
+    unseenItems: 0,
+  });
 
-  useInput((input, key) => {
+  useEffect(() => {
+    setViewport((prev) => {
+      if (items.length === 0) {
+        return { anchorIndex: 0, followTail: true, unseenItems: 0 };
+      }
+
+      const normalizedAnchor = Math.max(0, Math.min(prev.anchorIndex, items.length - 1));
+      if (prev.followTail) {
+        if (normalizedAnchor === items.length - 1 && prev.unseenItems === 0) {
+          return prev;
+        }
+        return { anchorIndex: items.length - 1, followTail: true, unseenItems: 0 };
+      }
+
+      if (normalizedAnchor !== prev.anchorIndex) {
+        return { ...prev, anchorIndex: normalizedAnchor };
+      }
+
+      const unseenItems = Math.max(0, (items.length - 1) - normalizedAnchor);
+      if (unseenItems !== prev.unseenItems) {
+        return { ...prev, unseenItems };
+      }
+
+      return prev;
+    });
+  }, [items.length]);
+
+  useInput((_input, key) => {
+    if (items.length === 0) return;
+
     if (key.pageUp) {
-      setScrollOffset((prev) => prev + 10);
-    } else if (key.pageDown) {
-      setScrollOffset((prev) => Math.max(0, prev - 10));
+      setViewport((prev) => ({
+        anchorIndex: Math.max(pageSize - 1, prev.anchorIndex - pageSize),
+        followTail: false,
+        unseenItems: Math.max(0, lastIndex - Math.max(pageSize - 1, prev.anchorIndex - pageSize)),
+      }));
+      return;
+    }
+
+    if (key.pageDown) {
+      setViewport((prev) => {
+        const nextAnchor = Math.min(lastIndex, prev.anchorIndex + pageSize);
+        const followTail = nextAnchor >= lastIndex;
+        return {
+          anchorIndex: nextAnchor,
+          followTail,
+          unseenItems: followTail ? 0 : Math.max(0, lastIndex - nextAnchor),
+        };
+      });
+      return;
+    }
+
+    if (_input === "[") {
+      setViewport((prev) => {
+        const target = findPreviousTurnBoundaryIndex(items, prev.anchorIndex - 1);
+        if (target === null) return prev;
+        return {
+          anchorIndex: target,
+          followTail: false,
+          unseenItems: Math.max(0, lastIndex - target),
+        };
+      });
+      return;
+    }
+
+    if (_input === "]") {
+      setViewport((prev) => {
+        const target = findNextTurnBoundaryIndex(items, prev.anchorIndex + 1);
+        if (target === null) return prev;
+        const followTail = target >= lastIndex;
+        return {
+          anchorIndex: target,
+          followTail,
+          unseenItems: followTail ? 0 : Math.max(0, lastIndex - target),
+        };
+      });
+      return;
+    }
+
+    if (key.ctrl && _input === "a") {
+      const headAnchor = Math.min(lastIndex, pageSize - 1);
+      setViewport({
+        anchorIndex: headAnchor,
+        followTail: false,
+        unseenItems: Math.max(0, lastIndex - headAnchor),
+      });
+      return;
+    }
+
+    if (key.ctrl && _input === "e") {
+      setViewport({
+        anchorIndex: lastIndex,
+        followTail: true,
+        unseenItems: 0,
+      });
     }
   });
 
-  // Render all timeline items. The parent layout in app.tsx hides overflow.
-  // We use justifyContent="flex-end" to auto-follow the bottom, and paddingTop
-  // to push items down when the user scrolls up.
-  const visibleItems = items;
+  const windowState = buildTimelineWindow(items.length, pageSize, viewport.followTail ? lastIndex : viewport.anchorIndex);
+  const visibleItems = items.slice(windowState.startIndex, windowState.endIndex);
   const visibleTurnIds = visibleItems
     .filter((item): item is TurnTimelineItem => item.type === "turn")
     .map((item) => item.turnId);
@@ -258,8 +409,18 @@ export function Timeline({ events, layout, uiState }: TimelineProps) {
   if (visibleItems.length === 0) return null;
 
   return (
-    <Box flexDirection="column" overflow="hidden" flexGrow={1} justifyContent="flex-end" width="100%">
-      <Box flexShrink={0} flexDirection="column" marginBottom={-scrollOffset} paddingX={1} width="100%">
+    <Box flexDirection="column" overflow="hidden" flexGrow={1} justifyContent="flex-start" width="100%">
+      <Box paddingX={1} marginBottom={1} width="100%" justifyContent="space-between" flexDirection="row">
+        <Text color={theme.DIM}>
+          {`showing ${windowState.startIndex + 1}-${windowState.endIndex} of ${items.length}`}
+        </Text>
+        <Text color={viewport.followTail ? theme.DIM : theme.INFO}>
+          {viewport.followTail
+            ? "PgUp browse  [ ] turns  Ctrl+A/Ctrl+E"
+            : `${viewport.unseenItems} newer • PgDn/Ctrl+E to follow`}
+        </Text>
+      </Box>
+      <Box flexShrink={0} flexDirection="column" paddingX={1} width="100%">
         {visibleItems.map((item, index) => (
           <Box key={item.type === "turn" ? `turn-${item.turnId}` : `event-${item.event.id}`} marginBottom={index === visibleItems.length - 1 ? 0 : 1} width="100%" flexShrink={0}>
             {item.type === "turn" && item.user ? (

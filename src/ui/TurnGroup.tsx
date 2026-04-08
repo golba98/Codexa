@@ -5,9 +5,7 @@ import { AgentBlock } from "./AgentBlock.js";
 import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
 import { useTheme } from "./theme.js";
-import { getUsableShellWidth } from "./layout.js";
-
-import { Panel } from "./Panel.js";
+import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 
 export type TurnOpacity = "active" | "recent" | "dim";
 
@@ -64,18 +62,14 @@ function UserSummary({
   const rightMeta = durationText ? `${statusText} • ${durationText}` : statusText;
 
   return (
-    <Box flexDirection="column" marginBottom={1} width="100%">
-      <Panel
-        cols={Math.max(1, getUsableShellWidth(cols, 2))}
-        title="USER INPUT"
-        rightTitle={rightMeta}
-        borderColor={dim ? theme.BORDER_SUBTLE : theme.BORDER_ACTIVE}
-        titleColor={metaColor}
-      >
+    <Box flexDirection="column" marginBottom={0} width="100%" paddingLeft={1}>
+      <Box flexDirection="row" justifyContent="space-between">
+        <Text color={dim ? theme.DIM : theme.ACCENT} bold>{"❯ "}</Text>
         <Text color={textColor} bold wrap="wrap">
-          {`> ${prompt}`}
+          {sanitizeTerminalOutput(prompt)}
         </Text>
-      </Panel>
+        <Text color={theme.DIM}>{rightMeta}</Text>
+      </Box>
     </Box>
   );
 }

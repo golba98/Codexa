@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  advanceTerminalViewport,
   clampVisualText,
+  createTerminalViewport,
   createLayoutSnapshot,
   getShellHeight,
   getShellWidth,
@@ -48,6 +50,35 @@ test("preserves the previous layout when resize values are invalid", () => {
   const next = createLayoutSnapshot(0, -1, previous);
 
   assert.deepEqual(next, previous);
+});
+
+test("marks undersized restore samples as unstable without discarding the last stable layout", () => {
+  const stable = createTerminalViewport(120, 40);
+  const invalidSamples = [
+    advanceTerminalViewport(stable, 1, 1),
+    advanceTerminalViewport(stable, 2, 1),
+    advanceTerminalViewport(stable, 1, 24),
+    advanceTerminalViewport(stable, 24, 1),
+  ];
+
+  for (const sample of invalidSamples) {
+    assert.equal(sample.unstable, true);
+    assert.equal(sample.cols, stable.cols);
+    assert.equal(sample.rows, stable.rows);
+    assert.equal(sample.layoutEpoch, stable.layoutEpoch);
+  }
+});
+
+test("bumps the layout epoch when the terminal recovers from an unstable restore", () => {
+  const stable = createTerminalViewport(120, 40);
+  const unstable = advanceTerminalViewport(stable, 1, 1);
+  const recovered = advanceTerminalViewport(unstable, 100, 30);
+
+  assert.equal(unstable.unstable, true);
+  assert.equal(recovered.unstable, false);
+  assert.equal(recovered.cols, 100);
+  assert.equal(recovered.rows, 30);
+  assert.equal(recovered.layoutEpoch, stable.layoutEpoch + 1);
 });
 
 test("measures visual width instead of raw string length", () => {

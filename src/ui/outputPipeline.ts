@@ -1,4 +1,5 @@
-import { stripNonPrintableControls, isNoiseLine } from "../core/providers/codexTranscript.js";
+import { isNoiseLine } from "../core/providers/codexTranscript.js";
+import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 import { parseMarkdown, type Segment } from "./Markdown.js";
 
 /**
@@ -7,13 +8,7 @@ import { parseMarkdown, type Segment } from "./Markdown.js";
  */
 export function sanitizeOutput(raw: string): string {
   if (!raw) return "";
-
-  let clean = stripNonPrintableControls(raw);
-  // Strip UI chrome and block artifacts that may have leaked.
-  clean = clean.replace(/[█▓▒░║╗╝╚╔═╦╩╠╣╬]/g, "");
-  // Strip stray status lines or prompt headers if they slipped past the parser.
-  clean = clean.replace(/^(✧\s*(Analysing|Executing|Streaming).*|Task:|user|assistant)\s*$/gm, "");
-
+  const clean = sanitizeTerminalOutput(raw, { preserveTabs: false, tabSize: 2 });
   return clean;
 }
 

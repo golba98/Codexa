@@ -8,12 +8,15 @@
  *   micro    < 60       → no logo, one-line header, ultra-compact composer
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStdout } from "ink";
 import stringWidth from "string-width";
 
 export const BREAKPOINT_FULL    = 110; // ≥ this → full
 export const BREAKPOINT_COMPACT =  60; // ≥ this → compact; below → micro
+export const MIN_VIEWPORT_COLS = 20;
+export const MIN_VIEWPORT_ROWS = 10;
+export const RESTORE_SETTLE_MS = 100;
 const DEFAULT_COLUMNS = 120;
 const DEFAULT_ROWS = 24;
 
@@ -23,6 +26,13 @@ export interface Layout {
   cols: number;
   rows: number;
   mode: LayoutMode;
+}
+
+export interface TerminalViewport extends Layout {
+  rawCols?: number;
+  rawRows?: number;
+  unstable: boolean;
+  layoutEpoch: number;
 }
 
 function isValidDimension(value: number | undefined): value is number {
@@ -35,6 +45,13 @@ export function normalizeDimension(value: number | undefined, fallback: number):
   }
 
   return Math.floor(value);
+}
+
+export function isRenderableViewport(cols: number | undefined, rows: number | undefined): boolean {
+  return isValidDimension(cols)
+    && isValidDimension(rows)
+    && Math.floor(cols) >= MIN_VIEWPORT_COLS
+    && Math.floor(rows) >= MIN_VIEWPORT_ROWS;
 }
 
 /**
@@ -108,29 +125,92 @@ function snapshot(stdout: NodeJS.WriteStream, fallback?: Layout): Layout {
   return createLayoutSnapshot(stdout.columns, stdout.rows, fallback);
 }
 
-/** React hook — returns live layout that updates on every terminal resize. */
-export function useLayout(): Layout {
+export function createTerminalViewport(
+  cols: number | undefined,
+  rows: number | undefined,
+  fallback?: TerminalViewport,
+): TerminalViewport {
+  const fallbackLayout = fallback
+    ? { cols: fallback.cols, rows: fallback.rows, mode: fallback.mode }
+    : undefined;
+  const unstable = !isRenderableViewport(cols, rows);
+  const stableLayout = unstable && fallbackLayout
+    ? fallbackLayout
+    : createLayoutSnapshot(cols, rows, fallbackLayout);
+
+  return {
+    ...stableLayout,
+    rawCols: cols,
+    rawRows: rows,
+    unstable,
+    layoutEpoch: fallback?.layoutEpoch ?? 0,
+  };
+}
+
+export function advanceTerminalViewport(
+  current: TerminalViewport,
+  cols: number | undefined,
+  rows: number | undefined,
+): TerminalViewport {
+  const next = createTerminalViewport(cols, rows, current);
+  if (!next.unstable && current.unstable) {
+    return {
+      ...next,
+      layoutEpoch: current.layoutEpoch + 1,
+    };
+  }
+
+  return {
+    ...next,
+    layoutEpoch: current.layoutEpoch,
+  };
+}
+
+/** React hook — returns live layout that ignores transient invalid restore sizes. */
+export function useTerminalViewport(): TerminalViewport {
   const { stdout } = useStdout();
-  const [layout, setLayout] = useState<Layout>(() => snapshot(stdout));
+  const [viewport, setViewport] = useState<TerminalViewport>(() => createTerminalViewport(stdout.columns, stdout.rows));
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const onResize = () => {
-      setLayout((current) => {
-        const nextLayout = snapshot(stdout, current);
+    const commit = () => {
+      setViewport((current) => {
+        const nextViewport = advanceTerminalViewport(current, stdout.columns, stdout.rows);
         if (
-          current.cols === nextLayout.cols &&
-          current.rows === nextLayout.rows &&
-          current.mode === nextLayout.mode
+          current.cols === nextViewport.cols &&
+          current.rows === nextViewport.rows &&
+          current.mode === nextViewport.mode &&
+          current.unstable === nextViewport.unstable &&
+          current.layoutEpoch === nextViewport.layoutEpoch &&
+          current.rawCols === nextViewport.rawCols &&
+          current.rawRows === nextViewport.rawRows
         ) {
           return current;
         }
 
-        return nextLayout;
+        return nextViewport;
       });
     };
+
+    const onResize = () => {
+      commit();
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+      }
+      settleTimerRef.current = setTimeout(() => {
+        settleTimerRef.current = null;
+        commit();
+      }, RESTORE_SETTLE_MS);
+    };
+
     stdout.on("resize", onResize);
-    return () => { stdout.off("resize", onResize); };
+    return () => {
+      stdout.off("resize", onResize);
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+      }
+    };
   }, [stdout]);
 
-  return layout;
+  return viewport;
 }
