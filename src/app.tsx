@@ -136,7 +136,8 @@ export function App() {
   const [conversationChars, setConversationChars] = useState(0);
   const [modelSpecs, setModelSpecs] = useState<Partial<Record<AvailableModel, ModelSpec>>>({});
   const { stdout } = useStdout();
-  const mouseCapture = screen === "main";
+  const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
+  const mouseCapture = mouseOverride ?? (screen === "main");
 
   useEffect(() => {
     // \x1b[?1000h: Enable basic mouse reporting (click/scroll)
@@ -1098,12 +1099,17 @@ export function App() {
         case "open_auth_panel":
           openAuthPanel();
           return;
-        case "mouse_toggle":
+        case "mouse_toggle": {
+          const nextMouse = !(mouseOverride ?? (screen === "main"));
+          setMouseOverride(nextMouse);
           appendSystemEvent(
             "Mouse mode updated",
-            "Transcript wheel browsing is now owned by Codexa on the main screen. Native terminal mouse selection is restored when you leave the chat screen.",
+            nextMouse
+              ? "Mouse capture enabled — wheel scrolling active. Use Shift+click+drag for text selection."
+              : "Mouse capture disabled — native text selection active. Use PageUp/PageDown/Home/End to scroll.",
           );
           return;
+        }
         case "copy":
           void handleCopy();
           return;

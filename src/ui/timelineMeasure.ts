@@ -626,7 +626,7 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
   const assistant = item.item.assistant;
   const streaming = item.renderState.runPhase === "streaming";
   const dim = item.renderState.opacity !== "active";
-  const contentWidth = Math.max(1, width - 4);
+  const contentWidth = Math.max(1, width);
   const rawContent = assistant?.content ?? "";
   const sanitized = streaming ? sanitizeStreamChunk(rawContent) : sanitizeOutput(rawContent);
   const normalized = normalizeOutput(sanitized);
@@ -674,18 +674,37 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
     ? `${runStatus} • ${formatDuration(run.durationMs)}`
     : runStatus;
 
-  return buildDashCardRows({
-    keyPrefix: `${item.key}-agent`,
-    width,
-    title: heading,
-    rightBadge,
-    borderTone: dim
-      ? "borderSubtle"
-      : streaming
-        ? "borderActive"
-        : "borderSubtle",
-    contentRows,
+  const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
+
+  const rows: TimelineRow[] = [];
+
+  // 1. Add top margin for separation
+  rows.push(createBlankRow(`${item.key}-agent-top-gap`, width));
+
+  // 2. Build prominent execution block header
+  const title = ` EXECUTION: ${heading} `;
+  const rightLabel = rightBadge ? ` ${rightBadge} ` : "";
+  const dashCount = Math.max(0, width - 2 - getTextWidth(title) - getTextWidth(rightLabel));
+  const topRowSpans: TimelineRowSpan[] = [
+    createSpan("──", borderTone),
+    createSpan(title, "text", { bold: true }),
+    createSpan("─".repeat(dashCount), borderTone),
+    ...(rightBadge ? [createSpan(rightLabel, "dim")] : []),
+  ];
+  rows.push(createRow(`${item.key}-agent-header`, topRowSpans, width));
+
+  // 3. Add header content margin
+  rows.push(createBlankRow(`${item.key}-agent-header-gap`, width));
+
+  // 4. Add the actual content rows
+  contentRows.forEach((row, index) => {
+    rows.push(createRow(`${item.key}-agent-content-${index}`, padSpansToWidth(row, width), width));
   });
+
+  // 5. Add bottom margin
+  rows.push(createBlankRow(`${item.key}-agent-bottom-gap`, width));
+
+  return rows;
 }
 
 function buildFileScanRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number): TimelineRow[] {
@@ -912,6 +931,18 @@ function applyTurnOpacity(rows: TimelineRow[], opacity: "active" | "recent" | "d
     return rows;
   }
 
+  if (opacity === "recent") {
+    return rows.map((row) => ({
+      ...row,
+      spans: row.spans.map((span) => {
+        if (span.tone === "borderActive") {
+          return { ...span, tone: "borderSubtle" };
+        }
+        return { ...span };
+      }),
+    }));
+  }
+
   return rows.map((row) => ({
     ...row,
     spans: row.spans.map((span) => {
@@ -944,15 +975,17 @@ function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, widt
     if (item.renderState.runPhase === "thinking") {
       rows.push(...buildThinkingRows(item.item.run, width));
     } else {
+      // Reordered: First File Scans and Activity (Process)
+      if (item.item.run.status !== "running" && item.item.run.touchedFileCount > 0) {
+        rows.push(...buildFileScanRows(item, width));
+      }
+
+      if (item.item.run.status !== "running" && item.item.run.toolActivities.length > 0) {
+        rows.push(...buildActivityRows(item, width));
+      }
+
+      // Then the Agent response (Result)
       rows.push(...buildAgentRows(item, width));
-    }
-
-    if (item.item.run.status !== "running" && item.item.run.touchedFileCount > 0) {
-      rows.push(...buildFileScanRows(item, width));
-    }
-
-    if (item.item.run.status !== "running" && item.item.run.toolActivities.length > 0) {
-      rows.push(...buildActivityRows(item, width));
     }
   }
 
