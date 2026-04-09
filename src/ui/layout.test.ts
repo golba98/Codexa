@@ -10,6 +10,7 @@ import {
   getUsableShellWidth,
   getVisualWidth,
 } from "./layout.js";
+import { measureTopHeaderRows } from "./TopHeader.js";
 
 test("leaves a one-column gutter to avoid edge-triggered scrollbars", () => {
   assert.equal(getShellWidth(120), 119);
@@ -43,6 +44,11 @@ test("keeps breakpoint modes stable at the edges", () => {
   assert.equal(createLayoutSnapshot(109, 24).mode, "compact");
   assert.equal(createLayoutSnapshot(60, 24).mode, "compact");
   assert.equal(createLayoutSnapshot(59, 24).mode, "micro");
+});
+
+test("measures the header rows for full and compact layouts", () => {
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(120, 30)), 6);
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 1);
 });
 
 test("preserves the previous layout when resize values are invalid", () => {

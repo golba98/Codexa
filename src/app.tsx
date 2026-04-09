@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { spawn } from "child_process";
-import { Box, Text, useApp, useFocusManager } from "ink";
+import { Box, Text, useApp, useFocusManager, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
 import { loadSettings, saveSettings } from "./config/persistence.js";
 import {
@@ -47,13 +47,13 @@ import {
   createModelSpecService,
   type ModelSpec,
 } from "./core/modelSpecs.js";
-import { createWorkspaceActivityTracker } from "./core/workspaceActivity.js";
+import { createWorkspaceActivityTracker, type RunFileActivity } from "./core/workspaceActivity.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProvider } from "./core/providers/types.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
-import type { AssistantEvent, RunEvent, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
+import type { RunEvent, RunToolActivity, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
 import {
   buildFollowUpPrompt,
   createRunEvent,
@@ -64,12 +64,11 @@ import {
 import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
 import { AuthPanel } from "./ui/AuthPanel.js";
 import { BackendPicker } from "./ui/BackendPicker.js";
-import { MemoizedBottomComposer } from "./ui/BottomComposer.js";
+import { measureBottomComposerRows, MemoizedBottomComposer } from "./ui/BottomComposer.js";
 import { useTerminalViewport } from "./ui/layout.js";
 import { ModelPicker } from "./ui/ModelPicker.js";
 import { ModePicker } from "./ui/ModePicker.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
-import { RunFooter } from "./ui/RunFooter.js";
 import { ThemePicker } from "./ui/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
 import { ThemeProvider, THEMES } from "./ui/theme.js";
@@ -86,7 +85,7 @@ import { AppShell } from "./ui/AppShell.js";
 
 let nextEventId = 0;
 let nextTurnId = 0;
-const ASSISTANT_DELTA_FLUSH_MS = 45;
+const LIVE_UPDATE_FLUSH_MS = 50;
 
 function createEventId(): number {
   return nextEventId++;
@@ -136,6 +135,21 @@ export function App() {
   // Running character total across the conversation — used to estimate token usage
   const [conversationChars, setConversationChars] = useState(0);
   const [modelSpecs, setModelSpecs] = useState<Partial<Record<AvailableModel, ModelSpec>>>({});
+  const { stdout } = useStdout();
+  const mouseCapture = screen === "main";
+
+  useEffect(() => {
+    // \x1b[?1000h: Enable basic mouse reporting (click/scroll)
+    // \x1b[?1006h: Enable SGR extended mouse reporting (high-res coords)
+    if (mouseCapture) {
+      stdout.write("\x1b[?1000h\x1b[?1006h");
+    } else {
+      stdout.write("\x1b[?1000l\x1b[?1006l");
+    }
+    return () => {
+      stdout.write("\x1b[?1000l\x1b[?1006l");
+    };
+  }, [mouseCapture, stdout]);
 
   const cleanupRef = useRef<(() => void) | null>(null);
   const isMountedRef = useRef(true);
@@ -152,6 +166,27 @@ export function App() {
   const currentModelSpec = modelSpecs[model] ?? createLoadingModelSpec(model);
   const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
   const busy = isUiBusy(uiState);
+  const composerRows = useMemo(() => measureBottomComposerRows({
+    layout: terminalLayout,
+    uiState,
+    mode,
+    model,
+    reasoningLevel,
+    tokensUsed: estimateTokens(conversationChars),
+    modelSpec: currentModelSpec,
+    value: inputValue,
+    cursor,
+  }), [
+    conversationChars,
+    currentModelSpec,
+    cursor,
+    inputValue,
+    mode,
+    model,
+    reasoningLevel,
+    terminalLayout,
+    uiState,
+  ]);
 
   const provider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
 
@@ -577,30 +612,74 @@ export function App() {
     activeTurnIdRef.current = null;
     dispatchSession({ type: "UI_ACTION", action: { type: "SHELL_STARTED", shellId } });
 
+    let pendingStdout: string[] = [];
+    let pendingStderr: string[] = [];
+    let shellFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushShellLines = () => {
+      if (shellFlushTimer) {
+        clearTimeout(shellFlushTimer);
+        shellFlushTimer = null;
+      }
+
+      const stdoutLines = pendingStdout;
+      const stderrLines = pendingStderr;
+      pendingStdout = [];
+      pendingStderr = [];
+
+      if (stdoutLines.length === 0 && stderrLines.length === 0) {
+        return;
+      }
+
+      startTransition(() => {
+        if (stdoutLines.length > 0) {
+          dispatchSession({ type: "UPDATE_SHELL_LINES", shellId, stream: "stdout", lines: stdoutLines });
+        }
+        if (stderrLines.length > 0) {
+          dispatchSession({ type: "UPDATE_SHELL_LINES", shellId, stream: "stderr", lines: stderrLines });
+        }
+      });
+    };
+
+    const scheduleShellFlush = () => {
+      if (shellFlushTimer) return;
+      shellFlushTimer = setTimeout(() => {
+        shellFlushTimer = null;
+        flushShellLines();
+      }, LIVE_UPDATE_FLUSH_MS);
+    };
+
     const runner = runCommand(
       { executable: safeCommand, args: [], shell: true, cwd: workspaceRoot },
       {
         onStdout: (text) => {
           const lines = sanitizeTerminalLines(text.split(/\r?\n/));
           if (lines.length > 0) {
-            dispatchSession({ type: "UPDATE_SHELL_LINES", shellId, stream: "stdout", lines });
+            pendingStdout.push(...lines);
+            scheduleShellFlush();
           }
         },
         onStderr: (text) => {
           const lines = sanitizeTerminalLines(text.split(/\r?\n/));
           if (lines.length > 0) {
-            dispatchSession({ type: "UPDATE_SHELL_LINES", shellId, stream: "stderr", lines });
+            pendingStderr.push(...lines);
+            scheduleShellFlush();
           }
         },
       },
     );
 
     cleanupRef.current = () => {
+      if (shellFlushTimer) {
+        clearTimeout(shellFlushTimer);
+        shellFlushTimer = null;
+      }
       runner.cancel();
     };
 
     void runner.result.then((result) => {
       if (activeRunIdRef.current !== shellId) return;
+      flushShellLines();
       activeRunIdRef.current = null;
       cleanupRef.current = null;
       focusManager.focus(FOCUS_IDS.composer);
@@ -710,8 +789,6 @@ export function App() {
       prompt: safeDisplayPrompt,
       turnId,
     };
-    appendStaticEvent(userEvent);
-
     setConversationChars((count) => count + safeProviderPrompt.length);
 
     const runId = createEventId();
@@ -719,6 +796,7 @@ export function App() {
     activeTurnIdRef.current = turnId;
     dispatchSession({ type: "UI_ACTION", action: { type: "PROMPT_RUN_STARTED", turnId } });
     dispatchSession({ type: "SET_ACTIVE_EVENTS", events: [
+      userEvent,
       {
         ...createRunEvent({
           id: runId,
@@ -738,50 +816,79 @@ export function App() {
         rootDir: workspaceRoot,
         onActivity: (activity) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-          dispatchSession({ type: "RUN_APPEND_ACTIVITY", runId, activity });
+          pendingActivity.push(...activity);
+          scheduleLiveFlush();
         },
       })
       : null;
 
     let pendingAssistantDelta = "";
+    let pendingProgressLines: string[] = [];
+    let pendingActivity: RunFileActivity[] = [];
+    const pendingToolActivities = new Map<string, RunToolActivity>();
     let hasAssistantDelta = false;
-    let assistantFlushTimer: ReturnType<typeof setTimeout> | null = null;
-    const flushAssistantDelta = () => {
-      if (!pendingAssistantDelta || !isCurrentRun(activeRunIdRef.current, runId)) {
+    let liveFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushLiveUpdates = () => {
+      if (liveFlushTimer) {
+        clearTimeout(liveFlushTimer);
+        liveFlushTimer = null;
+      }
+
+      if (!isCurrentRun(activeRunIdRef.current, runId)) {
         pendingAssistantDelta = "";
+        pendingProgressLines = [];
+        pendingActivity = [];
+        pendingToolActivities.clear();
         return;
       }
 
+      const activity = pendingActivity;
+      const progressLines = pendingProgressLines;
+      const toolActivities = [...pendingToolActivities.values()];
       const chunk = pendingAssistantDelta;
+      pendingActivity = [];
+      pendingProgressLines = [];
       pendingAssistantDelta = "";
-      dispatchSession({
-        type: "RUN_APPEND_ASSISTANT_DELTA",
-        turnId,
-        chunk,
-        eventFactory: () => ({
-          id: createEventId(),
-          type: "assistant",
-          createdAt: Date.now(),
-          content: chunk,
-          turnId,
-        }),
+      pendingToolActivities.clear();
+
+      if (activity.length === 0 && progressLines.length === 0 && toolActivities.length === 0 && !chunk) {
+        return;
+      }
+
+      startTransition(() => {
+        if (activity.length > 0) {
+          dispatchSession({ type: "RUN_APPEND_ACTIVITY", runId, activity });
+        }
+        if (progressLines.length > 0) {
+          dispatchSession({ type: "RUN_APPEND_PROGRESS", runId, lines: progressLines });
+        }
+        for (const toolActivity of toolActivities) {
+          dispatchSession({ type: "RUN_UPSERT_TOOL_ACTIVITY", runId, activity: toolActivity });
+        }
+        if (chunk) {
+          dispatchSession({
+            type: "RUN_APPEND_ASSISTANT_DELTA",
+            turnId,
+            chunk,
+            eventFactory: () => ({
+              id: createEventId(),
+              type: "assistant",
+              createdAt: Date.now(),
+              content: chunk,
+              turnId,
+            }),
+          });
+        }
       });
     };
 
-    const flushAssistantDeltaNow = () => {
-      if (assistantFlushTimer) {
-        clearTimeout(assistantFlushTimer);
-        assistantFlushTimer = null;
-      }
-      flushAssistantDelta();
-    };
-
-    const scheduleAssistantFlush = () => {
-      if (assistantFlushTimer) return;
-      assistantFlushTimer = setTimeout(() => {
-        assistantFlushTimer = null;
-        flushAssistantDelta();
-      }, ASSISTANT_DELTA_FLUSH_MS);
+    const scheduleLiveFlush = () => {
+      if (liveFlushTimer) return;
+      liveFlushTimer = setTimeout(() => {
+        liveFlushTimer = null;
+        flushLiveUpdates();
+      }, LIVE_UPDATE_FLUSH_MS);
     };
 
     const stopProviderRun = provider.run(
@@ -794,22 +901,24 @@ export function App() {
           if (!safeChunk) return;
           hasAssistantDelta = true;
           pendingAssistantDelta += safeChunk;
-          scheduleAssistantFlush();
+          scheduleLiveFlush();
         },
         onToolActivity: (activity) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-          dispatchSession({ type: "RUN_UPSERT_TOOL_ACTIVITY", runId, activity });
+          const existing = pendingToolActivities.get(activity.id);
+          pendingToolActivities.set(activity.id, existing ? { ...existing, ...activity } : activity);
+          scheduleLiveFlush();
         },
         onResponse: (response) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-          flushAssistantDeltaNow();
+          flushLiveUpdates();
           const safeResponse = sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 });
           setConversationChars((count) => count + safeResponse.length);
           void finalizePromptRun(runId, turnId, "completed", undefined, safeResponse);
         },
         onError: (message, rawOutput) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-          flushAssistantDeltaNow();
+          flushLiveUpdates();
           const safeMessage = sanitizeTerminalOutput(message);
           const safeRawOutput = sanitizeTerminalOutput(rawOutput ?? "");
           const combinedOutput = [safeMessage, safeRawOutput].filter(Boolean).join("\n");
@@ -837,13 +946,14 @@ export function App() {
           const currentUiState = uiStateRef.current;
           const isRespondingForTurn = currentUiState.kind === "RESPONDING" && currentUiState.turnId === turnId;
           if (hasAssistantDelta || isRespondingForTurn) return;
-          dispatchSession({ type: "RUN_APPEND_PROGRESS", runId, lines: [safeLine] });
+          pendingProgressLines.push(safeLine);
+          scheduleLiveFlush();
         },
       },
     );
 
     cleanupRef.current = () => {
-      flushAssistantDeltaNow();
+      flushLiveUpdates();
       activityTracker?.stop();
       stopProviderRun?.();
     };
@@ -851,7 +961,6 @@ export function App() {
     return true;
   }, [
     appendErrorEvent,
-    appendStaticEvent,
     appendSystemEvent,
     authStatus.state,
     backend,
@@ -989,6 +1098,12 @@ export function App() {
         case "open_auth_panel":
           openAuthPanel();
           return;
+        case "mouse_toggle":
+          appendSystemEvent(
+            "Mouse mode updated",
+            "Transcript wheel browsing is now owned by Codexa on the main screen. Native terminal mouse selection is restored when you leave the chat screen.",
+          );
+          return;
         case "copy":
           void handleCopy();
           return;
@@ -1061,7 +1176,8 @@ export function App() {
         screen={screen}
         authState={authStatus.state}
         workspaceRoot={workspaceRoot}
-        events={[...staticEvents, ...activeEvents]}
+        staticEvents={staticEvents}
+        activeEvents={activeEvents}
         uiState={uiState}
         panel={
           <>
@@ -1183,7 +1299,7 @@ export function App() {
             onQuit={handleQuit}
           />
         )}
-        runFooter={<RunFooter uiState={uiState} onCancel={handleCancel} onQuit={handleQuit} />}
+        composerRows={composerRows}
         panelHint={screen !== "main" ? (
           <Box marginTop={1} paddingX={1}>
             <Text color={activeTheme.DIM}>Close the active panel with Esc to return to the composer.</Text>

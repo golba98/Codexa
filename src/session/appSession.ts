@@ -171,6 +171,9 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       };
     }
     case "FINALIZE_RUN": {
+      const userEvent = state.activeEvents.find(
+        (event): event is UserPromptEvent => event.type === "user" && event.turnId === action.turnId,
+      );
       const runEvent = state.activeEvents.find(
         (event): event is RunEvent => event.type === "run" && event.id === action.runId,
       );
@@ -180,7 +183,8 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
 
       const remainingEvents = state.activeEvents.filter((event) =>
         !(event.type === "run" && event.id === action.runId)
-        && !(event.type === "assistant" && event.turnId === action.turnId),
+        && !(event.type === "assistant" && event.turnId === action.turnId)
+        && !(event.type === "user" && event.turnId === action.turnId),
       );
 
       if (!runEvent) {
@@ -209,7 +213,9 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
           ? action.response?.trim() ? action.response : assistantEvent?.content ?? ""
           : assistantEvent?.content?.trim() ? assistantEvent.content : "";
 
-      const additions: TimelineEvent[] = [finalizedRun];
+      const additions: TimelineEvent[] = [];
+      if (userEvent) additions.push(userEvent);
+      additions.push(finalizedRun);
       if (assistantContent.trim()) {
         additions.push(
           assistantEvent
@@ -253,7 +259,8 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         activeEvents: state.activeEvents.filter((event) =>
           !(event.type === "run" && event.id === action.runId)
           && !(event.type === "assistant" && action.turnId !== null && action.turnId !== undefined && event.turnId === action.turnId)
-          && !(event.type === "shell" && event.id === action.runId),
+          && !(event.type === "shell" && event.id === action.runId)
+          && !(event.type === "user" && action.turnId !== null && action.turnId !== undefined && event.turnId === action.turnId),
         ),
       };
     case "UI_ACTION":

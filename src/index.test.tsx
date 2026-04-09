@@ -152,6 +152,8 @@ test("hard-repaints once when resize recovers from invalid dimensions", async ()
   harness.stdout.emit("resize");
 
   assert.equal(harness.stdout.clearCalls, 1);
+  assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
+  assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
   assert.match(harness.stdout.writes, /\x1b\[2J\x1b\[3J\x1b\[H/);
 
@@ -189,7 +191,11 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
 
   harness.registeredHandlers[0]!();
   assert.equal(harness.stdout.listenerCount("resize"), 0);
+  assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
+  assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
+  assert.match(harness.stdout.writes, /\x1b\[\?1000l/);
+  assert.match(harness.stdout.writes, /\x1b\[\?1006l/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004l/);
 
   // Resolving after explicit cleanup should be idempotent.

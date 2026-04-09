@@ -1,7 +1,11 @@
 import React from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import type { UIState } from "../session/types.js";
 import { useTheme } from "./theme.js";
+
+export function measureRunFooterRows(): number {
+  return 3;
+}
 
 export function getRunFooterStatus(uiState: UIState): string {
   if (uiState.kind === "THINKING") return "Analysing request...";
@@ -16,18 +20,8 @@ interface RunFooterProps {
   onQuit: () => void;
 }
 
-export function RunFooter({ uiState, onCancel, onQuit }: RunFooterProps) {
+export function RunFooter({ uiState }: RunFooterProps) {
   const theme = useTheme();
-
-  useInput((input, key) => {
-    if (key.ctrl && (input === "c" || input === "q")) {
-      onQuit();
-      return;
-    }
-    if (key.escape) {
-      onCancel();
-    }
-  }, { isActive: true });
 
   return (
     <Box flexDirection="column" paddingBottom={1} width="100%">

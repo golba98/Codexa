@@ -21,6 +21,10 @@ interface TopHeaderProps {
   layout: Layout;
 }
 
+export function measureTopHeaderRows(layout: Layout): number {
+  return layout.mode === "full" ? WORDMARK.length : 1;
+}
+
 /** Truncate a path to fit within maxWidth, keeping the end and prefixing with "... " if needed */
 function truncatePath(path: string, maxWidth: number): string {
   if (maxWidth <= 4 || path.length <= maxWidth) return path;

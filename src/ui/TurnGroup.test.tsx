@@ -127,8 +127,9 @@ test("unmounts thinking view before streaming view appears for the same turn", a
         user={user}
         run={run}
         assistant={null}
-        uiState={{ kind: "THINKING", turnId }}
         opacity="active"
+        question={null}
+        runPhase="thinking"
         streamPreviewRows={8}
         streamMode="assistant-first"
       />
@@ -148,8 +149,9 @@ test("unmounts thinking view before streaming view appears for the same turn", a
         user={user}
         run={run}
         assistant={assistant}
-        uiState={{ kind: "RESPONDING", turnId }}
         opacity="active"
+        question={null}
+        runPhase="streaming"
         streamPreviewRows={8}
         streamMode="assistant-first"
       />
@@ -187,8 +189,9 @@ test("snaps cleanly from streaming cursor view to completion view", async () => 
         user={user}
         run={running}
         assistant={assistant}
-        uiState={{ kind: "RESPONDING", turnId }}
         opacity="active"
+        question={null}
+        runPhase="streaming"
         streamPreviewRows={6}
         streamMode="assistant-first"
       />
@@ -208,8 +211,9 @@ test("snaps cleanly from streaming cursor view to completion view", async () => 
         user={user}
         run={{ ...running, status: "completed", durationMs: 1200 }}
         assistant={assistant}
-        uiState={{ kind: "IDLE" }}
         opacity="active"
+        question={null}
+        runPhase="final"
         streamPreviewRows={6}
         streamMode="assistant-first"
       />

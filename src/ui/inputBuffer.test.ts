@@ -87,6 +87,14 @@ test("reclamps scroll state when resize reduces the wrapped row count", () => {
   assert.deepEqual(wideViewport.visibleRows.map((row) => row.text), ["alpha beta gamma delta epsilon"]);
 });
 
+test("strips leaked SGR mouse escape sequence fragments from input", () => {
+  const leaked = "[<0;26;24M[<0;26;24m";
+  assert.equal(normalizeInputText(leaked), "");
+
+  const partial = "text[<0;26;24Mmore";
+  assert.equal(normalizeInputText(partial), "textmore");
+});
+
 test("robustness: rapid sequential typing and deletion", () => {
   let state = { value: "", cursorOffset: 0 };
   

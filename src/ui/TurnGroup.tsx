@@ -18,8 +18,9 @@ interface TurnGroupProps {
   user: UserPromptEvent;
   run: RunEvent | null;
   assistant: AssistantEvent | null;
-  uiState: UIState;
   opacity: TurnOpacity;
+  question: string | null;
+  runPhase: TurnRunPhase;
   streamPreviewRows: number;
   streamMode: "assistant-first";
 }
@@ -33,26 +34,26 @@ function formatDuration(ms: number): string {
 
 function UserInputCard({
   prompt,
-  run,
+  status,
   cols,
   dim,
 }: {
   prompt: string;
-  run: RunEvent | null;
+  status: RunEvent["status"] | null;
   cols: number;
   dim: boolean;
 }) {
   const theme = useTheme();
 
-  const statusBadge = run
-    ? run.status === "running"
+  const statusBadge = status
+    ? status === "running"
       ? "active"
-      : run.status === "completed"
+      : status === "completed"
         ? "done"
-        : run.status
+        : status
     : "queued";
 
-  const borderColor = dim ? theme.BORDER_SUBTLE : (run?.status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE);
+  const borderColor = dim ? theme.BORDER_SUBTLE : (status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE);
   const contentWidth = Math.max(1, cols - 7); // DashCard side borders (│ + space each side = 4) + cols-3 adjustment
   const lines = wrapPlainText(sanitizeTerminalOutput(prompt), contentWidth);
 
@@ -67,23 +68,30 @@ function UserInputCard({
   );
 }
 
+const MemoizedUserInputCard = memo(UserInputCard, (prev, next) => (
+  prev.prompt === next.prompt
+  && prev.status === next.status
+  && prev.cols === next.cols
+  && prev.dim === next.dim
+));
+
 // ─── Task Status Line ────────────────────────────────────────────────────────
 
 function TaskStatusLine({
-  run,
-  uiState,
-  turnId,
+  status,
+  durationMs,
+  runPhase,
   cols,
 }: {
-  run: RunEvent;
-  uiState: UIState;
-  turnId: number;
+  status: RunEvent["status"];
+  durationMs: number | null;
+  runPhase: TurnRunPhase;
   cols: number;
 }) {
   const theme = useTheme();
   const [frameIndex, setFrameIndex] = useState(0);
 
-  const isActive = run.status === "running";
+  const isActive = status === "running";
 
   useEffect(() => {
     if (!isActive) return;
@@ -96,10 +104,10 @@ function TaskStatusLine({
   let phaseText: string;
   let badge: string;
 
-  if (run.status !== "running") {
+  if (status !== "running") {
     phaseText = "Complete";
-    badge = run.status === "failed" ? "failed" : "done";
-  } else if (uiState.kind === "RESPONDING" && uiState.turnId === turnId) {
+    badge = status === "failed" ? "failed" : "done";
+  } else if (runPhase === "streaming") {
     phaseText = "Streaming response ...";
     badge = "active";
   } else {
@@ -108,7 +116,7 @@ function TaskStatusLine({
   }
 
   const spinner = isActive ? SPINNER_FRAMES[frameIndex] + " " : "";
-  const durationText = run.durationMs != null ? ` ${formatDuration(run.durationMs)}` : "";
+  const durationText = durationMs != null ? ` ${formatDuration(durationMs)}` : "";
   const rightText = `${badge}${durationText}`;
   const padding = Math.max(1, cols - 4 - spinner.length - phaseText.length - rightText.length - 2);
 
@@ -123,6 +131,13 @@ function TaskStatusLine({
     </Box>
   );
 }
+
+const MemoizedTaskStatusLine = memo(TaskStatusLine, (prev, next) => (
+  prev.status === next.status
+  && prev.durationMs === next.durationMs
+  && prev.runPhase === next.runPhase
+  && prev.cols === next.cols
+));
 
 // ─── File Scan Card ──────────────────────────────────────────────────────────
 
@@ -184,34 +199,31 @@ export function TurnGroup({
   user,
   run,
   assistant,
-  uiState,
   opacity,
+  question,
+  runPhase,
   streamPreviewRows,
   streamMode,
 }: TurnGroupProps) {
-  const runPhase = resolveTurnRunPhase(run, assistant, uiState, user.turnId);
   const isThinking = runPhase === "thinking";
   const isStreaming = runPhase === "streaming";
   const agentRunPhase = runPhase === "streaming" ? "streaming" : "final";
-  const question = uiState.kind === "AWAITING_USER_ACTION" && uiState.turnId === user.turnId
-    ? uiState.question
-    : null;
   const dim = opacity !== "active";
   const shouldShowAgentBlock = run !== null && (runPhase !== "thinking");
   const isFinished = run !== null && run.status !== "running";
 
   return (
     <Box flexDirection="column" width="100%">
-      <UserInputCard
+      <MemoizedUserInputCard
         prompt={user.prompt}
-        run={run}
+        status={run?.status ?? null}
         cols={cols}
         dim={opacity === "dim"}
       />
 
       {run && (
         <>
-          <TaskStatusLine run={run} uiState={uiState} turnId={user.turnId} cols={cols} />
+          <MemoizedTaskStatusLine status={run.status} durationMs={run.durationMs} runPhase={runPhase} cols={cols} />
 
           <Box key={`run-phase-${user.turnId}-${runPhase}`} width="100%">
             {isThinking ? (
@@ -248,25 +260,17 @@ export function TurnGroup({
 
 // Memoized wrapper to prevent re-renders of finalized turns
 export const MemoizedTurnGroup = memo(TurnGroup, (prev, next) => {
-  // Always re-render if the run is still active or changing
-  const prevPhase = resolveTurnRunPhase(prev.run, prev.assistant, prev.uiState, prev.user.turnId);
-  const nextPhase = resolveTurnRunPhase(next.run, next.assistant, next.uiState, next.user.turnId);
-
-  // If either is actively running, allow normal React comparison
-  if (prevPhase !== "final" || nextPhase !== "final") {
-    return false; // Don't skip, allow re-render
-  }
-
-  // For finalized turns, skip re-render if key props are equal
   return (
     prev.cols === next.cols &&
     prev.turnIndex === next.turnIndex &&
     prev.opacity === next.opacity &&
-    prev.user.id === next.user.id &&
-    prev.run?.id === next.run?.id &&
-    prev.run?.status === next.run?.status &&
-    prev.assistant?.id === next.assistant?.id &&
-    prev.assistant?.content === next.assistant?.content
+    prev.question === next.question &&
+    prev.runPhase === next.runPhase &&
+    prev.streamPreviewRows === next.streamPreviewRows &&
+    prev.streamMode === next.streamMode &&
+    prev.user === next.user &&
+    prev.run === next.run &&
+    prev.assistant === next.assistant
   );
 });
 

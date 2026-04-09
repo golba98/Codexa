@@ -4,10 +4,9 @@ import React from "react";
 import { PassThrough } from "node:stream";
 import { render, Text } from "ink";
 import type { TimelineEvent, UIState } from "../session/types.js";
-import { BottomComposer } from "./BottomComposer.js";
+import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 import { AppShell } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "./layout.js";
-import { RunFooter } from "./RunFooter.js";
 import { ThemeProvider } from "./theme.js";
 
 class TestInput extends PassThrough {
@@ -97,6 +96,16 @@ function renderShell(layoutCols: number, layoutRows: number, uiState: UIState): 
   });
 
   const layout = createLayoutSnapshot(layoutCols, layoutRows);
+  const composerRows = measureBottomComposerRows({
+    layout,
+    uiState,
+    mode: "auto-edit",
+    model: "gpt-5.4",
+    reasoningLevel: "medium",
+    tokensUsed: 1200,
+    value: "",
+    cursor: 0,
+  });
 
   const instance = render(
     <ThemeProvider theme="purple">
@@ -105,7 +114,8 @@ function renderShell(layoutCols: number, layoutRows: number, uiState: UIState): 
         screen="main"
         authState="authenticated"
         workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
-        events={EVENTS}
+        staticEvents={EVENTS}
+        activeEvents={[]}
         uiState={uiState}
         panel={null}
         composer={
@@ -135,7 +145,7 @@ function renderShell(layoutCols: number, layoutRows: number, uiState: UIState): 
             onQuit={() => {}}
           />
         }
-        runFooter={<RunFooter uiState={uiState} onCancel={() => {}} onQuit={() => {}} />}
+        composerRows={composerRows}
       />
     </ThemeProvider>,
     {

@@ -28,6 +28,8 @@ test("builds a write-enabled codex prompt for auto-edit", () => {
   const prompt = buildCodexPrompt("Create a weather app script with tests", "auto-edit");
   assert.match(prompt, /write access/i);
   assert.match(prompt, /create or update files directly/i);
+  assert.match(prompt, /best-effort continuation/i);
+  assert.match(prompt, /make the most reasonable assumption/i);
   assert.match(prompt, /\[QUESTION\]:/i);
   assert.match(prompt, /do not reply with generic readiness/i);
   assert.match(prompt, /Task:/i);
@@ -36,6 +38,9 @@ test("builds a write-enabled codex prompt for auto-edit", () => {
 test("builds a suggest-mode prompt that avoids generic readiness replies", () => {
   const prompt = buildCodexPrompt("Explain this code", "suggest");
   assert.match(prompt, /read-only mode/i);
+  assert.match(prompt, /best-effort continuation/i);
+  assert.match(prompt, /choose one sensible path and continue/i);
+  assert.match(prompt, /\[QUESTION\]:/i);
   assert.match(prompt, /do not reply with generic readiness/i);
   assert.match(prompt, /Task:/i);
 });

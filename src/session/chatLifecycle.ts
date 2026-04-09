@@ -31,18 +31,14 @@ const BUSY_NOTICE_BY_KIND: Record<ConfigMutationKind, string> = {
 // Returns the question string if detected, null otherwise.
 //
 // Detection order:
-//   1. Explicit marker  [QUESTION]: <text>      (preferred — prompt the system to use this)
-//   2. Heuristic        last non-empty line ends with "?" and response is short (≤5 lines)
+//   1. Explicit marker  [QUESTION]: <text>
+//
+// Ordinary assistant prose must never enter blocking-question mode just because it
+// ends with a question mark. Only explicit hard-block markers should do that.
 
 export function detectAgentQuestion(text: string): string | null {
   const explicit = text.match(/\[QUESTION\]:\s*(.+)/);
   if (explicit) return explicit[1]!.trim();
-
-  const lines = text.trim().split("\n").filter(Boolean);
-  const last = lines[lines.length - 1];
-  if (last && last.trimEnd().endsWith("?") && lines.length <= 5) {
-    return last.trim();
-  }
 
   return null;
 }
@@ -81,7 +77,7 @@ export function buildFollowUpPrompt(params: {
   userAnswer: string;
 }): string {
   return [
-    "You are continuing an earlier task after asking the user for a required clarification.",
+    "You are continuing an earlier task after pausing for one genuinely blocking clarification.",
     "",
     "Original task:",
     params.originalPrompt,
@@ -93,8 +89,10 @@ export function buildFollowUpPrompt(params: {
     params.userAnswer,
     "",
     "Continue the task using that answer.",
-    "Do not ask the same question again unless a different required detail is still missing.",
-    "If you still need another required clarification, end with exactly one [QUESTION]: line.",
+    "Default to best-effort continuation instead of stopping for clarification.",
+    "If another detail is missing but non-critical, make the most reasonable assumption and state it briefly.",
+    "Only ask another blocking question if proceeding would likely use the wrong file, wrong command, destructive behavior, or produce fundamentally incorrect output.",
+    "If you are still truly blocked on one critical missing fact, end the response with exactly one [QUESTION]: line.",
   ].join("\n");
 }
 

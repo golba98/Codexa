@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Box, Text } from "ink";
 import type { AssistantEvent, RunEvent } from "../session/types.js";
-import { RenderMessage } from "./Markdown.js";
+import { MemoizedRenderMessage } from "./Markdown.js";
 import { getUsableShellWidth } from "./layout.js";
 import { useTheme } from "./theme.js";
 import { wrapPlainText } from "./textLayout.js";
@@ -15,35 +15,6 @@ import {
   formatForBox,
 } from "./outputPipeline.js";
 import { DashCard } from "./DashCard.js";
-
-const FLUSH_INTERVAL_MS = 60;
-
-function useStreamBuffer(streaming: boolean) {
-  const bufferRef = useRef("");
-  const [displayText, setDisplayText] = useState("");
-
-  useEffect(() => {
-    if (!streaming) return;
-    const id = setInterval(() => {
-      setDisplayText((prev) => {
-        const next = bufferRef.current;
-        return next !== prev ? next : prev;
-      });
-    }, FLUSH_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [streaming]);
-
-  return {
-    displayText,
-    appendToken: useCallback((token: string) => {
-      bufferRef.current += token;
-    }, []),
-    resetBuffer: useCallback(() => {
-      bufferRef.current = "";
-      setDisplayText("");
-    }, []),
-  };
-}
 
 function useStreamingCursor() {
   const [visible, setVisible] = useState(true);
@@ -71,6 +42,31 @@ interface AgentBlockProps {
   streamingMode?: "assistant-first";
 }
 
+const MemoizedMessageBody = memo(function MessageBody({
+  segments,
+  width,
+}: {
+  segments: ReturnType<typeof formatForBox>;
+  width: number;
+}) {
+  return <MemoizedRenderMessage segments={segments} width={width} />;
+}, (prev, next) => prev.segments === next.segments && prev.width === next.width);
+
+const StreamingCursor = memo(function StreamingCursor() {
+  const theme = useTheme();
+  const cursorVisible = useStreamingCursor();
+
+  if (!cursorVisible) {
+    return null;
+  }
+
+  return (
+    <Box width="100%" paddingLeft={2}>
+      <Text color={theme.ACCENT}>{"▌"}</Text>
+    </Box>
+  );
+});
+
 export function AgentBlock({
   cols,
   assistant,
@@ -80,36 +76,18 @@ export function AgentBlock({
   runPhase = streaming ? "streaming" : "final",
 }: AgentBlockProps) {
   const theme = useTheme();
-  const cursorVisible = useStreamingCursor();
-  const prevContentRef = useRef("");
-  const { displayText, appendToken, resetBuffer } = useStreamBuffer(streaming);
-
-  useEffect(() => {
-    if (!streaming || !assistant?.content) return;
-    const nextChunk = assistant.content.slice(prevContentRef.current.length);
-    if (nextChunk) {
-      appendToken(nextChunk);
-      prevContentRef.current = assistant.content;
-    }
-  }, [appendToken, assistant?.content, streaming]);
-
-  useEffect(() => {
-    if (streaming) {
-      prevContentRef.current = "";
-      resetBuffer();
-    }
-  }, [resetBuffer, streaming]);
-
-  const content = streaming ? displayText : (assistant?.content ?? "");
+  const content = assistant?.content ?? "";
+  const deferredStreamingContent = useDeferredValue(content);
+  const renderContent = streaming ? deferredStreamingContent : content;
   const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
 
   const pipelineState = useMemo(() => {
-    const sanitized = streaming ? sanitizeStreamChunk(content) : sanitizeOutput(content);
+    const sanitized = streaming ? sanitizeStreamChunk(renderContent) : sanitizeOutput(renderContent);
     const normalized = normalizeOutput(sanitized);
     const classified = classifyOutput(normalized);
     const formatted = formatForBox(classified, contentWidth);
     return { length: normalized.length, formatted };
-  }, [content, streaming, contentWidth]);
+  }, [contentWidth, renderContent, streaming]);
 
   const failureMessage = run?.status === "failed"
     ? sanitizeTerminalOutput(run.errorMessage ?? run.summary)
@@ -140,15 +118,11 @@ export function AgentBlock({
 
       {pipelineState.length > 0 && (
         <Box flexDirection="column" width="100%">
-          <RenderMessage segments={pipelineState.formatted} width={contentWidth} />
+          <MemoizedMessageBody segments={pipelineState.formatted} width={contentWidth} />
         </Box>
       )}
 
-      {streaming && cursorVisible && (
-        <Box width="100%" paddingLeft={2}>
-          <Text color={theme.ACCENT}>{"▌"}</Text>
-        </Box>
-      )}
+      {streaming && <StreamingCursor />}
 
       {!streaming && run && run.status !== "running" && (
         <Box flexDirection="column" width="100%">

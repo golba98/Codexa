@@ -16,6 +16,7 @@ import {
   normalizeCursorOffset,
 } from "./inputBuffer.js";
 import { getModeColor } from "./modeColor.js";
+import { measureRunFooterRows, RunFooter } from "./RunFooter.js";
 import { useTheme } from "./theme.js";
 import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { getTextWidth, splitTextAtColumn } from "./textLayout.js";
@@ -85,6 +86,18 @@ interface BottomComposerProps {
   onQuit: () => void;
 }
 
+export interface BottomComposerMeasureParams {
+  layout: Layout;
+  uiState: UIState;
+  mode?: string;
+  model?: string;
+  reasoningLevel?: string;
+  tokensUsed?: number;
+  modelSpec?: ModelSpec;
+  value: string;
+  cursor: number;
+}
+
 const COMMANDS = [
   { cmd: "/help", desc: "Show available commands" },
   { cmd: "/clear", desc: "Clear chat and cancel active run" },
@@ -96,6 +109,7 @@ const COMMANDS = [
   { cmd: "/auth", desc: "Manage authentication" },
   { cmd: "/workspace", desc: "Show the locked workspace" },
   { cmd: "/copy", desc: "Copy the last response" },
+  { cmd: "/mouse", desc: "Toggle terminal mouse browse mode" },
   { cmd: "/exit", desc: "Quit the application" },
 ] as const;
 
@@ -119,6 +133,55 @@ export function getComposerPersona(uiState: UIState): ComposerPersona {
     return "error";
   }
   return "idle";
+}
+
+export function shouldRenderBusyFooter(layout: Layout, uiState: UIState): boolean {
+  return layout.rows <= 24 && getComposerPersona(uiState) === "busy";
+}
+
+export function measureBottomComposerRows({
+  layout,
+  uiState,
+  value,
+  cursor,
+}: BottomComposerMeasureParams): number {
+  if (shouldRenderBusyFooter(layout, uiState)) {
+    return measureRunFooterRows();
+  }
+
+  const persona = getComposerPersona(uiState);
+  const inputLocked = persona === "busy";
+  const allowCommands = persona !== "answer";
+  const composerWidth = getShellWidth(layout.cols);
+  const composerBodyWidth = getComposerBodyWidth(composerWidth);
+  const promptWidth = Math.max(4, composerBodyWidth - getTextWidth("❯ "));
+  const normalizedValue = normalizeInputText(value);
+  const normalizedCursor = normalizeCursorOffset(normalizedValue, cursor);
+  const promptViewport = createInputViewport({
+    text: normalizedValue,
+    cursorOffset: normalizedCursor,
+    width: promptWidth,
+    maxVisibleRows: MAX_VISIBLE_INPUT_ROWS,
+    scrollRow: 0,
+  });
+  const isCmdPrefix = allowCommands && normalizedValue.startsWith("/");
+  const cmdPrefix = normalizedValue.split(" ")[0]?.toLowerCase() ?? "";
+  const showSuggestions = !inputLocked && isCmdPrefix && !normalizedValue.includes(" ");
+  const suggestions = showSuggestions
+    ? COMMANDS.filter((command) => command.cmd.startsWith(cmdPrefix)).slice(0, 5)
+    : [];
+  const showStatusLine = (getStatusLine(uiState) ?? "").length > 0 && persona !== "answer";
+  const showMetadata = layout.mode !== "micro" && layout.rows > 24;
+  const bottomPadding = layout.mode === "micro" || layout.rows <= 24 ? 0 : 1;
+
+  return (
+    promptViewport.visibleRows.length
+    + 2
+    + (suggestions.length > 0 ? 1 : 0)
+    + (showStatusLine ? 1 : 0)
+    + (showMetadata ? 1 : 0)
+    + bottomPadding
+  );
 }
 
 function getStatusLine(uiState: UIState): string | null {
@@ -192,11 +255,8 @@ export function BottomComposer({
   const lastPropsCursorRef = useRef(cursor);
   const pasteBufferRef = useRef<string | null>(null);
   const deleteIntentRef = useRef<DeleteIntent | null>(null);
-
-  useEffect(() => {
-    const timer = setInterval(() => setCursorVisible((visible) => !visible), 520);
-    return () => clearInterval(timer);
-  }, []);
+  const mouseEventTickRef = useRef(false);
+  const mouseEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const handleRawInput = (chunk: Buffer | string) => {
@@ -205,11 +265,23 @@ export function BottomComposer({
       if (intent) {
         deleteIntentRef.current = intent;
       }
+
+      // Explicitly detect terminal mouse reporting escape sequences to swallow
+      // the fragments (e.g. "[<0;26;24M") that Ink's readline parser sequentially
+      // emits after stripping the ESC prefix.
+      if (/\u001b\[<(\d+);(\d+);(\d+)([Mm])/.test(raw) || /\u001b\[M/.test(raw)) {
+        mouseEventTickRef.current = true;
+        if (mouseEventTimeoutRef.current) clearTimeout(mouseEventTimeoutRef.current);
+        mouseEventTimeoutRef.current = setTimeout(() => {
+          mouseEventTickRef.current = false;
+        }, 32);
+      }
     };
 
     stdin.on("data", handleRawInput);
     return () => {
       stdin.off("data", handleRawInput);
+      if (mouseEventTimeoutRef.current) clearTimeout(mouseEventTimeoutRef.current);
     };
   }, [stdin]);
 
@@ -315,6 +387,10 @@ export function BottomComposer({
   };
 
   useInput((input, key) => {
+    if (mouseEventTickRef.current) {
+      return;
+    }
+
     if (key.ctrl) {
       switch (input) {
         case "q":
@@ -447,6 +523,7 @@ export function BottomComposer({
     : theme.SUCCESS;
   const reasoningSuffix = reasoningLevel ? ` (${reasoningLevel})` : "";
   const isAnswerMode = persona === "answer";
+  const showBusyFooter = shouldRenderBusyFooter(layout, uiState);
 
   // The prompt line is shared between bordered and non-bordered layouts.
   const promptLine = (
@@ -492,6 +569,10 @@ export function BottomComposer({
       </Box>
     </Box>
   );
+
+  if (showBusyFooter) {
+    return <RunFooter uiState={uiState} onCancel={onCancel} onQuit={onQuit} />;
+  }
 
   return (
     <Box flexDirection="column" paddingBottom={layoutMode === "micro" || crampedViewport ? 0 : 1} width="100%">

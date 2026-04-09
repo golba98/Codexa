@@ -20,8 +20,14 @@ function isLowSurrogate(code: number): boolean {
   return code >= 0xdc00 && code <= 0xdfff;
 }
 
+const LEAKED_SGR_MOUSE_PATTERN = /\[<\d+;\d+;\d+[Mm]?/g;
+
 export function normalizeInputText(text: string): string {
-  return normalizeLineBreaks(sanitizeTerminalInput(text));
+  if (!text) return "";
+  // Strip out leaked SGR mouse coordinates that might have been emitted by
+  // the terminal without their ESC prefix (swallowed by readline).
+  const withoutMouse = text.replace(LEAKED_SGR_MOUSE_PATTERN, "");
+  return normalizeLineBreaks(sanitizeTerminalInput(withoutMouse));
 }
 
 export function normalizeCursorOffset(text: string, cursorOffset: number): number {

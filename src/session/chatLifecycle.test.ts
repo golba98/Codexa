@@ -144,9 +144,15 @@ test("ignores stale run callbacks after cancellation", () => {
   assert.equal(isCurrentRun(8, 7), false);
 });
 
-test("detects explicit and heuristic agent questions", () => {
+test("detects only explicit agent questions", () => {
   assert.equal(detectAgentQuestion("Done.\n[QUESTION]: Which file should I update?"), "Which file should I update?");
-  assert.equal(detectAgentQuestion("Need one detail first.\nShould I use Redis?"), "Should I use Redis?");
+  assert.equal(detectAgentQuestion("Need one detail first.\nShould I use Redis?"), null);
+});
+
+test("does not treat ordinary trailing questions as blocking", () => {
+  const parsed = extractAssistantActionRequired("Done with the inspection.\nShould I add tests?");
+  assert.equal(parsed.question, null);
+  assert.equal(parsed.content, "Done with the inspection.\nShould I add tests?");
 });
 
 test("extracts ACTION REQUIRED blocks and removes them from assistant output", () => {
@@ -175,6 +181,8 @@ test("builds a staged follow-up prompt from original task and answer", () => {
   assert.match(prompt, /Original task:/);
   assert.match(prompt, /Should I use Redis\?/);
   assert.match(prompt, /Use in-memory storage for now\./);
+  assert.match(prompt, /best-effort continuation/i);
+  assert.match(prompt, /truly blocked on one critical missing fact/i);
 });
 
 test("reduces ui state across thinking responding awaiting and shell states", () => {

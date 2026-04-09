@@ -46,6 +46,23 @@ test("falls back to filtered plain output when no labeled assistant block exists
   assert.equal(sanitizeCodexTranscript(raw), "First useful line\nSecond useful line");
 });
 
+test("filters echoed clarification-policy prompt lines from finalized transcripts", () => {
+  const raw = [
+    "default to best-effort continuation instead of stopping for clarification.",
+    "if a detail is missing but non-critical, make the most reasonable assumption and state it briefly.",
+    "if multiple paths are possible, choose one sensible path and continue.",
+    "only ask a blocking follow-up question if proceeding would likely use the wrong file, wrong command, destructive behavior, or produce fundamentally incorrect output.",
+    "if you are truly blocked on one critical missing fact, end the response with exactly one line in this format: [QUESTION]: <your question>",
+    "",
+    "Implemented the fix and assumed src/app.tsx was the target entrypoint.",
+  ].join("\n");
+
+  assert.equal(
+    sanitizeCodexTranscript(raw),
+    "Implemented the fix and assumed src/app.tsx was the target entrypoint.",
+  );
+});
+
 test("returns a readable fallback when only noise is present", () => {
   const raw = [
     "Reading additional input from stdin...",

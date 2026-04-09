@@ -39,6 +39,7 @@ export type CommandAction =
   | "open_auth_panel"
   | "open_theme_picker"
   | "themes"
+  | "mouse_toggle"
   | "unknown";
 
 export interface CommandResult {
@@ -227,6 +228,9 @@ export function handleCommand(
       return { action: "open_theme_picker" };
     }
 
+    case "mouse":
+      return { action: "mouse_toggle" };
+
     case "help":
       return {
         action: "help",
@@ -246,6 +250,7 @@ export function handleCommand(
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
           "  /theme [name]      Switch theme directly (no arg opens picker)",
           "  /themes            Open visual theme picker (Up/Down + Enter)",
+          "  /mouse             Toggle terminal mouse browse mode (disables native selection)",
           "  /auth [option]     Open auth panel or set auth preference",
           "  /auth status       Probe Codexa auth status",
           "  /login             Show guided ChatGPT subscription login steps",

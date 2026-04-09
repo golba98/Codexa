@@ -288,3 +288,7 @@ export function RenderMessage({ segments, width }: { segments: Segment[]; width:
   );
 }
 
+export const MemoizedRenderMessage = React.memo(RenderMessage, (prev, next) => (
+  prev.segments === next.segments && prev.width === next.width
+));
+

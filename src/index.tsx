@@ -9,6 +9,8 @@ import { getTerminalCapability } from "./core/terminalCapabilities.js";
 // again — causing the "stacked UI" artifact.  \x1b[3J erases the scrollback
 // immediately after so nothing accumulates there.
 const HARD_REPAINT_SEQUENCE = "\x1b[2J\x1b[3J\x1b[H";
+const ENABLE_TRANSCRIPT_WHEEL_MODE = "\x1b[?1000h\x1b[?1006h";
+const DISABLE_TRANSCRIPT_WHEEL_MODE = "\x1b[?1000l\x1b[?1006l";
 
 type RenderHandle = Pick<Instance, "clear" | "waitUntilExit">;
 
@@ -114,7 +116,7 @@ export function startApp({
   // content from a previous process (e.g. bun --watch restart) ghosts above
   // the new frame.  We stay in the normal screen buffer (no \x1b[?1049h) to
   // preserve terminal scrollback and allow mouse text selection.
-  stdout.write(`${HARD_REPAINT_SEQUENCE}\x1b[?2004h`);
+  stdout.write(`${HARD_REPAINT_SEQUENCE}${ENABLE_TRANSCRIPT_WHEEL_MODE}\x1b[?2004h`);
 
   let cleanupDone = false;
   let repaintArmed = false;
@@ -200,12 +202,35 @@ export function startApp({
     cleanupDone = true;
     if (repaintDebounceTimer) clearTimeout(repaintDebounceTimer);
     stdout.off("resize", onResize);
-    stdout.write("\x1b[?2004l");
+    // Restore terminal state: disable mouse reporting and bracketed paste.
+    stdout.write(`${DISABLE_TRANSCRIPT_WHEEL_MODE}\x1b[?2004l`);
     activeRoot = null;
+  };
+
+  const handleFatal = (error: unknown) => {
+    cleanup();
+    if (error instanceof Error) {
+      stderr.write(`${error.stack || error.message}\n`);
+    } else if (error) {
+      stderr.write(`${String(error)}\n`);
+    }
+    process.exit(1);
+  };
+
+  const handleSignal = () => {
+    cleanup();
+    process.exit(0);
   };
 
   stdout.on("resize", onResize);
   registerExitHandler(cleanup);
+
+  // Ensure clean teardown on signals and unhandled failures to prevent
+  // leaving the terminal in mouse-reporting mode.
+  process.on("SIGINT", handleSignal);
+  process.on("SIGTERM", handleSignal);
+  process.on("uncaughtException", handleFatal);
+  process.on("unhandledRejection", handleFatal);
 
   renderHandle = renderApp(<App />);
 

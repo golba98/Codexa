@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Box, Text, useInput } from "ink";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, useInput, useStdin } from "ink";
 import type {
   AssistantEvent,
   ErrorEvent,
@@ -10,16 +10,18 @@ import type {
   UIState,
   UserPromptEvent,
 } from "../session/types.js";
-import { MemoizedTurnGroup, type TurnOpacity } from "./TurnGroup.js";
-import { getUsableShellWidth, type Layout } from "./layout.js";
-import { getTextWidth, wrapPlainText } from "./textLayout.js";
+import { getShellWidth, type Layout } from "./layout.js";
+import type { TimelineRow, TimelineSnapshot, TimelineTone } from "./timelineMeasure.js";
+import { buildTimelineSnapshot } from "./timelineMeasure.js";
+import { resolveTurnRunPhase, type TurnOpacity, type TurnRunPhase } from "./TurnGroup.js";
 import { useTheme } from "./theme.js";
-import { sanitizeTerminalLines, sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 
 interface TimelineProps {
-  events: TimelineEvent[];
+  staticEvents: TimelineEvent[];
+  activeEvents: TimelineEvent[];
   layout: Layout;
   uiState: UIState;
+  viewportRows: number;
 }
 
 type StandaloneTimelineEvent = SystemEvent | ErrorEvent | ShellEvent;
@@ -39,15 +41,41 @@ interface EventTimelineItem {
 }
 
 export type TimelineItem = TurnTimelineItem | EventTimelineItem;
-export interface TimelineViewportState {
-  anchorIndex: number;
-  followTail: boolean;
-  unseenItems: number;
+
+export interface TurnRenderState {
+  opacity: TurnOpacity;
+  question: string | null;
+  runPhase: TurnRunPhase;
 }
 
-const MAX_SHELL_FAILURE_EXCERPT_LINES = 3;
-const MIN_TIMELINE_PAGE_SIZE = 3;
-const DEFAULT_TIMELINE_ROWS = 24;
+interface TurnRenderTimelineItem {
+  key: string;
+  type: "turn";
+  padded: boolean;
+  item: TurnTimelineItem;
+  renderState: TurnRenderState;
+}
+
+interface EventRenderTimelineItem {
+  key: string;
+  type: "event";
+  padded: boolean;
+  event: StandaloneTimelineEvent;
+}
+
+export type RenderTimelineItem = TurnRenderTimelineItem | EventRenderTimelineItem;
+
+const HOME_KEY_INPUTS = new Set(["\u001b[H", "\u001b[1~", "\u001bOH"]);
+const END_KEY_INPUTS = new Set(["\u001b[F", "\u001b[4~", "\u001bOF"]);
+const SGR_WHEEL_EVENT_PATTERN = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
+
+export interface TimelineViewportState {
+  anchorRow: number;
+  followTail: boolean;
+  unseenItems: number;
+  unseenRows: number;
+  frozenSnapshot: TimelineSnapshot | null;
+}
 
 function isStandaloneEvent(event: TimelineEvent): event is StandaloneTimelineEvent {
   return event.type === "system" || event.type === "error" || event.type === "shell";
@@ -60,6 +88,29 @@ function getActiveTurnId(uiState: UIState): number | null {
     || uiState.kind === "ERROR"
     ? uiState.turnId
     : null;
+}
+
+function isHomeInput(input: string): boolean {
+  return HOME_KEY_INPUTS.has(input);
+}
+
+function isEndInput(input: string): boolean {
+  return END_KEY_INPUTS.has(input);
+}
+
+function clampAnchorRow(anchorRow: number, totalRows: number): number {
+  if (totalRows <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(anchorRow, totalRows - 1));
+}
+
+function getFirstPageAnchor(totalRows: number, viewportRows: number): number {
+  if (totalRows <= 0) {
+    return 0;
+  }
+  return Math.min(totalRows - 1, Math.max(0, viewportRows - 1));
 }
 
 export function buildTimelineItems(events: TimelineEvent[]): TimelineItem[] {
@@ -114,333 +165,474 @@ export function resolveTurnOpacity(turnIds: number[], turnId: number, activeTurn
   return "dim";
 }
 
-export function getTimelinePageSize(layoutMode: Layout["mode"], rows = DEFAULT_TIMELINE_ROWS): number {
-  const base = layoutMode === "micro" ? 4 : layoutMode === "compact" ? 5 : 6;
-  const delta = rows >= DEFAULT_TIMELINE_ROWS
-    ? Math.floor((rows - DEFAULT_TIMELINE_ROWS) / 8)
-    : -Math.ceil((DEFAULT_TIMELINE_ROWS - rows) / 6);
-  return Math.max(MIN_TIMELINE_PAGE_SIZE, base + delta);
-}
-
-export function buildTimelineWindow(totalItems: number, pageSize: number, anchorIndex: number): {
-  startIndex: number;
-  endIndex: number;
-  anchorIndex: number;
-} {
-  if (totalItems <= 0) {
-    return { startIndex: 0, endIndex: 0, anchorIndex: 0 };
-  }
-
-  const safePageSize = Math.max(MIN_TIMELINE_PAGE_SIZE, pageSize);
-  const normalizedAnchor = Math.max(0, Math.min(anchorIndex, totalItems - 1));
-  const endIndex = normalizedAnchor + 1;
-  const startIndex = Math.max(0, endIndex - safePageSize);
-
+export function createFollowTailViewport(totalRows: number): TimelineViewportState {
   return {
-    startIndex,
-    endIndex,
-    anchorIndex: normalizedAnchor,
+    anchorRow: Math.max(0, totalRows - 1),
+    followTail: true,
+    unseenItems: 0,
+    unseenRows: 0,
+    frozenSnapshot: null,
   };
 }
 
-function findPreviousTurnBoundaryIndex(items: TimelineItem[], fromIndex: number): number | null {
-  for (let index = Math.min(items.length - 1, fromIndex); index >= 0; index -= 1) {
-    if (items[index]?.type === "turn") return index;
-  }
-  return null;
+function getFrozenSnapshot(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+): TimelineSnapshot {
+  return viewport.followTail || viewport.frozenSnapshot === null
+    ? liveSnapshot
+    : viewport.frozenSnapshot;
 }
 
-function findNextTurnBoundaryIndex(items: TimelineItem[], fromIndex: number): number | null {
-  for (let index = Math.max(0, fromIndex); index < items.length; index += 1) {
-    if (items[index]?.type === "turn") return index;
-  }
-  return null;
-}
-
-function PrefixedRows({
-  marker,
-  text,
-  width,
-  markerColor,
-  textColor,
-}: {
-  marker: string;
-  text: string;
-  width: number;
-  markerColor: string;
-  textColor: string;
-}) {
-  const rows = wrapPlainText(text, Math.max(1, width - getTextWidth(marker)));
-  return (
-    <Box flexDirection="column" width="100%">
-      {rows.map((row, index) => (
-        <Box key={index} width="100%">
-          <Text color={markerColor}>{index === 0 ? marker : "  "}</Text>
-          <Text color={textColor}>{row || " "}</Text>
-        </Box>
-      ))}
-    </Box>
-  );
-}
-
-function getShellFailureExcerpt(event: ShellEvent): string[] {
-  const source = event.stderrLines.length > 0 ? event.stderrLines : event.lines;
-  const summary = sanitizeTerminalOutput(event.summary ?? "").trim().toLowerCase();
-  return sanitizeTerminalLines(source)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line, index) => !(index === 0 && summary && line.toLowerCase() === summary))
-    .slice(0, MAX_SHELL_FAILURE_EXCERPT_LINES);
-}
-
-function StandaloneEventLine({ event, width }: { event: StandaloneTimelineEvent; width: number }) {
-  const theme = useTheme();
-
-  if (event.type === "shell") {
-    const command = sanitizeTerminalOutput(event.command);
-    const summary = sanitizeTerminalOutput(event.summary ?? "");
-    const marker = event.status === "failed" ? "✕ " : "✧ ";
-    const verb = event.status === "running" ? "Executing shell"
-      : event.status === "completed" ? "Executed shell"
-      : "Shell failed";
-    const statusBits = [
-      event.exitCode !== null && event.status !== "running" ? `exit ${event.exitCode}` : null,
-      event.durationMs !== null ? `${(event.durationMs / 1000).toFixed(2)}s` : null,
-    ].filter(Boolean).join(" • ");
-    const heading = `${verb}: ${command}${statusBits ? `  •  ${statusBits}` : ""}`;
-    const summaryRows = summary && event.status !== "running"
-      ? wrapPlainText(summary, Math.max(1, width - 2))
-      : [];
-    const failureExcerpt = event.status === "failed"
-      ? getShellFailureExcerpt(event)
-      : [];
-
-    return (
-      <Box flexDirection="column" width="100%">
-        <PrefixedRows
-          marker={marker}
-          text={heading}
-          width={width}
-          markerColor={event.status === "failed" ? theme.ERROR : theme.ACCENT}
-          textColor={theme.TEXT}
-        />
-        {summaryRows.length > 0 && (
-          <Box flexDirection="column" paddingLeft={2} marginTop={1} width="100%">
-            {summaryRows.map((row, index) => (
-              <Text key={index} color={event.status === "failed" ? theme.ERROR : theme.MUTED}>{row || " "}</Text>
-            ))}
-          </Box>
-        )}
-        {failureExcerpt.length > 0 && (
-          <Box flexDirection="column" paddingLeft={2} marginTop={summaryRows.length > 0 ? 0 : 1} width="100%">
-            {failureExcerpt.map((line, index) => (
-              <Text key={index} color={theme.ERROR}>{line}</Text>
-            ))}
-          </Box>
-        )}
-      </Box>
-    );
+export function syncTimelineViewport(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+): TimelineViewportState {
+  if (liveSnapshot.totalRows === 0) {
+    return createFollowTailViewport(0);
   }
 
-  if (event.type === "error") {
-    const content = sanitizeTerminalOutput(event.content).split("\n").find((line) => line.trim()) ?? "";
-    return (
-      <Box flexDirection="column" width="100%">
-        <PrefixedRows
-          marker="✕ "
-          text={sanitizeTerminalOutput(event.title)}
-          width={width}
-          markerColor={theme.ERROR}
-          textColor={theme.ERROR}
-        />
-        {content && (
-          <Box flexDirection="column" paddingLeft={2} marginTop={1} width="100%">
-            {wrapPlainText(content, Math.max(1, width - 2)).map((row, index) => (
-              <Text key={index} color={theme.MUTED}>{row || " "}</Text>
-            ))}
-          </Box>
-        )}
-      </Box>
-    );
+  if (viewport.followTail) {
+    const nextAnchor = liveSnapshot.totalRows - 1;
+    if (
+      viewport.anchorRow === nextAnchor
+      && viewport.unseenItems === 0
+      && viewport.unseenRows === 0
+      && viewport.frozenSnapshot === null
+    ) {
+      return viewport;
+    }
+    return createFollowTailViewport(liveSnapshot.totalRows);
   }
 
-  const firstLine = sanitizeTerminalOutput(event.content).split("\n").find((line) => line.trim()) ?? "";
-  return (
-    <Box flexDirection="column" width="100%">
-      <PrefixedRows
-        marker="• "
-        text={sanitizeTerminalOutput(event.title)}
-        width={width}
-        markerColor={theme.INFO}
-        textColor={theme.TEXT}
-      />
-      {firstLine && (
-        <Box flexDirection="column" paddingLeft={2} marginTop={1} width="100%">
-          {wrapPlainText(firstLine, Math.max(1, width - 2)).map((row, index) => (
-            <Text key={index} color={theme.DIM}>{row || " "}</Text>
-          ))}
-        </Box>
-      )}
-    </Box>
-  );
+  const frozenSnapshot = viewport.frozenSnapshot ?? liveSnapshot;
+  const anchorRow = clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
+  const unseenItems = Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount);
+  const unseenRows = Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows);
+
+  if (
+    viewport.anchorRow === anchorRow
+    && viewport.unseenItems === unseenItems
+    && viewport.unseenRows === unseenRows
+    && viewport.frozenSnapshot === frozenSnapshot
+  ) {
+    return viewport;
+  }
+
+  return {
+    anchorRow,
+    followTail: false,
+    unseenItems,
+    unseenRows,
+    frozenSnapshot,
+  };
 }
 
-export function Timeline({ events, layout, uiState }: TimelineProps) {
-  const theme = useTheme();
-  const items = useMemo(() => buildTimelineItems(events), [events]);
-  const pageSize = useMemo(
-    () => Math.max(MIN_TIMELINE_PAGE_SIZE, getTimelinePageSize(layout.mode, layout.rows)),
-    [layout.mode, layout.rows],
-  );
-  const lastIndex = items.length - 1;
-  const [viewport, setViewport] = useState<TimelineViewportState>({
-    anchorIndex: Math.max(0, lastIndex),
-    followTail: true,
-    unseenItems: 0,
+export function pageUpTimelineViewport(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+  viewportRows: number,
+): TimelineViewportState {
+  if (liveSnapshot.totalRows === 0) {
+    return createFollowTailViewport(0);
+  }
+
+  const frozenSnapshot = getFrozenSnapshot(viewport, liveSnapshot);
+  const tailRow = Math.max(0, frozenSnapshot.totalRows - 1);
+  const currentAnchor = viewport.followTail
+    ? tailRow
+    : clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
+  const nextAnchor = Math.max(getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows), currentAnchor - Math.max(1, viewportRows));
+
+  return {
+    anchorRow: nextAnchor,
+    followTail: false,
+    unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
+    unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
+    frozenSnapshot,
+  };
+}
+
+export function pageDownTimelineViewport(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+  viewportRows: number,
+): TimelineViewportState {
+  if (liveSnapshot.totalRows === 0 || viewport.followTail) {
+    return viewport;
+  }
+
+  const frozenSnapshot = viewport.frozenSnapshot ?? liveSnapshot;
+  const tailRow = Math.max(0, frozenSnapshot.totalRows - 1);
+  const currentAnchor = clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
+  if (currentAnchor >= tailRow) {
+    return createFollowTailViewport(liveSnapshot.totalRows);
+  }
+
+  const nextAnchor = Math.min(tailRow, currentAnchor + Math.max(1, viewportRows));
+  if (nextAnchor >= tailRow) {
+    return createFollowTailViewport(liveSnapshot.totalRows);
+  }
+
+  return {
+    anchorRow: nextAnchor,
+    followTail: false,
+    unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
+    unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
+    frozenSnapshot,
+  };
+}
+
+export function stepUpTimelineViewport(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+): TimelineViewportState {
+  if (liveSnapshot.totalRows === 0) {
+    return createFollowTailViewport(0);
+  }
+
+  const frozenSnapshot = getFrozenSnapshot(viewport, liveSnapshot);
+  const tailRow = Math.max(0, frozenSnapshot.totalRows - 1);
+  const currentAnchor = viewport.followTail
+    ? tailRow
+    : clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
+
+  return {
+    anchorRow: Math.max(0, currentAnchor - 1),
+    followTail: false,
+    unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
+    unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
+    frozenSnapshot,
+  };
+}
+
+export function stepDownTimelineViewport(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+): TimelineViewportState {
+  if (liveSnapshot.totalRows === 0 || viewport.followTail) {
+    return viewport;
+  }
+
+  const frozenSnapshot = viewport.frozenSnapshot ?? liveSnapshot;
+  const tailRow = Math.max(0, frozenSnapshot.totalRows - 1);
+  const currentAnchor = clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
+  if (currentAnchor >= tailRow) {
+    return createFollowTailViewport(liveSnapshot.totalRows);
+  }
+
+  const nextAnchor = Math.min(tailRow, currentAnchor + 1);
+  if (nextAnchor >= tailRow) {
+    return createFollowTailViewport(liveSnapshot.totalRows);
+  }
+
+  return {
+    anchorRow: nextAnchor,
+    followTail: false,
+    unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
+    unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
+    frozenSnapshot,
+  };
+}
+
+export function homeTimelineViewport(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+  viewportRows: number,
+): TimelineViewportState {
+  if (liveSnapshot.totalRows === 0) {
+    return createFollowTailViewport(0);
+  }
+
+  const frozenSnapshot = getFrozenSnapshot(viewport, liveSnapshot);
+  return {
+    anchorRow: getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows),
+    followTail: false,
+    unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
+    unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
+    frozenSnapshot,
+  };
+}
+
+export function endTimelineViewport(totalRows: number): TimelineViewportState {
+  return createFollowTailViewport(totalRows);
+}
+
+export function parseWheelScrollDirections(raw: string): Array<"up" | "down"> {
+  const directions: Array<"up" | "down"> = [];
+
+  for (const match of raw.matchAll(SGR_WHEEL_EVENT_PATTERN)) {
+    const code = Number.parseInt(match[1] ?? "", 10);
+    const terminator = match[4];
+    if (terminator !== "M" || Number.isNaN(code) || (code & 64) !== 64) {
+      continue;
+    }
+
+    directions.push((code & 1) === 0 ? "up" : "down");
+  }
+
+  return directions;
+}
+
+export function selectTimelineRows(
+  liveSnapshot: TimelineSnapshot,
+  viewport: TimelineViewportState,
+  viewportRows: number,
+): {
+  sourceSnapshot: TimelineSnapshot;
+  visibleRows: TimelineRow[];
+  window: {
+    startRow: number;
+    endRow: number;
+    anchorRow: number;
+  };
+} {
+  const sourceSnapshot = viewport.followTail || viewport.frozenSnapshot === null
+    ? liveSnapshot
+    : viewport.frozenSnapshot;
+  const safeViewportRows = Math.max(1, viewportRows);
+
+  if (sourceSnapshot.totalRows === 0) {
+    return {
+      sourceSnapshot,
+      visibleRows: [],
+      window: { startRow: 0, endRow: 0, anchorRow: 0 },
+    };
+  }
+
+  const anchorRow = viewport.followTail
+    ? sourceSnapshot.totalRows - 1
+    : clampAnchorRow(viewport.anchorRow, sourceSnapshot.totalRows);
+  const endRow = anchorRow + 1;
+  const startRow = Math.max(0, endRow - safeViewportRows);
+
+  return {
+    sourceSnapshot,
+    visibleRows: sourceSnapshot.rows.slice(startRow, endRow),
+    window: {
+      startRow,
+      endRow,
+      anchorRow,
+    },
+  };
+}
+
+export function buildStaticRenderItems(
+  items: TimelineItem[],
+  turnIds: number[],
+  activeTurnId: number | null,
+  questionTurnId: number | null,
+  question: string | null,
+): RenderTimelineItem[] {
+  return items.map((item) => {
+    if (item.type === "event") {
+      return {
+        key: `event-${item.event.id}`,
+        type: "event",
+        padded: false,
+        event: item.event,
+      };
+    }
+
+    return {
+      key: `turn-${item.turnId}`,
+      type: "turn",
+      padded: false,
+      item,
+      renderState: {
+        opacity: resolveTurnOpacity(turnIds, item.turnId, activeTurnId),
+        question: questionTurnId === item.turnId ? question : null,
+        runPhase: resolveTurnRunPhase(item.run, item.assistant, { kind: "IDLE" }, item.turnId),
+      },
+    };
   });
+}
+
+export function buildActiveRenderItems(
+  items: TimelineItem[],
+  turnIds: number[],
+  uiState: UIState,
+): RenderTimelineItem[] {
+  const activeTurnId = getActiveTurnId(uiState);
+  const questionTurnId = uiState.kind === "AWAITING_USER_ACTION" ? uiState.turnId : null;
+  const question = uiState.kind === "AWAITING_USER_ACTION" ? uiState.question : null;
+
+  return items.map((item) => {
+    if (item.type === "event") {
+      return {
+        key: `event-${item.event.id}`,
+        type: "event",
+        padded: true,
+        event: item.event,
+      };
+    }
+
+    return {
+      key: `turn-${item.turnId}`,
+      type: "turn",
+      padded: true,
+      item,
+      renderState: {
+        opacity: resolveTurnOpacity(turnIds, item.turnId, activeTurnId),
+        question: questionTurnId === item.turnId ? question : null,
+        runPhase: resolveTurnRunPhase(item.run, item.assistant, uiState, item.turnId),
+      },
+    };
+  });
+}
+
+function getToneColor(theme: ReturnType<typeof useTheme>, tone: TimelineTone | undefined): string | undefined {
+  switch (tone) {
+    case "text": return theme.TEXT;
+    case "dim": return theme.DIM;
+    case "muted": return theme.MUTED;
+    case "accent": return theme.ACCENT;
+    case "info": return theme.INFO;
+    case "error": return theme.ERROR;
+    case "warning": return theme.WARNING;
+    case "success": return theme.SUCCESS;
+    case "borderSubtle": return theme.BORDER_SUBTLE;
+    case "borderActive": return theme.BORDER_ACTIVE;
+    case "panel": return theme.PANEL;
+    case "star": return theme.STAR;
+    default: return undefined;
+  }
+}
+
+function TimelineRowView({ row }: { row: TimelineRow }) {
+  const theme = useTheme();
+
+  return (
+    <Box width="100%" overflow="hidden">
+      <Text>
+        {row.spans.map((span, index) => (
+          <Text
+            key={index}
+            color={getToneColor(theme, span.tone)}
+            backgroundColor={getToneColor(theme, span.backgroundTone)}
+            bold={span.bold}
+          >
+            {span.text}
+          </Text>
+        ))}
+      </Text>
+    </Box>
+  );
+}
+
+export function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows }: TimelineProps) {
+  const { stdin } = useStdin();
+  const staticItems = useMemo(() => buildTimelineItems(staticEvents), [staticEvents]);
+  const activeItems = useMemo(() => buildTimelineItems(activeEvents), [activeEvents]);
+  const activeTurnId = getActiveTurnId(uiState);
+  const questionTurnId = uiState.kind === "AWAITING_USER_ACTION" ? uiState.turnId : null;
+  const question = uiState.kind === "AWAITING_USER_ACTION" ? uiState.question : null;
+  const staticTurnIds = useMemo(
+    () => staticItems.filter((item): item is TurnTimelineItem => item.type === "turn").map((item) => item.turnId),
+    [staticItems],
+  );
+  const activeTurnIds = useMemo(
+    () => activeItems.filter((item): item is TurnTimelineItem => item.type === "turn").map((item) => item.turnId),
+    [activeItems],
+  );
+  const allTurnIds = useMemo(
+    () => [...staticTurnIds, ...activeTurnIds],
+    [activeTurnIds, staticTurnIds],
+  );
+  const staticRenderItems = useMemo(
+    () => buildStaticRenderItems(staticItems, allTurnIds, activeTurnId, questionTurnId, question),
+    [activeTurnId, allTurnIds, question, questionTurnId, staticItems],
+  );
+  const activeRenderItems = useMemo(
+    () => buildActiveRenderItems(activeItems, allTurnIds, uiState),
+    [activeItems, allTurnIds, uiState],
+  );
+  const liveRenderItems = useMemo(
+    () => [...staticRenderItems, ...activeRenderItems],
+    [activeRenderItems, staticRenderItems],
+  );
+  const liveSnapshot = useMemo(
+    () => buildTimelineSnapshot(liveRenderItems, { totalWidth: getShellWidth(layout.cols) }),
+    [layout.cols, liveRenderItems],
+  );
+  const [viewport, setViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(liveSnapshot.totalRows));
+  const liveSnapshotRef = useRef(liveSnapshot);
 
   useEffect(() => {
-    setViewport((prev) => {
-      if (items.length === 0) {
-        return { anchorIndex: 0, followTail: true, unseenItems: 0 };
+    liveSnapshotRef.current = liveSnapshot;
+  }, [liveSnapshot]);
+
+  useEffect(() => {
+    setViewport((current) => syncTimelineViewport(current, liveSnapshot));
+  }, [liveSnapshot]);
+
+  useEffect(() => {
+    const handleRawInput = (chunk: Buffer | string) => {
+      const raw = typeof chunk === "string" ? chunk : chunk.toString();
+      const directions = parseWheelScrollDirections(raw);
+      if (directions.length === 0) {
+        return;
       }
 
-      const normalizedAnchor = Math.max(0, Math.min(prev.anchorIndex, items.length - 1));
-      if (prev.followTail) {
-        if (normalizedAnchor === items.length - 1 && prev.unseenItems === 0) {
-          return prev;
+      const currentSnapshot = liveSnapshotRef.current;
+      if (currentSnapshot.totalRows === 0) {
+        return;
+      }
+
+      setViewport((current) => {
+        let next = current;
+        for (const direction of directions) {
+          next = direction === "up"
+            ? stepUpTimelineViewport(next, currentSnapshot)
+            : stepDownTimelineViewport(next, currentSnapshot);
         }
-        return { anchorIndex: items.length - 1, followTail: true, unseenItems: 0 };
-      }
+        return next;
+      });
+    };
 
-      if (normalizedAnchor !== prev.anchorIndex) {
-        return { ...prev, anchorIndex: normalizedAnchor };
-      }
+    stdin.on("data", handleRawInput);
+    return () => {
+      stdin.off("data", handleRawInput);
+    };
+  }, [stdin]);
 
-      const unseenItems = Math.max(0, (items.length - 1) - normalizedAnchor);
-      if (unseenItems !== prev.unseenItems) {
-        return { ...prev, unseenItems };
-      }
-
-      return prev;
-    });
-  }, [items.length]);
-
-  useInput((_input, key) => {
-    if (items.length === 0) return;
+  useInput((input, key) => {
+    if (liveSnapshot.totalRows === 0) return;
 
     if (key.pageUp) {
-      setViewport((prev) => ({
-        anchorIndex: Math.max(pageSize - 1, prev.anchorIndex - pageSize),
-        followTail: false,
-        unseenItems: Math.max(0, lastIndex - Math.max(pageSize - 1, prev.anchorIndex - pageSize)),
-      }));
+      setViewport((current) => pageUpTimelineViewport(current, liveSnapshot, viewportRows));
       return;
     }
 
     if (key.pageDown) {
-      setViewport((prev) => {
-        const nextAnchor = Math.min(lastIndex, prev.anchorIndex + pageSize);
-        const followTail = nextAnchor >= lastIndex;
-        return {
-          anchorIndex: nextAnchor,
-          followTail,
-          unseenItems: followTail ? 0 : Math.max(0, lastIndex - nextAnchor),
-        };
-      });
+      setViewport((current) => pageDownTimelineViewport(current, liveSnapshot, viewportRows));
       return;
     }
 
-    if (_input === "[") {
-      setViewport((prev) => {
-        const target = findPreviousTurnBoundaryIndex(items, prev.anchorIndex - 1);
-        if (target === null) return prev;
-        return {
-          anchorIndex: target,
-          followTail: false,
-          unseenItems: Math.max(0, lastIndex - target),
-        };
-      });
+    if (isHomeInput(input)) {
+      setViewport((current) => homeTimelineViewport(current, liveSnapshot, viewportRows));
       return;
     }
 
-    if (_input === "]") {
-      setViewport((prev) => {
-        const target = findNextTurnBoundaryIndex(items, prev.anchorIndex + 1);
-        if (target === null) return prev;
-        const followTail = target >= lastIndex;
-        return {
-          anchorIndex: target,
-          followTail,
-          unseenItems: followTail ? 0 : Math.max(0, lastIndex - target),
-        };
-      });
-      return;
-    }
-
-    if (key.ctrl && _input === "a") {
-      const headAnchor = Math.min(lastIndex, pageSize - 1);
-      setViewport({
-        anchorIndex: headAnchor,
-        followTail: false,
-        unseenItems: Math.max(0, lastIndex - headAnchor),
-      });
-      return;
-    }
-
-    if (key.ctrl && _input === "e") {
-      setViewport({
-        anchorIndex: lastIndex,
-        followTail: true,
-        unseenItems: 0,
-      });
+    if (isEndInput(input)) {
+      setViewport(endTimelineViewport(liveSnapshot.totalRows));
     }
   });
 
-  const windowState = buildTimelineWindow(items.length, pageSize, viewport.followTail ? lastIndex : viewport.anchorIndex);
-  const visibleItems = items.slice(windowState.startIndex, windowState.endIndex);
-  const visibleTurnIds = visibleItems
-    .filter((item): item is TurnTimelineItem => item.type === "turn")
-    .map((item) => item.turnId);
-  const activeTurnId = getActiveTurnId(uiState);
-  const standaloneWidth = Math.max(1, getUsableShellWidth(layout.cols, 2));
-  const streamPreviewRows = layout.mode === "micro" ? 5 : layout.mode === "compact" ? 8 : 12;
+  const { visibleRows } = useMemo(
+    () => selectTimelineRows(liveSnapshot, viewport, viewportRows),
+    [liveSnapshot, viewport, viewportRows],
+  );
 
-  if (visibleItems.length === 0) return null;
+  if (visibleRows.length === 0) {
+    return null;
+  }
 
   return (
-    <Box flexDirection="column" overflow="hidden" flexGrow={1} justifyContent="flex-start" width="100%">
-      <Box paddingX={1} marginBottom={1} width="100%" justifyContent="space-between" flexDirection="row">
-        <Text color={theme.DIM}>
-          {`showing ${windowState.startIndex + 1}-${windowState.endIndex} of ${items.length}`}
-        </Text>
-        <Text color={viewport.followTail ? theme.DIM : theme.INFO}>
-          {viewport.followTail
-            ? "PgUp browse  [ ] turns  Ctrl+A/Ctrl+E"
-            : `${viewport.unseenItems} newer • PgDn/Ctrl+E to follow`}
-        </Text>
-      </Box>
-      <Box flexShrink={0} flexDirection="column" paddingX={1} width="100%">
-        {visibleItems.map((item, index) => (
-          <Box key={item.type === "turn" ? `turn-${item.turnId}` : `event-${item.event.id}`} marginBottom={index === visibleItems.length - 1 ? 0 : 1} width="100%" flexShrink={0}>
-            {item.type === "turn" && item.user ? (
-              <MemoizedTurnGroup
-                cols={layout.cols}
-                turnIndex={item.turnIndex}
-                user={item.user}
-                run={item.run}
-                assistant={item.assistant}
-                uiState={uiState}
-                opacity={resolveTurnOpacity(visibleTurnIds, item.turnId, activeTurnId)}
-                streamPreviewRows={streamPreviewRows}
-                streamMode="assistant-first"
-              />
-            ) : item.type === "event" ? (
-              <StandaloneEventLine event={item.event} width={standaloneWidth} />
-            ) : null}
-          </Box>
-        ))}
-      </Box>
+    <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} overflow="hidden">
+      {visibleRows.map((row) => (
+        <TimelineRowView key={row.key} row={row} />
+      ))}
     </Box>
   );
 }
