@@ -1,6 +1,7 @@
 import type { RunEvent, ShellEvent } from "../session/types.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
 import { sanitizeTerminalLines, sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { clampVisualText } from "./layout.js";
 import type { Segment } from "./Markdown.js";
 import { classifyOutput, formatForBox, normalizeOutput, sanitizeOutput, sanitizeStreamChunk } from "./outputPipeline.js";
 import { selectVisibleRunActivity } from "./runActivityView.js";
@@ -408,6 +409,9 @@ function getShellFailureExcerpt(event: ShellEvent): string[] {
     .slice(0, MAX_SHELL_FAILURE_EXCERPT_LINES);
 }
 
+// Fixed total content rows inside the thinking card (MAX_VISIBLE_THINKING_LINES + 1 tool row)
+const THINKING_CARD_ROWS = MAX_VISIBLE_THINKING_LINES + 1;
+
 function buildThinkingRows(run: RunEvent, width: number): TimelineRow[] {
   const latestTool = run.toolActivities[run.toolActivities.length - 1] ?? null;
   const toolLine = latestTool
@@ -421,21 +425,37 @@ function buildThinkingRows(run: RunEvent, width: number): TimelineRow[] {
   const contentWidth = Math.max(1, width - 4);
   const contentRows: TimelineRowSpan[][] = [];
 
-  if (hiddenCount > 0) {
+  const hasContent = thinkingLines.length > 0 || toolLine;
+
+  if (!hasContent) {
+    // Placeholder while waiting
+    contentRows.push([createSpan("Waiting for response...", "dim")]);
+  } else if (hiddenCount > 0) {
     contentRows.push([createSpan(`... ${hiddenCount} more above`, "dim")]);
   }
 
-  visibleLines.forEach((line) => {
-    wrapPlainText(line, contentWidth).forEach((row) => {
-      contentRows.push([createSpan(row || " ", "muted")]);
+  // Truncate each thinking line to a single row instead of wrapping
+  if (hasContent) {
+    visibleLines.forEach((line) => {
+      const clamped = clampVisualText(line, contentWidth);
+      contentRows.push([createSpan(clamped || " ", "muted")]);
     });
-  });
+  }
 
+  // Pad to fixed count (before tool row) so card height is stable
+  while (contentRows.length < MAX_VISIBLE_THINKING_LINES) {
+    contentRows.push([createSpan(" ", "dim")]);
+  }
+
+  // Always include a tool status row (blank if no tool activity)
   if (toolLine) {
+    const clampedTool = clampVisualText(toolLine, Math.max(1, contentWidth - 2));
     contentRows.push([
       createSpan("• ", "info"),
-      createSpan(toolLine, "info"),
+      createSpan(clampedTool, "info"),
     ]);
+  } else {
+    contentRows.push([createSpan(" ", "dim")]);
   }
 
   return buildDashCardRows({

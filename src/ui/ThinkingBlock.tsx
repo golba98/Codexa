@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { Box, Text } from "ink";
+import React from "react";
+import { Text } from "ink";
 import type { RunEvent } from "../session/types.js";
-import { getUsableShellWidth } from "./layout.js";
-import { wrapPlainText } from "./textLayout.js";
+import { clampVisualText, getUsableShellWidth } from "./layout.js";
 import { useTheme } from "./theme.js";
 import { DashCard } from "./DashCard.js";
 
@@ -30,26 +29,55 @@ export function ThinkingBlock({ cols, run }: ThinkingBlockProps) {
   const hasThinking = thinkingLines.length > 0;
   const hasContent = hasThinking || toolLine;
 
-  if (!hasContent) return null;
-
   const hiddenCount = Math.max(0, thinkingLines.length - MAX_VISIBLE_THINKING_LINES);
   const visibleLines = thinkingLines.slice(-MAX_VISIBLE_THINKING_LINES);
   const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
 
+  // Build the fixed-height line slots
+  const lineSlots: React.ReactNode[] = [];
+
+  if (!hasContent) {
+    lineSlots.push(
+      <Text key="waiting" color={theme.DIM}>Waiting for response...</Text>,
+    );
+  } else if (hiddenCount > 0) {
+    lineSlots.push(
+      <Text key="hidden" color={theme.DIM}>{`... ${hiddenCount} more above`}</Text>,
+    );
+  }
+
+  // Render visible thinking lines (truncated, not wrapped)
+  if (hasContent) {
+    visibleLines.forEach((line, index) => {
+      const clamped = clampVisualText(line, contentWidth);
+      lineSlots.push(
+        <Text key={`line-${index}`} color={theme.MUTED}>{clamped || " "}</Text>,
+      );
+    });
+  }
+
+  // Pad to MAX_VISIBLE_THINKING_LINES slots for stable height
+  while (lineSlots.length < MAX_VISIBLE_THINKING_LINES) {
+    lineSlots.push(
+      <Text key={`pad-${lineSlots.length}`} color={theme.DIM}>{" "}</Text>,
+    );
+  }
+
+  // Always render tool status row (blank if no tool activity)
+  if (toolLine) {
+    const clampedTool = clampVisualText(toolLine, Math.max(1, contentWidth - 2));
+    lineSlots.push(
+      <Text key="tool" color={theme.INFO}>{"• "}{clampedTool}</Text>,
+    );
+  } else {
+    lineSlots.push(
+      <Text key="tool-empty" color={theme.DIM}>{" "}</Text>,
+    );
+  }
+
   return (
     <DashCard cols={cols} title="Processing" rightBadge="active" borderColor={theme.BORDER_ACTIVE}>
-      {hiddenCount > 0 && (
-        <Text color={theme.DIM}>{`... ${hiddenCount} more above`}</Text>
-      )}
-      {visibleLines.map((line, index) => {
-        const rows = wrapPlainText(line, contentWidth);
-        return rows.map((row, rowIdx) => (
-          <Text key={`${index}-${rowIdx}`} color={theme.MUTED}>{row || " "}</Text>
-        ));
-      })}
-      {toolLine && (
-        <Text color={theme.INFO}>{"• "}{toolLine}</Text>
-      )}
+      {lineSlots}
     </DashCard>
   );
 }

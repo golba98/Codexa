@@ -2,7 +2,7 @@ import { spawn } from "child_process";
 import { AVAILABLE_MODELS, buildCodexExecArgs } from "../../config/settings.js";
 import { formatCodexLaunchError, resolveCodexExecutable, spawnCodexProcess } from "../codexExecutable.js";
 import { buildCodexPrompt } from "../codexPrompt.js";
-import { createCodexTranscriptStreamParser, sanitizeCodexTranscript } from "./codexTranscript.js";
+import { createCodexTranscriptStreamParser, isStderrNoise, sanitizeCodexTranscript, stripAnsi, stripNonPrintableControls } from "./codexTranscript.js";
 import type { BackendProvider } from "./types.js";
 
 export const codexSubprocessProvider: BackendProvider = {
@@ -54,14 +54,30 @@ export const codexSubprocessProvider: BackendProvider = {
           onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
           onToolActivity: (activity) => handlers.onToolActivity?.(activity),
         });
-        const handleChunk = (chunk: Buffer) => {
+        const handleStdout = (chunk: Buffer) => {
           if (cancelled || done) return;
           const text = chunk.toString();
           rawOutput += text;
           parser.feed(text);
         };
-        proc.stdout?.on("data", handleChunk);
-        proc.stderr?.on("data", handleChunk);
+        const handleStderr = (chunk: Buffer) => {
+          if (cancelled || done) return;
+          const text = chunk.toString();
+          rawOutput += text;
+          const lines = stripNonPrintableControls(stripAnsi(text))
+            .replace(/\r\n/g, "\n")
+            .replace(/\r/g, "\n")
+            .split("\n");
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            if (isStderrNoise(trimmed)) continue;
+            const truncated = trimmed.length > 80 ? trimmed.slice(0, 77) + "..." : trimmed;
+            handlers.onProgress?.(truncated);
+          }
+        };
+        proc.stdout?.on("data", handleStdout);
+        proc.stderr?.on("data", handleStderr);
 
         proc.on("close", (code) => {
           if (cancelled || done) return;

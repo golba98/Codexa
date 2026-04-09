@@ -57,8 +57,27 @@ const NOISE_PREFIXES = [
   "tool-selection rationale",
 ];
 
-function stripAnsi(text: string): string {
+export function stripAnsi(text: string): string {
   return text.replace(ANSI_ESCAPE_PATTERN, "");
+}
+
+const STDERR_NOISE_PATTERNS = [
+  /\[\d+\/\d+\]/,                          // Progress fractions: [3/10]
+  /^\s*\d+\/\d+\s*$/,                      // Bare fractions: 3/10
+  /\d+(\.\d+)?%/,                           // Percentages: 45.2%
+  /^[\s#=.]+$/,                             // Progress bars: ####, ====, ....
+  /^[\s⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏\-\\|/]+$/,              // Spinner characters
+  /^\(node:\d+\)/,                          // Node.js warnings: (node:1234)
+  /DeprecationWarning:/i,                   // Node deprecation warnings
+  /ExperimentalWarning:/i,                  // Node experimental warnings
+  /^\s*Warning:/i,                          // Generic warnings
+];
+
+export function isStderrNoise(line: string): boolean {
+  if (isNoiseLine(line)) return true;
+  const trimmed = line.trim();
+  if (!trimmed) return true;
+  return STDERR_NOISE_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
 // Keep line breaks but drop control bytes that can move or corrupt terminal cursor/layout.
@@ -115,6 +134,16 @@ const TOOL_EXEC_PATTERNS = [
   /^\s*\[running:?\s/i,             // [running: Get-ChildItem]
   /^\s*\[exec(uting)?:?\s/i,        // [exec: rg --files]
   /^\s*executing\s*:/i,             // executing: Get-ChildItem
+  /^\s*reading\s+(file|from)\s+/i,  // reading file src/...
+  /^\s*scanning\s+/i,               // scanning directory...
+  /^\s*searching\s+/i,              // searching for...
+  /^\s*writing\s+(to\s+)?file\s+/i, // writing to file...
+  /^\s*creating\s+file\s+/i,        // creating file...
+  /^\s*deleting\s+file\s+/i,        // deleting file...
+  /^\s*\[tool:\s/i,                 // [tool: read_file]
+  /^\s*\[function:\s/i,             // [function: search]
+  /^\s*tool_use\s*:/i,              // tool_use: read
+  /^\s*function_call\s*:/i,         // function_call: write
 ];
 
 function isToolExecStart(line: string): boolean {

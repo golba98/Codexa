@@ -86,6 +86,8 @@ import { AppShell } from "./ui/AppShell.js";
 let nextEventId = 0;
 let nextTurnId = 0;
 const LIVE_UPDATE_FLUSH_MS = 50;
+const PROGRESS_ONLY_FLUSH_MS = 150;
+const MAX_PENDING_PROGRESS_LINES = 5;
 
 function createEventId(): number {
   return nextEventId++;
@@ -886,10 +888,11 @@ export function App() {
 
     const scheduleLiveFlush = () => {
       if (liveFlushTimer) return;
+      const interval = pendingAssistantDelta ? LIVE_UPDATE_FLUSH_MS : PROGRESS_ONLY_FLUSH_MS;
       liveFlushTimer = setTimeout(() => {
         liveFlushTimer = null;
         flushLiveUpdates();
-      }, LIVE_UPDATE_FLUSH_MS);
+      }, interval);
     };
 
     const stopProviderRun = provider.run(
@@ -947,7 +950,14 @@ export function App() {
           const currentUiState = uiStateRef.current;
           const isRespondingForTurn = currentUiState.kind === "RESPONDING" && currentUiState.turnId === turnId;
           if (hasAssistantDelta || isRespondingForTurn) return;
-          pendingProgressLines.push(safeLine);
+          // Deduplicate: skip if identical to last pending line
+          if (pendingProgressLines.length > 0 && pendingProgressLines[pendingProgressLines.length - 1] === safeLine) return;
+          // Cap: replace last entry instead of growing unbounded
+          if (pendingProgressLines.length >= MAX_PENDING_PROGRESS_LINES) {
+            pendingProgressLines[pendingProgressLines.length - 1] = safeLine;
+          } else {
+            pendingProgressLines.push(safeLine);
+          }
           scheduleLiveFlush();
         },
       },
