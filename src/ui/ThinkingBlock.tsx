@@ -4,8 +4,11 @@ import type { RunEvent } from "../session/types.js";
 import { getUsableShellWidth } from "./layout.js";
 import { wrapPlainText } from "./textLayout.js";
 import { useTheme } from "./theme.js";
+import { DashCard } from "./DashCard.js";
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+
+const MAX_VISIBLE_THINKING_LINES = 5;
 
 interface ThinkingBlockProps {
   cols: number;
@@ -13,45 +16,40 @@ interface ThinkingBlockProps {
   turnIndex: number;
 }
 
-function formatTime(createdAt: number): string {
-  return new Date(createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-export function ThinkingBlock({ cols, run, turnIndex }: ThinkingBlockProps) {
+export function ThinkingBlock({ cols, run }: ThinkingBlockProps) {
   const theme = useTheme();
-  const [frameIndex, setFrameIndex] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setFrameIndex((current) => (current + 1) % SPINNER_FRAMES.length);
-    }, 90);
-    return () => clearInterval(timer);
-  }, []);
 
   const latestTool = run.toolActivities[run.toolActivities.length - 1] ?? null;
-  const activityLabel = latestTool
+  const toolLine = latestTool
     ? latestTool.status === "running"
       ? `running: ${latestTool.command}`
       : latestTool.summary ?? latestTool.command
-    : run.activitySummary
-      ? `${run.touchedFileCount} file${run.touchedFileCount === 1 ? "" : "s"} touched`
-      : run.summary;
-  const detailWidth = Math.max(1, getUsableShellWidth(cols, 4));
-  const detailRows = wrapPlainText(activityLabel || "thinking...", detailWidth);
+    : null;
+
+  const thinkingLines = run.thinkingLines ?? [];
+  const hasThinking = thinkingLines.length > 0;
+  const hasContent = hasThinking || toolLine;
+
+  if (!hasContent) return null;
+
+  const hiddenCount = Math.max(0, thinkingLines.length - MAX_VISIBLE_THINKING_LINES);
+  const visibleLines = thinkingLines.slice(-MAX_VISIBLE_THINKING_LINES);
+  const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
 
   return (
-    <Box flexDirection="column" marginBottom={1} width="100%">
-      <Box width="100%" overflow="hidden">
-        <Text color={theme.ACCENT}>{"✧ "}</Text>
-        <Text color={theme.INFO}>{SPINNER_FRAMES[frameIndex]}{" "}</Text>
-        <Text color={theme.TEXT} bold>{"codexa"}</Text>
-        <Text color={theme.DIM}>{`  ·  ${run.model}`}</Text>
-      </Box>
-      <Box flexDirection="column" paddingLeft={2} width="100%">
-        {detailRows.map((row, index) => (
-          <Text key={index} color={theme.MUTED}>{row || " "}</Text>
-        ))}
-      </Box>
-    </Box>
+    <DashCard cols={cols} title="Processing" rightBadge="active" borderColor={theme.BORDER_ACTIVE}>
+      {hiddenCount > 0 && (
+        <Text color={theme.DIM}>{`... ${hiddenCount} more above`}</Text>
+      )}
+      {visibleLines.map((line, index) => {
+        const rows = wrapPlainText(line, contentWidth);
+        return rows.map((row, rowIdx) => (
+          <Text key={`${index}-${rowIdx}`} color={theme.MUTED}>{row || " "}</Text>
+        ));
+      })}
+      {toolLine && (
+        <Text color={theme.INFO}>{"• "}{toolLine}</Text>
+      )}
+    </DashCard>
   );
 }

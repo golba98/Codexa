@@ -12,6 +12,41 @@ const HARD_REPAINT_SEQUENCE = "\x1b[2J\x1b[3J\x1b[H";
 
 type RenderHandle = Pick<Instance, "clear" | "waitUntilExit">;
 
+/**
+ * Typed subset of the internal Ink class instance we access for repaint control.
+ * The render() wrapper only exposes clear/waitUntilExit/etc — the real properties
+ * (lastOutput, onRender, calculateLayout, unsubscribeResize) live on the Ink class.
+ */
+interface InkInstance {
+  lastOutput: string;
+  onRender: (() => void) & { cancel?: () => void };
+  calculateLayout: () => void;
+  unsubscribeResize?: () => void;
+  rootNode: { onRender: { cancel?: () => void } };
+  throttledLog: { cancel?: () => void };
+}
+
+/**
+ * Resolve the real Ink class instance via Ink's internal WeakMap<stdout, Ink>.
+ * Returns null if resolution fails (e.g. different Ink version, test mocks).
+ */
+function resolveInkInstance(stdout: AppStdout): InkInstance | null {
+  try {
+    // Bun doesn't resolve bare subpath imports like "ink/build/instances.js"
+    // so we resolve ink's main entry first, then derive the sibling path.
+    const { createRequire } = require("node:module");
+    const req = createRequire(import.meta.url);
+    const inkMain = req.resolve("ink");
+    const instancesPath = inkMain.replace(/index\.js$/, "instances.js");
+    const instances = req(instancesPath);
+    const weakMap: WeakMap<object, InkInstance> =
+      instances.default ?? instances;
+    return weakMap.get(stdout as object) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export interface AppStdout {
   isTTY: boolean;
   write: (chunk: string) => boolean;
@@ -85,32 +120,48 @@ export function startApp({
   let repaintArmed = false;
   let pendingRecoveryRepaint = false;
   let renderHandle: RenderHandle | null = null;
+  let inkInstance: InkInstance | null = null;
   let repaintDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   const performHardRepaint = () => {
     stdout.write(HARD_REPAINT_SEQUENCE);
     if (renderHandle) {
-      // Reset Ink's lastOutput cache so the next onRender() call always
-      // re-draws, even when terminal dimensions haven't changed (e.g. after
-      // a taskbar restore where cols/rows are identical to before).
-      (renderHandle as any).lastOutput = "";
       renderHandle.clear();
     }
+    if (inkInstance) {
+      // Reset on the REAL Ink instance so the next render always redraws,
+      // even when terminal dimensions haven't changed (e.g. taskbar restore).
+      inkInstance.lastOutput = "";
+    }
+    // Do NOT call onRender() here — let React's own re-render cycle
+    // (triggered by useTerminalViewport state update) handle drawing.
+    // Forcing onRender() while React state still holds stale dimensions
+    // triggers Ink's outputHeight >= rows direct-write path, which
+    // desyncs logUpdate and causes duplicated UI.
   };
 
   const scheduleRepaint = () => {
     if (repaintDebounceTimer) clearTimeout(repaintDebounceTimer);
     repaintDebounceTimer = setTimeout(() => {
       repaintDebounceTimer = null;
-      if (renderHandle) {
-        // Soft re-render: erase current output and redraw with final settled
-        // dimensions.  We intentionally do NOT call performHardRepaint() here
-        // because a second \x1b[2J would push the fresh render back into the
-        // scrollback buffer, and Ink would skip re-drawing (output unchanged
-        // vs lastOutput) — leaving the screen blank.
+      if (renderHandle && inkInstance) {
+        // By now (150ms later) React state has settled — useTerminalViewport's
+        // 100ms settle timer has fired, so dimensions are correct.
+        stdout.write(HARD_REPAINT_SEQUENCE);
         renderHandle.clear();
-        (renderHandle as any).lastOutput = "";
-        (renderHandle as any).onRender?.();
+        inkInstance.lastOutput = "";
+
+        // Cancel any pending throttled callbacks so they don't fire with
+        // stale layout after we force a fresh render below.
+        inkInstance.throttledLog?.cancel?.();
+        inkInstance.rootNode?.onRender?.cancel?.();
+
+        // Safe to call now — React state is settled, output height will fit.
+        inkInstance.calculateLayout();
+        inkInstance.onRender();
+      } else if (renderHandle) {
+        // Fallback: no Ink instance resolved (e.g. test mock).
+        renderHandle.clear();
       } else {
         pendingRecoveryRepaint = true;
       }
@@ -157,6 +208,18 @@ export function startApp({
   registerExitHandler(cleanup);
 
   renderHandle = renderApp(<App />);
+
+  // Resolve the real Ink class instance to get access to lastOutput,
+  // onRender, calculateLayout, etc.  Gracefully degrades to null in tests.
+  inkInstance = resolveInkInstance(stdout);
+
+  // Remove Ink's own resize handler so the app is the sole resize handler.
+  // This eliminates the race where Ink's resized() fires alongside our
+  // onResize, causing interleaved renders that desync logUpdate.
+  if (inkInstance?.unsubscribeResize) {
+    inkInstance.unsubscribeResize();
+  }
+
   if (pendingRecoveryRepaint) {
     pendingRecoveryRepaint = false;
     performHardRepaint();

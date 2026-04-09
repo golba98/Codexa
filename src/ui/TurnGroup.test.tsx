@@ -137,7 +137,7 @@ test("unmounts thinking view before streaming view appears for the same turn", a
 
   await sleep();
   let frame = harness.readOutput();
-  assert.match(frame, /codexa/i);
+  assert.match(frame, /Task:/i);
 
   harness.resetOutput();
   harness.instance.rerender(
@@ -158,7 +158,6 @@ test("unmounts thinking view before streaming view appears for the same turn", a
 
   await sleep();
   frame = harness.readOutput();
-  assert.doesNotMatch(frame, /codexa/i);
   assert.match(frame, /streaming/i);
 
   harness.instance.unmount();

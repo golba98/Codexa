@@ -14,6 +14,7 @@ import {
   classifyOutput,
   formatForBox,
 } from "./outputPipeline.js";
+import { DashCard } from "./DashCard.js";
 
 const FLUSH_INTERVAL_MS = 60;
 
@@ -100,7 +101,7 @@ export function AgentBlock({
   }, [resetBuffer, streaming]);
 
   const content = streaming ? displayText : (assistant?.content ?? "");
-  const contentWidth = Math.max(1, getUsableShellWidth(cols, 2));
+  const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
 
   const pipelineState = useMemo(() => {
     const sanitized = streaming ? sanitizeStreamChunk(content) : sanitizeOutput(content);
@@ -110,30 +111,27 @@ export function AgentBlock({
     return { length: normalized.length, formatted };
   }, [content, streaming, contentWidth]);
 
-  const metadataColor = dim ? theme.DIM : theme.MUTED;
   const failureMessage = run?.status === "failed"
     ? sanitizeTerminalOutput(run.errorMessage ?? run.summary)
     : null;
   const cancelMessage = run?.status === "canceled" ? sanitizeTerminalOutput(run.summary) : null;
+
   const runStatus = runPhase === "streaming"
     ? "streaming"
     : run?.status === "completed"
       ? "complete"
       : run?.status ?? "running";
-  const rightMeta = run?.durationMs != null && runPhase !== "streaming"
+  const rightBadge = run?.durationMs != null && runPhase !== "streaming"
     ? `${runStatus} • ${formatDuration(run.durationMs)}`
     : runStatus;
   const heading = run?.model ? run.model.toUpperCase().replace(/-/g, " ") : `AGENT RESPONSE`;
 
-  return (
-    <Box flexDirection="column" marginBottom={1} width="100%" paddingLeft={2}>
-      <Box flexDirection="row" justifyContent="space-between" marginBottom={0}>
-        <Text color={metadataColor} bold>{heading}</Text>
-        <Text color={theme.DIM}>{rightMeta}</Text>
-      </Box>
+  const borderColor = dim ? theme.BORDER_SUBTLE : (runPhase === "streaming" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE);
 
+  return (
+    <DashCard cols={cols} title={heading} rightBadge={rightBadge} borderColor={borderColor}>
       {!streaming && failureMessage && (
-        <Box flexDirection="column" marginTop={1} width="100%">
+        <Box flexDirection="column" width="100%">
           {wrapPlainText(failureMessage, contentWidth).map((row, index) => (
             <Text key={index} color={theme.ERROR}>{index === 0 ? `✕ ${row || " "}` : row || " "}</Text>
           ))}
@@ -141,31 +139,20 @@ export function AgentBlock({
       )}
 
       {pipelineState.length > 0 && (
-        <Box flexDirection="column" marginTop={1} width="100%">
+        <Box flexDirection="column" width="100%">
           <RenderMessage segments={pipelineState.formatted} width={contentWidth} />
         </Box>
       )}
 
       {streaming && cursorVisible && (
-        <Box width="100%" marginTop={pipelineState.length > 0 ? 1 : 0} paddingLeft={2}>
+        <Box width="100%" paddingLeft={2}>
           <Text color={theme.ACCENT}>{"▌"}</Text>
         </Box>
       )}
 
       {!streaming && run && run.status !== "running" && (
-        <Box
-          flexDirection="column"
-          marginTop={pipelineState.length > 0 ? 1 : 0}
-          width="100%"
-        >
-          {run.touchedFileCount > 0 ? (
-            <Text color={dim ? theme.DIM : theme.SUCCESS}>
-              {"✓ "}
-              <Text color={metadataColor}>
-                {run.touchedFileCount} file{run.touchedFileCount === 1 ? "" : "s"} modified
-              </Text>
-            </Text>
-          ) : run.status === "canceled" ? (
+        <Box flexDirection="column" width="100%">
+          {run.status === "canceled" && cancelMessage ? (
             <Text color={theme.WARNING}>{cancelMessage}</Text>
           ) : run.status === "completed" && pipelineState.length === 0 ? (
             <Text color={theme.DIM}>{"(no output)"}</Text>
@@ -175,6 +162,6 @@ export function AgentBlock({
           )}
         </Box>
       )}
-    </Box>
+    </DashCard>
   );
 }
