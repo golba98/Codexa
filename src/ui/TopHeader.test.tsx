@@ -86,7 +86,7 @@ test("full mode renders wordmark at wide terminal", async () => {
   const output = await renderHeader(130, "authenticated");
 
   assert.match(output, /[█╔╗╚╝═║]/);
-  assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/\./g, "\\.")}`));
+  assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
 });
 
@@ -110,6 +110,6 @@ test("full mode always shows wordmark regardless of activity", async () => {
   const output = await renderHeader(130, "authenticated");
 
   assert.match(output, /[█╔╗╚╝═║]/);
-  assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/\./g, "\\.")}`));
+  assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
 });
