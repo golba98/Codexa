@@ -93,7 +93,7 @@ test("full mode renders wordmark at wide terminal", async () => {
 test("compact mode renders version and auth", async () => {
   const output = await renderHeader(80, "authenticated");
 
-  assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/\./g, "\\.")}`));
+  assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
   assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
 });
