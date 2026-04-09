@@ -65,6 +65,7 @@ interface EventRenderTimelineItem {
 
 export type RenderTimelineItem = TurnRenderTimelineItem | EventRenderTimelineItem;
 
+const WHEEL_SCROLL_STEP = 3;
 const HOME_KEY_INPUTS = new Set(["\u001b[H", "\u001b[1~", "\u001bOH"]);
 const END_KEY_INPUTS = new Set(["\u001b[F", "\u001b[4~", "\u001bOF"]);
 const SGR_WHEEL_EVENT_PATTERN = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
@@ -582,9 +583,11 @@ export function Timeline({ staticEvents, activeEvents, layout, uiState, viewport
       setViewport((current) => {
         let next = current;
         for (const direction of directions) {
-          next = direction === "up"
-            ? stepUpTimelineViewport(next, currentSnapshot)
-            : stepDownTimelineViewport(next, currentSnapshot);
+          for (let i = 0; i < WHEEL_SCROLL_STEP; i++) {
+            next = direction === "up"
+              ? stepUpTimelineViewport(next, currentSnapshot)
+              : stepDownTimelineViewport(next, currentSnapshot);
+          }
         }
         return next;
       });
