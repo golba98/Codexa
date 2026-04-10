@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useInput, useStdin } from "ink";
 import type {
   AssistantEvent,
@@ -503,7 +503,7 @@ function getToneColor(theme: ReturnType<typeof useTheme>, tone: TimelineTone | u
   }
 }
 
-function TimelineRowView({ row }: { row: TimelineRow }) {
+const TimelineRowView = memo(function TimelineRowView({ row }: { row: TimelineRow }) {
   const theme = useTheme();
 
   return (
@@ -522,9 +522,9 @@ function TimelineRowView({ row }: { row: TimelineRow }) {
       </Text>
     </Box>
   );
-}
+}, (prev, next) => prev.row === next.row);
 
-export function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows }: TimelineProps) {
+export const Timeline = memo(function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows }: TimelineProps) {
   const { stdin } = useStdin();
   const staticItems = useMemo(() => buildTimelineItems(staticEvents), [staticEvents]);
   const activeItems = useMemo(() => buildTimelineItems(activeEvents), [activeEvents]);
@@ -551,13 +551,29 @@ export function Timeline({ staticEvents, activeEvents, layout, uiState, viewport
     () => buildActiveRenderItems(activeItems, allTurnIds, uiState),
     [activeItems, allTurnIds, uiState],
   );
-  const liveRenderItems = useMemo(
-    () => [...staticRenderItems, ...activeRenderItems],
-    [activeRenderItems, staticRenderItems],
+  // ── Split snapshot building ──────────────────────────────────────────────
+  // During streaming, activeEvents change every ~50ms but staticEvents stay
+  // the same.  Building the snapshot for ALL items on every frame is
+  // expensive once the conversation has many turns.  By computing the static
+  // and active snapshots separately, the static half is cached and only the
+  // active half (typically 1-2 items) is rebuilt each frame.
+  const snapshotWidth = getShellWidth(layout.cols);
+  const staticSnapshot = useMemo(
+    () => buildTimelineSnapshot(staticRenderItems, { totalWidth: snapshotWidth }),
+    [snapshotWidth, staticRenderItems],
+  );
+  const activeSnapshot = useMemo(
+    () => buildTimelineSnapshot(activeRenderItems, { totalWidth: snapshotWidth }),
+    [snapshotWidth, activeRenderItems],
   );
   const liveSnapshot = useMemo(
-    () => buildTimelineSnapshot(liveRenderItems, { totalWidth: getShellWidth(layout.cols) }),
-    [layout.cols, liveRenderItems],
+    () => ({
+      items: [...staticSnapshot.items, ...activeSnapshot.items],
+      rows: [...staticSnapshot.rows, ...activeSnapshot.rows],
+      totalRows: staticSnapshot.totalRows + activeSnapshot.totalRows,
+      itemCount: staticSnapshot.itemCount + activeSnapshot.itemCount,
+    }),
+    [staticSnapshot, activeSnapshot],
   );
   const [viewport, setViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(liveSnapshot.totalRows));
   const liveSnapshotRef = useRef(liveSnapshot);
@@ -641,6 +657,16 @@ export function Timeline({ staticEvents, activeEvents, layout, uiState, viewport
       ))}
     </Box>
   );
-}
+}, (prev, next) => {
+  return (
+    prev.staticEvents === next.staticEvents &&
+    prev.activeEvents === next.activeEvents &&
+    prev.layout.cols === next.layout.cols &&
+    prev.layout.rows === next.layout.rows &&
+    prev.layout.mode === next.layout.mode &&
+    prev.uiState === next.uiState &&
+    prev.viewportRows === next.viewportRows
+  );
+});
 
 export { Timeline as ActiveTimeline };
