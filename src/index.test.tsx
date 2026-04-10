@@ -215,6 +215,74 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
   await flushMicrotasks();
 });
 
+test("treats sub-viewport dimensions as invalid and defers repaint", async () => {
+  const harness = createSupportedHarness();
+  startApp(harness.deps);
+
+  // Reset counters after initial render
+  harness.stdout.clearCalls = 0;
+  harness.stdout.writes = "";
+
+  // Emit resize with medium-invalid dims (pass old <=1 check but fail MIN_VIEWPORT threshold)
+  harness.stdout.columns = 15;
+  harness.stdout.rows = 8;
+  harness.stdout.emit("resize");
+
+  // Should NOT write scrollback clear — dims are invalid, content preserved
+  assert.equal(harness.stdout.clearCalls, 0);
+
+  // Debounce fires but dims are still invalid — repaint is skipped
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.equal(harness.stdout.clearCalls, 0);
+
+  // Now recover to valid dims
+  harness.stdout.columns = 120;
+  harness.stdout.rows = 40;
+  harness.stdout.emit("resize");
+
+  // After debounce, the repaint fires
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.ok(harness.stdout.clearCalls >= 1, `expected >=1 clear calls, got ${harness.stdout.clearCalls}`);
+
+  harness.resolveExit();
+  await flushMicrotasks();
+});
+
+test("debounced repaint fires after rapid resizes to identical dimensions", async () => {
+  const harness = createSupportedHarness();
+  startApp(harness.deps);
+
+  // Reset counters after initial render
+  harness.stdout.clearCalls = 0;
+  harness.stdout.writes = "";
+
+  try {
+    // Emit two resizes to identical valid dims in quick succession — simulates
+    // max→standard where the final dims match what React already rendered.
+    // The debounce should collapse both into a single repaint.
+    harness.stdout.columns = 100;
+    harness.stdout.rows = 35;
+    harness.stdout.emit("resize");
+    harness.stdout.emit("resize");
+
+    // Each resize writes a scrollback-only clear (\x1b[3J)
+    assert.match(harness.stdout.writes, /\x1b\[3J/);
+
+    // No clear() yet — deferred to the debounced repaint
+    assert.equal(harness.stdout.clearCalls, 0);
+
+    // Wait for the 150ms debounce to fire
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // renderHandle.clear() should have been called by the debounced repaint.
+    // (In mocks inkInstance is null so the fallback path runs.)
+    assert.ok(harness.stdout.clearCalls >= 1, `expected >=1 clear calls, got ${harness.stdout.clearCalls}`);
+  } finally {
+    harness.resolveExit();
+    await flushMicrotasks();
+  }
+});
+
 test("scheduled repaint calls renderHandle.clear when inkInstance is null", async () => {
   const harness = createSupportedHarness();
   startApp(harness.deps);

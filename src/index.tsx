@@ -2,6 +2,7 @@ import React from "react";
 import { render, type Instance } from "ink";
 import { App } from "./app.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
+import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 
 // \x1b[2J clears the visible viewport but on Windows Terminal it pushes the
 // cleared content into the scrollback buffer.  When the terminal is later
@@ -21,6 +22,8 @@ type RenderHandle = Pick<Instance, "clear" | "waitUntilExit">;
  */
 interface InkInstance {
   lastOutput: string;
+  lastOutputToRender: string;
+  lastOutputHeight: number;
   onRender: (() => void) & { cancel?: () => void };
   calculateLayout: () => void;
   unsubscribeResize?: () => void;
@@ -82,7 +85,8 @@ let activeRoot: ActiveRootState | null = null;
 function hasInvalidRestoreDimensions(stdout: Pick<AppStdout, "columns" | "rows">): boolean {
   const cols = stdout.columns;
   const rows = stdout.rows;
-  return !Number.isFinite(cols) || !Number.isFinite(rows) || (cols ?? 0) <= 1 || (rows ?? 0) <= 1;
+  return !Number.isFinite(cols) || !Number.isFinite(rows)
+    || (cols ?? 0) < MIN_VIEWPORT_COLS || (rows ?? 0) < MIN_VIEWPORT_ROWS;
 }
 
 export function startApp({
@@ -127,13 +131,19 @@ export function startApp({
 
   const performHardRepaint = () => {
     stdout.write(HARD_REPAINT_SEQUENCE);
+    if (inkInstance) {
+      // Reset ALL Ink output state BEFORE calling clear().
+      // Ink.clear() internally calls log.sync(this.lastOutputToRender || …)
+      // which re-fills log-update's previousOutput.  If lastOutputToRender
+      // still holds the most recent frame, the subsequent render produces
+      // identical output and log-update's hasChanges() returns false —
+      // the render silently no-ops and the screen stays blank.
+      inkInstance.lastOutput = "";
+      inkInstance.lastOutputToRender = "";
+      inkInstance.lastOutputHeight = 0;
+    }
     if (renderHandle) {
       renderHandle.clear();
-    }
-    if (inkInstance) {
-      // Reset on the REAL Ink instance so the next render always redraws,
-      // even when terminal dimensions haven't changed (e.g. taskbar restore).
-      inkInstance.lastOutput = "";
     }
     // Do NOT call onRender() here — let React's own re-render cycle
     // (triggered by useTerminalViewport state update) handle drawing.
@@ -162,8 +172,18 @@ export function startApp({
         // By now (150ms later) React state has settled — useTerminalViewport's
         // 100ms settle timer has fired, so dimensions are correct.
         stdout.write(HARD_REPAINT_SEQUENCE);
-        renderHandle.clear();
+
+        // Reset ALL Ink output state BEFORE calling clear().
+        // Ink.clear() internally calls log.sync(this.lastOutputToRender || …)
+        // which re-fills log-update's previousOutput.  If lastOutputToRender
+        // still holds the most recent frame, the subsequent onRender() produces
+        // identical output and log-update's hasChanges() returns false — the
+        // forced render silently no-ops and the screen stays blank.
         inkInstance.lastOutput = "";
+        inkInstance.lastOutputToRender = "";
+        inkInstance.lastOutputHeight = 0;
+
+        renderHandle.clear();
 
         // Cancel ALL pending throttled callbacks — including onRender's own
         // throttle — so the forced render below executes immediately rather
@@ -183,6 +203,17 @@ export function startApp({
         // edge cases where the forced onRender above produced a frame that
         // was buffered/lost by the terminal during its resize animation.
         inkInstance.lastOutput = "";
+
+        // Verification: monitor switches and DPI changes can take 200-500ms
+        // to settle.  Check if dims changed after the forced render and, if
+        // so, trigger another repaint cycle.
+        const renderedCols = stdout.columns;
+        const renderedRows = stdout.rows;
+        setTimeout(() => {
+          if (stdout.columns !== renderedCols || stdout.rows !== renderedRows) {
+            scheduleRepaint();
+          }
+        }, 350);
       } else if (renderHandle) {
         // Fallback: no Ink instance resolved (e.g. test mock).
         renderHandle.clear();

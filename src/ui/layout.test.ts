@@ -65,6 +65,10 @@ test("marks undersized restore samples as unstable without discarding the last s
     advanceTerminalViewport(stable, 2, 1),
     advanceTerminalViewport(stable, 1, 24),
     advanceTerminalViewport(stable, 24, 1),
+    // Medium-invalid: pass old <=1 check but fail MIN_VIEWPORT thresholds
+    advanceTerminalViewport(stable, 15, 8),
+    advanceTerminalViewport(stable, 19, 24),
+    advanceTerminalViewport(stable, 120, 9),
   ];
 
   for (const sample of invalidSamples) {

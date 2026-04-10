@@ -631,7 +631,7 @@ export function Timeline({ staticEvents, activeEvents, layout, uiState, viewport
   );
 
   if (visibleRows.length === 0) {
-    return null;
+    return <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} />;
   }
 
   return (
