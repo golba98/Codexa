@@ -62,6 +62,7 @@ export function getTokenBarDisplay(tokensUsed: number, modelSpec: ModelSpec) {
 interface BottomComposerProps {
   layout: Layout;
   uiState: UIState;
+  themeName?: string;
   mode?: string;
   model?: string;
   reasoningLevel?: string;
@@ -210,6 +211,7 @@ function getPlaceholder(persona: ComposerPersona): string {
 export function BottomComposer({
   layout,
   uiState,
+  themeName = "purple",
   mode = "",
   model = "",
   reasoningLevel = "",
@@ -671,6 +673,7 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   if (prev.layout.cols !== next.layout.cols) return false;
   if (prev.layout.rows !== next.layout.rows) return false;
   if (prev.layout.mode !== next.layout.mode) return false;
+  if (prev.themeName !== next.themeName) return false;
   
   // Re-render if model spec status changes
   if (prev.modelSpec?.status !== next.modelSpec?.status) return false;

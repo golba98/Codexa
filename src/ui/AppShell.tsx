@@ -37,23 +37,24 @@ export function AppShell({
   composerRows,
   panelHint,
 }: AppShellProps) {
-  const crampedViewport = isCrampedViewport(layout.rows);
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
   const showComposer = screen === "main";
-  const headerRows = screen === "main" ? measureTopHeaderRows(layout) + 1 : 0;
+  const showTimeline = screen === "main";
+  const showPanelStage = screen !== "main";
+  const headerRows = showTimeline ? measureTopHeaderRows(layout) + 1 : 0;
   const timelineRows = Math.max(1, shellHeight - headerRows - (showComposer ? composerRows : 0));
 
   return (
     <Box flexDirection="column" width="100%" height={shellHeight}>
       <Box flexDirection="column" width={shellWidth}>
-        {screen === "main" && (
+        {showTimeline && (
           <Box flexDirection="column" borderBottom={true} flexShrink={0}>
             <MemoizedTopHeader authState={authState} workspaceRoot={workspaceRoot} layout={layout} />
           </Box>
         )}
 
-        {screen === "main" ? (
+        {showTimeline && (
           <Box flexDirection="column" height={timelineRows} overflow="hidden">
             <Timeline
               staticEvents={staticEvents}
@@ -63,19 +64,13 @@ export function AppShell({
               viewportRows={timelineRows}
             />
           </Box>
-        ) : (
-          <Box flexDirection="column" flexGrow={1} overflow="hidden" paddingBottom={crampedViewport ? 0 : 1}>
-            <Timeline
-              staticEvents={staticEvents}
-              activeEvents={activeEvents}
-              layout={layout}
-              uiState={uiState}
-              viewportRows={Math.max(1, timelineRows)}
-            />
-          </Box>
         )}
 
-        {panel}
+        {showPanelStage && (
+          <Box flexDirection="column" flexGrow={1} justifyContent="center" overflow="hidden" paddingY={1}>
+            {panel}
+          </Box>
+        )}
 
         {showComposer && (
           <Box flexDirection="column" flexShrink={0}>
@@ -83,7 +78,7 @@ export function AppShell({
           </Box>
         )}
 
-        {screen !== "main" && panelHint}
+        {showPanelStage && panelHint}
       </Box>
     </Box>
   );

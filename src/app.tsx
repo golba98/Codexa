@@ -210,8 +210,23 @@ export function App() {
     return () => {
       isMountedRef.current = false;
       cleanupRef.current?.();
+      if (themePreviewTimerRef.current) {
+        clearTimeout(themePreviewTimerRef.current);
+        themePreviewTimerRef.current = null;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (screen === "theme-picker") {
+      return;
+    }
+
+    if (themePreviewTimerRef.current) {
+      clearTimeout(themePreviewTimerRef.current);
+      themePreviewTimerRef.current = null;
+    }
+  }, [screen]);
 
   useEffect(() => {
     uiStateRef.current = uiState;
@@ -1249,6 +1264,10 @@ export function App() {
                 <ThemePicker
                   currentTheme={themeSelection.committedTheme}
                   onSelect={(value) => {
+                    if (themePreviewTimerRef.current) {
+                      clearTimeout(themePreviewTimerRef.current);
+                      themePreviewTimerRef.current = null;
+                    }
                     setThemeSelection((currentTheme) => commitThemeSelection(currentTheme, value));
                     setScreen("main");
                     appendSystemEvent("Theme updated", `Visual theme switched to ${formatThemeLabel(value)}.`);
@@ -1270,6 +1289,7 @@ export function App() {
                   }}
                   onCancel={() => {
                     if (themePreviewTimerRef.current) clearTimeout(themePreviewTimerRef.current);
+                    themePreviewTimerRef.current = null;
                     setThemeSelection((currentTheme) => cancelThemeSelection(currentTheme));
                     setScreen("main");
                   }}
@@ -1284,6 +1304,7 @@ export function App() {
             uiState={uiState}
             mode={mode}
             model={model}
+            themeName={activeThemeName}
             reasoningLevel={reasoningLevel}
             tokensUsed={estimateTokens(conversationChars)}
             modelSpec={currentModelSpec}
