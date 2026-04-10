@@ -588,20 +588,27 @@ function buildCodePanelRows(keyPrefix: string, segment: Extract<Segment, { type:
   const panelWidth = Math.max(10, width - 2);
   const panelContentWidth = Math.max(1, panelWidth - 4);
 
-  // Detect diff: explicit lang="diff" OR lines matching unified-diff pattern.
-  // We check the first few lines for hunk/file headers to avoid false-positives
-  // on code that starts with + or - (e.g. arithmetic expressions, CLI flags).
-  const isDiffBlock = segment.lang.toLowerCase() === "diff"
-    || codeLines.some((line) => (
+  // Detect diff blocks using a two-tier test:
+  //   Tier 1 — "strong signal": explicit lang=diff, @@ hunk header, diff --git/--unified,
+  //            index <sha>, or a paired +++ / --- file-header pair.
+  //   Tier 2 — addition / deletion lines (+/-) are only treated as diff colouring when
+  //            Tier 1 fired.  This prevents false-positives from code that contains
+  //            arithmetic (+1, -1), CLI flags (-v, --verbose), POSIX permissions (+x),
+  //            or any other prose that starts with + or -.
+  const isExplicitDiff = segment.lang.toLowerCase() === "diff";
+  const hasStrongDiffSignal = isExplicitDiff
+    || codeLines.some((line) =>
       line.startsWith("@@")
       || line.startsWith("diff --")
       || line.startsWith("index ")
-      || line.startsWith("+++ ")
-      || line.startsWith("--- ")
-      // Allow + / - only when accompanied by a strong diff signal above
-      || (line.startsWith("+") && !line.startsWith("+++ "))
+      || (line.startsWith("+++ ") && codeLines.some((l) => l.startsWith("--- ")))
+      || (line.startsWith("--- ") && codeLines.some((l) => l.startsWith("+++ ")))
+    );
+  const isDiffBlock = hasStrongDiffSignal
+    && codeLines.some((line) =>
+      (line.startsWith("+") && !line.startsWith("+++ "))
       || (line.startsWith("-") && !line.startsWith("--- "))
-    ));
+    );
   const contentRows: TimelineRowSpan[][] = [];
 
   codeLines.forEach((line, index) => {
@@ -772,30 +779,23 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
 
   const rows: TimelineRow[] = [];
 
-  // 1. Add top margin for separation
+  // 1. Add top margin for separation from the task status line above.
   rows.push(createBlankRow(`${item.key}-agent-top-gap`, width));
 
-  // 2. Build prominent execution block header
-  const title = ` EXECUTION: ${heading} `;
-  const rightLabel = rightBadge ? ` ${rightBadge} ` : "";
-  const dashCount = Math.max(0, width - 2 - getTextWidth(title) - getTextWidth(rightLabel));
-  const topRowSpans: TimelineRowSpan[] = [
-    createSpan("──", borderTone),
-    createSpan(title, "text", { bold: true }),
-    createSpan("─".repeat(dashCount), borderTone),
-    ...(rightBadge ? [createSpan(rightLabel, "dim")] : []),
-  ];
-  rows.push(createRow(`${item.key}-agent-header`, topRowSpans, width));
+  // 2. Render the agent response inside a DashCard — visually consistent with
+  //    every other block in the timeline: USER INPUT, Processing, File Scan,
+  //    and Activity all use the same ╭──...──╮ frame.  The title is the model
+  //    name (e.g. "GPT 4O") or the generic "AGENT RESPONSE" fallback.
+  rows.push(...buildDashCardRows({
+    keyPrefix: `${item.key}-agent`,
+    width,
+    title: heading,
+    rightBadge,
+    borderTone,
+    contentRows,
+  }));
 
-  // 3. Add header content margin
-  rows.push(createBlankRow(`${item.key}-agent-header-gap`, width));
-
-  // 4. Add the actual content rows
-  contentRows.forEach((row, index) => {
-    rows.push(createRow(`${item.key}-agent-content-${index}`, padSpansToWidth(row, width), width));
-  });
-
-  // 5. Add bottom margin
+  // 3. Add bottom margin for separation from the next section / turn.
   rows.push(createBlankRow(`${item.key}-agent-bottom-gap`, width));
 
   return rows;
@@ -987,11 +987,19 @@ function buildStandaloneEventRows(item: Extract<RenderTimelineItem, { type: "eve
       width,
     ));
 
-    const content = sanitizeTerminalOutput(event.content).split("\n").find((line) => line.trim()) ?? "";
-    if (content) {
+    // Show the full content — not just the first line.  Error messages can span
+    // multiple lines (stack traces, multi-step explanations) and silently
+    // truncating to line 1 hides important diagnostic information.
+    const errorContentLines = sanitizeTerminalOutput(event.content)
+      .split("\n")
+      .filter((line) => line.trim());
+    if (errorContentLines.length > 0) {
+      const wrappedRows = errorContentLines.flatMap((line) =>
+        wrapPlainText(line, Math.max(1, width - 2)).map((row) => [createSpan(row || " ", "muted")])
+      );
       rows.push(...buildIndentedRows(
         `${item.key}-error-content`,
-        wrapPlainText(content, Math.max(1, width - 2)).map((row) => [createSpan(row || " ", "muted")]),
+        wrappedRows,
         width,
         2,
       ));
@@ -1007,11 +1015,19 @@ function buildStandaloneEventRows(item: Extract<RenderTimelineItem, { type: "eve
     width,
   ));
 
-  const firstLine = sanitizeTerminalOutput(event.content).split("\n").find((line) => line.trim()) ?? "";
-  if (firstLine) {
+  // Show the full content — not just the first line.  System events carry
+  // rich multi-line payloads: /help output, auth status, model listings,
+  // workspace summaries, etc.  Limiting to line 1 silently hides all of it.
+  const systemContentLines = sanitizeTerminalOutput(event.content)
+    .split("\n")
+    .filter((line) => line.trim());
+  if (systemContentLines.length > 0) {
+    const wrappedRows = systemContentLines.flatMap((line) =>
+      wrapPlainText(line, Math.max(1, width - 2)).map((row) => [createSpan(row || " ", "dim")])
+    );
     rows.push(...buildIndentedRows(
       `${item.key}-system-content`,
-      wrapPlainText(firstLine, Math.max(1, width - 2)).map((row) => [createSpan(row || " ", "dim")]),
+      wrappedRows,
       width,
       2,
     ));
