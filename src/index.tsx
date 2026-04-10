@@ -153,14 +153,30 @@ export function startApp({
         renderHandle.clear();
         inkInstance.lastOutput = "";
 
-        // Cancel any pending throttled callbacks so they don't fire with
-        // stale layout after we force a fresh render below.
+        // Cancel ALL pending throttled callbacks — including onRender's own
+        // throttle — so the forced render below executes immediately rather
+        // than being silently deferred by a stale throttle window.  This was
+        // the secondary cause of the maximize blank-screen bug: onRender()
+        // was called but the throttle swallowed it because React's own render
+        // cycle had already invoked onRender within the throttle interval.
         inkInstance.throttledLog?.cancel?.();
         inkInstance.rootNode?.onRender?.cancel?.();
+        if (typeof inkInstance.onRender?.cancel === "function") {
+          inkInstance.onRender.cancel();
+        }
 
-        // Safe to call now — React state is settled, output height will fit.
+        // Force a synchronous layout + render pass.
         inkInstance.calculateLayout();
         inkInstance.onRender();
+
+        // Safety: reset lastOutput after the forced render so the very next
+        // React-driven render cycle also writes output.  This recovers from
+        // edge cases where the forced onRender above produced a frame that
+        // was buffered/lost by the terminal during its resize animation —
+        // without this reset, lastOutput would hold a non-empty string and
+        // all subsequent React renders would no-op against it, leaving the
+        // screen permanently blank.
+        inkInstance.lastOutput = "";
       } else if (renderHandle) {
         // Fallback: no Ink instance resolved (e.g. test mock).
         renderHandle.clear();
@@ -172,6 +188,8 @@ export function startApp({
 
   const onResize = () => {
     if (hasInvalidRestoreDimensions(stdout)) {
+      // Transient invalid dimensions (e.g. during maximize/restore on Windows).
+      // Cancel any pending repaint — new valid dimensions will follow shortly.
       if (repaintDebounceTimer) {
         clearTimeout(repaintDebounceTimer);
         repaintDebounceTimer = null;
@@ -182,18 +200,33 @@ export function startApp({
 
     if (repaintArmed) {
       repaintArmed = false;
-      if (renderHandle) {
-        performHardRepaint();
-        return;
-      }
-      pendingRecoveryRepaint = true;
-      return;
     }
 
-    // Normal resize (valid dims throughout).
-    // Clear the screen and reset Ink's line tracking immediately so the next
-    // Ink re-render starts from a clean slate instead of ghosting old output.
-    performHardRepaint();
+    // ── Resize strategy: preserve visible content during the transition ──
+    //
+    // Previously this handler called performHardRepaint() which cleared the
+    // visible viewport (\x1b[2J) immediately.  This caused a blank frame
+    // that persisted until the deferred scheduleRepaint fired 150ms later.
+    // For maximize events on Windows Terminal the deferred forced render
+    // could collide with Ink's internal render throttle — onRender() was
+    // called but the throttle silently swallowed it because React's own
+    // render cycle had already invoked onRender within the same throttle
+    // interval.  Result: screen cleared, no render, permanently blank.
+    //
+    // New approach:
+    //  1. Clear only the scrollback buffer (\x1b[3J]) so old frames don't
+    //     ghost when the terminal is expanded (the stacked-UI artifact).
+    //     Do NOT clear the visible viewport — keep old content on-screen
+    //     so the user never sees a blank frame.
+    //  2. Reset Ink's output cache so the React-driven re-render (triggered
+    //     by useTerminalViewport's state update) writes fresh output to
+    //     stdout instead of short-circuiting due to lastOutput matching.
+    //  3. Schedule a full clean repaint (clear + forced render) for after
+    //     the layout dimensions settle, as a safety net.
+    stdout.write("\x1b[3J");
+    if (inkInstance) {
+      inkInstance.lastOutput = "";
+    }
     scheduleRepaint();
   };
 

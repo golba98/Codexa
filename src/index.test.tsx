@@ -151,11 +151,18 @@ test("hard-repaints once when resize recovers from invalid dimensions", async ()
   harness.stdout.rows = 40;
   harness.stdout.emit("resize");
 
-  assert.equal(harness.stdout.clearCalls, 1);
+  // New behaviour: onResize only clears scrollback (\x1b[3J]) immediately.
+  // renderHandle.clear() is deferred to scheduleRepaint (150ms).
+  assert.equal(harness.stdout.clearCalls, 0);
   assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
   assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
-  assert.match(harness.stdout.writes, /\x1b\[2J\x1b\[3J\x1b\[H/);
+  // Scrollback-only clear should appear (no \x1b[2J visible)
+  assert.match(harness.stdout.writes, /\x1b\[3J/);
+
+  // After the debounce fires, the full repaint + clear happens.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.ok(harness.stdout.clearCalls >= 1);
 
   harness.resolveExit();
   await flushMicrotasks();
@@ -171,10 +178,12 @@ test("hard-repaints when resize occurs without invalid dimensions", async () => 
   harness.stdout.columns = 80;
   harness.stdout.emit("resize");
 
-  // The clear sequence must be written immediately (before debounce fires)
-  assert.match(harness.stdout.writes.slice(writesBefore.length), /\x1b\[2J\x1b\[3J\x1b\[H/);
+  // New behaviour: only scrollback clear is written immediately.
+  // The visible viewport is NOT cleared — content stays on-screen.
+  const immediateWrites = harness.stdout.writes.slice(writesBefore.length);
+  assert.match(immediateWrites, /\x1b\[3J/);
 
-  // After debounce fires, Ink.clear() is also called
+  // After debounce fires, the full hard repaint + Ink.clear() is called.
   await new Promise((resolve) => setTimeout(resolve, 200));
   assert.ok(harness.stdout.clearCalls >= 1);
 
@@ -189,11 +198,14 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
   assert.equal(harness.stdout.listenerCount("resize"), 1);
   assert.equal(harness.registeredHandlers.length, 1);
 
+  // Cleanup is deferred via registerExitHandler (index 0)
   harness.registeredHandlers[0]!();
   assert.equal(harness.stdout.listenerCount("resize"), 0);
+  // Verify enable sequences were written during startup
   assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
   assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
+  // Verify disable sequences were written during cleanup
   assert.match(harness.stdout.writes, /\x1b\[\?1000l/);
   assert.match(harness.stdout.writes, /\x1b\[\?1006l/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004l/);
@@ -203,7 +215,7 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
   await flushMicrotasks();
 });
 
-test("scheduled repaint clears screen and calls renderHandle.clear when inkInstance is null", async () => {
+test("scheduled repaint calls renderHandle.clear when inkInstance is null", async () => {
   const harness = createSupportedHarness();
   startApp(harness.deps);
 
@@ -211,21 +223,22 @@ test("scheduled repaint clears screen and calls renderHandle.clear when inkInsta
   harness.stdout.clearCalls = 0;
   harness.stdout.writes = "";
 
-  // Emit a normal resize — triggers performHardRepaint + scheduleRepaint
+  // Emit a normal resize — triggers scrollback clear + scheduleRepaint
   harness.stdout.columns = 80;
   harness.stdout.emit("resize");
+
+  // Immediately after resize: only scrollback clear, no renderHandle.clear()
+  assert.equal(harness.stdout.clearCalls, 0);
+  assert.match(harness.stdout.writes, /\x1b\[3J/);
 
   // Wait for the 150ms debounce to fire
   await new Promise((resolve) => setTimeout(resolve, 200));
 
   // In test mocks, inkInstance is null so scheduleRepaint uses the fallback
-  // path that calls renderHandle.clear().  The immediate performHardRepaint
-  // also calls clear(), so we expect at least 2.
-  assert.ok(harness.stdout.clearCalls >= 2, `expected >=2 clear calls, got ${harness.stdout.clearCalls}`);
-
-  // The scheduled repaint should also write a hard-clear sequence
-  const repaintMatches = harness.stdout.writes.match(/\x1b\[2J\x1b\[3J\x1b\[H/g);
-  assert.ok(repaintMatches && repaintMatches.length >= 1, "expected at least one hard repaint sequence");
+  // path that calls renderHandle.clear() (no HARD_REPAINT_SEQUENCE written
+  // in the fallback branch — the full sequence is only used when inkInstance
+  // is available).
+  assert.ok(harness.stdout.clearCalls >= 1, `expected >=1 clear calls, got ${harness.stdout.clearCalls}`);
 
   harness.resolveExit();
   await flushMicrotasks();
