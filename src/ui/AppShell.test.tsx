@@ -84,7 +84,13 @@ function sleep(ms = 50): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function renderShell(layoutCols: number, layoutRows: number, uiState: UIState): Promise<string> {
+function renderShell(
+  layoutCols: number,
+  layoutRows: number,
+  uiState: UIState,
+  screen: "main" | "theme-picker" = "main",
+  panel: React.ReactNode = null,
+): Promise<string> {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = layoutCols;
@@ -111,19 +117,20 @@ function renderShell(layoutCols: number, layoutRows: number, uiState: UIState): 
     <ThemeProvider theme="purple">
       <AppShell
         layout={layout}
-        screen="main"
+        screen={screen}
         authState="authenticated"
         workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
         staticEvents={EVENTS}
         activeEvents={[]}
         uiState={uiState}
-        panel={null}
+        panel={panel}
         composer={
           <BottomComposer
             layout={layout}
             uiState={uiState}
             mode="auto-edit"
             model="gpt-5.4"
+            themeName="purple"
             reasoningLevel="medium"
             tokensUsed={1200}
             value=""
@@ -185,6 +192,19 @@ test("cramped busy state uses the run footer in app composition", async () => {
 
   assert.match(output, /Analysing request/i);
   assert.doesNotMatch(output, /CODEXA AGENT/);
+});
+
+test("non-main screens center the active panel and keep the composer hidden", async () => {
+  const output = await renderShell(
+    100,
+    30,
+    { kind: "IDLE" },
+    "theme-picker",
+    <Text>Theme panel</Text>,
+  );
+
+  assert.match(output, /Theme panel/);
+  assert.doesNotMatch(output, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+M/);
 });
 
 test("memoized composer re-renders when only the terminal height changes", async () => {

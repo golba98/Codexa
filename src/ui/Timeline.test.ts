@@ -256,13 +256,14 @@ test("page down from the frozen tail resumes live follow mode", () => {
 
 test("wheel stepping leaves follow mode and only resumes at the frozen tail", () => {
   const snapshot = createSnapshot([1, 1, 1, 1]);
+  const viewportRows = 3;
 
-  const stepUp = stepUpTimelineViewport(createFollowTailViewport(snapshot.totalRows), snapshot);
+  const stepUp = stepUpTimelineViewport(createFollowTailViewport(snapshot.totalRows), snapshot, viewportRows);
   assert.equal(stepUp.followTail, false);
   assert.equal(stepUp.anchorRow, snapshot.totalRows - 2);
   assert.equal(stepUp.frozenSnapshot?.itemCount, 4);
 
-  const stepDown = stepDownTimelineViewport(stepUp, snapshot);
+  const stepDown = stepDownTimelineViewport(stepUp, snapshot, viewportRows);
   assert.equal(stepDown.followTail, true);
   assert.equal(stepDown.anchorRow, snapshot.totalRows - 1);
   assert.equal(stepDown.frozenSnapshot, null);
@@ -270,7 +271,7 @@ test("wheel stepping leaves follow mode and only resumes at the frozen tail", ()
 
 test("manual browse snapshot survives run start and first assistant delta", () => {
   const initial = createSnapshot([1, 1, 1, 1]);
-  const browsing = stepUpTimelineViewport(createFollowTailViewport(initial.totalRows), initial);
+  const browsing = stepUpTimelineViewport(createFollowTailViewport(initial.totalRows), initial, 3);
   const afterRunStart = syncTimelineViewport(browsing, createSnapshot([1, 1, 1, 1, 1]));
   const afterFirstDelta = syncTimelineViewport(afterRunStart, createSnapshot([1, 1, 1, 1, 1, 2]));
   const selected = selectTimelineRows(createSnapshot([1, 1, 1, 1, 1, 2]), afterFirstDelta, 3);

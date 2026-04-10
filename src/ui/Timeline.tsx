@@ -287,6 +287,7 @@ export function pageDownTimelineViewport(
 export function stepUpTimelineViewport(
   viewport: TimelineViewportState,
   liveSnapshot: TimelineSnapshot,
+  viewportRows: number,
 ): TimelineViewportState {
   if (liveSnapshot.totalRows === 0) {
     return createFollowTailViewport(0);
@@ -297,9 +298,10 @@ export function stepUpTimelineViewport(
   const currentAnchor = viewport.followTail
     ? tailRow
     : clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
+  const floor = getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows);
 
   return {
-    anchorRow: Math.max(0, currentAnchor - 1),
+    anchorRow: Math.max(floor, currentAnchor - 1),
     followTail: false,
     unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
     unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
@@ -310,6 +312,7 @@ export function stepUpTimelineViewport(
 export function stepDownTimelineViewport(
   viewport: TimelineViewportState,
   liveSnapshot: TimelineSnapshot,
+  _viewportRows?: number,
 ): TimelineViewportState {
   if (liveSnapshot.totalRows === 0 || viewport.followTail) {
     return viewport;
@@ -585,8 +588,8 @@ export function Timeline({ staticEvents, activeEvents, layout, uiState, viewport
         for (const direction of directions) {
           for (let i = 0; i < WHEEL_SCROLL_STEP; i++) {
             next = direction === "up"
-              ? stepUpTimelineViewport(next, currentSnapshot)
-              : stepDownTimelineViewport(next, currentSnapshot);
+              ? stepUpTimelineViewport(next, currentSnapshot, viewportRows)
+              : stepDownTimelineViewport(next, currentSnapshot, viewportRows);
           }
         }
         return next;
@@ -597,7 +600,7 @@ export function Timeline({ staticEvents, activeEvents, layout, uiState, viewport
     return () => {
       stdin.off("data", handleRawInput);
     };
-  }, [stdin]);
+  }, [stdin, viewportRows]);
 
   useInput((input, key) => {
     if (liveSnapshot.totalRows === 0) return;
