@@ -139,7 +139,10 @@ export function App() {
   const [modelSpecs, setModelSpecs] = useState<Partial<Record<AvailableModel, ModelSpec>>>({});
   const { stdout } = useStdout();
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
-  const mouseCapture = mouseOverride ?? (screen === "main");
+  // Mouse capture (terminal mouse reporting) is OFF by default so the terminal
+  // emulator can handle mouse events natively — allowing drag-select and copy.
+  // Users can enable wheel-scroll mode with /mouse (disables native selection).
+  const mouseCapture = mouseOverride ?? false;
 
   useEffect(() => {
     // \x1b[?1000h: Enable basic mouse reporting (click/scroll)
@@ -1130,7 +1133,7 @@ export function App() {
           appendSystemEvent(
             "Mouse mode updated",
             nextMouse
-              ? "Mouse capture enabled — wheel scrolling active. Use Shift+click+drag for text selection."
+              ? "Mouse capture enabled — wheel scrolling active. Use Shift+click+drag or disable /mouse for text selection."
               : "Mouse capture disabled — native text selection active. Use PageUp/PageDown/Home/End to scroll.",
           );
           return;

@@ -250,7 +250,7 @@ export function handleCommand(
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
           "  /theme [name]      Switch theme directly (no arg opens picker)",
           "  /themes            Open visual theme picker (Up/Down + Enter)",
-          "  /mouse             Toggle terminal mouse browse mode (disables native selection)",
+          "  /mouse             Toggle wheel-scroll mode — off by default so native text selection works",
           "  /auth [option]     Open auth panel or set auth preference",
           "  /auth status       Probe Codexa auth status",
           "  /login             Show guided ChatGPT subscription login steps",

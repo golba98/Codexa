@@ -10,7 +10,6 @@ import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 // again — causing the "stacked UI" artifact.  \x1b[3J erases the scrollback
 // immediately after so nothing accumulates there.
 const HARD_REPAINT_SEQUENCE = "\x1b[2J\x1b[3J\x1b[H";
-const ENABLE_TRANSCRIPT_WHEEL_MODE = "\x1b[?1000h\x1b[?1006h";
 const DISABLE_TRANSCRIPT_WHEEL_MODE = "\x1b[?1000l\x1b[?1006l";
 
 type RenderHandle = Pick<Instance, "clear" | "waitUntilExit">;
@@ -120,7 +119,10 @@ export function startApp({
   // content from a previous process (e.g. bun --watch restart) ghosts above
   // the new frame.  We stay in the normal screen buffer (no \x1b[?1049h) to
   // preserve terminal scrollback and allow mouse text selection.
-  stdout.write(`${HARD_REPAINT_SEQUENCE}${ENABLE_TRANSCRIPT_WHEEL_MODE}\x1b[?2004h`);
+  // NOTE: Mouse reporting (\x1b[?1000h / \x1b[?1006h) is NOT enabled here.
+  // It is managed exclusively by the React app (app.tsx) and defaults to OFF
+  // so native terminal drag-selection and copy work without any special steps.
+  stdout.write(`${HARD_REPAINT_SEQUENCE}\x1b[?2004h`);
 
   let cleanupDone = false;
   let repaintArmed = false;
