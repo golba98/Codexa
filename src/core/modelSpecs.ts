@@ -27,9 +27,7 @@ export const MODEL_SPEC_DOC_URLS: Record<AvailableModel, string> = {
   "gpt-5.4": "https://developers.openai.com/api/docs/models/gpt-5.4",
   "gpt-5.4-mini": "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
   "gpt-5.3-codex": "https://developers.openai.com/api/docs/models/gpt-5.3-codex",
-  "gpt-5.2-codex": "https://developers.openai.com/api/docs/models/gpt-5.2-codex",
-  "gpt-5.1-codex-max": "https://developers.openai.com/api/docs/models/gpt-5.1-codex-max",
-  "gpt-5.1-codex-mini": "https://developers.openai.com/api/docs/models/gpt-5.1-codex-mini",
+  "gpt-5.2": "https://developers.openai.com/api/docs/models/gpt-5.2",
 };
 
 type ModelSpecCache = Partial<Record<AvailableModel, VerifiedModelSpec>>;
