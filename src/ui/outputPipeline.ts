@@ -5,6 +5,12 @@ import { parseMarkdown, type Segment } from "./Markdown.js";
 /**
  * 1. Sanitize: Strip ANSI escape sequences and non-printable control characters.
  * Removes known UI chrome bleed (e.g. box drawing characters) before rendering.
+ *
+ * Note on diff colours: Diff colouring in this app is applied at the React/Ink
+ * *rendering* layer via getDiffTone() tones, NOT via raw ANSI escape sequences.
+ * This means sanitizeTerminalOutput() can safely strip all raw ANSI here —
+ * the correct theme colours are re-applied by buildCodePanelRows/buildMarkdownRows
+ * in timelineMeasure.ts.  There is no need to preserve SGR codes at this stage.
  */
 export function sanitizeOutput(raw: string): string {
   if (!raw) return "";
@@ -39,6 +45,10 @@ export function normalizeOutput(clean: string): string {
 /**
  * 3. Classify: Segments the normalized string into typed semantic blocks
  * such as prose, code blocks, diffs, lists, and headers.
+ *
+ * Diff colouring is applied at render time (step 4) via getDiffTone() in
+ * timelineMeasure.ts, which maps each diff line to a TimelineTone that
+ * the theme system resolves to the correct terminal colour.
  */
 export function classifyOutput(normalized: string): Segment[] {
   return parseMarkdown(normalized);
