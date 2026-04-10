@@ -146,6 +146,18 @@ export function startApp({
     if (repaintDebounceTimer) clearTimeout(repaintDebounceTimer);
     repaintDebounceTimer = setTimeout(() => {
       repaintDebounceTimer = null;
+
+      // If dimensions are still invalid when the timer fires, skip the
+      // destructive repaint — the old content is still on-screen (we never
+      // cleared the viewport during the unstable phase) so the user sees
+      // stale-but-visible UI instead of a blank frame.  The next resize
+      // event with valid dimensions will schedule a fresh repaint.
+      if (hasInvalidRestoreDimensions(stdout)) {
+        return;
+      }
+
+      repaintArmed = false;
+
       if (renderHandle && inkInstance) {
         // By now (150ms later) React state has settled — useTerminalViewport's
         // 100ms settle timer has fired, so dimensions are correct.
@@ -155,10 +167,7 @@ export function startApp({
 
         // Cancel ALL pending throttled callbacks — including onRender's own
         // throttle — so the forced render below executes immediately rather
-        // than being silently deferred by a stale throttle window.  This was
-        // the secondary cause of the maximize blank-screen bug: onRender()
-        // was called but the throttle swallowed it because React's own render
-        // cycle had already invoked onRender within the throttle interval.
+        // than being silently deferred by a stale throttle window.
         inkInstance.throttledLog?.cancel?.();
         inkInstance.rootNode?.onRender?.cancel?.();
         if (typeof inkInstance.onRender?.cancel === "function") {
@@ -172,10 +181,7 @@ export function startApp({
         // Safety: reset lastOutput after the forced render so the very next
         // React-driven render cycle also writes output.  This recovers from
         // edge cases where the forced onRender above produced a frame that
-        // was buffered/lost by the terminal during its resize animation —
-        // without this reset, lastOutput would hold a non-empty string and
-        // all subsequent React renders would no-op against it, leaving the
-        // screen permanently blank.
+        // was buffered/lost by the terminal during its resize animation.
         inkInstance.lastOutput = "";
       } else if (renderHandle) {
         // Fallback: no Ink instance resolved (e.g. test mock).
@@ -188,13 +194,22 @@ export function startApp({
 
   const onResize = () => {
     if (hasInvalidRestoreDimensions(stdout)) {
-      // Transient invalid dimensions (e.g. during maximize/restore on Windows).
-      // Cancel any pending repaint — new valid dimensions will follow shortly.
-      if (repaintDebounceTimer) {
-        clearTimeout(repaintDebounceTimer);
-        repaintDebounceTimer = null;
-      }
+      // Transient invalid dimensions (e.g. during maximize/restore on
+      // Windows).  Don't clear the screen or reset Ink's cache — we want
+      // the old content to stay visible while dimensions are unstable.
+      //
+      // CRITICAL: always schedule a repaint rather than cancelling the
+      // pending timer.  On Windows Terminal, restore-down can emit resize
+      // events in this order:
+      //   1. valid dims (restored size)  → scheduleRepaint at t+150
+      //   2. invalid dims (trailing glitch) → THIS branch
+      // Previously this branch cancelled the timer from step 1, leaving
+      // the app with repaintArmed=true and no timer — permanent blank.
+      // Now the scheduleRepaint call here replaces the old timer with a
+      // new one that fires 150ms after the LAST event.  By then the
+      // terminal has settled and dims are valid.
       repaintArmed = true;
+      scheduleRepaint();
       return;
     }
 
@@ -204,16 +219,9 @@ export function startApp({
 
     // ── Resize strategy: preserve visible content during the transition ──
     //
-    // Previously this handler called performHardRepaint() which cleared the
-    // visible viewport (\x1b[2J) immediately.  This caused a blank frame
-    // that persisted until the deferred scheduleRepaint fired 150ms later.
-    // For maximize events on Windows Terminal the deferred forced render
-    // could collide with Ink's internal render throttle — onRender() was
-    // called but the throttle silently swallowed it because React's own
-    // render cycle had already invoked onRender within the same throttle
-    // interval.  Result: screen cleared, no render, permanently blank.
+    // Don't clear the visible viewport (\x1b[2J]) immediately — that would
+    // create a blank frame while React processes the new dimensions.
     //
-    // New approach:
     //  1. Clear only the scrollback buffer (\x1b[3J]) so old frames don't
     //     ghost when the terminal is expanded (the stacked-UI artifact).
     //     Do NOT clear the visible viewport — keep old content on-screen
