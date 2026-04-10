@@ -31,13 +31,13 @@ export const AVAILABLE_BACKENDS = [
 
 export type AvailableBackend = (typeof AVAILABLE_BACKENDS)[number]["id"];
 
+// Canonical model allowlist — add or remove models here only.
+// All pickers, commands, and validation read from this single source.
 export const AVAILABLE_MODELS = [
   "gpt-5.4",
   "gpt-5.4-mini",
   "gpt-5.3-codex",
-  "gpt-5.2-codex",
-  "gpt-5.1-codex-max",
-  "gpt-5.1-codex-mini",
+  "gpt-5.2",
 ] as const;
 
 export type AvailableModel = (typeof AVAILABLE_MODELS)[number];
@@ -60,9 +60,7 @@ export const MODEL_REASONING_RECOMMENDATIONS: Record<AvailableModel, ReasoningLe
   "gpt-5.4": "xhigh",
   "gpt-5.4-mini": "medium",
   "gpt-5.3-codex": "high",
-  "gpt-5.2-codex": "high",
-  "gpt-5.1-codex-max": "high",
-  "gpt-5.1-codex-mini": "medium",
+  "gpt-5.2": "high",
 };
 
 export const AVAILABLE_MODES = [

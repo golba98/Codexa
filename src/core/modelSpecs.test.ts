@@ -73,11 +73,11 @@ test("cache round-trip preserves verified values", () => {
 
   try {
     const cache = {
-      "gpt-5.2-codex": {
+      "gpt-5.2": {
         status: "verified" as const,
         contextWindow: 400_000,
         maxOutputTokens: 128_000,
-        sourceUrl: MODEL_SPEC_DOC_URLS["gpt-5.2-codex"],
+        sourceUrl: MODEL_SPEC_DOC_URLS["gpt-5.2"],
         verifiedAt: 456,
       },
     };
@@ -105,8 +105,8 @@ test("background refresh updates specs and dedupes concurrent requests", async (
 
   try {
     const [left, right] = await Promise.all([
-      service.refreshSpec("gpt-5.2-codex"),
-      service.refreshSpec("gpt-5.2-codex"),
+      service.refreshSpec("gpt-5.2"),
+      service.refreshSpec("gpt-5.2"),
     ]);
 
     assert.equal(fetchCalls, 1);
@@ -116,7 +116,7 @@ test("background refresh updates specs and dedupes concurrent requests", async (
     assert.equal(left.maxOutputTokens, 128_000);
 
     const persisted = JSON.parse(readFileSync(cacheFile, "utf-8")) as Record<string, ModelSpec>;
-    assert.equal(persisted["gpt-5.2-codex"]?.verifiedAt, 789);
+    assert.equal(persisted["gpt-5.2"]?.verifiedAt, 789);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -126,11 +126,11 @@ test("refresh returns unknown when a fetch fails even if cache exists", async ()
   const dir = mkdtempSync(join(tmpdir(), "codexa-model-specs-"));
   const cacheFile = join(dir, "model-specs.json");
   saveModelSpecCache({
-    "gpt-5.1-codex-max": {
+    "gpt-5.3-codex": {
       status: "verified",
       contextWindow: 400_000,
       maxOutputTokens: 128_000,
-      sourceUrl: MODEL_SPEC_DOC_URLS["gpt-5.1-codex-max"],
+      sourceUrl: MODEL_SPEC_DOC_URLS["gpt-5.3-codex"],
       verifiedAt: 123,
     },
   }, cacheFile);
@@ -141,11 +141,11 @@ test("refresh returns unknown when a fetch fails even if cache exists", async ()
   });
 
   try {
-    const spec = await service.refreshSpec("gpt-5.1-codex-max");
+    const spec = await service.refreshSpec("gpt-5.3-codex");
     assert.equal(spec.status, "unknown");
     assert.equal(spec.contextWindow, null);
     assert.equal(spec.maxOutputTokens, null);
-    assert.equal(spec.error, "Unable to parse model spec for gpt-5.1-codex-max");
+    assert.equal(spec.error, "Unable to parse model spec for gpt-5.3-codex");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -160,8 +160,8 @@ test("refresh returns unknown when there is no cache and verification fails", as
   });
 
   try {
-    const spec = await service.refreshSpec("gpt-5.1-codex-mini");
-    assert.deepEqual(spec, createUnknownModelSpec("gpt-5.1-codex-mini", "Unable to parse model spec for gpt-5.1-codex-mini"));
+    const spec = await service.refreshSpec("gpt-5.2");
+    assert.deepEqual(spec, createUnknownModelSpec("gpt-5.2", "Unable to parse model spec for gpt-5.2"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
