@@ -110,7 +110,7 @@ const COMMANDS = [
   { cmd: "/auth", desc: "Manage authentication" },
   { cmd: "/workspace", desc: "Show the locked workspace" },
   { cmd: "/copy", desc: "Copy the last response" },
-  { cmd: "/mouse", desc: "Toggle wheel-scroll mode — off by default so native text selection works" },
+  { cmd: "/mouse", desc: "Toggle wheel-scroll mode (on by default; off enables plain drag-select)" },
   { cmd: "/exit", desc: "Quit the application" },
 ] as const;
 
