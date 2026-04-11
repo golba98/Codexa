@@ -727,7 +727,7 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
   const assistant = item.item.assistant;
   const streaming = item.renderState.runPhase === "streaming";
   const dim = item.renderState.opacity !== "active";
-  const contentWidth = Math.max(1, width);
+  const contentWidth = Math.max(1, width - 4);
   const rawContent = assistant?.content ?? "";
   const sanitized = streaming ? sanitizeStreamChunk(rawContent) : sanitizeOutput(rawContent);
   const normalized = normalizeOutput(sanitized);
@@ -736,7 +736,7 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
 
   if (!streaming && run.status === "failed") {
     const failureMessage = sanitizeTerminalOutput(run.errorMessage ?? run.summary);
-    wrapPlainText(failureMessage, contentWidth).forEach((row, index) => {
+    wrapPlainText(failureMessage, Math.max(1, contentWidth - 2)).forEach((row, index) => {
       contentRows.push([
         createSpan(index === 0 ? "✕ " : "  ", "error"),
         createSpan(row || " ", "error"),
@@ -755,7 +755,9 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
 
   if (!streaming && run.status !== "running") {
     if (run.status === "canceled") {
-      contentRows.push([createSpan(sanitizeTerminalOutput(run.summary), "warning")]);
+      wrapPlainText(sanitizeTerminalOutput(run.summary), contentWidth).forEach((wrapped) => {
+        contentRows.push([createSpan(wrapped || " ", "warning")]);
+      });
     } else if (run.status === "completed" && normalized.length === 0) {
       contentRows.push([createSpan("(no output)", "dim")]);
     }
@@ -1046,29 +1048,37 @@ function applyTurnOpacity(rows: TimelineRow[], opacity: "active" | "recent" | "d
       ...row,
       spans: row.spans.map((span) => {
         if (span.tone === "borderActive") {
-          return { ...span, tone: "borderSubtle" };
+          return { ...span, tone: "borderSubtle" as TimelineTone };
         }
         return { ...span };
       }),
     }));
   }
 
+  // Dim mode: tone down most colours to "dim" but preserve semantic diff
+  // colours ("success" for additions, "error" for deletions) so that diff
+  // blocks in older turns remain readable instead of collapsing to a uniform
+  // monochrome.  "accent" (hunk headers) is mapped to "muted" for a softer
+  // but still-distinct visual.
   return rows.map((row) => ({
     ...row,
     spans: row.spans.map((span) => {
       if (
         span.tone === "text"
         || span.tone === "muted"
-        || span.tone === "accent"
         || span.tone === "info"
-        || span.tone === "success"
         || span.tone === "warning"
       ) {
-        return { ...span, tone: "dim" };
+        return { ...span, tone: "dim" as TimelineTone };
+      }
+      if (span.tone === "accent") {
+        return { ...span, tone: "muted" as TimelineTone };
       }
       if (span.tone === "borderActive") {
-        return { ...span, tone: "borderSubtle" };
+        return { ...span, tone: "borderSubtle" as TimelineTone };
       }
+      // "success" and "error" pass through — keeps diff additions (green)
+      // and deletions (red) visible in dimmed turns.
       return { ...span };
     }),
   }));
