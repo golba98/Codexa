@@ -174,6 +174,15 @@ export function App() {
       : (THEMES[activeThemeName] ?? THEMES.purple);
   const currentModelSpec = modelSpecs[model] ?? createLoadingModelSpec(model);
   const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
+
+  // Refs for mutable state values — used by stable callbacks below so they
+  // always read the latest value without being listed as deps (which would
+  // recreate the callbacks on every keystroke and defeat memoisation).
+  const inputValueRef = useRef(inputValue);
+  inputValueRef.current = inputValue;
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
+
   const busy = isUiBusy(uiState);
   const composerRows = useMemo(() => measureBottomComposerRows({
     layout: terminalLayout,
@@ -588,15 +597,72 @@ export function App() {
   }, [cancelActiveRun, exit]);
 
   const handleCopy = useCallback(async () => {
-    const assistantEvent = [...staticEvents].reverse().find((event) => event.type === "assistant");
-    if (!assistantEvent || assistantEvent.type !== "assistant") {
-      appendSystemEvent("Copy unavailable", "There is no assistant response to copy yet.");
+    // Build a full conversation transcript from all user prompts and assistant
+    // responses in staticEvents, paired by turnId and sorted chronologically.
+    type TurnPair = { createdAt: number; prompt: string; response: string | null };
+    const turns = new Map<number, TurnPair>();
+
+    for (const event of staticEvents) {
+      if (event.type === "user") {
+        const existing = turns.get(event.turnId);
+        if (!existing) {
+          turns.set(event.turnId, { createdAt: event.createdAt, prompt: event.prompt, response: null });
+        }
+      } else if (event.type === "assistant") {
+        const existing = turns.get(event.turnId);
+        if (existing) {
+          existing.response = event.content;
+        }
+      }
+    }
+
+    if (turns.size === 0) {
+      appendSystemEvent("Copy unavailable", "There is no conversation to copy yet.");
       return;
     }
 
-    const ok = await copyToClipboard(assistantEvent.content);
-    appendSystemEvent("Clipboard", ok ? "Copied the last assistant response." : "Clipboard unavailable.");
+    // Sort turns by creation time and format as a readable dialogue.
+    const lines: string[] = [];
+    const sorted = [...turns.values()].sort((a, b) => a.createdAt - b.createdAt);
+    for (const turn of sorted) {
+      lines.push(`You: ${turn.prompt.trim()}`);
+      if (turn.response?.trim()) {
+        lines.push("");
+        lines.push(`Codexa: ${turn.response.trim()}`);
+      }
+      lines.push("");
+    }
+    const transcript = lines.join("\n").trimEnd();
+
+    const ok = await copyToClipboard(transcript);
+    const turnWord = turns.size === 1 ? "1 turn" : `${turns.size} turns`;
+    appendSystemEvent(
+      "Clipboard",
+      ok
+        ? `Copied full conversation (${turnWord}) to clipboard.`
+        : "Clipboard unavailable.",
+    );
   }, [appendSystemEvent, staticEvents]);
+
+
+  // ── Stable composer-input callbacks ────────────────────────────────────────
+  // These use refs so the function identity never changes, avoiding
+  // unnecessary downstream work even though the memo comparator on
+  // MemoizedBottomComposer already skips callback checks.
+  const handleChangeInput = useCallback((value: string, nextCursor: number) => {
+    const safeValue = sanitizeTerminalInput(value);
+    dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(nextCursor, safeValue.length) });
+  }, [dispatchSession]);
+
+  const handleChangeValue = useCallback((value: string) => {
+    const safeValue = sanitizeTerminalInput(value);
+    dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(cursorRef.current, safeValue.length) });
+  }, [dispatchSession]);
+
+  const handleChangeCursor = useCallback((nextCursor: number) => {
+    const safeValue = sanitizeTerminalInput(inputValueRef.current);
+    dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(nextCursor, safeValue.length) });
+  }, [dispatchSession]);
 
   const handleClear = useCallback(() => {
     cancelActiveRun(false);
@@ -1316,20 +1382,11 @@ export function App() {
             modelSpec={currentModelSpec}
             value={inputValue}
             cursor={cursor}
-            onChangeInput={(value, nextCursor) => {
-              const safeValue = sanitizeTerminalInput(value);
-              dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(nextCursor, safeValue.length) });
-            }}
+            onChangeInput={handleChangeInput}
             onSubmit={handleSubmit}
             onCancel={handleCancel}
-            onChangeValue={(value) => {
-              const safeValue = sanitizeTerminalInput(value);
-              dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(cursor, safeValue.length) });
-            }}
-            onChangeCursor={(nextCursor) => {
-              const safeValue = sanitizeTerminalInput(inputValue);
-              dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(nextCursor, safeValue.length) });
-            }}
+            onChangeValue={handleChangeValue}
+            onChangeCursor={handleChangeCursor}
             onHistoryUp={handleHistoryUp}
             onHistoryDown={handleHistoryDown}
             onOpenBackendPicker={openBackendPicker}

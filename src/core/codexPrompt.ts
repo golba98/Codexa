@@ -38,7 +38,56 @@ export function resolveExecutionMode(
   return { mode: requestedMode, autoUpgraded: false };
 }
 
+export function enrichFileCreationPrompt(prompt: string): string {
+  const normalized = prompt.trim();
+  if (!normalized) return prompt;
+
+  const fileCreationMatch = /^(?:make|create|generate|add|write)\s+(?:a\s+|an\s+|new\s+)?(?:text\s+|markdown\s+|js\s+|ts\s+|python\s+)?(?:file|script|document)\s*(?:about|saying|for|called|named|with)?\s*(.*)$/i.exec(normalized);
+  
+  if (!fileCreationMatch) {
+    return prompt;
+  }
+  
+  const description = fileCreationMatch[1]?.trim();
+  if (!description) {
+    return [
+      prompt,
+      "",
+      "System Instructions for File Creation:",
+      "- The user requested a new file but didn't specify a name.",
+      "- Infer a sensible default filename (like 'untitled.txt' or 'scratch.md') and add content if context implies it. Do not create an empty file without an extension.",
+    ].join("\n");
+  }
+
+  const explicitExact = /^(?:called|named|save as)\s+['"]?([a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+)['"]?$/i.test(description);
+  const hasExtension = /\.[a-zA-Z0-9]{1,5}(\s|$)/.test(description);
+  const hasQuotes = /['"]([^'"]+)['"]/.test(description);
+  
+  if (explicitExact || hasExtension || hasQuotes) {
+    return [
+      prompt,
+      "",
+      "System Instructions for File Creation:",
+      "- The user provided an explicit filename (detected via quotes, extension, or direct naming).",
+      "- Create the file exactly as designated.",
+    ].join("\n");
+  }
+
+  return [
+    prompt,
+    "",
+    "System Instructions for File Creation:",
+    "- The request is a natural-language description, NOT a literal filename.",
+    "- DO NOT use the entire sentence as the filename (e.g., do not create 'how much i love rean go').",
+    "- Infer intent and generate a short, sensible filename (e.g., 'rean-love-note.txt', 'project-ideas.md').",
+    "- Include an appropriate file extension.",
+    "- The request implies content, so generate appropriate starter content. DO NOT create an empty file.",
+  ].join("\n");
+}
+
 export function buildCodexPrompt(prompt: string, mode: AvailableMode): string {
+  const enrichedPrompt = enrichFileCreationPrompt(prompt);
+
   if (mode === "suggest") {
     return [
       "The user request below is the task to handle now.",
@@ -51,7 +100,7 @@ export function buildCodexPrompt(prompt: string, mode: AvailableMode): string {
       "If you are truly blocked on one critical missing fact, end the response with exactly one line in this format: [QUESTION]: <your question>",
       "",
       "Task:",
-      prompt,
+      enrichedPrompt,
     ].join("\n");
   }
 
@@ -74,6 +123,6 @@ export function buildCodexPrompt(prompt: string, mode: AvailableMode): string {
     "After doing the work, summarize what changed.",
     "",
     "Task:",
-    prompt,
+    enrichedPrompt,
   ].join("\n");
 }

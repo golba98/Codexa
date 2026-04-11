@@ -109,7 +109,7 @@ const COMMANDS = [
   { cmd: "/themes", desc: "Open visual theme picker" },
   { cmd: "/auth", desc: "Manage authentication" },
   { cmd: "/workspace", desc: "Show the locked workspace" },
-  { cmd: "/copy", desc: "Copy the last response" },
+  { cmd: "/copy", desc: "Copy the full conversation transcript to clipboard" },
   { cmd: "/mouse", desc: "Toggle wheel-scroll mode (on by default; off enables plain drag-select)" },
   { cmd: "/exit", desc: "Quit the application" },
 ] as const;
