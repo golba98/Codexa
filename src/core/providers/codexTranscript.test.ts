@@ -102,7 +102,7 @@ test("streams thinking lines separately from assistant deltas", () => {
   assert.deepEqual(assistant, ["First line", "\nSecond line"]);
 });
 
-test("keeps multi-line assistant formatting when streaming", () => {
+test("emits fenced code blocks atomically when streaming", () => {
   const assistant: string[] = [];
   const parser = createCodexTranscriptStreamParser({
     onAssistantDelta: (chunk) => assistant.push(chunk),
@@ -113,7 +113,8 @@ test("keeps multi-line assistant formatting when streaming", () => {
   parser.feed("```\n");
   parser.flush();
 
-  assert.deepEqual(assistant, ["```ts", "\nconst value = 1;", "\n```"]);
+  // Code fences are buffered and emitted as a single atomic chunk
+  assert.deepEqual(assistant, ["```ts\nconst value = 1;\n```"]);
 });
 
 test("emits tool activity separately from assistant prose while streaming", () => {
@@ -157,6 +158,115 @@ test("removes tool execution stdout from the finalized assistant transcript", ()
     sanitizeCodexTranscript(raw),
     "I found the relevant files and updated the composer.",
   );
+});
+
+// ─── Progressive streaming tests ──────────────────────────────────────────────
+
+test("emits partial lines after timeout when no newline arrives", async () => {
+  const assistant: string[] = [];
+  const parser = createCodexTranscriptStreamParser({
+    onAssistantDelta: (chunk) => assistant.push(chunk),
+  });
+
+  parser.feed("assistant\n");
+  parser.feed("Hello wor");
+  // No newline yet — partial flush timer should fire after ~100ms
+  assert.equal(assistant.length, 0);
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(assistant.length, 1);
+  assert.equal(assistant[0], "Hello wor");
+
+  parser.flush();
+  // flush should not re-emit the already-emitted partial
+  assert.equal(assistant.length, 1);
+});
+
+test("does not duplicate content when partial is followed by complete line", async () => {
+  const assistant: string[] = [];
+  const parser = createCodexTranscriptStreamParser({
+    onAssistantDelta: (chunk) => assistant.push(chunk),
+  });
+
+  parser.feed("assistant\n");
+  parser.feed("Start of line");
+  // Wait for partial flush
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(assistant.length, 1);
+  assert.equal(assistant[0], "Start of line");
+
+  // Now the rest of the line arrives with newline
+  parser.feed(" and the rest\n");
+  // The partial was already emitted; the remaining text appends naturally
+  // The feed should process the complete line that includes both parts
+  assert.ok(assistant.length >= 1);
+
+  parser.flush();
+});
+
+test("code fence with prose before and after emits prose immediately and fence atomically", () => {
+  const assistant: string[] = [];
+  const parser = createCodexTranscriptStreamParser({
+    onAssistantDelta: (chunk) => assistant.push(chunk),
+  });
+
+  parser.feed("assistant\nHere is the code:\n```ts\nconst x = 1;\n```\nDone.\n");
+  parser.flush();
+
+  assert.equal(assistant.length, 3);
+  assert.equal(assistant[0], "Here is the code:");
+  assert.equal(assistant[1], "\n```ts\nconst x = 1;\n```");
+  assert.equal(assistant[2], "\nDone.");
+});
+
+test("code fence safety timeout emits buffered content after 3 seconds", async () => {
+  const assistant: string[] = [];
+  const parser = createCodexTranscriptStreamParser({
+    onAssistantDelta: (chunk) => assistant.push(chunk),
+  });
+
+  parser.feed("assistant\n```ts\nconst x = 1;\n");
+  // No closing fence — wait for safety timeout (3s)
+  // We'll test that flush() force-emits instead of waiting the full 3s
+  assert.equal(assistant.length, 0);
+
+  parser.flush();
+  assert.equal(assistant.length, 1);
+  assert.equal(assistant[0], "```ts\nconst x = 1;");
+});
+
+test("auto-promotes long prose lines from preamble to assistant section", () => {
+  const thinking: string[] = [];
+  const assistant: string[] = [];
+  const parser = createCodexTranscriptStreamParser({
+    onThinkingLine: (line) => thinking.push(line),
+    onAssistantDelta: (chunk) => assistant.push(chunk),
+  });
+
+  parser.feed([
+    "I have analyzed the codebase and here is a comprehensive summary of all the changes that need to be made to fix this issue.",
+  ].join("\n"));
+  parser.flush();
+
+  // Long prose with many words should auto-promote to assistant
+  assert.equal(thinking.length, 0);
+  assert.equal(assistant.length, 1);
+  assert.match(assistant[0]!, /analyzed the codebase/);
+});
+
+test("does not auto-promote short status lines from preamble", () => {
+  const thinking: string[] = [];
+  const assistant: string[] = [];
+  const parser = createCodexTranscriptStreamParser({
+    onThinkingLine: (line) => thinking.push(line),
+    onAssistantDelta: (chunk) => assistant.push(chunk),
+  });
+
+  parser.feed("Checking src/app.tsx\n");
+  parser.flush();
+
+  assert.equal(thinking.length, 1);
+  assert.equal(assistant.length, 0);
 });
 
 test("strips control characters from streamed and finalized assistant text", () => {

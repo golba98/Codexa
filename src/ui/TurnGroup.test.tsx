@@ -138,7 +138,7 @@ test("unmounts thinking view before streaming view appears for the same turn", a
 
   await sleep();
   let frame = harness.readOutput();
-  assert.match(frame, /Task:/i);
+  assert.match(frame, /processing/i);
 
   harness.resetOutput();
   harness.instance.rerender(
@@ -161,6 +161,114 @@ test("unmounts thinking view before streaming view appears for the same turn", a
   await sleep();
   frame = harness.readOutput();
   assert.match(frame, /streaming/i);
+
+  harness.instance.unmount();
+});
+
+test("renders progressive content updates during streaming", async () => {
+  const turnId = 12;
+  const user = makeUser(turnId);
+  const run = makeRunningRun(turnId);
+
+  const harness = renderTurnGroup(
+    <ThemeProvider theme="purple">
+      <TurnGroup
+        cols={120}
+        turnIndex={1}
+        user={user}
+        run={run}
+        assistant={makeAssistant(turnId, "First chunk")}
+        opacity="active"
+        question={null}
+        runPhase="streaming"
+        streamPreviewRows={8}
+        streamMode="assistant-first"
+      />
+    </ThemeProvider>,
+  );
+
+  await sleep();
+  let frame = harness.readOutput();
+  assert.match(frame, /first chunk/i);
+
+  // Update with more content — should render incrementally
+  harness.resetOutput();
+  harness.instance.rerender(
+    <ThemeProvider theme="purple">
+      <TurnGroup
+        cols={120}
+        turnIndex={1}
+        user={user}
+        run={run}
+        assistant={makeAssistant(turnId, "First chunk\nSecond chunk")}
+        opacity="active"
+        question={null}
+        runPhase="streaming"
+        streamPreviewRows={8}
+        streamMode="assistant-first"
+      />
+    </ThemeProvider>,
+  );
+
+  await sleep();
+  frame = harness.readOutput();
+  assert.match(frame, /second chunk/i);
+
+  harness.instance.unmount();
+});
+
+test("finalization with same content does not cause visual flash", async () => {
+  const turnId = 13;
+  const user = makeUser(turnId);
+  const run = makeRunningRun(turnId);
+  const content = "The response content stays the same";
+  const assistant = makeAssistant(turnId, content);
+
+  const harness = renderTurnGroup(
+    <ThemeProvider theme="purple">
+      <TurnGroup
+        cols={120}
+        turnIndex={1}
+        user={user}
+        run={run}
+        assistant={assistant}
+        opacity="active"
+        question={null}
+        runPhase="streaming"
+        streamPreviewRows={8}
+        streamMode="assistant-first"
+      />
+    </ThemeProvider>,
+  );
+
+  await sleep();
+  let streamingFrame = harness.readOutput();
+  assert.match(streamingFrame, /response content stays/i);
+
+  // Transition to final with same content
+  harness.resetOutput();
+  harness.instance.rerender(
+    <ThemeProvider theme="purple">
+      <TurnGroup
+        cols={120}
+        turnIndex={1}
+        user={user}
+        run={{ ...run, status: "completed", durationMs: 800 }}
+        assistant={assistant}
+        opacity="active"
+        question={null}
+        runPhase="final"
+        streamPreviewRows={8}
+        streamMode="assistant-first"
+      />
+    </ThemeProvider>,
+  );
+
+  await sleep();
+  let finalFrame = harness.readOutput();
+  // Content should still be present — no flash/disappearance
+  assert.match(finalFrame, /response content stays/i);
+  assert.match(finalFrame, /complete/i);
 
   harness.instance.unmount();
 });

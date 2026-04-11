@@ -18,6 +18,7 @@ export interface AppShellProps {
   composer: React.ReactNode;
   composerRows: number;
   panelHint?: React.ReactNode;
+  verboseMode?: boolean;
 }
 
 export function isCrampedViewport(rows: number | undefined): boolean {
@@ -36,6 +37,7 @@ function AppShellInner({
   composer,
   composerRows,
   panelHint,
+  verboseMode = false,
 }: AppShellProps) {
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
@@ -73,6 +75,7 @@ function AppShellInner({
               layout={layout}
               uiState={uiState}
               viewportRows={timelineRows}
+              verboseMode={verboseMode}
             />
           </Box>
         )}
@@ -120,6 +123,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.activeEvents    === next.activeEvents    &&
     prev.uiState         === next.uiState         &&
     prev.composerRows    === next.composerRows    &&
-    prev.composer        === next.composer
+    prev.composer        === next.composer        &&
+    prev.verboseMode     === next.verboseMode
   );
 });
