@@ -139,7 +139,13 @@ export function App() {
   const [modelSpecs, setModelSpecs] = useState<Partial<Record<AvailableModel, ModelSpec>>>({});
   const { stdout } = useStdout();
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
-  const mouseCapture = mouseOverride ?? (screen === "main");
+  // Mouse reporting is ON by default so wheel-based history scrolling works in
+  // the timeline. When mouse reporting is active, most modern terminals (Windows
+  // Terminal, iTerm2, etc.) still allow text selection via Shift+drag — the
+  // terminal intercepts Shift-modified clicks itself before forwarding to the app.
+  // Use /mouse to toggle to native-only mode if you prefer plain drag-select
+  // at the cost of losing wheel scroll (keyboard PageUp/PageDown still works).
+  const mouseCapture = mouseOverride ?? true;
 
   useEffect(() => {
     // \x1b[?1000h: Enable basic mouse reporting (click/scroll)
@@ -1130,8 +1136,8 @@ export function App() {
           appendSystemEvent(
             "Mouse mode updated",
             nextMouse
-              ? "Mouse capture enabled — wheel scrolling active. Use Shift+click+drag for text selection."
-              : "Mouse capture disabled — native text selection active. Use PageUp/PageDown/Home/End to scroll.",
+              ? "Mouse capture enabled — wheel scrolling active. Use Shift+drag for text selection (supported by most terminals)."
+              : "Mouse capture disabled — native drag-select active. Use PageUp/PageDown/Home/End to scroll.",
           );
           return;
         }

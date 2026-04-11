@@ -7,8 +7,13 @@
 //
 // The component is split so token/model info can re-render independently
 // of workspace/auth info — both are memoized.
+//
+// PERF: Wrapped in React.memo with an explicit prop comparator so this
+// component does NOT re-render during streaming (which updates activeEvents
+// and causes App → AppShell to re-render on every streaming chunk).
+// Only props that visibly affect status-bar output are compared.
 
-import React, { useMemo } from "react";
+import React, { memo, useMemo } from "react";
 import { Box, Text } from "ink";
 import { APP_VERSION, formatModeLabel } from "../config/settings.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
@@ -59,7 +64,7 @@ function formatApprox(n: number): string {
   return `${n}`;
 }
 
-export function StatusBar({
+function StatusBarInner({
   authState,
   workspaceRoot,
   layout,
@@ -86,16 +91,22 @@ export function StatusBar({
     ? (mode === "suggest" ? "S" : mode === "auto-edit" ? "E" : "A")
     : formatModeLabel(mode);
 
+  // Memoize expensive token-bar computation — only recompute when usage or spec changes.
   const tokenBar = useMemo(
     () => tokenBarString(tokensUsed, modelSpec),
     [tokensUsed, modelSpec],
   );
 
-  const tokenColor =
-    tokenBar.pct === null ? theme.DIM
-    : tokenBar.pct >= 90  ? theme.ERROR
-    : tokenBar.pct >= 70  ? theme.WARNING
-    : theme.SUCCESS;
+  // Derive token color from pct — stable unless pct or theme colors change.
+  const tokenColor = useMemo(
+    () => (
+      tokenBar.pct === null ? theme.DIM
+      : tokenBar.pct >= 90  ? theme.ERROR
+      : tokenBar.pct >= 70  ? theme.WARNING
+      : theme.SUCCESS
+    ),
+    [tokenBar.pct, theme.DIM, theme.ERROR, theme.WARNING, theme.SUCCESS],
+  );
 
   // ── MICRO (<60 cols) ──────────────────────────────────────────────────────
   if (layoutMode === "micro") {
@@ -131,9 +142,14 @@ export function StatusBar({
   const tokenSuffix = tokenBar.pct !== null
     ? `  ${formatApprox(tokensUsed)}  ${tokenBar.pct}%`
     : `  ${formatApprox(tokensUsed)}`;
-  // 15 chars for "⌂  " + "  ⬡  Tokens: " + token suffix
+  // Memoize the path truncation — expensive for long paths and stable for most renders.
   const wsMaxWidth = Math.max(8, innerW - 16 - tokenSuffix.length - modelModeStr.length);
-  const wsDisplay = truncatePath(workspaceRoot, wsMaxWidth);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const wsDisplay = useMemo(
+    () => truncatePath(workspaceRoot, wsMaxWidth),
+    // wsMaxWidth depends on cols/model/mode/tokensUsed — recalculate only when it changes.
+    [workspaceRoot, wsMaxWidth],
+  );
 
   return (
     <Box
@@ -182,3 +198,24 @@ export function StatusBar({
     </Box>
   );
 }
+
+/**
+ * Memoized StatusBar — gates re-renders on the exact subset of props
+ * that affect what the bar displays.  Streaming updates (activeEvents,
+ * uiState, cursor) flow through App → AppShell but do NOT reach
+ * StatusBar unless authState / workspaceRoot / layout / model / mode /
+ * tokensUsed / modelSpec actually change.
+ */
+export const StatusBar = memo(StatusBarInner, (prev, next) => {
+  return (
+    prev.authState       === next.authState       &&
+    prev.workspaceRoot   === next.workspaceRoot   &&
+    prev.layout.cols     === next.layout.cols     &&
+    prev.layout.rows     === next.layout.rows     &&
+    prev.layout.mode     === next.layout.mode     &&
+    prev.model           === next.model           &&
+    prev.mode            === next.mode            &&
+    prev.tokensUsed      === next.tokensUsed      &&
+    prev.modelSpec       === next.modelSpec
+  );
+});

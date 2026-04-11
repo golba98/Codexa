@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useMemo } from "react";
 import { Box } from "ink";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
@@ -24,7 +24,7 @@ export function isCrampedViewport(rows: number | undefined): boolean {
   return (rows ?? 24) <= 24;
 }
 
-export function AppShell({
+function AppShellInner({
   layout,
   screen,
   authState,
@@ -42,14 +42,25 @@ export function AppShell({
   const showComposer = screen === "main";
   const showTimeline = screen === "main";
   const showPanelStage = screen !== "main";
-  const headerRows = showTimeline ? measureTopHeaderRows(layout) + 1 : 0;
-  const timelineRows = Math.max(1, shellHeight - headerRows - (showComposer ? composerRows : 0));
+
+  // Memoize headerRows — only changes when layout mode/cols changes, not on streaming.
+  const headerRows = useMemo(
+    () => (showTimeline ? measureTopHeaderRows(layout) + 1 : 0),
+    [showTimeline, layout.cols, layout.rows, layout.mode],
+  );
+
+  // timelineRows similarly stable — only changes when layout or composerRows change.
+  const timelineRows = useMemo(
+    () => Math.max(1, shellHeight - headerRows - (showComposer ? composerRows : 0)),
+    [shellHeight, headerRows, showComposer, composerRows],
+  );
 
   return (
     <Box flexDirection="column" width="100%" height={shellHeight}>
       <Box flexDirection="column" width={shellWidth}>
         {showTimeline && (
           <Box flexDirection="column" borderBottom={true} flexShrink={0}>
+            {/* MemoizedTopHeader already has its own comparator — stable during streaming. */}
             <MemoizedTopHeader authState={authState} workspaceRoot={workspaceRoot} layout={layout} />
           </Box>
         )}
@@ -83,3 +94,31 @@ export function AppShell({
     </Box>
   );
 }
+
+/**
+ * Memoized AppShell — prevents re-renders when irrelevant App state changes.
+ *
+ * The App component re-renders on every streaming delta (via dispatchSession),
+ * cursor move, and conversationChars update.  AppShell itself only needs to
+ * re-render when the layout, screen, event lists, uiState, or composer
+ * layout rows actually change.  ReactNode props (panel, composer, panelHint)
+ * are intentionally excluded from the comparator — they are already internally
+ * memoized at their own component level (MemoizedBottomComposer, etc.).
+ */
+export const AppShell = memo(AppShellInner, (prev, next) => {
+  return (
+    prev.layout.cols     === next.layout.cols     &&
+    prev.layout.rows     === next.layout.rows     &&
+    prev.layout.mode     === next.layout.mode     &&
+    prev.screen          === next.screen          &&
+    prev.authState       === next.authState       &&
+    prev.workspaceRoot   === next.workspaceRoot   &&
+    prev.staticEvents    === next.staticEvents    &&
+    prev.activeEvents    === next.activeEvents    &&
+    prev.uiState         === next.uiState         &&
+    prev.composerRows    === next.composerRows    &&
+    prev.panel           === next.panel           &&
+    prev.composer        === next.composer        &&
+    prev.panelHint       === next.panelHint
+  );
+});

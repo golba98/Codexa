@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useInput, useStdin } from "ink";
 import type {
   AssistantEvent,
@@ -339,6 +339,51 @@ export function stepDownTimelineViewport(
   };
 }
 
+export function scrollTimelineViewport(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+  viewportRows: number,
+  deltaRows: number,
+): TimelineViewportState {
+  if (liveSnapshot.totalRows === 0) {
+    return createFollowTailViewport(0);
+  }
+  if (deltaRows === 0) {
+    return viewport;
+  }
+
+  const frozenSnapshot = getFrozenSnapshot(viewport, liveSnapshot);
+  const tailRow = Math.max(0, frozenSnapshot.totalRows - 1);
+  
+  if (deltaRows > 0 && viewport.followTail) {
+    return viewport;
+  }
+
+  const currentAnchor = viewport.followTail
+    ? tailRow
+    : clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
+    
+  const floor = getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows);
+
+  let nextAnchor = currentAnchor + deltaRows;
+
+  if (nextAnchor >= tailRow) {
+    return createFollowTailViewport(liveSnapshot.totalRows);
+  }
+  
+  if (nextAnchor < floor) {
+    nextAnchor = floor;
+  }
+
+  return {
+    anchorRow: nextAnchor,
+    followTail: false,
+    unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
+    unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
+    frozenSnapshot,
+  };
+}
+
 export function homeTimelineViewport(
   viewport: TimelineViewportState,
   liveSnapshot: TimelineSnapshot,
@@ -503,7 +548,7 @@ function getToneColor(theme: ReturnType<typeof useTheme>, tone: TimelineTone | u
   }
 }
 
-function TimelineRowView({ row }: { row: TimelineRow }) {
+const TimelineRowView = memo(function TimelineRowView({ row }: { row: TimelineRow }) {
   const theme = useTheme();
 
   return (
@@ -522,9 +567,9 @@ function TimelineRowView({ row }: { row: TimelineRow }) {
       </Text>
     </Box>
   );
-}
+}, (prev, next) => prev.row === next.row);
 
-export function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows }: TimelineProps) {
+export const Timeline = memo(function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows }: TimelineProps) {
   const { stdin } = useStdin();
   const staticItems = useMemo(() => buildTimelineItems(staticEvents), [staticEvents]);
   const activeItems = useMemo(() => buildTimelineItems(activeEvents), [activeEvents]);
@@ -551,13 +596,29 @@ export function Timeline({ staticEvents, activeEvents, layout, uiState, viewport
     () => buildActiveRenderItems(activeItems, allTurnIds, uiState),
     [activeItems, allTurnIds, uiState],
   );
-  const liveRenderItems = useMemo(
-    () => [...staticRenderItems, ...activeRenderItems],
-    [activeRenderItems, staticRenderItems],
+  // ── Split snapshot building ──────────────────────────────────────────────
+  // During streaming, activeEvents change every ~50ms but staticEvents stay
+  // the same.  Building the snapshot for ALL items on every frame is
+  // expensive once the conversation has many turns.  By computing the static
+  // and active snapshots separately, the static half is cached and only the
+  // active half (typically 1-2 items) is rebuilt each frame.
+  const snapshotWidth = getShellWidth(layout.cols);
+  const staticSnapshot = useMemo(
+    () => buildTimelineSnapshot(staticRenderItems, { totalWidth: snapshotWidth }),
+    [snapshotWidth, staticRenderItems],
+  );
+  const activeSnapshot = useMemo(
+    () => buildTimelineSnapshot(activeRenderItems, { totalWidth: snapshotWidth }),
+    [snapshotWidth, activeRenderItems],
   );
   const liveSnapshot = useMemo(
-    () => buildTimelineSnapshot(liveRenderItems, { totalWidth: getShellWidth(layout.cols) }),
-    [layout.cols, liveRenderItems],
+    () => ({
+      items: [...staticSnapshot.items, ...activeSnapshot.items],
+      rows: [...staticSnapshot.rows, ...activeSnapshot.rows],
+      totalRows: staticSnapshot.totalRows + activeSnapshot.totalRows,
+      itemCount: staticSnapshot.itemCount + activeSnapshot.itemCount,
+    }),
+    [staticSnapshot, activeSnapshot],
   );
   const [viewport, setViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(liveSnapshot.totalRows));
   const liveSnapshotRef = useRef(liveSnapshot);
@@ -571,6 +632,9 @@ export function Timeline({ staticEvents, activeEvents, layout, uiState, viewport
   }, [liveSnapshot]);
 
   useEffect(() => {
+    let scrollDelta = 0;
+    let scrollTimer: ReturnType<typeof setTimeout> | null = null;
+
     const handleRawInput = (chunk: Buffer | string) => {
       const raw = typeof chunk === "string" ? chunk : chunk.toString();
       const directions = parseWheelScrollDirections(raw);
@@ -578,27 +642,33 @@ export function Timeline({ staticEvents, activeEvents, layout, uiState, viewport
         return;
       }
 
-      const currentSnapshot = liveSnapshotRef.current;
-      if (currentSnapshot.totalRows === 0) {
+      for (const direction of directions) {
+        if (direction === "up") scrollDelta -= WHEEL_SCROLL_STEP;
+        else scrollDelta += WHEEL_SCROLL_STEP;
+      }
+
+      if (scrollTimer !== null) {
         return;
       }
 
-      setViewport((current) => {
-        let next = current;
-        for (const direction of directions) {
-          for (let i = 0; i < WHEEL_SCROLL_STEP; i++) {
-            next = direction === "up"
-              ? stepUpTimelineViewport(next, currentSnapshot, viewportRows)
-              : stepDownTimelineViewport(next, currentSnapshot, viewportRows);
-          }
+      scrollTimer = setTimeout(() => {
+        const currentSnapshot = liveSnapshotRef.current;
+        const deltaRows = scrollDelta;
+        scrollDelta = 0;
+        scrollTimer = null;
+
+        if (deltaRows === 0 || currentSnapshot.totalRows === 0) {
+          return;
         }
-        return next;
-      });
+
+        setViewport((current) => scrollTimelineViewport(current, currentSnapshot, viewportRows, deltaRows));
+      }, 16);
     };
 
     stdin.on("data", handleRawInput);
     return () => {
       stdin.off("data", handleRawInput);
+      if (scrollTimer !== null) clearTimeout(scrollTimer);
     };
   }, [stdin, viewportRows]);
 
@@ -641,6 +711,16 @@ export function Timeline({ staticEvents, activeEvents, layout, uiState, viewport
       ))}
     </Box>
   );
-}
+}, (prev, next) => {
+  return (
+    prev.staticEvents === next.staticEvents &&
+    prev.activeEvents === next.activeEvents &&
+    prev.layout.cols === next.layout.cols &&
+    prev.layout.rows === next.layout.rows &&
+    prev.layout.mode === next.layout.mode &&
+    prev.uiState === next.uiState &&
+    prev.viewportRows === next.viewportRows
+  );
+});
 
 export { Timeline as ActiveTimeline };

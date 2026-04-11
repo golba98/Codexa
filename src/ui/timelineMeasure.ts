@@ -360,7 +360,12 @@ function formatDuration(ms: number): string {
 
 function buildTaskStatusRow(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number): TimelineRow {
   const run = item.item.run!;
-  const frame = SPINNER_FRAMES[Math.floor(Date.now() / 90) % SPINNER_FRAMES.length] ?? SPINNER_FRAMES[0];
+  // PERF: Do NOT call Date.now() here — this function runs inside buildTimelineSnapshot
+  // which is computed inside a useMemo in Timeline.tsx.  Using Date.now() prevents the
+  // snapshot from ever fully stabilising, causing unnecessary downstream invalidation.
+  // The spinner animation is handled by TurnGroup/TaskStatusLine via its own setInterval.
+  // We use a static frame so the data-layer row is deterministic and memo-stable.
+  const spinnerPlaceholder = "⠿";
   const isActive = run.status === "running";
   let phaseText: string;
   let badge: string;
@@ -378,7 +383,9 @@ function buildTaskStatusRow(item: Extract<RenderTimelineItem, { type: "turn" }>,
 
   const leftSpans: TimelineRowSpan[] = [
     createSpan("✧ ", "star"),
-    ...(isActive ? [createSpan(`${frame} `, "info")] : []),
+    // Only emit spinner placeholder if the run is active; the placeholder char is
+    // visually distinct enough to hint at activity without requiring time-based state.
+    ...(isActive ? [createSpan(`${spinnerPlaceholder} `, "info")] : []),
     createSpan(`Task: ${phaseText}`, "text"),
   ];
   const durationText = run.durationMs != null ? ` ${formatDuration(run.durationMs)}` : "";
@@ -511,10 +518,27 @@ function buildWrappedMarkdownLine(
     .map((row, index) => padSpansToWidth(row, width));
 }
 
+/**
+ * Map a unified-diff line to a timeline tone for colour-coded rendering.
+ *
+ * Standard unified diff format:
+ *   diff --git a/... b/...   → file header   (info)
+ *   index abc..def 100644    → file metadata  (info)
+ *   --- a/...               → left-file marker (info)
+ *   +++ b/...               → right-file marker (info)
+ *   @@ -1,4 +1,4 @@         → hunk header    (accent/cyan)
+ *   +added line             → addition        (success/green)
+ *   -removed line           → deletion        (error/red)
+ *   ("unchanged" context)   → muted/default
+ */
 function getDiffTone(line: string): TimelineTone {
+  // Additions: any line starting with + that is not the +++ file marker
   if (line.startsWith("+") && !line.startsWith("+++")) return "success";
+  // Deletions: any line starting with - that is not the --- file marker
   if (line.startsWith("-") && !line.startsWith("---")) return "error";
+  // Hunk headers: @@ -1,4 +1,4 @@ (optional context)
   if (line.startsWith("@@")) return "accent";
+  // File-level header lines (diff/index/---/+++) shown in info tone
   if (
     line.startsWith("diff --")
     || line.startsWith("index ")
@@ -523,7 +547,32 @@ function getDiffTone(line: string): TimelineTone {
   ) {
     return "info";
   }
+  // Context / unchanged lines
   return "muted";
+}
+
+/**
+ * Detect whether a paragraph-style block looks like a unified diff.
+ * Requires at least one strong diff signal (hunk header, file header) to
+ * avoid false-positives from prose that starts with '+' or '-'.
+ */
+function isDiffParagraph(lines: string[]): boolean {
+  // Need at least 2 lines to be a plausible diff
+  if (lines.length < 2) return false;
+  // A strong signal: hunk header or diff/index/file-header line
+  const hasStrongSignal = lines.some((line) =>
+    line.startsWith("@@")
+    || line.startsWith("diff --")
+    || line.startsWith("index ")
+    || (line.startsWith("+++ ") && lines.some((l) => l.startsWith("--- ")))
+    || (line.startsWith("--- ") && lines.some((l) => l.startsWith("+++ ")))
+  );
+  if (!hasStrongSignal) return false;
+  // Also verify at least one addition or deletion line is present
+  return lines.some((line) =>
+    (line.startsWith("+") && !line.startsWith("+++ "))
+    || (line.startsWith("-") && !line.startsWith("--- "))
+  );
 }
 
 function buildCodePanelRows(keyPrefix: string, segment: Extract<Segment, { type: "code" }>, width: number): TimelineRowSpan[][] {
@@ -538,16 +587,28 @@ function buildCodePanelRows(keyPrefix: string, segment: Extract<Segment, { type:
   const rightTitle = segment.lang ? `${segment.lang.toUpperCase()} ⎘ Copy Code` : "⎘ Copy Code";
   const panelWidth = Math.max(10, width - 2);
   const panelContentWidth = Math.max(1, panelWidth - 4);
-  const isDiffBlock = segment.lang.toLowerCase() === "diff"
-    || codeLines.some((line) => (
-      line.startsWith("+")
-      || line.startsWith("-")
-      || line.startsWith("@@")
+
+  // Detect diff blocks using a two-tier test:
+  //   Tier 1 — "strong signal": explicit lang=diff, @@ hunk header, diff --git/--unified,
+  //            index <sha>, or a paired +++ / --- file-header pair.
+  //   Tier 2 — addition / deletion lines (+/-) are only treated as diff colouring when
+  //            Tier 1 fired.  This prevents false-positives from code that contains
+  //            arithmetic (+1, -1), CLI flags (-v, --verbose), POSIX permissions (+x),
+  //            or any other prose that starts with + or -.
+  const isExplicitDiff = segment.lang.toLowerCase() === "diff";
+  const hasStrongDiffSignal = isExplicitDiff
+    || codeLines.some((line) =>
+      line.startsWith("@@")
       || line.startsWith("diff --")
       || line.startsWith("index ")
-      || line.startsWith("+++ ")
-      || line.startsWith("--- ")
-    ));
+      || (line.startsWith("+++ ") && codeLines.some((l) => l.startsWith("--- ")))
+      || (line.startsWith("--- ") && codeLines.some((l) => l.startsWith("+++ ")))
+    );
+  const isDiffBlock = hasStrongDiffSignal
+    && codeLines.some((line) =>
+      (line.startsWith("+") && !line.startsWith("+++ "))
+      || (line.startsWith("-") && !line.startsWith("--- "))
+    );
   const contentRows: TimelineRowSpan[][] = [];
 
   codeLines.forEach((line, index) => {
@@ -626,6 +687,13 @@ function buildMarkdownRows(segments: Segment[], width: number): TimelineRowSpan[
       return;
     }
 
+    // Paragraph segment — check if it looks like a unified diff so we can
+    // apply colour-coded tones instead of the flat 'text' tone.
+    const rawParaLines = segment.lines.map((parts) =>
+      normalizeMarkdownParts(parts).map((p) => p.text).join(""),
+    );
+    const segmentIsDiffPara = isDiffParagraph(rawParaLines);
+
     segment.lines.forEach((parts, lineIndex) => {
       const normalizedParts = normalizeMarkdownParts(parts);
       const isBlank = normalizedParts.length === 1
@@ -634,6 +702,19 @@ function buildMarkdownRows(segments: Segment[], width: number): TimelineRowSpan[
       if (isBlank) {
         return;
       }
+
+      // If all parts are plain text and the paragraph looks like a unified diff,
+      // apply diff tones instead of the default 'text' tone for better readability.
+      const rawLineText = normalizedParts.map((p) => p.text).join("");
+      // isDiffParagraph is checked per-segment (below), so we use a captured flag.
+      if (segmentIsDiffPara) {
+        const tone = getDiffTone(rawLineText);
+        // Wrap and apply the diff tone to the entire line
+        wrapStyledSpans([createSpan(rawLineText, tone)], width)
+          .forEach((row) => rows.push(padSpansToWidth(row, width)));
+        return;
+      }
+
       rows.push(...buildWrappedMarkdownLine(`para-${segmentIndex}-${lineIndex}`, normalizedParts, width, "text"));
     });
   });
@@ -646,7 +727,7 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
   const assistant = item.item.assistant;
   const streaming = item.renderState.runPhase === "streaming";
   const dim = item.renderState.opacity !== "active";
-  const contentWidth = Math.max(1, width);
+  const contentWidth = Math.max(1, width - 4);
   const rawContent = assistant?.content ?? "";
   const sanitized = streaming ? sanitizeStreamChunk(rawContent) : sanitizeOutput(rawContent);
   const normalized = normalizeOutput(sanitized);
@@ -655,7 +736,7 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
 
   if (!streaming && run.status === "failed") {
     const failureMessage = sanitizeTerminalOutput(run.errorMessage ?? run.summary);
-    wrapPlainText(failureMessage, contentWidth).forEach((row, index) => {
+    wrapPlainText(failureMessage, Math.max(1, contentWidth - 2)).forEach((row, index) => {
       contentRows.push([
         createSpan(index === 0 ? "✕ " : "  ", "error"),
         createSpan(row || " ", "error"),
@@ -674,7 +755,9 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
 
   if (!streaming && run.status !== "running") {
     if (run.status === "canceled") {
-      contentRows.push([createSpan(sanitizeTerminalOutput(run.summary), "warning")]);
+      wrapPlainText(sanitizeTerminalOutput(run.summary), contentWidth).forEach((wrapped) => {
+        contentRows.push([createSpan(wrapped || " ", "warning")]);
+      });
     } else if (run.status === "completed" && normalized.length === 0) {
       contentRows.push([createSpan("(no output)", "dim")]);
     }
@@ -698,30 +781,23 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
 
   const rows: TimelineRow[] = [];
 
-  // 1. Add top margin for separation
+  // 1. Add top margin for separation from the task status line above.
   rows.push(createBlankRow(`${item.key}-agent-top-gap`, width));
 
-  // 2. Build prominent execution block header
-  const title = ` EXECUTION: ${heading} `;
-  const rightLabel = rightBadge ? ` ${rightBadge} ` : "";
-  const dashCount = Math.max(0, width - 2 - getTextWidth(title) - getTextWidth(rightLabel));
-  const topRowSpans: TimelineRowSpan[] = [
-    createSpan("──", borderTone),
-    createSpan(title, "text", { bold: true }),
-    createSpan("─".repeat(dashCount), borderTone),
-    ...(rightBadge ? [createSpan(rightLabel, "dim")] : []),
-  ];
-  rows.push(createRow(`${item.key}-agent-header`, topRowSpans, width));
+  // 2. Render the agent response inside a DashCard — visually consistent with
+  //    every other block in the timeline: USER INPUT, Processing, File Scan,
+  //    and Activity all use the same ╭──...──╮ frame.  The title is the model
+  //    name (e.g. "GPT 4O") or the generic "AGENT RESPONSE" fallback.
+  rows.push(...buildDashCardRows({
+    keyPrefix: `${item.key}-agent`,
+    width,
+    title: heading,
+    rightBadge,
+    borderTone,
+    contentRows,
+  }));
 
-  // 3. Add header content margin
-  rows.push(createBlankRow(`${item.key}-agent-header-gap`, width));
-
-  // 4. Add the actual content rows
-  contentRows.forEach((row, index) => {
-    rows.push(createRow(`${item.key}-agent-content-${index}`, padSpansToWidth(row, width), width));
-  });
-
-  // 5. Add bottom margin
+  // 3. Add bottom margin for separation from the next section / turn.
   rows.push(createBlankRow(`${item.key}-agent-bottom-gap`, width));
 
   return rows;
@@ -913,11 +989,19 @@ function buildStandaloneEventRows(item: Extract<RenderTimelineItem, { type: "eve
       width,
     ));
 
-    const content = sanitizeTerminalOutput(event.content).split("\n").find((line) => line.trim()) ?? "";
-    if (content) {
+    // Show the full content — not just the first line.  Error messages can span
+    // multiple lines (stack traces, multi-step explanations) and silently
+    // truncating to line 1 hides important diagnostic information.
+    const errorContentLines = sanitizeTerminalOutput(event.content)
+      .split("\n")
+      .filter((line) => line.trim());
+    if (errorContentLines.length > 0) {
+      const wrappedRows = errorContentLines.flatMap((line) =>
+        wrapPlainText(line, Math.max(1, width - 2)).map((row) => [createSpan(row || " ", "muted")])
+      );
       rows.push(...buildIndentedRows(
         `${item.key}-error-content`,
-        wrapPlainText(content, Math.max(1, width - 2)).map((row) => [createSpan(row || " ", "muted")]),
+        wrappedRows,
         width,
         2,
       ));
@@ -933,11 +1017,19 @@ function buildStandaloneEventRows(item: Extract<RenderTimelineItem, { type: "eve
     width,
   ));
 
-  const firstLine = sanitizeTerminalOutput(event.content).split("\n").find((line) => line.trim()) ?? "";
-  if (firstLine) {
+  // Show the full content — not just the first line.  System events carry
+  // rich multi-line payloads: /help output, auth status, model listings,
+  // workspace summaries, etc.  Limiting to line 1 silently hides all of it.
+  const systemContentLines = sanitizeTerminalOutput(event.content)
+    .split("\n")
+    .filter((line) => line.trim());
+  if (systemContentLines.length > 0) {
+    const wrappedRows = systemContentLines.flatMap((line) =>
+      wrapPlainText(line, Math.max(1, width - 2)).map((row) => [createSpan(row || " ", "dim")])
+    );
     rows.push(...buildIndentedRows(
       `${item.key}-system-content`,
-      wrapPlainText(firstLine, Math.max(1, width - 2)).map((row) => [createSpan(row || " ", "dim")]),
+      wrappedRows,
       width,
       2,
     ));
@@ -956,29 +1048,37 @@ function applyTurnOpacity(rows: TimelineRow[], opacity: "active" | "recent" | "d
       ...row,
       spans: row.spans.map((span) => {
         if (span.tone === "borderActive") {
-          return { ...span, tone: "borderSubtle" };
+          return { ...span, tone: "borderSubtle" as TimelineTone };
         }
         return { ...span };
       }),
     }));
   }
 
+  // Dim mode: tone down most colours to "dim" but preserve semantic diff
+  // colours ("success" for additions, "error" for deletions) so that diff
+  // blocks in older turns remain readable instead of collapsing to a uniform
+  // monochrome.  "accent" (hunk headers) is mapped to "muted" for a softer
+  // but still-distinct visual.
   return rows.map((row) => ({
     ...row,
     spans: row.spans.map((span) => {
       if (
         span.tone === "text"
         || span.tone === "muted"
-        || span.tone === "accent"
         || span.tone === "info"
-        || span.tone === "success"
         || span.tone === "warning"
       ) {
-        return { ...span, tone: "dim" };
+        return { ...span, tone: "dim" as TimelineTone };
+      }
+      if (span.tone === "accent") {
+        return { ...span, tone: "muted" as TimelineTone };
       }
       if (span.tone === "borderActive") {
-        return { ...span, tone: "borderSubtle" };
+        return { ...span, tone: "borderSubtle" as TimelineTone };
       }
+      // "success" and "error" pass through — keeps diff additions (green)
+      // and deletions (red) visible in dimmed turns.
       return { ...span };
     }),
   }));

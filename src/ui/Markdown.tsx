@@ -168,16 +168,32 @@ function isTreeLine(line: string): boolean {
   return /^[│├└─\s]+/.test(line);
 }
 
+/**
+ * Determine if a line is part of a unified diff output.
+ * Uses a conservative heuristic to avoid false-positives from prose
+ * or code that begins with + or - (arithmetic, CLI flags, etc.).
+ */
 function isDiffLine(line: string): boolean {
-  return line.startsWith("+")
-    || line.startsWith("-")
-    || line.startsWith("@@")
+  return line.startsWith("@@")
     || line.startsWith("diff --")
     || line.startsWith("index ")
     || line.startsWith("+++ ")
-    || line.startsWith("--- ");
+    || line.startsWith("--- ")
+    // Include +/- only as additions/deletions (distinct from file markers)
+    || (line.startsWith("+") && !line.startsWith("+++ "))
+    || (line.startsWith("-") && !line.startsWith("--- "));
 }
 
+/**
+ * Map a unified-diff line to a theme colour for Ink rendering.
+ *
+ * Colour convention (matches terminal standard):
+ *   + additions  → theme.SUCCESS (green)
+ *   - deletions  → theme.ERROR   (red)
+ *   @@ hunks    → theme.ACCENT  (cyan/blue)
+ *   file headers → theme.INFO    (blue)
+ *   context      → theme.MUTED   (neutral)
+ */
 function getDiffColor(line: string, theme: ReturnType<typeof useTheme>): string {
   if (line.startsWith("+") && !line.startsWith("+++")) return theme.SUCCESS;
   if (line.startsWith("-") && !line.startsWith("---")) return theme.ERROR;
