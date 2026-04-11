@@ -48,7 +48,7 @@ import {
   type ModelSpec,
 } from "./core/modelSpecs.js";
 import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots, type RunFileActivity } from "./core/workspaceActivity.js";
-import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
+import { formatWorkspaceLabel, resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProvider } from "./core/providers/types.js";
@@ -124,6 +124,7 @@ export function App() {
   const [mode, setMode] = useState<AvailableMode>(initialSettings.current.mode);
   const [reasoningLevel, setReasoningLevel] = useState<ReasoningLevel>(initialSettings.current.reasoningLevel);
   const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.authPreference);
+  const [workspaceDisplayMode, setWorkspaceDisplayMode] = useState(initialSettings.current.workspaceDisplayMode);
   const [themeSelection, setThemeSelection] = useState<ThemeSelectionState>({
     committedTheme: initialSettings.current.theme,
     previewTheme: null,
@@ -147,6 +148,20 @@ export function App() {
   // Use /mouse to toggle to native-only mode if you prefer plain drag-select
   // at the cost of losing wheel scroll (keyboard PageUp/PageDown still works).
   const mouseCapture = mouseOverride ?? true;
+
+  useEffect(() => {
+    const assertTitle = () => {
+      try { process.title = "CODEXA"; } catch { /* ignore */ }
+      stdout.write("\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07");
+    };
+    assertTitle();
+    const t1 = setTimeout(assertTitle, 300);
+    const t2 = setTimeout(assertTitle, 1200);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [stdout]);
 
   useEffect(() => {
     // \x1b[?1000h: Enable basic mouse reporting (click/scroll)
@@ -219,8 +234,9 @@ export function App() {
       theme: themeSelection.committedTheme,
       customTheme,
       authPreference,
+      workspaceDisplayMode,
     });
-  }, [authPreference, backend, customTheme, mode, model, reasoningLevel, themeSelection.committedTheme]);
+  }, [authPreference, backend, customTheme, mode, model, reasoningLevel, themeSelection.committedTheme, workspaceDisplayMode]);
 
   useEffect(() => {
     return () => {
@@ -1362,6 +1378,7 @@ export function App() {
         screen={screen}
         authState={authStatus.state}
         workspaceRoot={workspaceRoot}
+        workspaceDisplayMode={workspaceDisplayMode}
         staticEvents={staticEvents}
         activeEvents={activeEvents}
         uiState={uiState}

@@ -4,6 +4,9 @@ import { spawn, spawnSync } from "child_process";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
+process.title = "CODEXA";
+process.stdout.write("\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07");
+
 /**
  * Filters out terminal mouse reporting escape sequences from stdin data.
  * Prevents SGR mouse clicks and scroll events from leaking into the TUI app.
