@@ -101,9 +101,12 @@ function AppShellInner({
  * The App component re-renders on every streaming delta (via dispatchSession),
  * cursor move, and conversationChars update.  AppShell itself only needs to
  * re-render when the layout, screen, event lists, uiState, or composer
- * layout rows actually change.  ReactNode props (panel, composer, panelHint)
- * are intentionally excluded from the comparator — they are already internally
- * memoized at their own component level (MemoizedBottomComposer, etc.).
+ * layout rows actually change.
+ *
+ * ReactNode props (panel, panelHint) are excluded — their visibility is fully
+ * determined by `screen`, which IS compared.  `composer` must remain in the
+ * comparator because MemoizedBottomComposer receives value/cursor updates
+ * through this prop; without it the composer would display stale input.
  */
 export const AppShell = memo(AppShellInner, (prev, next) => {
   return (
@@ -117,8 +120,6 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.activeEvents    === next.activeEvents    &&
     prev.uiState         === next.uiState         &&
     prev.composerRows    === next.composerRows    &&
-    prev.panel           === next.panel           &&
-    prev.composer        === next.composer        &&
-    prev.panelHint       === next.panelHint
+    prev.composer        === next.composer
   );
 });

@@ -169,19 +169,18 @@ function isTreeLine(line: string): boolean {
 }
 
 /**
- * Determine if a line is part of a unified diff output.
- * Uses a conservative heuristic to avoid false-positives from prose
- * or code that begins with + or - (arithmetic, CLI flags, etc.).
+ * Detect a "strong" diff signal: hunk header, file header, or paired +++ / ---
+ * markers.  Used as Tier 1 in the two-tier detection to avoid false-positives
+ * from prose or code that begins with + or - (arithmetic, CLI flags, etc.).
  */
-function isDiffLine(line: string): boolean {
-  return line.startsWith("@@")
+function hasStrongDiffSignal(lines: string[]): boolean {
+  return lines.some((line) =>
+    line.startsWith("@@")
     || line.startsWith("diff --")
     || line.startsWith("index ")
-    || line.startsWith("+++ ")
-    || line.startsWith("--- ")
-    // Include +/- only as additions/deletions (distinct from file markers)
-    || (line.startsWith("+") && !line.startsWith("+++ "))
-    || (line.startsWith("-") && !line.startsWith("--- "));
+    || (line.startsWith("+++ ") && lines.some((l) => l.startsWith("--- ")))
+    || (line.startsWith("--- ") && lines.some((l) => l.startsWith("+++ ")))
+  );
 }
 
 /**
@@ -212,7 +211,18 @@ export function RenderMessage({ segments, width }: { segments: Segment[]; width:
 
         if (segment.type === "code") {
           const lang = (segment.lang || "").toLowerCase();
-          const isDiffBlock = lang === "diff" || segment.lines.some((line) => isDiffLine(line));
+          // Two-tier diff detection (matches timelineMeasure.ts):
+          //   Tier 1 — explicit lang=diff OR at least one strong diff signal
+          //   Tier 2 — at least one addition/deletion line (+/-)
+          // This prevents false-positives from code with arithmetic (+1, -1),
+          // CLI flags (-v, --verbose), or other prose starting with + or -.
+          const isExplicitDiff = lang === "diff";
+          const strongSignal = isExplicitDiff || hasStrongDiffSignal(segment.lines);
+          const isDiffBlock = strongSignal
+            && segment.lines.some((line) =>
+              (line.startsWith("+") && !line.startsWith("+++ "))
+              || (line.startsWith("-") && !line.startsWith("--- "))
+            );
           const looksLikeTree = segment.lines.some((line) => isTreeLine(line));
 
           let title = segment.lang || "code";
