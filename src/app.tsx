@@ -29,7 +29,7 @@ import {
 } from "./core/auth/codexAuth.js";
 import { copyToClipboard } from "./core/clipboard.js";
 import { runCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
-import { resolveExecutionMode } from "./core/codexPrompt.js";
+import { detectHollowResponse, resolveExecutionMode } from "./core/codexPrompt.js";
 import {
   buildDevLaunchNotice,
   buildWorkspaceCommandContext,
@@ -47,7 +47,7 @@ import {
   createModelSpecService,
   type ModelSpec,
 } from "./core/modelSpecs.js";
-import { createWorkspaceActivityTracker, type RunFileActivity } from "./core/workspaceActivity.js";
+import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots, type RunFileActivity } from "./core/workspaceActivity.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
@@ -506,8 +506,11 @@ export function App() {
     focusManager.focus(FOCUS_IDS.composer);
     cleanup?.();
     const safeMessage = message ? sanitizeTerminalOutput(message) : undefined;
-    const safeResponse = response ? sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 }) : "";
-    const parsed = status === "completed" && safeResponse.trim()
+    // When response is undefined, signal the reducer to preserve streamed content as-is.
+    const safeResponse = response != null
+      ? sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 })
+      : undefined;
+    const parsed = status === "completed" && safeResponse?.trim()
       ? extractAssistantActionRequired(safeResponse)
       : { content: safeResponse, question: null as string | null };
     dispatchSession({
@@ -902,18 +905,24 @@ export function App() {
       },
     ] });
 
+    // Capture the workspace state before the run starts so we can diff on completion.
+    let preRunSnapshot: ReturnType<typeof captureWorkspaceSnapshot> | null = null;
     const activityTracker = backend === "codex-subprocess"
-      ? createWorkspaceActivityTracker({
-        rootDir: workspaceRoot,
-        onActivity: (activity) => {
-          if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-          pendingActivity.push(...activity);
-          scheduleLiveFlush();
-        },
-      })
+      ? (() => {
+        preRunSnapshot = captureWorkspaceSnapshot(workspaceRoot);
+        return createWorkspaceActivityTracker({
+          rootDir: workspaceRoot,
+          onActivity: (activity) => {
+            if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+            pendingActivity.push(...activity);
+            scheduleLiveFlush();
+          },
+        });
+      })()
       : null;
 
     let pendingAssistantDelta = "";
+    let streamedAssistantContent = "";
     let pendingProgressLines: string[] = [];
     let pendingActivity: RunFileActivity[] = [];
     const pendingToolActivities = new Map<string, RunToolActivity>();
@@ -947,6 +956,24 @@ export function App() {
         return;
       }
 
+      // Assistant deltas are dispatched at normal priority for immediate rendering.
+      // Lower-priority updates (activity, progress, tools) use startTransition
+      // so they don't delay streaming text from appearing.
+      if (chunk) {
+        dispatchSession({
+          type: "RUN_APPEND_ASSISTANT_DELTA",
+          turnId,
+          chunk,
+          eventFactory: () => ({
+            id: createEventId(),
+            type: "assistant",
+            createdAt: Date.now(),
+            content: chunk,
+            turnId,
+          }),
+        });
+      }
+
       startTransition(() => {
         if (activity.length > 0) {
           dispatchSession({ type: "RUN_APPEND_ACTIVITY", runId, activity });
@@ -956,20 +983,6 @@ export function App() {
         }
         for (const toolActivity of toolActivities) {
           dispatchSession({ type: "RUN_UPSERT_TOOL_ACTIVITY", runId, activity: toolActivity });
-        }
-        if (chunk) {
-          dispatchSession({
-            type: "RUN_APPEND_ASSISTANT_DELTA",
-            turnId,
-            chunk,
-            eventFactory: () => ({
-              id: createEventId(),
-              type: "assistant",
-              createdAt: Date.now(),
-              content: chunk,
-              turnId,
-            }),
-          });
         }
       });
     };
@@ -993,6 +1006,7 @@ export function App() {
           if (!safeChunk) return;
           hasAssistantDelta = true;
           pendingAssistantDelta += safeChunk;
+          streamedAssistantContent += safeChunk;
           scheduleLiveFlush();
         },
         onToolActivity: (activity) => {
@@ -1003,10 +1017,55 @@ export function App() {
         },
         onResponse: (response) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+
+          // Force one final synchronous workspace poll before finalizing the run.
+          // This closes the race condition where the activity tracker's interval
+          // hasn't fired yet and late file changes would be missed.
+          if (activityTracker && preRunSnapshot) {
+            try {
+              const finalSnapshot = captureWorkspaceSnapshot(workspaceRoot);
+              const lateActivity = diffWorkspaceSnapshots(preRunSnapshot, finalSnapshot);
+              if (lateActivity.length > 0) {
+                pendingActivity.push(...lateActivity);
+              }
+            } catch {
+              // Non-fatal: best-effort final poll
+            }
+          }
+
           flushLiveUpdates();
           const safeResponse = sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 });
           setConversationChars((count) => count + safeResponse.length);
-          void finalizePromptRun(runId, turnId, "completed", undefined, safeResponse);
+
+          // Validate response quality for write-intent/destructive prompts:
+          // If the backend returned filler like "Hello." instead of execution
+          // feedback, inject a warning so the user isn't silently misled.
+          if (effectiveMode !== "suggest") {
+            const hollow = detectHollowResponse(safeProviderPrompt, safeResponse);
+            if (hollow.isHollow) {
+              const warningResponse = [
+                `⚠ Warning: ${hollow.reason}.`,
+                "",
+                "The backend response did not confirm any of the requested actions.",
+                "The workspace may not have been modified as expected.",
+                "Check your files manually or re-submit the request.",
+                "",
+                "--- Backend response ---",
+                safeResponse,
+              ].join("\n");
+              void finalizePromptRun(runId, turnId, "completed", undefined, warningResponse);
+              return;
+            }
+          }
+
+          // If the streamed content matches the sanitized response (after
+          // normalizing whitespace), pass undefined so FINALIZE_RUN preserves
+          // the already-rendered streamed content — avoiding a visual flash.
+          const normalizeWs = (s: string) => s.replace(/\s+/g, " ").trim();
+          const streamedNorm = normalizeWs(streamedAssistantContent);
+          const responseNorm = normalizeWs(safeResponse);
+          const finalResponse = streamedNorm && streamedNorm === responseNorm ? undefined : safeResponse;
+          void finalizePromptRun(runId, turnId, "completed", undefined, finalResponse);
         },
         onError: (message, rawOutput) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
@@ -1053,6 +1112,19 @@ export function App() {
 
     cleanupRef.current = () => {
       flushLiveUpdates();
+      // Do one final sync poll before stopping the tracker to capture
+      // any last-moment file changes that were in-flight.
+      if (activityTracker && preRunSnapshot) {
+        try {
+          const cleanupSnapshot = captureWorkspaceSnapshot(workspaceRoot);
+          const lastActivity = diffWorkspaceSnapshots(preRunSnapshot, cleanupSnapshot);
+          if (lastActivity.length > 0 && isCurrentRun(activeRunIdRef.current, runId)) {
+            dispatchSession({ type: "RUN_APPEND_ACTIVITY", runId, activity: lastActivity });
+          }
+        } catch {
+          // Non-fatal
+        }
+      }
       activityTracker?.stop();
       stopProviderRun?.();
     };
