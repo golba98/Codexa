@@ -323,34 +323,19 @@ function buildPanelRows(params: {
 }
 
 function buildUserInputRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number): TimelineRow[] {
-  const runStatus = item.item.run?.status ?? null;
-  const statusBadge = runStatus
-    ? runStatus === "running"
-      ? "active"
-      : runStatus === "completed"
-        ? "done"
-        : runStatus
-    : "queued";
   const dim = item.renderState.opacity === "dim";
   const contentWidth = Math.max(1, width - 4);
-  const lines = wrapPlainText(sanitizeTerminalOutput(item.item.user?.prompt ?? ""), Math.max(1, contentWidth - 2))
-    .map((line, index) => [
-      createSpan(index === 0 ? "> " : "  ", dim ? "dim" : "text"),
-      createSpan(line || " ", dim ? "dim" : "text"),
-    ]);
+  const lines = wrapPlainText(sanitizeTerminalOutput(item.item.user?.prompt ?? ""), contentWidth);
 
-  return buildDashCardRows({
-    keyPrefix: `${item.key}-user`,
+  return lines.map((line, index) => createRow(
+    `${item.key}-user-${index}`,
+    [
+      createSpan(" "),
+      createSpan(index === 0 ? "❯ " : "  ", dim ? "dim" : "text"),
+      createSpan(line || " ", dim ? "dim" : "text"),
+    ],
     width,
-    title: "USER INPUT",
-    rightBadge: statusBadge,
-    borderTone: dim
-      ? "borderSubtle"
-      : runStatus === "running"
-        ? "borderActive"
-        : "borderSubtle",
-    contentRows: lines,
-  });
+  ));
 }
 
 function formatDuration(ms: number): string {
@@ -363,44 +348,39 @@ function buildTaskStatusRow(item: Extract<RenderTimelineItem, { type: "turn" }>,
   // PERF: Do NOT call Date.now() here — this function runs inside buildTimelineSnapshot
   // which is computed inside a useMemo in Timeline.tsx.  Using Date.now() prevents the
   // snapshot from ever fully stabilising, causing unnecessary downstream invalidation.
-  // The spinner animation is handled by TurnGroup/TaskStatusLine via its own setInterval.
+  // The spinner animation is handled by TurnGroup/StatusLine via its own setInterval.
   // We use a static frame so the data-layer row is deterministic and memo-stable.
   const spinnerPlaceholder = "⠿";
   const isActive = run.status === "running";
-  let phaseText: string;
-  let badge: string;
 
-  if (run.status !== "running") {
-    phaseText = "Complete";
-    badge = run.status === "failed" ? "failed" : "done";
-  } else if (item.renderState.runPhase === "streaming") {
-    phaseText = "Streaming response ...";
-    badge = "active";
-  } else {
-    phaseText = "Receiving response ...";
-    badge = "active";
+  if (!isActive) {
+    // Completed state — clean summary line
+    const icon = run.status === "failed" ? "✕" : "✔";
+    const iconTone: TimelineTone = run.status === "failed" ? "error" : "success";
+    const label = run.status === "failed" ? "Failed" : run.status === "canceled" ? "Canceled" : "Complete";
+    const durationText = run.durationMs != null ? ` • ${formatDuration(run.durationMs)}` : "";
+    return createRow(
+      `${item.key}-status`,
+      [
+        createSpan(" "),
+        createSpan(`${icon} `, iconTone),
+        createSpan(`${label}${durationText}`, "dim"),
+      ],
+      width,
+    );
   }
 
-  const leftSpans: TimelineRowSpan[] = [
-    createSpan("✧ ", "star"),
-    // Only emit spinner placeholder if the run is active; the placeholder char is
-    // visually distinct enough to hint at activity without requiring time-based state.
-    ...(isActive ? [createSpan(`${spinnerPlaceholder} `, "info")] : []),
-    createSpan(`Task: ${phaseText}`, "text"),
-  ];
-  const durationText = run.durationMs != null ? ` ${formatDuration(run.durationMs)}` : "";
-  const rightText = `${badge}${durationText}`;
-  const leftWidth = getSpansWidth(leftSpans);
-  const rightWidth = getTextWidth(rightText);
-  const padding = Math.max(1, width - leftWidth - rightWidth);
+  // Active state — spinner + concise status
+  const statusText = item.renderState.runPhase === "streaming"
+    ? "Streaming response..."
+    : "CODEXA is working...";
 
   return createRow(
     `${item.key}-status`,
     [
-      createSpan(" ", undefined),
-      ...leftSpans,
-      createSpan(" ".repeat(Math.max(0, padding - 1))),
-      createSpan(rightText, "dim"),
+      createSpan(" "),
+      createSpan(`${spinnerPlaceholder} `, "info"),
+      createSpan(statusText, "muted"),
     ],
     width,
   );
@@ -419,7 +399,16 @@ function getShellFailureExcerpt(event: ShellEvent): string[] {
 // Fixed total content rows inside the thinking card (MAX_VISIBLE_THINKING_LINES + 1 tool row)
 const THINKING_CARD_ROWS = MAX_VISIBLE_THINKING_LINES + 1;
 
-function buildThinkingRows(run: RunEvent, width: number): TimelineRow[] {
+/**
+ * Verbose mode: full thinking card with reasoning lines.
+ * Default mode returns empty — the spinner is already in the status row.
+ */
+function buildThinkingRows(run: RunEvent, width: number, verbose: boolean): TimelineRow[] {
+  if (!verbose) {
+    // Default mode: no thinking card, just the status spinner line
+    return [];
+  }
+
   const latestTool = run.toolActivities[run.toolActivities.length - 1] ?? null;
   const toolLine = latestTool
     ? latestTool.status === "running"
@@ -435,13 +424,11 @@ function buildThinkingRows(run: RunEvent, width: number): TimelineRow[] {
   const hasContent = thinkingLines.length > 0 || toolLine;
 
   if (!hasContent) {
-    // Placeholder while waiting
     contentRows.push([createSpan("Waiting for response...", "dim")]);
   } else if (hiddenCount > 0) {
     contentRows.push([createSpan(`... ${hiddenCount} more above`, "dim")]);
   }
 
-  // Truncate each thinking line to a single row instead of wrapping
   if (hasContent) {
     visibleLines.forEach((line) => {
       const clamped = clampVisualText(line, contentWidth);
@@ -449,12 +436,10 @@ function buildThinkingRows(run: RunEvent, width: number): TimelineRow[] {
     });
   }
 
-  // Pad to fixed count (before tool row) so card height is stable
   while (contentRows.length < MAX_VISIBLE_THINKING_LINES) {
     contentRows.push([createSpan(" ", "dim")]);
   }
 
-  // Always include a tool status row (blank if no tool activity)
   if (toolLine) {
     const clampedTool = clampVisualText(toolLine, Math.max(1, contentWidth - 2));
     contentRows.push([
@@ -473,6 +458,91 @@ function buildThinkingRows(run: RunEvent, width: number): TimelineRow[] {
     borderTone: "borderActive",
     contentRows,
   });
+}
+
+/**
+ * Compact impact summary for completed runs (default mode).
+ * Shows file changes and a summary footer.
+ */
+function buildImpactSummaryRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number): TimelineRow[] {
+  const run = item.item.run!;
+  const summary = run.activitySummary;
+  const hasFiles = run.touchedFileCount > 0;
+  const hasTools = run.toolActivities.length > 0;
+  if (!hasFiles && !hasTools) return [];
+
+  const rows: TimelineRow[] = [];
+  const recentFiles = summary?.recent ?? run.activity.slice(-6);
+  const hasDeletes = (summary?.deleted ?? 0) > 0;
+
+  const opLabel = (op: string) => {
+    switch (op) {
+      case "created": return "CREATED ";
+      case "modified": return "MODIFIED";
+      case "deleted": return "DELETED ";
+      default: return op.toUpperCase().padEnd(8);
+    }
+  };
+  const opTone = (op: string): TimelineTone => {
+    switch (op) {
+      case "created": return "success";
+      case "deleted": return "error";
+      default: return "info";
+    }
+  };
+
+  // Warning banner for destructive changes
+  if (hasDeletes) {
+    rows.push(createRow(
+      `${item.key}-impact-warn`,
+      [createSpan(" "), createSpan("⚠ Destructive changes detected:", "warning")],
+      width,
+    ));
+  }
+
+  // "Changes:" label
+  if (hasFiles) {
+    rows.push(createRow(
+      `${item.key}-impact-label`,
+      [createSpan("   "), createSpan("Changes:", "dim")],
+      width,
+    ));
+
+    // File list
+    recentFiles.forEach((file, index) => {
+      const diffInfo = file.addedLines != null || file.removedLines != null
+        ? ` (+${file.addedLines ?? 0} -${file.removedLines ?? 0})`
+        : "";
+      rows.push(createRow(
+        `${item.key}-impact-file-${index}`,
+        [
+          createSpan("     "),
+          createSpan(opLabel(file.operation), opTone(file.operation)),
+          createSpan(` ${file.path}`, "text"),
+          createSpan(diffInfo, "dim"),
+        ],
+        width,
+      ));
+    });
+  }
+
+  // Summary footer
+  const parts: string[] = [];
+  if (run.touchedFileCount > 0) parts.push(`${run.touchedFileCount} file${run.touchedFileCount === 1 ? "" : "s"}`);
+  if (hasTools) parts.push(`${run.toolActivities.length} action${run.toolActivities.length === 1 ? "" : "s"}`);
+  if (run.durationMs != null) parts.push(formatDuration(run.durationMs));
+
+  rows.push(createRow(
+    `${item.key}-impact-summary`,
+    [
+      createSpan("   "),
+      createSpan("✔ ", "success"),
+      createSpan(parts.join(" • "), "dim"),
+    ],
+    width,
+  ));
+
+  return rows;
 }
 
 function normalizeMarkdownParts(parts: unknown): MarkdownInlinePart[] {
@@ -1084,7 +1154,7 @@ function applyTurnOpacity(rows: TimelineRow[], opacity: "active" | "recent" | "d
   }));
 }
 
-function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number): TimelineRow[] {
+function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, verbose = false): TimelineRow[] {
   const rows: TimelineRow[] = [];
 
   rows.push(...buildUserInputRows(item, width));
@@ -1093,19 +1163,24 @@ function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, widt
     rows.push(buildTaskStatusRow(item, width));
 
     if (item.renderState.runPhase === "thinking") {
-      rows.push(...buildThinkingRows(item.item.run, width));
+      rows.push(...buildThinkingRows(item.item.run, width, verbose));
     } else {
-      // Reordered: First File Scans and Activity (Process)
-      if (item.item.run.status !== "running" && item.item.run.touchedFileCount > 0) {
-        rows.push(...buildFileScanRows(item, width));
-      }
-
-      if (item.item.run.status !== "running" && item.item.run.toolActivities.length > 0) {
-        rows.push(...buildActivityRows(item, width));
-      }
-
-      // Then the Agent response (Result)
+      // Agent response first
       rows.push(...buildAgentRows(item, width));
+
+      // After the response: either compact impact summary (default) or verbose cards
+      if (item.item.run.status !== "running") {
+        if (verbose) {
+          if (item.item.run.touchedFileCount > 0) {
+            rows.push(...buildFileScanRows(item, width));
+          }
+          if (item.item.run.toolActivities.length > 0) {
+            rows.push(...buildActivityRows(item, width));
+          }
+        } else {
+          rows.push(...buildImpactSummaryRows(item, width));
+        }
+      }
     }
   }
 
@@ -1134,13 +1209,15 @@ export function buildTimelineSnapshot(
   items: RenderTimelineItem[],
   options: {
     totalWidth: number;
+    verboseMode?: boolean;
   },
 ): TimelineSnapshot {
+  const verbose = options.verboseMode ?? false;
   const builtItems = items.map((item) => {
     const innerWidth = Math.max(10, options.totalWidth - (item.padded ? 2 : 0));
     const builtRows = item.type === "event"
       ? buildStandaloneEventRows(item, innerWidth)
-      : buildTurnRows(item, innerWidth);
+      : buildTurnRows(item, innerWidth, verbose);
     const rows = wrapItemRows(builtRows, options.totalWidth, item.padded, item.key);
     return {
       key: item.key,

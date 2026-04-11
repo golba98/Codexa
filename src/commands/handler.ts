@@ -40,6 +40,7 @@ export type CommandAction =
   | "open_theme_picker"
   | "themes"
   | "mouse_toggle"
+  | "verbose_toggle"
   | "unknown";
 
 export interface CommandResult {
@@ -231,6 +232,10 @@ export function handleCommand(
     case "mouse":
       return { action: "mouse_toggle" };
 
+    case "verbose":
+    case "debug":
+      return { action: "verbose_toggle" };
+
     case "help":
       return {
         action: "help",
@@ -250,6 +255,7 @@ export function handleCommand(
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
           "  /theme [name]      Switch theme directly (no arg opens picker)",
           "  /themes            Open visual theme picker (Up/Down + Enter)",
+          "  /verbose           Toggle verbose mode (shows detailed processing info)",
           "  /mouse             Toggle wheel-scroll mode — on by default; off restores native drag-select",
           "  /auth [option]     Open auth panel or set auth preference",
           "  /auth status       Probe Codexa auth status",

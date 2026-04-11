@@ -139,6 +139,7 @@ export function App() {
   const [modelSpecs, setModelSpecs] = useState<Partial<Record<AvailableModel, ModelSpec>>>({});
   const { stdout } = useStdout();
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
+  const [verboseMode, setVerboseMode] = useState(false);
   // Mouse reporting is ON by default so wheel-based history scrolling works in
   // the timeline. When mouse reporting is active, most modern terminals (Windows
   // Terminal, iTerm2, etc.) still allow text selection via Shift+drag — the
@@ -1207,6 +1208,16 @@ export function App() {
           );
           return;
         }
+        case "verbose_toggle": {
+          setVerboseMode((current) => !current);
+          appendSystemEvent(
+            "Verbose mode",
+            verboseMode
+              ? "Verbose mode disabled — showing concise output."
+              : "Verbose mode enabled — showing detailed processing info.",
+          );
+          return;
+        }
         case "copy":
           void handleCopy();
           return;
@@ -1282,6 +1293,7 @@ export function App() {
         staticEvents={staticEvents}
         activeEvents={activeEvents}
         uiState={uiState}
+        verboseMode={verboseMode}
         panel={
           <>
             {screen === "backend-picker" && (

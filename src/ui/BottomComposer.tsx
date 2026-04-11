@@ -108,6 +108,7 @@ const COMMANDS = [
   { cmd: "/backend", desc: "Change active backend" },
   { cmd: "/reasoning", desc: "Change reasoning level" },
   { cmd: "/themes", desc: "Open visual theme picker" },
+  { cmd: "/verbose", desc: "Toggle verbose mode (detailed processing info)" },
   { cmd: "/auth", desc: "Manage authentication" },
   { cmd: "/workspace", desc: "Show the locked workspace" },
   { cmd: "/copy", desc: "Copy the full conversation transcript to clipboard" },
