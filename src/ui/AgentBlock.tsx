@@ -77,8 +77,10 @@ export function AgentBlock({
 }: AgentBlockProps) {
   const theme = useTheme();
   const content = assistant?.content ?? "";
-  const deferredStreamingContent = useDeferredValue(content);
-  const renderContent = streaming ? deferredStreamingContent : content;
+  const deferredContent = useDeferredValue(content);
+  // During streaming, use content directly for immediate rendering.
+  // When not streaming, defer large final content to avoid blocking input.
+  const renderContent = streaming ? content : deferredContent;
   const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
 
   const pipelineState = useMemo(() => {

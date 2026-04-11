@@ -225,6 +225,32 @@ export function createCodexTranscriptStreamParser(handlers: CodexTranscriptStrea
     outputLines: string[];
   } | null = null;
 
+  // Partial-line flush: emit pending content after a short delay if we're in
+  // the assistant section, so sub-line text appears progressively.
+  let partialFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingEmittedAsPartial = false;
+
+  // Code fence buffering: buffer lines inside fenced blocks and emit them
+  // atomically when the closing fence arrives (or after a safety timeout).
+  let inCodeFence = false;
+  let codeFenceBuffer: string[] = [];
+  let codeFenceTimeout: ReturnType<typeof setTimeout> | null = null;
+  const CODE_FENCE_TIMEOUT_MS = 3000;
+
+  const clearPartialFlushTimer = () => {
+    if (partialFlushTimer) {
+      clearTimeout(partialFlushTimer);
+      partialFlushTimer = null;
+    }
+  };
+
+  const clearCodeFenceTimeout = () => {
+    if (codeFenceTimeout) {
+      clearTimeout(codeFenceTimeout);
+      codeFenceTimeout = null;
+    }
+  };
+
   const emitThinking = (line: string) => {
     const cleaned = line.replace(/\s+$/g, "");
     if (!cleaned.trim()) return;
@@ -234,6 +260,42 @@ export function createCodexTranscriptStreamParser(handlers: CodexTranscriptStrea
   const emitAssistant = (line: string) => {
     const cleaned = line.replace(/\s+$/g, "");
     if (!cleaned && !emittedAssistantLine) return;
+
+    // Code fence buffering: accumulate fenced lines and emit atomically
+    if (!inCodeFence && /^\s*```/.test(cleaned)) {
+      inCodeFence = true;
+      codeFenceBuffer = [cleaned];
+      clearCodeFenceTimeout();
+      codeFenceTimeout = setTimeout(() => {
+        // Safety timeout: force-emit buffered content if fence never closes
+        if (inCodeFence && codeFenceBuffer.length > 0) {
+          const block = codeFenceBuffer.join("\n");
+          const chunk = emittedAssistantLine ? `\n${block}` : block;
+          handlers.onAssistantDelta?.(chunk);
+          emittedAssistantLine = true;
+          codeFenceBuffer = [];
+          inCodeFence = false;
+        }
+        codeFenceTimeout = null;
+      }, CODE_FENCE_TIMEOUT_MS);
+      return;
+    }
+
+    if (inCodeFence) {
+      codeFenceBuffer.push(cleaned);
+      // Detect closing fence
+      if (/^\s*```\s*$/.test(cleaned) && codeFenceBuffer.length > 1) {
+        clearCodeFenceTimeout();
+        const block = codeFenceBuffer.join("\n");
+        const chunk = emittedAssistantLine ? `\n${block}` : block;
+        handlers.onAssistantDelta?.(chunk);
+        emittedAssistantLine = true;
+        codeFenceBuffer = [];
+        inCodeFence = false;
+      }
+      return;
+    }
+
     const chunk = emittedAssistantLine ? `\n${cleaned}` : cleaned;
     handlers.onAssistantDelta?.(chunk);
     emittedAssistantLine = true;
@@ -348,10 +410,33 @@ export function createCodexTranscriptStreamParser(handlers: CodexTranscriptStrea
       return;
     }
 
+    // Auto-promotion: if we're in preamble and the line looks like substantive
+    // prose (multiple words, length > 40, no noise patterns, not a progress/status
+    // line), auto-promote to assistant section. This handles backends that skip
+    // the "Assistant:" label.
+    if (
+      section === "preamble"
+      && trimmed.length > 40
+      && (trimmed.match(/\s+/g)?.length ?? 0) >= 4
+      && !isNoiseLine(trimmed)
+      && !isToolExecStart(line)
+      && !/^(checking|scanning|searching|reading|loading|processing|analyzing|looking)\s/i.test(trimmed)
+    ) {
+      section = "assistant";
+      emitAssistant(line);
+      return;
+    }
+
     emitThinking(line);
   };
 
   const feed = (chunk: string) => {
+    // If the previous pending content was already emitted as a partial,
+    // clear that flag since we're about to process new data.
+    if (pendingEmittedAsPartial) {
+      pendingEmittedAsPartial = false;
+    }
+
     pending += chunk;
     const normalized = pending.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     const lines = normalized.split("\n");
@@ -360,12 +445,47 @@ export function createCodexTranscriptStreamParser(handlers: CodexTranscriptStrea
     for (const line of lines) {
       processLine(line);
     }
+
+    // Partial-line flush: if there's leftover content in pending and we're
+    // in the assistant section, schedule a timer to emit it as a partial delta.
+    clearPartialFlushTimer();
+    if (pending && section === "assistant" && !inCodeFence) {
+      partialFlushTimer = setTimeout(() => {
+        partialFlushTimer = null;
+        if (pending && section === "assistant" && !inCodeFence) {
+          const cleaned = stripNonPrintableControls(stripAnsi(pending)).replace(/\s+$/g, "");
+          if (cleaned) {
+            const partialChunk = emittedAssistantLine ? `\n${cleaned}` : cleaned;
+            handlers.onAssistantDelta?.(partialChunk);
+            emittedAssistantLine = true;
+            pendingEmittedAsPartial = true;
+          }
+        }
+      }, 100);
+    }
   };
 
   const flush = () => {
+    clearPartialFlushTimer();
+    clearCodeFenceTimeout();
+
+    // Force-emit any buffered code fence content
+    if (inCodeFence && codeFenceBuffer.length > 0) {
+      const block = codeFenceBuffer.join("\n");
+      const chunk = emittedAssistantLine ? `\n${block}` : block;
+      handlers.onAssistantDelta?.(chunk);
+      emittedAssistantLine = true;
+      codeFenceBuffer = [];
+      inCodeFence = false;
+    }
+
     if (pending) {
-      processLine(pending);
+      // If pending was already emitted as a partial, skip re-emission
+      if (!pendingEmittedAsPartial) {
+        processLine(pending);
+      }
       pending = "";
+      pendingEmittedAsPartial = false;
     }
     finalizeActiveTool();
   };

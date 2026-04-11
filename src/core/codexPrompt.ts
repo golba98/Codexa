@@ -49,7 +49,7 @@ export function enrichFileCreationPrompt(prompt: string): string {
   }
   
   const description = fileCreationMatch[1]?.trim();
-  if (!description) {
+  if (!description) { 
     return [
       prompt,
       "",

@@ -22,6 +22,7 @@ interface TimelineProps {
   layout: Layout;
   uiState: UIState;
   viewportRows: number;
+  verboseMode?: boolean;
 }
 
 type StandaloneTimelineEvent = SystemEvent | ErrorEvent | ShellEvent;
@@ -569,7 +570,7 @@ const TimelineRowView = memo(function TimelineRowView({ row }: { row: TimelineRo
   );
 }, (prev, next) => prev.row === next.row);
 
-export const Timeline = memo(function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows }: TimelineProps) {
+export const Timeline = memo(function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows, verboseMode = false }: TimelineProps) {
   const { stdin } = useStdin();
   const staticItems = useMemo(() => buildTimelineItems(staticEvents), [staticEvents]);
   const activeItems = useMemo(() => buildTimelineItems(activeEvents), [activeEvents]);
@@ -604,12 +605,12 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
   // active half (typically 1-2 items) is rebuilt each frame.
   const snapshotWidth = getShellWidth(layout.cols);
   const staticSnapshot = useMemo(
-    () => buildTimelineSnapshot(staticRenderItems, { totalWidth: snapshotWidth }),
-    [snapshotWidth, staticRenderItems],
+    () => buildTimelineSnapshot(staticRenderItems, { totalWidth: snapshotWidth, verboseMode }),
+    [snapshotWidth, staticRenderItems, verboseMode],
   );
   const activeSnapshot = useMemo(
-    () => buildTimelineSnapshot(activeRenderItems, { totalWidth: snapshotWidth }),
-    [snapshotWidth, activeRenderItems],
+    () => buildTimelineSnapshot(activeRenderItems, { totalWidth: snapshotWidth, verboseMode }),
+    [snapshotWidth, activeRenderItems, verboseMode],
   );
   const liveSnapshot = useMemo(
     () => ({
@@ -719,7 +720,8 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     prev.layout.rows === next.layout.rows &&
     prev.layout.mode === next.layout.mode &&
     prev.uiState === next.uiState &&
-    prev.viewportRows === next.viewportRows
+    prev.viewportRows === next.viewportRows &&
+    prev.verboseMode === next.verboseMode
   );
 });
 

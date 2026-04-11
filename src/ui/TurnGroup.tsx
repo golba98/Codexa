@@ -9,6 +9,8 @@ import { useTheme } from "./theme.js";
 import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 import { wrapPlainText } from "./textLayout.js";
 import { selectVisibleRunActivity } from "./runActivityView.js";
+import type { RunFileActivity } from "../core/workspaceActivity.js";
+import type { RunActivitySummary } from "../core/workspaceActivity.js";
 
 export type TurnOpacity = "active" | "recent" | "dim";
 
@@ -23,6 +25,7 @@ interface TurnGroupProps {
   runPhase: TurnRunPhase;
   streamPreviewRows: number;
   streamMode: "assistant-first";
+  verboseMode?: boolean;
 }
 
 function formatDuration(ms: number): string {
@@ -31,37 +34,27 @@ function formatDuration(ms: number): string {
 }
 
 // ─── User Input Card ─────────────────────────────────────────────────────────
+// User prompt wrapped in a rounded DashCard border.
 
 function UserInputCard({
   prompt,
-  status,
   cols,
   dim,
 }: {
   prompt: string;
-  status: RunEvent["status"] | null;
   cols: number;
   dim: boolean;
 }) {
   const theme = useTheme();
-
-  const statusBadge = status
-    ? status === "running"
-      ? "active"
-      : status === "completed"
-        ? "done"
-        : status
-    : "queued";
-
-  const borderColor = dim ? theme.BORDER_SUBTLE : (status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE);
-  const contentWidth = Math.max(1, cols - 7); // DashCard side borders (│ + space each side = 4) + cols-3 adjustment
+  const borderColor = dim ? theme.BORDER_SUBTLE : theme.BORDER_SUBTLE;
+  const contentWidth = Math.max(1, cols - 7);
   const lines = wrapPlainText(sanitizeTerminalOutput(prompt), contentWidth);
 
   return (
-    <DashCard cols={cols} title="USER INPUT" rightBadge={statusBadge} borderColor={borderColor}>
+    <DashCard cols={cols} title="PROMPT" borderColor={borderColor}>
       {lines.map((line, i) => (
         <Text key={i} color={dim ? theme.DIM : theme.TEXT}>
-          {i === 0 ? "> " : "  "}{line}
+          {i === 0 ? "❯ " : "  "}{line}
         </Text>
       ))}
     </DashCard>
@@ -70,14 +63,14 @@ function UserInputCard({
 
 const MemoizedUserInputCard = memo(UserInputCard, (prev, next) => (
   prev.prompt === next.prompt
-  && prev.status === next.status
   && prev.cols === next.cols
   && prev.dim === next.dim
 ));
 
-// ─── Task Status Line ────────────────────────────────────────────────────────
+// ─── Status Line ─────────────────────────────────────────────────────────────
+// Single line: "⠋ CODEXA is working..." or "✔ Complete • 2.1s"
 
-function TaskStatusLine({
+function StatusLine({
   status,
   durationMs,
   runPhase,
@@ -101,47 +94,120 @@ function TaskStatusLine({
     return () => clearInterval(timer);
   }, [isActive]);
 
-  let phaseText: string;
-  let badge: string;
-
   if (status !== "running") {
-    phaseText = "Complete";
-    badge = status === "failed" ? "failed" : "done";
-  } else {
-    // Sync dots to the spinner index (which ticks at 90ms).
-    // Math.floor(frameIndex / 3) updates every 270ms, 4 frames logic
-    const dotsCount = Math.floor(frameIndex / 3) % 4; // 0, 1, 2, 3
-    const dots = ".".repeat(dotsCount).padEnd(3, " ");
-    const baseText = runPhase === "streaming" ? "Streaming response" : "Receiving response";
-    phaseText = `${baseText} ${dots}`;
-    badge = "active";
+    // Completed state — clean summary line
+    const icon = status === "failed" ? "✕" : "✔";
+    const iconColor = status === "failed" ? theme.ERROR : theme.SUCCESS;
+    const label = status === "failed" ? "Failed" : status === "canceled" ? "Canceled" : "Complete";
+    const duration = durationMs != null ? ` • ${formatDuration(durationMs)}` : "";
+
+    return (
+      <Box width="100%" paddingX={1}>
+        <Text>
+          <Text color={iconColor}>{icon} </Text>
+          <Text color={theme.DIM}>{label}{duration}</Text>
+        </Text>
+      </Box>
+    );
   }
 
-  const spinner = isActive ? SPINNER_FRAMES[frameIndex] + " " : "";
-  const durationText = durationMs != null ? ` ${formatDuration(durationMs)}` : "";
-  const rightText = `${badge}${durationText}`;
-  const padding = Math.max(1, cols - 4 - spinner.length - phaseText.length - rightText.length - 2);
+  // Active state — spinner + concise status
+  const spinner = SPINNER_FRAMES[frameIndex];
+  const statusText = runPhase === "streaming"
+    ? "Streaming response..."
+    : "CODEXA is working...";
 
   return (
     <Box width="100%" paddingX={1}>
       <Text>
-        <Text color={theme.STAR}>{"✧ "}</Text>
-        {isActive && <Text color={theme.INFO}>{spinner}</Text>}
-        <Text color={theme.TEXT}>{"Task: "}{phaseText}</Text>
-        <Text color={theme.DIM}>{" ".repeat(padding)}{rightText}</Text>
+        <Text color={theme.INFO}>{spinner} </Text>
+        <Text color={theme.MUTED}>{statusText}</Text>
       </Text>
     </Box>
   );
 }
 
-const MemoizedTaskStatusLine = memo(TaskStatusLine, (prev, next) => (
+const MemoizedStatusLine = memo(StatusLine, (prev, next) => (
   prev.status === next.status
   && prev.durationMs === next.durationMs
   && prev.runPhase === next.runPhase
   && prev.cols === next.cols
 ));
 
-// ─── File Scan Card ──────────────────────────────────────────────────────────
+// ─── Impact Summary ──────────────────────────────────────────────────────────
+// Compact file-change summary replacing FileScanCard + ActivityCard
+
+function ImpactSummary({
+  run,
+  cols,
+}: {
+  run: RunEvent;
+  cols: number;
+}) {
+  const theme = useTheme();
+  const summary = run.activitySummary;
+  const hasFiles = run.touchedFileCount > 0;
+  const hasTools = run.toolActivities.length > 0;
+
+  if (!hasFiles && !hasTools) return null;
+
+  const contentWidth = Math.max(1, cols - 6);
+  const recentFiles = summary?.recent ?? run.activity.slice(-6);
+  const hasDeletes = (summary?.deleted ?? 0) > 0;
+
+  const opLabel = (op: string) => {
+    switch (op) {
+      case "created": return "CREATED ";
+      case "modified": return "MODIFIED";
+      case "deleted": return "DELETED ";
+      default: return op.toUpperCase().padEnd(8);
+    }
+  };
+
+  const opColor = (op: string) => {
+    switch (op) {
+      case "created": return theme.SUCCESS;
+      case "deleted": return theme.ERROR;
+      default: return theme.INFO;
+    }
+  };
+
+  return (
+    <Box flexDirection="column" width="100%" paddingX={1} marginTop={0}>
+      {hasDeletes && (
+        <Text color={theme.WARNING}>{"⚠ Destructive changes detected:"}</Text>
+      )}
+      {hasFiles && (
+        <>
+          <Text color={theme.DIM}>{"  Changes:"}</Text>
+          {recentFiles.map((file: RunFileActivity, i: number) => {
+            const diffInfo = file.addedLines != null || file.removedLines != null
+              ? ` (+${file.addedLines ?? 0} -${file.removedLines ?? 0})`
+              : "";
+            return (
+              <Text key={i}>
+                <Text color={theme.DIM}>{"    "}</Text>
+                <Text color={opColor(file.operation)}>{opLabel(file.operation)}</Text>
+                <Text color={theme.TEXT}>{" "}{file.path}</Text>
+                <Text color={theme.DIM}>{diffInfo}</Text>
+              </Text>
+            );
+          })}
+        </>
+      )}
+      {/* Summary footer */}
+      <Text color={theme.DIM}>
+        {"  "}
+        <Text color={theme.SUCCESS}>{"✔ "}</Text>
+        {run.touchedFileCount > 0 && `${run.touchedFileCount} file${run.touchedFileCount === 1 ? "" : "s"}`}
+        {hasTools && `${hasFiles ? " • " : ""}${run.toolActivities.length} action${run.toolActivities.length === 1 ? "" : "s"}`}
+        {run.durationMs != null && ` • ${formatDuration(run.durationMs)}`}
+      </Text>
+    </Box>
+  );
+}
+
+// ─── Verbose Cards (only shown in verbose mode) ──────────────────────────────
 
 function FileScanCard({ run, cols }: { run: RunEvent; cols: number }) {
   const theme = useTheme();
@@ -161,8 +227,6 @@ function FileScanCard({ run, cols }: { run: RunEvent; cols: number }) {
     </DashCard>
   );
 }
-
-// ─── Activity Card ───────────────────────────────────────────────────────────
 
 function ActivityCard({ run, cols }: { run: RunEvent; cols: number }) {
   const theme = useTheme();
@@ -206,6 +270,7 @@ export function TurnGroup({
   runPhase,
   streamPreviewRows,
   streamMode,
+  verboseMode = false,
 }: TurnGroupProps) {
   const isThinking = runPhase === "thinking";
   const isStreaming = runPhase === "streaming";
@@ -218,38 +283,46 @@ export function TurnGroup({
     <Box flexDirection="column" width="100%">
       <MemoizedUserInputCard
         prompt={user.prompt}
-        status={run?.status ?? null}
         cols={cols}
         dim={opacity === "dim"}
       />
 
       {run && (
         <>
-          <MemoizedTaskStatusLine status={run.status} durationMs={run.durationMs} runPhase={runPhase} cols={cols} />
+          <MemoizedStatusLine status={run.status} durationMs={run.durationMs} runPhase={runPhase} cols={cols} />
 
-          <Box key={`run-phase-${user.turnId}-${runPhase}`} width="100%">
-            {isThinking ? (
-              <ThinkingBlock cols={cols} run={run} turnIndex={turnIndex} />
-            ) : shouldShowAgentBlock ? (
-              <AgentBlock
-                cols={cols}
-                assistant={assistant}
-                run={run}
-                streaming={isStreaming}
-                turnIndex={turnIndex}
-                dim={dim}
-                runPhase={agentRunPhase}
-                streamingPreviewRows={streamPreviewRows}
-                streamingMode={streamMode}
-              />
-            ) : null}
-          </Box>
+          {isThinking && !verboseMode && (
+            /* Default: no ThinkingBlock card, just the spinner line above */
+            null
+          )}
 
-          {isFinished && run.touchedFileCount > 0 && (
+          {isThinking && verboseMode && (
+            <ThinkingBlock cols={cols} run={run} turnIndex={turnIndex} />
+          )}
+
+          {shouldShowAgentBlock && (
+            <AgentBlock
+              cols={cols}
+              assistant={assistant}
+              run={run}
+              streaming={isStreaming}
+              turnIndex={turnIndex}
+              dim={dim}
+              runPhase={agentRunPhase}
+              streamingPreviewRows={streamPreviewRows}
+              streamingMode={streamMode}
+            />
+          )}
+
+          {isFinished && !verboseMode && (
+            <ImpactSummary run={run} cols={cols} />
+          )}
+
+          {isFinished && verboseMode && run.touchedFileCount > 0 && (
             <FileScanCard run={run} cols={cols} />
           )}
 
-          {isFinished && run.toolActivities.length > 0 && (
+          {isFinished && verboseMode && run.toolActivities.length > 0 && (
             <ActivityCard run={run} cols={cols} />
           )}
         </>
@@ -270,6 +343,7 @@ export const MemoizedTurnGroup = memo(TurnGroup, (prev, next) => {
     prev.runPhase === next.runPhase &&
     prev.streamPreviewRows === next.streamPreviewRows &&
     prev.streamMode === next.streamMode &&
+    prev.verboseMode === next.verboseMode &&
     prev.user === next.user &&
     prev.run === next.run &&
     prev.assistant === next.assistant
