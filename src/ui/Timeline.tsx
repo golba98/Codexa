@@ -339,6 +339,51 @@ export function stepDownTimelineViewport(
   };
 }
 
+export function scrollTimelineViewport(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+  viewportRows: number,
+  deltaRows: number,
+): TimelineViewportState {
+  if (liveSnapshot.totalRows === 0) {
+    return createFollowTailViewport(0);
+  }
+  if (deltaRows === 0) {
+    return viewport;
+  }
+
+  const frozenSnapshot = getFrozenSnapshot(viewport, liveSnapshot);
+  const tailRow = Math.max(0, frozenSnapshot.totalRows - 1);
+  
+  if (deltaRows > 0 && viewport.followTail) {
+    return viewport;
+  }
+
+  const currentAnchor = viewport.followTail
+    ? tailRow
+    : clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
+    
+  const floor = getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows);
+
+  let nextAnchor = currentAnchor + deltaRows;
+
+  if (nextAnchor >= tailRow) {
+    return createFollowTailViewport(liveSnapshot.totalRows);
+  }
+  
+  if (nextAnchor < floor) {
+    nextAnchor = floor;
+  }
+
+  return {
+    anchorRow: nextAnchor,
+    followTail: false,
+    unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
+    unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
+    frozenSnapshot,
+  };
+}
+
 export function homeTimelineViewport(
   viewport: TimelineViewportState,
   liveSnapshot: TimelineSnapshot,
@@ -587,6 +632,9 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
   }, [liveSnapshot]);
 
   useEffect(() => {
+    let scrollDelta = 0;
+    let scrollTimer: ReturnType<typeof setTimeout> | null = null;
+
     const handleRawInput = (chunk: Buffer | string) => {
       const raw = typeof chunk === "string" ? chunk : chunk.toString();
       const directions = parseWheelScrollDirections(raw);
@@ -594,27 +642,33 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
         return;
       }
 
-      const currentSnapshot = liveSnapshotRef.current;
-      if (currentSnapshot.totalRows === 0) {
+      for (const direction of directions) {
+        if (direction === "up") scrollDelta -= WHEEL_SCROLL_STEP;
+        else scrollDelta += WHEEL_SCROLL_STEP;
+      }
+
+      if (scrollTimer !== null) {
         return;
       }
 
-      setViewport((current) => {
-        let next = current;
-        for (const direction of directions) {
-          for (let i = 0; i < WHEEL_SCROLL_STEP; i++) {
-            next = direction === "up"
-              ? stepUpTimelineViewport(next, currentSnapshot, viewportRows)
-              : stepDownTimelineViewport(next, currentSnapshot, viewportRows);
-          }
+      scrollTimer = setTimeout(() => {
+        const currentSnapshot = liveSnapshotRef.current;
+        const deltaRows = scrollDelta;
+        scrollDelta = 0;
+        scrollTimer = null;
+
+        if (deltaRows === 0 || currentSnapshot.totalRows === 0) {
+          return;
         }
-        return next;
-      });
+
+        setViewport((current) => scrollTimelineViewport(current, currentSnapshot, viewportRows, deltaRows));
+      }, 16);
     };
 
     stdin.on("data", handleRawInput);
     return () => {
       stdin.off("data", handleRawInput);
+      if (scrollTimer !== null) clearTimeout(scrollTimer);
     };
   }, [stdin, viewportRows]);
 
