@@ -85,6 +85,44 @@ export function enrichFileCreationPrompt(prompt: string): string {
   ].join("\n");
 }
 
+export interface HollowResponseResult {
+  isHollow: boolean;
+  reason: string;
+}
+
+const HOLLOW_PATTERNS = [
+  /^(hello|hi|hey|sure|okay|ok|got it|understood|of course|absolutely|certainly|great|sounds good)[.!]?\s*$/i,
+  /^i('m| am) (ready|here|available|happy to help)[.!]?\s*$/i,
+  /^how can i (help|assist) (you )?(today|now)?[?!]?\s*$/i,
+];
+
+const ACTION_CONFIRMATION_PATTERNS = [
+  /\b(created?|wrote|written|updated?|modified?|added?|deleted?|removed?|changed?|fixed?|built?|generated?|scaffolded?|refactored?)\b/i,
+  /\b(file|files|function|class|component|module|directory|folder)\b/i,
+  /```/,
+  /\[QUESTION\]:/,
+];
+
+export function detectHollowResponse(prompt: string, response: string): HollowResponseResult {
+  const trimmed = response.trim();
+
+  for (const pattern of HOLLOW_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { isHollow: true, reason: "Backend returned a generic greeting instead of executing the task" };
+    }
+  }
+
+  const hasWriteIntent = promptHasWriteIntent(prompt);
+  if (hasWriteIntent && trimmed.length < 80) {
+    const hasConfirmation = ACTION_CONFIRMATION_PATTERNS.some((p) => p.test(trimmed));
+    if (!hasConfirmation) {
+      return { isHollow: true, reason: "Response is too short and contains no action confirmation for a write-intent prompt" };
+    }
+  }
+
+  return { isHollow: false, reason: "" };
+}
+
 export function buildCodexPrompt(prompt: string, mode: AvailableMode): string {
   const enrichedPrompt = enrichFileCreationPrompt(prompt);
 
