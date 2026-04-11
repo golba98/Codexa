@@ -325,17 +325,19 @@ function buildPanelRows(params: {
 function buildUserInputRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number): TimelineRow[] {
   const dim = item.renderState.opacity === "dim";
   const contentWidth = Math.max(1, width - 4);
-  const lines = wrapPlainText(sanitizeTerminalOutput(item.item.user?.prompt ?? ""), contentWidth);
-
-  return lines.map((line, index) => createRow(
-    `${item.key}-user-${index}`,
-    [
-      createSpan(" "),
+  const lines = wrapPlainText(sanitizeTerminalOutput(item.item.user?.prompt ?? ""), Math.max(1, contentWidth - 2))
+    .map((line, index) => [
       createSpan(index === 0 ? "❯ " : "  ", dim ? "dim" : "text"),
       createSpan(line || " ", dim ? "dim" : "text"),
-    ],
+    ]);
+
+  return buildDashCardRows({
+    keyPrefix: `${item.key}-user`,
     width,
-  ));
+    title: "PROMPT",
+    borderTone: "borderSubtle",
+    contentRows: lines,
+  });
 }
 
 function formatDuration(ms: number): string {

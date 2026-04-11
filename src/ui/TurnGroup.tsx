@@ -33,10 +33,10 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-// ─── User Input Line ─────────────────────────────────────────────────────────
-// Clean prompt-prefix style: "> user prompt text" — no bordered card.
+// ─── User Input Card ─────────────────────────────────────────────────────────
+// User prompt wrapped in a rounded DashCard border.
 
-function UserInputLine({
+function UserInputCard({
   prompt,
   cols,
   dim,
@@ -46,21 +46,22 @@ function UserInputLine({
   dim: boolean;
 }) {
   const theme = useTheme();
-  const contentWidth = Math.max(1, cols - 4);
+  const borderColor = dim ? theme.BORDER_SUBTLE : theme.BORDER_SUBTLE;
+  const contentWidth = Math.max(1, cols - 7);
   const lines = wrapPlainText(sanitizeTerminalOutput(prompt), contentWidth);
 
   return (
-    <Box flexDirection="column" width="100%" paddingX={1}>
+    <DashCard cols={cols} title="PROMPT" borderColor={borderColor}>
       {lines.map((line, i) => (
         <Text key={i} color={dim ? theme.DIM : theme.TEXT}>
           {i === 0 ? "❯ " : "  "}{line}
         </Text>
       ))}
-    </Box>
+    </DashCard>
   );
 }
 
-const MemoizedUserInputLine = memo(UserInputLine, (prev, next) => (
+const MemoizedUserInputCard = memo(UserInputCard, (prev, next) => (
   prev.prompt === next.prompt
   && prev.cols === next.cols
   && prev.dim === next.dim
@@ -280,7 +281,7 @@ export function TurnGroup({
 
   return (
     <Box flexDirection="column" width="100%">
-      <MemoizedUserInputLine
+      <MemoizedUserInputCard
         prompt={user.prompt}
         cols={cols}
         dim={opacity === "dim"}
