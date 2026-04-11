@@ -107,11 +107,13 @@ function TaskStatusLine({
   if (status !== "running") {
     phaseText = "Complete";
     badge = status === "failed" ? "failed" : "done";
-  } else if (runPhase === "streaming") {
-    phaseText = "Streaming response ...";
-    badge = "active";
   } else {
-    phaseText = "Receiving response ...";
+    // Sync dots to the spinner index (which ticks at 90ms).
+    // Math.floor(frameIndex / 3) updates every 270ms, 4 frames logic
+    const dotsCount = Math.floor(frameIndex / 3) % 4; // 0, 1, 2, 3
+    const dots = ".".repeat(dotsCount).padEnd(3, " ");
+    const baseText = runPhase === "streaming" ? "Streaming response" : "Receiving response";
+    phaseText = `${baseText} ${dots}`;
     badge = "active";
   }
 

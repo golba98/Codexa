@@ -22,6 +22,7 @@ import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { getTextWidth, splitTextAtColumn } from "./textLayout.js";
 import { useThrottledValue } from "./useThrottledValue.js";
 import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { AnimatedStatusText } from "./AnimatedStatusText.js";
 
 type ComposerPersona = "idle" | "busy" | "answer" | "error";
 type DeleteIntent = "backspace" | "delete";
@@ -186,9 +187,9 @@ export function measureBottomComposerRows({
 }
 
 function getStatusLine(uiState: UIState): string | null {
-  if (uiState.kind === "THINKING") return "✧ Analysing request...";
-  if (uiState.kind === "RESPONDING") return "✧ Streaming response...";
-  if (uiState.kind === "SHELL_RUNNING") return "✧ Executing shell command...";
+  if (uiState.kind === "THINKING") return "✧ Analysing request";
+  if (uiState.kind === "RESPONDING") return "✧ Streaming response";
+  if (uiState.kind === "SHELL_RUNNING") return "✧ Executing shell command";
   if (uiState.kind === "AWAITING_USER_ACTION") return "✧ waiting for your answer";
   if (uiState.kind === "ERROR") return uiState.message;
   return null;
@@ -307,7 +308,10 @@ export function BottomComposer({
   const suggestionText = suggestions
     .map((suggestion, index) => `${index === selectedIndex ? "›" : "·"} ${suggestion.cmd}`)
     .join("   ");
-  const statusLine = useThrottledValue(sanitizeTerminalOutput(getStatusLine(uiState) ?? ""), 80);
+  
+  const rawStatusLine = getStatusLine(uiState) ?? "";
+  const showStatusLine = rawStatusLine.length > 0 && persona !== "answer";
+  
   const promptViewport = useMemo(
     () => createInputViewport({
       text: value,
@@ -610,11 +614,19 @@ export function BottomComposer({
         </Box>
       )}
 
-      {statusLine.length > 0 && !isAnswerMode && (
+      {showStatusLine && (
         <Box paddingX={1} marginTop={0} width="100%" justifyContent="space-between" overflow="hidden">
-          <Text color={persona === "error" ? theme.ERROR : theme.INFO} wrap="truncate">{statusLine}</Text>
+          <Box flexShrink={1} flexGrow={1} overflow="hidden">
+            <AnimatedStatusText 
+              baseText={rawStatusLine} 
+              isActive={inputLocked} 
+              isError={persona === "error"} 
+            />
+          </Box>
           {inputLocked && (
-            <Text color={theme.DIM}>Esc cancel  Ctrl+C quit</Text>
+            <Box flexShrink={0}>
+              <Text color={theme.DIM}>Esc cancel  Ctrl+C quit</Text>
+            </Box>
           )}
         </Box>
       )}
