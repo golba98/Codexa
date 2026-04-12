@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCodexPrompt, promptHasWriteIntent, resolveExecutionMode } from "./codexPrompt.js";
+import { buildCodexPrompt, detectHollowResponse, promptHasWriteIntent, resolveExecutionMode } from "./codexPrompt.js";
 
 test("detects write intent for build requests", () => {
   assert.equal(promptHasWriteIntent("Create a weather app script with tests"), true);
@@ -43,4 +43,72 @@ test("builds a suggest-mode prompt that avoids generic readiness replies", () =>
   assert.match(prompt, /\[QUESTION\]:/i);
   assert.match(prompt, /do not reply with generic readiness/i);
   assert.match(prompt, /Task:/i);
+});
+
+// --- detectHollowResponse tests ---
+
+test("detects greetings as hollow with kind=greeting", () => {
+  for (const greeting of ["Hello.", "Hi!", "Hey", "Sure.", "Okay", "Sounds good"]) {
+    const result = detectHollowResponse("create a file", greeting);
+    assert.equal(result.isHollow, true, `Expected "${greeting}" to be hollow`);
+    assert.equal(result.kind, "greeting");
+  }
+});
+
+test("detects filler acknowledgments as hollow with kind=filler", () => {
+  for (const filler of ["Thanks.", "Thank you!", "No problem", "Will do", "Noted"]) {
+    const result = detectHollowResponse("create a file", filler);
+    assert.equal(result.isHollow, true, `Expected "${filler}" to be hollow`);
+    assert.equal(result.kind, "filler");
+  }
+});
+
+test("detects clarification questions as hollow with kind=clarification", () => {
+  for (const question of ["Can you clarify?", "Could you specify the path?", "What do you mean?"]) {
+    const result = detectHollowResponse("create a file", question);
+    assert.equal(result.isHollow, true, `Expected "${question}" to be hollow`);
+    assert.equal(result.kind, "clarification");
+  }
+});
+
+test("detects empty/whitespace as hollow with kind=filler", () => {
+  assert.equal(detectHollowResponse("create a file", "").isHollow, true);
+  assert.equal(detectHollowResponse("create a file", "   ").isHollow, true);
+  assert.equal(detectHollowResponse("create a file", "").kind, "filler");
+});
+
+test("detects short no-action responses for write-intent prompts", () => {
+  const result = detectHollowResponse("create a new script file", "Let me think about that.");
+  assert.equal(result.isHollow, true);
+  assert.equal(result.kind, "short-no-action");
+});
+
+test("does not flag valid short responses with action confirmation", () => {
+  const result = detectHollowResponse("create a file", "Done, created the file.");
+  assert.equal(result.isHollow, false);
+  assert.equal(result.kind, "none");
+});
+
+test("does not flag longer task completions", () => {
+  const longResponse = "I've created the file at src/utils/helper.ts with the requested utility functions. The module exports three helpers for string manipulation.";
+  const result = detectHollowResponse("create a utility file", longResponse);
+  assert.equal(result.isHollow, false);
+});
+
+test("does not flag responses containing code blocks", () => {
+  const result = detectHollowResponse("create a script", "Here:\n```js\nconsole.log('hi');\n```");
+  assert.equal(result.isHollow, false);
+});
+
+test("does not flag greetings when prompt has no write intent", () => {
+  // User saying "Hello" and getting "Hello" back is normal conversation
+  for (const prompt of ["Hello", "Hi there", "Hey", "What's up"]) {
+    const result = detectHollowResponse(prompt, "Hello!");
+    assert.equal(result.isHollow, false, `Prompt "${prompt}" should not trigger hollow detection`);
+  }
+});
+
+test("does not flag filler when prompt is conversational", () => {
+  const result = detectHollowResponse("thanks for that", "You're welcome!");
+  assert.equal(result.isHollow, false);
 });

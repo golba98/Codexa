@@ -30,6 +30,8 @@ import {
 import { copyToClipboard } from "./core/clipboard.js";
 import { runCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
 import { detectHollowResponse, resolveExecutionMode } from "./core/codexPrompt.js";
+import { formatHollowResponse } from "./core/hollowResponseFormat.js";
+import { reassertTerminalTitle } from "./core/terminalTitle.js";
 import {
   buildDevLaunchNotice,
   buildWorkspaceCommandContext,
@@ -788,6 +790,7 @@ export function App() {
     };
 
     void runner.result.then((result) => {
+      reassertTerminalTitle();
       if (activeRunIdRef.current !== shellId) return;
       flushShellLines();
       activeRunIdRef.current = null;
@@ -1059,17 +1062,8 @@ export function App() {
           if (effectiveMode !== "suggest") {
             const hollow = detectHollowResponse(safeProviderPrompt, safeResponse);
             if (hollow.isHollow) {
-              const warningResponse = [
-                `⚠ Warning: ${hollow.reason}.`,
-                "",
-                "The backend response did not confirm any of the requested actions.",
-                "The workspace may not have been modified as expected.",
-                "Check your files manually or re-submit the request.",
-                "",
-                "--- Backend response ---",
-                safeResponse,
-              ].join("\n");
-              void finalizePromptRun(runId, turnId, "completed", undefined, warningResponse);
+              const formatted = formatHollowResponse(hollow, safeResponse);
+              void finalizePromptRun(runId, turnId, "completed", undefined, formatted);
               return;
             }
           }
@@ -1080,7 +1074,13 @@ export function App() {
           const normalizeWs = (s: string) => s.replace(/\s+/g, " ").trim();
           const streamedNorm = normalizeWs(streamedAssistantContent);
           const responseNorm = normalizeWs(safeResponse);
-          const finalResponse = streamedNorm && streamedNorm === responseNorm ? undefined : safeResponse;
+          const finalResponse =
+            streamedNorm && (
+              streamedNorm === responseNorm ||
+              (responseNorm.startsWith(streamedNorm) && streamedNorm.length / responseNorm.length > 0.8)
+            )
+              ? undefined
+              : safeResponse;
           void finalizePromptRun(runId, turnId, "completed", undefined, finalResponse);
         },
         onError: (message, rawOutput) => {

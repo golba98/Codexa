@@ -85,6 +85,72 @@ export function stripNonPrintableControls(text: string): string {
   return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
 }
 
+// Box-drawing and block-element Unicode characters (U+2500–U+259F) used by
+// terminal TUI frame decorations — strip these from streaming output.
+const BOX_DRAWING_BLOCK_ELEMENTS = /[\u2500-\u259F]/g;
+
+/**
+ * Stateful factory that pre-sanitizes raw stdout chunks before the stream
+ * parser sees them.  Maintains a carryover buffer so that ANSI escape
+ * sequences split across Node `data` events are handled correctly.
+ */
+export function createStdoutSanitizer(): {
+  process(chunk: string): string;
+  flush(): string;
+} {
+  // Lazy-import to avoid circular deps at module parse time.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { sanitizeTerminalOutput } = require("../terminalSanitize.js") as typeof import("../terminalSanitize.js");
+
+  let carryover = "";
+
+  const sanitize = (text: string): string => {
+    let cleaned = sanitizeTerminalOutput(text);
+    cleaned = cleaned.replace(BOX_DRAWING_BLOCK_ELEMENTS, "");
+    return cleaned;
+  };
+
+  return {
+    process(chunk: string): string {
+      const input = carryover + chunk;
+      carryover = "";
+
+      // Scan the last 20 characters for an incomplete ESC sequence.
+      // An ESC (0x1B) not followed by a complete CSI/OSC/Fe terminator
+      // means the sequence spans into the next chunk.
+      const tail = input.slice(-20);
+      const lastEsc = tail.lastIndexOf("\u001B");
+      if (lastEsc !== -1) {
+        const afterEsc = tail.slice(lastEsc);
+        // Check if this looks like a complete sequence:
+        // - Fe: ESC + single byte in @-Z\_
+        // - CSI: ESC [ ... <letter>
+        // - OSC: ESC ] ... (BEL or ST)
+        const isComplete =
+          /^\u001B[@-Z\\-_]/.test(afterEsc) ||                          // Fe
+          /^\u001B\[[0-?]*[ -/]*[@-~]/.test(afterEsc) ||                // CSI complete
+          /^\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)/.test(afterEsc); // OSC complete
+
+        if (!isComplete && afterEsc.length < 20) {
+          // Incomplete escape — hold it back for the next chunk
+          const splitAt = input.length - tail.length + lastEsc;
+          carryover = input.slice(splitAt);
+          return sanitize(input.slice(0, splitAt));
+        }
+      }
+
+      return sanitize(input);
+    },
+
+    flush(): string {
+      if (!carryover) return "";
+      const remaining = carryover;
+      carryover = "";
+      return sanitize(remaining);
+    },
+  };
+}
+
 type TranscriptSection = "preamble" | "task" | "user" | "assistant" | "tool_output" | "postlude";
 
 export interface CodexTranscriptStreamHandlers {

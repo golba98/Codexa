@@ -77,6 +77,25 @@ export function findUserPrompt(events: TimelineEvent[], turnId: number): UserPro
   return event ?? null;
 }
 
+function reconcileAssistantContent(
+  streamed: string | undefined,
+  response: string | undefined,
+  status: "completed" | "failed" | "canceled",
+): string {
+  if (status !== "completed") return streamed?.trim() ? streamed : "";
+  if (!response?.trim()) return streamed ?? "";
+  if (!streamed?.trim()) return response;
+
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+  const sNorm = norm(streamed);
+  const rNorm = norm(response);
+
+  if (sNorm === rNorm) return streamed;                    // exact → keep streamed formatting
+  if (rNorm.startsWith(sNorm) && sNorm.length > 20)       // streamed is prefix → use response
+    return response;
+  return response;                                          // different → authoritative response wins
+}
+
 export function reduceSessionState(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case "APPEND_STATIC_EVENT":
@@ -208,10 +227,11 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
             ? failRunEvent(runEvent, action.message ?? "Run failed", action.message ?? "Run failed")
             : cancelRunEvent(runEvent);
 
-      const assistantContent =
-        action.status === "completed"
-          ? action.response?.trim() ? action.response : assistantEvent?.content ?? ""
-          : assistantEvent?.content?.trim() ? assistantEvent.content : "";
+      const assistantContent = reconcileAssistantContent(
+        assistantEvent?.content,
+        action.response,
+        action.status,
+      );
 
       const additions: TimelineEvent[] = [];
       if (userEvent) additions.push(userEvent);
@@ -219,7 +239,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       if (assistantContent.trim()) {
         additions.push(
           assistantEvent
-            ? { ...assistantEvent, content: action.status === "completed" && action.response ? action.response : assistantEvent.content }
+            ? { ...assistantEvent, content: assistantContent }
             : action.assistantFactory(),
         );
       }

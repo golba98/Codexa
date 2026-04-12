@@ -85,15 +85,26 @@ export function enrichFileCreationPrompt(prompt: string): string {
   ].join("\n");
 }
 
+export type HollowResponseKind = "greeting" | "filler" | "clarification" | "short-no-action" | "none";
+
 export interface HollowResponseResult {
   isHollow: boolean;
+  kind: HollowResponseKind;
   reason: string;
 }
 
-const HOLLOW_PATTERNS = [
+const GREETING_PATTERNS = [
   /^(hello|hi|hey|sure|okay|ok|got it|understood|of course|absolutely|certainly|great|sounds good)[.!]?\s*$/i,
   /^i('m| am) (ready|here|available|happy to help)[.!]?\s*$/i,
   /^how can i (help|assist) (you )?(today|now)?[?!]?\s*$/i,
+];
+
+const FILLER_PATTERNS = [
+  /^(thanks|thank you|no problem|you're welcome|will do|on it|noted)[.!]?\s*$/i,
+];
+
+const CLARIFICATION_PATTERNS = [
+  /^(can you|could you|what|which|where|please)\b.+\b(clarify|specify|provide|tell me|explain|mean)\b.*[?.]?\s*$/i,
 ];
 
 const ACTION_CONFIRMATION_PATTERNS = [
@@ -105,22 +116,44 @@ const ACTION_CONFIRMATION_PATTERNS = [
 
 export function detectHollowResponse(prompt: string, response: string): HollowResponseResult {
   const trimmed = response.trim();
+  const hasWriteIntent = promptHasWriteIntent(prompt);
 
-  for (const pattern of HOLLOW_PATTERNS) {
+  // Only flag hollow responses when the prompt actually asked the backend to do something.
+  // A user saying "Hello" and getting "Hello" back is perfectly normal.
+  if (!hasWriteIntent) {
+    return { isHollow: false, kind: "none", reason: "" };
+  }
+
+  if (!trimmed) {
+    return { isHollow: true, kind: "filler", reason: "Empty response" };
+  }
+
+  for (const pattern of GREETING_PATTERNS) {
     if (pattern.test(trimmed)) {
-      return { isHollow: true, reason: "Backend returned a generic greeting instead of executing the task" };
+      return { isHollow: true, kind: "greeting", reason: "Generic greeting" };
     }
   }
 
-  const hasWriteIntent = promptHasWriteIntent(prompt);
-  if (hasWriteIntent && trimmed.length < 80) {
+  for (const pattern of FILLER_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { isHollow: true, kind: "filler", reason: "Filler acknowledgment" };
+    }
+  }
+
+  for (const pattern of CLARIFICATION_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { isHollow: true, kind: "clarification", reason: "Clarification question" };
+    }
+  }
+
+  if (trimmed.length < 80) {
     const hasConfirmation = ACTION_CONFIRMATION_PATTERNS.some((p) => p.test(trimmed));
     if (!hasConfirmation) {
-      return { isHollow: true, reason: "Response is too short and contains no action confirmation for a write-intent prompt" };
+      return { isHollow: true, kind: "short-no-action", reason: "Short response with no action confirmation" };
     }
   }
 
-  return { isHollow: false, reason: "" };
+  return { isHollow: false, kind: "none", reason: "" };
 }
 
 export function buildCodexPrompt(prompt: string, mode: AvailableMode): string {

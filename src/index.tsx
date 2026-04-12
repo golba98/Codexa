@@ -11,6 +11,7 @@ import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 // immediately after so nothing accumulates there.
 const HARD_REPAINT_SEQUENCE = "\x1b[2J\x1b[3J\x1b[H";
 const DISABLE_TRANSCRIPT_WHEEL_MODE = "\x1b[?1000l\x1b[?1006l";
+import { SET_TERMINAL_TITLE } from "./core/terminalTitle.js";
 
 type RenderHandle = Pick<Instance, "clear" | "waitUntilExit">;
 
@@ -122,7 +123,7 @@ export function startApp({
   // NOTE: Mouse reporting (\x1b[?1000h / \x1b[?1006h) is NOT enabled here.
   // It is managed exclusively by the React app (app.tsx) and defaults to OFF
   // so native terminal drag-selection and copy work without any special steps.
-  stdout.write(`${HARD_REPAINT_SEQUENCE}\x1b[?2004h`);
+  stdout.write(`${SET_TERMINAL_TITLE}${HARD_REPAINT_SEQUENCE}\x1b[?2004h`);
 
   let cleanupDone = false;
   let repaintArmed = false;

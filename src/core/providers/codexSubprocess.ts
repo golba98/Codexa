@@ -1,8 +1,9 @@
 import { spawn } from "child_process";
 import { AVAILABLE_MODELS, buildCodexExecArgs } from "../../config/settings.js";
 import { formatCodexLaunchError, resolveCodexExecutable, spawnCodexProcess } from "../codexExecutable.js";
+import { createTitleGuard } from "../terminalTitle.js";
 import { buildCodexPrompt } from "../codexPrompt.js";
-import { createCodexTranscriptStreamParser, isStderrNoise, sanitizeCodexTranscript, stripAnsi, stripNonPrintableControls } from "./codexTranscript.js";
+import { createCodexTranscriptStreamParser, createStdoutSanitizer, isStderrNoise, sanitizeCodexTranscript, stripAnsi, stripNonPrintableControls } from "./codexTranscript.js";
 import type { BackendProvider } from "./types.js";
 
 export const codexSubprocessProvider: BackendProvider = {
@@ -18,6 +19,7 @@ export const codexSubprocessProvider: BackendProvider = {
     let cancelled = false;
     let proc: ReturnType<typeof spawn> | null = null;
     let rawOutput = "";
+    let stopTitleGuard: (() => void) | null = null;
 
     const finishError = (message: string) => {
       if (done) return;
@@ -46,6 +48,10 @@ export const codexSubprocessProvider: BackendProvider = {
           { stdio: ["pipe", "pipe", "pipe"] },
         );
 
+        // Re-assert terminal title periodically while the subprocess runs —
+        // the backend may spawn child processes that reset the window title.
+        stopTitleGuard = createTitleGuard(500);
+
         proc.stdin?.write(buildCodexPrompt(prompt, options.mode));
         proc.stdin?.end();
 
@@ -54,11 +60,13 @@ export const codexSubprocessProvider: BackendProvider = {
           onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
           onToolActivity: (activity) => handlers.onToolActivity?.(activity),
         });
+        const stdoutSanitizer = createStdoutSanitizer();
         const handleStdout = (chunk: Buffer) => {
           if (cancelled || done) return;
           const text = chunk.toString();
-          rawOutput += text;
-          parser.feed(text);
+          rawOutput += text;                             // raw preserved for fallback
+          const clean = stdoutSanitizer.process(text);
+          if (clean) parser.feed(clean);                 // parser gets clean input
         };
         const handleStderr = (chunk: Buffer) => {
           if (cancelled || done) return;
@@ -80,7 +88,12 @@ export const codexSubprocessProvider: BackendProvider = {
         proc.stderr?.on("data", handleStderr);
 
         proc.on("close", (code) => {
+          stopTitleGuard?.();
+          stopTitleGuard = null;
+
           if (cancelled || done) return;
+          const remaining = stdoutSanitizer.flush();
+          if (remaining) parser.feed(remaining);
           parser.flush();
           if (code === 0) {
             finishSuccess();
@@ -104,6 +117,8 @@ export const codexSubprocessProvider: BackendProvider = {
     return () => {
       cancelled = true;
       done = true;
+      stopTitleGuard?.();
+      stopTitleGuard = null;
       proc?.kill();
     };
   },
