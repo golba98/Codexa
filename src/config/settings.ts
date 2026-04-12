@@ -63,6 +63,28 @@ export const MODEL_REASONING_RECOMMENDATIONS: Record<AvailableModel, ReasoningLe
   "gpt-5.2": "high",
 };
 
+/**
+ * Per-model reasoning level availability — the single source of truth for
+ * which reasoning levels each model actually supports.  UI bar counts,
+ * selection ranges, and interactive behaviour all derive from this map.
+ */
+export const MODEL_AVAILABLE_REASONING: Record<AvailableModel, readonly ReasoningLevel[]> = {
+  "gpt-5.4":       ["low", "medium", "high", "xhigh"],
+  "gpt-5.4-mini":  ["low", "medium", "high", "xhigh"],
+  "gpt-5.3-codex": ["low", "medium", "high", "xhigh"],
+  "gpt-5.2":       ["low", "medium", "high", "xhigh"],
+};
+
+/** Returns the ordered list of reasoning levels a model supports. */
+export function getAvailableReasoningForModel(model: AvailableModel): readonly ReasoningLevel[] {
+  return MODEL_AVAILABLE_REASONING[model] ?? AVAILABLE_REASONING_LEVELS.map((r) => r.id);
+}
+
+/** True when a model supports more than one reasoning level (interactive). */
+export function isReasoningInteractive(model: AvailableModel): boolean {
+  return getAvailableReasoningForModel(model).length > 1;
+}
+
 export const AVAILABLE_MODES = [
   { key: "suggest", label: "SUGGEST" },
   { key: "auto-edit", label: "AUTO-EDIT" },
@@ -209,11 +231,12 @@ export function normalizeReasoningForModel(
   model: AvailableModel,
   reasoningLevel: ReasoningLevel,
 ): ReasoningLevel {
-  if (model === "gpt-5.4-mini") {
-    return getRecommendedReasoningForModel(model);
+  const available = getAvailableReasoningForModel(model);
+  if (available.includes(reasoningLevel)) {
+    return reasoningLevel;
   }
-
-  return reasoningLevel;
+  // If the current level isn't supported, fall back to the recommendation.
+  return getRecommendedReasoningForModel(model);
 }
 
 export function formatAuthPreferenceLabel(preference: string): string {
