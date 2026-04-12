@@ -219,6 +219,46 @@ test("builds multi-row snapshots from wrapped timeline items", () => {
   assert.equal(snapshot.itemCount, 1);
 });
 
+test("timeline snapshot keeps the prompt card top border closed", () => {
+  const items = buildTimelineItems([
+    {
+      id: 1,
+      type: "user",
+      createdAt: 1,
+      prompt: "Reproduce the prompt border issue",
+      turnId: 10,
+    },
+    {
+      id: 2,
+      type: "run",
+      createdAt: 2,
+      startedAt: 2,
+      durationMs: null,
+      backendId: "codex-subprocess",
+      backendLabel: "Codexa",
+      mode: "auto-edit",
+      model: "gpt-5.4",
+      prompt: "Reproduce the prompt border issue",
+      thinkingLines: [],
+      status: "running",
+      summary: "Running",
+      truncatedOutput: false,
+      toolActivities: [],
+      activity: [],
+      touchedFileCount: 0,
+      errorMessage: null,
+      turnId: 10,
+    },
+  ]);
+  const renderItems = buildActiveRenderItems(items, [10], { kind: "THINKING", turnId: 10 });
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 56 });
+  const topBorder = snapshot.rows[0]?.spans.map((span) => span.text).join("").trim();
+
+  assert.equal(topBorder?.includes("╭── PROMPT"), true);
+  assert.match(topBorder ?? "", /──╮$/);
+  assert.doesNotMatch(topBorder ?? "", / ──╮$/);
+});
+
 test("keeps a frozen browse snapshot while live rows continue to arrive", () => {
   const live = createSnapshot([2, 2]);
   const browsing = pageUpTimelineViewport(createFollowTailViewport(live.totalRows), live, 3);

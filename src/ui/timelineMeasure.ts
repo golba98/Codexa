@@ -212,12 +212,13 @@ function buildTopBorder(width: number, title: string, rightBadge?: string): Time
   const titleWidth = getTextWidth(title);
   const badgeWidth = rightBadge ? getTextWidth(rightBadge) : 0;
   const suffixWidth = rightBadge ? 4 : 3;
-  const fillCount = Math.max(1, safeWidth - prefixWidth - titleWidth - badgeWidth - suffixWidth - 2);
+  const fillSpacerWidth = rightBadge ? 2 : 1;
+  const fillCount = Math.max(1, safeWidth - prefixWidth - titleWidth - badgeWidth - suffixWidth - fillSpacerWidth);
 
   const spans: TimelineRowSpan[] = [
     createSpan("╭── ", "borderSubtle"),
     createSpan(title, "muted", { bold: true }),
-    createSpan(` ${"─".repeat(fillCount)} `, "borderSubtle"),
+    createSpan(rightBadge ? ` ${"─".repeat(fillCount)} ` : ` ${"─".repeat(fillCount)}`, "borderSubtle"),
   ];
 
   if (rightBadge) {

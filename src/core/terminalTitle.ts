@@ -1,23 +1,39 @@
+export const TERMINAL_TITLE = "CODEXA";
+
 /** ANSI OSC sequence that sets the terminal window title to "CODEXA". */
-export const SET_TERMINAL_TITLE = "\x1b]0;CODEXA\x07";
+export const SET_TERMINAL_TITLE = "\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07";
 
 /** Write the title sequence to stdout to (re-)assert the window title. */
-export function reassertTerminalTitle(): void {
-  process.stdout.write(SET_TERMINAL_TITLE);
+export function reassertTerminalTitle(
+  write: (chunk: string) => void = (chunk) => {
+    process.stdout.write(chunk);
+  },
+): void {
+  try {
+    process.title = TERMINAL_TITLE;
+  } catch {
+    // Ignore hosts where process.title cannot be updated.
+  }
+  write(SET_TERMINAL_TITLE);
 }
 
 /**
- * Throttled title guard that re-asserts the terminal title at most once
- * every `intervalMs` milliseconds.  Returns a dispose function to stop
- * the guard and emit one final title assertion.
- *
- * Use this during long-running subprocess executions where child
- * processes (spawned by the backend) can reset the terminal title.
+ * Acquire a run-scoped title guard that immediately asserts the title,
+ * reasserts it periodically while work is active, and emits one final
+ * assertion when released.
  */
-export function createTitleGuard(intervalMs = 500): () => void {
-  const timer = setInterval(reassertTerminalTitle, intervalMs);
+export function acquireTerminalTitleGuard(
+  intervalMs = 250,
+  reassert: () => void = reassertTerminalTitle,
+): () => void {
+  let released = false;
+  reassert();
+  const timer = setInterval(reassert, intervalMs);
+  timer.unref?.();
   return () => {
+    if (released) return;
+    released = true;
     clearInterval(timer);
-    reassertTerminalTitle();
+    reassert();
   };
 }
