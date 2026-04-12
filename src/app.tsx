@@ -31,7 +31,7 @@ import { copyToClipboard } from "./core/clipboard.js";
 import { runCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
 import { detectHollowResponse, resolveExecutionMode } from "./core/codexPrompt.js";
 import { formatHollowResponse } from "./core/hollowResponseFormat.js";
-import { reassertTerminalTitle } from "./core/terminalTitle.js";
+import { acquireTerminalTitleGuard } from "./core/terminalTitle.js";
 import {
   buildDevLaunchNotice,
   buildWorkspaceCommandContext,
@@ -705,6 +705,13 @@ export function App() {
 
     const shellId = createEventId();
     const startTime = Date.now();
+    const stopTitleGuard = acquireTerminalTitleGuard();
+    let titleGuardReleased = false;
+    const releaseTitleGuard = () => {
+      if (titleGuardReleased) return;
+      titleGuardReleased = true;
+      stopTitleGuard();
+    };
 
     const initialEvent: ShellEvent = {
       id: shellId,
@@ -787,10 +794,11 @@ export function App() {
         shellFlushTimer = null;
       }
       runner.cancel();
+      releaseTitleGuard();
     };
 
     void runner.result.then((result) => {
-      reassertTerminalTitle();
+      releaseTitleGuard();
       if (activeRunIdRef.current !== shellId) return;
       flushShellLines();
       activeRunIdRef.current = null;
@@ -895,6 +903,13 @@ export function App() {
     }
 
     const turnId = createTurnId();
+    const stopTitleGuard = acquireTerminalTitleGuard();
+    let titleGuardReleased = false;
+    const releaseTitleGuard = () => {
+      if (titleGuardReleased) return;
+      titleGuardReleased = true;
+      stopTitleGuard();
+    };
     const userEvent: UserPromptEvent = {
       id: createEventId(),
       type: "user",
@@ -1143,6 +1158,7 @@ export function App() {
       }
       activityTracker?.stop();
       stopProviderRun?.();
+      releaseTitleGuard();
     };
 
     return true;

@@ -39,7 +39,7 @@ export function DashCard({
       <Text wrap="truncate">
         <Text color={border}>{"╭── "}</Text>
         <Text color={tColor} bold>{topLine.title}</Text>
-        <Text color={border}>{" " + topLine.fill + " "}</Text>
+        <Text color={border}>{topLine.badge ? " " + topLine.fill + " " : " " + topLine.fill}</Text>
         {topLine.badge ? (
           <>
             <Text color={bColor}>{topLine.badge}</Text>
@@ -72,7 +72,7 @@ function buildTopBorder(
   const suffix = badge ? 4 : 3; // " ──╮" with badge spacing, or "──╮"
   const titleWidth = getVisualWidth(title);
   const badgeWidth = badge ? getVisualWidth(badge) : 0;
-  const spacing = 2; // spaces around fill (one each side)
+  const spacing = badge ? 2 : 1; // the title-only variant has no trailing gap before the corner
 
   const available = w - prefix - titleWidth - spacing - badgeWidth - suffix;
   const fillCount = Math.max(1, available);
