@@ -50,7 +50,7 @@ import {
   type ModelSpec,
 } from "./core/modelSpecs.js";
 import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots, type RunFileActivity } from "./core/workspaceActivity.js";
-import { formatWorkspaceLabel, resolveWorkspaceRoot } from "./core/workspaceRoot.js";
+import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProvider } from "./core/providers/types.js";
@@ -68,7 +68,7 @@ import { AuthPanel } from "./ui/AuthPanel.js";
 import { BackendPicker } from "./ui/BackendPicker.js";
 import { measureBottomComposerRows, MemoizedBottomComposer } from "./ui/BottomComposer.js";
 import { useTerminalViewport } from "./ui/layout.js";
-import { ModelPicker } from "./ui/ModelPicker.js";
+import { ModelReasoningPicker } from "./ui/ModelReasoningPicker.js";
 import { ModePicker } from "./ui/ModePicker.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
 import { ThemePicker } from "./ui/ThemePicker.js";
@@ -126,7 +126,6 @@ export function App() {
   const [mode, setMode] = useState<AvailableMode>(initialSettings.current.mode);
   const [reasoningLevel, setReasoningLevel] = useState<ReasoningLevel>(initialSettings.current.reasoningLevel);
   const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.authPreference);
-  const [workspaceDisplayMode, setWorkspaceDisplayMode] = useState(initialSettings.current.workspaceDisplayMode);
   const [themeSelection, setThemeSelection] = useState<ThemeSelectionState>({
     committedTheme: initialSettings.current.theme,
     previewTheme: null,
@@ -236,9 +235,8 @@ export function App() {
       theme: themeSelection.committedTheme,
       customTheme,
       authPreference,
-      workspaceDisplayMode,
     });
-  }, [authPreference, backend, customTheme, mode, model, reasoningLevel, themeSelection.committedTheme, workspaceDisplayMode]);
+  }, [authPreference, backend, customTheme, mode, model, reasoningLevel, themeSelection.committedTheme]);
 
   useEffect(() => {
     return () => {
@@ -437,6 +435,31 @@ export function App() {
     setScreen("main");
     appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
   }, [appendSystemEvent, busy]);
+
+  const setModelAndReasoningWithNotice = useCallback((nextModel: AvailableModel, nextReasoning: ReasoningLevel) => {
+    const gate = guardConfigMutation("model", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing the model.");
+      return;
+    }
+
+    const modelChanged = nextModel !== model;
+    const reasoningChanged = nextReasoning !== reasoningLevel;
+
+    setModel(nextModel);
+    setReasoningLevel(nextReasoning);
+    setScreen("main");
+
+    if (modelChanged && reasoningChanged) {
+      appendSystemEvent("Model updated", `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(nextReasoning)}.`);
+    } else if (modelChanged) {
+      appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
+    } else if (reasoningChanged) {
+      appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(nextReasoning)}.`);
+    } else {
+      // Nothing changed — still close the picker silently.
+    }
+  }, [appendSystemEvent, busy, model, reasoningLevel]);
 
   const setAuthPreferenceWithNotice = useCallback((nextPreference: AuthPreference) => {
     setAuthPreference(nextPreference);
@@ -1378,7 +1401,6 @@ export function App() {
         screen={screen}
         authState={authStatus.state}
         workspaceRoot={workspaceRoot}
-        workspaceDisplayMode={workspaceDisplayMode}
         staticEvents={staticEvents}
         activeEvents={activeEvents}
         uiState={uiState}
@@ -1394,9 +1416,10 @@ export function App() {
             )}
 
               {screen === "model-picker" && (
-                <ModelPicker
+                <ModelReasoningPicker
                   currentModel={model}
-                  onSelect={(value) => setModelWithNotice(value as AvailableModel)}
+                  currentReasoning={reasoningLevel}
+                  onSelect={(m, r) => setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel)}
                   onCancel={() => setScreen("main")}
                 />
               )}
