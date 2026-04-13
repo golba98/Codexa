@@ -329,6 +329,71 @@ test("manual browse snapshot survives run start and first assistant delta", () =
   ]);
 });
 
+test("default timeline shows compact processing signals while a run is streaming", () => {
+  const items = buildTimelineItems([
+    {
+      id: 1,
+      type: "user",
+      createdAt: 1,
+      prompt: "Create a file",
+      turnId: 99,
+    },
+    {
+      id: 2,
+      type: "run",
+      createdAt: 2,
+      startedAt: 2,
+      durationMs: null,
+      backendId: "codex-subprocess",
+      backendLabel: "Codexa",
+      mode: "auto-edit",
+      model: "gpt-5.4",
+      prompt: "Create a file",
+      thinkingLines: ["Todo 1/2: Write Hello_World.py", "Verifying generated file"],
+      status: "running",
+      summary: "Running",
+      truncatedOutput: false,
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "python -m pytest",
+          status: "running",
+          startedAt: 2,
+        },
+      ],
+      activity: [
+        {
+          path: "Hello_World.py",
+          operation: "created",
+          detectedAt: 3,
+        },
+      ],
+      touchedFileCount: 1,
+      errorMessage: null,
+      turnId: 99,
+    },
+    {
+      id: 3,
+      type: "assistant",
+      createdAt: 4,
+      content: "I created the file and I am verifying it.",
+      turnId: 99,
+    },
+  ]);
+
+  const renderItems = buildActiveRenderItems(items, [99], { kind: "RESPONDING", turnId: 99 });
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 70 });
+  const joined = snapshot.rows
+    .map((row) => row.spans.map((span) => span.text).join(""))
+    .join("\n");
+
+  assert.match(joined, /Processing/);
+  assert.match(joined, /Verifying generated file/);
+  assert.match(joined, /python -m pytest/);
+  assert.match(joined, /Hello_World\.py/);
+  assert.match(joined, /GPT 5\.4/);
+});
+
 test("parses sgr mouse wheel directions without treating other mouse events as scroll", () => {
   const raw = "\u001b[<64;12;9M\u001b[<65;12;10M\u001b[<0;12;10M";
   assert.deepEqual(parseWheelScrollDirections(raw), ["up", "down"]);

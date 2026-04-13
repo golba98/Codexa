@@ -36,7 +36,7 @@ export function streamCodex(
 
       proc = spawnCodexProcess(
         executable,
-        buildCodexExecArgs(model, mode, workspaceRoot, reasoningLevel),
+        buildCodexExecArgs(model, mode, workspaceRoot, reasoningLevel, false),
         { stdio: ["pipe", "pipe", "pipe"] },
       );
 

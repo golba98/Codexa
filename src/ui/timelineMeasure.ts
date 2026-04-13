@@ -399,31 +399,72 @@ function getShellFailureExcerpt(event: ShellEvent): string[] {
     .slice(0, MAX_SHELL_FAILURE_EXCERPT_LINES);
 }
 
-// Fixed total content rows inside the thinking card (MAX_VISIBLE_THINKING_LINES + 1 tool row)
-const THINKING_CARD_ROWS = MAX_VISIBLE_THINKING_LINES + 1;
-
 /**
- * Verbose mode: full thinking card with reasoning lines.
- * Default mode returns empty — the spinner is already in the status row.
+ * Verbose mode renders the full reasoning card.
+ * Default mode renders a compact live-activity card only when there are
+ * meaningful progress, tool, or file signals to show.
  */
 function buildThinkingRows(run: RunEvent, width: number, verbose: boolean): TimelineRow[] {
+  const latestTool = run.toolActivities[run.toolActivities.length - 1] ?? null;
+  const thinkingLines = run.thinkingLines ?? [];
+  const recentActivity = run.activity.slice(-2);
+  const contentWidth = Math.max(1, width - 4);
+  const contentRows: TimelineRowSpan[][] = [];
   if (!verbose) {
-    // Default mode: no thinking card, just the status spinner line
-    return [];
+    const visibleLines = thinkingLines.slice(-2);
+    visibleLines.forEach((line) => {
+      const clamped = clampVisualText(line, contentWidth);
+      if (!clamped.trim()) return;
+      contentRows.push([createSpan(clamped, "muted")]);
+    });
+
+    if (latestTool) {
+      const toolPrefix = latestTool.status === "failed" ? "✕ " : latestTool.status === "completed" ? "✓ " : "• ";
+      const toolTone = latestTool.status === "failed" ? "error" : latestTool.status === "completed" ? "success" : "info";
+      const toolText = latestTool.status === "running"
+        ? latestTool.command
+        : latestTool.summary ?? latestTool.command;
+      const clampedTool = clampVisualText(toolText, Math.max(1, contentWidth - 2));
+      if (clampedTool.trim()) {
+        contentRows.push([
+          createSpan(toolPrefix, toolTone),
+          createSpan(clampedTool, toolTone),
+        ]);
+      }
+    }
+
+    recentActivity.forEach((file) => {
+      const prefix = file.operation === "created" ? "+ " : file.operation === "deleted" ? "- " : "~ ";
+      const tone = file.operation === "created" ? "success" : file.operation === "deleted" ? "error" : "info";
+      const text = clampVisualText(file.path, Math.max(1, contentWidth - 2));
+      if (!text.trim()) return;
+      contentRows.push([
+        createSpan(prefix, tone),
+        createSpan(text, tone),
+      ]);
+    });
+
+    if (contentRows.length === 0) {
+      return [];
+    }
+
+    return buildDashCardRows({
+      keyPrefix: `${run.turnId}-thinking`,
+      width,
+      title: "Processing",
+      rightBadge: "active",
+      borderTone: "borderActive",
+      contentRows: contentRows.slice(-4),
+    });
   }
 
-  const latestTool = run.toolActivities[run.toolActivities.length - 1] ?? null;
   const toolLine = latestTool
     ? latestTool.status === "running"
       ? `running: ${latestTool.command}`
       : latestTool.summary ?? latestTool.command
     : null;
-  const thinkingLines = run.thinkingLines ?? [];
   const hiddenCount = Math.max(0, thinkingLines.length - MAX_VISIBLE_THINKING_LINES);
   const visibleLines = thinkingLines.slice(-MAX_VISIBLE_THINKING_LINES);
-  const contentWidth = Math.max(1, width - 4);
-  const contentRows: TimelineRowSpan[][] = [];
-
   const hasContent = thinkingLines.length > 0 || toolLine;
 
   if (!hasContent) {
@@ -1165,9 +1206,14 @@ function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, widt
   if (item.item.run) {
     rows.push(buildTaskStatusRow(item, width));
 
+    const processingRows = item.item.run.status === "running"
+      ? buildThinkingRows(item.item.run, width, verbose)
+      : [];
+
     if (item.renderState.runPhase === "thinking") {
-      rows.push(...buildThinkingRows(item.item.run, width, verbose));
+      rows.push(...processingRows);
     } else {
+      rows.push(...processingRows);
       // Agent response first
       rows.push(...buildAgentRows(item, width));
 
