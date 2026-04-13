@@ -181,7 +181,6 @@ export function App() {
   const isMountedRef = useRef(true);
   const activeRunIdRef = useRef<number | null>(null);
   const activeTurnIdRef = useRef<number | null>(null);
-  const uiStateRef = useRef<UIState>({ kind: "IDLE" });
   const previousScreenRef = useRef<Screen>("main");
   const themePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeThemeName = getDisplayedThemeName(themeSelection);
@@ -259,10 +258,6 @@ export function App() {
       themePreviewTimerRef.current = null;
     }
   }, [screen]);
-
-  useEffect(() => {
-    uiStateRef.current = uiState;
-  }, [uiState]);
 
   useEffect(() => {
     const previousScreen = previousScreenRef.current;
@@ -983,7 +978,6 @@ export function App() {
     let pendingProgressLines: string[] = [];
     let pendingActivity: RunFileActivity[] = [];
     const pendingToolActivities = new Map<string, RunToolActivity>();
-    let hasAssistantDelta = false;
     let liveFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
     const flushLiveUpdates = () => {
@@ -1061,7 +1055,6 @@ export function App() {
           if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) return;
           const safeChunk = sanitizeTerminalOutput(chunk, { preserveTabs: false, tabSize: 2 });
           if (!safeChunk) return;
-          hasAssistantDelta = true;
           pendingAssistantDelta += safeChunk;
           streamedAssistantContent += safeChunk;
           scheduleLiveFlush();
@@ -1148,9 +1141,6 @@ export function App() {
           if (!safeLine) return;
           if (isNoiseLine(safeLine)) return;
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-          const currentUiState = uiStateRef.current;
-          const isRespondingForTurn = currentUiState.kind === "RESPONDING" && currentUiState.turnId === turnId;
-          if (hasAssistantDelta || isRespondingForTurn) return;
           // Deduplicate: skip if identical to last pending line
           if (pendingProgressLines.length > 0 && pendingProgressLines[pendingProgressLines.length - 1] === safeLine) return;
           // Cap: replace last entry instead of growing unbounded
