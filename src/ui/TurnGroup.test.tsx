@@ -4,6 +4,7 @@ import React from "react";
 import { PassThrough } from "node:stream";
 import { render } from "ink";
 import type { AssistantEvent, RunEvent, UIState, UserPromptEvent } from "../session/types.js";
+import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { ThemeProvider } from "./theme.js";
 import { TurnGroup, resolveTurnRunPhase } from "./TurnGroup.js";
 
@@ -54,8 +55,7 @@ function makeRunningRun(turnId: number): RunEvent {
     durationMs: null,
     backendId: "codex-subprocess",
     backendLabel: "Codexa",
-    mode: "auto-edit",
-    model: "gpt-5.4",
+    runtime: TEST_RUNTIME,
     prompt: "Do work",
     thinkingLines: [],
     status: "running",

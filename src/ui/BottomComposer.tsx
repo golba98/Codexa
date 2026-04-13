@@ -107,6 +107,8 @@ const COMMANDS = [
   { cmd: "/mode", desc: "Change execution mode" },
   { cmd: "/backend", desc: "Change active backend" },
   { cmd: "/reasoning", desc: "Change reasoning level" },
+  { cmd: "/status", desc: "Show effective runtime configuration" },
+  { cmd: "/runtime", desc: "Inspect or update runtime policy" },
   { cmd: "/themes", desc: "Open visual theme picker" },
   { cmd: "/verbose", desc: "Toggle verbose mode (detailed processing info)" },
   { cmd: "/auth", desc: "Manage authentication" },

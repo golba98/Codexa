@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { buildCodexExecArgs } from "../config/settings.js";
+import { buildCodexExecArgs, type ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import { formatCodexLaunchError, resolveCodexExecutable, spawnCodexProcess } from "./codexExecutable.js";
 
 export interface CodexHandlers {
@@ -10,9 +10,7 @@ export interface CodexHandlers {
 
 export function streamCodex(
   prompt: string,
-  model: string,
-  mode: string,
-  reasoningLevel: string,
+  runtime: ResolvedRuntimeConfig,
   workspaceRoot: string,
   handlers: CodexHandlers,
 ): () => void {
@@ -36,7 +34,7 @@ export function streamCodex(
 
       proc = spawnCodexProcess(
         executable,
-        buildCodexExecArgs(model, mode, workspaceRoot, reasoningLevel, false),
+        buildCodexExecArgs(runtime, workspaceRoot, false),
         { stdio: ["pipe", "pipe", "pipe"] },
       );
 

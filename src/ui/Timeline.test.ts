@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TimelineEvent } from "../session/types.js";
+import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import type { TimelineRow, TimelineSnapshot } from "./timelineMeasure.js";
 import { buildTimelineSnapshot } from "./timelineMeasure.js";
 import {
@@ -63,8 +64,7 @@ test("groups user, run, and assistant events into a single turn item", () => {
       durationMs: null,
       backendId: "codex-subprocess",
       backendLabel: "Codexa",
-      mode: "auto-edit",
-      model: "gpt-5.4",
+      runtime: TEST_RUNTIME,
       prompt: "Implement rate limiting",
       thinkingLines: ["Scanning routes..."],
       status: "running",
@@ -135,8 +135,7 @@ test("separates committed and active turn render state", () => {
       durationMs: 250,
       backendId: "codex-subprocess",
       backendLabel: "Codexa",
-      mode: "auto-edit",
-      model: "gpt-5.4",
+      runtime: TEST_RUNTIME,
       prompt: "Completed turn",
       thinkingLines: [],
       status: "completed",
@@ -173,8 +172,7 @@ test("separates committed and active turn render state", () => {
       durationMs: null,
       backendId: "codex-subprocess",
       backendLabel: "Codexa",
-      mode: "auto-edit",
-      model: "gpt-5.4",
+      runtime: TEST_RUNTIME,
       prompt: "Live turn",
       thinkingLines: [],
       status: "running",
@@ -236,8 +234,7 @@ test("timeline snapshot keeps the prompt card top border closed", () => {
       durationMs: null,
       backendId: "codex-subprocess",
       backendLabel: "Codexa",
-      mode: "auto-edit",
-      model: "gpt-5.4",
+      runtime: TEST_RUNTIME,
       prompt: "Reproduce the prompt border issue",
       thinkingLines: [],
       status: "running",
@@ -346,8 +343,7 @@ test("default timeline shows compact processing signals while a run is streaming
       durationMs: null,
       backendId: "codex-subprocess",
       backendLabel: "Codexa",
-      mode: "auto-edit",
-      model: "gpt-5.4",
+      runtime: TEST_RUNTIME,
       prompt: "Create a file",
       thinkingLines: ["Todo 1/2: Write Hello_World.py", "Verifying generated file"],
       status: "running",
