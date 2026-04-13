@@ -1,5 +1,6 @@
 import React, { memo, useMemo } from "react";
 import { Box } from "ink";
+import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
 import { getShellHeight, getShellWidth, type Layout } from "./layout.js";
@@ -11,6 +12,7 @@ export interface AppShellProps {
   screen: Screen;
   authState: CodexAuthState;
   workspaceRoot: string;
+  runtimeSummary?: RuntimeSummary | null;
   staticEvents: TimelineEvent[];
   activeEvents: TimelineEvent[];
   uiState: UIState;
@@ -30,6 +32,7 @@ function AppShellInner({
   screen,
   authState,
   workspaceRoot,
+  runtimeSummary = null,
   staticEvents,
   activeEvents,
   uiState,
@@ -63,7 +66,7 @@ function AppShellInner({
         {showTimeline && (
           <Box flexDirection="column" borderBottom={true} flexShrink={0}>
             {/* MemoizedTopHeader already has its own comparator — stable during streaming. */}
-            <MemoizedTopHeader authState={authState} workspaceRoot={workspaceRoot} layout={layout} />
+            <MemoizedTopHeader authState={authState} workspaceRoot={workspaceRoot} layout={layout} runtimeSummary={runtimeSummary} />
           </Box>
         )}
 
@@ -119,6 +122,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.screen          === next.screen          &&
     prev.authState       === next.authState       &&
     prev.workspaceRoot   === next.workspaceRoot   &&
+    prev.runtimeSummary  === next.runtimeSummary  &&
     prev.staticEvents    === next.staticEvents    &&
     prev.activeEvents    === next.activeEvents    &&
     prev.uiState         === next.uiState         &&

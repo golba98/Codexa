@@ -4,6 +4,8 @@ import React from "react";
 import { PassThrough } from "node:stream";
 import { render } from "ink";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
+import { buildRuntimeSummary } from "../config/runtimeConfig.js";
+import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { ThemeProvider } from "./theme.js";
 import { TopHeader } from "./TopHeader.js";
@@ -63,6 +65,7 @@ async function renderHeader(cols: number, authState: CodexAuthState): Promise<st
         authState={authState}
         workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
         layout={createLayoutSnapshot(cols, 40)}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
       />
     </ThemeProvider>,
     {
@@ -95,6 +98,7 @@ test("compact mode renders version and auth", async () => {
 
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
+  assert.match(output, /gpt-5\.4/i);
   assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
 });
 

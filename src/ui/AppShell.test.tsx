@@ -4,6 +4,8 @@ import React from "react";
 import { PassThrough } from "node:stream";
 import { render, Text } from "ink";
 import type { TimelineEvent, UIState } from "../session/types.js";
+import { buildRuntimeSummary } from "../config/runtimeConfig.js";
+import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 import { AppShell } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "./layout.js";
@@ -50,8 +52,7 @@ const EVENTS: TimelineEvent[] = [
     durationMs: 1250,
     backendId: "codex-subprocess",
     backendLabel: "Codexa",
-    mode: "auto-edit",
-    model: "gpt-5.4",
+    runtime: TEST_RUNTIME,
     prompt: "Reproduce the resize flicker and fix it.",
     thinkingLines: [],
     status: "completed",
@@ -120,6 +121,7 @@ function renderShell(
         screen={screen}
         authState="authenticated"
         workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
         staticEvents={EVENTS}
         activeEvents={[]}
         uiState={uiState}
@@ -185,6 +187,7 @@ test("larger terminals keep the composer metadata row", async () => {
 
   assert.match(output, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+M/);
   assert.match(output, /Scanning workspace/);
+  assert.match(output, /gpt-5\.4/i);
 });
 
 test("cramped busy state uses the run footer in app composition", async () => {

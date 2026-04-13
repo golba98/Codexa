@@ -103,49 +103,6 @@ export const MODE_COMMAND_ALIASES = {
 
 export type ModeCommandAlias = keyof typeof MODE_COMMAND_ALIASES;
 
-export type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
-
-export function buildCodexExecArgs(
-  model: string,
-  mode: string,
-  cwd: string,
-  reasoningLevel?: string,
-  structuredOutput = true,
-): string[] {
-  // Ensure cwd is safe to pass as a single command-line argument.
-  let safeCwd = cwd;
-  if (safeCwd.includes("\n") || safeCwd.includes("\r") || safeCwd.includes("\0")) {
-    safeCwd = process.cwd();
-  }
-  const args: string[] = ["exec"];
-
-  if (structuredOutput) {
-    args.push("--experimental-json");
-  }
-
-  args.push("--skip-git-repo-check", "--cd", safeCwd, "--model", model);
-
-  if (reasoningLevel) {
-    args.push("--config", `reasoning.effort=${reasoningLevel}`);
-  }
-
-  switch (mode) {
-    case "auto-edit":
-      args.push("--sandbox", "workspace-write");
-      break;
-    case "full-auto":
-      args.push("--full-auto");
-      break;
-    case "suggest":
-    default:
-      args.push("--sandbox", "read-only");
-      break;
-  }
-
-  args.push("-");
-  return args;
-}
-
 export const AUTH_PREFERENCES = [
   {
     id: "chatgpt-login-goal",

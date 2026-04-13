@@ -1,5 +1,6 @@
 import { MAX_CHAT_LINES } from "../config/settings.js";
-import type { AvailableBackend, AvailableMode, AvailableModel } from "../config/settings.js";
+import type { AvailableBackend } from "../config/settings.js";
+import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import { summarizeRunActivity, type RunFileActivity } from "../core/workspaceActivity.js";
 import type { RunEvent, RunToolActivity, TimelineEvent, UIState } from "./types.js";
 
@@ -146,8 +147,7 @@ export function createRunEvent(params: {
   id: number;
   backendId: AvailableBackend;
   backendLabel: string;
-  mode: AvailableMode;
-  model: AvailableModel;
+  runtime: ResolvedRuntimeConfig;
   prompt: string;
   turnId: number;
 }): RunEvent {
@@ -160,8 +160,7 @@ export function createRunEvent(params: {
     durationMs: null,
     backendId: params.backendId,
     backendLabel: params.backendLabel,
-    mode: params.mode,
-    model: params.model,
+    runtime: params.runtime,
     prompt: params.prompt,
     thinkingLines: [],
     status: "running",

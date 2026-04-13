@@ -19,6 +19,25 @@ import {
   normalizeReasoningForModel,
 } from "./config/settings.js";
 import {
+  addWritableRoot,
+  buildRuntimeSummary,
+  clearWritableRoots,
+  formatApprovalPolicyLabel,
+  formatNetworkAccessLabel,
+  formatPersonalityLabel,
+  formatSandboxModeLabel,
+  formatServiceTierLabel,
+  removeWritableRoot,
+  resolveRuntimeConfig,
+  resolveWritableRootCommandPath,
+  type RuntimeApprovalPolicy,
+  type RuntimeConfig,
+  type RuntimeNetworkAccess,
+  type RuntimePersonality,
+  type RuntimeSandboxMode,
+  type RuntimeServiceTier,
+} from "./config/runtimeConfig.js";
+import {
   type CodexAuthProbeResult,
   getAuthStatusMessage,
   getLoginGuidance,
@@ -121,16 +140,13 @@ export function App() {
   const modelSpecService = useMemo(() => createModelSpecService(), []);
   const terminalLayout = useTerminalViewport();
 
-  const [backend, setBackend] = useState<AvailableBackend>(initialSettings.current.backend);
-  const [model, setModel] = useState<AvailableModel>(initialSettings.current.model);
-  const [mode, setMode] = useState<AvailableMode>(initialSettings.current.mode);
-  const [reasoningLevel, setReasoningLevel] = useState<ReasoningLevel>(initialSettings.current.reasoningLevel);
-  const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.authPreference);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>(initialSettings.current.runtime);
+  const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.auth.preference);
   const [themeSelection, setThemeSelection] = useState<ThemeSelectionState>({
-    committedTheme: initialSettings.current.theme,
+    committedTheme: initialSettings.current.ui.theme,
     previewTheme: null,
   });
-  const [customTheme, setCustomTheme] = useState(initialSettings.current.customTheme);
+  const [customTheme, setCustomTheme] = useState(initialSettings.current.ui.customTheme);
   const [screen, setScreen] = useState<Screen>("main");
   const [composerInstanceKey, setComposerInstanceKey] = useState(0);
   const { state: sessionState, dispatch: dispatchSession } = useAppSessionState();
@@ -188,6 +204,9 @@ export function App() {
     activeThemeName === "custom"
       ? { ...THEMES.purple, ...customTheme }
       : (THEMES[activeThemeName] ?? THEMES.purple);
+  const { provider: backend, model, mode, reasoningLevel } = runtimeConfig;
+  const resolvedRuntimeConfig = useMemo(() => resolveRuntimeConfig(runtimeConfig), [runtimeConfig]);
+  const runtimeSummary = useMemo(() => buildRuntimeSummary(resolvedRuntimeConfig), [resolvedRuntimeConfig]);
   const currentModelSpec = modelSpecs[model] ?? createLoadingModelSpec(model);
   const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
 
@@ -226,16 +245,17 @@ export function App() {
 
   useEffect(() => {
     saveSettings({
-      backend,
-      model,
-      mode,
-      reasoningLevel,
-      layoutStyle: initialSettings.current.layoutStyle,
-      theme: themeSelection.committedTheme,
-      customTheme,
-      authPreference,
+      runtime: runtimeConfig,
+      ui: {
+        layoutStyle: initialSettings.current.ui.layoutStyle,
+        theme: themeSelection.committedTheme,
+        customTheme,
+      },
+      auth: {
+        preference: authPreference,
+      },
     });
-  }, [authPreference, backend, customTheme, mode, model, reasoningLevel, themeSelection.committedTheme]);
+  }, [authPreference, customTheme, runtimeConfig, themeSelection.committedTheme]);
 
   useEffect(() => {
     return () => {
@@ -375,6 +395,17 @@ export function App() {
     appendSystemEvent("Launch mode", devLaunchNotice);
   }, [appendSystemEvent, launchContext]);
 
+  const updateRuntimeConfig = useCallback((updater: (current: RuntimeConfig) => RuntimeConfig) => {
+    setRuntimeConfig((current) => updater(current));
+  }, []);
+
+  const updateRuntimePolicy = useCallback((updater: (current: RuntimeConfig["policy"]) => RuntimeConfig["policy"]) => {
+    setRuntimeConfig((current) => ({
+      ...current,
+      policy: updater(current.policy),
+    }));
+  }, []);
+
   const setBackendWithNotice = useCallback((nextBackend: AvailableBackend) => {
     const gate = guardConfigMutation("backend", busy);
     if (!gate.allowed) {
@@ -382,13 +413,16 @@ export function App() {
       return;
     }
 
-    setBackend(nextBackend);
+    updateRuntimeConfig((current) => ({
+      ...current,
+      provider: nextBackend,
+    }));
     setScreen("main");
     appendSystemEvent("Backend updated", `Active backend is now ${formatBackendLabel(nextBackend)}.`);
     if (nextBackend === "codex-subprocess") {
       void refreshAuthStatus(false);
     }
-  }, [appendSystemEvent, busy, refreshAuthStatus]);
+  }, [appendSystemEvent, busy, refreshAuthStatus, updateRuntimeConfig]);
 
   const setModeWithNotice = useCallback((nextMode: AvailableMode) => {
     const gate = guardConfigMutation("mode", busy);
@@ -397,10 +431,13 @@ export function App() {
       return;
     }
 
-    setMode(nextMode);
+    updateRuntimeConfig((current) => ({
+      ...current,
+      mode: nextMode,
+    }));
     setScreen("main");
     appendSystemEvent("Mode updated", `Execution mode switched to ${formatModeLabel(nextMode)}.`);
-  }, [appendSystemEvent, busy]);
+  }, [appendSystemEvent, busy, updateRuntimeConfig]);
 
   const cycleModeWithNotice = useCallback(() => {
     setModeWithNotice(getNextMode(mode));
@@ -413,10 +450,13 @@ export function App() {
       return;
     }
 
-    setReasoningLevel(nextReasoningLevel);
+    updateRuntimeConfig((current) => ({
+      ...current,
+      reasoningLevel: nextReasoningLevel,
+    }));
     setScreen("main");
     appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(nextReasoningLevel)}.`);
-  }, [appendSystemEvent, busy]);
+  }, [appendSystemEvent, busy, updateRuntimeConfig]);
 
   const setModelWithNotice = useCallback((nextModel: AvailableModel) => {
     const gate = guardConfigMutation("model", busy);
@@ -425,11 +465,14 @@ export function App() {
       return;
     }
 
-    setModel(nextModel);
-    setReasoningLevel((currentReasoning) => normalizeReasoningForModel(nextModel, currentReasoning));
+    updateRuntimeConfig((current) => ({
+      ...current,
+      model: nextModel,
+      reasoningLevel: normalizeReasoningForModel(nextModel, current.reasoningLevel),
+    }));
     setScreen("main");
     appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
-  }, [appendSystemEvent, busy]);
+  }, [appendSystemEvent, busy, updateRuntimeConfig]);
 
   const setModelAndReasoningWithNotice = useCallback((nextModel: AvailableModel, nextReasoning: ReasoningLevel) => {
     const gate = guardConfigMutation("model", busy);
@@ -441,8 +484,11 @@ export function App() {
     const modelChanged = nextModel !== model;
     const reasoningChanged = nextReasoning !== reasoningLevel;
 
-    setModel(nextModel);
-    setReasoningLevel(nextReasoning);
+    updateRuntimeConfig((current) => ({
+      ...current,
+      model: nextModel,
+      reasoningLevel: nextReasoning,
+    }));
     setScreen("main");
 
     if (modelChanged && reasoningChanged) {
@@ -454,12 +500,102 @@ export function App() {
     } else {
       // Nothing changed — still close the picker silently.
     }
-  }, [appendSystemEvent, busy, model, reasoningLevel]);
+  }, [appendSystemEvent, busy, model, reasoningLevel, updateRuntimeConfig]);
 
   const setAuthPreferenceWithNotice = useCallback((nextPreference: AuthPreference) => {
     setAuthPreference(nextPreference);
     appendSystemEvent("Auth preference updated", `Preference set to ${formatAuthPreferenceLabel(nextPreference)}.`);
   }, [appendSystemEvent]);
+
+  const setApprovalPolicyWithNotice = useCallback((nextValue: RuntimeApprovalPolicy) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimePolicy((current) => ({ ...current, approvalPolicy: nextValue }));
+    appendSystemEvent("Runtime policy", `Approval policy set to ${formatApprovalPolicyLabel(nextValue)}.`);
+  }, [appendSystemEvent, busy, updateRuntimePolicy]);
+
+  const setSandboxModeWithNotice = useCallback((nextValue: RuntimeSandboxMode) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimePolicy((current) => ({ ...current, sandboxMode: nextValue }));
+    appendSystemEvent("Runtime policy", `Sandbox mode set to ${formatSandboxModeLabel(nextValue)}.`);
+  }, [appendSystemEvent, busy, updateRuntimePolicy]);
+
+  const setNetworkAccessWithNotice = useCallback((nextValue: RuntimeNetworkAccess) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimePolicy((current) => ({ ...current, networkAccess: nextValue }));
+    appendSystemEvent("Runtime policy", `Network access set to ${formatNetworkAccessLabel(nextValue)}.`);
+  }, [appendSystemEvent, busy, updateRuntimePolicy]);
+
+  const addWritableRootWithNotice = useCallback((pathValue: string) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    const resolvedPath = resolveWritableRootCommandPath(pathValue, workspaceRoot);
+    updateRuntimeConfig((current) => addWritableRoot(current, resolvedPath));
+    appendSystemEvent("Runtime policy", `Writable root added: ${resolvedPath}.`);
+  }, [appendSystemEvent, busy, updateRuntimeConfig, workspaceRoot]);
+
+  const removeWritableRootWithNotice = useCallback((pathValue: string) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    const resolvedPath = resolveWritableRootCommandPath(pathValue, workspaceRoot);
+    updateRuntimeConfig((current) => removeWritableRoot(current, resolvedPath));
+    appendSystemEvent("Runtime policy", `Writable root removed: ${resolvedPath}.`);
+  }, [appendSystemEvent, busy, updateRuntimeConfig, workspaceRoot]);
+
+  const clearWritableRootsWithNotice = useCallback(() => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimeConfig((current) => clearWritableRoots(current));
+    appendSystemEvent("Runtime policy", "Writable roots cleared.");
+  }, [appendSystemEvent, busy, updateRuntimeConfig]);
+
+  const setServiceTierWithNotice = useCallback((nextValue: RuntimeServiceTier) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimePolicy((current) => ({ ...current, serviceTier: nextValue }));
+    appendSystemEvent("Runtime policy", `Service tier set to ${formatServiceTierLabel(nextValue)}.`);
+  }, [appendSystemEvent, busy, updateRuntimePolicy]);
+
+  const setPersonalityWithNotice = useCallback((nextValue: RuntimePersonality) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimePolicy((current) => ({ ...current, personality: nextValue }));
+    appendSystemEvent("Runtime policy", `Personality set to ${formatPersonalityLabel(nextValue)}.`);
+  }, [appendSystemEvent, busy, updateRuntimePolicy]);
 
   const openBackendPicker = useCallback(() => {
     const gate = guardConfigMutation("backend", busy);
@@ -894,6 +1030,10 @@ export function App() {
 
     const executionModeDecision = resolveExecutionMode(mode, safeProviderPrompt);
     const effectiveMode = executionModeDecision.mode;
+    const runtimeForTurn = resolveRuntimeConfig({
+      ...runtimeConfig,
+      mode: effectiveMode,
+    });
     if (executionModeDecision.autoUpgraded) {
       appendSystemEvent(
         "Mode auto-upgraded",
@@ -948,8 +1088,7 @@ export function App() {
           id: runId,
           backendId: backend,
           backendLabel: provider.label,
-          mode: effectiveMode,
-          model,
+          runtime: runtimeForTurn,
           prompt: safeProviderPrompt,
           turnId,
         }),
@@ -1049,7 +1188,7 @@ export function App() {
 
     const stopProviderRun = provider.run(
       safeProviderPrompt,
-      { model, mode: effectiveMode, reasoningLevel, workspaceRoot },
+      { runtime: runtimeForTurn, workspaceRoot },
       {
         onAssistantDelta: (chunk) => {
           if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) return;
@@ -1179,14 +1318,12 @@ export function App() {
     appendErrorEvent,
     appendSystemEvent,
     authStatus.state,
-    backend,
     finalizePromptRun,
-    model,
     mode,
     provider,
-    reasoningLevel,
     dispatchSession,
     setRuntimeUnauthenticated,
+    runtimeConfig,
     workspaceRoot,
   ]);
 
@@ -1222,16 +1359,12 @@ export function App() {
       return;
     }
 
-    const commandResult = handleCommand(
-      value,
-      backend,
-      model,
-      mode,
-      authPreference,
-      reasoningLevel,
-      themeSelection.committedTheme,
-      workspaceCommandContext,
-    );
+    const commandResult = handleCommand(value, {
+      runtime: runtimeConfig,
+      resolvedRuntime: resolvedRuntimeConfig,
+      workspace: workspaceCommandContext,
+      tokensUsed: estimateTokens(conversationChars),
+    });
     const isCommand = commandResult !== null;
 
     if (!isCommand && busy) {
@@ -1267,6 +1400,60 @@ export function App() {
         case "reasoning":
           if (commandResult.value) {
             setReasoningWithNotice(commandResult.value as ReasoningLevel);
+          }
+          return;
+        case "status":
+        case "runtime_writable_roots_list":
+          if (commandResult.message) {
+            appendSystemEvent("Runtime status", commandResult.message);
+          }
+          return;
+        case "runtime_approval_policy":
+          if (commandResult.value) {
+            setApprovalPolicyWithNotice(commandResult.value as RuntimeApprovalPolicy);
+          } else if (commandResult.message) {
+            appendSystemEvent("Runtime policy", commandResult.message);
+          }
+          return;
+        case "runtime_sandbox_mode":
+          if (commandResult.value) {
+            setSandboxModeWithNotice(commandResult.value as RuntimeSandboxMode);
+          } else if (commandResult.message) {
+            appendSystemEvent("Runtime policy", commandResult.message);
+          }
+          return;
+        case "runtime_network_access":
+          if (commandResult.value) {
+            setNetworkAccessWithNotice(commandResult.value as RuntimeNetworkAccess);
+          } else if (commandResult.message) {
+            appendSystemEvent("Runtime policy", commandResult.message);
+          }
+          return;
+        case "runtime_writable_roots_add":
+          if (commandResult.value) {
+            addWritableRootWithNotice(commandResult.value);
+          }
+          return;
+        case "runtime_writable_roots_remove":
+          if (commandResult.value) {
+            removeWritableRootWithNotice(commandResult.value);
+          }
+          return;
+        case "runtime_writable_roots_clear":
+          clearWritableRootsWithNotice();
+          return;
+        case "runtime_service_tier":
+          if (commandResult.value) {
+            setServiceTierWithNotice(commandResult.value as RuntimeServiceTier);
+          } else if (commandResult.message) {
+            appendSystemEvent("Runtime policy", commandResult.message);
+          }
+          return;
+        case "runtime_personality":
+          if (commandResult.value) {
+            setPersonalityWithNotice(commandResult.value as RuntimePersonality);
+          } else if (commandResult.message) {
+            appendSystemEvent("Runtime policy", commandResult.message);
           }
           return;
         case "auth":
@@ -1369,9 +1556,9 @@ export function App() {
   }, [
     appendErrorEvent,
     appendSystemEvent,
-    backend,
     busy,
     buildFollowUpPrompt,
+    conversationChars,
     dispatchSession,
     findUserPromptForTurn,
     focusManager,
@@ -1388,11 +1575,21 @@ export function App() {
     openReasoningPicker,
     refreshAuthStatus,
     resetComposer,
+    resolvedRuntimeConfig,
+    runtimeConfig,
+    addWritableRootWithNotice,
+    clearWritableRootsWithNotice,
+    removeWritableRootWithNotice,
+    setApprovalPolicyWithNotice,
     setAuthPreferenceWithNotice,
     setBackendWithNotice,
+    setNetworkAccessWithNotice,
     setModeWithNotice,
     setModelWithNotice,
+    setPersonalityWithNotice,
     setReasoningWithNotice,
+    setSandboxModeWithNotice,
+    setServiceTierWithNotice,
     startPromptRun,
     themeSelection.committedTheme,
     uiState,
@@ -1407,6 +1604,7 @@ export function App() {
         screen={screen}
         authState={authStatus.state}
         workspaceRoot={workspaceRoot}
+        runtimeSummary={runtimeSummary}
         staticEvents={staticEvents}
         activeEvents={activeEvents}
         uiState={uiState}

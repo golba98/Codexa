@@ -1,10 +1,8 @@
 import type {
   AuthPreference,
   AvailableBackend,
-  AvailableMode,
-  AvailableModel,
-  ReasoningLevel,
 } from "../config/settings.js";
+import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import type { RunActivitySummary, RunFileActivity } from "../core/workspaceActivity.js";
 
 export type Screen = "main" | "model-picker" | "mode-picker" | "backend-picker" | "auth-panel" | "reasoning-picker" | "theme-picker";
@@ -28,15 +26,6 @@ export type UIState =
 /** Derive the legacy busy flag from UIState for guard functions. */
 export function isBusy(state: UIState): boolean {
   return state.kind === "THINKING" || state.kind === "RESPONDING" || state.kind === "SHELL_RUNNING";
-}
-
-export interface SessionSettingsSnapshot {
-  backend: AvailableBackend;
-  model: AvailableModel;
-  mode: AvailableMode;
-  reasoningLevel: ReasoningLevel;
-  layoutStyle: string;
-  authPreference: AuthPreference;
 }
 
 export interface TimelineBaseEvent {
@@ -83,8 +72,7 @@ export interface RunEvent extends TimelineBaseEvent {
   type: "run";
   backendId: AvailableBackend;
   backendLabel: string;
-  mode: AvailableMode;
-  model: AvailableModel;
+  runtime: ResolvedRuntimeConfig;
   prompt: string;
   thinkingLines: string[];
   status: "running" | "completed" | "failed" | "canceled";

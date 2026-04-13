@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
-import { AVAILABLE_MODELS, buildCodexExecArgs } from "../../config/settings.js";
+import { AVAILABLE_MODELS } from "../../config/settings.js";
+import { buildCodexExecArgs } from "../../config/runtimeConfig.js";
 import { formatCodexLaunchError, resolveCodexExecutable, spawnCodexProcess } from "../codexExecutable.js";
 import { buildCodexPrompt } from "../codexPrompt.js";
 import { createCodexJsonStreamParser } from "./codexJsonStream.js";
@@ -113,16 +114,14 @@ export const codexSubprocessProvider: BackendProvider = {
       proc = spawnCodexProcess(
         executable,
         buildCodexExecArgs(
-          options.model,
-          options.mode,
+          options.runtime,
           options.workspaceRoot,
-          options.reasoningLevel,
           structuredOutput,
         ),
         { stdio: ["pipe", "pipe", "pipe"] },
       );
 
-      proc.stdin?.write(buildCodexPrompt(prompt, options.mode));
+      proc.stdin?.write(buildCodexPrompt(prompt, options.runtime.mode));
       proc.stdin?.end();
 
       proc.stdout?.on("data", (chunk: Buffer) => {
