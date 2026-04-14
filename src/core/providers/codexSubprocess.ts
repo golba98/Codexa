@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
-import { AVAILABLE_MODELS, buildCodexExecArgs } from "../../config/settings.js";
-import { formatCodexLaunchError, resolveCodexExecutable, spawnCodexProcess } from "../codexExecutable.js";
+import { AVAILABLE_MODELS } from "../../config/settings.js";
+import { formatCodexLaunchError, spawnCodexProcess } from "../codexExecutable.js";
+import { prepareCodexExecLaunch } from "../codexLaunch.js";
 import { buildCodexPrompt } from "../codexPrompt.js";
 import { createCodexJsonStreamParser } from "./codexJsonStream.js";
 import {
@@ -43,185 +44,193 @@ export const codexSubprocessProvider: BackendProvider = {
       handlers.onResponse(response);
     };
 
-    const startAttempt = (executable: string, structuredOutput: boolean) => {
+    const startAttempt = (structuredOutput: boolean) => {
       if (cancelled || done) return;
 
-      let rawStdout = "";
-      let rawStderr = "";
-      let stdoutLineBuffer = "";
-      let mode: "undecided" | "json" | "legacy" = structuredOutput ? "undecided" : "legacy";
-
-      const transcriptParser = createCodexTranscriptStreamParser({
-        onThinkingLine: (line) => handlers.onProgress?.(line),
-        onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
-        onToolActivity: (activity) => handlers.onToolActivity?.(activity),
-      });
-      const transcriptStdoutSanitizer = createStdoutSanitizer();
-      const transcriptStderrSanitizer = createStdoutSanitizer();
-      const jsonParser = createCodexJsonStreamParser({
-        onProgress: (line) => handlers.onProgress?.(line),
-        onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
-        onToolActivity: (activity) => handlers.onToolActivity?.(activity),
-      });
-
-      const feedTranscript = (text: string, stream: "stdout" | "stderr") => {
-        const sanitizer = stream === "stdout" ? transcriptStdoutSanitizer : transcriptStderrSanitizer;
-        const clean = sanitizer.process(text);
-        if (clean) {
-          transcriptParser.feed(clean);
-        }
-      };
-
-      const switchToTranscriptFallback = () => {
-        if (mode === "legacy") return;
-        mode = "legacy";
-        if (rawStdout) {
-          feedTranscript(rawStdout, "stdout");
-        }
-        if (rawStderr) {
-          feedTranscript(rawStderr, "stderr");
-        }
-        stdoutLineBuffer = "";
-      };
-
-      const processStructuredLines = (flush: boolean) => {
-        while (true) {
-          const newlineIndex = stdoutLineBuffer.indexOf("\n");
-          if (newlineIndex === -1) {
-            if (!flush) return;
-            if (!stdoutLineBuffer) return;
-          }
-
-          const line = newlineIndex === -1
-            ? stdoutLineBuffer
-            : stdoutLineBuffer.slice(0, newlineIndex);
-          stdoutLineBuffer = newlineIndex === -1 ? "" : stdoutLineBuffer.slice(newlineIndex + 1);
-          const normalizedLine = line.replace(/\r$/, "");
-          if (!normalizedLine.trim()) {
-            continue;
-          }
-
-          const parsed = jsonParser.feedLine(normalizedLine);
-          if (!parsed) {
-            switchToTranscriptFallback();
+      void prepareCodexExecLaunch(
+        {
+        model: options.model,
+        cwd: options.workspaceRoot,
+        runtimePolicy: options.runtimePolicy,
+        reasoningLevel: options.reasoningLevel,
+        structuredOutput,
+      },
+        import.meta.url,
+      )
+        .then((launchPlan) => {
+          if (cancelled || done) return;
+          if (!launchPlan.ok) {
+            finishError(launchPlan.error);
             return;
           }
-          mode = "json";
-        }
-      };
+          if (!launchPlan.executable) {
+            finishError("Codex launch preparation did not return an executable.");
+            return;
+          }
 
-      proc = spawnCodexProcess(
-        executable,
-        buildCodexExecArgs(
-          options.model,
-          options.workspaceRoot,
-          options.runtimePolicy,
-          options.reasoningLevel,
-          structuredOutput,
-        ),
-        { stdio: ["pipe", "pipe", "pipe"] },
-      );
+          let rawStdout = "";
+          let rawStderr = "";
+          let stdoutLineBuffer = "";
+          let mode: "undecided" | "json" | "legacy" = structuredOutput ? "undecided" : "legacy";
 
-      proc.stdin?.write(buildCodexPrompt(prompt, options.mode, options.runtimePolicy));
-      proc.stdin?.end();
+          const transcriptParser = createCodexTranscriptStreamParser({
+            onThinkingLine: (line) => handlers.onProgress?.(line),
+            onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
+            onToolActivity: (activity) => handlers.onToolActivity?.(activity),
+          });
+          const transcriptStdoutSanitizer = createStdoutSanitizer();
+          const transcriptStderrSanitizer = createStdoutSanitizer();
+          const jsonParser = createCodexJsonStreamParser({
+            onProgress: (line) => handlers.onProgress?.(line),
+            onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
+            onToolActivity: (activity) => handlers.onToolActivity?.(activity),
+          });
 
-      proc.stdout?.on("data", (chunk: Buffer) => {
-        if (cancelled || done) return;
-        const text = chunk.toString();
-        currentRawOutput += text;
-        rawStdout += text;
+          const feedTranscript = (text: string, stream: "stdout" | "stderr") => {
+            const sanitizer = stream === "stdout" ? transcriptStdoutSanitizer : transcriptStderrSanitizer;
+            const clean = sanitizer.process(text);
+            if (clean) {
+              transcriptParser.feed(clean);
+            }
+          };
 
-        if (mode === "legacy") {
-          feedTranscript(text, "stdout");
-          return;
-        }
+          const switchToTranscriptFallback = () => {
+            if (mode === "legacy") return;
+            mode = "legacy";
+            if (rawStdout) {
+              feedTranscript(rawStdout, "stdout");
+            }
+            if (rawStderr) {
+              feedTranscript(rawStderr, "stderr");
+            }
+            stdoutLineBuffer = "";
+          };
 
-        stdoutLineBuffer += text;
-        processStructuredLines(false);
-      });
+          const processStructuredLines = (flush: boolean) => {
+            while (true) {
+              const newlineIndex = stdoutLineBuffer.indexOf("\n");
+              if (newlineIndex === -1) {
+                if (!flush) return;
+                if (!stdoutLineBuffer) return;
+              }
 
-      proc.stderr?.on("data", (chunk: Buffer) => {
-        if (cancelled || done) return;
-        const text = chunk.toString();
-        currentRawOutput += text;
-        rawStderr += text;
+              const line = newlineIndex === -1
+                ? stdoutLineBuffer
+                : stdoutLineBuffer.slice(0, newlineIndex);
+              stdoutLineBuffer = newlineIndex === -1 ? "" : stdoutLineBuffer.slice(newlineIndex + 1);
+              const normalizedLine = line.replace(/\r$/, "");
+              if (!normalizedLine.trim()) {
+                continue;
+              }
 
-        if (mode === "legacy") {
-          feedTranscript(text, "stderr");
-          return;
-        }
+              const parsed = jsonParser.feedLine(normalizedLine);
+              if (!parsed) {
+                switchToTranscriptFallback();
+                return;
+              }
+              mode = "json";
+            }
+          };
 
-        const lines = stripNonPrintableControls(stripAnsi(text))
-          .replace(/\r\n/g, "\n")
-          .replace(/\r/g, "\n")
-          .split("\n");
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || isStderrNoise(trimmed)) continue;
-          handlers.onProgress?.(trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed);
-        }
-      });
+          proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
 
-      proc.on("close", (code) => {
-        if (cancelled || done) return;
+          proc.stdin?.write(buildCodexPrompt(prompt, options.mode, options.runtimePolicy));
+          proc.stdin?.end();
 
-        if (mode !== "legacy") {
-          processStructuredLines(true);
-        }
+          proc.stdout?.on("data", (chunk: Buffer) => {
+            if (cancelled || done) return;
+            const text = chunk.toString();
+            currentRawOutput += text;
+            rawStdout += text;
 
-        if (mode === "legacy") {
-          const remainingStdout = transcriptStdoutSanitizer.flush();
-          if (remainingStdout) transcriptParser.feed(remainingStdout);
-          const remainingStderr = transcriptStderrSanitizer.flush();
-          if (remainingStderr) transcriptParser.feed(remainingStderr);
-          transcriptParser.flush();
-        }
+            if (mode === "legacy") {
+              feedTranscript(text, "stdout");
+              return;
+            }
 
-        if (
-          structuredOutput
-          && code !== 0
-          && !jsonParser.hasStructuredEvents()
-          && looksLikeUnsupportedStructuredOutput(`${rawStdout}\n${rawStderr}`)
-        ) {
-          currentRawOutput = "";
-          startAttempt(executable, false);
-          return;
-        }
+            stdoutLineBuffer += text;
+            processStructuredLines(false);
+          });
 
-        const structuredFailure = jsonParser.getFailureMessage();
-        if (structuredFailure) {
-          finishError(structuredFailure);
-          return;
-        }
+          proc.stderr?.on("data", (chunk: Buffer) => {
+            if (cancelled || done) return;
+            const text = chunk.toString();
+            currentRawOutput += text;
+            rawStderr += text;
 
-        if (code === 0) {
-          const finalResponse = mode === "json"
-            ? jsonParser.getFinalResponse().trim() || sanitizeCodexTranscript(currentRawOutput)
-            : sanitizeCodexTranscript(currentRawOutput);
-          finishSuccess(finalResponse);
-          return;
-        }
+            if (mode === "legacy") {
+              feedTranscript(text, "stderr");
+              return;
+            }
 
-        finishError(`Process exited with code ${code}`);
-      });
+            const lines = stripNonPrintableControls(stripAnsi(text))
+              .replace(/\r\n/g, "\n")
+              .replace(/\r/g, "\n")
+              .split("\n");
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || isStderrNoise(trimmed)) continue;
+              handlers.onProgress?.(trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed);
+            }
+          });
 
-      proc.on("error", (err) => {
-        if (cancelled || done) return;
-        const errno = err as NodeJS.ErrnoException;
-        finishError(formatCodexLaunchError(errno));
-      });
+          proc.on("close", (code) => {
+            if (cancelled || done) return;
+
+            if (mode !== "legacy") {
+              processStructuredLines(true);
+            }
+
+            if (mode === "legacy") {
+              const remainingStdout = transcriptStdoutSanitizer.flush();
+              if (remainingStdout) transcriptParser.feed(remainingStdout);
+              const remainingStderr = transcriptStderrSanitizer.flush();
+              if (remainingStderr) transcriptParser.feed(remainingStderr);
+              transcriptParser.flush();
+            }
+
+            if (
+              structuredOutput
+              && code !== 0
+              && !jsonParser.hasStructuredEvents()
+              && looksLikeUnsupportedStructuredOutput(`${rawStdout}\n${rawStderr}`)
+            ) {
+              currentRawOutput = "";
+              startAttempt(false);
+              return;
+            }
+
+            const structuredFailure = jsonParser.getFailureMessage();
+            if (structuredFailure) {
+              finishError(structuredFailure);
+              return;
+            }
+
+            if (code === 0) {
+              const finalResponse = mode === "json"
+                ? jsonParser.getFinalResponse().trim() || sanitizeCodexTranscript(currentRawOutput)
+                : sanitizeCodexTranscript(currentRawOutput);
+              finishSuccess(finalResponse);
+              return;
+            }
+
+            finishError(`Process exited with code ${code}`);
+          });
+
+          proc.on("error", (err) => {
+            if (cancelled || done) return;
+            const errno = err as NodeJS.ErrnoException;
+            finishError(formatCodexLaunchError(errno));
+          });
+        })
+        .catch((error) => {
+          const errno = error as NodeJS.ErrnoException;
+          finishError(formatCodexLaunchError(errno));
+        });
     };
 
-    void resolveCodexExecutable()
-      .then((executable) => {
-        if (cancelled) return;
-        currentRawOutput = "";
-        startAttempt(executable, true);
-      })
-      .catch((error) => {
-        const errno = error as NodeJS.ErrnoException;
-        finishError(formatCodexLaunchError(errno));
-      });
+    currentRawOutput = "";
+    startAttempt(true);
 
     return () => {
       cancelled = true;

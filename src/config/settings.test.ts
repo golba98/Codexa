@@ -2,109 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_MODE,
-  buildCodexExecArgs,
   formatModeLabel,
   formatRuntimePolicySummary,
   getLegacyRuntimePolicyForMode,
   getNextMode,
   normalizeReasoningForModel,
 } from "./settings.js";
-
-test("builds suggest exec args with explicit untrusted read-only policy", () => {
-  assert.deepEqual(
-    buildCodexExecArgs("gpt-5.4", "C:/repo", {
-      approvalPolicy: "untrusted",
-      sandboxMode: "read-only",
-    }),
-    [
-      "exec",
-      "--experimental-json",
-      "--skip-git-repo-check",
-      "--cd",
-      "C:/repo",
-      "--model",
-      "gpt-5.4",
-      "--ask-for-approval",
-      "untrusted",
-      "--sandbox",
-      "read-only",
-      "-",
-    ],
-  );
-});
-
-test("passes reasoning effort through codex exec args", () => {
-  assert.deepEqual(
-    buildCodexExecArgs(
-      "gpt-5.4-mini",
-      "C:/repo",
-      { approvalPolicy: "untrusted", sandboxMode: "read-only" },
-      "medium",
-    ),
-    [
-      "exec",
-      "--experimental-json",
-      "--skip-git-repo-check",
-      "--cd",
-      "C:/repo",
-      "--model",
-      "gpt-5.4-mini",
-      "--config",
-      "reasoning.effort=medium",
-      "--ask-for-approval",
-      "untrusted",
-      "--sandbox",
-      "read-only",
-      "-",
-    ],
-  );
-});
-
-test("builds workspace-write exec args with on-request approval", () => {
-  assert.deepEqual(
-    buildCodexExecArgs("gpt-5.4", "C:/repo", {
-      approvalPolicy: "on-request",
-      sandboxMode: "workspace-write",
-    }),
-    [
-      "exec",
-      "--experimental-json",
-      "--skip-git-repo-check",
-      "--cd",
-      "C:/repo",
-      "--model",
-      "gpt-5.4",
-      "--ask-for-approval",
-      "on-request",
-      "--sandbox",
-      "workspace-write",
-      "-",
-    ],
-  );
-});
-
-test("builds danger-full-access exec args with never approval", () => {
-  assert.deepEqual(
-    buildCodexExecArgs("gpt-5.4", "C:/repo", {
-      approvalPolicy: "never",
-      sandboxMode: "danger-full-access",
-    }),
-    [
-      "exec",
-      "--experimental-json",
-      "--skip-git-repo-check",
-      "--cd",
-      "C:/repo",
-      "--model",
-      "gpt-5.4",
-      "--ask-for-approval",
-      "never",
-      "--sandbox",
-      "danger-full-access",
-      "-",
-    ],
-  );
-});
 
 test("returns legacy runtime policies for existing modes", () => {
   assert.deepEqual(getLegacyRuntimePolicyForMode("suggest"), {
@@ -137,31 +40,6 @@ test("keeps supported reasoning levels for gpt-5.4-mini", () => {
 
 test("keeps reasoning unchanged for non-mini models", () => {
   assert.equal(normalizeReasoningForModel("gpt-5.4", "low"), "low");
-});
-
-test("can build legacy transcript exec args without structured output", () => {
-  assert.deepEqual(
-    buildCodexExecArgs(
-      "gpt-5.4",
-      "C:/repo",
-      { approvalPolicy: "untrusted", sandboxMode: "read-only" },
-      undefined,
-      false,
-    ),
-    [
-      "exec",
-      "--skip-git-repo-check",
-      "--cd",
-      "C:/repo",
-      "--model",
-      "gpt-5.4",
-      "--ask-for-approval",
-      "untrusted",
-      "--sandbox",
-      "read-only",
-      "-",
-    ],
-  );
 });
 
 test("formats codex-style mode labels", () => {

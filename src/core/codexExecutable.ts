@@ -16,6 +16,12 @@ interface SpawnOptions {
   stdio: ["ignore" | "pipe", "pipe", "pipe"];
 }
 
+export interface CapturedProcessOutput {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}
+
 export async function resolveCodexExecutable(): Promise<string> {
   if (cachedExecutable) return cachedExecutable;
   if (resolveInFlight) return resolveInFlight;
@@ -175,4 +181,58 @@ export function spawnCodexProcess(
   }
 
   return spawn(executable, args, options);
+}
+
+export function captureCodexProcessOutput(
+  executable: string,
+  args: string[],
+  timeoutMs: number,
+): Promise<CapturedProcessOutput> {
+  return new Promise<CapturedProcessOutput>((resolve, reject) => {
+    let proc: ReturnType<typeof spawn>;
+    try {
+      proc = spawnCodexProcess(executable, args, { stdio: ["ignore", "pipe", "pipe"] });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback();
+    };
+
+    const timer = setTimeout(() => {
+      proc.kill();
+      const error = new Error(`Timed out waiting for Codex command: ${args.join(" ")}`) as NodeJS.ErrnoException;
+      error.code = "ETIME";
+      finish(() => reject(error));
+    }, timeoutMs);
+
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on("error", (error) => {
+      finish(() => reject(error));
+    });
+
+    proc.on("close", (exitCode) => {
+      finish(() => resolve({
+        exitCode,
+        stdout,
+        stderr,
+      }));
+    });
+  });
 }

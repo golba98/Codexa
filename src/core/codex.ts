@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
-import { buildCodexExecArgs, getLegacyRuntimePolicyForMode, type AvailableMode } from "../config/settings.js";
-import { formatCodexLaunchError, resolveCodexExecutable, spawnCodexProcess } from "./codexExecutable.js";
+import { getLegacyRuntimePolicyForMode, type AvailableMode } from "../config/settings.js";
+import { formatCodexLaunchError, spawnCodexProcess } from "./codexExecutable.js";
+import { prepareCodexExecLaunch } from "./codexLaunch.js";
 
 export interface CodexHandlers {
   onLine: (line: string) => void;
@@ -30,21 +31,28 @@ export function streamCodex(
     handlers.onDone();
   };
 
-  void resolveCodexExecutable()
-    .then((executable) => {
-      if (cancelled) return;
-
-      proc = spawnCodexProcess(
-        executable,
-        buildCodexExecArgs(
+  void prepareCodexExecLaunch(
+    {
           model,
-          workspaceRoot,
-          getLegacyRuntimePolicyForMode(mode as AvailableMode),
+          cwd: workspaceRoot,
+          runtimePolicy: getLegacyRuntimePolicyForMode(mode as AvailableMode),
           reasoningLevel,
-          false,
-        ),
-        { stdio: ["pipe", "pipe", "pipe"] },
-      );
+          structuredOutput: false,
+        },
+    import.meta.url,
+  )
+    .then((launchPlan) => {
+      if (cancelled) return;
+      if (!launchPlan.ok) {
+        finishError(launchPlan.error);
+        return;
+      }
+      if (!launchPlan.executable) {
+        finishError("Codex launch preparation did not return an executable.");
+        return;
+      }
+
+      proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
 
       proc.stdin?.write(prompt);
       proc.stdin?.end();

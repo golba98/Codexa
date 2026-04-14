@@ -202,37 +202,6 @@ export function isSandboxMode(value: unknown): value is CodexSandboxMode {
     && AVAILABLE_SANDBOX_MODES.some((item) => item.id === value);
 }
 
-export function buildCodexExecArgs(
-  model: string,
-  cwd: string,
-  runtimePolicy: RuntimePolicy,
-  reasoningLevel?: string,
-  structuredOutput = true,
-): string[] {
-  // Ensure cwd is safe to pass as a single command-line argument.
-  let safeCwd = cwd;
-  if (safeCwd.includes("\n") || safeCwd.includes("\r") || safeCwd.includes("\0")) {
-    safeCwd = process.cwd();
-  }
-  const args: string[] = ["exec"];
-
-  if (structuredOutput) {
-    args.push("--experimental-json");
-  }
-
-  args.push("--skip-git-repo-check", "--cd", safeCwd, "--model", model);
-
-  if (reasoningLevel) {
-    args.push("--config", `reasoning.effort=${reasoningLevel}`);
-  }
-
-  args.push("--ask-for-approval", runtimePolicy.approvalPolicy);
-  args.push("--sandbox", runtimePolicy.sandboxMode);
-
-  args.push("-");
-  return args;
-}
-
 export const AUTH_PREFERENCES = [
   {
     id: "chatgpt-login-goal",
