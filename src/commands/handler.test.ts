@@ -29,6 +29,7 @@ const baseConfig: LayeredConfigResult = {
       model: "Built-in defaults",
       reasoningLevel: "Built-in defaults",
       mode: "Built-in defaults",
+      planMode: "Built-in defaults",
       "policy.approvalPolicy": "Built-in defaults",
       "policy.sandboxMode": "Built-in defaults",
       "policy.networkAccess": "Built-in defaults",
@@ -118,9 +119,36 @@ test("accepts extra high reasoning aliases", () => {
   assert.equal(result?.value, "xhigh");
 });
 
+test("shows and toggles plan mode", () => {
+  const statusResult = runCommand("/plan");
+  assert.equal(statusResult?.action, "plan_mode");
+  assert.equal(statusResult?.message, "Plan mode: Disabled.");
+
+  const explicitStatusResult = runCommand("/plan status", {
+    runtime: normalizeRuntimeConfig({ planMode: true }),
+  });
+  assert.equal(explicitStatusResult?.action, "plan_mode");
+  assert.equal(explicitStatusResult?.message, "Plan mode: Enabled.");
+
+  const enableResult = runCommand("/plan on");
+  assert.equal(enableResult?.action, "plan_mode");
+  assert.equal(enableResult?.value, "on");
+
+  const disableResult = runCommand("/plan off");
+  assert.equal(disableResult?.action, "plan_mode");
+  assert.equal(disableResult?.value, "off");
+});
+
+test("rejects invalid /plan usage with a short hint", () => {
+  const result = runCommand("/plan maybe");
+  assert.equal(result?.action, "unknown");
+  assert.equal(result?.message, "Usage: /plan [on|off]");
+});
+
 test("shows effective runtime status", () => {
   const result = runCommand("/status");
   assert.equal(result?.action, "status");
+  assert.match(result?.message ?? "", /Plan mode: Disabled/i);
   assert.match(result?.message ?? "", /Approval policy: On request/i);
   assert.match(result?.message ?? "", /Sandbox mode: Read only/i);
   assert.match(result?.message ?? "", /Tokens used: ~1,200/i);
@@ -262,6 +290,8 @@ test("documents runtime commands in help", () => {
   assert.match(result?.message ?? "", /\/permissions approval-policy/i);
   assert.match(result?.message ?? "", /\/runtime approval-policy/i);
   assert.match(result?.message ?? "", /\/runtime writable-roots/i);
+  assert.match(result?.message ?? "", /\/plan \[on\|off\]\s+Show or toggle session plan mode/i);
+  assert.match(result?.message ?? "", /Current plan mode: Disabled/i);
   assert.match(result?.message ?? "", /Ctrl\+Y\s+Cycle execution mode/i);
 });
 

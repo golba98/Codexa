@@ -67,6 +67,7 @@ interface BottomComposerProps {
   mode?: string;
   model?: string;
   reasoningLevel?: string;
+  planMode?: boolean;
   tokensUsed?: number;
   modelSpec?: ModelSpec;
   value: string;
@@ -107,6 +108,7 @@ const COMMANDS = [
   { cmd: "/mode", desc: "Change execution mode" },
   { cmd: "/backend", desc: "Change active backend" },
   { cmd: "/reasoning", desc: "Change reasoning level" },
+  { cmd: "/plan", desc: "Show or toggle session plan mode" },
   { cmd: "/status", desc: "Show effective runtime configuration" },
   { cmd: "/permissions", desc: "Inspect or update permissions and sandbox controls" },
   { cmd: "/runtime", desc: "Compatibility runtime policy controls" },
@@ -220,6 +222,7 @@ export function BottomComposer({
   mode = "",
   model = "",
   reasoningLevel = "",
+  planMode = false,
   tokensUsed = 0,
   modelSpec = FALLBACK_MODEL_SPEC,
   value,
@@ -640,6 +643,7 @@ export function BottomComposer({
           <Box flexGrow={1} flexShrink={1} overflow="hidden">
             <Text color={theme.TEXT} bold>{modeLabel}</Text>
             <Text color={theme.DIM}>{"  "}{model}{reasoningSuffix}{"  Ctrl+M"}</Text>
+            {planMode && <Text color={theme.ACCENT}>{"  Plan"}</Text>}
           </Box>
           <Box flexShrink={0}>
             <Text color={theme.TEXT}>{tokenDisplay.usedText}</Text>
@@ -683,6 +687,7 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   if (prev.mode !== next.mode) return false;
   if (prev.model !== next.model) return false;
   if (prev.reasoningLevel !== next.reasoningLevel) return false;
+  if (prev.planMode !== next.planMode) return false;
   if (prev.tokensUsed !== next.tokensUsed) return false;
   
   // Re-render if layout changes

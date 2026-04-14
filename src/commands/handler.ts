@@ -49,6 +49,7 @@ export type CommandAction =
   | "open_mode_picker"
   | "reasoning"
   | "open_reasoning_picker"
+  | "plan_mode"
   | "theme"
   | "help"
   | "copy"
@@ -381,6 +382,28 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       };
     }
 
+    case "plan": {
+      if (!arg || normalizedArg === "status") {
+        return {
+          action: "plan_mode",
+          message: `Plan mode: ${context.runtime.planMode ? "Enabled" : "Disabled"}.`,
+        };
+      }
+
+      if (normalizedArg === "on" || normalizedArg === "off") {
+        return {
+          action: "plan_mode",
+          value: normalizedArg,
+          message: `Plan mode ${normalizedArg === "on" ? "enabled" : "disabled"}.`,
+        };
+      }
+
+      return {
+        action: "unknown",
+        message: "Usage: /plan [on|off]",
+      };
+    }
+
     case "theme": {
       if (!arg) return { action: "open_theme_picker" };
       if (AVAILABLE_THEMES.some((item) => item.id === arg)) {
@@ -570,6 +593,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           `  /mode [name]       Switch execution mode (${formatModeCommandHelp()})`,
           "                     suggest = read-only-style prompting, auto-edit = file edits, full-auto = strongest autonomy",
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
+          "  /plan [on|off]     Show or toggle session plan mode",
           "  /status            Show the effective runtime configuration",
           "  /config            Show layered config sources and winning values",
           "  /config trust [status|on|off] Manage whether project config is allowed to load",
@@ -600,6 +624,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "  /workspace         Show the locked workspace for this session",
           "  /workspace relaunch <path> Restart the app in another workspace folder",
           `  Current reasoning: ${formatReasoningLabel(context.runtime.reasoningLevel)}`,
+          `  Current plan mode: ${context.runtime.planMode ? "Enabled" : "Disabled"}`,
           "  /copy              Copy last response to clipboard",
           "  /help              Show this help",
           "",

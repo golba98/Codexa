@@ -244,7 +244,7 @@ export function App({ launchArgs }: AppProps) {
     [baseLayeredConfig, sessionRuntimeOverride],
   );
   const runtimeConfig = layeredRuntimeConfig.runtime;
-  const { provider: backend, model, mode, reasoningLevel } = runtimeConfig;
+  const { provider: backend, model, mode, reasoningLevel, planMode } = runtimeConfig;
   const resolvedRuntimeConfig = useMemo(() => resolveRuntimeConfig(runtimeConfig), [runtimeConfig]);
   const runtimeSummary = useMemo(() => buildRuntimeSummary(resolvedRuntimeConfig), [resolvedRuntimeConfig]);
   const allowedWritableRoots = useMemo(
@@ -515,6 +515,20 @@ export function App({ launchArgs }: AppProps) {
     }));
     setScreen("main");
     appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(nextReasoningLevel)}.`);
+  }, [appendSystemEvent, busy, updateRuntimeConfig]);
+
+  const setPlanModeWithNotice = useCallback((nextEnabled: boolean) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing plan mode.");
+      return;
+    }
+
+    updateRuntimeConfig((current) => ({
+      ...current,
+      planMode: nextEnabled,
+    }));
+    appendSystemEvent("Plan mode", `Plan mode ${nextEnabled ? "enabled" : "disabled"}.`);
   }, [appendSystemEvent, busy, updateRuntimeConfig]);
 
   const setModelWithNotice = useCallback((nextModel: AvailableModel) => {
@@ -1553,6 +1567,13 @@ export function App({ launchArgs }: AppProps) {
             setReasoningWithNotice(commandResult.value as ReasoningLevel);
           }
           return;
+        case "plan_mode":
+          if (commandResult.value) {
+            setPlanModeWithNotice(commandResult.value === "on");
+          } else if (commandResult.message) {
+            appendSystemEvent("Plan mode", commandResult.message);
+          }
+          return;
         case "status":
         case "runtime_writable_roots_list":
           if (commandResult.message) {
@@ -1763,6 +1784,7 @@ export function App({ launchArgs }: AppProps) {
     setNetworkAccessWithNotice,
     setModeWithNotice,
     setModelWithNotice,
+    setPlanModeWithNotice,
     setPersonalityWithNotice,
     setProjectTrustWithNotice,
     setReasoningWithNotice,
@@ -1985,6 +2007,7 @@ export function App({ launchArgs }: AppProps) {
             model={model}
             themeName={activeThemeName}
             reasoningLevel={reasoningLevel}
+            planMode={planMode}
             tokensUsed={estimateTokens(conversationChars)}
             modelSpec={currentModelSpec}
             value={inputValue}
