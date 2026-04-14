@@ -635,6 +635,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "Shortcuts:",
           "  Ctrl+B    Open backend picker",
           "  Ctrl+M    Open model picker",
+          "  Shift+Tab Toggle plan mode",
           "  Ctrl+P    Open mode picker",
           "  Ctrl+A    Open auth panel",
           "  Ctrl+L    Clear chat and cancel active run",

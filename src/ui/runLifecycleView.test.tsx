@@ -78,6 +78,7 @@ function LifecycleHarness({ uiState, value }: { uiState: UIState; value: string 
             onOpenModePicker={() => {}}
             onOpenThemePicker={() => {}}
             onOpenAuthPanel={() => {}}
+            onTogglePlanMode={() => {}}
             onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}

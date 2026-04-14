@@ -175,6 +175,7 @@ function ModelPickerComposerHarness() {
           onOpenModePicker={() => {}}
           onOpenThemePicker={() => {}}
           onOpenAuthPanel={() => {}}
+          onTogglePlanMode={() => {}}
           onClear={() => {}}
           onCycleMode={() => {}}
           onQuit={() => {}}
@@ -214,12 +215,130 @@ function PasteComposerHarness() {
           onOpenModePicker={() => {}}
           onOpenThemePicker={() => {}}
           onOpenAuthPanel={() => {}}
+          onTogglePlanMode={() => {}}
           onClear={() => {}}
           onCycleMode={() => {}}
           onQuit={() => {}}
         />
         <Text>{`submit:${submitCount}`}</Text>
         <Text>{`value:${JSON.stringify(value)}`}</Text>
+      </Box>
+    </ThemeProvider>
+  );
+}
+
+function PlanToggleComposerHarness() {
+  const [planMode, setPlanMode] = React.useState(false);
+  const [value, setValue] = React.useState("");
+  const [cursor, setCursor] = React.useState(0);
+  const [submitCount, setSubmitCount] = React.useState(0);
+
+  return (
+    <ThemeProvider theme="purple">
+      <Box flexDirection="column">
+        <BottomComposer
+          layout={TEST_LAYOUT}
+          uiState={{ kind: "IDLE" }}
+          value={value}
+          cursor={cursor}
+          planMode={planMode}
+          onChangeInput={(nextValue, nextCursor) => {
+            setValue(nextValue);
+            setCursor(nextCursor);
+          }}
+          onSubmit={() => {
+            setSubmitCount((count) => count + 1);
+          }}
+          onCancel={() => {}}
+          onChangeValue={setValue}
+          onChangeCursor={setCursor}
+          onHistoryUp={() => {}}
+          onHistoryDown={() => {}}
+          onOpenBackendPicker={() => {}}
+          onOpenModelPicker={() => {}}
+          onOpenModePicker={() => {}}
+          onOpenThemePicker={() => {}}
+          onOpenAuthPanel={() => {}}
+          onTogglePlanMode={() => setPlanMode((current) => !current)}
+          onClear={() => {}}
+          onCycleMode={() => {}}
+          onQuit={() => {}}
+        />
+        <Text>{`plan:${planMode ? "on" : "off"}`}</Text>
+        <Text>{`submit:${submitCount}`}</Text>
+        <Text>{`value:${JSON.stringify(value)}`}</Text>
+      </Box>
+    </ThemeProvider>
+  );
+}
+
+function ShortcutModelPickerHarness() {
+  const focusManager = useFocusManager();
+  const [screen, setScreen] = React.useState<"main" | "model-picker">("main");
+  const [model, setModel] = React.useState<AvailableModel>("gpt-5.4");
+  const [reasoningLevel, setReasoningLevel] = React.useState<ReasoningLevel>("high");
+  const [value, setValue] = React.useState("");
+  const [cursor, setCursor] = React.useState(0);
+  const [composerInstanceKey, setComposerInstanceKey] = React.useState(0);
+  const previousScreenRef = React.useRef<"main" | "model-picker">("main");
+
+  React.useEffect(() => {
+    const previousScreen = previousScreenRef.current;
+    if (shouldBumpComposerInstance(previousScreen, screen)) {
+      setComposerInstanceKey((currentKey) => currentKey + 1);
+    }
+    previousScreenRef.current = screen;
+  }, [screen]);
+
+  React.useEffect(() => {
+    focusManager.focus(getFocusTargetForScreen(screen));
+  }, [composerInstanceKey, focusManager, screen]);
+
+  return (
+    <ThemeProvider theme="purple">
+      <Box flexDirection="column">
+        <Text>{`screen:${screen}`}</Text>
+        {screen === "model-picker" ? (
+          <ModelPicker
+            currentModel={model}
+            onSelect={(nextModel) => {
+              const resolvedModel = nextModel as AvailableModel;
+              setModel(resolvedModel);
+              setReasoningLevel((currentReasoning) =>
+                normalizeReasoningForModel(resolvedModel, currentReasoning),
+              );
+              setScreen("main");
+            }}
+            onCancel={() => setScreen("main")}
+          />
+        ) : (
+          <BottomComposer
+            key={composerInstanceKey}
+            layout={TEST_LAYOUT}
+            uiState={{ kind: "IDLE" }}
+            value={value}
+            cursor={cursor}
+            onChangeInput={(nextValue, nextCursor) => {
+              setValue(nextValue);
+              setCursor(nextCursor);
+            }}
+            onSubmit={() => {}}
+            onCancel={() => {}}
+            onChangeValue={setValue}
+            onChangeCursor={setCursor}
+            onHistoryUp={() => {}}
+            onHistoryDown={() => {}}
+            onOpenBackendPicker={() => {}}
+            onOpenModelPicker={() => setScreen("model-picker")}
+            onOpenModePicker={() => {}}
+            onOpenThemePicker={() => {}}
+            onOpenAuthPanel={() => {}}
+            onTogglePlanMode={() => {}}
+            onClear={() => {}}
+            onCycleMode={() => {}}
+            onQuit={() => {}}
+          />
+        )}
       </Box>
     </ThemeProvider>
   );
@@ -316,6 +435,44 @@ test("ctrl+j inserts a newline without submitting the composer", async () => {
     assert.match(output, /value:"a\\nb"/);
     assert.match(output, /a/);
     assert.match(output, /b/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("shift+tab toggles plan mode without submitting or mutating the input", async () => {
+  const harness = createInkHarness(<PlanToggleComposerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("a");
+    await sleep(20);
+    harness.stdin.write("\u001b[Z");
+    await sleep(80);
+    harness.stdin.write("\u001b[Z");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.match(output, /plan:on/);
+    assert.match(output, /plan:off/);
+    assert.match(output, /submit:0/);
+    assert.equal(getLastComposerValue(output), "a");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("ctrl+m opens the existing model picker path without submitting", async () => {
+  const harness = createInkHarness(<ShortcutModelPickerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[109;5u");
+    await sleep(120);
+
+    const output = harness.getOutput();
+    assert.match(output, /screen:model-picker/);
+    assert.match(output, /Select model/);
   } finally {
     await harness.cleanup();
   }
