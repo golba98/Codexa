@@ -6,8 +6,10 @@ import {
   buildRuntimeSummary,
   buildCodexConfigOverrides,
   buildCodexExecArgs,
+  diffRuntimeConfig,
   formatPermissionsStatus,
   formatRuntimeStatus,
+  mergeRuntimeConfig,
   normalizeRuntimeConfig,
   removeWritableRoot,
   resolveRuntimeConfig,
@@ -67,6 +69,38 @@ test("writable root normalization strips redundant trailing separators", () => {
   });
 
   assert.deepEqual(normalized.policy.writableRoots, ["C:\\Repo"]);
+});
+
+test("merges runtime overrides onto a canonical base", () => {
+  const merged = mergeRuntimeConfig(DEFAULT_RUNTIME_CONFIG, {
+    model: "gpt-5.4-mini",
+    policy: {
+      writableRoots: ["C:/Repo/extra"],
+      serviceTier: "fast",
+    },
+  });
+
+  assert.equal(merged.model, "gpt-5.4-mini");
+  assert.deepEqual(merged.policy.writableRoots, ["C:\\Repo\\extra"]);
+  assert.equal(merged.policy.serviceTier, "fast");
+});
+
+test("diffRuntimeConfig emits only fields that differ from the base", () => {
+  const target = normalizeRuntimeConfig({
+    model: "gpt-5.4-mini",
+    policy: {
+      networkAccess: "enabled",
+      personality: "pragmatic",
+    },
+  });
+
+  assert.deepEqual(diffRuntimeConfig(DEFAULT_RUNTIME_CONFIG, target), {
+    model: "gpt-5.4-mini",
+    policy: {
+      networkAccess: "enabled",
+      personality: "pragmatic",
+    },
+  });
 });
 
 test("builds deterministic codex config overrides and exec args", () => {

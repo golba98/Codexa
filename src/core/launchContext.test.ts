@@ -25,7 +25,7 @@ test("uses installed launcher metadata when available", () => {
       CODEXA_PACKAGE_ROOT: "C:/repo",
       CODEXA_LAUNCHER_SCRIPT: "C:/repo/bin/codexa.js",
       CODEXA_RELAUNCH_EXECUTABLE: "C:/Program Files/nodejs/node.exe",
-      CODEXA_RELAUNCH_ARGS: JSON.stringify(["C:/repo/bin/codexa.js"]),
+      CODEXA_RELAUNCH_ARGS: JSON.stringify(["C:/repo/bin/codexa.js", "--profile", "review"]),
     },
   });
 
@@ -33,7 +33,7 @@ test("uses installed launcher metadata when available", () => {
   assert.equal(context.packageRoot, "C:\\repo");
   assert.equal(context.launcherScriptPath, "C:/repo/bin/codexa.js");
   assert.equal(context.relaunchExecutable, "C:/Program Files/nodejs/node.exe");
-  assert.deepEqual(context.relaunchArgs, ["C:/repo/bin/codexa.js"]);
+  assert.deepEqual(context.relaunchArgs, ["C:/repo/bin/codexa.js", "--profile", "review"]);
 });
 
 test("falls back to bun repo launch metadata when no installed launcher env exists", () => {
@@ -42,12 +42,22 @@ test("falls back to bun repo launch metadata when no installed launcher env exis
     packageRoot: "C:/repo",
     execPath: "C:/tools/bun.exe",
     hasBunRuntime: true,
+    forwardArgs: ["--profile", "review", "--config", "model=\"gpt-5.4\""],
     env: {},
   });
 
   assert.equal(context.launchKind, "dev-run");
   assert.equal(context.relaunchExecutable, "C:/tools/bun.exe");
-  assert.deepEqual(context.relaunchArgs, ["run", "--silent", join("C:\\repo", "src", "index.tsx")]);
+  assert.deepEqual(context.relaunchArgs, [
+    "run",
+    "--silent",
+    join("C:\\repo", "src", "index.tsx"),
+    "--",
+    "--profile",
+    "review",
+    "--config",
+    "model=\"gpt-5.4\"",
+  ]);
 });
 
 test("creates an installed-bin relaunch plan with normalized target cwd and env", () => {
@@ -65,7 +75,7 @@ test("creates an installed-bin relaunch plan with normalized target cwd and env"
         CODEXA_PACKAGE_ROOT: "C:/repo",
         CODEXA_LAUNCHER_SCRIPT: "C:/repo/bin/codexa.js",
         CODEXA_RELAUNCH_EXECUTABLE: "C:/Program Files/nodejs/node.exe",
-        CODEXA_RELAUNCH_ARGS: JSON.stringify(["C:/repo/bin/codexa.js"]),
+        CODEXA_RELAUNCH_ARGS: JSON.stringify(["C:/repo/bin/codexa.js", "--profile", "review"]),
       },
     });
 
@@ -74,7 +84,7 @@ test("creates an installed-bin relaunch plan with normalized target cwd and env"
     if (!result.ok) return;
 
     assert.equal(result.plan.executable, "C:/Program Files/nodejs/node.exe");
-    assert.deepEqual(result.plan.args, ["C:/repo/bin/codexa.js"]);
+    assert.deepEqual(result.plan.args, ["C:/repo/bin/codexa.js", "--profile", "review"]);
     assert.equal(result.plan.cwd, normalizeWorkspaceRoot(nextWorkspace));
     assert.equal(result.plan.env.CODEX_WORKSPACE_ROOT, normalizeWorkspaceRoot(nextWorkspace));
     assert.equal(result.plan.env.CODEXA_LAUNCH_KIND, "installed-bin");

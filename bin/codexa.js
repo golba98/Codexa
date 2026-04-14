@@ -73,13 +73,14 @@ const currentFile = fileURLToPath(import.meta.url);
 const packageRoot = dirname(dirname(currentFile));
 const appEntry = join(packageRoot, "src", "index.tsx");
 const workspaceRoot = process.cwd();
+const forwardArgs = process.argv.slice(2);
 
 // Detect if parent process has a real TTY
 const parentHasTTY = process.stdin.isTTY && process.stdout.isTTY;
 
 const child = spawn(
   bunExecutable,
-  ["run", "--silent", appEntry],
+  ["run", "--silent", appEntry, ...(forwardArgs.length > 0 ? ["--", ...forwardArgs] : [])],
   {
     cwd: workspaceRoot,
     stdio: [parentHasTTY ? "inherit" : "pipe", "inherit", "inherit"],
@@ -90,7 +91,7 @@ const child = spawn(
       CODEXA_PACKAGE_ROOT: packageRoot,
       CODEXA_LAUNCHER_SCRIPT: currentFile,
       CODEXA_RELAUNCH_EXECUTABLE: process.execPath,
-      CODEXA_RELAUNCH_ARGS: JSON.stringify([currentFile]),
+      CODEXA_RELAUNCH_ARGS: JSON.stringify([currentFile, ...forwardArgs]),
       CODEXA_PARENT_HAS_TTY: parentHasTTY ? "1" : "0",
     },
   },

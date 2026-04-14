@@ -1,7 +1,9 @@
-import { readFileSync, renameSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { dirname } from "path";
 import { Theme } from "../ui/theme.js";
 import {
   AUTH_PREFERENCES,
+  CODEX_CONFIG_FILE,
   DEFAULT_AUTH_PREFERENCE,
   DEFAULT_LAYOUT_STYLE,
   DEFAULT_THEME,
@@ -9,7 +11,11 @@ import {
   type AuthPreference,
 } from "./settings.js";
 import {
-  DEFAULT_RUNTIME_CONFIG,
+  mergeRuntimeIntoTomlConfig,
+  parseTomlDocument,
+  serializeTomlDocument,
+} from "./layeredConfig.js";
+import {
   normalizeRuntimeConfig,
   type RuntimeConfig,
 } from "./runtimeConfig.js";
@@ -25,7 +31,6 @@ export interface AuthSettings {
 }
 
 export interface AppSettings {
-  runtime: RuntimeConfig;
   ui: UiSettings;
   auth: AuthSettings;
 }
@@ -46,7 +51,6 @@ function normalizeUiSettings(input: Partial<UiSettings> | null | undefined): UiS
 
 export function getDefaultSettings(): AppSettings {
   return {
-    runtime: DEFAULT_RUNTIME_CONFIG,
     ui: normalizeUiSettings(null),
     auth: {
       preference: DEFAULT_AUTH_PREFERENCE,
@@ -63,6 +67,34 @@ function parseLegacyRuntime(data: Record<string, unknown>): RuntimeConfig {
   });
 }
 
+export function extractLegacyRuntime(data: unknown): RuntimeConfig | null {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+
+  const record = data as Record<string, unknown>;
+  if (typeof record.runtime === "object" && record.runtime !== null) {
+    return normalizeRuntimeConfig(record.runtime as Partial<RuntimeConfig>);
+  }
+
+  const hasFlatRuntimeKeys = ["backend", "model", "mode", "reasoning_level"].some((key) => key in record);
+  return hasFlatRuntimeKeys ? parseLegacyRuntime(record) : null;
+}
+
+function stripLegacyRuntime(data: unknown): Record<string, unknown> {
+  if (!data || typeof data !== "object") {
+    return {};
+  }
+
+  const record = { ...(data as Record<string, unknown>) };
+  delete record.runtime;
+  delete record.backend;
+  delete record.model;
+  delete record.mode;
+  delete record.reasoning_level;
+  return record;
+}
+
 export function parseSettingsData(data: unknown): AppSettings {
   const defaults = getDefaultSettings();
   if (!data || typeof data !== "object") {
@@ -70,12 +102,6 @@ export function parseSettingsData(data: unknown): AppSettings {
   }
 
   const record = data as Record<string, unknown>;
-
-  const hasNestedRuntime = typeof record.runtime === "object" && record.runtime !== null;
-  const runtime = hasNestedRuntime
-    ? normalizeRuntimeConfig(record.runtime as Partial<RuntimeConfig>)
-    : parseLegacyRuntime(record);
-
   const uiSource = typeof record.ui === "object" && record.ui !== null
     ? record.ui as Record<string, unknown>
     : record;
@@ -84,7 +110,6 @@ export function parseSettingsData(data: unknown): AppSettings {
     : record;
 
   return {
-    runtime,
     ui: normalizeUiSettings({
       layoutStyle: typeof uiSource.layoutStyle === "string"
         ? uiSource.layoutStyle
@@ -102,7 +127,6 @@ export function parseSettingsData(data: unknown): AppSettings {
 
 export function serializeSettings(settings: AppSettings): Record<string, unknown> {
   return {
-    runtime: normalizeRuntimeConfig(settings.runtime),
     ui: {
       layout_style: settings.ui.layoutStyle,
       theme: settings.ui.theme,
@@ -114,10 +138,40 @@ export function serializeSettings(settings: AppSettings): Record<string, unknown
   };
 }
 
+function writeJsonFile(filePath: string, data: Record<string, unknown>): void {
+  mkdirSync(dirname(filePath), { recursive: true });
+  const tmpFile = `${filePath}.tmp`;
+  writeFileSync(tmpFile, JSON.stringify(data, null, 2), "utf-8");
+  renameSync(tmpFile, filePath);
+}
+
+function maybeMigrateLegacyRuntime(rawData: unknown): void {
+  const legacyRuntime = extractLegacyRuntime(rawData);
+  if (!legacyRuntime) {
+    return;
+  }
+
+  try {
+    const existingConfig = existsSync(CODEX_CONFIG_FILE)
+      ? parseTomlDocument(readFileSync(CODEX_CONFIG_FILE, "utf-8"))
+      : {};
+    const mergedConfig = mergeRuntimeIntoTomlConfig(existingConfig, legacyRuntime);
+    mkdirSync(dirname(CODEX_CONFIG_FILE), { recursive: true });
+    const tmpTomlFile = `${CODEX_CONFIG_FILE}.tmp`;
+    writeFileSync(tmpTomlFile, serializeTomlDocument(mergedConfig), "utf-8");
+    renameSync(tmpTomlFile, CODEX_CONFIG_FILE);
+    writeJsonFile(SETTINGS_FILE, stripLegacyRuntime(rawData));
+  } catch {
+    // Best-effort migration only; keep legacy JSON intact if anything fails.
+  }
+}
+
 export function loadSettings(): AppSettings {
   try {
     const text = readFileSync(SETTINGS_FILE, "utf-8");
-    return parseSettingsData(JSON.parse(text));
+    const rawData = JSON.parse(text);
+    maybeMigrateLegacyRuntime(rawData);
+    return parseSettingsData(rawData);
   } catch {
     return getDefaultSettings();
   }
@@ -125,9 +179,7 @@ export function loadSettings(): AppSettings {
 
 export function saveSettings(settings: AppSettings): void {
   try {
-    const tmpFile = SETTINGS_FILE + ".tmp";
-    writeFileSync(tmpFile, JSON.stringify(serializeSettings(settings), null, 2), "utf-8");
-    renameSync(tmpFile, SETTINGS_FILE);
+    writeJsonFile(SETTINGS_FILE, serializeSettings(settings));
   } catch {
     // Silently ignore — settings are best-effort
   }

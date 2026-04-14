@@ -218,6 +218,78 @@ export function normalizeRuntimeConfig(input: PartialRuntimeConfig | null | unde
   };
 }
 
+export function mergeRuntimeConfig(
+  base: RuntimeConfig,
+  override: PartialRuntimeConfig | null | undefined,
+): RuntimeConfig {
+  if (!override) {
+    return normalizeRuntimeConfig(base);
+  }
+
+  return normalizeRuntimeConfig({
+    ...base,
+    ...override,
+    policy: {
+      ...base.policy,
+      ...override.policy,
+    },
+  });
+}
+
+function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
+export function diffRuntimeConfig(base: RuntimeConfig, target: RuntimeConfig): PartialRuntimeConfig {
+  const normalizedBase = normalizeRuntimeConfig(base);
+  const normalizedTarget = normalizeRuntimeConfig(target);
+  const policyPatch: Partial<RuntimePolicyConfig> = {};
+
+  if (normalizedBase.policy.approvalPolicy !== normalizedTarget.policy.approvalPolicy) {
+    policyPatch.approvalPolicy = normalizedTarget.policy.approvalPolicy;
+  }
+
+  if (normalizedBase.policy.sandboxMode !== normalizedTarget.policy.sandboxMode) {
+    policyPatch.sandboxMode = normalizedTarget.policy.sandboxMode;
+  }
+
+  if (normalizedBase.policy.networkAccess !== normalizedTarget.policy.networkAccess) {
+    policyPatch.networkAccess = normalizedTarget.policy.networkAccess;
+  }
+
+  if (!arraysEqual(normalizedBase.policy.writableRoots, normalizedTarget.policy.writableRoots)) {
+    policyPatch.writableRoots = normalizedTarget.policy.writableRoots;
+  }
+
+  if (normalizedBase.policy.serviceTier !== normalizedTarget.policy.serviceTier) {
+    policyPatch.serviceTier = normalizedTarget.policy.serviceTier;
+  }
+
+  if (normalizedBase.policy.personality !== normalizedTarget.policy.personality) {
+    policyPatch.personality = normalizedTarget.policy.personality;
+  }
+
+  return {
+    ...(normalizedBase.provider !== normalizedTarget.provider
+      ? { provider: normalizedTarget.provider }
+      : {}),
+    ...(normalizedBase.model !== normalizedTarget.model
+      ? { model: normalizedTarget.model }
+      : {}),
+    ...(normalizedBase.reasoningLevel !== normalizedTarget.reasoningLevel
+      ? { reasoningLevel: normalizedTarget.reasoningLevel }
+      : {}),
+    ...(normalizedBase.mode !== normalizedTarget.mode
+      ? { mode: normalizedTarget.mode }
+      : {}),
+    ...(Object.keys(policyPatch).length > 0 ? { policy: policyPatch } : {}),
+  };
+}
+
 export function resolveInheritedApprovalPolicy(mode: AvailableMode): ResolvedApprovalPolicy {
   switch (mode) {
     case "suggest":

@@ -1,21 +1,48 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { LayeredConfigResult } from "../config/layeredConfig.js";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../config/runtimeConfig.js";
 import { handleCommand, type CommandContext } from "./handler.js";
 
+const baseRuntime = normalizeRuntimeConfig({
+  provider: "codex-subprocess",
+  model: "gpt-5.4",
+  mode: "suggest",
+  reasoningLevel: "high",
+});
+
+const baseConfig: LayeredConfigResult = {
+  runtime: baseRuntime,
+  diagnostics: {
+    projectRoot: "C:\\Workspace",
+    projectTrusted: false,
+    selectedProfile: null,
+    selectedProfileSource: null,
+    cliOverrides: [],
+    layers: [
+      { label: "Built-in defaults", status: "loaded" as const },
+      { label: "User config", status: "missing" as const, path: "C:\\Users\\Test\\.codex\\config.toml" },
+    ],
+    ignoredEntries: [],
+    fieldSources: {
+      provider: "Built-in defaults",
+      model: "Built-in defaults",
+      reasoningLevel: "Built-in defaults",
+      mode: "Built-in defaults",
+      "policy.approvalPolicy": "Built-in defaults",
+      "policy.sandboxMode": "Built-in defaults",
+      "policy.networkAccess": "Built-in defaults",
+      "policy.writableRoots": "Built-in defaults",
+      "policy.serviceTier": "Built-in defaults",
+      "policy.personality": "Built-in defaults",
+    },
+  },
+};
+
 const baseContext: CommandContext = {
-  runtime: normalizeRuntimeConfig({
-    provider: "codex-subprocess",
-    model: "gpt-5.4",
-    mode: "suggest",
-    reasoningLevel: "high",
-  }),
-  resolvedRuntime: resolveRuntimeConfig(normalizeRuntimeConfig({
-    provider: "codex-subprocess",
-    model: "gpt-5.4",
-    mode: "suggest",
-    reasoningLevel: "high",
-  })),
+  config: baseConfig,
+  runtime: baseRuntime,
+  resolvedRuntime: resolveRuntimeConfig(baseRuntime),
   workspace: {
     root: "C:\\Workspace",
     summaryMessage: [
@@ -97,6 +124,23 @@ test("shows effective runtime status", () => {
   assert.match(result?.message ?? "", /Approval policy: On request/i);
   assert.match(result?.message ?? "", /Sandbox mode: Read only/i);
   assert.match(result?.message ?? "", /Tokens used: ~1,200/i);
+});
+
+test("shows layered config status", () => {
+  const result = runCommand("/config");
+  assert.equal(result?.action, "config_status");
+  assert.match(result?.message ?? "", /Config status:/i);
+  assert.match(result?.message ?? "", /Project trust: Untrusted/i);
+});
+
+test("parses config trust commands", () => {
+  const statusResult = runCommand("/config trust");
+  assert.equal(statusResult?.action, "config_trust_status");
+  assert.match(statusResult?.message ?? "", /Status: Untrusted/i);
+
+  const setResult = runCommand("/config trust on");
+  assert.equal(setResult?.action, "config_trust_set");
+  assert.equal(setResult?.value, "on");
 });
 
 test("opens the permissions panel when /permissions has no arguments", () => {
@@ -213,6 +257,7 @@ test("documents runtime commands in help", () => {
   const result = runCommand("/help");
   assert.equal(result?.action, "help");
   assert.match(result?.message ?? "", /\/status\s+Show the effective runtime configuration/i);
+  assert.match(result?.message ?? "", /\/config\s+Show layered config sources/i);
   assert.match(result?.message ?? "", /\/permissions\s+Open or update permissions and sandbox controls/i);
   assert.match(result?.message ?? "", /\/permissions approval-policy/i);
   assert.match(result?.message ?? "", /\/runtime approval-policy/i);

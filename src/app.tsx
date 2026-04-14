@@ -2,6 +2,12 @@ import React, { startTransition, useCallback, useEffect, useMemo, useRef, useSta
 import { spawn } from "child_process";
 import { Box, Text, useApp, useFocusManager, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
+import {
+  applyLayeredRuntimeOverride,
+  resolveLayeredConfig,
+  type LayeredConfigResult,
+} from "./config/layeredConfig.js";
+import type { LaunchArgs } from "./config/launchArgs.js";
 import { loadSettings, saveSettings } from "./config/persistence.js";
 import {
   type AuthPreference,
@@ -25,14 +31,17 @@ import {
   addWritableRoot,
   buildRuntimeSummary,
   clearWritableRoots,
+  diffRuntimeConfig,
   formatApprovalPolicyLabel,
   formatNetworkAccessLabel,
   formatPersonalityLabel,
   formatSandboxModeLabel,
   formatServiceTierLabel,
+  mergeRuntimeConfig,
   removeWritableRoot,
   resolveRuntimeConfig,
   resolveWritableRootCommandPath,
+  type PartialRuntimeConfig,
   type RuntimeApprovalPolicy,
   type RuntimeConfig,
   type RuntimeNetworkAccess,
@@ -40,6 +49,7 @@ import {
   type RuntimeSandboxMode,
   type RuntimeServiceTier,
 } from "./config/runtimeConfig.js";
+import { setProjectTrust } from "./config/trustStore.js";
 import {
   type CodexAuthProbeResult,
   getAuthStatusMessage,
@@ -139,12 +149,23 @@ function createInitialAuthStatus(): CodexAuthProbeResult {
   };
 }
 
-export function App() {
+interface AppProps {
+  launchArgs: LaunchArgs;
+}
+
+export function App({ launchArgs }: AppProps) {
   const { exit } = useApp();
   const focusManager = useFocusManager();
-  const initialSettings = useRef(loadSettings());
   const workspaceRoot = useMemo(() => resolveWorkspaceRoot(), []);
-  const launchContext = useMemo(() => resolveLaunchContext({ workspaceRoot }), [workspaceRoot]);
+  const initialSettings = useRef(loadSettings());
+  const initialLayeredConfig = useRef<LayeredConfigResult | null>(null);
+  if (initialLayeredConfig.current === null) {
+    initialLayeredConfig.current = resolveLayeredConfig({ workspaceRoot, launchArgs });
+  }
+  const launchContext = useMemo(
+    () => resolveLaunchContext({ workspaceRoot, forwardArgs: launchArgs.passthroughArgs }),
+    [launchArgs.passthroughArgs, workspaceRoot],
+  );
   const workspaceCommandContext = useMemo(
     () => buildWorkspaceCommandContext(launchContext),
     [launchContext],
@@ -152,7 +173,8 @@ export function App() {
   const modelSpecService = useMemo(() => createModelSpecService(), []);
   const terminalLayout = useTerminalViewport();
 
-  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>(initialSettings.current.runtime);
+  const [baseLayeredConfig, setBaseLayeredConfig] = useState<LayeredConfigResult>(initialLayeredConfig.current);
+  const [sessionRuntimeOverride, setSessionRuntimeOverride] = useState<PartialRuntimeConfig>({});
   const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.auth.preference);
   const [themeSelection, setThemeSelection] = useState<ThemeSelectionState>({
     committedTheme: initialSettings.current.ui.theme,
@@ -216,6 +238,12 @@ export function App() {
     activeThemeName === "custom"
       ? { ...THEMES.purple, ...customTheme }
       : (THEMES[activeThemeName] ?? THEMES.purple);
+  const baseRuntimeConfigRef = useRef(baseLayeredConfig.runtime);
+  const layeredRuntimeConfig = useMemo(
+    () => applyLayeredRuntimeOverride(baseLayeredConfig, sessionRuntimeOverride, "In-session overrides"),
+    [baseLayeredConfig, sessionRuntimeOverride],
+  );
+  const runtimeConfig = layeredRuntimeConfig.runtime;
   const { provider: backend, model, mode, reasoningLevel } = runtimeConfig;
   const resolvedRuntimeConfig = useMemo(() => resolveRuntimeConfig(runtimeConfig), [runtimeConfig]);
   const runtimeSummary = useMemo(() => buildRuntimeSummary(resolvedRuntimeConfig), [resolvedRuntimeConfig]);
@@ -260,8 +288,11 @@ export function App() {
   const provider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
 
   useEffect(() => {
+    baseRuntimeConfigRef.current = baseLayeredConfig.runtime;
+  }, [baseLayeredConfig.runtime]);
+
+  useEffect(() => {
     saveSettings({
-      runtime: runtimeConfig,
       ui: {
         layoutStyle: initialSettings.current.ui.layoutStyle,
         theme: themeSelection.committedTheme,
@@ -271,7 +302,7 @@ export function App() {
         preference: authPreference,
       },
     });
-  }, [authPreference, customTheme, runtimeConfig, themeSelection.committedTheme]);
+  }, [authPreference, customTheme, themeSelection.committedTheme]);
 
   useEffect(() => {
     return () => {
@@ -411,16 +442,28 @@ export function App() {
     appendSystemEvent("Launch mode", devLaunchNotice);
   }, [appendSystemEvent, launchContext]);
 
+  const reloadBaseLayeredConfig = useCallback(() => {
+    const nextConfig = resolveLayeredConfig({ workspaceRoot, launchArgs });
+    baseRuntimeConfigRef.current = nextConfig.runtime;
+    setBaseLayeredConfig(nextConfig);
+    return nextConfig;
+  }, [launchArgs, workspaceRoot]);
+
   const updateRuntimeConfig = useCallback((updater: (current: RuntimeConfig) => RuntimeConfig) => {
-    setRuntimeConfig((current) => updater(current));
+    setSessionRuntimeOverride((currentPatch) => {
+      const baseRuntime = baseRuntimeConfigRef.current;
+      const currentRuntime = mergeRuntimeConfig(baseRuntime, currentPatch);
+      const nextRuntime = updater(currentRuntime);
+      return diffRuntimeConfig(baseRuntime, nextRuntime);
+    });
   }, []);
 
   const updateRuntimePolicy = useCallback((updater: (current: RuntimeConfig["policy"]) => RuntimeConfig["policy"]) => {
-    setRuntimeConfig((current) => ({
+    updateRuntimeConfig((current) => ({
       ...current,
       policy: updater(current.policy),
     }));
-  }, []);
+  }, [updateRuntimeConfig]);
 
   const setBackendWithNotice = useCallback((nextBackend: AvailableBackend) => {
     const gate = guardConfigMutation("backend", busy);
@@ -612,6 +655,22 @@ export function App() {
     updateRuntimePolicy((current) => ({ ...current, personality: nextValue }));
     appendSystemEvent("Runtime policy", `Personality set to ${formatPersonalityLabel(nextValue)}.`);
   }, [appendSystemEvent, busy, updateRuntimePolicy]);
+
+  const setProjectTrustWithNotice = useCallback((trusted: boolean) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing project trust.");
+      return;
+    }
+
+    const projectRoot = baseLayeredConfig.diagnostics.projectRoot;
+    setProjectTrust(projectRoot, trusted);
+    reloadBaseLayeredConfig();
+    appendSystemEvent(
+      "Config trust",
+      `${trusted ? "Trusted" : "Untrusted"} project root: ${projectRoot}.`,
+    );
+  }, [appendSystemEvent, baseLayeredConfig.diagnostics.projectRoot, busy, reloadBaseLayeredConfig]);
 
   const openBackendPicker = useCallback(() => {
     const gate = guardConfigMutation("backend", busy);
@@ -1451,6 +1510,7 @@ export function App() {
     }
 
     const commandResult = handleCommand(value, {
+      config: layeredRuntimeConfig,
       runtime: runtimeConfig,
       resolvedRuntime: resolvedRuntimeConfig,
       workspace: workspaceCommandContext,
@@ -1497,6 +1557,21 @@ export function App() {
         case "runtime_writable_roots_list":
           if (commandResult.message) {
             appendSystemEvent("Runtime status", commandResult.message);
+          }
+          return;
+        case "config_status":
+          if (commandResult.message) {
+            appendSystemEvent("Config", commandResult.message);
+          }
+          return;
+        case "config_trust_status":
+          if (commandResult.message) {
+            appendSystemEvent("Config trust", commandResult.message);
+          }
+          return;
+        case "config_trust_set":
+          if (commandResult.value) {
+            setProjectTrustWithNotice(commandResult.value === "on");
           }
           return;
         case "permissions_status":
@@ -1668,6 +1743,7 @@ export function App() {
     handleShellExecute,
     handleWorkspaceRelaunch,
     inputValue,
+    layeredRuntimeConfig,
     openAuthPanel,
     openBackendPicker,
     openModePicker,
@@ -1688,6 +1764,7 @@ export function App() {
     setModeWithNotice,
     setModelWithNotice,
     setPersonalityWithNotice,
+    setProjectTrustWithNotice,
     setReasoningWithNotice,
     setSandboxModeWithNotice,
     setServiceTierWithNotice,
