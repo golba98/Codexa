@@ -13,6 +13,10 @@ import {
 } from "../config/settings.js";
 import { AVAILABLE_THEMES } from "../config/settings.js";
 import {
+  formatLayeredConfigStatus,
+  type LayeredConfigResult,
+} from "../config/layeredConfig.js";
+import {
   formatApprovalPolicyLabel,
   formatNetworkAccessLabel,
   formatPermissionsStatus,
@@ -52,6 +56,9 @@ export type CommandAction =
   | "models"
   | "workspace"
   | "workspace_relaunch"
+  | "config_status"
+  | "config_trust_status"
+  | "config_trust_set"
   | "open_auth_panel"
   | "open_theme_picker"
   | "open_permissions_panel"
@@ -78,6 +85,7 @@ export interface CommandResult {
 }
 
 export interface CommandContext {
+  config: LayeredConfigResult;
   runtime: RuntimeConfig;
   resolvedRuntime: ResolvedRuntimeConfig;
   workspace: WorkspaceCommandContext;
@@ -434,6 +442,39 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       };
     }
 
+    case "config": {
+      if (!arg || normalizedArg === "status") {
+        return {
+          action: "config_status",
+          message: formatLayeredConfigStatus(context.config),
+        };
+      }
+
+      if (normalizedArg === "trust" || normalizedArg === "trust status") {
+        return {
+          action: "config_trust_status",
+          message: [
+            "Project trust:",
+            `  Root: ${context.config.diagnostics.projectRoot}`,
+            `  Status: ${context.config.diagnostics.projectTrusted ? "Trusted" : "Untrusted"}`,
+          ].join("\n"),
+        };
+      }
+
+      if (normalizedArg === "trust on" || normalizedArg === "trust off") {
+        return {
+          action: "config_trust_set",
+          value: normalizedArg.endsWith("on") ? "on" : "off",
+          message: `Project trust ${normalizedArg.endsWith("on") ? "enabled" : "disabled"}.`,
+        };
+      }
+
+      return {
+        action: "unknown",
+        message: "Unknown config command. Use /config, /config status, or /config trust [status|on|off].",
+      };
+    }
+
     case "auth": {
       if (!arg) return { action: "open_auth_panel" };
       if (arg === "status") {
@@ -530,6 +571,8 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "                     suggest = read-only-style prompting, auto-edit = file edits, full-auto = strongest autonomy",
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
           "  /status            Show the effective runtime configuration",
+          "  /config            Show layered config sources and winning values",
+          "  /config trust [status|on|off] Manage whether project config is allowed to load",
           "  /permissions       Open or update permissions and sandbox controls",
           "  /permissions status",
           "  /permissions approval-policy [status|inherit|untrusted|on-request|never]",

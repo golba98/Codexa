@@ -1,6 +1,7 @@
 import React from "react";
 import { render, type Instance } from "ink";
 import { App } from "./app.js";
+import { parseLaunchArgs, type LaunchArgs } from "./config/launchArgs.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 
@@ -67,6 +68,7 @@ export interface StartAppDependencies {
   stderr: Pick<NodeJS.WriteStream, "write">;
   env: Record<string, string | undefined>;
   platform: NodeJS.Platform;
+  argv: string[];
   renderApp: (node: React.ReactElement) => RenderHandle;
   registerExitHandler: (handler: () => void) => void;
 }
@@ -95,6 +97,7 @@ export function startApp({
   stderr = process.stderr,
   env = process.env,
   platform = process.platform,
+  argv = process.argv.slice(2),
   renderApp = render,
   registerExitHandler = (handler) => {
     process.on("exit", handler);
@@ -115,6 +118,13 @@ export function startApp({
     stderr.write(`${capability.message}\n`);
     return { started: false, exitCode: 1 };
   }
+
+  const parsedLaunchArgs = parseLaunchArgs(argv);
+  if (!parsedLaunchArgs.ok) {
+    stderr.write(`${parsedLaunchArgs.error}\n`);
+    return { started: false, exitCode: 1 };
+  }
+  const launchArgs: LaunchArgs = parsedLaunchArgs.value;
 
   // Clear the screen and move cursor to home before rendering so no stale
   // content from a previous process (e.g. bun --watch restart) ghosts above
@@ -307,7 +317,7 @@ export function startApp({
   process.on("uncaughtException", handleFatal);
   process.on("unhandledRejection", handleFatal);
 
-  renderHandle = renderApp(<App />);
+  renderHandle = renderApp(<App launchArgs={launchArgs} />);
 
   // Resolve the real Ink class instance to get access to lastOutput,
   // onRender, calculateLayout, etc.  Gracefully degrades to null in tests.

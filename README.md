@@ -15,6 +15,41 @@ where codexa
 
 `where codexa` should resolve to your global npm bin directory before you rely on the command.
 
+## Layered Config
+
+CODEXA now resolves execution settings from a layered `config.toml` surface instead of persisting runtime state in `~/.codexa-settings.json`.
+
+- User config: `~/.codex/config.toml`
+- Project config: `.codex/config.toml` from the detected project root down to the locked workspace
+- Profile selection: `--profile <name>` or top-level `profile = "name"` in loaded TOML layers
+- CLI overrides: repeatable `--config key=<toml-value>` / `-c key=<toml-value>`
+
+Example:
+
+```powershell
+codexa --profile review --config model="gpt-5.4" --config codexa.mode="suggest"
+```
+
+Supported runtime keys in this rank:
+
+- Native-style keys: `model`, `model_reasoning_effort`, `approval_policy`, `sandbox_mode`, `sandbox_workspace_write.network_access`, `sandbox_workspace_write.writable_roots`, `service_tier`, `personality`
+- CODEXA-specific keys: `[codexa].backend`, `[codexa].mode`
+
+Pure UI/auth preferences still live in `~/.codexa-settings.json`.
+
+### Project Trust
+
+Project config is only applied when the detected project root is trusted.
+
+```text
+/config
+/config trust status
+/config trust on
+/config trust off
+```
+
+Untrusted project config is detected but blocked visibly in `/config`.
+
 ## Launch in a Target Workspace
 
 Start `codexa` from the folder you want locked as the workspace:

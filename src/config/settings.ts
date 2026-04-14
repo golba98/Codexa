@@ -13,6 +13,9 @@ export const DEFAULT_AUTH_PREFERENCE = "chatgpt-login-goal";
 export const CODEX_EXECUTABLE = process.env.CODEX_EXECUTABLE || "codex";
 export const MAX_CHAT_LINES = 2000;
 export const MAX_VISIBLE_EVENTS = 8;
+export const CODEX_HOME = process.env.CODEX_HOME?.trim() || join(homedir(), ".codex");
+export const CODEX_CONFIG_FILE = join(CODEX_HOME, "config.toml");
+export const CODEXA_TRUST_STORE_FILE = join(CODEX_HOME, "codexa-trust.json");
 export const SETTINGS_FILE = join(homedir(), ".codexa-settings.json");
 export const MODEL_SPECS_FILE = join(homedir(), ".codexa-model-specs.json");
 
