@@ -5,6 +5,7 @@ import {
   findOutsideWorkspacePaths,
   getPromptWorkspaceGuardMessage,
   getShellWorkspaceGuardMessage,
+  isPathInsideAllowedRoots,
   isPathInsideWorkspace,
   resolveWorkspacePath,
 } from "./workspaceGuard.js";
@@ -73,6 +74,42 @@ test("treats same-path drive letter case differences as inside the workspace", (
     ),
     true,
   );
+});
+
+test("allows configured writable roots outside the locked workspace", () => {
+  const extraRoot = "C:\\Users\\jorda\\Desktop\\Allowed Root";
+
+  assert.equal(
+    isPathInsideAllowedRoots("C:\\Users\\jorda\\Desktop\\Allowed Root\\notes.txt", workspaceRoot, [extraRoot]),
+    true,
+  );
+
+  const promptMessage = getPromptWorkspaceGuardMessage(
+    "Edit \"C:\\Users\\jorda\\Desktop\\Allowed Root\\notes.txt\"",
+    workspaceRoot,
+    [extraRoot],
+  );
+  assert.equal(promptMessage, null);
+
+  const shellMessage = getShellWorkspaceGuardMessage(
+    "type \"C:\\Users\\jorda\\Desktop\\Allowed Root\\notes.txt\"",
+    workspaceRoot,
+    [extraRoot],
+  );
+  assert.equal(shellMessage, null);
+});
+
+test("still blocks paths outside the workspace and configured writable roots", () => {
+  const extraRoot = "C:\\Users\\jorda\\Desktop\\Allowed Root";
+  const message = getPromptWorkspaceGuardMessage(
+    "Edit C:\\Users\\jorda\\Desktop\\Other\\notes.txt",
+    workspaceRoot,
+    [extraRoot],
+  );
+
+  assert(message);
+  assert.match(message, /Allowed writable roots:/i);
+  assert.match(message, /Allowed Root/i);
 });
 
 test("returns a prompt guard message before a run starts", () => {

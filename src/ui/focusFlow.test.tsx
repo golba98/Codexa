@@ -100,7 +100,7 @@ function FocusProbe({ id, label }: { id: string; label: string }) {
   return <Text>{label}:{isFocused ? "focused" : "blurred"}</Text>;
 }
 
-function FocusRoutingHarness({ screen }: { screen: "main" | "model-picker" }) {
+function FocusRoutingHarness({ screen }: { screen: "main" | "model-picker" | "permissions-panel" }) {
   const focusManager = useFocusManager();
 
   React.useEffect(() => {
@@ -111,6 +111,7 @@ function FocusRoutingHarness({ screen }: { screen: "main" | "model-picker" }) {
     <Box flexDirection="column">
       {screen === "main" && <FocusProbe id="composer" label="composer" />}
       {screen === "model-picker" && <FocusProbe id="model-picker" label="model" />}
+      {screen === "permissions-panel" && <FocusProbe id="permissions-panel" label="permissions" />}
     </Box>
   );
 }
@@ -234,6 +235,22 @@ test("focus manager targets the active panel and returns to the composer", async
 
     const output = harness.getOutput();
     assert.match(output, /model:focused/);
+    assert.ok(output.trim().endsWith("composer:focused"));
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("focus manager routes through the permissions panel and back to the composer", async () => {
+  const harness = createInkHarness(<FocusRoutingHarness screen="permissions-panel" />);
+
+  try {
+    await sleep();
+    harness.instance.rerender(<FocusRoutingHarness screen="main" />);
+    await sleep();
+
+    const output = harness.getOutput();
+    assert.match(output, /permissions:focused/);
     assert.ok(output.trim().endsWith("composer:focused"));
   } finally {
     await harness.cleanup();

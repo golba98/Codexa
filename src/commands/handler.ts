@@ -15,6 +15,7 @@ import { AVAILABLE_THEMES } from "../config/settings.js";
 import {
   formatApprovalPolicyLabel,
   formatNetworkAccessLabel,
+  formatPermissionsStatus,
   formatPersonalityLabel,
   formatRuntimeStatus,
   formatSandboxModeLabel,
@@ -53,10 +54,12 @@ export type CommandAction =
   | "workspace_relaunch"
   | "open_auth_panel"
   | "open_theme_picker"
+  | "open_permissions_panel"
   | "themes"
   | "mouse_toggle"
   | "verbose_toggle"
   | "status"
+  | "permissions_status"
   | "runtime_approval_policy"
   | "runtime_sandbox_mode"
   | "runtime_network_access"
@@ -95,6 +98,200 @@ function formatWritableRoots(roots: readonly string[]): string {
   return roots.length > 0
     ? roots.map((root) => `  - ${root}`).join("\n")
     : "  - none";
+}
+
+function handlePolicyCommand(
+  commandPrefix: "/runtime" | "/permissions",
+  arg: string,
+  context: CommandContext,
+  includeExtendedControls = true,
+): CommandResult {
+  const [subcommandRaw, ...restParts] = arg.split(/\s+/);
+  const subcommand = subcommandRaw?.toLowerCase() ?? "";
+  const rest = restParts.join(" ").trim();
+  const normalizedRest = rest.toLowerCase();
+
+  switch (subcommand) {
+    case "approval-policy": {
+      if (!rest || normalizedRest === "status") {
+        return {
+          action: "runtime_approval_policy",
+          message: `Approval policy: configured ${formatApprovalPolicyLabel(context.runtime.policy.approvalPolicy)}; effective ${formatApprovalPolicyLabel(context.resolvedRuntime.policy.approvalPolicy)}.`,
+        };
+      }
+      if (isOneOf(normalizedRest, APPROVAL_POLICY_VALUES)) {
+        const value = normalizedRest as RuntimeApprovalPolicy;
+        return {
+          action: "runtime_approval_policy",
+          value,
+          message: `Approval policy set to ${formatApprovalPolicyLabel(value)}.`,
+        };
+      }
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} approval-policy [status|inherit|untrusted|on-request|never]`,
+      };
+    }
+
+    case "sandbox": {
+      if (!rest || normalizedRest === "status") {
+        return {
+          action: "runtime_sandbox_mode",
+          message: `Sandbox mode: configured ${formatSandboxModeLabel(context.runtime.policy.sandboxMode)}; effective ${formatSandboxModeLabel(context.resolvedRuntime.policy.sandboxMode)}.`,
+        };
+      }
+      if (isOneOf(normalizedRest, SANDBOX_MODE_VALUES)) {
+        const value = normalizedRest as RuntimeSandboxMode;
+        return {
+          action: "runtime_sandbox_mode",
+          value,
+          message: `Sandbox mode set to ${formatSandboxModeLabel(value)}.`,
+        };
+      }
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} sandbox [status|inherit|read-only|workspace-write|danger-full-access]`,
+      };
+    }
+
+    case "network": {
+      if (!rest || normalizedRest === "status") {
+        return {
+          action: "runtime_network_access",
+          message: `Network access: configured ${formatNetworkAccessLabel(context.runtime.policy.networkAccess)}; effective ${formatNetworkAccessLabel(context.resolvedRuntime.policy.networkAccess)}.`,
+        };
+      }
+      if (isOneOf(normalizedRest, NETWORK_ACCESS_VALUES)) {
+        const value: RuntimeNetworkAccess = normalizedRest === "on"
+          ? "enabled"
+          : normalizedRest === "off"
+            ? "disabled"
+            : "inherit";
+        return {
+          action: "runtime_network_access",
+          value,
+          message: `Network access set to ${formatNetworkAccessLabel(value)}.`,
+        };
+      }
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} network [status|inherit|on|off]`,
+      };
+    }
+
+    case "writable-roots": {
+      if (!rest || normalizedRest === "list" || normalizedRest === "status") {
+        return {
+          action: "runtime_writable_roots_list",
+          message: `Writable roots:\n${formatWritableRoots(context.runtime.policy.writableRoots)}`,
+        };
+      }
+
+      if (normalizedRest === "clear") {
+        return {
+          action: "runtime_writable_roots_clear",
+          message: "Writable roots cleared.",
+        };
+      }
+
+      if (normalizedRest.startsWith("add ")) {
+        const pathValue = rest.slice("add".length).trim();
+        if (!pathValue) {
+          return {
+            action: "unknown",
+            message: `Usage: ${commandPrefix} writable-roots add <path>`,
+          };
+        }
+        return {
+          action: "runtime_writable_roots_add",
+          value: pathValue,
+          message: `Writable root added: ${pathValue}`,
+        };
+      }
+
+      if (normalizedRest.startsWith("remove ")) {
+        const pathValue = rest.slice("remove".length).trim();
+        if (!pathValue) {
+          return {
+            action: "unknown",
+            message: `Usage: ${commandPrefix} writable-roots remove <path>`,
+          };
+        }
+        return {
+          action: "runtime_writable_roots_remove",
+          value: pathValue,
+          message: `Writable root removed: ${pathValue}`,
+        };
+      }
+
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} writable-roots [list|add <path>|remove <path>|clear]`,
+      };
+    }
+
+    case "service-tier": {
+      if (!includeExtendedControls) {
+        return {
+          action: "unknown",
+          message: `Unknown ${commandPrefix.slice(1)} command. Use ${commandPrefix} <approval-policy|sandbox|network|writable-roots>.`,
+        };
+      }
+      if (!rest || normalizedRest === "status") {
+        return {
+          action: "runtime_service_tier",
+          message: `Service tier: ${formatServiceTierLabel(context.runtime.policy.serviceTier)}.`,
+        };
+      }
+      if (isOneOf(normalizedRest, SERVICE_TIER_VALUES)) {
+        const value = normalizedRest as RuntimeServiceTier;
+        return {
+          action: "runtime_service_tier",
+          value,
+          message: `Service tier set to ${formatServiceTierLabel(value)}.`,
+        };
+      }
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} service-tier [status|flex|fast]`,
+      };
+    }
+
+    case "personality": {
+      if (!includeExtendedControls) {
+        return {
+          action: "unknown",
+          message: `Unknown ${commandPrefix.slice(1)} command. Use ${commandPrefix} <approval-policy|sandbox|network|writable-roots>.`,
+        };
+      }
+      if (!rest || normalizedRest === "status") {
+        return {
+          action: "runtime_personality",
+          message: `Personality: ${formatPersonalityLabel(context.runtime.policy.personality)}.`,
+        };
+      }
+      if (isOneOf(normalizedRest, PERSONALITY_VALUES)) {
+        const value = normalizedRest as RuntimePersonality;
+        return {
+          action: "runtime_personality",
+          value,
+          message: `Personality set to ${formatPersonalityLabel(value)}.`,
+        };
+      }
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} personality [status|none|friendly|pragmatic]`,
+      };
+    }
+
+    default:
+      return {
+        action: "unknown",
+        message: includeExtendedControls
+          ? `Unknown ${commandPrefix.slice(1)} command. Use /status or ${commandPrefix} <approval-policy|sandbox|network|writable-roots|service-tier|personality>.`
+          : `Unknown ${commandPrefix.slice(1)} command. Use /permissions <approval-policy|sandbox|network|writable-roots>.`,
+      };
+  }
 }
 
 export function handleCommand(text: string, context: CommandContext): CommandResult | null {
@@ -264,6 +461,25 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
         }),
       };
 
+    case "permissions": {
+      if (!arg) {
+        return { action: "open_permissions_panel" };
+      }
+
+      if (normalizedArg === "status") {
+        return {
+          action: "permissions_status",
+          message: formatPermissionsStatus(
+            context.runtime,
+            context.resolvedRuntime,
+            context.workspace.root,
+          ),
+        };
+      }
+
+      return handlePolicyCommand("/permissions", arg, context, false);
+    }
+
     case "runtime": {
       if (!arg) {
         return {
@@ -274,179 +490,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           }),
         };
       }
-
-      const [subcommandRaw, ...restParts] = arg.split(/\s+/);
-      const subcommand = subcommandRaw?.toLowerCase() ?? "";
-      const rest = restParts.join(" ").trim();
-      const normalizedRest = rest.toLowerCase();
-
-      switch (subcommand) {
-        case "approval-policy": {
-          if (!rest || normalizedRest === "status") {
-            return {
-              action: "runtime_approval_policy",
-              message: `Approval policy: configured ${formatApprovalPolicyLabel(context.runtime.policy.approvalPolicy)}; effective ${formatApprovalPolicyLabel(context.resolvedRuntime.policy.approvalPolicy)}.`,
-            };
-          }
-          if (isOneOf(normalizedRest, APPROVAL_POLICY_VALUES)) {
-            const value = normalizedRest as RuntimeApprovalPolicy;
-            return {
-              action: "runtime_approval_policy",
-              value,
-              message: `Approval policy set to ${formatApprovalPolicyLabel(value)}.`,
-            };
-          }
-          return {
-            action: "unknown",
-            message: "Usage: /runtime approval-policy [status|inherit|untrusted|on-request|never]",
-          };
-        }
-
-        case "sandbox": {
-          if (!rest || normalizedRest === "status") {
-            return {
-              action: "runtime_sandbox_mode",
-              message: `Sandbox mode: configured ${formatSandboxModeLabel(context.runtime.policy.sandboxMode)}; effective ${formatSandboxModeLabel(context.resolvedRuntime.policy.sandboxMode)}.`,
-            };
-          }
-          if (isOneOf(normalizedRest, SANDBOX_MODE_VALUES)) {
-            const value = normalizedRest as RuntimeSandboxMode;
-            return {
-              action: "runtime_sandbox_mode",
-              value,
-              message: `Sandbox mode set to ${formatSandboxModeLabel(value)}.`,
-            };
-          }
-          return {
-            action: "unknown",
-            message: "Usage: /runtime sandbox [status|inherit|read-only|workspace-write|danger-full-access]",
-          };
-        }
-
-        case "network": {
-          if (!rest || normalizedRest === "status") {
-            return {
-              action: "runtime_network_access",
-              message: `Network access: configured ${formatNetworkAccessLabel(context.runtime.policy.networkAccess)}; effective ${formatNetworkAccessLabel(context.resolvedRuntime.policy.networkAccess)}.`,
-            };
-          }
-          if (isOneOf(normalizedRest, NETWORK_ACCESS_VALUES)) {
-            const value: RuntimeNetworkAccess = normalizedRest === "on"
-              ? "enabled"
-              : normalizedRest === "off"
-                ? "disabled"
-                : "inherit";
-            return {
-              action: "runtime_network_access",
-              value,
-              message: `Network access set to ${formatNetworkAccessLabel(value)}.`,
-            };
-          }
-          return {
-            action: "unknown",
-            message: "Usage: /runtime network [status|inherit|on|off]",
-          };
-        }
-
-        case "writable-roots": {
-          if (!rest || normalizedRest === "list" || normalizedRest === "status") {
-            return {
-              action: "runtime_writable_roots_list",
-              message: `Writable roots:\n${formatWritableRoots(context.runtime.policy.writableRoots)}`,
-            };
-          }
-
-          if (normalizedRest === "clear") {
-            return {
-              action: "runtime_writable_roots_clear",
-              message: "Writable roots cleared.",
-            };
-          }
-
-          if (normalizedRest.startsWith("add ")) {
-            const pathValue = rest.slice("add".length).trim();
-            if (!pathValue) {
-              return {
-                action: "unknown",
-                message: "Usage: /runtime writable-roots add <path>",
-              };
-            }
-            return {
-              action: "runtime_writable_roots_add",
-              value: pathValue,
-              message: `Writable root added: ${pathValue}`,
-            };
-          }
-
-          if (normalizedRest.startsWith("remove ")) {
-            const pathValue = rest.slice("remove".length).trim();
-            if (!pathValue) {
-              return {
-                action: "unknown",
-                message: "Usage: /runtime writable-roots remove <path>",
-              };
-            }
-            return {
-              action: "runtime_writable_roots_remove",
-              value: pathValue,
-              message: `Writable root removed: ${pathValue}`,
-            };
-          }
-
-          return {
-            action: "unknown",
-            message: "Usage: /runtime writable-roots [list|add <path>|remove <path>|clear]",
-          };
-        }
-
-        case "service-tier": {
-          if (!rest || normalizedRest === "status") {
-            return {
-              action: "runtime_service_tier",
-              message: `Service tier: ${formatServiceTierLabel(context.runtime.policy.serviceTier)}.`,
-            };
-          }
-          if (isOneOf(normalizedRest, SERVICE_TIER_VALUES)) {
-            const value = normalizedRest as RuntimeServiceTier;
-            return {
-              action: "runtime_service_tier",
-              value,
-              message: `Service tier set to ${formatServiceTierLabel(value)}.`,
-            };
-          }
-          return {
-            action: "unknown",
-            message: "Usage: /runtime service-tier [status|flex|fast]",
-          };
-        }
-
-        case "personality": {
-          if (!rest || normalizedRest === "status") {
-            return {
-              action: "runtime_personality",
-              message: `Personality: ${formatPersonalityLabel(context.runtime.policy.personality)}.`,
-            };
-          }
-          if (isOneOf(normalizedRest, PERSONALITY_VALUES)) {
-            const value = normalizedRest as RuntimePersonality;
-            return {
-              action: "runtime_personality",
-              value,
-              message: `Personality set to ${formatPersonalityLabel(value)}.`,
-            };
-          }
-          return {
-            action: "unknown",
-            message: "Usage: /runtime personality [status|none|friendly|pragmatic]",
-          };
-        }
-
-        default:
-          return {
-            action: "unknown",
-            message: "Unknown runtime command. Use /status or /runtime <approval-policy|sandbox|network|writable-roots|service-tier|personality>.",
-          };
-      }
+      return handlePolicyCommand("/runtime", arg, context, true);
     }
 
     case "login":
@@ -486,7 +530,14 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "                     suggest = read-only-style prompting, auto-edit = file edits, full-auto = strongest autonomy",
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
           "  /status            Show the effective runtime configuration",
+          "  /permissions       Open or update permissions and sandbox controls",
+          "  /permissions status",
+          "  /permissions approval-policy [status|inherit|untrusted|on-request|never]",
+          "  /permissions sandbox [status|inherit|read-only|workspace-write|danger-full-access]",
+          "  /permissions network [status|inherit|on|off]",
+          "  /permissions writable-roots [list|add <path>|remove <path>|clear]",
           "  /runtime ...       Inspect or update runtime policy controls",
+          "                     Compatibility surface; /permissions is the primary entry point",
           "  /runtime approval-policy [status|inherit|untrusted|on-request|never]",
           "  /runtime sandbox [status|inherit|read-only|workspace-write|danger-full-access]",
           "  /runtime network [status|inherit|on|off]",

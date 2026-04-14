@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   DEFAULT_RUNTIME_CONFIG,
   addWritableRoot,
+  buildRuntimeSummary,
   buildCodexConfigOverrides,
   buildCodexExecArgs,
+  formatPermissionsStatus,
   formatRuntimeStatus,
   normalizeRuntimeConfig,
   removeWritableRoot,
@@ -81,12 +83,13 @@ test("builds deterministic codex config overrides and exec args", () => {
       personality: "pragmatic",
     },
   }));
+  const writableRoot = resolved.policy.writableRoots[0];
 
   assert.deepEqual(buildCodexConfigOverrides(resolved), [
     "reasoning.effort=medium",
     "approval_policy=never",
     "sandbox_workspace_write.network_access=true",
-    "sandbox_workspace_write.writable_roots=[\"C:/Repo/extra\"]",
+    `sandbox_workspace_write.writable_roots=${JSON.stringify([writableRoot])}`,
     "service_tier=fast",
     "personality=pragmatic",
   ]);
@@ -108,13 +111,44 @@ test("builds deterministic codex config overrides and exec args", () => {
     "--config",
     "sandbox_workspace_write.network_access=true",
     "--config",
-    "sandbox_workspace_write.writable_roots=[\"C:/Repo/extra\"]",
+    `sandbox_workspace_write.writable_roots=${JSON.stringify([writableRoot])}`,
     "--config",
     "service_tier=fast",
     "--config",
     "personality=pragmatic",
     "-",
   ]);
+});
+
+test("builds runtime summary with network and writable-root indicators", () => {
+  const summary = buildRuntimeSummary(resolveRuntimeConfig(normalizeRuntimeConfig({
+    policy: {
+      networkAccess: "enabled",
+      writableRoots: ["C:/Repo/extra"],
+    },
+  })));
+
+  assert.equal(summary.networkLabel, "Net: on");
+  assert.equal(summary.writableRootsLabel, "Roots: 1");
+});
+
+test("formats permissions status with configured and effective policy", () => {
+  const runtime = normalizeRuntimeConfig({
+    mode: "suggest",
+    policy: {
+      approvalPolicy: "inherit",
+      sandboxMode: "inherit",
+      networkAccess: "enabled",
+      writableRoots: ["C:/Repo/extra"],
+    },
+  });
+  const status = formatPermissionsStatus(runtime, resolveRuntimeConfig(runtime), "C:\\Workspace");
+
+  assert.match(status, /Permissions status:/);
+  assert.match(status, /Approval policy: configured Inherit; effective On request/);
+  assert.match(status, /Network access: configured Enabled; effective Enabled/);
+  assert.match(status, /Configured:/);
+  assert.match(status, /Effective:/);
 });
 
 test("formats runtime status with effective policy details", () => {

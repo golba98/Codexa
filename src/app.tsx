@@ -19,6 +19,9 @@ import {
   normalizeReasoningForModel,
 } from "./config/settings.js";
 import {
+  AVAILABLE_APPROVAL_POLICIES,
+  AVAILABLE_NETWORK_ACCESS_VALUES,
+  AVAILABLE_SANDBOX_MODES,
   addWritableRoot,
   buildRuntimeSummary,
   clearWritableRoots,
@@ -89,7 +92,10 @@ import { measureBottomComposerRows, MemoizedBottomComposer } from "./ui/BottomCo
 import { useTerminalViewport } from "./ui/layout.js";
 import { ModelReasoningPicker } from "./ui/ModelReasoningPicker.js";
 import { ModePicker } from "./ui/ModePicker.js";
+import { PermissionsPanel, type PermissionsPanelAction } from "./ui/PermissionsPanel.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
+import { SelectionPanel } from "./ui/SelectionPanel.js";
+import { TextEntryPanel } from "./ui/TextEntryPanel.js";
 import { ThemePicker } from "./ui/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
 import { ThemeProvider, THEMES } from "./ui/theme.js";
@@ -109,6 +115,12 @@ let nextTurnId = 0;
 const LIVE_UPDATE_FLUSH_MS = 50;
 const PROGRESS_ONLY_FLUSH_MS = 150;
 const MAX_PENDING_PROGRESS_LINES = 5;
+
+function formatWritableRootsMessage(roots: readonly string[]): string {
+  return roots.length > 0
+    ? roots.map((root) => `  - ${root}`).join("\n")
+    : "  - none";
+}
 
 function createEventId(): number {
   return nextEventId++;
@@ -207,6 +219,10 @@ export function App() {
   const { provider: backend, model, mode, reasoningLevel } = runtimeConfig;
   const resolvedRuntimeConfig = useMemo(() => resolveRuntimeConfig(runtimeConfig), [runtimeConfig]);
   const runtimeSummary = useMemo(() => buildRuntimeSummary(resolvedRuntimeConfig), [resolvedRuntimeConfig]);
+  const allowedWritableRoots = useMemo(
+    () => resolvedRuntimeConfig.policy.writableRoots,
+    [resolvedRuntimeConfig],
+  );
   const currentModelSpec = modelSpecs[model] ?? createLoadingModelSpec(model);
   const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
 
@@ -656,6 +672,81 @@ export function App() {
     setScreen("auth-panel");
   }, [appendSystemEvent, busy]);
 
+  const openPermissionsPanel = useCallback(() => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    setScreen("permissions-panel");
+  }, [appendSystemEvent, busy]);
+
+  const openPermissionsApprovalPicker = useCallback(() => {
+    setScreen("permissions-approval-picker");
+  }, []);
+
+  const openPermissionsSandboxPicker = useCallback(() => {
+    setScreen("permissions-sandbox-picker");
+  }, []);
+
+  const openPermissionsNetworkPicker = useCallback(() => {
+    setScreen("permissions-network-picker");
+  }, []);
+
+  const openPermissionsAddWritableRoot = useCallback(() => {
+    setScreen("permissions-add-writable-root");
+  }, []);
+
+  const openPermissionsRemoveWritableRoot = useCallback(() => {
+    if (runtimeConfig.policy.writableRoots.length === 0) {
+      appendSystemEvent("Runtime policy", "No writable roots are configured.");
+      return;
+    }
+
+    setScreen("permissions-remove-writable-root");
+  }, [appendSystemEvent, runtimeConfig.policy.writableRoots.length]);
+
+  const handlePermissionsPanelAction = useCallback((action: PermissionsPanelAction) => {
+    switch (action) {
+      case "approval-policy":
+        openPermissionsApprovalPicker();
+        return;
+      case "sandbox":
+        openPermissionsSandboxPicker();
+        return;
+      case "network":
+        openPermissionsNetworkPicker();
+        return;
+      case "writable-roots-summary":
+        appendSystemEvent(
+          "Runtime policy",
+          `Writable roots:\n${formatWritableRootsMessage(runtimeConfig.policy.writableRoots)}`,
+        );
+        return;
+      case "writable-roots-add":
+        openPermissionsAddWritableRoot();
+        return;
+      case "writable-roots-remove":
+        openPermissionsRemoveWritableRoot();
+        return;
+      case "writable-roots-clear":
+        clearWritableRootsWithNotice();
+        return;
+      default:
+        return;
+    }
+  }, [
+    appendSystemEvent,
+    clearWritableRootsWithNotice,
+    openPermissionsAddWritableRoot,
+    openPermissionsApprovalPicker,
+    openPermissionsNetworkPicker,
+    openPermissionsRemoveWritableRoot,
+    openPermissionsSandboxPicker,
+    runtimeConfig.policy.writableRoots,
+  ]);
+
   const resetComposer = useCallback(() => {
     dispatchSession({ type: "RESET_INPUT" });
   }, [dispatchSession]);
@@ -851,7 +942,7 @@ export function App() {
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();
-    const guardMessage = getShellWorkspaceGuardMessage(safeCommand, workspaceRoot);
+    const guardMessage = getShellWorkspaceGuardMessage(safeCommand, workspaceRoot, allowedWritableRoots);
     if (guardMessage) {
       appendErrorEvent("Shell command blocked", guardMessage);
       return;
@@ -971,7 +1062,7 @@ export function App() {
 
       dispatchSession({ type: "FINALIZE_SHELL", shellId, finalEvent });
     });
-  }, [appendErrorEvent, dispatchSession, focusManager, workspaceRoot]);
+  }, [allowedWritableRoots, appendErrorEvent, dispatchSession, focusManager, workspaceRoot]);
 
   const handleWorkspaceRelaunch = useCallback((targetPath: string) => {
     const gate = guardWorkspaceRelaunch(busy);
@@ -1408,6 +1499,11 @@ export function App() {
             appendSystemEvent("Runtime status", commandResult.message);
           }
           return;
+        case "permissions_status":
+          if (commandResult.message) {
+            appendSystemEvent("Permissions", commandResult.message);
+          }
+          return;
         case "runtime_approval_policy":
           if (commandResult.value) {
             setApprovalPolicyWithNotice(commandResult.value as RuntimeApprovalPolicy);
@@ -1498,6 +1594,9 @@ export function App() {
         case "open_theme_picker":
           openThemePicker();
           return;
+        case "open_permissions_panel":
+          openPermissionsPanel();
+          return;
         case "open_auth_panel":
           openAuthPanel();
           return;
@@ -1547,13 +1646,14 @@ export function App() {
       }
     }
 
-    const workspaceGuardMessage = getPromptWorkspaceGuardMessage(value, workspaceRoot);
+    const workspaceGuardMessage = getPromptWorkspaceGuardMessage(value, workspaceRoot, allowedWritableRoots);
     if (workspaceGuardMessage) {
       appendErrorEvent("Workspace boundary", workspaceGuardMessage);
       return;
     }
     startPromptRun(value, value);
   }, [
+    allowedWritableRoots,
     appendErrorEvent,
     appendSystemEvent,
     busy,
@@ -1572,6 +1672,7 @@ export function App() {
     openBackendPicker,
     openModePicker,
     openModelPicker,
+    openPermissionsPanel,
     openReasoningPicker,
     refreshAuthStatus,
     resetComposer,
@@ -1657,6 +1758,107 @@ export function App() {
                     void refreshAuthStatus(false);
                   }}
                   onClose={() => setScreen("main")}
+                />
+              )}
+
+              {screen === "permissions-panel" && (
+                <PermissionsPanel
+                  runtime={runtimeConfig}
+                  resolvedRuntime={resolvedRuntimeConfig}
+                  onSelect={handlePermissionsPanelAction}
+                  onCancel={() => setScreen("main")}
+                />
+              )}
+
+              {screen === "permissions-approval-picker" && (
+                <SelectionPanel
+                  focusId={FOCUS_IDS.permissionsApprovalPicker}
+                  title="Approval Policy"
+                  subtitle="Choose how Codexa should handle approval prompts."
+                  items={AVAILABLE_APPROVAL_POLICIES.map((item) => ({
+                    label: item.id === runtimeConfig.policy.approvalPolicy
+                      ? `${item.label}  ✓`
+                      : item.label,
+                    value: item.id,
+                  }))}
+                  onSelect={(value) => {
+                    setApprovalPolicyWithNotice(value as RuntimeApprovalPolicy);
+                    setScreen("permissions-panel");
+                  }}
+                  onCancel={() => setScreen("permissions-panel")}
+                />
+              )}
+
+              {screen === "permissions-sandbox-picker" && (
+                <SelectionPanel
+                  focusId={FOCUS_IDS.permissionsSandboxPicker}
+                  title="Sandbox Mode"
+                  subtitle="Choose the effective filesystem sandbox for future runs."
+                  items={AVAILABLE_SANDBOX_MODES.map((item) => ({
+                    label: item.id === runtimeConfig.policy.sandboxMode
+                      ? `${item.label}  ✓`
+                      : item.label,
+                    value: item.id,
+                  }))}
+                  onSelect={(value) => {
+                    setSandboxModeWithNotice(value as RuntimeSandboxMode);
+                    setScreen("permissions-panel");
+                  }}
+                  onCancel={() => setScreen("permissions-panel")}
+                />
+              )}
+
+              {screen === "permissions-network-picker" && (
+                <SelectionPanel
+                  focusId={FOCUS_IDS.permissionsNetworkPicker}
+                  title="Network Access"
+                  subtitle="Choose whether network access is enabled for future runs."
+                  items={AVAILABLE_NETWORK_ACCESS_VALUES.map((item) => ({
+                    label: item.id === runtimeConfig.policy.networkAccess
+                      ? `${item.label}  ✓`
+                      : item.label,
+                    value: item.id,
+                  }))}
+                  onSelect={(value) => {
+                    setNetworkAccessWithNotice(value as RuntimeNetworkAccess);
+                    setScreen("permissions-panel");
+                  }}
+                  onCancel={() => setScreen("permissions-panel")}
+                />
+              )}
+
+              {screen === "permissions-add-writable-root" && (
+                <TextEntryPanel
+                  focusId={FOCUS_IDS.permissionsAddWritableRoot}
+                  title="Add Writable Root"
+                  subtitle="Enter an absolute path or a path relative to the locked workspace."
+                  placeholder="relative\\or\\absolute\\path"
+                  onSubmit={(value) => {
+                    if (!value.trim()) {
+                      appendSystemEvent("Runtime policy", "Writable root path cannot be empty.");
+                      return;
+                    }
+                    addWritableRootWithNotice(value);
+                    setScreen("permissions-panel");
+                  }}
+                  onCancel={() => setScreen("permissions-panel")}
+                />
+              )}
+
+              {screen === "permissions-remove-writable-root" && (
+                <SelectionPanel
+                  focusId={FOCUS_IDS.permissionsRemoveWritableRoot}
+                  title="Remove Writable Root"
+                  subtitle="Select a configured writable root to remove."
+                  items={runtimeConfig.policy.writableRoots.map((root) => ({
+                    label: root,
+                    value: root,
+                  }))}
+                  onSelect={(value) => {
+                    removeWritableRootWithNotice(value);
+                    setScreen("permissions-panel");
+                  }}
+                  onCancel={() => setScreen("permissions-panel")}
                 />
               )}
 
