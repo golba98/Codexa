@@ -50,6 +50,14 @@ function sleep(ms = 50): Promise<void> {
 }
 
 async function renderHeader(cols: number, authState: CodexAuthState): Promise<string> {
+  return renderHeaderWithWorkspace(cols, authState, "C:\\Development\\1-JavaScript\\13-Custom CLI");
+}
+
+async function renderHeaderWithWorkspace(
+  cols: number,
+  authState: CodexAuthState,
+  workspaceRoot: string,
+): Promise<string> {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = cols;
@@ -63,7 +71,7 @@ async function renderHeader(cols: number, authState: CodexAuthState): Promise<st
     <ThemeProvider theme="purple">
       <TopHeader
         authState={authState}
-        workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
+        workspaceRoot={workspaceRoot}
         layout={createLayoutSnapshot(cols, 40)}
         runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
       />
@@ -91,15 +99,27 @@ test("full mode renders wordmark at wide terminal", async () => {
   assert.match(output, /[█╔╗╚╝═║]/);
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
+  assert.match(output, /Workspace:\s*C:\\Development\\1-JavaScript\\13-Custom CLI/);
+  assert.doesNotMatch(output, /Runtime:/);
+  assert.doesNotMatch(output, /gpt-5\.4/i);
+  assert.doesNotMatch(output, /Net:\s*off/i);
+  assert.doesNotMatch(output, /Roots:\s*0/i);
+  assert.doesNotMatch(output, /FULL AUTO/i);
+  assert.doesNotMatch(output, /Workspace write/i);
+  assert.doesNotMatch(output, /On request/i);
 });
 
 test("compact mode renders version and auth", async () => {
   const output = await renderHeader(105, "authenticated");
 
   assert.match(output, new RegExp(`v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
-  assert.match(output, /Auth/);
-  assert.match(output, /gpt-5\.4/i);
-  assert.match(output, /Net:\s*off/i);
+  assert.match(output, /Authenticated/);
+  assert.match(output, /C:\\Development\\1-JavaScript\\13-Custom CLI/);
+  assert.doesNotMatch(output, /Runtime:/);
+  assert.doesNotMatch(output, /gpt-5\.4/i);
+  assert.doesNotMatch(output, /Net:\s*off/i);
+  assert.doesNotMatch(output, /Roots:\s*0/i);
+  assert.doesNotMatch(output, /FULL AUTO/i);
   assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
 });
 
@@ -109,6 +129,7 @@ test("micro mode renders version and auth", async () => {
   assert.match(output, /Codex/);
   assert.match(output, new RegExp(`v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
+  assert.doesNotMatch(output, /gpt-5\.4/i);
 });
 
 test("full mode always shows wordmark regardless of activity", async () => {
@@ -117,6 +138,19 @@ test("full mode always shows wordmark regardless of activity", async () => {
   assert.match(output, /[█╔╗╚╝═║]/);
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
-  assert.match(output, /Net:\s*off/i);
-  assert.match(output, /Roots:\s*0/i);
+  assert.match(output, /Workspace:\s*C:\\Development\\1-JavaScript\\13-Custom CLI/);
+  assert.doesNotMatch(output, /Runtime:/);
+});
+
+test("compact mode preserves workspace truncation without runtime text", async () => {
+  const output = await renderHeaderWithWorkspace(
+    60,
+    "authenticated",
+    "C:\\Development\\1-JavaScript\\13-Custom CLI\\packages\\really-long-subfolder\\nested\\workspace",
+  );
+
+  assert.match(output, /\.\.\. /);
+  assert.match(output, /nested\\workspace/);
+  assert.doesNotMatch(output, /packages\\really-long-subfolder/);
+  assert.doesNotMatch(output, /gpt-5\.4/i);
 });
