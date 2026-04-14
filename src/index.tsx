@@ -1,8 +1,7 @@
 import React from "react";
 import { render, type Instance } from "ink";
 import { App } from "./app.js";
-import { resolveEffectiveSettings, type ResolvedAppBootstrap } from "./config/effectiveSettings.js";
-import { normalizeWorkspaceRoot } from "./core/workspaceRoot.js";
+import { parseLaunchArgs, type LaunchArgs } from "./config/launchArgs.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 
@@ -69,14 +68,9 @@ export interface StartAppDependencies {
   stderr: Pick<NodeJS.WriteStream, "write">;
   env: Record<string, string | undefined>;
   platform: NodeJS.Platform;
-  argv?: string[];
+  argv: string[];
   renderApp: (node: React.ReactElement) => RenderHandle;
   registerExitHandler: (handler: () => void) => void;
-  resolveBootstrapSettings?: (options: {
-    workspaceRoot: string;
-    env: Record<string, string | undefined>;
-    launchArgs: string[];
-  }) => ResolvedAppBootstrap;
 }
 
 export interface StartAppResult {
@@ -103,12 +97,11 @@ export function startApp({
   stderr = process.stderr,
   env = process.env,
   platform = process.platform,
-  argv = [],
+  argv = process.argv.slice(2),
   renderApp = render,
   registerExitHandler = (handler) => {
     process.on("exit", handler);
   },
-  resolveBootstrapSettings = resolveEffectiveSettings,
 }: Partial<StartAppDependencies> = {}): StartAppResult {
   if (activeRoot) {
     return { started: true, exitCode: 0 };
@@ -126,6 +119,13 @@ export function startApp({
     return { started: false, exitCode: 1 };
   }
 
+  const parsedLaunchArgs = parseLaunchArgs(argv);
+  if (!parsedLaunchArgs.ok) {
+    stderr.write(`${parsedLaunchArgs.error}\n`);
+    return { started: false, exitCode: 1 };
+  }
+  const launchArgs: LaunchArgs = parsedLaunchArgs.value;
+
   // Clear the screen and move cursor to home before rendering so no stale
   // content from a previous process (e.g. bun --watch restart) ghosts above
   // the new frame.  We stay in the normal screen buffer (no \x1b[?1049h) to
@@ -134,13 +134,6 @@ export function startApp({
   // It is managed exclusively by the React app (app.tsx) and defaults to OFF
   // so native terminal drag-selection and copy work without any special steps.
   stdout.write(`${SET_TERMINAL_TITLE}${HARD_REPAINT_SEQUENCE}\x1b[?2004h`);
-
-  const workspaceRoot = normalizeWorkspaceRoot(env.CODEX_WORKSPACE_ROOT?.trim() || process.cwd());
-  const bootstrapSettings = resolveBootstrapSettings({
-    workspaceRoot,
-    env,
-    launchArgs: argv,
-  });
 
   let cleanupDone = false;
   let repaintArmed = false;
@@ -324,7 +317,7 @@ export function startApp({
   process.on("uncaughtException", handleFatal);
   process.on("unhandledRejection", handleFatal);
 
-  renderHandle = renderApp(<App bootstrap={bootstrapSettings} />);
+  renderHandle = renderApp(<App launchArgs={launchArgs} />);
 
   // Resolve the real Ink class instance to get access to lastOutput,
   // onRender, calculateLayout, etc.  Gracefully degrades to null in tests.
@@ -351,7 +344,7 @@ export function startApp({
 const isMainModule = Boolean((import.meta as ImportMeta & { main?: boolean }).main);
 
 if (isMainModule) {
-  const result = startApp({ argv: process.argv.slice(2) });
+  const result = startApp();
   if (!result.started) {
     process.exitCode = result.exitCode;
   }

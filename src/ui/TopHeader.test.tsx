@@ -4,6 +4,8 @@ import React from "react";
 import { PassThrough } from "node:stream";
 import { render } from "ink";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
+import { buildRuntimeSummary } from "../config/runtimeConfig.js";
+import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { ThemeProvider } from "./theme.js";
 import { TopHeader } from "./TopHeader.js";
@@ -63,6 +65,7 @@ async function renderHeader(cols: number, authState: CodexAuthState): Promise<st
         authState={authState}
         workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
         layout={createLayoutSnapshot(cols, 40)}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
       />
     </ThemeProvider>,
     {
@@ -91,25 +94,29 @@ test("full mode renders wordmark at wide terminal", async () => {
 });
 
 test("compact mode renders version and auth", async () => {
-  const output = await renderHeader(80, "authenticated");
+  const output = await renderHeader(105, "authenticated");
 
-  assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
-  assert.match(output, /Authenticated/);
+  assert.match(output, new RegExp(`v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.match(output, /Auth/);
+  assert.match(output, /gpt-5\.4/i);
+  assert.match(output, /Net:\s*off/i);
   assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
 });
 
 test("micro mode renders version and auth", async () => {
   const output = await renderHeader(50, "authenticated");
 
-  assert.match(output, /Codexa/);
-  assert.match(output, /Authenticat/);
+  assert.match(output, /Codex/);
+  assert.match(output, new RegExp(`v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
 });
 
 test("full mode always shows wordmark regardless of activity", async () => {
-  const output = await renderHeader(130, "authenticated");
+  const output = await renderHeader(180, "authenticated");
 
   assert.match(output, /[█╔╗╚╝═║]/);
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
+  assert.match(output, /Net:\s*off/i);
+  assert.match(output, /Roots:\s*0/i);
 });

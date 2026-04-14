@@ -1,10 +1,8 @@
 import type {
   AuthPreference,
   AvailableBackend,
-  AvailableMode,
-  AvailableModel,
-  ReasoningLevel,
 } from "../config/settings.js";
+import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import type { RunActivitySummary, RunFileActivity } from "../core/workspaceActivity.js";
 
 export type Screen =
@@ -14,8 +12,13 @@ export type Screen =
   | "backend-picker"
   | "auth-panel"
   | "reasoning-picker"
-  | "permissions-picker"
-  | "theme-picker";
+  | "theme-picker"
+  | "permissions-panel"
+  | "permissions-approval-picker"
+  | "permissions-sandbox-picker"
+  | "permissions-network-picker"
+  | "permissions-add-writable-root"
+  | "permissions-remove-writable-root";
 
 // ─── UI State Machine ─────────────────────────────────────────────────────────
 // Drives all visual decisions: border colors, input persona, turn opacity.
@@ -36,15 +39,6 @@ export type UIState =
 /** Derive the legacy busy flag from UIState for guard functions. */
 export function isBusy(state: UIState): boolean {
   return state.kind === "THINKING" || state.kind === "RESPONDING" || state.kind === "SHELL_RUNNING";
-}
-
-export interface SessionSettingsSnapshot {
-  backend: AvailableBackend;
-  model: AvailableModel;
-  mode: AvailableMode;
-  reasoningLevel: ReasoningLevel;
-  layoutStyle: string;
-  authPreference: AuthPreference;
 }
 
 export interface TimelineBaseEvent {
@@ -91,8 +85,7 @@ export interface RunEvent extends TimelineBaseEvent {
   type: "run";
   backendId: AvailableBackend;
   backendLabel: string;
-  mode: AvailableMode;
-  model: AvailableModel;
+  runtime: ResolvedRuntimeConfig;
   prompt: string;
   thinkingLines: string[];
   status: "running" | "completed" | "failed" | "canceled";

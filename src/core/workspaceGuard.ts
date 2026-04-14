@@ -65,6 +65,25 @@ function normalizeComparisonPath(pathValue: string, style: PathStyle): string {
   return style === "windows" ? normalized.toLowerCase() : normalized;
 }
 
+function normalizeAllowedRoots(workspaceRoot: string, allowedRoots: readonly string[] = []): string[] {
+  const normalizedWorkspace = normalizeWorkspaceRoot(workspaceRoot);
+  const roots = [normalizedWorkspace, ...allowedRoots];
+  const seen = new Set<string>();
+  const normalizedRoots: string[] = [];
+
+  for (const root of roots) {
+    const style = detectPathStyle(root);
+    if (!style) continue;
+    const normalizedRoot = normalizeAbsolutePath(root, style);
+    const comparisonKey = normalizeComparisonPath(normalizedRoot, style);
+    if (seen.has(comparisonKey)) continue;
+    seen.add(comparisonKey);
+    normalizedRoots.push(normalizedRoot);
+  }
+
+  return normalizedRoots;
+}
+
 export function resolveWorkspacePath(pathValue: string, workspaceRoot: string): string {
   const trimmed = stripWrappingQuotes(pathValue.trim());
   const workspaceStyle = detectPathStyle(workspaceRoot) ?? "windows";
@@ -80,25 +99,43 @@ export function resolveWorkspacePath(pathValue: string, workspaceRoot: string): 
 
 export function isPathInsideWorkspace(pathValue: string, workspaceRoot: string): boolean {
   const normalizedWorkspace = normalizeWorkspaceRoot(workspaceRoot);
-  const workspaceStyle = detectPathStyle(normalizedWorkspace) ?? "windows";
-  const explicitStyle = detectPathStyle(stripWrappingQuotes(pathValue.trim()));
+  return isPathInsideAllowedRoots(pathValue, normalizedWorkspace);
+}
 
-  if (explicitStyle && explicitStyle !== workspaceStyle) {
+export function isPathInsideAllowedRoots(
+  pathValue: string,
+  workspaceRoot: string,
+  allowedRoots: readonly string[] = [],
+): boolean {
+  const normalizedWorkspace = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedRoots = normalizeAllowedRoots(normalizedWorkspace, allowedRoots);
+  const resolvedTarget = resolveWorkspacePath(pathValue, normalizedWorkspace);
+  const targetStyle = detectPathStyle(resolvedTarget);
+
+  if (!targetStyle) {
     return false;
   }
 
-  const pathApi = getPathApi(workspaceStyle);
-  const workspaceForComparison = normalizeComparisonPath(normalizedWorkspace, workspaceStyle);
-  const targetForComparison = normalizeComparisonPath(
-    resolveWorkspacePath(pathValue, normalizedWorkspace),
-    workspaceStyle,
-  );
-  const relativePath = pathApi.relative(workspaceForComparison, targetForComparison);
+  for (const root of normalizedRoots) {
+    const rootStyle = detectPathStyle(root);
+    if (!rootStyle || rootStyle !== targetStyle) {
+      continue;
+    }
 
-  return (
-    relativePath === "" ||
-    (!relativePath.startsWith("..") && !pathApi.isAbsolute(relativePath))
-  );
+    const pathApi = getPathApi(rootStyle);
+    const rootForComparison = normalizeComparisonPath(root, rootStyle);
+    const targetForComparison = normalizeComparisonPath(resolvedTarget, rootStyle);
+    const relativePath = pathApi.relative(rootForComparison, targetForComparison);
+
+    if (
+      relativePath === "" ||
+      (!relativePath.startsWith("..") && !pathApi.isAbsolute(relativePath))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export function extractExplicitPathReferences(text: string): string[] {
@@ -142,13 +179,14 @@ export function extractExplicitPathReferences(text: string): string[] {
 export function findOutsideWorkspacePaths(
   text: string,
   workspaceRoot: string,
+  allowedRoots: readonly string[] = [],
 ): WorkspacePathViolation[] {
   const violations: WorkspacePathViolation[] = [];
   const seen = new Set<string>();
   const workspaceStyle = detectPathStyle(workspaceRoot) ?? "windows";
 
   for (const rawPath of extractExplicitPathReferences(text)) {
-    if (isPathInsideWorkspace(rawPath, workspaceRoot)) {
+    if (isPathInsideAllowedRoots(rawPath, workspaceRoot, allowedRoots)) {
       continue;
     }
 
@@ -177,21 +215,35 @@ function formatOutsidePathBlockMessage(
   heading: string,
   workspaceRoot: string,
   violations: WorkspacePathViolation[],
+  allowedRoots: readonly string[] = [],
 ): string {
   const normalizedWorkspace = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedAllowedRoots = normalizeAllowedRoots(normalizedWorkspace, allowedRoots)
+    .filter((root) => normalizeComparisonPath(root, detectPathStyle(root) ?? "windows") !== normalizeComparisonPath(normalizedWorkspace, detectPathStyle(normalizedWorkspace) ?? "windows"));
   const paths = violations.map((item) => `  - ${item.normalizedPath}`).join("\n");
+  const extraRootsBlock = normalizedAllowedRoots.length > 0
+    ? [
+      "Allowed writable roots:",
+      ...normalizedAllowedRoots.map((root) => `  - ${root}`),
+    ].join("\n")
+    : null;
 
   return [
     heading,
     `Locked workspace: ${normalizedWorkspace}`,
+    extraRootsBlock,
     "Outside path references:",
     paths,
     "Use relative paths inside this workspace, or relaunch the CLI from the folder you want to edit.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
-export function getPromptWorkspaceGuardMessage(prompt: string, workspaceRoot: string): string | null {
-  const violations = findOutsideWorkspacePaths(prompt, workspaceRoot);
+export function getPromptWorkspaceGuardMessage(
+  prompt: string,
+  workspaceRoot: string,
+  allowedRoots: readonly string[] = [],
+): string | null {
+  const violations = findOutsideWorkspacePaths(prompt, workspaceRoot, allowedRoots);
   if (violations.length === 0) {
     return null;
   }
@@ -200,10 +252,15 @@ export function getPromptWorkspaceGuardMessage(prompt: string, workspaceRoot: st
     "Run blocked: this session can only work inside the locked workspace.",
     workspaceRoot,
     violations,
+    allowedRoots,
   );
 }
 
-export function getShellWorkspaceGuardMessage(command: string, workspaceRoot: string): string | null {
+export function getShellWorkspaceGuardMessage(
+  command: string,
+  workspaceRoot: string,
+  allowedRoots: readonly string[] = [],
+): string | null {
   if (containsDirectoryNavigationCommand(command)) {
     return [
       "Shell command blocked: this session is locked to the launch folder.",
@@ -212,7 +269,7 @@ export function getShellWorkspaceGuardMessage(command: string, workspaceRoot: st
     ].join("\n");
   }
 
-  const violations = findOutsideWorkspacePaths(command, workspaceRoot);
+  const violations = findOutsideWorkspacePaths(command, workspaceRoot, allowedRoots);
   if (violations.length === 0) {
     return null;
   }
@@ -221,5 +278,6 @@ export function getShellWorkspaceGuardMessage(command: string, workspaceRoot: st
     "Shell command blocked: it references paths outside the locked workspace.",
     workspaceRoot,
     violations,
+    allowedRoots,
   );
 }

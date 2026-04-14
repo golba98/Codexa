@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { getLegacyRuntimePolicyForMode, type AvailableMode } from "../config/settings.js";
+import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import { formatCodexLaunchError, spawnCodexProcess } from "./codexExecutable.js";
 import { prepareCodexExecLaunch } from "./codexLaunch.js";
 
@@ -11,9 +11,7 @@ export interface CodexHandlers {
 
 export function streamCodex(
   prompt: string,
-  model: string,
-  mode: string,
-  reasoningLevel: string,
+  runtime: ResolvedRuntimeConfig,
   workspaceRoot: string,
   handlers: CodexHandlers,
 ): () => void {
@@ -33,12 +31,10 @@ export function streamCodex(
 
   void prepareCodexExecLaunch(
     {
-          model,
-          cwd: workspaceRoot,
-          runtimePolicy: getLegacyRuntimePolicyForMode(mode as AvailableMode),
-          reasoningLevel,
-          structuredOutput: false,
-        },
+      runtime,
+      cwd: workspaceRoot,
+      structuredOutput: false,
+    },
     import.meta.url,
   )
     .then((launchPlan) => {
@@ -52,7 +48,11 @@ export function streamCodex(
         return;
       }
 
-      proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
+      proc = spawnCodexProcess(
+        launchPlan.executable,
+        launchPlan.args,
+        { stdio: ["pipe", "pipe", "pipe"] },
+      );
 
       proc.stdin?.write(prompt);
       proc.stdin?.end();

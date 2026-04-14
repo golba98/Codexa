@@ -21,6 +21,7 @@ export interface ResolveLaunchContextOptions {
   packageRoot?: string;
   execPath?: string;
   hasBunRuntime?: boolean;
+  forwardArgs?: string[];
 }
 
 export interface WorkspaceCommandContext {
@@ -81,6 +82,18 @@ function getDevRelaunchExecutable(execPath: string, hasBunRuntime: boolean): str
   return "bun";
 }
 
+function buildInstalledRelaunchArgs(launcherScriptPath: string, forwardArgs: readonly string[]): string[] {
+  return [launcherScriptPath, ...forwardArgs];
+}
+
+function buildDevRelaunchArgs(packageRoot: string, forwardArgs: readonly string[]): string[] {
+  const args = ["run", "--silent", join(packageRoot, "src", "index.tsx")];
+  if (forwardArgs.length > 0) {
+    args.push("--", ...forwardArgs);
+  }
+  return args;
+}
+
 export function resolveLaunchContext(options: ResolveLaunchContextOptions = {}): LaunchContext {
   const env = options.env ?? process.env;
   const workspaceRoot = normalizeWorkspaceRoot(
@@ -95,6 +108,7 @@ export function resolveLaunchContext(options: ResolveLaunchContextOptions = {}):
   const envRelaunchArgs = parseRelaunchArgs(env[ENV_KEYS.relaunchArgs]);
   const execPath = options.execPath ?? process.execPath;
   const hasBunRuntime = options.hasBunRuntime ?? Boolean(process.versions.bun);
+  const forwardArgs = options.forwardArgs ?? process.argv.slice(2);
 
   if (launchKind === "installed-bin") {
     const resolvedLauncherScript = launcherScriptPath ?? join(packageRoot, "bin", "codexa.js");
@@ -107,7 +121,7 @@ export function resolveLaunchContext(options: ResolveLaunchContextOptions = {}):
       relaunchExecutable: envRelaunchExecutable || execPath,
       relaunchArgs: envRelaunchArgs && envRelaunchArgs.length > 0
         ? envRelaunchArgs
-        : [resolvedLauncherScript],
+        : buildInstalledRelaunchArgs(resolvedLauncherScript, forwardArgs),
     };
   }
 
@@ -119,7 +133,7 @@ export function resolveLaunchContext(options: ResolveLaunchContextOptions = {}):
     relaunchExecutable: envRelaunchExecutable || getDevRelaunchExecutable(execPath, hasBunRuntime),
     relaunchArgs: envRelaunchArgs && envRelaunchArgs.length > 0
       ? envRelaunchArgs
-      : ["run", "--silent", join(packageRoot, "src", "index.tsx")],
+      : buildDevRelaunchArgs(packageRoot, forwardArgs),
   };
 }
 

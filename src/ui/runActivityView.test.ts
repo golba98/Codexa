@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { RunEvent } from "../session/types.js";
 import { summarizeRunActivity } from "../core/workspaceActivity.js";
+import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import {
   formatRunActivityStats,
   getVisibleRawOutputLines,
@@ -19,8 +20,7 @@ function makeRunEvent(overrides: Partial<RunEvent> = {}): RunEvent {
     durationMs: null,
     backendId: "codex-subprocess",
     backendLabel: "Codex CLI",
-    mode: "auto-edit",
-    model: "gpt-5.4",
+    runtime: TEST_RUNTIME,
     prompt: "Build something",
     thinkingLines: [],
     status: "running",

@@ -46,15 +46,12 @@ export const codexSubprocessProvider: BackendProvider = {
 
     const startAttempt = (structuredOutput: boolean) => {
       if (cancelled || done) return;
-
       void prepareCodexExecLaunch(
         {
-        model: options.model,
-        cwd: options.workspaceRoot,
-        runtimePolicy: options.runtimePolicy,
-        reasoningLevel: options.reasoningLevel,
-        structuredOutput,
-      },
+          runtime: options.runtime,
+          cwd: options.workspaceRoot,
+          structuredOutput,
+        },
         import.meta.url,
       )
         .then((launchPlan) => {
@@ -134,7 +131,7 @@ export const codexSubprocessProvider: BackendProvider = {
 
           proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
 
-          proc.stdin?.write(buildCodexPrompt(prompt, options.mode, options.runtimePolicy));
+          proc.stdin?.write(buildCodexPrompt(prompt, options.runtime));
           proc.stdin?.end();
 
           proc.stdout?.on("data", (chunk: Buffer) => {

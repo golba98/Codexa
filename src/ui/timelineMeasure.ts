@@ -881,7 +881,7 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
     }
   }
 
-  const heading = run.model ? run.model.toUpperCase().replace(/-/g, " ") : "AGENT RESPONSE";
+  const heading = run.runtime.model ? run.runtime.model.toUpperCase().replace(/-/g, " ") : "AGENT RESPONSE";
   const runStatus = streaming
     ? "streaming"
     : run.status === "completed"

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolveRuntimeConfig, normalizeRuntimeConfig } from "../config/runtimeConfig.js";
 import { prepareCodexExecLaunch } from "./codexLaunch.js";
 import type { CodexCliCapabilities } from "./codexCapabilities.js";
 
@@ -13,13 +14,15 @@ test("prepares a shared launch plan with resolved executable strategy and source
 
   const result = await prepareCodexExecLaunch(
     {
-      model: "gpt-5.4",
+      runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
+        model: "gpt-5.4",
+        reasoningLevel: "medium",
+        policy: {
+          approvalPolicy: "on-request",
+          sandboxMode: "workspace-write",
+        },
+      })),
       cwd: "C:/repo",
-      runtimePolicy: {
-        approvalPolicy: "on-request",
-        sandboxMode: "workspace-write",
-      },
-      reasoningLevel: "medium",
       structuredOutput: false,
     },
     "file:///C:/Development/1-JavaScript/13-Custom%20CLI/src/core/providers/codexSubprocess.ts",

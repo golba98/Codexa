@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MAX_CHAT_LINES, MAX_VISIBLE_EVENTS } from "../config/settings.js";
+import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import {
   appendRunActivity,
   appendRunThinking,
@@ -32,8 +33,7 @@ test("creates a running run event", () => {
     id: 1,
     backendId: "codex-subprocess",
     backendLabel: "Codex CLI",
-    mode: "suggest",
-    model: "gpt-5.4",
+    runtime: TEST_RUNTIME,
     prompt: "Hello",
     turnId: 1,
   });
@@ -50,8 +50,7 @@ test("caps streamed run output and marks truncation", () => {
     id: 2,
     backendId: "codex-subprocess",
     backendLabel: "Codex CLI",
-    mode: "suggest",
-    model: "gpt-5.4",
+    runtime: TEST_RUNTIME,
     prompt: "Hello",
     turnId: 2,
   });
@@ -71,8 +70,7 @@ test("completes and cancels runs with stable terminal statuses", () => {
       id: 3,
       backendId: "codex-subprocess",
       backendLabel: "Codex CLI",
-      mode: "suggest",
-      model: "gpt-5.4",
+      runtime: TEST_RUNTIME,
       prompt: "Hello",
       turnId: 3,
     }),
@@ -101,8 +99,7 @@ test("appends structured file activity and tracks unique touched files", () => {
       id: 4,
       backendId: "codex-subprocess",
       backendLabel: "Codex CLI",
-      mode: "suggest",
-      model: "gpt-5.4",
+      runtime: TEST_RUNTIME,
       prompt: "Build a feature",
       turnId: 4,
     }),
@@ -136,6 +133,21 @@ test("blocks config changes while a run is active", () => {
   assert.equal(blocked.allowed, false);
   assert.match(blocked.message ?? "", /model/i);
   assert.equal(allowed.allowed, true);
+});
+
+test("snapshots resolved runtime config onto a run event", () => {
+  const run = createRunEvent({
+    id: 5,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Inspect the repo",
+    turnId: 5,
+  });
+
+  assert.equal(run.runtime.model, TEST_RUNTIME.model);
+  assert.equal(run.runtime.mode, TEST_RUNTIME.mode);
+  assert.equal(run.runtime.policy.approvalPolicy, TEST_RUNTIME.policy.approvalPolicy);
 });
 
 test("ignores stale run callbacks after cancellation", () => {

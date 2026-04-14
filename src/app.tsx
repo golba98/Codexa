@@ -2,32 +2,54 @@ import React, { startTransition, useCallback, useEffect, useMemo, useRef, useSta
 import { spawn } from "child_process";
 import { Box, Text, useApp, useFocusManager, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
-import { saveSettings } from "./config/persistence.js";
-import { formatEffectiveSettingsDebugNotice, type ResolvedAppBootstrap } from "./config/effectiveSettings.js";
 import {
-  PERMISSION_PRESETS,
+  applyLayeredRuntimeOverride,
+  resolveLayeredConfig,
+  type LayeredConfigResult,
+} from "./config/layeredConfig.js";
+import type { LaunchArgs } from "./config/launchArgs.js";
+import { loadSettings, saveSettings } from "./config/persistence.js";
+import {
   type AuthPreference,
   type AvailableBackend,
   type AvailableMode,
   type AvailableModel,
-  type CodexApprovalPolicy,
-  type CodexSandboxMode,
   type ReasoningLevel,
-  type RuntimePolicy,
-  areRuntimePoliciesEqual,
   estimateTokens,
   formatAuthPreferenceLabel,
-  formatApprovalPolicyLabel,
   formatBackendLabel,
   formatModeLabel,
   formatReasoningLabel,
-  formatRuntimePolicySummary,
-  formatSandboxLabel,
   formatThemeLabel,
-  getLegacyRuntimePolicyForMode,
   getNextMode,
   normalizeReasoningForModel,
 } from "./config/settings.js";
+import {
+  AVAILABLE_APPROVAL_POLICIES,
+  AVAILABLE_NETWORK_ACCESS_VALUES,
+  AVAILABLE_SANDBOX_MODES,
+  addWritableRoot,
+  buildRuntimeSummary,
+  clearWritableRoots,
+  diffRuntimeConfig,
+  formatApprovalPolicyLabel,
+  formatNetworkAccessLabel,
+  formatPersonalityLabel,
+  formatSandboxModeLabel,
+  formatServiceTierLabel,
+  mergeRuntimeConfig,
+  removeWritableRoot,
+  resolveRuntimeConfig,
+  resolveWritableRootCommandPath,
+  type PartialRuntimeConfig,
+  type RuntimeApprovalPolicy,
+  type RuntimeConfig,
+  type RuntimeNetworkAccess,
+  type RuntimePersonality,
+  type RuntimeSandboxMode,
+  type RuntimeServiceTier,
+} from "./config/runtimeConfig.js";
+import { setProjectTrust } from "./config/trustStore.js";
 import {
   type CodexAuthProbeResult,
   getAuthStatusMessage,
@@ -80,8 +102,10 @@ import { measureBottomComposerRows, MemoizedBottomComposer } from "./ui/BottomCo
 import { useTerminalViewport } from "./ui/layout.js";
 import { ModelReasoningPicker } from "./ui/ModelReasoningPicker.js";
 import { ModePicker } from "./ui/ModePicker.js";
-import { PermissionsPicker } from "./ui/PermissionsPicker.js";
+import { PermissionsPanel, type PermissionsPanelAction } from "./ui/PermissionsPanel.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
+import { SelectionPanel } from "./ui/SelectionPanel.js";
+import { TextEntryPanel } from "./ui/TextEntryPanel.js";
 import { ThemePicker } from "./ui/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
 import { ThemeProvider, THEMES } from "./ui/theme.js";
@@ -102,6 +126,12 @@ const LIVE_UPDATE_FLUSH_MS = 50;
 const PROGRESS_ONLY_FLUSH_MS = 150;
 const MAX_PENDING_PROGRESS_LINES = 5;
 
+function formatWritableRootsMessage(roots: readonly string[]): string {
+  return roots.length > 0
+    ? roots.map((root) => `  - ${root}`).join("\n")
+    : "  - none";
+}
+
 function createEventId(): number {
   return nextEventId++;
 }
@@ -120,22 +150,22 @@ function createInitialAuthStatus(): CodexAuthProbeResult {
 }
 
 interface AppProps {
-  bootstrap: ResolvedAppBootstrap;
+  launchArgs: LaunchArgs;
 }
 
-export function App({ bootstrap }: AppProps) {
+export function App({ launchArgs }: AppProps) {
   const { exit } = useApp();
   const focusManager = useFocusManager();
-  const initialSettings = useRef(bootstrap.effectiveSettings);
-  const persistedSettingsRef = useRef(bootstrap.persistedSettings);
-  const executionSettingsDirtyRef = useRef({
-    model: false,
-    reasoningLevel: false,
-    approvalPolicy: false,
-    sandboxMode: false,
-  });
   const workspaceRoot = useMemo(() => resolveWorkspaceRoot(), []);
-  const launchContext = useMemo(() => resolveLaunchContext({ workspaceRoot }), [workspaceRoot]);
+  const initialSettings = useRef(loadSettings());
+  const initialLayeredConfig = useRef<LayeredConfigResult | null>(null);
+  if (initialLayeredConfig.current === null) {
+    initialLayeredConfig.current = resolveLayeredConfig({ workspaceRoot, launchArgs });
+  }
+  const launchContext = useMemo(
+    () => resolveLaunchContext({ workspaceRoot, forwardArgs: launchArgs.passthroughArgs }),
+    [launchArgs.passthroughArgs, workspaceRoot],
+  );
   const workspaceCommandContext = useMemo(
     () => buildWorkspaceCommandContext(launchContext),
     [launchContext],
@@ -143,18 +173,14 @@ export function App({ bootstrap }: AppProps) {
   const modelSpecService = useMemo(() => createModelSpecService(), []);
   const terminalLayout = useTerminalViewport();
 
-  const [backend, setBackend] = useState<AvailableBackend>(initialSettings.current.backend);
-  const [model, setModel] = useState<AvailableModel>(initialSettings.current.model);
-  const [mode, setMode] = useState<AvailableMode>(initialSettings.current.mode);
-  const [reasoningLevel, setReasoningLevel] = useState<ReasoningLevel>(initialSettings.current.reasoningLevel);
-  const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.authPreference);
-  const [approvalPolicy, setApprovalPolicy] = useState<CodexApprovalPolicy>(initialSettings.current.approvalPolicy);
-  const [sandboxMode, setSandboxMode] = useState<CodexSandboxMode>(initialSettings.current.sandboxMode);
+  const [baseLayeredConfig, setBaseLayeredConfig] = useState<LayeredConfigResult>(initialLayeredConfig.current);
+  const [sessionRuntimeOverride, setSessionRuntimeOverride] = useState<PartialRuntimeConfig>({});
+  const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.auth.preference);
   const [themeSelection, setThemeSelection] = useState<ThemeSelectionState>({
-    committedTheme: initialSettings.current.theme,
+    committedTheme: initialSettings.current.ui.theme,
     previewTheme: null,
   });
-  const [customTheme, setCustomTheme] = useState(initialSettings.current.customTheme);
+  const [customTheme, setCustomTheme] = useState(initialSettings.current.ui.customTheme);
   const [screen, setScreen] = useState<Screen>("main");
   const [composerInstanceKey, setComposerInstanceKey] = useState(0);
   const { state: sessionState, dispatch: dispatchSession } = useAppSessionState();
@@ -212,6 +238,19 @@ export function App({ bootstrap }: AppProps) {
     activeThemeName === "custom"
       ? { ...THEMES.purple, ...customTheme }
       : (THEMES[activeThemeName] ?? THEMES.purple);
+  const baseRuntimeConfigRef = useRef(baseLayeredConfig.runtime);
+  const layeredRuntimeConfig = useMemo(
+    () => applyLayeredRuntimeOverride(baseLayeredConfig, sessionRuntimeOverride, "In-session overrides"),
+    [baseLayeredConfig, sessionRuntimeOverride],
+  );
+  const runtimeConfig = layeredRuntimeConfig.runtime;
+  const { provider: backend, model, mode, reasoningLevel } = runtimeConfig;
+  const resolvedRuntimeConfig = useMemo(() => resolveRuntimeConfig(runtimeConfig), [runtimeConfig]);
+  const runtimeSummary = useMemo(() => buildRuntimeSummary(resolvedRuntimeConfig), [resolvedRuntimeConfig]);
+  const allowedWritableRoots = useMemo(
+    () => resolvedRuntimeConfig.policy.writableRoots,
+    [resolvedRuntimeConfig],
+  );
   const currentModelSpec = modelSpecs[model] ?? createLoadingModelSpec(model);
   const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
 
@@ -247,38 +286,23 @@ export function App({ bootstrap }: AppProps) {
   ]);
 
   const provider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
-  const runtimePolicy = useMemo<RuntimePolicy>(() => ({
-    approvalPolicy,
-    sandboxMode,
-  }), [approvalPolicy, sandboxMode]);
-  const markExecutionSettingsDirty = useCallback((
-    ...keys: Array<keyof typeof executionSettingsDirtyRef.current>
-  ) => {
-    for (const key of keys) {
-      executionSettingsDirtyRef.current[key] = true;
-    }
-  }, []);
+
+  useEffect(() => {
+    baseRuntimeConfigRef.current = baseLayeredConfig.runtime;
+  }, [baseLayeredConfig.runtime]);
 
   useEffect(() => {
     saveSettings({
-      backend,
-      model: executionSettingsDirtyRef.current.model ? model : persistedSettingsRef.current.model,
-      mode,
-      reasoningLevel: executionSettingsDirtyRef.current.reasoningLevel
-        ? reasoningLevel
-        : persistedSettingsRef.current.reasoningLevel,
-      layoutStyle: initialSettings.current.layoutStyle,
-      theme: themeSelection.committedTheme,
-      customTheme,
-      authPreference,
-      approvalPolicy: executionSettingsDirtyRef.current.approvalPolicy
-        ? approvalPolicy
-        : persistedSettingsRef.current.approvalPolicy,
-      sandboxMode: executionSettingsDirtyRef.current.sandboxMode
-        ? sandboxMode
-        : persistedSettingsRef.current.sandboxMode,
+      ui: {
+        layoutStyle: initialSettings.current.ui.layoutStyle,
+        theme: themeSelection.committedTheme,
+        customTheme,
+      },
+      auth: {
+        preference: authPreference,
+      },
     });
-  }, [approvalPolicy, authPreference, backend, customTheme, mode, model, reasoningLevel, sandboxMode, themeSelection.committedTheme]);
+  }, [authPreference, customTheme, themeSelection.committedTheme]);
 
   useEffect(() => {
     return () => {
@@ -371,13 +395,6 @@ export function App({ bootstrap }: AppProps) {
     });
   }, [appendStaticEvent]);
 
-  useEffect(() => {
-    const configNotice = formatEffectiveSettingsDebugNotice(initialSettings.current, bootstrap.debug);
-    if (!configNotice) return;
-
-    appendSystemEvent("Config", configNotice);
-  }, [appendSystemEvent, bootstrap.debug]);
-
   const setRuntimeUnauthenticated = useCallback((summary: string) => {
     setAuthStatus({
       state: "unauthenticated",
@@ -425,6 +442,29 @@ export function App({ bootstrap }: AppProps) {
     appendSystemEvent("Launch mode", devLaunchNotice);
   }, [appendSystemEvent, launchContext]);
 
+  const reloadBaseLayeredConfig = useCallback(() => {
+    const nextConfig = resolveLayeredConfig({ workspaceRoot, launchArgs });
+    baseRuntimeConfigRef.current = nextConfig.runtime;
+    setBaseLayeredConfig(nextConfig);
+    return nextConfig;
+  }, [launchArgs, workspaceRoot]);
+
+  const updateRuntimeConfig = useCallback((updater: (current: RuntimeConfig) => RuntimeConfig) => {
+    setSessionRuntimeOverride((currentPatch) => {
+      const baseRuntime = baseRuntimeConfigRef.current;
+      const currentRuntime = mergeRuntimeConfig(baseRuntime, currentPatch);
+      const nextRuntime = updater(currentRuntime);
+      return diffRuntimeConfig(baseRuntime, nextRuntime);
+    });
+  }, []);
+
+  const updateRuntimePolicy = useCallback((updater: (current: RuntimeConfig["policy"]) => RuntimeConfig["policy"]) => {
+    updateRuntimeConfig((current) => ({
+      ...current,
+      policy: updater(current.policy),
+    }));
+  }, [updateRuntimeConfig]);
+
   const setBackendWithNotice = useCallback((nextBackend: AvailableBackend) => {
     const gate = guardConfigMutation("backend", busy);
     if (!gate.allowed) {
@@ -432,32 +472,16 @@ export function App({ bootstrap }: AppProps) {
       return;
     }
 
-    setBackend(nextBackend);
+    updateRuntimeConfig((current) => ({
+      ...current,
+      provider: nextBackend,
+    }));
     setScreen("main");
     appendSystemEvent("Backend updated", `Active backend is now ${formatBackendLabel(nextBackend)}.`);
     if (nextBackend === "codex-subprocess") {
       void refreshAuthStatus(false);
     }
-  }, [appendSystemEvent, busy, refreshAuthStatus]);
-
-  const setRuntimePolicyWithNotice = useCallback((
-    nextPolicy: RuntimePolicy,
-    title = "Permissions updated",
-    message = `Permissions are now ${formatRuntimePolicySummary(nextPolicy)}.`,
-  ) => {
-    const gate = guardConfigMutation("permissions", busy);
-    if (!gate.allowed) {
-      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing permissions.");
-      return false;
-    }
-
-    setApprovalPolicy(nextPolicy.approvalPolicy);
-    setSandboxMode(nextPolicy.sandboxMode);
-    markExecutionSettingsDirty("approvalPolicy", "sandboxMode");
-    setScreen("main");
-    appendSystemEvent(title, message);
-    return true;
-  }, [appendSystemEvent, busy, markExecutionSettingsDirty]);
+  }, [appendSystemEvent, busy, refreshAuthStatus, updateRuntimeConfig]);
 
   const setModeWithNotice = useCallback((nextMode: AvailableMode) => {
     const gate = guardConfigMutation("mode", busy);
@@ -466,66 +490,17 @@ export function App({ bootstrap }: AppProps) {
       return;
     }
 
-    const currentLegacyPolicy = getLegacyRuntimePolicyForMode(mode);
-    const nextLegacyPolicy = getLegacyRuntimePolicyForMode(nextMode);
-    const currentPolicyMatchesLegacy = areRuntimePoliciesEqual(runtimePolicy, currentLegacyPolicy);
-
-    setMode(nextMode);
-    if (currentPolicyMatchesLegacy) {
-      setApprovalPolicy(nextLegacyPolicy.approvalPolicy);
-      setSandboxMode(nextLegacyPolicy.sandboxMode);
-      markExecutionSettingsDirty("approvalPolicy", "sandboxMode");
-    }
+    updateRuntimeConfig((current) => ({
+      ...current,
+      mode: nextMode,
+    }));
     setScreen("main");
-    appendSystemEvent(
-      "Mode updated",
-      currentPolicyMatchesLegacy
-        ? `Execution mode switched to ${formatModeLabel(nextMode)}. Permissions now ${formatRuntimePolicySummary(nextLegacyPolicy)}.`
-        : `Execution mode switched to ${formatModeLabel(nextMode)}. Custom permissions remain ${formatRuntimePolicySummary(runtimePolicy)}.`,
-    );
-  }, [appendSystemEvent, busy, markExecutionSettingsDirty, mode, runtimePolicy]);
+    appendSystemEvent("Mode updated", `Execution mode switched to ${formatModeLabel(nextMode)}.`);
+  }, [appendSystemEvent, busy, updateRuntimeConfig]);
 
   const cycleModeWithNotice = useCallback(() => {
     setModeWithNotice(getNextMode(mode));
   }, [mode, setModeWithNotice]);
-
-  const setApprovalPolicyWithNotice = useCallback((nextApprovalPolicy: CodexApprovalPolicy) => {
-    const nextPolicy: RuntimePolicy = {
-      approvalPolicy: nextApprovalPolicy,
-      sandboxMode,
-    };
-    return setRuntimePolicyWithNotice(
-      nextPolicy,
-      "Permissions updated",
-      `Approval policy is now ${formatApprovalPolicyLabel(nextApprovalPolicy)}. Sandbox remains ${formatSandboxLabel(sandboxMode)}.`,
-    );
-  }, [sandboxMode, setRuntimePolicyWithNotice]);
-
-  const setSandboxModeWithNotice = useCallback((nextSandboxMode: CodexSandboxMode) => {
-    const nextPolicy: RuntimePolicy = {
-      approvalPolicy,
-      sandboxMode: nextSandboxMode,
-    };
-    return setRuntimePolicyWithNotice(
-      nextPolicy,
-      "Permissions updated",
-      `Sandbox is now ${formatSandboxLabel(nextSandboxMode)}. Approval remains ${formatApprovalPolicyLabel(approvalPolicy)}.`,
-    );
-  }, [approvalPolicy, setRuntimePolicyWithNotice]);
-
-  const applyPermissionPresetWithNotice = useCallback((presetId: string) => {
-    const preset = PERMISSION_PRESETS.find((item) => item.id === presetId);
-    if (!preset) {
-      appendSystemEvent("Permissions updated", "Unknown permissions preset.");
-      return;
-    }
-
-    setRuntimePolicyWithNotice(
-      preset.policy,
-      "Permissions updated",
-      `${preset.label} preset applied. ${formatRuntimePolicySummary(preset.policy)}.`,
-    );
-  }, [appendSystemEvent, setRuntimePolicyWithNotice]);
 
   const setReasoningWithNotice = useCallback((nextReasoningLevel: ReasoningLevel) => {
     const gate = guardConfigMutation("reasoning", busy);
@@ -534,11 +509,13 @@ export function App({ bootstrap }: AppProps) {
       return;
     }
 
-    setReasoningLevel(nextReasoningLevel);
-    markExecutionSettingsDirty("reasoningLevel");
+    updateRuntimeConfig((current) => ({
+      ...current,
+      reasoningLevel: nextReasoningLevel,
+    }));
     setScreen("main");
     appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(nextReasoningLevel)}.`);
-  }, [appendSystemEvent, busy, markExecutionSettingsDirty]);
+  }, [appendSystemEvent, busy, updateRuntimeConfig]);
 
   const setModelWithNotice = useCallback((nextModel: AvailableModel) => {
     const gate = guardConfigMutation("model", busy);
@@ -547,16 +524,14 @@ export function App({ bootstrap }: AppProps) {
       return;
     }
 
-    const nextReasoningLevel = normalizeReasoningForModel(nextModel, reasoningLevel);
-    setModel(nextModel);
-    setReasoningLevel(nextReasoningLevel);
-    markExecutionSettingsDirty("model");
-    if (nextReasoningLevel !== reasoningLevel) {
-      markExecutionSettingsDirty("reasoningLevel");
-    }
+    updateRuntimeConfig((current) => ({
+      ...current,
+      model: nextModel,
+      reasoningLevel: normalizeReasoningForModel(nextModel, current.reasoningLevel),
+    }));
     setScreen("main");
     appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
-  }, [appendSystemEvent, busy, markExecutionSettingsDirty, reasoningLevel]);
+  }, [appendSystemEvent, busy, updateRuntimeConfig]);
 
   const setModelAndReasoningWithNotice = useCallback((nextModel: AvailableModel, nextReasoning: ReasoningLevel) => {
     const gate = guardConfigMutation("model", busy);
@@ -568,14 +543,11 @@ export function App({ bootstrap }: AppProps) {
     const modelChanged = nextModel !== model;
     const reasoningChanged = nextReasoning !== reasoningLevel;
 
-    setModel(nextModel);
-    setReasoningLevel(nextReasoning);
-    if (modelChanged) {
-      markExecutionSettingsDirty("model");
-    }
-    if (reasoningChanged) {
-      markExecutionSettingsDirty("reasoningLevel");
-    }
+    updateRuntimeConfig((current) => ({
+      ...current,
+      model: nextModel,
+      reasoningLevel: nextReasoning,
+    }));
     setScreen("main");
 
     if (modelChanged && reasoningChanged) {
@@ -587,12 +559,118 @@ export function App({ bootstrap }: AppProps) {
     } else {
       // Nothing changed — still close the picker silently.
     }
-  }, [appendSystemEvent, busy, markExecutionSettingsDirty, model, reasoningLevel]);
+  }, [appendSystemEvent, busy, model, reasoningLevel, updateRuntimeConfig]);
 
   const setAuthPreferenceWithNotice = useCallback((nextPreference: AuthPreference) => {
     setAuthPreference(nextPreference);
     appendSystemEvent("Auth preference updated", `Preference set to ${formatAuthPreferenceLabel(nextPreference)}.`);
   }, [appendSystemEvent]);
+
+  const setApprovalPolicyWithNotice = useCallback((nextValue: RuntimeApprovalPolicy) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimePolicy((current) => ({ ...current, approvalPolicy: nextValue }));
+    appendSystemEvent("Runtime policy", `Approval policy set to ${formatApprovalPolicyLabel(nextValue)}.`);
+  }, [appendSystemEvent, busy, updateRuntimePolicy]);
+
+  const setSandboxModeWithNotice = useCallback((nextValue: RuntimeSandboxMode) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimePolicy((current) => ({ ...current, sandboxMode: nextValue }));
+    appendSystemEvent("Runtime policy", `Sandbox mode set to ${formatSandboxModeLabel(nextValue)}.`);
+  }, [appendSystemEvent, busy, updateRuntimePolicy]);
+
+  const setNetworkAccessWithNotice = useCallback((nextValue: RuntimeNetworkAccess) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimePolicy((current) => ({ ...current, networkAccess: nextValue }));
+    appendSystemEvent("Runtime policy", `Network access set to ${formatNetworkAccessLabel(nextValue)}.`);
+  }, [appendSystemEvent, busy, updateRuntimePolicy]);
+
+  const addWritableRootWithNotice = useCallback((pathValue: string) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    const resolvedPath = resolveWritableRootCommandPath(pathValue, workspaceRoot);
+    updateRuntimeConfig((current) => addWritableRoot(current, resolvedPath));
+    appendSystemEvent("Runtime policy", `Writable root added: ${resolvedPath}.`);
+  }, [appendSystemEvent, busy, updateRuntimeConfig, workspaceRoot]);
+
+  const removeWritableRootWithNotice = useCallback((pathValue: string) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    const resolvedPath = resolveWritableRootCommandPath(pathValue, workspaceRoot);
+    updateRuntimeConfig((current) => removeWritableRoot(current, resolvedPath));
+    appendSystemEvent("Runtime policy", `Writable root removed: ${resolvedPath}.`);
+  }, [appendSystemEvent, busy, updateRuntimeConfig, workspaceRoot]);
+
+  const clearWritableRootsWithNotice = useCallback(() => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimeConfig((current) => clearWritableRoots(current));
+    appendSystemEvent("Runtime policy", "Writable roots cleared.");
+  }, [appendSystemEvent, busy, updateRuntimeConfig]);
+
+  const setServiceTierWithNotice = useCallback((nextValue: RuntimeServiceTier) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimePolicy((current) => ({ ...current, serviceTier: nextValue }));
+    appendSystemEvent("Runtime policy", `Service tier set to ${formatServiceTierLabel(nextValue)}.`);
+  }, [appendSystemEvent, busy, updateRuntimePolicy]);
+
+  const setPersonalityWithNotice = useCallback((nextValue: RuntimePersonality) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    updateRuntimePolicy((current) => ({ ...current, personality: nextValue }));
+    appendSystemEvent("Runtime policy", `Personality set to ${formatPersonalityLabel(nextValue)}.`);
+  }, [appendSystemEvent, busy, updateRuntimePolicy]);
+
+  const setProjectTrustWithNotice = useCallback((trusted: boolean) => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing project trust.");
+      return;
+    }
+
+    const projectRoot = baseLayeredConfig.diagnostics.projectRoot;
+    setProjectTrust(projectRoot, trusted);
+    reloadBaseLayeredConfig();
+    appendSystemEvent(
+      "Config trust",
+      `${trusted ? "Trusted" : "Untrusted"} project root: ${projectRoot}.`,
+    );
+  }, [appendSystemEvent, baseLayeredConfig.diagnostics.projectRoot, busy, reloadBaseLayeredConfig]);
 
   const openBackendPicker = useCallback(() => {
     const gate = guardConfigMutation("backend", busy);
@@ -634,16 +712,6 @@ export function App({ bootstrap }: AppProps) {
     setScreen("reasoning-picker");
   }, [appendSystemEvent, busy]);
 
-  const openPermissionsPicker = useCallback(() => {
-    const gate = guardConfigMutation("permissions", busy);
-    if (!gate.allowed) {
-      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing permissions.");
-      return;
-    }
-
-    setScreen("permissions-picker");
-  }, [appendSystemEvent, busy]);
-
   const openThemePicker = useCallback(() => {
     const gate = guardConfigMutation("theme", busy);
     if (!gate.allowed) {
@@ -662,6 +730,81 @@ export function App({ bootstrap }: AppProps) {
 
     setScreen("auth-panel");
   }, [appendSystemEvent, busy]);
+
+  const openPermissionsPanel = useCallback(() => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing runtime policy.");
+      return;
+    }
+
+    setScreen("permissions-panel");
+  }, [appendSystemEvent, busy]);
+
+  const openPermissionsApprovalPicker = useCallback(() => {
+    setScreen("permissions-approval-picker");
+  }, []);
+
+  const openPermissionsSandboxPicker = useCallback(() => {
+    setScreen("permissions-sandbox-picker");
+  }, []);
+
+  const openPermissionsNetworkPicker = useCallback(() => {
+    setScreen("permissions-network-picker");
+  }, []);
+
+  const openPermissionsAddWritableRoot = useCallback(() => {
+    setScreen("permissions-add-writable-root");
+  }, []);
+
+  const openPermissionsRemoveWritableRoot = useCallback(() => {
+    if (runtimeConfig.policy.writableRoots.length === 0) {
+      appendSystemEvent("Runtime policy", "No writable roots are configured.");
+      return;
+    }
+
+    setScreen("permissions-remove-writable-root");
+  }, [appendSystemEvent, runtimeConfig.policy.writableRoots.length]);
+
+  const handlePermissionsPanelAction = useCallback((action: PermissionsPanelAction) => {
+    switch (action) {
+      case "approval-policy":
+        openPermissionsApprovalPicker();
+        return;
+      case "sandbox":
+        openPermissionsSandboxPicker();
+        return;
+      case "network":
+        openPermissionsNetworkPicker();
+        return;
+      case "writable-roots-summary":
+        appendSystemEvent(
+          "Runtime policy",
+          `Writable roots:\n${formatWritableRootsMessage(runtimeConfig.policy.writableRoots)}`,
+        );
+        return;
+      case "writable-roots-add":
+        openPermissionsAddWritableRoot();
+        return;
+      case "writable-roots-remove":
+        openPermissionsRemoveWritableRoot();
+        return;
+      case "writable-roots-clear":
+        clearWritableRootsWithNotice();
+        return;
+      default:
+        return;
+    }
+  }, [
+    appendSystemEvent,
+    clearWritableRootsWithNotice,
+    openPermissionsAddWritableRoot,
+    openPermissionsApprovalPicker,
+    openPermissionsNetworkPicker,
+    openPermissionsRemoveWritableRoot,
+    openPermissionsSandboxPicker,
+    runtimeConfig.policy.writableRoots,
+  ]);
 
   const resetComposer = useCallback(() => {
     dispatchSession({ type: "RESET_INPUT" });
@@ -858,7 +1001,7 @@ export function App({ bootstrap }: AppProps) {
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();
-    const guardMessage = getShellWorkspaceGuardMessage(safeCommand, workspaceRoot);
+    const guardMessage = getShellWorkspaceGuardMessage(safeCommand, workspaceRoot, allowedWritableRoots);
     if (guardMessage) {
       appendErrorEvent("Shell command blocked", guardMessage);
       return;
@@ -978,7 +1121,7 @@ export function App({ bootstrap }: AppProps) {
 
       dispatchSession({ type: "FINALIZE_SHELL", shellId, finalEvent });
     });
-  }, [appendErrorEvent, dispatchSession, focusManager, workspaceRoot]);
+  }, [allowedWritableRoots, appendErrorEvent, dispatchSession, focusManager, workspaceRoot]);
 
   const handleWorkspaceRelaunch = useCallback((targetPath: string) => {
     const gate = guardWorkspaceRelaunch(busy);
@@ -1037,6 +1180,10 @@ export function App({ bootstrap }: AppProps) {
 
     const executionModeDecision = resolveExecutionMode(mode, safeProviderPrompt);
     const effectiveMode = executionModeDecision.mode;
+    const runtimeForTurn = resolveRuntimeConfig({
+      ...runtimeConfig,
+      mode: effectiveMode,
+    });
     if (executionModeDecision.autoUpgraded) {
       appendSystemEvent(
         "Mode auto-upgraded",
@@ -1091,8 +1238,7 @@ export function App({ bootstrap }: AppProps) {
           id: runId,
           backendId: backend,
           backendLabel: provider.label,
-          mode: effectiveMode,
-          model,
+          runtime: runtimeForTurn,
           prompt: safeProviderPrompt,
           turnId,
         }),
@@ -1192,7 +1338,7 @@ export function App({ bootstrap }: AppProps) {
 
     const stopProviderRun = provider.run(
       safeProviderPrompt,
-      { model, mode: effectiveMode, reasoningLevel, runtimePolicy, workspaceRoot },
+      { runtime: runtimeForTurn, workspaceRoot },
       {
         onAssistantDelta: (chunk) => {
           if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) return;
@@ -1322,15 +1468,12 @@ export function App({ bootstrap }: AppProps) {
     appendErrorEvent,
     appendSystemEvent,
     authStatus.state,
-    backend,
     finalizePromptRun,
-    model,
     mode,
     provider,
-    reasoningLevel,
     dispatchSession,
-    runtimePolicy,
     setRuntimeUnauthenticated,
+    runtimeConfig,
     workspaceRoot,
   ]);
 
@@ -1366,17 +1509,13 @@ export function App({ bootstrap }: AppProps) {
       return;
     }
 
-    const commandResult = handleCommand(
-      value,
-      backend,
-      model,
-      mode,
-      authPreference,
-      reasoningLevel,
-      themeSelection.committedTheme,
-      runtimePolicy,
-      workspaceCommandContext,
-    );
+    const commandResult = handleCommand(value, {
+      config: layeredRuntimeConfig,
+      runtime: runtimeConfig,
+      resolvedRuntime: resolvedRuntimeConfig,
+      workspace: workspaceCommandContext,
+      tokensUsed: estimateTokens(conversationChars),
+    });
     const isCommand = commandResult !== null;
 
     if (!isCommand && busy) {
@@ -1414,19 +1553,78 @@ export function App({ bootstrap }: AppProps) {
             setReasoningWithNotice(commandResult.value as ReasoningLevel);
           }
           return;
-        case "permissions_approval":
-          if (commandResult.value) {
-            setApprovalPolicyWithNotice(commandResult.value as CodexApprovalPolicy);
+        case "status":
+        case "runtime_writable_roots_list":
+          if (commandResult.message) {
+            appendSystemEvent("Runtime status", commandResult.message);
           }
           return;
-        case "permissions_sandbox":
+        case "config_status":
+          if (commandResult.message) {
+            appendSystemEvent("Config", commandResult.message);
+          }
+          return;
+        case "config_trust_status":
+          if (commandResult.message) {
+            appendSystemEvent("Config trust", commandResult.message);
+          }
+          return;
+        case "config_trust_set":
           if (commandResult.value) {
-            setSandboxModeWithNotice(commandResult.value as CodexSandboxMode);
+            setProjectTrustWithNotice(commandResult.value === "on");
           }
           return;
         case "permissions_status":
           if (commandResult.message) {
             appendSystemEvent("Permissions", commandResult.message);
+          }
+          return;
+        case "runtime_approval_policy":
+          if (commandResult.value) {
+            setApprovalPolicyWithNotice(commandResult.value as RuntimeApprovalPolicy);
+          } else if (commandResult.message) {
+            appendSystemEvent("Runtime policy", commandResult.message);
+          }
+          return;
+        case "runtime_sandbox_mode":
+          if (commandResult.value) {
+            setSandboxModeWithNotice(commandResult.value as RuntimeSandboxMode);
+          } else if (commandResult.message) {
+            appendSystemEvent("Runtime policy", commandResult.message);
+          }
+          return;
+        case "runtime_network_access":
+          if (commandResult.value) {
+            setNetworkAccessWithNotice(commandResult.value as RuntimeNetworkAccess);
+          } else if (commandResult.message) {
+            appendSystemEvent("Runtime policy", commandResult.message);
+          }
+          return;
+        case "runtime_writable_roots_add":
+          if (commandResult.value) {
+            addWritableRootWithNotice(commandResult.value);
+          }
+          return;
+        case "runtime_writable_roots_remove":
+          if (commandResult.value) {
+            removeWritableRootWithNotice(commandResult.value);
+          }
+          return;
+        case "runtime_writable_roots_clear":
+          clearWritableRootsWithNotice();
+          return;
+        case "runtime_service_tier":
+          if (commandResult.value) {
+            setServiceTierWithNotice(commandResult.value as RuntimeServiceTier);
+          } else if (commandResult.message) {
+            appendSystemEvent("Runtime policy", commandResult.message);
+          }
+          return;
+        case "runtime_personality":
+          if (commandResult.value) {
+            setPersonalityWithNotice(commandResult.value as RuntimePersonality);
+          } else if (commandResult.message) {
+            appendSystemEvent("Runtime policy", commandResult.message);
           }
           return;
         case "auth":
@@ -1468,11 +1666,11 @@ export function App({ bootstrap }: AppProps) {
         case "open_reasoning_picker":
           openReasoningPicker();
           return;
-        case "open_permissions_picker":
-          openPermissionsPicker();
-          return;
         case "open_theme_picker":
           openThemePicker();
+          return;
+        case "open_permissions_panel":
+          openPermissionsPanel();
           return;
         case "open_auth_panel":
           openAuthPanel();
@@ -1523,18 +1721,19 @@ export function App({ bootstrap }: AppProps) {
       }
     }
 
-    const workspaceGuardMessage = getPromptWorkspaceGuardMessage(value, workspaceRoot);
+    const workspaceGuardMessage = getPromptWorkspaceGuardMessage(value, workspaceRoot, allowedWritableRoots);
     if (workspaceGuardMessage) {
       appendErrorEvent("Workspace boundary", workspaceGuardMessage);
       return;
     }
     startPromptRun(value, value);
   }, [
+    allowedWritableRoots,
     appendErrorEvent,
     appendSystemEvent,
-    backend,
     busy,
     buildFollowUpPrompt,
+    conversationChars,
     dispatchSession,
     findUserPromptForTurn,
     focusManager,
@@ -1544,22 +1743,31 @@ export function App({ bootstrap }: AppProps) {
     handleShellExecute,
     handleWorkspaceRelaunch,
     inputValue,
+    layeredRuntimeConfig,
     openAuthPanel,
     openBackendPicker,
     openModePicker,
     openModelPicker,
-    openPermissionsPicker,
+    openPermissionsPanel,
     openReasoningPicker,
     refreshAuthStatus,
     resetComposer,
-    runtimePolicy,
+    resolvedRuntimeConfig,
+    runtimeConfig,
+    addWritableRootWithNotice,
+    clearWritableRootsWithNotice,
+    removeWritableRootWithNotice,
     setApprovalPolicyWithNotice,
     setAuthPreferenceWithNotice,
     setBackendWithNotice,
+    setNetworkAccessWithNotice,
     setModeWithNotice,
     setModelWithNotice,
+    setPersonalityWithNotice,
+    setProjectTrustWithNotice,
     setReasoningWithNotice,
     setSandboxModeWithNotice,
+    setServiceTierWithNotice,
     startPromptRun,
     themeSelection.committedTheme,
     uiState,
@@ -1574,6 +1782,7 @@ export function App({ bootstrap }: AppProps) {
         screen={screen}
         authState={authStatus.state}
         workspaceRoot={workspaceRoot}
+        runtimeSummary={runtimeSummary}
         staticEvents={staticEvents}
         activeEvents={activeEvents}
         uiState={uiState}
@@ -1614,14 +1823,6 @@ export function App({ bootstrap }: AppProps) {
                 />
               )}
 
-              {screen === "permissions-picker" && (
-                <PermissionsPicker
-                  currentPolicy={runtimePolicy}
-                  onSelectPreset={applyPermissionPresetWithNotice}
-                  onCancel={() => setScreen("main")}
-                />
-              )}
-
               {screen === "auth-panel" && (
                 <AuthPanel
                   focusId={FOCUS_IDS.authPanel}
@@ -1634,6 +1835,107 @@ export function App({ bootstrap }: AppProps) {
                     void refreshAuthStatus(false);
                   }}
                   onClose={() => setScreen("main")}
+                />
+              )}
+
+              {screen === "permissions-panel" && (
+                <PermissionsPanel
+                  runtime={runtimeConfig}
+                  resolvedRuntime={resolvedRuntimeConfig}
+                  onSelect={handlePermissionsPanelAction}
+                  onCancel={() => setScreen("main")}
+                />
+              )}
+
+              {screen === "permissions-approval-picker" && (
+                <SelectionPanel
+                  focusId={FOCUS_IDS.permissionsApprovalPicker}
+                  title="Approval Policy"
+                  subtitle="Choose how Codexa should handle approval prompts."
+                  items={AVAILABLE_APPROVAL_POLICIES.map((item) => ({
+                    label: item.id === runtimeConfig.policy.approvalPolicy
+                      ? `${item.label}  ✓`
+                      : item.label,
+                    value: item.id,
+                  }))}
+                  onSelect={(value) => {
+                    setApprovalPolicyWithNotice(value as RuntimeApprovalPolicy);
+                    setScreen("permissions-panel");
+                  }}
+                  onCancel={() => setScreen("permissions-panel")}
+                />
+              )}
+
+              {screen === "permissions-sandbox-picker" && (
+                <SelectionPanel
+                  focusId={FOCUS_IDS.permissionsSandboxPicker}
+                  title="Sandbox Mode"
+                  subtitle="Choose the effective filesystem sandbox for future runs."
+                  items={AVAILABLE_SANDBOX_MODES.map((item) => ({
+                    label: item.id === runtimeConfig.policy.sandboxMode
+                      ? `${item.label}  ✓`
+                      : item.label,
+                    value: item.id,
+                  }))}
+                  onSelect={(value) => {
+                    setSandboxModeWithNotice(value as RuntimeSandboxMode);
+                    setScreen("permissions-panel");
+                  }}
+                  onCancel={() => setScreen("permissions-panel")}
+                />
+              )}
+
+              {screen === "permissions-network-picker" && (
+                <SelectionPanel
+                  focusId={FOCUS_IDS.permissionsNetworkPicker}
+                  title="Network Access"
+                  subtitle="Choose whether network access is enabled for future runs."
+                  items={AVAILABLE_NETWORK_ACCESS_VALUES.map((item) => ({
+                    label: item.id === runtimeConfig.policy.networkAccess
+                      ? `${item.label}  ✓`
+                      : item.label,
+                    value: item.id,
+                  }))}
+                  onSelect={(value) => {
+                    setNetworkAccessWithNotice(value as RuntimeNetworkAccess);
+                    setScreen("permissions-panel");
+                  }}
+                  onCancel={() => setScreen("permissions-panel")}
+                />
+              )}
+
+              {screen === "permissions-add-writable-root" && (
+                <TextEntryPanel
+                  focusId={FOCUS_IDS.permissionsAddWritableRoot}
+                  title="Add Writable Root"
+                  subtitle="Enter an absolute path or a path relative to the locked workspace."
+                  placeholder="relative\\or\\absolute\\path"
+                  onSubmit={(value) => {
+                    if (!value.trim()) {
+                      appendSystemEvent("Runtime policy", "Writable root path cannot be empty.");
+                      return;
+                    }
+                    addWritableRootWithNotice(value);
+                    setScreen("permissions-panel");
+                  }}
+                  onCancel={() => setScreen("permissions-panel")}
+                />
+              )}
+
+              {screen === "permissions-remove-writable-root" && (
+                <SelectionPanel
+                  focusId={FOCUS_IDS.permissionsRemoveWritableRoot}
+                  title="Remove Writable Root"
+                  subtitle="Select a configured writable root to remove."
+                  items={runtimeConfig.policy.writableRoots.map((root) => ({
+                    label: root,
+                    value: root,
+                  }))}
+                  onSelect={(value) => {
+                    removeWritableRootWithNotice(value);
+                    setScreen("permissions-panel");
+                  }}
+                  onCancel={() => setScreen("permissions-panel")}
                 />
               )}
 

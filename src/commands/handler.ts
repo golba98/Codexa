@@ -1,24 +1,38 @@
 import {
-  AVAILABLE_APPROVAL_POLICIES,
   AUTH_PREFERENCES,
   AVAILABLE_BACKENDS,
   AVAILABLE_MODELS,
   AVAILABLE_REASONING_LEVELS,
-  AVAILABLE_SANDBOX_MODES,
   formatAuthPreferenceLabel,
-  formatApprovalPolicyLabel,
   formatBackendLabel,
+  formatModeCommandHelp,
   formatModeLabel,
   formatReasoningLabel,
-  formatRuntimePolicySummary,
-  formatSandboxLabel,
   formatThemeLabel,
-  formatModeCommandHelp,
   resolveModeCommand,
 } from "../config/settings.js";
 import { AVAILABLE_THEMES } from "../config/settings.js";
+import {
+  formatLayeredConfigStatus,
+  type LayeredConfigResult,
+} from "../config/layeredConfig.js";
+import {
+  formatApprovalPolicyLabel,
+  formatNetworkAccessLabel,
+  formatPermissionsStatus,
+  formatPersonalityLabel,
+  formatRuntimeStatus,
+  formatSandboxModeLabel,
+  formatServiceTierLabel,
+  type ResolvedRuntimeConfig,
+  type RuntimeApprovalPolicy,
+  type RuntimeConfig,
+  type RuntimeNetworkAccess,
+  type RuntimePersonality,
+  type RuntimeSandboxMode,
+  type RuntimeServiceTier,
+} from "../config/runtimeConfig.js";
 import type { WorkspaceCommandContext } from "../core/launchContext.js";
-import type { RuntimePolicy } from "../config/settings.js";
 
 export type CommandAction =
   | "exit"
@@ -35,10 +49,6 @@ export type CommandAction =
   | "open_mode_picker"
   | "reasoning"
   | "open_reasoning_picker"
-  | "permissions_approval"
-  | "permissions_sandbox"
-  | "permissions_status"
-  | "open_permissions_picker"
   | "theme"
   | "help"
   | "copy"
@@ -46,11 +56,26 @@ export type CommandAction =
   | "models"
   | "workspace"
   | "workspace_relaunch"
+  | "config_status"
+  | "config_trust_status"
+  | "config_trust_set"
   | "open_auth_panel"
   | "open_theme_picker"
+  | "open_permissions_panel"
   | "themes"
   | "mouse_toggle"
   | "verbose_toggle"
+  | "status"
+  | "permissions_status"
+  | "runtime_approval_policy"
+  | "runtime_sandbox_mode"
+  | "runtime_network_access"
+  | "runtime_writable_roots_add"
+  | "runtime_writable_roots_remove"
+  | "runtime_writable_roots_clear"
+  | "runtime_writable_roots_list"
+  | "runtime_service_tier"
+  | "runtime_personality"
   | "unknown";
 
 export interface CommandResult {
@@ -59,17 +84,225 @@ export interface CommandResult {
   value?: string;
 }
 
-export function handleCommand(
-  text: string,
-  currentBackend: string,
-  currentModel: string,
-  currentMode: string,
-  currentAuthPreference: string,
-  currentReasoningLevel: string,
-  currentTheme: string,
-  currentRuntimePolicy: RuntimePolicy,
-  workspace: WorkspaceCommandContext,
-): CommandResult | null {
+export interface CommandContext {
+  config: LayeredConfigResult;
+  runtime: RuntimeConfig;
+  resolvedRuntime: ResolvedRuntimeConfig;
+  workspace: WorkspaceCommandContext;
+  tokensUsed?: number;
+}
+
+const APPROVAL_POLICY_VALUES = ["inherit", "untrusted", "on-request", "never"] as const;
+const SANDBOX_MODE_VALUES = ["inherit", "read-only", "workspace-write", "danger-full-access"] as const;
+const NETWORK_ACCESS_VALUES = ["inherit", "on", "off"] as const;
+const SERVICE_TIER_VALUES = ["flex", "fast"] as const;
+const PERSONALITY_VALUES = ["none", "friendly", "pragmatic"] as const;
+
+function isOneOf<T extends string>(value: string, list: readonly T[]): value is T {
+  return (list as readonly string[]).includes(value);
+}
+
+function formatWritableRoots(roots: readonly string[]): string {
+  return roots.length > 0
+    ? roots.map((root) => `  - ${root}`).join("\n")
+    : "  - none";
+}
+
+function handlePolicyCommand(
+  commandPrefix: "/runtime" | "/permissions",
+  arg: string,
+  context: CommandContext,
+  includeExtendedControls = true,
+): CommandResult {
+  const [subcommandRaw, ...restParts] = arg.split(/\s+/);
+  const subcommand = subcommandRaw?.toLowerCase() ?? "";
+  const rest = restParts.join(" ").trim();
+  const normalizedRest = rest.toLowerCase();
+
+  switch (subcommand) {
+    case "approval-policy": {
+      if (!rest || normalizedRest === "status") {
+        return {
+          action: "runtime_approval_policy",
+          message: `Approval policy: configured ${formatApprovalPolicyLabel(context.runtime.policy.approvalPolicy)}; effective ${formatApprovalPolicyLabel(context.resolvedRuntime.policy.approvalPolicy)}.`,
+        };
+      }
+      if (isOneOf(normalizedRest, APPROVAL_POLICY_VALUES)) {
+        const value = normalizedRest as RuntimeApprovalPolicy;
+        return {
+          action: "runtime_approval_policy",
+          value,
+          message: `Approval policy set to ${formatApprovalPolicyLabel(value)}.`,
+        };
+      }
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} approval-policy [status|inherit|untrusted|on-request|never]`,
+      };
+    }
+
+    case "sandbox": {
+      if (!rest || normalizedRest === "status") {
+        return {
+          action: "runtime_sandbox_mode",
+          message: `Sandbox mode: configured ${formatSandboxModeLabel(context.runtime.policy.sandboxMode)}; effective ${formatSandboxModeLabel(context.resolvedRuntime.policy.sandboxMode)}.`,
+        };
+      }
+      if (isOneOf(normalizedRest, SANDBOX_MODE_VALUES)) {
+        const value = normalizedRest as RuntimeSandboxMode;
+        return {
+          action: "runtime_sandbox_mode",
+          value,
+          message: `Sandbox mode set to ${formatSandboxModeLabel(value)}.`,
+        };
+      }
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} sandbox [status|inherit|read-only|workspace-write|danger-full-access]`,
+      };
+    }
+
+    case "network": {
+      if (!rest || normalizedRest === "status") {
+        return {
+          action: "runtime_network_access",
+          message: `Network access: configured ${formatNetworkAccessLabel(context.runtime.policy.networkAccess)}; effective ${formatNetworkAccessLabel(context.resolvedRuntime.policy.networkAccess)}.`,
+        };
+      }
+      if (isOneOf(normalizedRest, NETWORK_ACCESS_VALUES)) {
+        const value: RuntimeNetworkAccess = normalizedRest === "on"
+          ? "enabled"
+          : normalizedRest === "off"
+            ? "disabled"
+            : "inherit";
+        return {
+          action: "runtime_network_access",
+          value,
+          message: `Network access set to ${formatNetworkAccessLabel(value)}.`,
+        };
+      }
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} network [status|inherit|on|off]`,
+      };
+    }
+
+    case "writable-roots": {
+      if (!rest || normalizedRest === "list" || normalizedRest === "status") {
+        return {
+          action: "runtime_writable_roots_list",
+          message: `Writable roots:\n${formatWritableRoots(context.runtime.policy.writableRoots)}`,
+        };
+      }
+
+      if (normalizedRest === "clear") {
+        return {
+          action: "runtime_writable_roots_clear",
+          message: "Writable roots cleared.",
+        };
+      }
+
+      if (normalizedRest.startsWith("add ")) {
+        const pathValue = rest.slice("add".length).trim();
+        if (!pathValue) {
+          return {
+            action: "unknown",
+            message: `Usage: ${commandPrefix} writable-roots add <path>`,
+          };
+        }
+        return {
+          action: "runtime_writable_roots_add",
+          value: pathValue,
+          message: `Writable root added: ${pathValue}`,
+        };
+      }
+
+      if (normalizedRest.startsWith("remove ")) {
+        const pathValue = rest.slice("remove".length).trim();
+        if (!pathValue) {
+          return {
+            action: "unknown",
+            message: `Usage: ${commandPrefix} writable-roots remove <path>`,
+          };
+        }
+        return {
+          action: "runtime_writable_roots_remove",
+          value: pathValue,
+          message: `Writable root removed: ${pathValue}`,
+        };
+      }
+
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} writable-roots [list|add <path>|remove <path>|clear]`,
+      };
+    }
+
+    case "service-tier": {
+      if (!includeExtendedControls) {
+        return {
+          action: "unknown",
+          message: `Unknown ${commandPrefix.slice(1)} command. Use ${commandPrefix} <approval-policy|sandbox|network|writable-roots>.`,
+        };
+      }
+      if (!rest || normalizedRest === "status") {
+        return {
+          action: "runtime_service_tier",
+          message: `Service tier: ${formatServiceTierLabel(context.runtime.policy.serviceTier)}.`,
+        };
+      }
+      if (isOneOf(normalizedRest, SERVICE_TIER_VALUES)) {
+        const value = normalizedRest as RuntimeServiceTier;
+        return {
+          action: "runtime_service_tier",
+          value,
+          message: `Service tier set to ${formatServiceTierLabel(value)}.`,
+        };
+      }
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} service-tier [status|flex|fast]`,
+      };
+    }
+
+    case "personality": {
+      if (!includeExtendedControls) {
+        return {
+          action: "unknown",
+          message: `Unknown ${commandPrefix.slice(1)} command. Use ${commandPrefix} <approval-policy|sandbox|network|writable-roots>.`,
+        };
+      }
+      if (!rest || normalizedRest === "status") {
+        return {
+          action: "runtime_personality",
+          message: `Personality: ${formatPersonalityLabel(context.runtime.policy.personality)}.`,
+        };
+      }
+      if (isOneOf(normalizedRest, PERSONALITY_VALUES)) {
+        const value = normalizedRest as RuntimePersonality;
+        return {
+          action: "runtime_personality",
+          value,
+          message: `Personality set to ${formatPersonalityLabel(value)}.`,
+        };
+      }
+      return {
+        action: "unknown",
+        message: `Usage: ${commandPrefix} personality [status|none|friendly|pragmatic]`,
+      };
+    }
+
+    default:
+      return {
+        action: "unknown",
+        message: includeExtendedControls
+          ? `Unknown ${commandPrefix.slice(1)} command. Use /status or ${commandPrefix} <approval-policy|sandbox|network|writable-roots|service-tier|personality>.`
+          : `Unknown ${commandPrefix.slice(1)} command. Use /permissions <approval-policy|sandbox|network|writable-roots>.`,
+      };
+  }
+}
+
+export function handleCommand(text: string, context: CommandContext): CommandResult | null {
   if (!text.startsWith("/")) return null;
 
   const [rawCmd, ...argParts] = text.slice(1).trim().split(/\s+/);
@@ -148,51 +381,6 @@ export function handleCommand(
       };
     }
 
-    case "permissions": {
-      if (!arg) return { action: "open_permissions_picker" };
-      if (normalizedArg === "status") {
-        return {
-          action: "permissions_status",
-          message: `Current permissions: ${formatRuntimePolicySummary(currentRuntimePolicy)}`,
-        };
-      }
-
-      if (normalizedArg.startsWith("approval ")) {
-        const approvalValue = arg.slice("approval".length).trim().toLowerCase();
-        if (AVAILABLE_APPROVAL_POLICIES.some((item) => item.id === approvalValue)) {
-          return {
-            action: "permissions_approval",
-            value: approvalValue,
-            message: `Approval policy switched to ${formatApprovalPolicyLabel(approvalValue)}.`,
-          };
-        }
-        return {
-          action: "unknown",
-          message: "Unknown approval policy. Valid: untrusted, on-request, never",
-        };
-      }
-
-      if (normalizedArg.startsWith("sandbox ")) {
-        const sandboxValue = arg.slice("sandbox".length).trim().toLowerCase();
-        if (AVAILABLE_SANDBOX_MODES.some((item) => item.id === sandboxValue)) {
-          return {
-            action: "permissions_sandbox",
-            value: sandboxValue,
-            message: `Sandbox switched to ${formatSandboxLabel(sandboxValue)}.`,
-          };
-        }
-        return {
-          action: "unknown",
-          message: "Unknown sandbox mode. Valid: read-only, workspace-write, danger-full-access",
-        };
-      }
-
-      return {
-        action: "unknown",
-        message: "Unknown permissions command. Use /permissions, /permissions status, /permissions approval <policy>, or /permissions sandbox <mode>.",
-      };
-    }
-
     case "theme": {
       if (!arg) return { action: "open_theme_picker" };
       if (AVAILABLE_THEMES.some((item) => item.id === arg)) {
@@ -209,20 +397,20 @@ export function handleCommand(
     }
 
     case "models": {
-      const list = AVAILABLE_MODELS.map((m, i) => `  ${i + 1}. ${m}`).join("\n");
+      const list = AVAILABLE_MODELS.map((model, index) => `  ${index + 1}. ${model}`).join("\n");
       return {
         action: "models",
-        message: `Available models:\n${list}\n\nCurrent: ${currentModel}\nBackend: ${formatBackendLabel(currentBackend)}`,
+        message: `Available models:\n${list}\n\nCurrent: ${context.runtime.model}\nBackend: ${formatBackendLabel(context.runtime.provider)}`,
       };
     }
 
     case "backends": {
       const list = AVAILABLE_BACKENDS
-        .map((item, i) => `  ${i + 1}. ${item.label} (${item.id})`)
+        .map((item, index) => `  ${index + 1}. ${item.label} (${item.id})`)
         .join("\n");
       return {
         action: "backends",
-        message: `Available backends:\n${list}\n\nCurrent: ${formatBackendLabel(currentBackend)}`,
+        message: `Available backends:\n${list}\n\nCurrent: ${formatBackendLabel(context.runtime.provider)}`,
       };
     }
 
@@ -230,7 +418,7 @@ export function handleCommand(
       if (!arg) {
         return {
           action: "workspace",
-          message: workspace.summaryMessage,
+          message: context.workspace.summaryMessage,
         };
       }
 
@@ -254,6 +442,39 @@ export function handleCommand(
       };
     }
 
+    case "config": {
+      if (!arg || normalizedArg === "status") {
+        return {
+          action: "config_status",
+          message: formatLayeredConfigStatus(context.config),
+        };
+      }
+
+      if (normalizedArg === "trust" || normalizedArg === "trust status") {
+        return {
+          action: "config_trust_status",
+          message: [
+            "Project trust:",
+            `  Root: ${context.config.diagnostics.projectRoot}`,
+            `  Status: ${context.config.diagnostics.projectTrusted ? "Trusted" : "Untrusted"}`,
+          ].join("\n"),
+        };
+      }
+
+      if (normalizedArg === "trust on" || normalizedArg === "trust off") {
+        return {
+          action: "config_trust_set",
+          value: normalizedArg.endsWith("on") ? "on" : "off",
+          message: `Project trust ${normalizedArg.endsWith("on") ? "enabled" : "disabled"}.`,
+        };
+      }
+
+      return {
+        action: "unknown",
+        message: "Unknown config command. Use /config, /config status, or /config trust [status|on|off].",
+      };
+    }
+
     case "auth": {
       if (!arg) return { action: "open_auth_panel" };
       if (arg === "status") {
@@ -272,6 +493,47 @@ export function handleCommand(
       };
     }
 
+    case "status":
+      return {
+        action: "status",
+        message: formatRuntimeStatus(context.resolvedRuntime, {
+          workspaceRoot: context.workspace.root,
+          tokensUsed: context.tokensUsed,
+        }),
+      };
+
+    case "permissions": {
+      if (!arg) {
+        return { action: "open_permissions_panel" };
+      }
+
+      if (normalizedArg === "status") {
+        return {
+          action: "permissions_status",
+          message: formatPermissionsStatus(
+            context.runtime,
+            context.resolvedRuntime,
+            context.workspace.root,
+          ),
+        };
+      }
+
+      return handlePolicyCommand("/permissions", arg, context, false);
+    }
+
+    case "runtime": {
+      if (!arg) {
+        return {
+          action: "status",
+          message: formatRuntimeStatus(context.resolvedRuntime, {
+            workspaceRoot: context.workspace.root,
+            tokensUsed: context.tokensUsed,
+          }),
+        };
+      }
+      return handlePolicyCommand("/runtime", arg, context, true);
+    }
+
     case "login":
       return { action: "login" };
 
@@ -281,9 +543,8 @@ export function handleCommand(
     case "copy":
       return { action: "copy" };
 
-    case "themes": {
+    case "themes":
       return { action: "open_theme_picker" };
-    }
 
     case "mouse":
       return { action: "mouse_toggle" };
@@ -307,12 +568,25 @@ export function handleCommand(
           "  /backend [name]    Switch backend (no arg opens picker)",
           "  /model [name]      Switch model (no arg opens picker)",
           `  /mode [name]       Switch execution mode (${formatModeCommandHelp()})`,
-          "                     suggest = advisor turn, auto-edit = edit-focused, full-auto = strongest autonomy",
+          "                     suggest = read-only-style prompting, auto-edit = file edits, full-auto = strongest autonomy",
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
-          "  /permissions       Open permissions picker",
-          "  /permissions status Show current approval policy and sandbox",
-          "  /permissions approval <policy> Set approval policy",
-          "  /permissions sandbox <mode> Set sandbox mode",
+          "  /status            Show the effective runtime configuration",
+          "  /config            Show layered config sources and winning values",
+          "  /config trust [status|on|off] Manage whether project config is allowed to load",
+          "  /permissions       Open or update permissions and sandbox controls",
+          "  /permissions status",
+          "  /permissions approval-policy [status|inherit|untrusted|on-request|never]",
+          "  /permissions sandbox [status|inherit|read-only|workspace-write|danger-full-access]",
+          "  /permissions network [status|inherit|on|off]",
+          "  /permissions writable-roots [list|add <path>|remove <path>|clear]",
+          "  /runtime ...       Inspect or update runtime policy controls",
+          "                     Compatibility surface; /permissions is the primary entry point",
+          "  /runtime approval-policy [status|inherit|untrusted|on-request|never]",
+          "  /runtime sandbox [status|inherit|read-only|workspace-write|danger-full-access]",
+          "  /runtime network [status|inherit|on|off]",
+          "  /runtime writable-roots [list|add <path>|remove <path>|clear]",
+          "  /runtime service-tier [status|flex|fast]",
+          "  /runtime personality [status|none|friendly|pragmatic]",
           "  /theme [name]      Switch theme directly (no arg opens picker)",
           "  /themes            Open visual theme picker (Up/Down + Enter)",
           "  /verbose           Toggle verbose mode (shows detailed processing info)",
@@ -325,8 +599,7 @@ export function handleCommand(
           "  /models            List all available models",
           "  /workspace         Show the locked workspace for this session",
           "  /workspace relaunch <path> Restart the app in another workspace folder",
-          `  Current reasoning: ${formatReasoningLabel(currentReasoningLevel)}`,
-          `  Current permissions: ${formatRuntimePolicySummary(currentRuntimePolicy)}`,
+          `  Current reasoning: ${formatReasoningLabel(context.runtime.reasoningLevel)}`,
           "  /copy              Copy last response to clipboard",
           "  /help              Show this help",
           "",

@@ -1,6 +1,7 @@
 import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { APP_VERSION } from "../config/settings.js";
+import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../core/auth/codexAuth.js";
 import { useTheme } from "./theme.js";
@@ -20,6 +21,7 @@ interface TopHeaderProps {
   authState: CodexAuthState;
   workspaceRoot: string;
   layout: Layout;
+  runtimeSummary?: RuntimeSummary | null;
 }
 
 export function measureTopHeaderRows(layout: Layout): number {
@@ -33,7 +35,7 @@ function truncatePath(path: string, maxWidth: number): string {
   return "... " + path.slice(path.length - (maxWidth - 4));
 }
 
-export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) {
+export function TopHeader({ authState, workspaceRoot, layout, runtimeSummary = null }: TopHeaderProps) {
   const { cols, mode } = layout;
   const theme = useTheme();
 
@@ -57,6 +59,11 @@ export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) 
           <Text color={theme.TEXT} bold>{`Codexa v${APP_VERSION}`}</Text>
           <Text color={theme.TEXT}>{`Auth: ${authLabel}`}</Text>
           <Text color={theme.MUTED} wrap="truncate">{`Workspace: ${wsDisplay}`}</Text>
+          {runtimeSummary && (
+            <Text color={theme.DIM} wrap="truncate">
+              {`Runtime: ${runtimeSummary.model} (${runtimeSummary.reasoningLabel}) · ${runtimeSummary.modeLabel} · ${runtimeSummary.sandboxLabel} / ${runtimeSummary.approvalLabel} · ${runtimeSummary.networkLabel} · ${runtimeSummary.writableRootsLabel}`}
+            </Text>
+          )}
         </Box>
       </Box>
     );
@@ -68,6 +75,14 @@ export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) 
       <Text color={theme.TEXT} bold>{`Codexa v${APP_VERSION}`}</Text>
       <Text color={theme.DIM}>{"  ·  "}</Text>
       <Text color={theme.TEXT}>{authLabel}</Text>
+      {runtimeSummary && (
+        <>
+          <Text color={theme.DIM}>{"  ·  "}</Text>
+          <Text color={theme.INFO} wrap="truncate">
+            {`${runtimeSummary.model} · ${runtimeSummary.networkLabel} · ${runtimeSummary.writableRootsLabel} · ${runtimeSummary.modeLabel} · ${runtimeSummary.sandboxLabel}/${runtimeSummary.approvalLabel}`}
+          </Text>
+        </>
+      )}
       <Text color={theme.DIM}>{"  ·  "}</Text>
       <Text color={theme.MUTED} wrap="truncate">{wsDisplay}</Text>
     </Box>
@@ -81,6 +96,7 @@ export const MemoizedTopHeader = memo(TopHeader, (prev, next) => {
     prev.workspaceRoot === next.workspaceRoot &&
     prev.layout.cols === next.layout.cols &&
     prev.layout.rows === next.layout.rows &&
-    prev.layout.mode === next.layout.mode
+    prev.layout.mode === next.layout.mode &&
+    prev.runtimeSummary === next.runtimeSummary
   );
 });

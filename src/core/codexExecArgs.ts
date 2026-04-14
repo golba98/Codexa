@@ -1,11 +1,9 @@
-import { formatRuntimePolicySummary, type RuntimePolicy } from "../config/settings.js";
+import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import type { CodexCliCapabilities } from "./codexCapabilities.js";
 
 export interface BuildCodexExecArgsOptions {
-  model: string;
+  runtime: ResolvedRuntimeConfig;
   cwd: string;
-  runtimePolicy: RuntimePolicy;
-  reasoningLevel?: string;
   structuredOutput?: boolean;
 }
 
@@ -27,8 +25,8 @@ function sanitizeWorkingDirectory(cwd: string): string {
   return cwd;
 }
 
-function isFullAutoRuntimePolicy(runtimePolicy: RuntimePolicy): boolean {
-  return runtimePolicy.approvalPolicy === "never" && runtimePolicy.sandboxMode === "danger-full-access";
+function isFullAutoRuntime(runtime: ResolvedRuntimeConfig): boolean {
+  return runtime.policy.approvalPolicy === "never" && runtime.policy.sandboxMode === "danger-full-access";
 }
 
 function buildCapabilitySummary(capabilities: CodexCliCapabilities): string {
@@ -42,13 +40,21 @@ function buildCapabilitySummary(capabilities: CodexCliCapabilities): string {
   return supported.length > 0 ? supported.join(", ") : "none";
 }
 
-function buildRuntimePolicyArgs(
-  runtimePolicy: RuntimePolicy,
-  capabilities: CodexCliCapabilities,
-): BuildCodexExecArgsResult {
+function buildRuntimeFailureMessage(runtime: ResolvedRuntimeConfig, capabilities: CodexCliCapabilities): string {
+  return [
+    "Installed Codex CLI cannot safely apply the requested runtime configuration.",
+    `Requested approval policy: ${runtime.policy.approvalPolicy}.`,
+    `Requested sandbox mode: ${runtime.policy.sandboxMode}.`,
+    `Detected launch controls: ${buildCapabilitySummary(capabilities)}.`,
+    "Update Codex or choose a runtime configuration that your installed CLI can represent.",
+  ].join("\n");
+}
+
+function buildRuntimePolicyArgs(runtime: ResolvedRuntimeConfig, capabilities: CodexCliCapabilities): BuildCodexExecArgsResult {
   const args: string[] = [];
   const missingDirectApproval = !capabilities.askForApproval;
   const missingDirectSandbox = !capabilities.sandbox;
+  const runtimePolicy = runtime.policy;
 
   if (!missingDirectApproval && !missingDirectSandbox) {
     args.push("--ask-for-approval", runtimePolicy.approvalPolicy);
@@ -56,7 +62,7 @@ function buildRuntimePolicyArgs(
     return { ok: true, args, strategy: "direct-flags" };
   }
 
-  if (isFullAutoRuntimePolicy(runtimePolicy) && capabilities.fullAuto) {
+  if (isFullAutoRuntime(runtime) && capabilities.fullAuto) {
     args.push("--full-auto");
     return { ok: true, args, strategy: "full-auto" };
   }
@@ -80,11 +86,7 @@ function buildRuntimePolicyArgs(
   return {
     ok: false,
     strategy: "fail",
-    error: [
-      `Installed Codex CLI cannot safely apply the requested runtime policy: ${formatRuntimePolicySummary(runtimePolicy)}.`,
-      `Detected launch controls: ${buildCapabilitySummary(capabilities)}.`,
-      "Update Codex or choose a policy that your installed CLI can represent.",
-    ].join("\n"),
+    error: buildRuntimeFailureMessage(runtime, capabilities),
   };
 }
 
@@ -92,6 +94,7 @@ export function buildCodexExecArgs(
   options: BuildCodexExecArgsOptions,
   capabilities: CodexCliCapabilities,
 ): BuildCodexExecArgsResult {
+  const { runtime } = options;
   const args: string[] = ["exec"];
 
   if (options.structuredOutput ?? true) {
@@ -103,30 +106,46 @@ export function buildCodexExecArgs(
     "--cd",
     sanitizeWorkingDirectory(options.cwd),
     "--model",
-    options.model,
+    runtime.model,
   );
 
-  if (options.reasoningLevel) {
-    if (!capabilities.config) {
-      return {
-        ok: false,
-        strategy: "fail",
-        error: [
-          `Installed Codex CLI cannot safely apply the selected reasoning level "${options.reasoningLevel}".`,
-          `Detected launch controls: ${buildCapabilitySummary(capabilities)}.`,
-          "This Codex version does not support --config / -c overrides.",
-        ].join("\n"),
-      };
-    }
-
-    args.push("--config", `reasoning.effort=${options.reasoningLevel}`);
+  if (!capabilities.config) {
+    return {
+      ok: false,
+      strategy: "fail",
+      error: [
+        `Installed Codex CLI cannot safely apply the selected reasoning level "${runtime.reasoningLevel}".`,
+        `Detected launch controls: ${buildCapabilitySummary(capabilities)}.`,
+        "This Codex version does not support --config / -c overrides.",
+      ].join("\n"),
+    };
   }
 
-  const policyArgs = buildRuntimePolicyArgs(options.runtimePolicy, capabilities);
+  args.push("--config", `reasoning.effort=${runtime.reasoningLevel}`);
+
+  const policyArgs = buildRuntimePolicyArgs(runtime, capabilities);
   if (!policyArgs.ok) {
     return policyArgs;
   }
 
-  args.push(...policyArgs.args, "-");
+  args.push(...policyArgs.args);
+
+  if (runtime.policy.networkAccess) {
+    args.push("--config", `sandbox_workspace_write.network_access=${JSON.stringify(runtime.policy.networkAccess)}`);
+  }
+
+  if (runtime.policy.writableRoots.length > 0) {
+    args.push("--config", `sandbox_workspace_write.writable_roots=${JSON.stringify(runtime.policy.writableRoots)}`);
+  }
+
+  if (runtime.policy.serviceTier !== "flex") {
+    args.push("--config", `service_tier=${runtime.policy.serviceTier}`);
+  }
+
+  if (runtime.policy.personality !== "none") {
+    args.push("--config", `personality=${runtime.policy.personality}`);
+  }
+
+  args.push("-");
   return { ok: true, args, strategy: policyArgs.strategy };
 }

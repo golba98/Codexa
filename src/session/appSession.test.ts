@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AssistantEvent, RunEvent, UserPromptEvent } from "./types.js";
 import { createInitialSessionState, reduceSessionState, type SessionState } from "./appSession.js";
+import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 
 function makeUserEvent(turnId: number): UserPromptEvent {
   return { id: 1, type: "user", createdAt: 1, prompt: "Do work", turnId };
@@ -16,8 +17,7 @@ function makeRunEvent(turnId: number): RunEvent {
     durationMs: null,
     backendId: "codex-subprocess",
     backendLabel: "Codexa",
-    mode: "auto-edit",
-    model: "gpt-5.4",
+    runtime: TEST_RUNTIME,
     prompt: "Do work",
     thinkingLines: [],
     status: "running",
@@ -121,4 +121,23 @@ test("RUN_APPEND_ASSISTANT_DELTA transitions UI state to RESPONDING", () => {
   });
 
   assert.equal(state.uiState.kind, "RESPONDING");
+});
+
+test("finalized runs retain their runtime snapshot after unrelated state changes", () => {
+  const turnId = 4;
+  let state = stateWithActiveRun(turnId);
+
+  state = reduceSessionState(state, {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "completed",
+    response: "Done",
+    assistantFactory: () => makeAssistantEvent(turnId, "Done"),
+  });
+
+  const runEvent = state.staticEvents.find((event): event is RunEvent => event.type === "run");
+  assert.ok(runEvent);
+  assert.equal(runEvent.runtime.model, TEST_RUNTIME.model);
+  assert.equal(runEvent.runtime.policy.sandboxMode, TEST_RUNTIME.policy.sandboxMode);
 });

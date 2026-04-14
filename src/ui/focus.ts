@@ -6,9 +6,14 @@ export const FOCUS_IDS = {
   modelPicker: "model-picker",
   modePicker: "mode-picker",
   reasoningPicker: "reasoning-picker",
-  permissionsPicker: "permissions-picker",
   themePicker: "theme-picker",
   authPanel: "auth-panel",
+  permissionsPanel: "permissions-panel",
+  permissionsApprovalPicker: "permissions-approval-picker",
+  permissionsSandboxPicker: "permissions-sandbox-picker",
+  permissionsNetworkPicker: "permissions-network-picker",
+  permissionsAddWritableRoot: "permissions-add-writable-root",
+  permissionsRemoveWritableRoot: "permissions-remove-writable-root",
 } as const;
 
 export type FocusTargetId = (typeof FOCUS_IDS)[keyof typeof FOCUS_IDS];
@@ -23,12 +28,22 @@ export function getFocusTargetForScreen(screen: Screen): FocusTargetId {
       return FOCUS_IDS.modePicker;
     case "reasoning-picker":
       return FOCUS_IDS.reasoningPicker;
-    case "permissions-picker":
-      return FOCUS_IDS.permissionsPicker;
     case "theme-picker":
       return FOCUS_IDS.themePicker;
     case "auth-panel":
       return FOCUS_IDS.authPanel;
+    case "permissions-panel":
+      return FOCUS_IDS.permissionsPanel;
+    case "permissions-approval-picker":
+      return FOCUS_IDS.permissionsApprovalPicker;
+    case "permissions-sandbox-picker":
+      return FOCUS_IDS.permissionsSandboxPicker;
+    case "permissions-network-picker":
+      return FOCUS_IDS.permissionsNetworkPicker;
+    case "permissions-add-writable-root":
+      return FOCUS_IDS.permissionsAddWritableRoot;
+    case "permissions-remove-writable-root":
+      return FOCUS_IDS.permissionsRemoveWritableRoot;
     case "main":
     default:
       return FOCUS_IDS.composer;

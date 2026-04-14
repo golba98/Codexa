@@ -69,6 +69,8 @@ function logCodexLaunchDiagnostics(
     `    fullAuto=${capabilities.fullAuto}`,
     `  chosen strategy: ${prepared.strategy}`,
     `  structured output: ${options.structuredOutput ?? true}`,
+    `  runtime model: ${options.runtime.model}`,
+    `  runtime mode: ${options.runtime.mode}`,
     `  final argv: ${JSON.stringify(prepared.args)}`,
   ];
 

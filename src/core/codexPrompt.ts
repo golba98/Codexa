@@ -1,4 +1,5 @@
-import type { AvailableMode, RuntimePolicy } from "../config/settings.js";
+import type { AvailableMode } from "../config/settings.js";
+import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 
 const WRITE_INTENT_PATTERNS = [
   /\b(create|make|build|implement|add|generate|write|scaffold|fix|edit|update|refactor)\b/i,
@@ -156,13 +157,37 @@ export function detectHollowResponse(prompt: string, response: string): HollowRe
   return { isHollow: false, kind: "none", reason: "" };
 }
 
+function resolvePromptRuntime(
+  modeOrRuntime: AvailableMode | Pick<ResolvedRuntimeConfig, "mode" | "policy">,
+  runtimePolicy?: {
+    approvalPolicy: string;
+    sandboxMode: string;
+  },
+): { mode: AvailableMode; sandboxMode: string } {
+  if (typeof modeOrRuntime === "string") {
+    return {
+      mode: modeOrRuntime,
+      sandboxMode: runtimePolicy?.sandboxMode ?? "workspace-write",
+    };
+  }
+
+  return {
+    mode: modeOrRuntime.mode,
+    sandboxMode: modeOrRuntime.policy.sandboxMode,
+  };
+}
+
 export function buildCodexPrompt(
   prompt: string,
-  mode: AvailableMode,
-  runtimePolicy: RuntimePolicy,
+  modeOrRuntime: AvailableMode | Pick<ResolvedRuntimeConfig, "mode" | "policy">,
+  runtimePolicy?: {
+    approvalPolicy: string;
+    sandboxMode: string;
+  },
 ): string {
   const enrichedPrompt = enrichFileCreationPrompt(prompt);
-  const readOnlySandbox = runtimePolicy.sandboxMode === "read-only";
+  const { mode, sandboxMode } = resolvePromptRuntime(modeOrRuntime, runtimePolicy);
+  const readOnlySandbox = sandboxMode === "read-only";
 
   if (readOnlySandbox) {
     return [
