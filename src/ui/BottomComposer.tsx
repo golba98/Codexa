@@ -30,6 +30,7 @@ type DeleteIntent = "backspace" | "delete";
 const BRACKETED_PASTE_START = /(?:\u001B)?\[200~/;
 const BRACKETED_PASTE_END = /(?:\u001B)?\[201~/;
 const DELETE_ESCAPE_SEQUENCE = /^\u001b\[3(?:;\d+)?~$/;
+const BACKTAB_ESCAPE_SEQUENCE = /\u001b\[Z/;
 const MAX_VISIBLE_INPUT_ROWS = 5;
 
 function resolveDeleteIntentFromRawInput(raw: string): DeleteIntent | null {
@@ -84,6 +85,7 @@ interface BottomComposerProps {
   onOpenModePicker: () => void;
   onOpenThemePicker: () => void;
   onOpenAuthPanel: () => void;
+  onTogglePlanMode: () => void;
   onClear: () => void;
   onCycleMode: () => void;
   onQuit: () => void;
@@ -239,6 +241,7 @@ export function BottomComposer({
   onOpenModePicker,
   onOpenThemePicker,
   onOpenAuthPanel,
+  onTogglePlanMode,
   onClear,
   onCycleMode,
   onQuit,
@@ -265,7 +268,9 @@ export function BottomComposer({
   const lastPropsCursorRef = useRef(cursor);
   const pasteBufferRef = useRef<string | null>(null);
   const deleteIntentRef = useRef<DeleteIntent | null>(null);
+  const backtabEventTickRef = useRef(false);
   const mouseEventTickRef = useRef(false);
+  const backtabEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mouseEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -274,6 +279,14 @@ export function BottomComposer({
       const intent = resolveDeleteIntentFromRawInput(raw);
       if (intent) {
         deleteIntentRef.current = intent;
+      }
+
+      if (BACKTAB_ESCAPE_SEQUENCE.test(raw)) {
+        backtabEventTickRef.current = true;
+        if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
+        backtabEventTimeoutRef.current = setTimeout(() => {
+          backtabEventTickRef.current = false;
+        }, 64);
       }
 
       // Explicitly detect terminal mouse reporting escape sequences to swallow
@@ -291,6 +304,7 @@ export function BottomComposer({
     stdin.on("data", handleRawInput);
     return () => {
       stdin.off("data", handleRawInput);
+      if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
       if (mouseEventTimeoutRef.current) clearTimeout(mouseEventTimeoutRef.current);
     };
   }, [stdin]);
@@ -401,6 +415,16 @@ export function BottomComposer({
 
   useInput((input, key) => {
     if (mouseEventTickRef.current) {
+      return;
+    }
+
+    if (backtabEventTickRef.current) {
+      backtabEventTickRef.current = false;
+      if (backtabEventTimeoutRef.current) {
+        clearTimeout(backtabEventTimeoutRef.current);
+        backtabEventTimeoutRef.current = null;
+      }
+      onTogglePlanMode();
       return;
     }
 

@@ -531,6 +531,10 @@ export function App({ launchArgs }: AppProps) {
     appendSystemEvent("Plan mode", `Plan mode ${nextEnabled ? "enabled" : "disabled"}.`);
   }, [appendSystemEvent, busy, updateRuntimeConfig]);
 
+  const togglePlanModeWithNotice = useCallback(() => {
+    setPlanModeWithNotice(!planMode);
+  }, [planMode, setPlanModeWithNotice]);
+
   const setModelWithNotice = useCallback((nextModel: AvailableModel) => {
     const gate = guardConfigMutation("model", busy);
     if (!gate.allowed) {
@@ -1785,6 +1789,7 @@ export function App({ launchArgs }: AppProps) {
     setModeWithNotice,
     setModelWithNotice,
     setPlanModeWithNotice,
+    togglePlanModeWithNotice,
     setPersonalityWithNotice,
     setProjectTrustWithNotice,
     setReasoningWithNotice,
@@ -2024,6 +2029,7 @@ export function App({ launchArgs }: AppProps) {
             onOpenModePicker={openModePicker}
             onOpenThemePicker={openThemePicker}
             onOpenAuthPanel={openAuthPanel}
+            onTogglePlanMode={togglePlanModeWithNotice}
             onClear={handleClear}
             onCycleMode={cycleModeWithNotice}
             onQuit={handleQuit}

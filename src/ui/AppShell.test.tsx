@@ -149,6 +149,7 @@ function renderShell(
             onOpenModePicker={() => {}}
             onOpenThemePicker={() => {}}
             onOpenAuthPanel={() => {}}
+            onTogglePlanMode={() => {}}
             onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
@@ -242,6 +243,7 @@ test("memoized composer re-renders when only the terminal height changes", async
         onOpenModePicker={() => {}}
         onOpenThemePicker={() => {}}
         onOpenAuthPanel={() => {}}
+        onTogglePlanMode={() => {}}
         onClear={() => {}}
         onCycleMode={() => {}}
         onQuit={() => {}}

@@ -292,6 +292,7 @@ test("documents runtime commands in help", () => {
   assert.match(result?.message ?? "", /\/runtime writable-roots/i);
   assert.match(result?.message ?? "", /\/plan \[on\|off\]\s+Show or toggle session plan mode/i);
   assert.match(result?.message ?? "", /Current plan mode: Disabled/i);
+  assert.match(result?.message ?? "", /Shift\+Tab\s+Toggle plan mode/i);
   assert.match(result?.message ?? "", /Ctrl\+Y\s+Cycle execution mode/i);
 });
 
