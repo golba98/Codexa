@@ -1,4 +1,5 @@
 import type { AvailableMode } from "../config/settings.js";
+import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 
 const WRITE_INTENT_PATTERNS = [
   /\b(create|make|build|implement|add|generate|write|scaffold|fix|edit|update|refactor)\b/i,
@@ -156,14 +157,61 @@ export function detectHollowResponse(prompt: string, response: string): HollowRe
   return { isHollow: false, kind: "none", reason: "" };
 }
 
-export function buildCodexPrompt(prompt: string, mode: AvailableMode): string {
+function resolvePromptRuntime(
+  modeOrRuntime: AvailableMode | Pick<ResolvedRuntimeConfig, "mode" | "policy">,
+  runtimePolicy?: {
+    approvalPolicy: string;
+    sandboxMode: string;
+  },
+): { mode: AvailableMode; sandboxMode: string } {
+  if (typeof modeOrRuntime === "string") {
+    return {
+      mode: modeOrRuntime,
+      sandboxMode: runtimePolicy?.sandboxMode ?? "workspace-write",
+    };
+  }
+
+  return {
+    mode: modeOrRuntime.mode,
+    sandboxMode: modeOrRuntime.policy.sandboxMode,
+  };
+}
+
+export function buildCodexPrompt(
+  prompt: string,
+  modeOrRuntime: AvailableMode | Pick<ResolvedRuntimeConfig, "mode" | "policy">,
+  runtimePolicy?: {
+    approvalPolicy: string;
+    sandboxMode: string;
+  },
+): string {
   const enrichedPrompt = enrichFileCreationPrompt(prompt);
+  const { mode, sandboxMode } = resolvePromptRuntime(modeOrRuntime, runtimePolicy);
+  const readOnlySandbox = sandboxMode === "read-only";
+
+  if (readOnlySandbox) {
+    return [
+      "The user request below is the task to handle now.",
+      "Do not reply with generic readiness or ask what they want changed if the request is already specific.",
+      "Runtime permissions are read-only for this turn.",
+      "Inspect files and answer carefully, but do not claim to have edited files unless you actually could.",
+      "Default to best-effort continuation instead of stopping for clarification.",
+      "If a detail is missing but non-critical, make the most reasonable assumption and state it briefly.",
+      "If multiple paths are possible, choose one sensible path and continue.",
+      "Only ask a blocking follow-up question if proceeding would likely use the wrong file, wrong command, destructive behavior, or produce fundamentally incorrect output.",
+      "If you are truly blocked on one critical missing fact, end the response with exactly one line in this format: [QUESTION]: <your question>",
+      "",
+      "Task:",
+      enrichedPrompt,
+    ].join("\n");
+  }
 
   if (mode === "suggest") {
     return [
       "The user request below is the task to handle now.",
       "Do not reply with generic readiness or ask what they want changed if the request is already specific.",
-      "You are in read-only mode, so inspect files and answer carefully, but do not claim to have edited files unless you actually could.",
+      "The current permissions allow workspace edits, but this turn is still in suggest mode.",
+      "Inspect the repo and answer carefully without making file changes in this turn.",
       "Default to best-effort continuation instead of stopping for clarification.",
       "If a detail is missing but non-critical, make the most reasonable assumption and state it briefly.",
       "If multiple paths are possible, choose one sensible path and continue.",

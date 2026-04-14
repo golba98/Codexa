@@ -2,6 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildCodexPrompt, detectHollowResponse, promptHasWriteIntent, resolveExecutionMode } from "./codexPrompt.js";
 
+const readOnlyPolicy = {
+  approvalPolicy: "untrusted",
+  sandboxMode: "read-only",
+} as const;
+
+const writePolicy = {
+  approvalPolicy: "on-request",
+  sandboxMode: "workspace-write",
+} as const;
+
 test("detects write intent for build requests", () => {
   assert.equal(promptHasWriteIntent("Create a weather app script with tests"), true);
 });
@@ -24,22 +34,26 @@ test("keeps explicit full-auto mode unchanged", () => {
   });
 });
 
-test("builds a write-enabled codex prompt for auto-edit", () => {
-  const prompt = buildCodexPrompt("Create a weather app script with tests", "auto-edit");
+test("read-only runtime policy overrides write-capable modes", () => {
+  const prompt = buildCodexPrompt("Create a weather app script with tests", "auto-edit", readOnlyPolicy);
+  assert.match(prompt, /runtime permissions are read-only/i);
+  assert.doesNotMatch(prompt, /write access/i);
+  assert.doesNotMatch(prompt, /create or update files directly/i);
+});
+
+test("suggest mode stays advisory even with write-capable permissions", () => {
+  const prompt = buildCodexPrompt("Explain this code", "suggest", writePolicy);
+  assert.match(prompt, /permissions allow workspace edits/i);
+  assert.match(prompt, /still in suggest mode/i);
+  assert.match(prompt, /without making file changes/i);
+});
+
+test("builds a write-enabled codex prompt for auto-edit when permissions allow it", () => {
+  const prompt = buildCodexPrompt("Create a weather app script with tests", "auto-edit", writePolicy);
   assert.match(prompt, /write access/i);
   assert.match(prompt, /create or update files directly/i);
   assert.match(prompt, /best-effort continuation/i);
   assert.match(prompt, /make the most reasonable assumption/i);
-  assert.match(prompt, /\[QUESTION\]:/i);
-  assert.match(prompt, /do not reply with generic readiness/i);
-  assert.match(prompt, /Task:/i);
-});
-
-test("builds a suggest-mode prompt that avoids generic readiness replies", () => {
-  const prompt = buildCodexPrompt("Explain this code", "suggest");
-  assert.match(prompt, /read-only mode/i);
-  assert.match(prompt, /best-effort continuation/i);
-  assert.match(prompt, /choose one sensible path and continue/i);
   assert.match(prompt, /\[QUESTION\]:/i);
   assert.match(prompt, /do not reply with generic readiness/i);
   assert.match(prompt, /Task:/i);
@@ -101,7 +115,6 @@ test("does not flag responses containing code blocks", () => {
 });
 
 test("does not flag greetings when prompt has no write intent", () => {
-  // User saying "Hello" and getting "Hello" back is normal conversation
   for (const prompt of ["Hello", "Hi there", "Hey", "What's up"]) {
     const result = detectHollowResponse(prompt, "Hello!");
     assert.equal(result.isHollow, false, `Prompt "${prompt}" should not trigger hollow detection`);

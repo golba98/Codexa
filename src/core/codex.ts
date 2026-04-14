@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
-import { buildCodexExecArgs, type ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
-import { formatCodexLaunchError, resolveCodexExecutable, spawnCodexProcess } from "./codexExecutable.js";
+import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
+import { formatCodexLaunchError, spawnCodexProcess } from "./codexExecutable.js";
+import { prepareCodexExecLaunch } from "./codexLaunch.js";
 
 export interface CodexHandlers {
   onLine: (line: string) => void;
@@ -28,13 +29,28 @@ export function streamCodex(
     handlers.onDone();
   };
 
-  void resolveCodexExecutable()
-    .then((executable) => {
+  void prepareCodexExecLaunch(
+    {
+      runtime,
+      cwd: workspaceRoot,
+      structuredOutput: false,
+    },
+    import.meta.url,
+  )
+    .then((launchPlan) => {
       if (cancelled) return;
+      if (!launchPlan.ok) {
+        finishError(launchPlan.error);
+        return;
+      }
+      if (!launchPlan.executable) {
+        finishError("Codex launch preparation did not return an executable.");
+        return;
+      }
 
       proc = spawnCodexProcess(
-        executable,
-        buildCodexExecArgs(runtime, workspaceRoot, false),
+        launchPlan.executable,
+        launchPlan.args,
         { stdio: ["pipe", "pipe", "pipe"] },
       );
 

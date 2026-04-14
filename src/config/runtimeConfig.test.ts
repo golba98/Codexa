@@ -5,7 +5,6 @@ import {
   addWritableRoot,
   buildRuntimeSummary,
   buildCodexConfigOverrides,
-  buildCodexExecArgs,
   diffRuntimeConfig,
   formatPermissionsStatus,
   formatRuntimeStatus,
@@ -103,7 +102,7 @@ test("diffRuntimeConfig emits only fields that differ from the base", () => {
   });
 });
 
-test("builds deterministic codex config overrides and exec args", () => {
+test("builds deterministic codex config overrides", () => {
   const resolved = resolveRuntimeConfig(normalizeRuntimeConfig({
     model: "gpt-5.4-mini",
     mode: "suggest",
@@ -126,31 +125,6 @@ test("builds deterministic codex config overrides and exec args", () => {
     `sandbox_workspace_write.writable_roots=${JSON.stringify([writableRoot])}`,
     "service_tier=fast",
     "personality=pragmatic",
-  ]);
-
-  assert.deepEqual(buildCodexExecArgs(resolved, "C:/repo"), [
-    "exec",
-    "--experimental-json",
-    "--skip-git-repo-check",
-    "--cd",
-    "C:/repo",
-    "--model",
-    "gpt-5.4-mini",
-    "--sandbox",
-    "workspace-write",
-    "--config",
-    "reasoning.effort=medium",
-    "--config",
-    "approval_policy=never",
-    "--config",
-    "sandbox_workspace_write.network_access=true",
-    "--config",
-    `sandbox_workspace_write.writable_roots=${JSON.stringify([writableRoot])}`,
-    "--config",
-    "service_tier=fast",
-    "--config",
-    "personality=pragmatic",
-    "-",
   ]);
 });
 

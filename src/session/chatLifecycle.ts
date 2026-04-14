@@ -7,7 +7,7 @@ import type { RunEvent, RunToolActivity, TimelineEvent, UIState } from "./types.
 export const RUN_OUTPUT_TRUNCATION_NOTICE = "Older output was truncated to keep the UI responsive.";
 const ACTION_REQUIRED_BLOCK_PATTERN = /\*{0,2}=+\*{0,2}\s*\n\*{0,2}\[ACTION REQUIRED\]\*{0,2}\s*\n\*{0,2}Verification Question:\*{0,2}\s*\n([\s\S]*?)\n\*{0,2}=+\*{0,2}/i;
 
-export type ConfigMutationKind = "backend" | "model" | "mode" | "reasoning" | "theme";
+export type ConfigMutationKind = "backend" | "model" | "mode" | "reasoning" | "permissions" | "theme";
 export type UIStateAction =
   | { type: "PROMPT_RUN_STARTED"; turnId: number }
   | { type: "FIRST_ASSISTANT_DELTA"; turnId: number }
@@ -24,6 +24,7 @@ const BUSY_NOTICE_BY_KIND: Record<ConfigMutationKind, string> = {
   model: "Finish the current run before changing the model.",
   mode: "Finish the current run before changing the mode.",
   reasoning: "Finish the current run before changing the reasoning level.",
+  permissions: "Finish the current run before changing permissions.",
   theme: "Finish the current run before changing the theme.",
 };
 

@@ -468,53 +468,29 @@ export function formatRuntimeStatus(runtime: ResolvedRuntimeConfig, context: Run
   return lines.join("\n");
 }
 
-function safeWorkspaceRoot(cwd: string): string {
-  if (cwd.includes("\n") || cwd.includes("\r") || cwd.includes("\0")) {
-    return process.cwd();
-  }
-  return cwd;
-}
-
 export function buildCodexConfigOverrides(runtime: ResolvedRuntimeConfig): string[] {
   const overrides = [
     `reasoning.effort=${runtime.reasoningLevel}`,
     `approval_policy=${runtime.policy.approvalPolicy}`,
-    `sandbox_workspace_write.network_access=${JSON.stringify(runtime.policy.networkAccess)}`,
-    `sandbox_workspace_write.writable_roots=${JSON.stringify(runtime.policy.writableRoots)}`,
-    `service_tier=${runtime.policy.serviceTier}`,
-    `personality=${runtime.policy.personality}`,
   ];
 
+  if (runtime.policy.networkAccess) {
+    overrides.push(`sandbox_workspace_write.network_access=${JSON.stringify(runtime.policy.networkAccess)}`);
+  }
+
+  if (runtime.policy.writableRoots.length > 0) {
+    overrides.push(`sandbox_workspace_write.writable_roots=${JSON.stringify(runtime.policy.writableRoots)}`);
+  }
+
+  if (runtime.policy.serviceTier !== "flex") {
+    overrides.push(`service_tier=${runtime.policy.serviceTier}`);
+  }
+
+  if (runtime.policy.personality !== "none") {
+    overrides.push(`personality=${runtime.policy.personality}`);
+  }
+
   return overrides;
-}
-
-export function buildCodexExecArgs(
-  runtime: ResolvedRuntimeConfig,
-  cwd: string,
-  structuredOutput = true,
-): string[] {
-  const args: string[] = ["exec"];
-
-  if (structuredOutput) {
-    args.push("--experimental-json");
-  }
-
-  args.push(
-    "--skip-git-repo-check",
-    "--cd",
-    safeWorkspaceRoot(cwd),
-    "--model",
-    runtime.model,
-    "--sandbox",
-    runtime.policy.sandboxMode,
-  );
-
-  for (const override of buildCodexConfigOverrides(runtime)) {
-    args.push("--config", override);
-  }
-
-  args.push("-");
-  return args;
 }
 
 export function resolveWritableRootCommandPath(pathValue: string, workspaceRoot: string): string {
