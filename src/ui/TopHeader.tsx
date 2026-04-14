@@ -61,7 +61,7 @@ export function TopHeader({ authState, workspaceRoot, layout, runtimeSummary = n
           <Text color={theme.MUTED} wrap="truncate">{`Workspace: ${wsDisplay}`}</Text>
           {runtimeSummary && (
             <Text color={theme.DIM} wrap="truncate">
-              {`Runtime: ${runtimeSummary.model} (${runtimeSummary.reasoningLabel}) · ${runtimeSummary.modeLabel} · ${runtimeSummary.sandboxLabel} / ${runtimeSummary.approvalLabel}`}
+              {`Runtime: ${runtimeSummary.model} (${runtimeSummary.reasoningLabel}) · ${runtimeSummary.modeLabel} · ${runtimeSummary.sandboxLabel} / ${runtimeSummary.approvalLabel} · ${runtimeSummary.networkLabel} · ${runtimeSummary.writableRootsLabel}`}
             </Text>
           )}
         </Box>
@@ -75,16 +75,16 @@ export function TopHeader({ authState, workspaceRoot, layout, runtimeSummary = n
       <Text color={theme.TEXT} bold>{`Codexa v${APP_VERSION}`}</Text>
       <Text color={theme.DIM}>{"  ·  "}</Text>
       <Text color={theme.TEXT}>{authLabel}</Text>
-      <Text color={theme.DIM}>{"  ·  "}</Text>
-      <Text color={theme.MUTED} wrap="truncate">{wsDisplay}</Text>
       {runtimeSummary && (
         <>
           <Text color={theme.DIM}>{"  ·  "}</Text>
           <Text color={theme.INFO} wrap="truncate">
-            {`${runtimeSummary.model} (${runtimeSummary.reasoningLabel}) · ${runtimeSummary.modeLabel} · ${runtimeSummary.sandboxLabel}/${runtimeSummary.approvalLabel}`}
+            {`${runtimeSummary.model} · ${runtimeSummary.networkLabel} · ${runtimeSummary.writableRootsLabel} · ${runtimeSummary.modeLabel} · ${runtimeSummary.sandboxLabel}/${runtimeSummary.approvalLabel}`}
           </Text>
         </>
       )}
+      <Text color={theme.DIM}>{"  ·  "}</Text>
+      <Text color={theme.MUTED} wrap="truncate">{wsDisplay}</Text>
     </Box>
   );
 }

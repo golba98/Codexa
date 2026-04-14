@@ -106,6 +106,8 @@ export interface RuntimeSummary {
   modeLabel: string;
   sandboxLabel: string;
   approvalLabel: string;
+  networkLabel: string;
+  writableRootsLabel: string;
 }
 
 export const DEFAULT_RUNTIME_POLICY: RuntimePolicyConfig = {
@@ -333,7 +335,37 @@ export function buildRuntimeSummary(runtime: ResolvedRuntimeConfig): RuntimeSumm
     modeLabel: formatModeLabel(runtime.mode),
     sandboxLabel: formatSandboxModeLabel(runtime.policy.sandboxMode),
     approvalLabel: formatApprovalPolicyLabel(runtime.policy.approvalPolicy),
+    networkLabel: runtime.policy.networkAccess ? "Net: on" : "Net: off",
+    writableRootsLabel: `Roots: ${runtime.policy.writableRoots.length}`,
   };
+}
+
+function formatWritableRootsBlock(roots: readonly string[]): string {
+  return roots.length > 0
+    ? roots.map((value) => `    - ${value}`).join("\n")
+    : "    - none";
+}
+
+export function formatPermissionsStatus(
+  runtime: RuntimeConfig,
+  resolvedRuntime: ResolvedRuntimeConfig,
+  workspaceRoot: string,
+): string {
+  const configuredRoots = formatWritableRootsBlock(runtime.policy.writableRoots);
+  const effectiveRoots = formatWritableRootsBlock(resolvedRuntime.policy.writableRoots);
+
+  return [
+    "Permissions status:",
+    `  Approval policy: configured ${formatApprovalPolicyLabel(runtime.policy.approvalPolicy)}; effective ${formatApprovalPolicyLabel(resolvedRuntime.policy.approvalPolicy)}`,
+    `  Sandbox mode: configured ${formatSandboxModeLabel(runtime.policy.sandboxMode)}; effective ${formatSandboxModeLabel(resolvedRuntime.policy.sandboxMode)}`,
+    `  Network access: configured ${formatNetworkAccessLabel(runtime.policy.networkAccess)}; effective ${formatNetworkAccessLabel(resolvedRuntime.policy.networkAccess)}`,
+    `  Workspace root: ${workspaceRoot}`,
+    "  Writable roots:",
+    "    Configured:",
+    configuredRoots,
+    "    Effective:",
+    effectiveRoots,
+  ].join("\n");
 }
 
 export function formatRuntimeStatus(runtime: ResolvedRuntimeConfig, context: RuntimeStatusContext): string {

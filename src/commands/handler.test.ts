@@ -99,6 +99,19 @@ test("shows effective runtime status", () => {
   assert.match(result?.message ?? "", /Tokens used: ~1,200/i);
 });
 
+test("opens the permissions panel when /permissions has no arguments", () => {
+  const result = runCommand("/permissions");
+  assert.equal(result?.action, "open_permissions_panel");
+});
+
+test("reports configured and effective permissions status", () => {
+  const result = runCommand("/permissions status");
+  assert.equal(result?.action, "permissions_status");
+  assert.match(result?.message ?? "", /Permissions status:/i);
+  assert.match(result?.message ?? "", /configured Inherit; effective On request/i);
+  assert.match(result?.message ?? "", /Network access: configured Inherit; effective Disabled/i);
+});
+
 test("parses runtime approval policy setters and status", () => {
   const setResult = runCommand("/runtime approval-policy never");
   assert.equal(setResult?.action, "runtime_approval_policy");
@@ -127,6 +140,24 @@ test("parses runtime network setters including inherit resets", () => {
   const inheritResult = runCommand("/runtime network inherit");
   assert.equal(inheritResult?.action, "runtime_network_access");
   assert.equal(inheritResult?.value, "inherit");
+});
+
+test("parses permissions command setters through the runtime action path", () => {
+  const approvalResult = runCommand("/permissions approval-policy never");
+  assert.equal(approvalResult?.action, "runtime_approval_policy");
+  assert.equal(approvalResult?.value, "never");
+
+  const sandboxResult = runCommand("/permissions sandbox workspace-write");
+  assert.equal(sandboxResult?.action, "runtime_sandbox_mode");
+  assert.equal(sandboxResult?.value, "workspace-write");
+
+  const networkResult = runCommand("/permissions network on");
+  assert.equal(networkResult?.action, "runtime_network_access");
+  assert.equal(networkResult?.value, "enabled");
+
+  const rootsResult = runCommand("/permissions writable-roots add .\\tmp");
+  assert.equal(rootsResult?.action, "runtime_writable_roots_add");
+  assert.equal(rootsResult?.value, ".\\tmp");
 });
 
 test("status reports resolved overrides rather than raw inherit values", () => {
@@ -182,6 +213,8 @@ test("documents runtime commands in help", () => {
   const result = runCommand("/help");
   assert.equal(result?.action, "help");
   assert.match(result?.message ?? "", /\/status\s+Show the effective runtime configuration/i);
+  assert.match(result?.message ?? "", /\/permissions\s+Open or update permissions and sandbox controls/i);
+  assert.match(result?.message ?? "", /\/permissions approval-policy/i);
   assert.match(result?.message ?? "", /\/runtime approval-policy/i);
   assert.match(result?.message ?? "", /\/runtime writable-roots/i);
   assert.match(result?.message ?? "", /Ctrl\+Y\s+Cycle execution mode/i);

@@ -5,7 +5,20 @@ import type {
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import type { RunActivitySummary, RunFileActivity } from "../core/workspaceActivity.js";
 
-export type Screen = "main" | "model-picker" | "mode-picker" | "backend-picker" | "auth-panel" | "reasoning-picker" | "theme-picker";
+export type Screen =
+  | "main"
+  | "model-picker"
+  | "mode-picker"
+  | "backend-picker"
+  | "auth-panel"
+  | "reasoning-picker"
+  | "theme-picker"
+  | "permissions-panel"
+  | "permissions-approval-picker"
+  | "permissions-sandbox-picker"
+  | "permissions-network-picker"
+  | "permissions-add-writable-root"
+  | "permissions-remove-writable-root";
 
 // ─── UI State Machine ─────────────────────────────────────────────────────────
 // Drives all visual decisions: border colors, input persona, turn opacity.
