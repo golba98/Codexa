@@ -71,6 +71,7 @@ export interface RuntimeConfig {
   model: AvailableModel;
   reasoningLevel: ReasoningLevel;
   mode: AvailableMode;
+  planMode: boolean;
   policy: RuntimePolicyConfig;
 }
 
@@ -92,6 +93,7 @@ export interface ResolvedRuntimeConfig {
   model: AvailableModel;
   reasoningLevel: ReasoningLevel;
   mode: AvailableMode;
+  planMode: boolean;
   policy: ResolvedRuntimePolicy;
 }
 
@@ -124,6 +126,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   model: DEFAULT_MODEL,
   reasoningLevel: normalizeReasoningForModel(DEFAULT_MODEL, DEFAULT_REASONING_LEVEL),
   mode: DEFAULT_MODE,
+  planMode: false,
   policy: DEFAULT_RUNTIME_POLICY,
 };
 
@@ -213,6 +216,7 @@ export function normalizeRuntimeConfig(input: PartialRuntimeConfig | null | unde
     provider,
     model,
     mode,
+    planMode: typeof input?.planMode === "boolean" ? input.planMode : DEFAULT_RUNTIME_CONFIG.planMode,
     reasoningLevel: normalizeReasoningForModel(model, reasoningInput),
     policy: normalizeRuntimePolicy(input?.policy),
   };
@@ -286,6 +290,9 @@ export function diffRuntimeConfig(base: RuntimeConfig, target: RuntimeConfig): P
     ...(normalizedBase.mode !== normalizedTarget.mode
       ? { mode: normalizedTarget.mode }
       : {}),
+    ...(normalizedBase.planMode !== normalizedTarget.planMode
+      ? { planMode: normalizedTarget.planMode }
+      : {}),
     ...(Object.keys(policyPatch).length > 0 ? { policy: policyPatch } : {}),
   };
 }
@@ -324,6 +331,7 @@ export function resolveRuntimeConfig(config: RuntimeConfig): ResolvedRuntimeConf
     provider: normalized.provider,
     model: normalized.model,
     mode: normalized.mode,
+    planMode: normalized.planMode,
     reasoningLevel: normalizeReasoningForModel(normalized.model, normalized.reasoningLevel),
     policy: {
       approvalPolicy,
@@ -451,6 +459,7 @@ export function formatRuntimeStatus(runtime: ResolvedRuntimeConfig, context: Run
     `  Model: ${runtime.model}`,
     `  Reasoning: ${formatReasoningLabel(runtime.reasoningLevel)}`,
     `  Mode: ${formatModeLabel(runtime.mode)}`,
+    `  Plan mode: ${runtime.planMode ? "Enabled" : "Disabled"}`,
     `  Approval policy: ${formatApprovalPolicyLabel(runtime.policy.approvalPolicy)}`,
     `  Sandbox mode: ${formatSandboxModeLabel(runtime.policy.sandboxMode)}`,
     `  Network access: ${formatNetworkAccessLabel(runtime.policy.networkAccess)}`,

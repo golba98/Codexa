@@ -39,6 +39,7 @@ export const RUNTIME_FIELD_PATHS = [
   "model",
   "reasoningLevel",
   "mode",
+  "planMode",
   "policy.approvalPolicy",
   "policy.sandboxMode",
   "policy.networkAccess",
@@ -579,6 +580,7 @@ function getTouchedFieldsFromPatch(patch: PartialRuntimeConfig): RuntimeFieldPat
   if (patch.model !== undefined) touched.add("model");
   if (patch.reasoningLevel !== undefined) touched.add("reasoningLevel");
   if (patch.mode !== undefined) touched.add("mode");
+  if (patch.planMode !== undefined) touched.add("planMode");
   if (patch.policy?.approvalPolicy !== undefined) touched.add("policy.approvalPolicy");
   if (patch.policy?.sandboxMode !== undefined) touched.add("policy.sandboxMode");
   if (patch.policy?.networkAccess !== undefined) touched.add("policy.networkAccess");
@@ -631,6 +633,8 @@ function formatRuntimeFieldValue(runtime: RuntimeConfig, field: RuntimeFieldPath
       return formatReasoningLabel(runtime.reasoningLevel);
     case "mode":
       return formatModeLabel(runtime.mode);
+    case "planMode":
+      return runtime.planMode ? "Enabled" : "Disabled";
     case "policy.approvalPolicy":
       return formatApprovalPolicyLabel(runtime.policy.approvalPolicy);
     case "policy.sandboxMode":

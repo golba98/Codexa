@@ -19,6 +19,7 @@ test("defaults resolve into a concrete runtime config", () => {
 
   assert.equal(resolved.model, DEFAULT_RUNTIME_CONFIG.model);
   assert.equal(resolved.mode, DEFAULT_RUNTIME_CONFIG.mode);
+  assert.equal(resolved.planMode, false);
   assert.equal(resolved.policy.approvalPolicy, "on-request");
   assert.equal(resolved.policy.sandboxMode, "workspace-write");
   assert.equal(resolved.policy.networkAccess, false);
@@ -73,6 +74,7 @@ test("writable root normalization strips redundant trailing separators", () => {
 test("merges runtime overrides onto a canonical base", () => {
   const merged = mergeRuntimeConfig(DEFAULT_RUNTIME_CONFIG, {
     model: "gpt-5.4-mini",
+    planMode: true,
     policy: {
       writableRoots: ["C:/Repo/extra"],
       serviceTier: "fast",
@@ -80,6 +82,7 @@ test("merges runtime overrides onto a canonical base", () => {
   });
 
   assert.equal(merged.model, "gpt-5.4-mini");
+  assert.equal(merged.planMode, true);
   assert.deepEqual(merged.policy.writableRoots, ["C:\\Repo\\extra"]);
   assert.equal(merged.policy.serviceTier, "fast");
 });
@@ -87,6 +90,7 @@ test("merges runtime overrides onto a canonical base", () => {
 test("diffRuntimeConfig emits only fields that differ from the base", () => {
   const target = normalizeRuntimeConfig({
     model: "gpt-5.4-mini",
+    planMode: true,
     policy: {
       networkAccess: "enabled",
       personality: "pragmatic",
@@ -95,6 +99,7 @@ test("diffRuntimeConfig emits only fields that differ from the base", () => {
 
   assert.deepEqual(diffRuntimeConfig(DEFAULT_RUNTIME_CONFIG, target), {
     model: "gpt-5.4-mini",
+    planMode: true,
     policy: {
       networkAccess: "enabled",
       personality: "pragmatic",
@@ -167,6 +172,7 @@ test("formats runtime status with effective policy details", () => {
   });
 
   assert.match(status, /Provider:/);
+  assert.match(status, /Plan mode: Disabled/);
   assert.match(status, /Approval policy:/);
   assert.match(status, /Sandbox mode:/);
   assert.match(status, /Tokens used: ~512/);

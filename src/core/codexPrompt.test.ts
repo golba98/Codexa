@@ -48,6 +48,18 @@ test("suggest mode stays advisory even with write-capable permissions", () => {
   assert.match(prompt, /without making file changes/i);
 });
 
+test("plan mode injects plan-first instructions without changing suggest semantics", () => {
+  const prompt = buildCodexPrompt("Explain this code", "suggest", {
+    ...writePolicy,
+    planMode: true,
+  });
+  assert.match(prompt, /Planning mode is enabled for this session/i);
+  assert.match(prompt, /Start by giving a concise, repo-aware plan/i);
+  assert.match(prompt, /continue the task normally under the current mode and runtime permissions/i);
+  assert.match(prompt, /still in suggest mode/i);
+  assert.match(prompt, /without making file changes/i);
+});
+
 test("builds a write-enabled codex prompt for auto-edit when permissions allow it", () => {
   const prompt = buildCodexPrompt("Create a weather app script with tests", "auto-edit", writePolicy);
   assert.match(prompt, /write access/i);
@@ -57,6 +69,27 @@ test("builds a write-enabled codex prompt for auto-edit when permissions allow i
   assert.match(prompt, /\[QUESTION\]:/i);
   assert.match(prompt, /do not reply with generic readiness/i);
   assert.match(prompt, /Task:/i);
+});
+
+test("plan mode keeps write-enabled prompts actionable", () => {
+  const prompt = buildCodexPrompt("Create a weather app script with tests", "auto-edit", {
+    ...writePolicy,
+    planMode: true,
+  });
+  assert.match(prompt, /Planning mode is enabled for this session/i);
+  assert.match(prompt, /continue the task normally under the current mode and runtime permissions/i);
+  assert.match(prompt, /write access/i);
+  assert.match(prompt, /create or update files directly/i);
+});
+
+test("plan mode does not override read-only runtime guidance", () => {
+  const prompt = buildCodexPrompt("Create a weather app script with tests", "full-auto", {
+    ...readOnlyPolicy,
+    planMode: true,
+  });
+  assert.match(prompt, /Planning mode is enabled for this session/i);
+  assert.match(prompt, /runtime permissions are read-only/i);
+  assert.doesNotMatch(prompt, /write access/i);
 });
 
 // --- detectHollowResponse tests ---

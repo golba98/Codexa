@@ -158,41 +158,54 @@ export function detectHollowResponse(prompt: string, response: string): HollowRe
 }
 
 function resolvePromptRuntime(
-  modeOrRuntime: AvailableMode | Pick<ResolvedRuntimeConfig, "mode" | "policy">,
+  modeOrRuntime: AvailableMode | Pick<ResolvedRuntimeConfig, "mode" | "policy" | "planMode">,
   runtimePolicy?: {
     approvalPolicy: string;
     sandboxMode: string;
+    planMode?: boolean;
   },
-): { mode: AvailableMode; sandboxMode: string } {
+): { mode: AvailableMode; sandboxMode: string; planMode: boolean } {
   if (typeof modeOrRuntime === "string") {
     return {
       mode: modeOrRuntime,
       sandboxMode: runtimePolicy?.sandboxMode ?? "workspace-write",
+      planMode: runtimePolicy?.planMode ?? false,
     };
   }
 
   return {
     mode: modeOrRuntime.mode,
     sandboxMode: modeOrRuntime.policy.sandboxMode,
+    planMode: modeOrRuntime.planMode,
   };
 }
 
 export function buildCodexPrompt(
   prompt: string,
-  modeOrRuntime: AvailableMode | Pick<ResolvedRuntimeConfig, "mode" | "policy">,
+  modeOrRuntime: AvailableMode | Pick<ResolvedRuntimeConfig, "mode" | "policy" | "planMode">,
   runtimePolicy?: {
     approvalPolicy: string;
     sandboxMode: string;
+    planMode?: boolean;
   },
 ): string {
   const enrichedPrompt = enrichFileCreationPrompt(prompt);
-  const { mode, sandboxMode } = resolvePromptRuntime(modeOrRuntime, runtimePolicy);
+  const { mode, sandboxMode, planMode } = resolvePromptRuntime(modeOrRuntime, runtimePolicy);
   const readOnlySandbox = sandboxMode === "read-only";
+  const planModeInstructions = planMode
+    ? [
+      "Planning mode is enabled for this session.",
+      "Start by giving a concise, repo-aware plan for how you will handle the task.",
+      "After the plan, continue the task normally under the current mode and runtime permissions.",
+      "Do not treat planning mode as a permission change and do not silently switch execution modes.",
+    ]
+    : [];
 
   if (readOnlySandbox) {
     return [
       "The user request below is the task to handle now.",
       "Do not reply with generic readiness or ask what they want changed if the request is already specific.",
+      ...planModeInstructions,
       "Runtime permissions are read-only for this turn.",
       "Inspect files and answer carefully, but do not claim to have edited files unless you actually could.",
       "Default to best-effort continuation instead of stopping for clarification.",
@@ -210,6 +223,7 @@ export function buildCodexPrompt(
     return [
       "The user request below is the task to handle now.",
       "Do not reply with generic readiness or ask what they want changed if the request is already specific.",
+      ...planModeInstructions,
       "The current permissions allow workspace edits, but this turn is still in suggest mode.",
       "Inspect the repo and answer carefully without making file changes in this turn.",
       "Default to best-effort continuation instead of stopping for clarification.",
@@ -231,6 +245,7 @@ export function buildCodexPrompt(
   return [
     "The user request below is the task to handle now.",
     "Do not reply with generic readiness or ask what they want changed if the request is already specific.",
+    ...planModeInstructions,
     "If the request is actionable, make the change in the workspace before responding.",
     "You are running inside the user's current workspace with write access.",
     autonomyLine,
