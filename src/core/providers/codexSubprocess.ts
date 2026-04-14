@@ -114,15 +114,15 @@ export const codexSubprocessProvider: BackendProvider = {
         executable,
         buildCodexExecArgs(
           options.model,
-          options.mode,
           options.workspaceRoot,
+          options.runtimePolicy,
           options.reasoningLevel,
           structuredOutput,
         ),
         { stdio: ["pipe", "pipe", "pipe"] },
       );
 
-      proc.stdin?.write(buildCodexPrompt(prompt, options.mode));
+      proc.stdin?.write(buildCodexPrompt(prompt, options.mode, options.runtimePolicy));
       proc.stdin?.end();
 
       proc.stdout?.on("data", (chunk: Buffer) => {

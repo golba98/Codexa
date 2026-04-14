@@ -6,6 +6,7 @@ export const FOCUS_IDS = {
   modelPicker: "model-picker",
   modePicker: "mode-picker",
   reasoningPicker: "reasoning-picker",
+  permissionsPicker: "permissions-picker",
   themePicker: "theme-picker",
   authPanel: "auth-panel",
 } as const;
@@ -22,6 +23,8 @@ export function getFocusTargetForScreen(screen: Screen): FocusTargetId {
       return FOCUS_IDS.modePicker;
     case "reasoning-picker":
       return FOCUS_IDS.reasoningPicker;
+    case "permissions-picker":
+      return FOCUS_IDS.permissionsPicker;
     case "theme-picker":
       return FOCUS_IDS.themePicker;
     case "auth-panel":

@@ -10,11 +10,17 @@ export const DEFAULT_REASONING_LEVEL = "high";
 export const DEFAULT_LAYOUT_STYLE = "gemini-shell";
 export const DEFAULT_THEME = "mono";
 export const DEFAULT_AUTH_PREFERENCE = "chatgpt-login-goal";
+export const DEFAULT_APPROVAL_POLICY = "on-request";
+export const DEFAULT_SANDBOX_MODE = "workspace-write";
 export const CODEX_EXECUTABLE = process.env.CODEX_EXECUTABLE || "codex";
 export const MAX_CHAT_LINES = 2000;
 export const MAX_VISIBLE_EVENTS = 8;
 export const SETTINGS_FILE = join(homedir(), ".codexa-settings.json");
 export const MODEL_SPECS_FILE = join(homedir(), ".codexa-model-specs.json");
+export const CODEX_CONFIG_DIR = ".codex";
+export const CODEX_CONFIG_FILE_NAME = "config.toml";
+export const GLOBAL_CODEX_CONFIG_FILE = join(homedir(), CODEX_CONFIG_DIR, CODEX_CONFIG_FILE_NAME);
+export const LAUNCH_ARGS_ENV = "CODEXA_LAUNCH_ARGS";
 
 export const AVAILABLE_BACKENDS = [
   {
@@ -50,6 +56,16 @@ export const AVAILABLE_REASONING_LEVELS = [
 ] as const;
 
 export type ReasoningLevel = (typeof AVAILABLE_REASONING_LEVELS)[number]["id"];
+
+export function isAvailableModel(value: unknown): value is AvailableModel {
+  return typeof value === "string"
+    && (AVAILABLE_MODELS as readonly string[]).includes(value);
+}
+
+export function isReasoningLevel(value: unknown): value is ReasoningLevel {
+  return typeof value === "string"
+    && AVAILABLE_REASONING_LEVELS.some((item) => item.id === value);
+}
 
 /** Rough token estimate: ~4 chars per token */
 export function estimateTokens(chars: number): number {
@@ -104,11 +120,92 @@ export const MODE_COMMAND_ALIASES = {
 export type ModeCommandAlias = keyof typeof MODE_COMMAND_ALIASES;
 
 export type CodexSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+export type CodexApprovalPolicy = "untrusted" | "on-request" | "never";
+
+export interface RuntimePolicy {
+  approvalPolicy: CodexApprovalPolicy;
+  sandboxMode: CodexSandboxMode;
+}
+
+export const AVAILABLE_APPROVAL_POLICIES = [
+  { id: "untrusted", label: "Untrusted" },
+  { id: "on-request", label: "On request" },
+  { id: "never", label: "Never" },
+] as const;
+
+export const AVAILABLE_SANDBOX_MODES = [
+  { id: "read-only", label: "Read only" },
+  { id: "workspace-write", label: "Workspace write" },
+  { id: "danger-full-access", label: "Danger full access" },
+] as const;
+
+export const PERMISSION_PRESETS = [
+  {
+    id: "read-only",
+    label: "Read only",
+    description: "Untrusted approval with read-only sandbox.",
+    policy: {
+      approvalPolicy: "untrusted",
+      sandboxMode: "read-only",
+    },
+  },
+  {
+    id: "auto-edit",
+    label: "Auto edit",
+    description: "On-request approval with workspace-write sandbox.",
+    policy: {
+      approvalPolicy: "on-request",
+      sandboxMode: "workspace-write",
+    },
+  },
+  {
+    id: "full-access",
+    label: "Full access",
+    description: "Never ask for approval and allow danger-full-access sandbox.",
+    policy: {
+      approvalPolicy: "never",
+      sandboxMode: "danger-full-access",
+    },
+  },
+] as const;
+
+export type PermissionPresetId = (typeof PERMISSION_PRESETS)[number]["id"];
+
+export function getLegacyRuntimePolicyForMode(mode: AvailableMode): RuntimePolicy {
+  switch (mode) {
+    case "suggest":
+      return {
+        approvalPolicy: "untrusted",
+        sandboxMode: "read-only",
+      };
+    case "auto-edit":
+    case "full-auto":
+    default:
+      return {
+        approvalPolicy: "on-request",
+        sandboxMode: "workspace-write",
+      };
+  }
+}
+
+export function areRuntimePoliciesEqual(left: RuntimePolicy, right: RuntimePolicy): boolean {
+  return left.approvalPolicy === right.approvalPolicy && left.sandboxMode === right.sandboxMode;
+}
+
+export function isApprovalPolicy(value: unknown): value is CodexApprovalPolicy {
+  return typeof value === "string"
+    && AVAILABLE_APPROVAL_POLICIES.some((item) => item.id === value);
+}
+
+export function isSandboxMode(value: unknown): value is CodexSandboxMode {
+  return typeof value === "string"
+    && AVAILABLE_SANDBOX_MODES.some((item) => item.id === value);
+}
 
 export function buildCodexExecArgs(
   model: string,
-  mode: string,
   cwd: string,
+  runtimePolicy: RuntimePolicy,
   reasoningLevel?: string,
   structuredOutput = true,
 ): string[] {
@@ -129,18 +226,8 @@ export function buildCodexExecArgs(
     args.push("--config", `reasoning.effort=${reasoningLevel}`);
   }
 
-  switch (mode) {
-    case "auto-edit":
-      args.push("--sandbox", "workspace-write");
-      break;
-    case "full-auto":
-      args.push("--full-auto");
-      break;
-    case "suggest":
-    default:
-      args.push("--sandbox", "read-only");
-      break;
-  }
+  args.push("--ask-for-approval", runtimePolicy.approvalPolicy);
+  args.push("--sandbox", runtimePolicy.sandboxMode);
 
   args.push("-");
   return args;
@@ -202,6 +289,20 @@ export function formatBackendLabel(backend: string): string {
 export function formatReasoningLabel(reasoning: string): string {
   const found = AVAILABLE_REASONING_LEVELS.find((item) => item.id === reasoning);
   return found?.label ?? reasoning;
+}
+
+export function formatApprovalPolicyLabel(policy: string): string {
+  const found = AVAILABLE_APPROVAL_POLICIES.find((item) => item.id === policy);
+  return found?.label ?? policy;
+}
+
+export function formatSandboxLabel(sandboxMode: string): string {
+  const found = AVAILABLE_SANDBOX_MODES.find((item) => item.id === sandboxMode);
+  return found?.label ?? sandboxMode;
+}
+
+export function formatRuntimePolicySummary(runtimePolicy: RuntimePolicy): string {
+  return `${formatApprovalPolicyLabel(runtimePolicy.approvalPolicy)} approval · ${formatSandboxLabel(runtimePolicy.sandboxMode)} sandbox`;
 }
 
 export const AVAILABLE_THEMES = [

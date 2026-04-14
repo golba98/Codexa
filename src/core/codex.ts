@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { buildCodexExecArgs } from "../config/settings.js";
+import { buildCodexExecArgs, getLegacyRuntimePolicyForMode, type AvailableMode } from "../config/settings.js";
 import { formatCodexLaunchError, resolveCodexExecutable, spawnCodexProcess } from "./codexExecutable.js";
 
 export interface CodexHandlers {
@@ -36,7 +36,13 @@ export function streamCodex(
 
       proc = spawnCodexProcess(
         executable,
-        buildCodexExecArgs(model, mode, workspaceRoot, reasoningLevel, false),
+        buildCodexExecArgs(
+          model,
+          workspaceRoot,
+          getLegacyRuntimePolicyForMode(mode as AvailableMode),
+          reasoningLevel,
+          false,
+        ),
         { stdio: ["pipe", "pipe", "pipe"] },
       );
 

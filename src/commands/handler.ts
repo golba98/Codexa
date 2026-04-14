@@ -1,18 +1,24 @@
 import {
+  AVAILABLE_APPROVAL_POLICIES,
   AUTH_PREFERENCES,
   AVAILABLE_BACKENDS,
   AVAILABLE_MODELS,
   AVAILABLE_REASONING_LEVELS,
+  AVAILABLE_SANDBOX_MODES,
   formatAuthPreferenceLabel,
+  formatApprovalPolicyLabel,
   formatBackendLabel,
   formatModeLabel,
   formatReasoningLabel,
+  formatRuntimePolicySummary,
+  formatSandboxLabel,
   formatThemeLabel,
   formatModeCommandHelp,
   resolveModeCommand,
 } from "../config/settings.js";
 import { AVAILABLE_THEMES } from "../config/settings.js";
 import type { WorkspaceCommandContext } from "../core/launchContext.js";
+import type { RuntimePolicy } from "../config/settings.js";
 
 export type CommandAction =
   | "exit"
@@ -29,6 +35,10 @@ export type CommandAction =
   | "open_mode_picker"
   | "reasoning"
   | "open_reasoning_picker"
+  | "permissions_approval"
+  | "permissions_sandbox"
+  | "permissions_status"
+  | "open_permissions_picker"
   | "theme"
   | "help"
   | "copy"
@@ -57,6 +67,7 @@ export function handleCommand(
   currentAuthPreference: string,
   currentReasoningLevel: string,
   currentTheme: string,
+  currentRuntimePolicy: RuntimePolicy,
   workspace: WorkspaceCommandContext,
 ): CommandResult | null {
   if (!text.startsWith("/")) return null;
@@ -134,6 +145,51 @@ export function handleCommand(
       return {
         action: "unknown",
         message: `Unknown reasoning level: ${arg}. Valid: low, medium, high, extra high`,
+      };
+    }
+
+    case "permissions": {
+      if (!arg) return { action: "open_permissions_picker" };
+      if (normalizedArg === "status") {
+        return {
+          action: "permissions_status",
+          message: `Current permissions: ${formatRuntimePolicySummary(currentRuntimePolicy)}`,
+        };
+      }
+
+      if (normalizedArg.startsWith("approval ")) {
+        const approvalValue = arg.slice("approval".length).trim().toLowerCase();
+        if (AVAILABLE_APPROVAL_POLICIES.some((item) => item.id === approvalValue)) {
+          return {
+            action: "permissions_approval",
+            value: approvalValue,
+            message: `Approval policy switched to ${formatApprovalPolicyLabel(approvalValue)}.`,
+          };
+        }
+        return {
+          action: "unknown",
+          message: "Unknown approval policy. Valid: untrusted, on-request, never",
+        };
+      }
+
+      if (normalizedArg.startsWith("sandbox ")) {
+        const sandboxValue = arg.slice("sandbox".length).trim().toLowerCase();
+        if (AVAILABLE_SANDBOX_MODES.some((item) => item.id === sandboxValue)) {
+          return {
+            action: "permissions_sandbox",
+            value: sandboxValue,
+            message: `Sandbox switched to ${formatSandboxLabel(sandboxValue)}.`,
+          };
+        }
+        return {
+          action: "unknown",
+          message: "Unknown sandbox mode. Valid: read-only, workspace-write, danger-full-access",
+        };
+      }
+
+      return {
+        action: "unknown",
+        message: "Unknown permissions command. Use /permissions, /permissions status, /permissions approval <policy>, or /permissions sandbox <mode>.",
       };
     }
 
@@ -251,8 +307,12 @@ export function handleCommand(
           "  /backend [name]    Switch backend (no arg opens picker)",
           "  /model [name]      Switch model (no arg opens picker)",
           `  /mode [name]       Switch execution mode (${formatModeCommandHelp()})`,
-          "                     suggest = read-only, auto-edit = writes files, full-auto = maximum autonomy",
+          "                     suggest = advisor turn, auto-edit = edit-focused, full-auto = strongest autonomy",
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
+          "  /permissions       Open permissions picker",
+          "  /permissions status Show current approval policy and sandbox",
+          "  /permissions approval <policy> Set approval policy",
+          "  /permissions sandbox <mode> Set sandbox mode",
           "  /theme [name]      Switch theme directly (no arg opens picker)",
           "  /themes            Open visual theme picker (Up/Down + Enter)",
           "  /verbose           Toggle verbose mode (shows detailed processing info)",
@@ -266,6 +326,7 @@ export function handleCommand(
           "  /workspace         Show the locked workspace for this session",
           "  /workspace relaunch <path> Restart the app in another workspace folder",
           `  Current reasoning: ${formatReasoningLabel(currentReasoningLevel)}`,
+          `  Current permissions: ${formatRuntimePolicySummary(currentRuntimePolicy)}`,
           "  /copy              Copy last response to clipboard",
           "  /help              Show this help",
           "",

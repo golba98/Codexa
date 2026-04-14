@@ -1,4 +1,10 @@
-import type { AvailableBackend, AvailableMode, AvailableModel, ReasoningLevel } from "../../config/settings.js";
+import type {
+  AvailableBackend,
+  AvailableMode,
+  AvailableModel,
+  ReasoningLevel,
+  RuntimePolicy,
+} from "../../config/settings.js";
 import type { RunToolActivity } from "../../session/types.js";
 
 export type BackendAuthState = "delegated" | "api-key-required" | "coming-soon";
@@ -28,6 +34,7 @@ export interface BackendProvider {
       model: AvailableModel;
       mode: AvailableMode;
       reasoningLevel: ReasoningLevel;
+      runtimePolicy: RuntimePolicy;
       workspaceRoot: string;
     },
     handlers: BackendRunHandlers,

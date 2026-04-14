@@ -7,7 +7,15 @@ import type {
 } from "../config/settings.js";
 import type { RunActivitySummary, RunFileActivity } from "../core/workspaceActivity.js";
 
-export type Screen = "main" | "model-picker" | "mode-picker" | "backend-picker" | "auth-panel" | "reasoning-picker" | "theme-picker";
+export type Screen =
+  | "main"
+  | "model-picker"
+  | "mode-picker"
+  | "backend-picker"
+  | "auth-panel"
+  | "reasoning-picker"
+  | "permissions-picker"
+  | "theme-picker";
 
 // ─── UI State Machine ─────────────────────────────────────────────────────────
 // Drives all visual decisions: border colors, input persona, turn opacity.

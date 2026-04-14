@@ -13,6 +13,10 @@ const NOISE_EXACT_LINES = new Set([
   // Injected system-prompt lines (from buildCodexPrompt) that the backend echoes back
   "the user request below is the task to handle now.",
   "do not reply with generic readiness or ask what they want changed if the request is already specific.",
+  "runtime permissions are read-only for this turn.",
+  "inspect files and answer carefully, but do not claim to have edited files unless you actually could.",
+  "the current permissions allow workspace edits, but this turn is still in suggest mode.",
+  "inspect the repo and answer carefully without making file changes in this turn.",
   "if the request is actionable, make the change in the workspace before responding.",
   "you are running inside the user's current workspace with write access.",
   "only ask a follow-up question if a required detail is truly missing and blocks the work.",

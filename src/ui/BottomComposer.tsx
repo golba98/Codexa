@@ -107,6 +107,7 @@ const COMMANDS = [
   { cmd: "/mode", desc: "Change execution mode" },
   { cmd: "/backend", desc: "Change active backend" },
   { cmd: "/reasoning", desc: "Change reasoning level" },
+  { cmd: "/permissions", desc: "Manage approval policy and sandbox" },
   { cmd: "/themes", desc: "Open visual theme picker" },
   { cmd: "/verbose", desc: "Toggle verbose mode (detailed processing info)" },
   { cmd: "/auth", desc: "Manage authentication" },

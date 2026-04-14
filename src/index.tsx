@@ -1,6 +1,8 @@
 import React from "react";
 import { render, type Instance } from "ink";
 import { App } from "./app.js";
+import { resolveEffectiveSettings, type ResolvedAppBootstrap } from "./config/effectiveSettings.js";
+import { normalizeWorkspaceRoot } from "./core/workspaceRoot.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 
@@ -67,8 +69,14 @@ export interface StartAppDependencies {
   stderr: Pick<NodeJS.WriteStream, "write">;
   env: Record<string, string | undefined>;
   platform: NodeJS.Platform;
+  argv?: string[];
   renderApp: (node: React.ReactElement) => RenderHandle;
   registerExitHandler: (handler: () => void) => void;
+  resolveBootstrapSettings?: (options: {
+    workspaceRoot: string;
+    env: Record<string, string | undefined>;
+    launchArgs: string[];
+  }) => ResolvedAppBootstrap;
 }
 
 export interface StartAppResult {
@@ -95,10 +103,12 @@ export function startApp({
   stderr = process.stderr,
   env = process.env,
   platform = process.platform,
+  argv = [],
   renderApp = render,
   registerExitHandler = (handler) => {
     process.on("exit", handler);
   },
+  resolveBootstrapSettings = resolveEffectiveSettings,
 }: Partial<StartAppDependencies> = {}): StartAppResult {
   if (activeRoot) {
     return { started: true, exitCode: 0 };
@@ -124,6 +134,13 @@ export function startApp({
   // It is managed exclusively by the React app (app.tsx) and defaults to OFF
   // so native terminal drag-selection and copy work without any special steps.
   stdout.write(`${SET_TERMINAL_TITLE}${HARD_REPAINT_SEQUENCE}\x1b[?2004h`);
+
+  const workspaceRoot = normalizeWorkspaceRoot(env.CODEX_WORKSPACE_ROOT?.trim() || process.cwd());
+  const bootstrapSettings = resolveBootstrapSettings({
+    workspaceRoot,
+    env,
+    launchArgs: argv,
+  });
 
   let cleanupDone = false;
   let repaintArmed = false;
@@ -307,7 +324,7 @@ export function startApp({
   process.on("uncaughtException", handleFatal);
   process.on("unhandledRejection", handleFatal);
 
-  renderHandle = renderApp(<App />);
+  renderHandle = renderApp(<App bootstrap={bootstrapSettings} />);
 
   // Resolve the real Ink class instance to get access to lastOutput,
   // onRender, calculateLayout, etc.  Gracefully degrades to null in tests.
@@ -334,7 +351,7 @@ export function startApp({
 const isMainModule = Boolean((import.meta as ImportMeta & { main?: boolean }).main);
 
 if (isMainModule) {
-  const result = startApp();
+  const result = startApp({ argv: process.argv.slice(2) });
   if (!result.started) {
     process.exitCode = result.exitCode;
   }

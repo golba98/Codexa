@@ -91,6 +91,7 @@ const child = spawn(
       CODEXA_LAUNCHER_SCRIPT: currentFile,
       CODEXA_RELAUNCH_EXECUTABLE: process.execPath,
       CODEXA_RELAUNCH_ARGS: JSON.stringify([currentFile]),
+      CODEXA_LAUNCH_ARGS: JSON.stringify(process.argv.slice(2)),
       CODEXA_PARENT_HAS_TTY: parentHasTTY ? "1" : "0",
     },
   },

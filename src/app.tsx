@@ -2,19 +2,29 @@ import React, { startTransition, useCallback, useEffect, useMemo, useRef, useSta
 import { spawn } from "child_process";
 import { Box, Text, useApp, useFocusManager, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
-import { loadSettings, saveSettings } from "./config/persistence.js";
+import { saveSettings } from "./config/persistence.js";
+import { formatEffectiveSettingsDebugNotice, type ResolvedAppBootstrap } from "./config/effectiveSettings.js";
 import {
+  PERMISSION_PRESETS,
   type AuthPreference,
   type AvailableBackend,
   type AvailableMode,
   type AvailableModel,
+  type CodexApprovalPolicy,
+  type CodexSandboxMode,
   type ReasoningLevel,
+  type RuntimePolicy,
+  areRuntimePoliciesEqual,
   estimateTokens,
   formatAuthPreferenceLabel,
+  formatApprovalPolicyLabel,
   formatBackendLabel,
   formatModeLabel,
   formatReasoningLabel,
+  formatRuntimePolicySummary,
+  formatSandboxLabel,
   formatThemeLabel,
+  getLegacyRuntimePolicyForMode,
   getNextMode,
   normalizeReasoningForModel,
 } from "./config/settings.js";
@@ -70,6 +80,7 @@ import { measureBottomComposerRows, MemoizedBottomComposer } from "./ui/BottomCo
 import { useTerminalViewport } from "./ui/layout.js";
 import { ModelReasoningPicker } from "./ui/ModelReasoningPicker.js";
 import { ModePicker } from "./ui/ModePicker.js";
+import { PermissionsPicker } from "./ui/PermissionsPicker.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
 import { ThemePicker } from "./ui/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
@@ -108,10 +119,21 @@ function createInitialAuthStatus(): CodexAuthProbeResult {
   };
 }
 
-export function App() {
+interface AppProps {
+  bootstrap: ResolvedAppBootstrap;
+}
+
+export function App({ bootstrap }: AppProps) {
   const { exit } = useApp();
   const focusManager = useFocusManager();
-  const initialSettings = useRef(loadSettings());
+  const initialSettings = useRef(bootstrap.effectiveSettings);
+  const persistedSettingsRef = useRef(bootstrap.persistedSettings);
+  const executionSettingsDirtyRef = useRef({
+    model: false,
+    reasoningLevel: false,
+    approvalPolicy: false,
+    sandboxMode: false,
+  });
   const workspaceRoot = useMemo(() => resolveWorkspaceRoot(), []);
   const launchContext = useMemo(() => resolveLaunchContext({ workspaceRoot }), [workspaceRoot]);
   const workspaceCommandContext = useMemo(
@@ -126,6 +148,8 @@ export function App() {
   const [mode, setMode] = useState<AvailableMode>(initialSettings.current.mode);
   const [reasoningLevel, setReasoningLevel] = useState<ReasoningLevel>(initialSettings.current.reasoningLevel);
   const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.authPreference);
+  const [approvalPolicy, setApprovalPolicy] = useState<CodexApprovalPolicy>(initialSettings.current.approvalPolicy);
+  const [sandboxMode, setSandboxMode] = useState<CodexSandboxMode>(initialSettings.current.sandboxMode);
   const [themeSelection, setThemeSelection] = useState<ThemeSelectionState>({
     committedTheme: initialSettings.current.theme,
     previewTheme: null,
@@ -223,19 +247,38 @@ export function App() {
   ]);
 
   const provider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
+  const runtimePolicy = useMemo<RuntimePolicy>(() => ({
+    approvalPolicy,
+    sandboxMode,
+  }), [approvalPolicy, sandboxMode]);
+  const markExecutionSettingsDirty = useCallback((
+    ...keys: Array<keyof typeof executionSettingsDirtyRef.current>
+  ) => {
+    for (const key of keys) {
+      executionSettingsDirtyRef.current[key] = true;
+    }
+  }, []);
 
   useEffect(() => {
     saveSettings({
       backend,
-      model,
+      model: executionSettingsDirtyRef.current.model ? model : persistedSettingsRef.current.model,
       mode,
-      reasoningLevel,
+      reasoningLevel: executionSettingsDirtyRef.current.reasoningLevel
+        ? reasoningLevel
+        : persistedSettingsRef.current.reasoningLevel,
       layoutStyle: initialSettings.current.layoutStyle,
       theme: themeSelection.committedTheme,
       customTheme,
       authPreference,
+      approvalPolicy: executionSettingsDirtyRef.current.approvalPolicy
+        ? approvalPolicy
+        : persistedSettingsRef.current.approvalPolicy,
+      sandboxMode: executionSettingsDirtyRef.current.sandboxMode
+        ? sandboxMode
+        : persistedSettingsRef.current.sandboxMode,
     });
-  }, [authPreference, backend, customTheme, mode, model, reasoningLevel, themeSelection.committedTheme]);
+  }, [approvalPolicy, authPreference, backend, customTheme, mode, model, reasoningLevel, sandboxMode, themeSelection.committedTheme]);
 
   useEffect(() => {
     return () => {
@@ -328,6 +371,13 @@ export function App() {
     });
   }, [appendStaticEvent]);
 
+  useEffect(() => {
+    const configNotice = formatEffectiveSettingsDebugNotice(initialSettings.current, bootstrap.debug);
+    if (!configNotice) return;
+
+    appendSystemEvent("Config", configNotice);
+  }, [appendSystemEvent, bootstrap.debug]);
+
   const setRuntimeUnauthenticated = useCallback((summary: string) => {
     setAuthStatus({
       state: "unauthenticated",
@@ -390,6 +440,25 @@ export function App() {
     }
   }, [appendSystemEvent, busy, refreshAuthStatus]);
 
+  const setRuntimePolicyWithNotice = useCallback((
+    nextPolicy: RuntimePolicy,
+    title = "Permissions updated",
+    message = `Permissions are now ${formatRuntimePolicySummary(nextPolicy)}.`,
+  ) => {
+    const gate = guardConfigMutation("permissions", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing permissions.");
+      return false;
+    }
+
+    setApprovalPolicy(nextPolicy.approvalPolicy);
+    setSandboxMode(nextPolicy.sandboxMode);
+    markExecutionSettingsDirty("approvalPolicy", "sandboxMode");
+    setScreen("main");
+    appendSystemEvent(title, message);
+    return true;
+  }, [appendSystemEvent, busy, markExecutionSettingsDirty]);
+
   const setModeWithNotice = useCallback((nextMode: AvailableMode) => {
     const gate = guardConfigMutation("mode", busy);
     if (!gate.allowed) {
@@ -397,14 +466,66 @@ export function App() {
       return;
     }
 
+    const currentLegacyPolicy = getLegacyRuntimePolicyForMode(mode);
+    const nextLegacyPolicy = getLegacyRuntimePolicyForMode(nextMode);
+    const currentPolicyMatchesLegacy = areRuntimePoliciesEqual(runtimePolicy, currentLegacyPolicy);
+
     setMode(nextMode);
+    if (currentPolicyMatchesLegacy) {
+      setApprovalPolicy(nextLegacyPolicy.approvalPolicy);
+      setSandboxMode(nextLegacyPolicy.sandboxMode);
+      markExecutionSettingsDirty("approvalPolicy", "sandboxMode");
+    }
     setScreen("main");
-    appendSystemEvent("Mode updated", `Execution mode switched to ${formatModeLabel(nextMode)}.`);
-  }, [appendSystemEvent, busy]);
+    appendSystemEvent(
+      "Mode updated",
+      currentPolicyMatchesLegacy
+        ? `Execution mode switched to ${formatModeLabel(nextMode)}. Permissions now ${formatRuntimePolicySummary(nextLegacyPolicy)}.`
+        : `Execution mode switched to ${formatModeLabel(nextMode)}. Custom permissions remain ${formatRuntimePolicySummary(runtimePolicy)}.`,
+    );
+  }, [appendSystemEvent, busy, markExecutionSettingsDirty, mode, runtimePolicy]);
 
   const cycleModeWithNotice = useCallback(() => {
     setModeWithNotice(getNextMode(mode));
   }, [mode, setModeWithNotice]);
+
+  const setApprovalPolicyWithNotice = useCallback((nextApprovalPolicy: CodexApprovalPolicy) => {
+    const nextPolicy: RuntimePolicy = {
+      approvalPolicy: nextApprovalPolicy,
+      sandboxMode,
+    };
+    return setRuntimePolicyWithNotice(
+      nextPolicy,
+      "Permissions updated",
+      `Approval policy is now ${formatApprovalPolicyLabel(nextApprovalPolicy)}. Sandbox remains ${formatSandboxLabel(sandboxMode)}.`,
+    );
+  }, [sandboxMode, setRuntimePolicyWithNotice]);
+
+  const setSandboxModeWithNotice = useCallback((nextSandboxMode: CodexSandboxMode) => {
+    const nextPolicy: RuntimePolicy = {
+      approvalPolicy,
+      sandboxMode: nextSandboxMode,
+    };
+    return setRuntimePolicyWithNotice(
+      nextPolicy,
+      "Permissions updated",
+      `Sandbox is now ${formatSandboxLabel(nextSandboxMode)}. Approval remains ${formatApprovalPolicyLabel(approvalPolicy)}.`,
+    );
+  }, [approvalPolicy, setRuntimePolicyWithNotice]);
+
+  const applyPermissionPresetWithNotice = useCallback((presetId: string) => {
+    const preset = PERMISSION_PRESETS.find((item) => item.id === presetId);
+    if (!preset) {
+      appendSystemEvent("Permissions updated", "Unknown permissions preset.");
+      return;
+    }
+
+    setRuntimePolicyWithNotice(
+      preset.policy,
+      "Permissions updated",
+      `${preset.label} preset applied. ${formatRuntimePolicySummary(preset.policy)}.`,
+    );
+  }, [appendSystemEvent, setRuntimePolicyWithNotice]);
 
   const setReasoningWithNotice = useCallback((nextReasoningLevel: ReasoningLevel) => {
     const gate = guardConfigMutation("reasoning", busy);
@@ -414,9 +535,10 @@ export function App() {
     }
 
     setReasoningLevel(nextReasoningLevel);
+    markExecutionSettingsDirty("reasoningLevel");
     setScreen("main");
     appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(nextReasoningLevel)}.`);
-  }, [appendSystemEvent, busy]);
+  }, [appendSystemEvent, busy, markExecutionSettingsDirty]);
 
   const setModelWithNotice = useCallback((nextModel: AvailableModel) => {
     const gate = guardConfigMutation("model", busy);
@@ -425,11 +547,16 @@ export function App() {
       return;
     }
 
+    const nextReasoningLevel = normalizeReasoningForModel(nextModel, reasoningLevel);
     setModel(nextModel);
-    setReasoningLevel((currentReasoning) => normalizeReasoningForModel(nextModel, currentReasoning));
+    setReasoningLevel(nextReasoningLevel);
+    markExecutionSettingsDirty("model");
+    if (nextReasoningLevel !== reasoningLevel) {
+      markExecutionSettingsDirty("reasoningLevel");
+    }
     setScreen("main");
     appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
-  }, [appendSystemEvent, busy]);
+  }, [appendSystemEvent, busy, markExecutionSettingsDirty, reasoningLevel]);
 
   const setModelAndReasoningWithNotice = useCallback((nextModel: AvailableModel, nextReasoning: ReasoningLevel) => {
     const gate = guardConfigMutation("model", busy);
@@ -443,6 +570,12 @@ export function App() {
 
     setModel(nextModel);
     setReasoningLevel(nextReasoning);
+    if (modelChanged) {
+      markExecutionSettingsDirty("model");
+    }
+    if (reasoningChanged) {
+      markExecutionSettingsDirty("reasoningLevel");
+    }
     setScreen("main");
 
     if (modelChanged && reasoningChanged) {
@@ -454,7 +587,7 @@ export function App() {
     } else {
       // Nothing changed — still close the picker silently.
     }
-  }, [appendSystemEvent, busy, model, reasoningLevel]);
+  }, [appendSystemEvent, busy, markExecutionSettingsDirty, model, reasoningLevel]);
 
   const setAuthPreferenceWithNotice = useCallback((nextPreference: AuthPreference) => {
     setAuthPreference(nextPreference);
@@ -499,6 +632,16 @@ export function App() {
     }
 
     setScreen("reasoning-picker");
+  }, [appendSystemEvent, busy]);
+
+  const openPermissionsPicker = useCallback(() => {
+    const gate = guardConfigMutation("permissions", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing permissions.");
+      return;
+    }
+
+    setScreen("permissions-picker");
   }, [appendSystemEvent, busy]);
 
   const openThemePicker = useCallback(() => {
@@ -1049,7 +1192,7 @@ export function App() {
 
     const stopProviderRun = provider.run(
       safeProviderPrompt,
-      { model, mode: effectiveMode, reasoningLevel, workspaceRoot },
+      { model, mode: effectiveMode, reasoningLevel, runtimePolicy, workspaceRoot },
       {
         onAssistantDelta: (chunk) => {
           if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) return;
@@ -1186,6 +1329,7 @@ export function App() {
     provider,
     reasoningLevel,
     dispatchSession,
+    runtimePolicy,
     setRuntimeUnauthenticated,
     workspaceRoot,
   ]);
@@ -1230,6 +1374,7 @@ export function App() {
       authPreference,
       reasoningLevel,
       themeSelection.committedTheme,
+      runtimePolicy,
       workspaceCommandContext,
     );
     const isCommand = commandResult !== null;
@@ -1267,6 +1412,21 @@ export function App() {
         case "reasoning":
           if (commandResult.value) {
             setReasoningWithNotice(commandResult.value as ReasoningLevel);
+          }
+          return;
+        case "permissions_approval":
+          if (commandResult.value) {
+            setApprovalPolicyWithNotice(commandResult.value as CodexApprovalPolicy);
+          }
+          return;
+        case "permissions_sandbox":
+          if (commandResult.value) {
+            setSandboxModeWithNotice(commandResult.value as CodexSandboxMode);
+          }
+          return;
+        case "permissions_status":
+          if (commandResult.message) {
+            appendSystemEvent("Permissions", commandResult.message);
           }
           return;
         case "auth":
@@ -1307,6 +1467,9 @@ export function App() {
           return;
         case "open_reasoning_picker":
           openReasoningPicker();
+          return;
+        case "open_permissions_picker":
+          openPermissionsPicker();
           return;
         case "open_theme_picker":
           openThemePicker();
@@ -1385,14 +1548,18 @@ export function App() {
     openBackendPicker,
     openModePicker,
     openModelPicker,
+    openPermissionsPicker,
     openReasoningPicker,
     refreshAuthStatus,
     resetComposer,
+    runtimePolicy,
+    setApprovalPolicyWithNotice,
     setAuthPreferenceWithNotice,
     setBackendWithNotice,
     setModeWithNotice,
     setModelWithNotice,
     setReasoningWithNotice,
+    setSandboxModeWithNotice,
     startPromptRun,
     themeSelection.committedTheme,
     uiState,
@@ -1443,6 +1610,14 @@ export function App() {
                   currentModel={model}
                   currentReasoning={reasoningLevel}
                   onSelect={(value) => setReasoningWithNotice(value as ReasoningLevel)}
+                  onCancel={() => setScreen("main")}
+                />
+              )}
+
+              {screen === "permissions-picker" && (
+                <PermissionsPicker
+                  currentPolicy={runtimePolicy}
+                  onSelectPreset={applyPermissionPresetWithNotice}
                   onCancel={() => setScreen("main")}
                 />
               )}
