@@ -9,6 +9,8 @@ interface TextEntryPanelProps {
   subtitle: string;
   placeholder?: string;
   initialValue?: string;
+  inputLabel?: string;
+  footerHint?: string;
   onSubmit: (value: string) => void;
   onCancel: () => void;
 }
@@ -23,6 +25,8 @@ export function TextEntryPanel({
   subtitle,
   placeholder = "",
   initialValue = "",
+  inputLabel = "Input",
+  footerHint = "Enter submit  Esc cancel  Backspace delete",
   onSubmit,
   onCancel,
 }: TextEntryPanelProps) {
@@ -109,7 +113,7 @@ export function TextEntryPanel({
         flexDirection="column"
       >
         <Box>
-          <Text color={theme.TEXT}>Path: </Text>
+          <Text color={theme.TEXT}>{inputLabel}: </Text>
           <Text color={display.isPlaceholder ? theme.DIM : theme.TEXT}>{display.before}</Text>
           <Text
             backgroundColor={theme.TEXT}
@@ -120,9 +124,13 @@ export function TextEntryPanel({
           <Text color={display.isPlaceholder ? theme.DIM : theme.TEXT}>{display.after}</Text>
         </Box>
         <Box marginTop={1}>
-          <Text color={theme.DIM}>Enter save  Esc cancel  Backspace delete</Text>
+          <Text color={theme.DIM}>{footerHint}</Text>
         </Box>
       </Box>
     </Box>
   );
+}
+
+export function measureTextEntryPanelRows(): number {
+  return 13;
 }

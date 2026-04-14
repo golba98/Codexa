@@ -61,7 +61,12 @@ import {
 } from "./core/auth/codexAuth.js";
 import { copyToClipboard } from "./core/clipboard.js";
 import { runCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
-import { detectHollowResponse, resolveExecutionMode } from "./core/codexPrompt.js";
+import {
+  buildPlanExecutionPrompt,
+  buildPlanningPrompt,
+  detectHollowResponse,
+  resolveExecutionMode,
+} from "./core/codexPrompt.js";
 import { formatHollowResponse } from "./core/hollowResponseFormat.js";
 import { acquireTerminalTitleGuard } from "./core/terminalTitle.js";
 import {
@@ -96,16 +101,28 @@ import {
   isCurrentRun,
 } from "./session/chatLifecycle.js";
 import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
+import {
+  approvePlanExecution,
+  beginPlanFeedback,
+  cancelPlanFeedback,
+  createInitialPlanFlowState,
+  finishPlanGeneration,
+  resetPlanFlow,
+  startPlanGeneration,
+  submitPlanFeedback,
+  type PlanFlowState,
+} from "./session/planFlow.js";
 import { AuthPanel } from "./ui/AuthPanel.js";
 import { BackendPicker } from "./ui/BackendPicker.js";
 import { measureBottomComposerRows, MemoizedBottomComposer } from "./ui/BottomComposer.js";
 import { useTerminalViewport } from "./ui/layout.js";
 import { ModelReasoningPicker } from "./ui/ModelReasoningPicker.js";
 import { ModePicker } from "./ui/ModePicker.js";
+import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } from "./ui/PlanActionPicker.js";
 import { PermissionsPanel, type PermissionsPanelAction } from "./ui/PermissionsPanel.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
 import { SelectionPanel } from "./ui/SelectionPanel.js";
-import { TextEntryPanel } from "./ui/TextEntryPanel.js";
+import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/TextEntryPanel.js";
 import { ThemePicker } from "./ui/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
 import { ThemeProvider, THEMES } from "./ui/theme.js";
@@ -153,6 +170,15 @@ interface AppProps {
   launchArgs: LaunchArgs;
 }
 
+interface PromptRunLifecycle {
+  parseActionRequired?: boolean;
+  disableModeAutoUpgrade?: boolean;
+  runtimeOverride?: PartialRuntimeConfig;
+  onCompleted?: (result: { response: string; turnId: number; runId: number }) => void;
+  onFailed?: (result: { message: string; turnId: number; runId: number }) => void;
+  onCanceled?: (result: { turnId: number; runId: number }) => void;
+}
+
 export function App({ launchArgs }: AppProps) {
   const { exit } = useApp();
   const focusManager = useFocusManager();
@@ -192,6 +218,7 @@ export function App({ launchArgs }: AppProps) {
   const { stdout } = useStdout();
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [verboseMode, setVerboseMode] = useState(false);
+  const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
   // Mouse reporting is ON by default so wheel-based history scrolling works in
   // the timeline. When mouse reporting is active, most modern terminals (Windows
   // Terminal, iTerm2, etc.) still allow text selection via Shift+drag — the
@@ -228,6 +255,7 @@ export function App({ launchArgs }: AppProps) {
   }, [mouseCapture, stdout]);
 
   const cleanupRef = useRef<(() => void) | null>(null);
+  const activeRunLifecycleRef = useRef<PromptRunLifecycle | null>(null);
   const isMountedRef = useRef(true);
   const activeRunIdRef = useRef<number | null>(null);
   const activeTurnIdRef = useRef<number | null>(null);
@@ -263,23 +291,32 @@ export function App({ launchArgs }: AppProps) {
   cursorRef.current = cursor;
 
   const busy = isUiBusy(uiState);
-  const composerRows = useMemo(() => measureBottomComposerRows({
-    layout: terminalLayout,
-    uiState,
-    mode,
-    model,
-    reasoningLevel,
-    tokensUsed: estimateTokens(conversationChars),
-    modelSpec: currentModelSpec,
-    value: inputValue,
-    cursor,
-  }), [
+  const composerRows = useMemo(() => {
+    if (planFlow.kind === "awaiting_action") {
+      return measurePlanActionPickerRows();
+    }
+    if (planFlow.kind === "collecting_feedback") {
+      return measureTextEntryPanelRows();
+    }
+    return measureBottomComposerRows({
+      layout: terminalLayout,
+      uiState,
+      mode,
+      model,
+      reasoningLevel,
+      tokensUsed: estimateTokens(conversationChars),
+      modelSpec: currentModelSpec,
+      value: inputValue,
+      cursor,
+    });
+  }, [
     conversationChars,
     currentModelSpec,
     cursor,
     inputValue,
     mode,
     model,
+    planFlow.kind,
     reasoningLevel,
     terminalLayout,
     uiState,
@@ -528,6 +565,9 @@ export function App({ launchArgs }: AppProps) {
       ...current,
       planMode: nextEnabled,
     }));
+    if (!nextEnabled) {
+      setPlanFlow(resetPlanFlow());
+    }
     appendSystemEvent("Plan mode", `Plan mode ${nextEnabled ? "enabled" : "disabled"}.`);
   }, [appendSystemEvent, busy, updateRuntimeConfig]);
 
@@ -839,6 +879,8 @@ export function App({ launchArgs }: AppProps) {
       return false;
     }
 
+    const lifecycle = activeRunLifecycleRef.current;
+    activeRunLifecycleRef.current = null;
     const cleanup = cleanupRef.current;
     cleanupRef.current = null;
     activeRunIdRef.current = null;
@@ -850,8 +892,11 @@ export function App({ launchArgs }: AppProps) {
     const safeResponse = response != null
       ? sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 })
       : undefined;
+    const shouldParseActionRequired = lifecycle?.parseActionRequired ?? true;
     const parsed = status === "completed" && safeResponse?.trim()
-      ? extractAssistantActionRequired(safeResponse)
+      ? shouldParseActionRequired
+        ? extractAssistantActionRequired(safeResponse)
+        : { content: safeResponse, question: null as string | null }
       : { content: safeResponse, question: null as string | null };
     dispatchSession({
       type: "FINALIZE_RUN",
@@ -869,6 +914,22 @@ export function App({ launchArgs }: AppProps) {
         turnId,
       }),
     });
+
+    if (status === "completed") {
+      lifecycle?.onCompleted?.({
+        response: parsed.content ?? "",
+        turnId,
+        runId,
+      });
+    } else if (status === "failed") {
+      lifecycle?.onFailed?.({
+        message: safeMessage ?? "Run failed",
+        turnId,
+        runId,
+      });
+    } else {
+      lifecycle?.onCanceled?.({ turnId, runId });
+    }
 
     return true;
   }, [dispatchSession, focusManager]);
@@ -892,6 +953,7 @@ export function App({ launchArgs }: AppProps) {
     if (retainHistory) {
       const shellEvent = activeEvents.find((event) => event.type === "shell" && event.id === runId) as ShellEvent | undefined;
       if (shellEvent) {
+        activeRunLifecycleRef.current = null;
         dispatchSession({
           type: "FINALIZE_SHELL",
           shellId: runId,
@@ -902,10 +964,20 @@ export function App({ launchArgs }: AppProps) {
         if (runEvent) {
           void finalizePromptRun(runId, runEvent.turnId, "canceled");
         } else {
+          const lifecycle = activeRunLifecycleRef.current;
+          activeRunLifecycleRef.current = null;
+          if (promptTurnId !== null) {
+            lifecycle?.onCanceled?.({ turnId: promptTurnId, runId });
+          }
           dispatchSession({ type: "REMOVE_ACTIVE_RUNTIME", runId, turnId: promptTurnId });
         }
       }
     } else {
+      const lifecycle = activeRunLifecycleRef.current;
+      activeRunLifecycleRef.current = null;
+      if (promptTurnId !== null) {
+        lifecycle?.onCanceled?.({ turnId: promptTurnId, runId });
+      }
       if (uiState.kind === "SHELL_RUNNING") {
         dispatchSession({ type: "UI_ACTION", action: { type: "SHELL_FINISHED", shellId: runId } });
       } else if (promptTurnId !== null) {
@@ -929,11 +1001,20 @@ export function App({ launchArgs }: AppProps) {
       cancelActiveRun(true);
       return;
     }
+    if (planFlow.kind === "collecting_feedback") {
+      setPlanFlow((current) => cancelPlanFeedback(current));
+      return;
+    }
+    if (planFlow.kind === "awaiting_action") {
+      setPlanFlow(resetPlanFlow());
+      appendSystemEvent("Plan review", "Plan review canceled. No changes were made.");
+      return;
+    }
     if (uiState.kind === "AWAITING_USER_ACTION" || uiState.kind === "ERROR") {
       dispatchSession({ type: "UI_ACTION", action: { type: "DISMISS_TRANSIENT" } });
       resetComposer();
     }
-  }, [busy, cancelActiveRun, dispatchSession, resetComposer, uiState.kind]);
+  }, [appendSystemEvent, busy, cancelActiveRun, dispatchSession, planFlow.kind, resetComposer, uiState.kind]);
 
   const handleQuit = useCallback(() => {
     cancelActiveRun(false);
@@ -1011,6 +1092,8 @@ export function App({ launchArgs }: AppProps) {
   const handleClear = useCallback(() => {
     cancelActiveRun(false);
     activeTurnIdRef.current = null;
+    activeRunLifecycleRef.current = null;
+    setPlanFlow(resetPlanFlow());
     dispatchSession({ type: "CLEAR_TRANSCRIPT" });
     setConversationChars(0);
     setScreen("main");
@@ -1188,7 +1271,11 @@ export function App({ launchArgs }: AppProps) {
     return findUserPrompt([...staticEvents, ...activeEvents], turnId);
   }, [activeEvents, staticEvents]);
 
-  const startPromptRun = useCallback((displayPrompt: string, providerPrompt: string) => {
+  const startPromptRun = useCallback((
+    displayPrompt: string,
+    providerPrompt: string,
+    lifecycle: PromptRunLifecycle = {},
+  ) => {
     const safeDisplayPrompt = sanitizeTerminalInput(displayPrompt).trim();
     const safeProviderPrompt = sanitizeTerminalInput(providerPrompt).trim();
     if (!safeDisplayPrompt || !safeProviderPrompt) {
@@ -1196,10 +1283,18 @@ export function App({ launchArgs }: AppProps) {
       return false;
     }
 
-    const executionModeDecision = resolveExecutionMode(mode, safeProviderPrompt);
+    const requestedMode = lifecycle.runtimeOverride?.mode ?? runtimeConfig.mode;
+    const executionModeDecision = lifecycle.disableModeAutoUpgrade
+      ? { mode: requestedMode, autoUpgraded: false }
+      : resolveExecutionMode(requestedMode, safeProviderPrompt);
     const effectiveMode = executionModeDecision.mode;
     const runtimeForTurn = resolveRuntimeConfig({
       ...runtimeConfig,
+      ...lifecycle.runtimeOverride,
+      policy: {
+        ...runtimeConfig.policy,
+        ...lifecycle.runtimeOverride?.policy,
+      },
       mode: effectiveMode,
     });
     if (executionModeDecision.autoUpgraded) {
@@ -1248,6 +1343,7 @@ export function App({ launchArgs }: AppProps) {
     const runId = createEventId();
     activeRunIdRef.current = runId;
     activeTurnIdRef.current = turnId;
+    activeRunLifecycleRef.current = lifecycle;
     dispatchSession({ type: "UI_ACTION", action: { type: "PROMPT_RUN_STARTED", turnId } });
     dispatchSession({ type: "SET_ACTIVE_EVENTS", events: [
       userEvent,
@@ -1494,6 +1590,125 @@ export function App({ launchArgs }: AppProps) {
     runtimeConfig,
     workspaceRoot,
   ]);
+
+  const runPlanGeneration = useCallback((
+    state: Extract<PlanFlowState, { kind: "generating" }>,
+    displayPrompt: string,
+  ) => {
+    const started = startPromptRun(
+      displayPrompt,
+      buildPlanningPrompt({
+        task: state.originalPrompt,
+        constraints: state.constraints,
+        currentPlan: state.currentPlan,
+        pendingFeedback: state.pendingFeedback,
+      }),
+      {
+        runtimeOverride: {
+          mode: "suggest",
+          planMode: false,
+        },
+        disableModeAutoUpgrade: true,
+        parseActionRequired: false,
+        onCompleted: ({ response }) => {
+          const nextPlan = response.trim();
+          if (!nextPlan) {
+            setPlanFlow(resetPlanFlow());
+            appendErrorEvent("Plan generation failed", "Plan mode expected a concrete plan, but the response was empty.");
+            return;
+          }
+          setPlanFlow((current) => finishPlanGeneration(current, nextPlan));
+        },
+        onFailed: () => {
+          setPlanFlow(resetPlanFlow());
+        },
+        onCanceled: () => {
+          setPlanFlow(resetPlanFlow());
+        },
+      },
+    );
+
+    if (!started) {
+      setPlanFlow(resetPlanFlow());
+    }
+
+    return started;
+  }, [appendErrorEvent, startPromptRun]);
+
+  const startApprovedPlanExecution = useCallback((state: Extract<PlanFlowState, { kind: "awaiting_action" }>) => {
+    setPlanFlow(approvePlanExecution(state));
+    const started = startPromptRun(
+      state.originalPrompt,
+      buildPlanExecutionPrompt({
+        task: state.originalPrompt,
+        approvedPlan: state.currentPlan,
+        constraints: state.constraints,
+      }),
+      {
+        runtimeOverride: {
+          mode: state.executionMode,
+          planMode: false,
+        },
+        onCompleted: () => {
+          setPlanFlow(resetPlanFlow());
+        },
+        onFailed: () => {
+          setPlanFlow(resetPlanFlow());
+        },
+        onCanceled: () => {
+          setPlanFlow(resetPlanFlow());
+        },
+      },
+    );
+
+    if (!started) {
+      setPlanFlow(state);
+    }
+  }, [startPromptRun]);
+
+  const handlePlanAction = useCallback((action: PlanActionValue) => {
+    if (planFlow.kind !== "awaiting_action") {
+      return;
+    }
+
+    switch (action) {
+      case "implement":
+        startApprovedPlanExecution(planFlow);
+        return;
+      case "revise":
+        setPlanFlow(beginPlanFeedback(planFlow, "revise"));
+        return;
+      case "constraints":
+        setPlanFlow(beginPlanFeedback(planFlow, "constraints"));
+        return;
+      case "cancel":
+        setPlanFlow(resetPlanFlow());
+        appendSystemEvent("Plan review", "Plan review canceled. No changes were made.");
+        return;
+      default:
+        return;
+    }
+  }, [appendSystemEvent, planFlow, startApprovedPlanExecution]);
+
+  const handlePlanFeedbackSubmit = useCallback((value: string) => {
+    if (planFlow.kind !== "collecting_feedback") {
+      return;
+    }
+
+    const feedback = sanitizeTerminalInput(value).trim();
+    if (!feedback) {
+      appendSystemEvent("Plan review", "Add a short revision note or constraint before submitting.");
+      return;
+    }
+
+    const nextState = submitPlanFeedback(planFlow, feedback);
+    if (nextState.kind !== "generating") {
+      return;
+    }
+
+    setPlanFlow(nextState);
+    runPlanGeneration(nextState, feedback);
+  }, [appendSystemEvent, planFlow, runPlanGeneration]);
 
   const handleSubmit = useCallback(() => {
     const value = sanitizeTerminalInput(inputValue).trim();
@@ -1751,6 +1966,12 @@ export function App({ launchArgs }: AppProps) {
       appendErrorEvent("Workspace boundary", workspaceGuardMessage);
       return;
     }
+    if (planMode) {
+      const nextPlanState = startPlanGeneration(value, mode);
+      setPlanFlow(nextPlanState);
+      runPlanGeneration(nextPlanState, value);
+      return;
+    }
     startPromptRun(value, value);
   }, [
     allowedWritableRoots,
@@ -1782,6 +2003,9 @@ export function App({ launchArgs }: AppProps) {
     addWritableRootWithNotice,
     clearWritableRootsWithNotice,
     removeWritableRootWithNotice,
+    mode,
+    planMode,
+    runPlanGeneration,
     setApprovalPolicyWithNotice,
     setAuthPreferenceWithNotice,
     setBackendWithNotice,
@@ -1937,6 +2161,8 @@ export function App({ launchArgs }: AppProps) {
                   title="Add Writable Root"
                   subtitle="Enter an absolute path or a path relative to the locked workspace."
                   placeholder="relative\\or\\absolute\\path"
+                  inputLabel="Path"
+                  footerHint="Enter save  Esc cancel  Backspace delete"
                   onSubmit={(value) => {
                     if (!value.trim()) {
                       appendSystemEvent("Runtime policy", "Writable root path cannot be empty.");
@@ -2003,7 +2229,27 @@ export function App({ launchArgs }: AppProps) {
               )}
           </>
         }
-        composer={(
+        composer={planFlow.kind === "awaiting_action" ? (
+          <PlanActionPicker
+            onSelect={handlePlanAction}
+            onCancel={handleCancel}
+          />
+        ) : planFlow.kind === "collecting_feedback" ? (
+          <TextEntryPanel
+            focusId={FOCUS_IDS.composer}
+            title={planFlow.mode === "revise" ? "Revise plan" : "Add constraints"}
+            subtitle={planFlow.mode === "revise"
+              ? "Describe what should change in the plan. Enter regenerates it."
+              : "Add extra instructions for the plan. Enter regenerates it."}
+            inputLabel={planFlow.mode === "revise" ? "Revision" : "Constraint"}
+            placeholder={planFlow.mode === "revise"
+              ? "e.g. keep it to one file and add tests"
+              : "e.g. keep it minimal and avoid touching other files"}
+            footerHint="Enter regenerate  Esc back  Backspace delete"
+            onSubmit={handlePlanFeedbackSubmit}
+            onCancel={() => setPlanFlow((current) => cancelPlanFeedback(current))}
+          />
+        ) : (
           <MemoizedBottomComposer
             key={composerInstanceKey}
             layout={terminalLayout}
