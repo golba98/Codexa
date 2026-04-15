@@ -21,6 +21,37 @@ test("buffers incomplete CSI sequences until the final byte arrives", () => {
   ]);
 });
 
+test("buffers incomplete OSC sequences until a terminator arrives", () => {
+  const parser = createTerminalInputParser();
+
+  assert.deepEqual(parser.push("\u001b]0;Codexa"), []);
+  assert.deepEqual(parser.push("\u0007tail"), [
+    {
+      type: "control",
+      control: "ignored_sequence",
+      leakedText: "]0;Codexa\u0007",
+    },
+    { type: "text", text: "tail" },
+  ]);
+});
+
+test("buffers OSC sequences terminated by ST across chunk boundaries", () => {
+  const parser = createTerminalInputParser();
+
+  assert.deepEqual(parser.push("head\u001b]52;c;abc"), [
+    { type: "text", text: "head" },
+  ]);
+  assert.deepEqual(parser.push("\u001b"), []);
+  assert.deepEqual(parser.push("\\tail"), [
+    {
+      type: "control",
+      control: "ignored_sequence",
+      leakedText: "]52;c;abc\u001b\\",
+    },
+    { type: "text", text: "tail" },
+  ]);
+});
+
 test("drops unknown CSI keyboard protocol sequences safely", () => {
   const parser = createTerminalInputParser();
 
@@ -30,6 +61,16 @@ test("drops unknown CSI keyboard protocol sequences safely", () => {
       control: "ignored_sequence",
       leakedText: "[65;2u",
     },
+  ]);
+});
+
+test("drops SS3 sequences safely, including split chunks", () => {
+  const parser = createTerminalInputParser();
+
+  assert.deepEqual(parser.push("\u001b"), []);
+  assert.deepEqual(parser.push("OPtext"), [
+    { type: "control", control: "ignored_sequence", leakedText: "OP" },
+    { type: "text", text: "text" },
   ]);
 });
 
@@ -47,6 +88,9 @@ test("classifies delete, shift+tab, ctrl+m, mouse, and focus events as controls"
   ]);
   assert.deepEqual(parser.push("\u001b[<64;12;9M"), [
     { type: "control", control: "mouse", leakedText: "[<64;12;9M" },
+  ]);
+  assert.deepEqual(parser.push("\u001b[MABC"), [
+    { type: "control", control: "mouse", leakedText: "[MABC" },
   ]);
   assert.deepEqual(parser.push("\u001b[I\u001b[O"), [
     { type: "control", control: "focus", leakedText: "[I" },
@@ -74,5 +118,19 @@ test("buffers incomplete bracketed paste until the closing wrapper arrives", () 
   assert.deepEqual(parser.push("ta\u001b[201~"), [
     { type: "paste", text: "alpha\nbeta" },
     { type: "control", control: "ignored_sequence", leakedText: "[201~" },
+  ]);
+});
+
+test("preserves only printable text when control sequences are mixed into a chunk", () => {
+  const parser = createTerminalInputParser();
+
+  assert.deepEqual(parser.push("alpha\u001b[<0;26;24Mbeta\u001b]0;title\u0007gamma\u001bOPdelta"), [
+    { type: "text", text: "alpha" },
+    { type: "control", control: "mouse", leakedText: "[<0;26;24M" },
+    { type: "text", text: "beta" },
+    { type: "control", control: "ignored_sequence", leakedText: "]0;title\u0007" },
+    { type: "text", text: "gamma" },
+    { type: "control", control: "ignored_sequence", leakedText: "OP" },
+    { type: "text", text: "delta" },
   ]);
 });
