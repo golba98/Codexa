@@ -31,7 +31,7 @@ const BRACKETED_PASTE_START = /(?:\u001B)?\[200~/;
 const BRACKETED_PASTE_END = /(?:\u001B)?\[201~/;
 const DELETE_ESCAPE_SEQUENCE = /^\u001b\[3(?:;\d+)?~$/;
 const BACKTAB_ESCAPE_SEQUENCE = /\u001b\[Z/;
-const CTRL_M_ESCAPE_SEQUENCE = /^\u001b\[(?:109|13);5u$/;
+const CTRL_M_ESCAPE_SEQUENCE = /^\u001b\[(?:(?:109|13);5u|27;5;13~)$/;
 const MAX_VISIBLE_INPUT_ROWS = 5;
 
 function resolveDeleteIntentFromRawInput(raw: string): DeleteIntent | null {
@@ -294,8 +294,8 @@ export function BottomComposer({
       }
 
       // Ctrl+M is not consistently surfaced as input="m" with key.ctrl.
-      // Terminals using CSI-u style modified key reporting often emit
-      // ESC[109;5u or ESC[13;5u instead, so detect those raw sequences here.
+      // Modified-key reporting terminals may emit CSI-u (ESC[109;5u,
+      // ESC[13;5u) or xterm modifyOtherKeys (ESC[27;5;13~) instead.
       if (CTRL_M_ESCAPE_SEQUENCE.test(raw)) {
         ctrlMEventTickRef.current = true;
         if (ctrlMEventTimeoutRef.current) clearTimeout(ctrlMEventTimeoutRef.current);

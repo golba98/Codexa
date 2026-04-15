@@ -282,6 +282,7 @@ function ShortcutModelPickerHarness() {
   const [reasoningLevel, setReasoningLevel] = React.useState<ReasoningLevel>("high");
   const [value, setValue] = React.useState("");
   const [cursor, setCursor] = React.useState(0);
+  const [submitCount, setSubmitCount] = React.useState(0);
   const [composerInstanceKey, setComposerInstanceKey] = React.useState(0);
   const previousScreenRef = React.useRef<"main" | "model-picker">("main");
 
@@ -301,6 +302,7 @@ function ShortcutModelPickerHarness() {
     <ThemeProvider theme="purple">
       <Box flexDirection="column">
         <Text>{`screen:${screen}`}</Text>
+        <Text>{`submit:${submitCount}`}</Text>
         {screen === "model-picker" ? (
           <ModelPicker
             currentModel={model}
@@ -325,7 +327,7 @@ function ShortcutModelPickerHarness() {
               setValue(nextValue);
               setCursor(nextCursor);
             }}
-            onSubmit={() => {}}
+            onSubmit={() => setSubmitCount((count) => count + 1)}
             onCancel={() => {}}
             onChangeValue={setValue}
             onChangeCursor={setCursor}
@@ -531,6 +533,7 @@ test("ctrl+m opens the existing model picker path without submitting", async () 
 
     const output = harness.getOutput();
     assert.match(output, /screen:model-picker/);
+    assert.match(output, /submit:0/);
     assert.match(output, /Select model/);
   } finally {
     await harness.cleanup();
@@ -547,7 +550,62 @@ test("ctrl+m also opens the model picker when the terminal reports ctrl+enter as
 
     const output = harness.getOutput();
     assert.match(output, /screen:model-picker/);
+    assert.match(output, /submit:0/);
     assert.match(output, /Select model/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("ctrl+m also opens the model picker when the terminal reports xterm modifyOtherKeys", async () => {
+  const harness = createInkHarness(<ShortcutModelPickerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[27;5;13~");
+    await sleep(120);
+
+    const output = harness.getOutput();
+    assert.match(output, /screen:model-picker/);
+    assert.match(output, /submit:0/);
+    assert.match(output, /Select model/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("plain enter still submits once from the focused composer", async () => {
+  const harness = createInkHarness(<PasteComposerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("go");
+    await sleep(20);
+    harness.stdin.write("\r");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.match(output, /submit:1/);
+    assert.match(output, /value:"go"/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("escape still closes the model picker after ctrl+m opens it", async () => {
+  const harness = createInkHarness(<ShortcutModelPickerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[109;5u");
+    await sleep(120);
+    harness.stdin.write("\u001b");
+    await sleep(120);
+
+    const output = harness.getOutput();
+    assert.match(output, /screen:model-picker/);
+    assert.match(output, /screen:main/);
+    assert.match(output, /submit:0/);
   } finally {
     await harness.cleanup();
   }
