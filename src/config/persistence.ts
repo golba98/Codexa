@@ -5,10 +5,13 @@ import {
   AUTH_PREFERENCES,
   CODEX_CONFIG_FILE,
   DEFAULT_AUTH_PREFERENCE,
+  DEFAULT_DIRECTORY_DISPLAY_MODE,
   DEFAULT_LAYOUT_STYLE,
   DEFAULT_THEME,
+  DIRECTORY_DISPLAY_MODES,
   SETTINGS_FILE,
   type AuthPreference,
+  type DirectoryDisplayMode,
 } from "./settings.js";
 import {
   mergeRuntimeIntoTomlConfig,
@@ -23,6 +26,7 @@ import {
 export interface UiSettings {
   layoutStyle: string;
   theme: string;
+  directoryDisplayMode: DirectoryDisplayMode;
   customTheme?: Partial<Theme>;
 }
 
@@ -45,6 +49,7 @@ function normalizeUiSettings(input: Partial<UiSettings> | null | undefined): UiS
   return {
     layoutStyle: input?.layoutStyle ?? DEFAULT_LAYOUT_STYLE,
     theme: input?.theme ?? DEFAULT_THEME,
+    directoryDisplayMode: input?.directoryDisplayMode ?? DEFAULT_DIRECTORY_DISPLAY_MODE,
     customTheme: input?.customTheme,
   };
 }
@@ -117,6 +122,12 @@ export function parseSettingsData(data: unknown): AppSettings {
           ? uiSource.layout_style
           : defaults.ui.layoutStyle,
       theme: typeof uiSource.theme === "string" ? uiSource.theme : defaults.ui.theme,
+      directoryDisplayMode:
+        typeof uiSource.directoryDisplayMode === "string" && DIRECTORY_DISPLAY_MODES.includes(uiSource.directoryDisplayMode as DirectoryDisplayMode)
+          ? uiSource.directoryDisplayMode as DirectoryDisplayMode
+          : typeof uiSource.directory_display_mode === "string" && DIRECTORY_DISPLAY_MODES.includes(uiSource.directory_display_mode as DirectoryDisplayMode)
+            ? uiSource.directory_display_mode as DirectoryDisplayMode
+            : defaults.ui.directoryDisplayMode,
       customTheme: (uiSource.customTheme ?? uiSource.custom_theme) as Partial<Theme> | undefined,
     }),
     auth: {
@@ -130,6 +141,7 @@ export function serializeSettings(settings: AppSettings): Record<string, unknown
     ui: {
       layout_style: settings.ui.layoutStyle,
       theme: settings.ui.theme,
+      directory_display_mode: settings.ui.directoryDisplayMode,
       custom_theme: settings.ui.customTheme,
     },
     auth: {

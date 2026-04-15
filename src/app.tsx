@@ -1,5 +1,7 @@
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { spawn } from "child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
 import { Box, Text, useApp, useFocusManager, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
 import {
@@ -12,15 +14,20 @@ import { loadSettings, saveSettings } from "./config/persistence.js";
 import {
   type AuthPreference,
   type AvailableBackend,
+  type DirectoryDisplayMode,
   type AvailableMode,
   type AvailableModel,
   type ReasoningLevel,
+  USER_SETTING_DEFINITIONS,
+  type UserSettingValues,
   estimateTokens,
   formatAuthPreferenceLabel,
   formatBackendLabel,
+  formatDirectoryDisplayModeLabel,
   formatModeLabel,
   formatReasoningLabel,
   formatThemeLabel,
+  formatWorkspaceDisplayPath,
   getNextMode,
   normalizeReasoningForModel,
 } from "./config/settings.js";
@@ -122,6 +129,7 @@ import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } f
 import { PermissionsPanel, type PermissionsPanelAction } from "./ui/PermissionsPanel.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
 import { SelectionPanel } from "./ui/SelectionPanel.js";
+import { SettingsPanel } from "./ui/SettingsPanel.js";
 import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/TextEntryPanel.js";
 import { ThemePicker } from "./ui/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
@@ -142,6 +150,8 @@ let nextTurnId = 0;
 const LIVE_UPDATE_FLUSH_MS = 50;
 const PROGRESS_ONLY_FLUSH_MS = 150;
 const MAX_PENDING_PROGRESS_LINES = 5;
+const PLAN_FILE_NAME = "last-plan.md";
+const PLAN_FILE_DIR = ".codexa";
 
 function formatWritableRootsMessage(roots: readonly string[]): string {
   return roots.length > 0
@@ -164,6 +174,10 @@ function createInitialAuthStatus(): CodexAuthProbeResult {
     rawSummary: "Initial auth check pending",
     recommendedAction: "Run /auth status to refresh.",
   };
+}
+
+function getPlanFilePath(workspaceRoot: string): string {
+  return join(workspaceRoot, PLAN_FILE_DIR, PLAN_FILE_NAME);
 }
 
 interface AppProps {
@@ -202,6 +216,9 @@ export function App({ launchArgs }: AppProps) {
   const [baseLayeredConfig, setBaseLayeredConfig] = useState<LayeredConfigResult>(initialLayeredConfig.current);
   const [sessionRuntimeOverride, setSessionRuntimeOverride] = useState<PartialRuntimeConfig>({});
   const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.auth.preference);
+  const [directoryDisplayMode, setDirectoryDisplayMode] = useState<DirectoryDisplayMode>(
+    initialSettings.current.ui.directoryDisplayMode,
+  );
   const [themeSelection, setThemeSelection] = useState<ThemeSelectionState>({
     committedTheme: initialSettings.current.ui.theme,
     previewTheme: null,
@@ -275,9 +292,22 @@ export function App({ launchArgs }: AppProps) {
   const { provider: backend, model, mode, reasoningLevel, planMode } = runtimeConfig;
   const resolvedRuntimeConfig = useMemo(() => resolveRuntimeConfig(runtimeConfig), [runtimeConfig]);
   const runtimeSummary = useMemo(() => buildRuntimeSummary(resolvedRuntimeConfig), [resolvedRuntimeConfig]);
+  const workspaceLabel = useMemo(
+    () => formatWorkspaceDisplayPath(workspaceRoot, directoryDisplayMode),
+    [directoryDisplayMode, workspaceRoot],
+  );
+  const currentUserSettings = useMemo<UserSettingValues>(() => ({
+    directory: directoryDisplayMode,
+  }), [directoryDisplayMode]);
   const allowedWritableRoots = useMemo(
     () => resolvedRuntimeConfig.policy.writableRoots,
     [resolvedRuntimeConfig],
+  );
+  const hasPlanFileAvailable = useMemo(
+    () => planFlow.kind !== "idle"
+      && planFlow.planFilePath !== null
+      && existsSync(planFlow.planFilePath),
+    [planFlow],
   );
   const currentModelSpec = modelSpecs[model] ?? createLoadingModelSpec(model);
   const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
@@ -293,7 +323,7 @@ export function App({ launchArgs }: AppProps) {
   const busy = isUiBusy(uiState);
   const composerRows = useMemo(() => {
     if (planFlow.kind === "awaiting_action") {
-      return measurePlanActionPickerRows();
+      return measurePlanActionPickerRows(hasPlanFileAvailable);
     }
     if (planFlow.kind === "collecting_feedback") {
       return measureTextEntryPanelRows();
@@ -313,6 +343,7 @@ export function App({ launchArgs }: AppProps) {
     conversationChars,
     currentModelSpec,
     cursor,
+    hasPlanFileAvailable,
     inputValue,
     mode,
     model,
@@ -333,13 +364,14 @@ export function App({ launchArgs }: AppProps) {
       ui: {
         layoutStyle: initialSettings.current.ui.layoutStyle,
         theme: themeSelection.committedTheme,
+        directoryDisplayMode,
         customTheme,
       },
       auth: {
         preference: authPreference,
       },
     });
-  }, [authPreference, customTheme, themeSelection.committedTheme]);
+  }, [authPreference, customTheme, directoryDisplayMode, themeSelection.committedTheme]);
 
   useEffect(() => {
     return () => {
@@ -624,6 +656,21 @@ export function App({ launchArgs }: AppProps) {
     appendSystemEvent("Auth preference updated", `Preference set to ${formatAuthPreferenceLabel(nextPreference)}.`);
   }, [appendSystemEvent]);
 
+  const setDirectoryDisplayModeWithNotice = useCallback((nextMode: DirectoryDisplayMode) => {
+    setDirectoryDisplayMode(nextMode);
+    appendSystemEvent(
+      "Settings",
+      `Directory display set to ${formatDirectoryDisplayModeLabel(nextMode)} (${nextMode}).`,
+    );
+  }, [appendSystemEvent]);
+
+  const saveSettingsFromPanel = useCallback((nextSettings: UserSettingValues) => {
+    if (nextSettings.directory !== directoryDisplayMode) {
+      setDirectoryDisplayModeWithNotice(nextSettings.directory);
+    }
+    setScreen("main");
+  }, [directoryDisplayMode, setDirectoryDisplayModeWithNotice]);
+
   const setApprovalPolicyWithNotice = useCallback((nextValue: RuntimeApprovalPolicy) => {
     const gate = guardConfigMutation("mode", busy);
     if (!gate.allowed) {
@@ -780,6 +827,16 @@ export function App({ launchArgs }: AppProps) {
     setScreen("theme-picker");
   }, [appendSystemEvent, busy]);
 
+  const openSettingsPanel = useCallback(() => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing settings.");
+      return;
+    }
+
+    setScreen("settings-panel");
+  }, [appendSystemEvent, busy]);
+
   const openAuthPanel = useCallback(() => {
     if (busy) {
       appendSystemEvent("Busy", "Finish the current run before opening auth guidance.");
@@ -880,9 +937,9 @@ export function App({ launchArgs }: AppProps) {
     }
 
     const lifecycle = activeRunLifecycleRef.current;
-    activeRunLifecycleRef.current = null;
     const cleanup = cleanupRef.current;
     cleanupRef.current = null;
+    activeRunLifecycleRef.current = null;
     activeRunIdRef.current = null;
     activeTurnIdRef.current = null;
     focusManager.focus(FOCUS_IDS.composer);
@@ -928,7 +985,10 @@ export function App({ launchArgs }: AppProps) {
         runId,
       });
     } else {
-      lifecycle?.onCanceled?.({ turnId, runId });
+      lifecycle?.onCanceled?.({
+        turnId,
+        runId,
+      });
     }
 
     return true;
@@ -943,15 +1003,23 @@ export function App({ launchArgs }: AppProps) {
       return false;
     }
 
+    const shellEvent = activeEvents.find((event) => event.type === "shell" && event.id === runId) as ShellEvent | undefined;
+    const runEvent = activeEvents.find((event) => event.type === "run" && event.id === runId) as RunEvent | undefined;
+
+    if (retainHistory && runEvent) {
+      return finalizePromptRun(runId, runEvent.turnId, "canceled");
+    }
+
     const cleanup = cleanupRef.current;
+    const lifecycle = activeRunLifecycleRef.current;
     cleanupRef.current = null;
+    activeRunLifecycleRef.current = null;
     activeRunIdRef.current = null;
     activeTurnIdRef.current = null;
     focusManager.focus(FOCUS_IDS.composer);
     cleanup?.();
 
     if (retainHistory) {
-      const shellEvent = activeEvents.find((event) => event.type === "shell" && event.id === runId) as ShellEvent | undefined;
       if (shellEvent) {
         activeRunLifecycleRef.current = null;
         dispatchSession({
@@ -960,12 +1028,11 @@ export function App({ launchArgs }: AppProps) {
           finalEvent: { ...shellEvent, status: "failed", exitCode: -1, durationMs: null },
         });
       } else {
+        dispatchSession({ type: "REMOVE_ACTIVE_RUNTIME", runId, turnId: promptTurnId });
         const runEvent = activeEvents.find((event) => event.type === "run" && event.id === runId) as RunEvent | undefined;
         if (runEvent) {
           void finalizePromptRun(runId, runEvent.turnId, "canceled");
         } else {
-          const lifecycle = activeRunLifecycleRef.current;
-          activeRunLifecycleRef.current = null;
           if (promptTurnId !== null) {
             lifecycle?.onCanceled?.({ turnId: promptTurnId, runId });
           }
@@ -973,8 +1040,6 @@ export function App({ launchArgs }: AppProps) {
         }
       }
     } else {
-      const lifecycle = activeRunLifecycleRef.current;
-      activeRunLifecycleRef.current = null;
       if (promptTurnId !== null) {
         lifecycle?.onCanceled?.({ turnId: promptTurnId, runId });
       }
@@ -1069,6 +1134,43 @@ export function App({ launchArgs }: AppProps) {
     );
   }, [appendSystemEvent, staticEvents]);
 
+  const savePlanFile = useCallback((planContent: string): string | null => {
+    try {
+      const planFilePath = getPlanFilePath(workspaceRoot);
+      mkdirSync(join(workspaceRoot, PLAN_FILE_DIR), { recursive: true });
+      writeFileSync(planFilePath, planContent, "utf-8");
+      return planFilePath;
+    } catch {
+      appendErrorEvent(
+        "Plan file unavailable",
+        `The generated plan could not be saved to ${getPlanFilePath(workspaceRoot)}.`,
+      );
+      return null;
+    }
+  }, [appendErrorEvent, workspaceRoot]);
+
+  const handleViewPlanFile = useCallback((planFilePath: string | null) => {
+    if (!planFilePath) {
+      appendErrorEvent("Plan file unavailable", "There is no saved plan file to view for this review.");
+      return;
+    }
+
+    if (!existsSync(planFilePath)) {
+      appendErrorEvent("Plan file unavailable", `The saved plan file is no longer available: ${planFilePath}`);
+      return;
+    }
+
+    try {
+      const contents = sanitizeTerminalOutput(readFileSync(planFilePath, "utf-8"), {
+        preserveTabs: false,
+        tabSize: 2,
+      });
+      appendSystemEvent("Plan file", [`Path: ${planFilePath}`, "", contents].join("\n"));
+    } catch {
+      appendErrorEvent("Plan file unavailable", `The saved plan file could not be read: ${planFilePath}`);
+    }
+  }, [appendErrorEvent, appendSystemEvent]);
+
 
   // ── Stable composer-input callbacks ────────────────────────────────────────
   // These use refs so the function identity never changes, avoiding
@@ -1132,6 +1234,7 @@ export function App({ launchArgs }: AppProps) {
     };
 
     dispatchSession({ type: "SET_ACTIVE_EVENTS", events: [initialEvent] });
+    activeRunLifecycleRef.current = null;
     activeRunIdRef.current = shellId;
     activeTurnIdRef.current = null;
     dispatchSession({ type: "UI_ACTION", action: { type: "SHELL_STARTED", shellId } });
@@ -1283,18 +1386,14 @@ export function App({ launchArgs }: AppProps) {
       return false;
     }
 
-    const requestedMode = lifecycle.runtimeOverride?.mode ?? runtimeConfig.mode;
+    const requestedRuntime = mergeRuntimeConfig(runtimeConfig, lifecycle.runtimeOverride ?? {});
+    const requestedMode = requestedRuntime.mode;
     const executionModeDecision = lifecycle.disableModeAutoUpgrade
       ? { mode: requestedMode, autoUpgraded: false }
       : resolveExecutionMode(requestedMode, safeProviderPrompt);
     const effectiveMode = executionModeDecision.mode;
     const runtimeForTurn = resolveRuntimeConfig({
-      ...runtimeConfig,
-      ...lifecycle.runtimeOverride,
-      policy: {
-        ...runtimeConfig.policy,
-        ...lifecycle.runtimeOverride?.policy,
-      },
+      ...requestedRuntime,
       mode: effectiveMode,
     });
     if (executionModeDecision.autoUpgraded) {
@@ -1617,7 +1716,8 @@ export function App({ launchArgs }: AppProps) {
             appendErrorEvent("Plan generation failed", "Plan mode expected a concrete plan, but the response was empty.");
             return;
           }
-          setPlanFlow((current) => finishPlanGeneration(current, nextPlan));
+          const planFilePath = savePlanFile(nextPlan);
+          setPlanFlow((current) => finishPlanGeneration(current, nextPlan, planFilePath));
         },
         onFailed: () => {
           setPlanFlow(resetPlanFlow());
@@ -1633,7 +1733,7 @@ export function App({ launchArgs }: AppProps) {
     }
 
     return started;
-  }, [appendErrorEvent, startPromptRun]);
+  }, [appendErrorEvent, savePlanFile, startPromptRun]);
 
   const startApprovedPlanExecution = useCallback((state: Extract<PlanFlowState, { kind: "awaiting_action" }>) => {
     setPlanFlow(approvePlanExecution(state));
@@ -1681,6 +1781,9 @@ export function App({ launchArgs }: AppProps) {
       case "constraints":
         setPlanFlow(beginPlanFeedback(planFlow, "constraints"));
         return;
+      case "view_plan_file":
+        handleViewPlanFile(planFlow.planFilePath);
+        return;
       case "cancel":
         setPlanFlow(resetPlanFlow());
         appendSystemEvent("Plan review", "Plan review canceled. No changes were made.");
@@ -1688,7 +1791,7 @@ export function App({ launchArgs }: AppProps) {
       default:
         return;
     }
-  }, [appendSystemEvent, planFlow, startApprovedPlanExecution]);
+  }, [appendSystemEvent, handleViewPlanFile, planFlow, startApprovedPlanExecution]);
 
   const handlePlanFeedbackSubmit = useCallback((value: string) => {
     if (planFlow.kind !== "collecting_feedback") {
@@ -1746,6 +1849,9 @@ export function App({ launchArgs }: AppProps) {
       config: layeredRuntimeConfig,
       runtime: runtimeConfig,
       resolvedRuntime: resolvedRuntimeConfig,
+      settings: {
+        directoryDisplayMode,
+      },
       workspace: workspaceCommandContext,
       tokensUsed: estimateTokens(conversationChars),
     });
@@ -1872,6 +1978,18 @@ export function App({ launchArgs }: AppProps) {
             setAuthPreferenceWithNotice(commandResult.value as AuthPreference);
           }
           return;
+        case "setting_status":
+          if (commandResult.message) {
+            appendSystemEvent("Settings", commandResult.message);
+          }
+          return;
+        case "setting_directory":
+          if (commandResult.value) {
+            setDirectoryDisplayModeWithNotice(commandResult.value as DirectoryDisplayMode);
+          } else if (commandResult.message) {
+            appendSystemEvent("Settings", commandResult.message);
+          }
+          return;
         case "theme":
           if (commandResult.value) {
             setThemeSelection((currentTheme) => commitThemeSelection(currentTheme, commandResult.value!));
@@ -1905,6 +2023,9 @@ export function App({ launchArgs }: AppProps) {
           return;
         case "open_reasoning_picker":
           openReasoningPicker();
+          return;
+        case "open_settings_panel":
+          openSettingsPanel();
           return;
         case "open_theme_picker":
           openThemePicker();
@@ -1980,6 +2101,7 @@ export function App({ launchArgs }: AppProps) {
     busy,
     buildFollowUpPrompt,
     conversationChars,
+    directoryDisplayMode,
     dispatchSession,
     findUserPromptForTurn,
     focusManager,
@@ -1987,18 +2109,23 @@ export function App({ launchArgs }: AppProps) {
     handleClear,
     handleQuit,
     handleShellExecute,
+    handlePlanFeedbackSubmit,
     handleWorkspaceRelaunch,
     inputValue,
     layeredRuntimeConfig,
+    mode,
     openAuthPanel,
     openBackendPicker,
     openModePicker,
     openModelPicker,
     openPermissionsPanel,
     openReasoningPicker,
+    openSettingsPanel,
+    planMode,
     refreshAuthStatus,
     resetComposer,
     resolvedRuntimeConfig,
+    runPlanGeneration,
     runtimeConfig,
     addWritableRootWithNotice,
     clearWritableRootsWithNotice,
@@ -2009,6 +2136,7 @@ export function App({ launchArgs }: AppProps) {
     setApprovalPolicyWithNotice,
     setAuthPreferenceWithNotice,
     setBackendWithNotice,
+    setDirectoryDisplayModeWithNotice,
     setNetworkAccessWithNotice,
     setModeWithNotice,
     setModelWithNotice,
@@ -2032,7 +2160,7 @@ export function App({ launchArgs }: AppProps) {
         layout={terminalLayout}
         screen={screen}
         authState={authStatus.state}
-        workspaceRoot={workspaceRoot}
+        workspaceLabel={workspaceLabel}
         runtimeSummary={runtimeSummary}
         staticEvents={staticEvents}
         activeEvents={activeEvents}
@@ -2227,10 +2355,21 @@ export function App({ launchArgs }: AppProps) {
                   }}
                 />
               )}
+
+              {screen === "settings-panel" && (
+                <SettingsPanel
+                  focusId={FOCUS_IDS.settingsPanel}
+                  settings={USER_SETTING_DEFINITIONS}
+                  values={currentUserSettings}
+                  onSave={(values) => saveSettingsFromPanel(values as UserSettingValues)}
+                  onCancel={() => setScreen("main")}
+                />
+              )}
           </>
         }
         composer={planFlow.kind === "awaiting_action" ? (
           <PlanActionPicker
+            hasPlanFile={hasPlanFileAvailable}
             onSelect={handlePlanAction}
             onCancel={handleCancel}
           />

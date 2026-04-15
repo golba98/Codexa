@@ -11,6 +11,7 @@ interface PlanFlowContext {
   originalPrompt: string;
   executionMode: AvailableMode;
   constraints: string[];
+  planFilePath: string | null;
 }
 
 export type PlanFlowState =
@@ -49,12 +50,17 @@ export function startPlanGeneration(originalPrompt: string, executionMode: Avail
     originalPrompt,
     executionMode,
     constraints: [],
+    planFilePath: null,
     currentPlan: null,
     pendingFeedback: null,
   };
 }
 
-export function finishPlanGeneration(state: PlanFlowState, currentPlan: string): PlanFlowState {
+export function finishPlanGeneration(
+  state: PlanFlowState,
+  currentPlan: string,
+  planFilePath: string | null,
+): PlanFlowState {
   if (state.kind !== "generating") {
     return state;
   }
@@ -65,6 +71,7 @@ export function finishPlanGeneration(state: PlanFlowState, currentPlan: string):
     executionMode: state.executionMode,
     constraints: state.constraints,
     currentPlan,
+    planFilePath,
   };
 }
 
@@ -79,6 +86,7 @@ export function beginPlanFeedback(state: PlanFlowState, mode: PlanFeedbackMode):
     executionMode: state.executionMode,
     constraints: state.constraints,
     currentPlan: state.currentPlan,
+    planFilePath: state.planFilePath,
     mode,
   };
 }
@@ -97,6 +105,7 @@ export function submitPlanFeedback(state: PlanFlowState, text: string): PlanFlow
     originalPrompt: state.originalPrompt,
     executionMode: state.executionMode,
     constraints: nextConstraints,
+    planFilePath: state.planFilePath,
     currentPlan: state.currentPlan,
     pendingFeedback: {
       mode: state.mode,
@@ -116,6 +125,7 @@ export function cancelPlanFeedback(state: PlanFlowState): PlanFlowState {
     executionMode: state.executionMode,
     constraints: state.constraints,
     currentPlan: state.currentPlan,
+    planFilePath: state.planFilePath,
   };
 }
 
@@ -130,6 +140,7 @@ export function approvePlanExecution(state: PlanFlowState): PlanFlowState {
     executionMode: state.executionMode,
     constraints: state.constraints,
     currentPlan: state.currentPlan,
+    planFilePath: state.planFilePath,
   };
 }
 

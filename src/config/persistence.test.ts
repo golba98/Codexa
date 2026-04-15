@@ -27,6 +27,7 @@ test("keeps UI and auth settings separate from runtime persistence", () => {
     ui: {
       layoutStyle: "gemini-shell",
       theme: "purple",
+      directoryDisplayMode: "simple" as const,
       customTheme: { TEXT: "#fff" },
     },
     auth: {
@@ -39,6 +40,7 @@ test("keeps UI and auth settings separate from runtime persistence", () => {
 
   assert.equal("runtime" in serialized, false);
   assert.equal(parsed.ui.theme, "purple");
+  assert.equal(parsed.ui.directoryDisplayMode, "simple");
   assert.equal(parsed.auth.preference, "runner-managed");
 });
 
@@ -48,6 +50,7 @@ test("falls back to defaults for missing UI or auth preferences", () => {
 
   assert.equal(parsed.ui.layoutStyle, defaults.ui.layoutStyle);
   assert.equal(parsed.ui.theme, defaults.ui.theme);
+  assert.equal(parsed.ui.directoryDisplayMode, defaults.ui.directoryDisplayMode);
   assert.equal(parsed.auth.preference, defaults.auth.preference);
 });
 

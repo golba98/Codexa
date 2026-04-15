@@ -102,7 +102,7 @@ function FocusProbe({ id, label }: { id: string; label: string }) {
   return <Text>{label}:{isFocused ? "focused" : "blurred"}</Text>;
 }
 
-function FocusRoutingHarness({ screen }: { screen: "main" | "model-picker" | "permissions-panel" }) {
+function FocusRoutingHarness({ screen }: { screen: "main" | "model-picker" | "permissions-panel" | "settings-panel" }) {
   const focusManager = useFocusManager();
 
   React.useEffect(() => {
@@ -114,6 +114,7 @@ function FocusRoutingHarness({ screen }: { screen: "main" | "model-picker" | "pe
       {screen === "main" && <FocusProbe id="composer" label="composer" />}
       {screen === "model-picker" && <FocusProbe id="model-picker" label="model" />}
       {screen === "permissions-panel" && <FocusProbe id="permissions-panel" label="permissions" />}
+      {screen === "settings-panel" && <FocusProbe id="settings-panel" label="settings" />}
     </Box>
   );
 }
@@ -354,6 +355,7 @@ function PlanActionPickerHarness() {
     <ThemeProvider theme="purple">
       <Box flexDirection="column">
         <PlanActionPicker
+          hasPlanFile={true}
           onSelect={(value) => setSelection(value)}
           onCancel={() => setCancelCount((count) => count + 1)}
         />
@@ -535,11 +537,47 @@ test("ctrl+m opens the existing model picker path without submitting", async () 
   }
 });
 
-test("plan action picker supports arrow navigation, enter confirm, and esc cancel", async () => {
+test("ctrl+m also opens the model picker when the terminal reports ctrl+enter as CSI-u", async () => {
+  const harness = createInkHarness(<ShortcutModelPickerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[13;5u");
+    await sleep(120);
+
+    const output = harness.getOutput();
+    assert.match(output, /screen:model-picker/);
+    assert.match(output, /Select model/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("focus manager routes through the settings panel and back to the composer", async () => {
+  const harness = createInkHarness(<FocusRoutingHarness screen="settings-panel" />);
+
+  try {
+    await sleep();
+    harness.instance.rerender(<FocusRoutingHarness screen="main" />);
+    await sleep();
+
+    const output = harness.getOutput();
+    assert.match(output, /settings:focused/);
+    assert.ok(output.trim().endsWith("composer:focused"));
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("plan action picker supports view-plan-file selection and esc cancel", async () => {
   const harness = createInkHarness(<PlanActionPickerHarness />);
 
   try {
     await sleep();
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
     harness.stdin.write("\u001b[B");
     await sleep(40);
     harness.stdin.write("\r");
@@ -548,7 +586,7 @@ test("plan action picker supports arrow navigation, enter confirm, and esc cance
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /selection:revise/);
+    assert.match(output, /selection:view_plan_file/);
     assert.match(output, /cancel:1/);
   } finally {
     await harness.cleanup();
@@ -570,18 +608,23 @@ test("plan feedback entry returns to the picker on esc and submits on enter", as
     await sleep(40);
     harness.stdin.write("\r");
     await sleep(80);
-    harness.stdin.write("m");
+    harness.stdin.write("s");
     await sleep(20);
-    harness.stdin.write("i");
+    harness.stdin.write("c");
     await sleep(20);
-    harness.stdin.write("n");
+    harness.stdin.write("o");
+    await sleep(20);
+    harness.stdin.write("p");
+    await sleep(20);
+    harness.stdin.write("e");
     await sleep(20);
     harness.stdin.write("\r");
-    await sleep(100);
+    await sleep(80);
 
     const output = harness.getOutput();
     assert.match(output, /screen:feedback/);
-    assert.ok(output.trim().endsWith('submitted:"min"'));
+    assert.match(output, /screen:picker/);
+    assert.match(output, /submitted:"scope"/);
   } finally {
     await harness.cleanup();
   }

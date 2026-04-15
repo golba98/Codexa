@@ -1,8 +1,10 @@
 import {
   AUTH_PREFERENCES,
   AVAILABLE_BACKENDS,
+  DIRECTORY_DISPLAY_MODES,
   AVAILABLE_MODELS,
   AVAILABLE_REASONING_LEVELS,
+  formatDirectoryDisplayModeLabel,
   formatAuthPreferenceLabel,
   formatBackendLabel,
   formatModeCommandHelp,
@@ -10,6 +12,7 @@ import {
   formatReasoningLabel,
   formatThemeLabel,
   resolveModeCommand,
+  type DirectoryDisplayMode,
 } from "../config/settings.js";
 import { AVAILABLE_THEMES } from "../config/settings.js";
 import {
@@ -50,6 +53,9 @@ export type CommandAction =
   | "reasoning"
   | "open_reasoning_picker"
   | "plan_mode"
+  | "open_settings_panel"
+  | "setting_status"
+  | "setting_directory"
   | "theme"
   | "help"
   | "copy"
@@ -89,6 +95,9 @@ export interface CommandContext {
   config: LayeredConfigResult;
   runtime: RuntimeConfig;
   resolvedRuntime: ResolvedRuntimeConfig;
+  settings: {
+    directoryDisplayMode: DirectoryDisplayMode;
+  };
   workspace: WorkspaceCommandContext;
   tokensUsed?: number;
 }
@@ -404,6 +413,46 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       };
     }
 
+    case "setting": {
+      if (!arg) {
+        return { action: "open_settings_panel" };
+      }
+
+      if (normalizedArg === "directory") {
+        return {
+          action: "setting_directory",
+          message: [
+            `Directory display: ${formatDirectoryDisplayModeLabel(context.settings.directoryDisplayMode)} (${context.settings.directoryDisplayMode})`,
+            "Allowed values: normal, simple",
+            "normal = show the full workspace path",
+            "simple = show only the final folder name",
+          ].join("\n"),
+        };
+      }
+
+      if (normalizedArg.startsWith("directory ")) {
+        const nextValue = normalizedArg.slice("directory ".length).trim();
+        if (DIRECTORY_DISPLAY_MODES.includes(nextValue as DirectoryDisplayMode)) {
+          const value = nextValue as DirectoryDisplayMode;
+          return {
+            action: "setting_directory",
+            value,
+            message: `Directory display set to ${formatDirectoryDisplayModeLabel(value)} (${value}).`,
+          };
+        }
+
+        return {
+          action: "unknown",
+          message: "Usage: /setting directory [normal|simple]",
+        };
+      }
+
+      return {
+        action: "unknown",
+        message: "Usage: /setting or /setting directory [normal|simple]",
+      };
+    }
+
     case "theme": {
       if (!arg) return { action: "open_theme_picker" };
       if (AVAILABLE_THEMES.some((item) => item.id === arg)) {
@@ -594,6 +643,8 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "                     suggest = read-only-style prompting, auto-edit = file edits, full-auto = strongest autonomy",
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
           "  /plan [on|off]     Show or toggle session plan mode",
+          "  /setting           Open the settings picker",
+          "  /setting directory [normal|simple] Control how the workspace path is displayed",
           "  /status            Show the effective runtime configuration",
           "  /config            Show layered config sources and winning values",
           "  /config trust [status|on|off] Manage whether project config is allowed to load",

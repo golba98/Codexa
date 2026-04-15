@@ -13,6 +13,7 @@ export type Screen =
   | "auth-panel"
   | "reasoning-picker"
   | "theme-picker"
+  | "settings-panel"
   | "permissions-panel"
   | "permissions-approval-picker"
   | "permissions-sandbox-picker"

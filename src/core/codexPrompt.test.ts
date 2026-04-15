@@ -99,7 +99,7 @@ test("plan mode does not override read-only runtime guidance", () => {
   assert.doesNotMatch(prompt, /write access/i);
 });
 
-test("builds a dedicated planning prompt with files steps assumptions and risks", () => {
+test("builds a planning prompt that stays plan-only and includes constraints", () => {
   const prompt = buildPlanningPrompt({
     task: "Delete everything in hello.py and replace it with a starter hello_world.py script.",
     constraints: ["Keep the change scoped to the current workspace."],

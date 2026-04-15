@@ -11,7 +11,7 @@ export interface AppShellProps {
   layout: Layout;
   screen: Screen;
   authState: CodexAuthState;
-  workspaceRoot: string;
+  workspaceLabel: string;
   runtimeSummary?: RuntimeSummary | null;
   staticEvents: TimelineEvent[];
   activeEvents: TimelineEvent[];
@@ -31,7 +31,7 @@ function AppShellInner({
   layout,
   screen,
   authState,
-  workspaceRoot,
+  workspaceLabel,
   runtimeSummary = null,
   staticEvents,
   activeEvents,
@@ -66,7 +66,7 @@ function AppShellInner({
         {showTimeline && (
           <Box flexDirection="column" borderBottom={true} flexShrink={0}>
             {/* MemoizedTopHeader already has its own comparator — stable during streaming. */}
-            <MemoizedTopHeader authState={authState} workspaceRoot={workspaceRoot} layout={layout} runtimeSummary={runtimeSummary} />
+            <MemoizedTopHeader authState={authState} workspaceLabel={workspaceLabel} layout={layout} runtimeSummary={runtimeSummary} />
           </Box>
         )}
 
@@ -121,7 +121,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.layout.mode     === next.layout.mode     &&
     prev.screen          === next.screen          &&
     prev.authState       === next.authState       &&
-    prev.workspaceRoot   === next.workspaceRoot   &&
+    prev.workspaceLabel  === next.workspaceLabel  &&
     prev.runtimeSummary  === next.runtimeSummary  &&
     prev.staticEvents    === next.staticEvents    &&
     prev.activeEvents    === next.activeEvents    &&

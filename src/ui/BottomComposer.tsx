@@ -31,6 +31,7 @@ const BRACKETED_PASTE_START = /(?:\u001B)?\[200~/;
 const BRACKETED_PASTE_END = /(?:\u001B)?\[201~/;
 const DELETE_ESCAPE_SEQUENCE = /^\u001b\[3(?:;\d+)?~$/;
 const BACKTAB_ESCAPE_SEQUENCE = /\u001b\[Z/;
+const CTRL_M_ESCAPE_SEQUENCE = /^\u001b\[(?:109|13);5u$/;
 const MAX_VISIBLE_INPUT_ROWS = 5;
 
 function resolveDeleteIntentFromRawInput(raw: string): DeleteIntent | null {
@@ -111,6 +112,7 @@ const COMMANDS = [
   { cmd: "/backend", desc: "Change active backend" },
   { cmd: "/reasoning", desc: "Change reasoning level" },
   { cmd: "/plan", desc: "Show or toggle session plan mode" },
+  { cmd: "/setting", desc: "Open the settings picker" },
   { cmd: "/status", desc: "Show effective runtime configuration" },
   { cmd: "/permissions", desc: "Inspect or update permissions and sandbox controls" },
   { cmd: "/runtime", desc: "Compatibility runtime policy controls" },
@@ -269,8 +271,10 @@ export function BottomComposer({
   const pasteBufferRef = useRef<string | null>(null);
   const deleteIntentRef = useRef<DeleteIntent | null>(null);
   const backtabEventTickRef = useRef(false);
+  const ctrlMEventTickRef = useRef(false);
   const mouseEventTickRef = useRef(false);
   const backtabEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ctrlMEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mouseEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -286,6 +290,17 @@ export function BottomComposer({
         if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
         backtabEventTimeoutRef.current = setTimeout(() => {
           backtabEventTickRef.current = false;
+        }, 64);
+      }
+
+      // Ctrl+M is not consistently surfaced as input="m" with key.ctrl.
+      // Terminals using CSI-u style modified key reporting often emit
+      // ESC[109;5u or ESC[13;5u instead, so detect those raw sequences here.
+      if (CTRL_M_ESCAPE_SEQUENCE.test(raw)) {
+        ctrlMEventTickRef.current = true;
+        if (ctrlMEventTimeoutRef.current) clearTimeout(ctrlMEventTimeoutRef.current);
+        ctrlMEventTimeoutRef.current = setTimeout(() => {
+          ctrlMEventTickRef.current = false;
         }, 64);
       }
 
@@ -305,6 +320,7 @@ export function BottomComposer({
     return () => {
       stdin.off("data", handleRawInput);
       if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
+      if (ctrlMEventTimeoutRef.current) clearTimeout(ctrlMEventTimeoutRef.current);
       if (mouseEventTimeoutRef.current) clearTimeout(mouseEventTimeoutRef.current);
     };
   }, [stdin]);
@@ -428,6 +444,18 @@ export function BottomComposer({
       return;
     }
 
+    if (ctrlMEventTickRef.current) {
+      ctrlMEventTickRef.current = false;
+      if (ctrlMEventTimeoutRef.current) {
+        clearTimeout(ctrlMEventTimeoutRef.current);
+        ctrlMEventTimeoutRef.current = null;
+      }
+      if (!inputLocked) {
+        onOpenModelPicker();
+      }
+      return;
+    }
+
     if (key.ctrl) {
       switch (input) {
         case "q":
@@ -456,6 +484,11 @@ export function BottomComposer({
         case "l": onClear(); return;
         case "y": onCycleMode(); return;
       }
+    }
+
+    if (allowCommands && key.ctrl && key.return) {
+      onOpenModelPicker();
+      return;
     }
 
     if (key.ctrl && (input === "j" || input === "\n")) {
