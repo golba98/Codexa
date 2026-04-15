@@ -21,23 +21,23 @@ export function CodexLogo({ layout = "full" }: CodexLogoProps) {
   const theme = useTheme();
 
   function colorForIndex(index: number): string {
-    const palette = [theme.ACCENT, theme.INFO, theme.STAR];
-    return palette[index % palette.length] ?? theme.ACCENT;
+    return theme.LOGO[index % theme.LOGO.length] ?? theme.LOGO[0];
   }
+
   // Micro mode — no logo rendered at all
   if (layout === "micro") return null;
 
   // Compact mode — single colourful line: ✦ CODEXA
   if (layout === "compact") {
+    const letters = ["C", "O", "D", "E", "X", "A"];
     return (
       <Box>
-        <Text color={theme.ACCENT} bold>{"✦ "}</Text>
-        <Text color={theme.ACCENT} bold>{"C"}</Text>
-        <Text color={theme.INFO}   bold>{"O"}</Text>
-        <Text color={theme.STAR}   bold>{"D"}</Text>
-        <Text color={theme.ACCENT} bold>{"E"}</Text>
-        <Text color={theme.INFO}   bold>{"X"}</Text>
-        <Text color={theme.STAR}   bold>{"A"}</Text>
+        <Text color={theme.LOGO[0]} bold>{"✦ "}</Text>
+        {letters.map((char, index) => (
+          <Text key={index} color={colorForIndex(index)} bold>
+            {char}
+          </Text>
+        ))}
       </Box>
     );
   }
