@@ -59,6 +59,40 @@ export const DIRECTORY_DISPLAY_MODES = ["normal", "simple"] as const;
 
 export type DirectoryDisplayMode = (typeof DIRECTORY_DISPLAY_MODES)[number];
 
+export interface SettingOption<TValue extends string> {
+  value: TValue;
+  label: string;
+}
+
+export interface SettingDefinition<TKey extends string, TValue extends string> {
+  key: TKey;
+  label: string;
+  description?: string;
+  options: readonly SettingOption<TValue>[];
+}
+
+export interface UserSettingValues {
+  directory: DirectoryDisplayMode;
+}
+
+export type UserSettingKey = keyof UserSettingValues;
+
+export type UserSettingDefinition = {
+  [K in UserSettingKey]: SettingDefinition<K, UserSettingValues[K]>;
+}[UserSettingKey];
+
+export const USER_SETTING_DEFINITIONS: readonly UserSettingDefinition[] = [
+  {
+    key: "directory",
+    label: "Directory",
+    description: "Controls how the workspace path is displayed in the Codexa UI.",
+    options: [
+      { value: "normal", label: "Normal" },
+      { value: "simple", label: "Simple" },
+    ],
+  },
+] as const;
+
 /** Rough token estimate: ~4 chars per token */
 export function estimateTokens(chars: number): number {
   return Math.ceil(chars / 4);

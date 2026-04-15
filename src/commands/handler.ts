@@ -53,6 +53,7 @@ export type CommandAction =
   | "reasoning"
   | "open_reasoning_picker"
   | "plan_mode"
+  | "open_settings_panel"
   | "setting_status"
   | "setting_directory"
   | "theme"
@@ -414,17 +415,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
 
     case "setting": {
       if (!arg) {
-        return {
-          action: "setting_status",
-          message: [
-            "Settings:",
-            `  directory: ${context.settings.directoryDisplayMode}`,
-            "",
-            "Usage:",
-            "  /setting directory",
-            "  /setting directory <normal|simple>",
-          ].join("\n"),
-        };
+        return { action: "open_settings_panel" };
       }
 
       if (normalizedArg === "directory") {
@@ -458,7 +449,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
 
       return {
         action: "unknown",
-        message: "Usage: /setting [directory [normal|simple]]",
+        message: "Usage: /setting or /setting directory [normal|simple]",
       };
     }
 
@@ -652,7 +643,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "                     suggest = read-only-style prompting, auto-edit = file edits, full-auto = strongest autonomy",
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
           "  /plan [on|off]     Show or toggle session plan mode",
-          "  /setting           Show user settings",
+          "  /setting           Open the settings picker",
           "  /setting directory [normal|simple] Control how the workspace path is displayed",
           "  /status            Show the effective runtime configuration",
           "  /config            Show layered config sources and winning values",

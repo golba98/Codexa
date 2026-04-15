@@ -148,10 +148,10 @@ test("rejects invalid /plan usage with a short hint", () => {
   assert.equal(result?.message, "Usage: /plan [on|off]");
 });
 
-test("shows and updates directory display settings", () => {
+test("opens the settings panel and keeps typed directory compatibility", () => {
   const statusResult = runCommand("/setting");
-  assert.equal(statusResult?.action, "setting_status");
-  assert.match(statusResult?.message ?? "", /directory:\s+normal/i);
+  assert.equal(statusResult?.action, "open_settings_panel");
+  assert.equal(statusResult?.message, undefined);
 
   const directoryResult = runCommand("/setting directory", {
     settings: {
@@ -174,7 +174,7 @@ test("rejects invalid /setting usage with a short hint", () => {
 
   const invalidSetting = runCommand("/setting theme");
   assert.equal(invalidSetting?.action, "unknown");
-  assert.equal(invalidSetting?.message, "Usage: /setting [directory [normal|simple]]");
+  assert.equal(invalidSetting?.message, "Usage: /setting or /setting directory [normal|simple]");
 });
 
 test("shows effective runtime status", () => {
@@ -323,7 +323,7 @@ test("documents runtime commands in help", () => {
   assert.match(result?.message ?? "", /\/runtime approval-policy/i);
   assert.match(result?.message ?? "", /\/runtime writable-roots/i);
   assert.match(result?.message ?? "", /\/plan \[on\|off\]\s+Show or toggle session plan mode/i);
-  assert.match(result?.message ?? "", /\/setting\s+Show user settings/i);
+  assert.match(result?.message ?? "", /\/setting\s+Open the settings picker/i);
   assert.match(result?.message ?? "", /\/setting directory \[normal\|simple\]/i);
   assert.match(result?.message ?? "", /Current plan mode: Disabled/i);
   assert.match(result?.message ?? "", /Shift\+Tab\s+Toggle plan mode/i);

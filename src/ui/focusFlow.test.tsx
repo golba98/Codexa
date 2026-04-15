@@ -7,8 +7,8 @@ import { normalizeReasoningForModel, type AvailableModel, type ReasoningLevel } 
 import { BottomComposer } from "./BottomComposer.js";
 import { getFocusTargetForScreen } from "./focus.js";
 import { ModelPicker } from "./ModelPicker.js";
-import { createLayoutSnapshot } from "./layout.js";
 import { PlanActionPicker } from "./PlanActionPicker.js";
+import { createLayoutSnapshot } from "./layout.js";
 import { TextEntryPanel } from "./TextEntryPanel.js";
 import { ThemeProvider } from "./theme.js";
 import { shouldBumpComposerInstance } from "./themeFlow.js";
@@ -102,7 +102,7 @@ function FocusProbe({ id, label }: { id: string; label: string }) {
   return <Text>{label}:{isFocused ? "focused" : "blurred"}</Text>;
 }
 
-function FocusRoutingHarness({ screen }: { screen: "main" | "model-picker" | "permissions-panel" }) {
+function FocusRoutingHarness({ screen }: { screen: "main" | "model-picker" | "permissions-panel" | "settings-panel" }) {
   const focusManager = useFocusManager();
 
   React.useEffect(() => {
@@ -114,6 +114,7 @@ function FocusRoutingHarness({ screen }: { screen: "main" | "model-picker" | "pe
       {screen === "main" && <FocusProbe id="composer" label="composer" />}
       {screen === "model-picker" && <FocusProbe id="model-picker" label="model" />}
       {screen === "permissions-panel" && <FocusProbe id="permissions-panel" label="permissions" />}
+      {screen === "settings-panel" && <FocusProbe id="settings-panel" label="settings" />}
     </Box>
   );
 }
@@ -605,6 +606,22 @@ test("escape still closes the model picker after ctrl+m opens it", async () => {
     assert.match(output, /screen:model-picker/);
     assert.match(output, /screen:main/);
     assert.match(output, /submit:0/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("focus manager routes through the settings panel and back to the composer", async () => {
+  const harness = createInkHarness(<FocusRoutingHarness screen="settings-panel" />);
+
+  try {
+    await sleep();
+    harness.instance.rerender(<FocusRoutingHarness screen="main" />);
+    await sleep();
+
+    const output = harness.getOutput();
+    assert.match(output, /settings:focused/);
+    assert.ok(output.trim().endsWith("composer:focused"));
   } finally {
     await harness.cleanup();
   }

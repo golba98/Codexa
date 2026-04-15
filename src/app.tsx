@@ -18,6 +18,8 @@ import {
   type AvailableMode,
   type AvailableModel,
   type ReasoningLevel,
+  USER_SETTING_DEFINITIONS,
+  type UserSettingValues,
   estimateTokens,
   formatAuthPreferenceLabel,
   formatBackendLabel,
@@ -127,6 +129,7 @@ import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } f
 import { PermissionsPanel, type PermissionsPanelAction } from "./ui/PermissionsPanel.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
 import { SelectionPanel } from "./ui/SelectionPanel.js";
+import { SettingsPanel } from "./ui/SettingsPanel.js";
 import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/TextEntryPanel.js";
 import { ThemePicker } from "./ui/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
@@ -149,14 +152,6 @@ const PROGRESS_ONLY_FLUSH_MS = 150;
 const MAX_PENDING_PROGRESS_LINES = 5;
 const PLAN_FILE_NAME = "last-plan.md";
 const PLAN_FILE_DIR = ".codexa";
-
-interface PromptRunLifecycle {
-  disableModeAutoUpgrade?: boolean;
-  runtimeOverride?: PartialRuntimeConfig;
-  onCompleted?: (result: { response: string; turnId: number; runId: number }) => void;
-  onFailed?: (result: { message: string; turnId: number; runId: number }) => void;
-  onCanceled?: (result: { turnId: number; runId: number }) => void;
-}
 
 function formatWritableRootsMessage(roots: readonly string[]): string {
   return roots.length > 0
@@ -187,6 +182,15 @@ function getPlanFilePath(workspaceRoot: string): string {
 
 interface AppProps {
   launchArgs: LaunchArgs;
+}
+
+interface PromptRunLifecycle {
+  parseActionRequired?: boolean;
+  disableModeAutoUpgrade?: boolean;
+  runtimeOverride?: PartialRuntimeConfig;
+  onCompleted?: (result: { response: string; turnId: number; runId: number }) => void;
+  onFailed?: (result: { message: string; turnId: number; runId: number }) => void;
+  onCanceled?: (result: { turnId: number; runId: number }) => void;
 }
 
 export function App({ launchArgs }: AppProps) {
@@ -292,6 +296,9 @@ export function App({ launchArgs }: AppProps) {
     () => formatWorkspaceDisplayPath(workspaceRoot, directoryDisplayMode),
     [directoryDisplayMode, workspaceRoot],
   );
+  const currentUserSettings = useMemo<UserSettingValues>(() => ({
+    directory: directoryDisplayMode,
+  }), [directoryDisplayMode]);
   const allowedWritableRoots = useMemo(
     () => resolvedRuntimeConfig.policy.writableRoots,
     [resolvedRuntimeConfig],
@@ -657,6 +664,13 @@ export function App({ launchArgs }: AppProps) {
     );
   }, [appendSystemEvent]);
 
+  const saveSettingsFromPanel = useCallback((nextSettings: UserSettingValues) => {
+    if (nextSettings.directory !== directoryDisplayMode) {
+      setDirectoryDisplayModeWithNotice(nextSettings.directory);
+    }
+    setScreen("main");
+  }, [directoryDisplayMode, setDirectoryDisplayModeWithNotice]);
+
   const setApprovalPolicyWithNotice = useCallback((nextValue: RuntimeApprovalPolicy) => {
     const gate = guardConfigMutation("mode", busy);
     if (!gate.allowed) {
@@ -813,6 +827,16 @@ export function App({ launchArgs }: AppProps) {
     setScreen("theme-picker");
   }, [appendSystemEvent, busy]);
 
+  const openSettingsPanel = useCallback(() => {
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing settings.");
+      return;
+    }
+
+    setScreen("settings-panel");
+  }, [appendSystemEvent, busy]);
+
   const openAuthPanel = useCallback(() => {
     if (busy) {
       appendSystemEvent("Busy", "Finish the current run before opening auth guidance.");
@@ -912,8 +936,8 @@ export function App({ launchArgs }: AppProps) {
       return false;
     }
 
-    const cleanup = cleanupRef.current;
     const lifecycle = activeRunLifecycleRef.current;
+    const cleanup = cleanupRef.current;
     cleanupRef.current = null;
     activeRunLifecycleRef.current = null;
     activeRunIdRef.current = null;
@@ -925,8 +949,11 @@ export function App({ launchArgs }: AppProps) {
     const safeResponse = response != null
       ? sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 })
       : undefined;
+    const shouldParseActionRequired = lifecycle?.parseActionRequired ?? true;
     const parsed = status === "completed" && safeResponse?.trim()
-      ? extractAssistantActionRequired(safeResponse)
+      ? shouldParseActionRequired
+        ? extractAssistantActionRequired(safeResponse)
+        : { content: safeResponse, question: null as string | null }
       : { content: safeResponse, question: null as string | null };
     dispatchSession({
       type: "FINALIZE_RUN",
@@ -994,6 +1021,7 @@ export function App({ launchArgs }: AppProps) {
 
     if (retainHistory) {
       if (shellEvent) {
+        activeRunLifecycleRef.current = null;
         dispatchSession({
           type: "FINALIZE_SHELL",
           shellId: runId,
@@ -1001,12 +1029,20 @@ export function App({ launchArgs }: AppProps) {
         });
       } else {
         dispatchSession({ type: "REMOVE_ACTIVE_RUNTIME", runId, turnId: promptTurnId });
+        const runEvent = activeEvents.find((event) => event.type === "run" && event.id === runId) as RunEvent | undefined;
+        if (runEvent) {
+          void finalizePromptRun(runId, runEvent.turnId, "canceled");
+        } else {
+          if (promptTurnId !== null) {
+            lifecycle?.onCanceled?.({ turnId: promptTurnId, runId });
+          }
+          dispatchSession({ type: "REMOVE_ACTIVE_RUNTIME", runId, turnId: promptTurnId });
+        }
       }
     } else {
-      lifecycle?.onCanceled?.({
-        turnId: promptTurnId ?? -1,
-        runId,
-      });
+      if (promptTurnId !== null) {
+        lifecycle?.onCanceled?.({ turnId: promptTurnId, runId });
+      }
       if (uiState.kind === "SHELL_RUNNING") {
         dispatchSession({ type: "UI_ACTION", action: { type: "SHELL_FINISHED", shellId: runId } });
       } else if (promptTurnId !== null) {
@@ -1158,6 +1194,7 @@ export function App({ launchArgs }: AppProps) {
   const handleClear = useCallback(() => {
     cancelActiveRun(false);
     activeTurnIdRef.current = null;
+    activeRunLifecycleRef.current = null;
     setPlanFlow(resetPlanFlow());
     dispatchSession({ type: "CLEAR_TRANSCRIPT" });
     setConversationChars(0);
@@ -1666,11 +1703,12 @@ export function App({ launchArgs }: AppProps) {
         pendingFeedback: state.pendingFeedback,
       }),
       {
-        disableModeAutoUpgrade: true,
         runtimeOverride: {
           mode: "suggest",
           planMode: false,
         },
+        disableModeAutoUpgrade: true,
+        parseActionRequired: false,
         onCompleted: ({ response }) => {
           const nextPlan = response.trim();
           if (!nextPlan) {
@@ -1986,6 +2024,9 @@ export function App({ launchArgs }: AppProps) {
         case "open_reasoning_picker":
           openReasoningPicker();
           return;
+        case "open_settings_panel":
+          openSettingsPanel();
+          return;
         case "open_theme_picker":
           openThemePicker();
           return;
@@ -2046,14 +2087,12 @@ export function App({ launchArgs }: AppProps) {
       appendErrorEvent("Workspace boundary", workspaceGuardMessage);
       return;
     }
-
     if (planMode) {
       const nextPlanState = startPlanGeneration(value, mode);
       setPlanFlow(nextPlanState);
       runPlanGeneration(nextPlanState, value);
       return;
     }
-
     startPromptRun(value, value);
   }, [
     allowedWritableRoots,
@@ -2081,6 +2120,7 @@ export function App({ launchArgs }: AppProps) {
     openModelPicker,
     openPermissionsPanel,
     openReasoningPicker,
+    openSettingsPanel,
     planMode,
     refreshAuthStatus,
     resetComposer,
@@ -2090,6 +2130,9 @@ export function App({ launchArgs }: AppProps) {
     addWritableRootWithNotice,
     clearWritableRootsWithNotice,
     removeWritableRootWithNotice,
+    mode,
+    planMode,
+    runPlanGeneration,
     setApprovalPolicyWithNotice,
     setAuthPreferenceWithNotice,
     setBackendWithNotice,
@@ -2246,6 +2289,8 @@ export function App({ launchArgs }: AppProps) {
                   title="Add Writable Root"
                   subtitle="Enter an absolute path or a path relative to the locked workspace."
                   placeholder="relative\\or\\absolute\\path"
+                  inputLabel="Path"
+                  footerHint="Enter save  Esc cancel  Backspace delete"
                   onSubmit={(value) => {
                     if (!value.trim()) {
                       appendSystemEvent("Runtime policy", "Writable root path cannot be empty.");
@@ -2308,6 +2353,16 @@ export function App({ launchArgs }: AppProps) {
                     setThemeSelection((currentTheme) => cancelThemeSelection(currentTheme));
                     setScreen("main");
                   }}
+                />
+              )}
+
+              {screen === "settings-panel" && (
+                <SettingsPanel
+                  focusId={FOCUS_IDS.settingsPanel}
+                  settings={USER_SETTING_DEFINITIONS}
+                  values={currentUserSettings}
+                  onSave={(values) => saveSettingsFromPanel(values as UserSettingValues)}
+                  onCancel={() => setScreen("main")}
                 />
               )}
           </>

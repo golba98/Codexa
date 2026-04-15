@@ -12,6 +12,22 @@ export interface ExecutionModeDecision {
   autoUpgraded: boolean;
 }
 
+export interface PlanningPromptParams {
+  task: string;
+  constraints?: readonly string[];
+  currentPlan?: string | null;
+  pendingFeedback?: {
+    mode: "revise" | "constraints";
+    text: string;
+  } | null;
+}
+
+export interface PlanExecutionPromptParams {
+  task: string;
+  approvedPlan: string;
+  constraints?: readonly string[];
+}
+
 export function promptHasWriteIntent(prompt: string): boolean {
   const normalized = prompt.trim();
   if (!normalized) return false;
@@ -86,13 +102,6 @@ export function enrichFileCreationPrompt(prompt: string): string {
   ].join("\n");
 }
 
-export interface PlanningPromptParams {
-  task: string;
-  constraints?: readonly string[];
-  currentPlan?: string | null;
-  pendingFeedback?: { mode: "revise" | "constraints"; text: string } | null;
-}
-
 export function buildPlanningPrompt({
   task,
   constraints = [],
@@ -131,12 +140,6 @@ export function buildPlanningPrompt({
   }
 
   return sections.join("\n");
-}
-
-export interface PlanExecutionPromptParams {
-  task: string;
-  approvedPlan: string;
-  constraints?: readonly string[];
 }
 
 export function buildPlanExecutionPrompt({

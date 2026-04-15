@@ -36,6 +36,9 @@ export type PlanFlowState =
   });
 
 export type PlanGeneratingState = Extract<PlanFlowState, { kind: "generating" }>;
+export type PlanAwaitingActionState = Extract<PlanFlowState, { kind: "awaiting_action" }>;
+export type PlanCollectingFeedbackState = Extract<PlanFlowState, { kind: "collecting_feedback" }>;
+export type PlanExecutingState = Extract<PlanFlowState, { kind: "executing" }>;
 
 export function createInitialPlanFlowState(): PlanFlowState {
   return { kind: "idle" };
