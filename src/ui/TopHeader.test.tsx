@@ -56,7 +56,7 @@ async function renderHeader(cols: number, authState: CodexAuthState): Promise<st
 async function renderHeaderWithWorkspace(
   cols: number,
   authState: CodexAuthState,
-  workspaceRoot: string,
+  workspaceLabel: string,
 ): Promise<string> {
   const stdin = new TestInput();
   const stdout = new TestOutput();
@@ -71,7 +71,7 @@ async function renderHeaderWithWorkspace(
     <ThemeProvider theme="purple">
       <TopHeader
         authState={authState}
-        workspaceRoot={workspaceRoot}
+        workspaceLabel={workspaceLabel}
         layout={createLayoutSnapshot(cols, 40)}
         runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
       />

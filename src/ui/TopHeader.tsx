@@ -19,7 +19,7 @@ const WORDMARK = [
 
 interface TopHeaderProps {
   authState: CodexAuthState;
-  workspaceRoot: string;
+  workspaceLabel: string;
   layout: Layout;
   runtimeSummary?: RuntimeSummary | null;
 }
@@ -35,7 +35,7 @@ function truncatePath(path: string, maxWidth: number): string {
   return "... " + path.slice(path.length - (maxWidth - 4));
 }
 
-export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) {
+export function TopHeader({ authState, workspaceLabel, layout }: TopHeaderProps) {
   const { cols, mode } = layout;
   const theme = useTheme();
 
@@ -44,7 +44,7 @@ export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) 
     ? authLabelRaw[0]!.toUpperCase() + authLabelRaw.slice(1)
     : authLabelRaw;
 
-  const wsDisplay = truncatePath(workspaceRoot, Math.max(18, cols - 40));
+  const wsDisplay = truncatePath(workspaceLabel, Math.max(18, cols - 40));
 
   // Full mode: always render wordmark + metadata side-by-side
   if (mode === "full") {
@@ -80,7 +80,7 @@ export function TopHeader({ authState, workspaceRoot, layout }: TopHeaderProps) 
 export const MemoizedTopHeader = memo(TopHeader, (prev, next) => {
   return (
     prev.authState === next.authState &&
-    prev.workspaceRoot === next.workspaceRoot &&
+    prev.workspaceLabel === next.workspaceLabel &&
     prev.layout.cols === next.layout.cols &&
     prev.layout.rows === next.layout.rows &&
     prev.layout.mode === next.layout.mode &&

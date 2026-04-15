@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCodexPrompt, detectHollowResponse, promptHasWriteIntent, resolveExecutionMode } from "./codexPrompt.js";
+import {
+  buildCodexPrompt,
+  buildPlanExecutionPrompt,
+  buildPlanningPrompt,
+  detectHollowResponse,
+  promptHasWriteIntent,
+  resolveExecutionMode,
+} from "./codexPrompt.js";
 
 const readOnlyPolicy = {
   approvalPolicy: "untrusted",
@@ -90,6 +97,33 @@ test("plan mode does not override read-only runtime guidance", () => {
   assert.match(prompt, /Planning mode is enabled for this session/i);
   assert.match(prompt, /runtime permissions are read-only/i);
   assert.doesNotMatch(prompt, /write access/i);
+});
+
+test("builds a planning prompt that stays plan-only and includes constraints", () => {
+  const prompt = buildPlanningPrompt({
+    task: "Delete everything in hello.py and replace it with a starter hello_world.py script.",
+    constraints: ["Keep the change scoped to the current workspace."],
+  });
+
+  assert.match(prompt, /plan-only turn/i);
+  assert.match(prompt, /Do not implement the task/i);
+  assert.match(prompt, /Files, Steps, Assumptions, Risks/i);
+  assert.match(prompt, /Active constraints:/i);
+  assert.match(prompt, /Task:/i);
+});
+
+test("builds an approved-plan execution prompt that tells codexa to implement now", () => {
+  const prompt = buildPlanExecutionPrompt({
+    task: "Delete everything in hello.py and replace it with a starter hello_world.py script.",
+    approvedPlan: "## Files\n- hello.py\n- hello_world.py",
+    constraints: ["Keep it minimal."],
+  });
+
+  assert.match(prompt, /approved the following plan/i);
+  assert.match(prompt, /implement it now/i);
+  assert.match(prompt, /Do the work in the workspace instead of re-planning/i);
+  assert.match(prompt, /Approved plan:/i);
+  assert.match(prompt, /Additional constraints:/i);
 });
 
 // --- detectHollowResponse tests ---

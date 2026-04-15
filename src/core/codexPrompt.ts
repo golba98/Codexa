@@ -86,6 +86,86 @@ export function enrichFileCreationPrompt(prompt: string): string {
   ].join("\n");
 }
 
+export interface PlanningPromptParams {
+  task: string;
+  constraints?: readonly string[];
+  currentPlan?: string | null;
+  pendingFeedback?: { mode: "revise" | "constraints"; text: string } | null;
+}
+
+export function buildPlanningPrompt({
+  task,
+  constraints = [],
+  currentPlan = null,
+  pendingFeedback = null,
+}: PlanningPromptParams): string {
+  const sections = [
+    "Plan-only turn.",
+    "Do not implement the task, do not claim to have edited files, and do not describe completed changes.",
+    "Produce a concise, repo-aware implementation plan in Markdown.",
+    "Include these sections in order: Files, Steps, Assumptions, Risks.",
+    "Under Files, list the files you expect to create, modify, or delete when they can be inferred.",
+    "Under Steps, give concrete implementation steps.",
+    "Under Assumptions, capture reasonable inferences you are making.",
+    "Under Risks, note obvious risks, confirmations, or scope boundaries.",
+    "Keep the plan focused and actionable. Do not ask for approval inside the plan.",
+    "",
+    "Task:",
+    task.trim(),
+  ];
+
+  if (constraints.length > 0) {
+    sections.push("", "Active constraints:");
+    for (const constraint of constraints) {
+      sections.push(`- ${constraint}`);
+    }
+  }
+
+  if (currentPlan?.trim()) {
+    sections.push("", "Current approved draft plan:", currentPlan.trim());
+  }
+
+  if (pendingFeedback?.text.trim()) {
+    const label = pendingFeedback.mode === "revise" ? "Revision request" : "Additional constraints";
+    sections.push("", `${label}:`, pendingFeedback.text.trim());
+  }
+
+  return sections.join("\n");
+}
+
+export interface PlanExecutionPromptParams {
+  task: string;
+  approvedPlan: string;
+  constraints?: readonly string[];
+}
+
+export function buildPlanExecutionPrompt({
+  task,
+  approvedPlan,
+  constraints = [],
+}: PlanExecutionPromptParams): string {
+  const sections = [
+    "The user approved the following plan. Implement it now.",
+    "Do the work in the workspace instead of re-planning.",
+    "Only pause if you discover a genuinely blocking issue.",
+    "",
+    "Original task:",
+    task.trim(),
+    "",
+    "Approved plan:",
+    approvedPlan.trim(),
+  ];
+
+  if (constraints.length > 0) {
+    sections.push("", "Additional constraints:");
+    for (const constraint of constraints) {
+      sections.push(`- ${constraint}`);
+    }
+  }
+
+  return sections.join("\n");
+}
+
 export type HollowResponseKind = "greeting" | "filler" | "clarification" | "short-no-action" | "none";
 
 export interface HollowResponseResult {

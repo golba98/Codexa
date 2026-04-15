@@ -1,5 +1,5 @@
 import { homedir } from "os";
-import { join } from "path";
+import { basename, join, parse } from "path";
 
 export const APP_NAME = "Codexa";
 export const APP_VERSION = "1.0.1";
@@ -9,6 +9,7 @@ export const DEFAULT_MODE = "full-auto";
 export const DEFAULT_REASONING_LEVEL = "high";
 export const DEFAULT_LAYOUT_STYLE = "gemini-shell";
 export const DEFAULT_THEME = "mono";
+export const DEFAULT_DIRECTORY_DISPLAY_MODE = "normal";
 export const DEFAULT_AUTH_PREFERENCE = "chatgpt-login-goal";
 export const CODEX_EXECUTABLE = process.env.CODEX_EXECUTABLE || "codex";
 export const MAX_CHAT_LINES = 2000;
@@ -53,6 +54,10 @@ export const AVAILABLE_REASONING_LEVELS = [
 ] as const;
 
 export type ReasoningLevel = (typeof AVAILABLE_REASONING_LEVELS)[number]["id"];
+
+export const DIRECTORY_DISPLAY_MODES = ["normal", "simple"] as const;
+
+export type DirectoryDisplayMode = (typeof DIRECTORY_DISPLAY_MODES)[number];
 
 /** Rough token estimate: ~4 chars per token */
 export function estimateTokens(chars: number): number {
@@ -188,6 +193,36 @@ export type AvailableTheme = (typeof AVAILABLE_THEMES)[number]["id"];
 export function formatThemeLabel(themeId: string): string {
   const found = AVAILABLE_THEMES.find((item) => item.id === themeId);
   return found?.label ?? themeId;
+}
+
+export function formatDirectoryDisplayModeLabel(mode: DirectoryDisplayMode): string {
+  return mode === "simple" ? "Simple" : "Normal";
+}
+
+export function formatWorkspaceDisplayPath(
+  workspaceRoot: string,
+  directoryDisplayMode: DirectoryDisplayMode,
+): string {
+  const trimmed = workspaceRoot.trim();
+  if (!trimmed || directoryDisplayMode === "normal") {
+    return trimmed;
+  }
+
+  const { root } = parse(trimmed);
+  let normalized = trimmed;
+  while (normalized.length > root.length && /[\\/]+$/.test(normalized)) {
+    normalized = normalized.slice(0, -1);
+  }
+
+  if (!normalized) {
+    return trimmed;
+  }
+
+  if (normalized === root) {
+    return root || trimmed;
+  }
+
+  return basename(normalized) || normalized;
 }
 
 export function getRecommendedReasoningForModel(model: AvailableModel): ReasoningLevel {

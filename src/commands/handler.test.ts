@@ -44,6 +44,9 @@ const baseContext: CommandContext = {
   config: baseConfig,
   runtime: baseRuntime,
   resolvedRuntime: resolveRuntimeConfig(baseRuntime),
+  settings: {
+    directoryDisplayMode: "normal",
+  },
   workspace: {
     root: "C:\\Workspace",
     summaryMessage: [
@@ -143,6 +146,35 @@ test("rejects invalid /plan usage with a short hint", () => {
   const result = runCommand("/plan maybe");
   assert.equal(result?.action, "unknown");
   assert.equal(result?.message, "Usage: /plan [on|off]");
+});
+
+test("shows and updates directory display settings", () => {
+  const statusResult = runCommand("/setting");
+  assert.equal(statusResult?.action, "setting_status");
+  assert.match(statusResult?.message ?? "", /directory:\s+normal/i);
+
+  const directoryResult = runCommand("/setting directory", {
+    settings: {
+      directoryDisplayMode: "simple",
+    },
+  });
+  assert.equal(directoryResult?.action, "setting_directory");
+  assert.match(directoryResult?.message ?? "", /Simple \(simple\)/i);
+  assert.match(directoryResult?.message ?? "", /Allowed values: normal, simple/i);
+
+  const setResult = runCommand("/setting directory simple");
+  assert.equal(setResult?.action, "setting_directory");
+  assert.equal(setResult?.value, "simple");
+});
+
+test("rejects invalid /setting usage with a short hint", () => {
+  const invalidValue = runCommand("/setting directory compact");
+  assert.equal(invalidValue?.action, "unknown");
+  assert.equal(invalidValue?.message, "Usage: /setting directory [normal|simple]");
+
+  const invalidSetting = runCommand("/setting theme");
+  assert.equal(invalidSetting?.action, "unknown");
+  assert.equal(invalidSetting?.message, "Usage: /setting [directory [normal|simple]]");
 });
 
 test("shows effective runtime status", () => {
@@ -291,6 +323,8 @@ test("documents runtime commands in help", () => {
   assert.match(result?.message ?? "", /\/runtime approval-policy/i);
   assert.match(result?.message ?? "", /\/runtime writable-roots/i);
   assert.match(result?.message ?? "", /\/plan \[on\|off\]\s+Show or toggle session plan mode/i);
+  assert.match(result?.message ?? "", /\/setting\s+Show user settings/i);
+  assert.match(result?.message ?? "", /\/setting directory \[normal\|simple\]/i);
   assert.match(result?.message ?? "", /Current plan mode: Disabled/i);
   assert.match(result?.message ?? "", /Shift\+Tab\s+Toggle plan mode/i);
   assert.match(result?.message ?? "", /Ctrl\+Y\s+Cycle execution mode/i);

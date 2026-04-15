@@ -8,6 +8,8 @@ import { BottomComposer } from "./BottomComposer.js";
 import { getFocusTargetForScreen } from "./focus.js";
 import { ModelPicker } from "./ModelPicker.js";
 import { createLayoutSnapshot } from "./layout.js";
+import { PlanActionPicker } from "./PlanActionPicker.js";
+import { TextEntryPanel } from "./TextEntryPanel.js";
 import { ThemeProvider } from "./theme.js";
 import { shouldBumpComposerInstance } from "./themeFlow.js";
 
@@ -344,6 +346,62 @@ function ShortcutModelPickerHarness() {
   );
 }
 
+function PlanActionPickerHarness() {
+  const [selection, setSelection] = React.useState<string>("none");
+  const [cancelCount, setCancelCount] = React.useState(0);
+
+  return (
+    <ThemeProvider theme="purple">
+      <Box flexDirection="column">
+        <PlanActionPicker
+          hasPlanFile={true}
+          onSelect={(value) => setSelection(value)}
+          onCancel={() => setCancelCount((count) => count + 1)}
+        />
+        <Text>{`selection:${selection}`}</Text>
+        <Text>{`cancel:${cancelCount}`}</Text>
+      </Box>
+    </ThemeProvider>
+  );
+}
+
+function PlanFeedbackHarness() {
+  const [screen, setScreen] = React.useState<"picker" | "feedback">("picker");
+  const [submitted, setSubmitted] = React.useState("");
+
+  return (
+    <ThemeProvider theme="purple">
+      <Box flexDirection="column">
+        {screen === "picker" ? (
+          <PlanActionPicker
+            onSelect={(value) => {
+              if (value === "revise") {
+                setScreen("feedback");
+              }
+            }}
+            onCancel={() => {}}
+          />
+        ) : (
+          <TextEntryPanel
+            focusId="composer"
+            title="Revise plan"
+            subtitle="Describe the revision."
+            inputLabel="Revision"
+            footerHint="Enter regenerate  Esc back  Backspace delete"
+            onSubmit={(value) => {
+              setSubmitted(value);
+              setScreen("picker");
+            }}
+            onCancel={() => setScreen("picker")}
+          />
+        )}
+        <Text>{`screen:${screen}`}</Text>
+        <Text>{`submitted:${JSON.stringify(submitted)}`}</Text>
+      </Box>
+    </ThemeProvider>
+  );
+}
+
 test("focus manager targets the active panel and returns to the composer", async () => {
   const harness = createInkHarness(<FocusRoutingHarness screen="model-picker" />);
 
@@ -473,6 +531,83 @@ test("ctrl+m opens the existing model picker path without submitting", async () 
     const output = harness.getOutput();
     assert.match(output, /screen:model-picker/);
     assert.match(output, /Select model/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("ctrl+m also opens the model picker when the terminal reports ctrl+enter as CSI-u", async () => {
+  const harness = createInkHarness(<ShortcutModelPickerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[13;5u");
+    await sleep(120);
+
+    const output = harness.getOutput();
+    assert.match(output, /screen:model-picker/);
+    assert.match(output, /Select model/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("plan action picker supports view-plan-file selection and esc cancel", async () => {
+  const harness = createInkHarness(<PlanActionPickerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+    harness.stdin.write("\u001b");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.match(output, /selection:view_plan_file/);
+    assert.match(output, /cancel:1/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("plan feedback entry returns to the picker on esc and submits on enter", async () => {
+  const harness = createInkHarness(<PlanFeedbackHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+    harness.stdin.write("\u001b");
+    await sleep(80);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+    harness.stdin.write("s");
+    await sleep(20);
+    harness.stdin.write("c");
+    await sleep(20);
+    harness.stdin.write("o");
+    await sleep(20);
+    harness.stdin.write("p");
+    await sleep(20);
+    harness.stdin.write("e");
+    await sleep(20);
+    harness.stdin.write("\r");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.match(output, /screen:feedback/);
+    assert.match(output, /screen:picker/);
+    assert.match(output, /submitted:"scope"/);
   } finally {
     await harness.cleanup();
   }

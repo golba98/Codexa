@@ -120,7 +120,7 @@ function renderShell(
         layout={layout}
         screen={screen}
         authState="authenticated"
-        workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
+        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
         runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
         staticEvents={EVENTS}
         activeEvents={[]}
@@ -178,7 +178,7 @@ function renderShell(
 test("80x24 keeps the last timeline content visible above the composer", async () => {
   const output = await renderShell(80, 24, { kind: "IDLE" });
 
-  assert.match(output, /Scanning workspace/);
+  assert.match(output, /Launch mode/);
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
   assert.doesNotMatch(output, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+M/);
 });
@@ -187,7 +187,7 @@ test("larger terminals keep the composer metadata row", async () => {
   const output = await renderShell(100, 30, { kind: "IDLE" });
 
   assert.match(output, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+M/);
-  assert.match(output, /Scanning workspace/);
+  assert.match(output, /Launch mode/);
   assert.match(output, /gpt-5\.4/i);
 });
 
