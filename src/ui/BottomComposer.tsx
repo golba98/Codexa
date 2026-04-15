@@ -295,7 +295,8 @@ export function BottomComposer({
 
       // Ctrl+M is not consistently surfaced as input="m" with key.ctrl.
       // Terminals using CSI-u style modified key reporting often emit
-      // ESC[109;5u or ESC[13;5u instead, so detect those raw sequences here.
+      // ESC[109;5u or ESC[13;5u instead. We also support Ctrl+O as a
+      // reliable cross-terminal alternative for opening the model picker.
       if (CTRL_M_ESCAPE_SEQUENCE.test(raw)) {
         ctrlMEventTickRef.current = true;
         if (ctrlMEventTimeoutRef.current) clearTimeout(ctrlMEventTimeoutRef.current);
@@ -478,6 +479,7 @@ export function BottomComposer({
       switch (input) {
         case "b": onOpenBackendPicker(); return;
         case "m": onOpenModelPicker(); return;
+        case "o": onOpenModelPicker(); return;
         case "p": onOpenModePicker(); return;
         case "t": onOpenThemePicker(); return;
         case "a": onOpenAuthPanel(); return;
@@ -699,7 +701,7 @@ export function BottomComposer({
         <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
           <Box flexGrow={1} flexShrink={1} overflow="hidden">
             <Text color={theme.TEXT} bold>{modeLabel}</Text>
-            <Text color={theme.DIM}>{"  "}{model}{reasoningSuffix}{"  Ctrl+M"}</Text>
+            <Text color={theme.DIM}>{"  "}{model}{reasoningSuffix}{"  Ctrl+O"}</Text>
             {planMode && <Text color={theme.ACCENT}>{"  Plan"}</Text>}
           </Box>
           <Box flexShrink={0}>

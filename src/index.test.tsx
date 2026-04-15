@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
 import { EventEmitter } from "node:events";
+import type { RenderOptions } from "ink";
 import { startApp } from "./index.js";
 
 class MockStdout extends EventEmitter {
@@ -35,28 +36,40 @@ function createSupportedHarness() {
   const stderr = new MockStderr();
   const registeredHandlers: Array<() => void> = [];
   let renderCalls = 0;
-  let resolveExit = () => {};
+  let cleanupCalls = 0;
+  let renderOptions: RenderOptions | undefined;
+  let resolveExitPromise = () => {};
   const waitUntilExitPromise = new Promise<void>((resolve) => {
-    resolveExit = resolve;
+    resolveExitPromise = resolve;
   });
 
   return {
     stdout,
     stderr,
     registeredHandlers,
+    getCleanupCalls: () => cleanupCalls,
     getRenderCalls: () => renderCalls,
-    resolveExit,
+    getRenderOptions: () => renderOptions,
+    resolveExit() {
+      resolveExitPromise();
+      registeredHandlers[0]?.();
+    },
     deps: {
       stdin: { isTTY: true },
       stdout,
       stderr,
       env: {},
       platform: "linux" as const,
-      renderApp(_node: React.ReactElement) {
+      renderApp(_node: React.ReactElement, options?: RenderOptions) {
         renderCalls += 1;
+        renderOptions = options;
+        stdout.write("\x1b[?1000h\x1b[?1006h");
         return {
           clear() {
             stdout.clearCalls += 1;
+          },
+          cleanup() {
+            cleanupCalls += 1;
           },
           waitUntilExit() {
             return waitUntilExitPromise;
@@ -105,6 +118,7 @@ test("refuses unsupported terminals without writing bracketed paste sequences", 
       renderCalled = true;
       return {
         clear() {},
+        cleanup() {},
         waitUntilExit() {
           return Promise.resolve();
         },
@@ -132,6 +146,10 @@ test("enforces a single render root while active", async () => {
   assert.deepEqual(first, { started: true, exitCode: 0 });
   assert.deepEqual(second, { started: true, exitCode: 0 });
   assert.equal(harness.getRenderCalls(), 1);
+  assert.deepEqual(harness.getRenderOptions()?.kittyKeyboard, {
+    mode: "auto",
+    flags: ["disambiguateEscapeCodes"],
+  });
 
   harness.resolveExit();
   await flushMicrotasks();
@@ -201,6 +219,7 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
   // Cleanup is deferred via registerExitHandler (index 0)
   harness.registeredHandlers[0]!();
   assert.equal(harness.stdout.listenerCount("resize"), 0);
+  assert.equal(harness.getCleanupCalls(), 1);
   // Verify enable sequences were written during startup
   assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
   assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
