@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
 import { EventEmitter } from "node:events";
+import type { RenderOptions } from "ink";
 import { startApp } from "./index.js";
 
 class MockStdout extends EventEmitter {
@@ -35,6 +36,7 @@ function createSupportedHarness() {
   const stderr = new MockStderr();
   const registeredHandlers: Array<() => void> = [];
   let renderCalls = 0;
+  let lastRenderOptions: RenderOptions | undefined;
   let resolveExit = () => {};
   const waitUntilExitPromise = new Promise<void>((resolve) => {
     resolveExit = resolve;
@@ -45,6 +47,7 @@ function createSupportedHarness() {
     stderr,
     registeredHandlers,
     getRenderCalls: () => renderCalls,
+    getLastRenderOptions: () => lastRenderOptions,
     resolveExit,
     deps: {
       stdin: { isTTY: true },
@@ -52,8 +55,9 @@ function createSupportedHarness() {
       stderr,
       env: {},
       platform: "linux" as const,
-      renderApp(_node: React.ReactElement) {
+      renderApp(_node: React.ReactElement, options?: RenderOptions) {
         renderCalls += 1;
+        lastRenderOptions = options;
         return {
           clear() {
             stdout.clearCalls += 1;
@@ -123,6 +127,20 @@ test("refuses unsupported terminals without writing bracketed paste sequences", 
   assert.match(stderrWrites, /VT control sequences/i);
 });
 
+test("passes kitty keyboard disambiguation options to Ink at startup", async () => {
+  const harness = createSupportedHarness();
+
+  startApp(harness.deps);
+
+  assert.deepEqual(harness.getLastRenderOptions()?.kittyKeyboard, {
+    mode: "auto",
+    flags: ["disambiguateEscapeCodes"],
+  });
+
+  harness.resolveExit();
+  await flushMicrotasks();
+});
+
 test("enforces a single render root while active", async () => {
   const harness = createSupportedHarness();
 
@@ -154,8 +172,6 @@ test("hard-repaints once when resize recovers from invalid dimensions", async ()
   // New behaviour: onResize only clears scrollback (\x1b[3J]) immediately.
   // renderHandle.clear() is deferred to scheduleRepaint (150ms).
   assert.equal(harness.stdout.clearCalls, 0);
-  assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
-  assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
   // Scrollback-only clear should appear (no \x1b[2J visible)
   assert.match(harness.stdout.writes, /\x1b\[3J/);
@@ -201,9 +217,7 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
   // Cleanup is deferred via registerExitHandler (index 0)
   harness.registeredHandlers[0]!();
   assert.equal(harness.stdout.listenerCount("resize"), 0);
-  // Verify enable sequences were written during startup
-  assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
-  assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
+  // Verify startup wrote bracketed paste enable only; mouse capture is owned by App.
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
   // Verify disable sequences were written during cleanup
   assert.match(harness.stdout.writes, /\x1b\[\?1000l/);

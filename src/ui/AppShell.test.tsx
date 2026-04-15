@@ -181,13 +181,13 @@ test("80x24 keeps the last timeline content visible above the composer", async (
 
   assert.match(output, /Launch mode/);
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
-  assert.doesNotMatch(output, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+M/);
+  assert.doesNotMatch(output, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+O/);
 });
 
 test("larger terminals keep the composer metadata row", async () => {
   const output = await renderShell(100, 30, { kind: "IDLE" });
 
-  assert.match(output, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+M/);
+  assert.match(output, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+O/);
   assert.match(output, /Launch mode/);
   assert.match(output, /gpt-5\.4/i);
 });
@@ -209,7 +209,7 @@ test("non-main screens center the active panel and keep the composer hidden", as
   );
 
   assert.match(output, /Theme panel/);
-  assert.doesNotMatch(output, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+M/);
+  assert.doesNotMatch(output, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+O/);
 });
 
 test("main screen keeps the transcript visible while showing the plan action picker", async () => {
@@ -309,13 +309,13 @@ test("memoized composer re-renders when only the terminal height changes", async
 
   await sleep(80);
   let frame = stripAnsi(output);
-  assert.match(frame, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+M/);
+  assert.match(frame, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+O/);
 
   output = "";
   instance.rerender(renderComposer(24));
   await sleep(80);
   frame = stripAnsi(output);
-  assert.doesNotMatch(frame, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+M/);
+  assert.doesNotMatch(frame, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+O/);
 
   instance.cleanup();
   await sleep(20);
