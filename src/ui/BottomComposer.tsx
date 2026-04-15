@@ -443,8 +443,8 @@ export function BottomComposer({
     // and starving Ink's input loop ("keyboard is cut" regression).
     // Instead, we non-destructively intercept `read()` to spy on verbatim chunks.
     const originalRead = stdin.read;
-    stdin.read = function (...args: any[]) {
-      const chunk = originalRead.apply(this, args);
+    stdin.read = function (...args: [size?: number]) {
+      const chunk = originalRead.apply(stdin, args);
       if (chunk !== null) {
         handleRawInput(chunk);
       }
