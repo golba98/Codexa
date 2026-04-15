@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
-import { Box, Text, useFocus, useInput } from "ink";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, useFocus, useInput, useStdin } from "ink";
 import type { FocusTargetId } from "./focus.js";
 import { useTheme } from "./theme.js";
+import { createTerminalInputParser } from "./terminalInputParser.js";
 
 interface TextEntryPanelProps {
   focusId: FocusTargetId;
@@ -19,6 +20,16 @@ function insertAt(value: string, index: number, text: string): string {
   return value.slice(0, index) + text + value.slice(index);
 }
 
+function consumeQueuedInput(queueRef: React.MutableRefObject<string>, input: string): boolean {
+  const queue = queueRef.current;
+  if (!queue || !input || !queue.startsWith(input)) {
+    return false;
+  }
+
+  queueRef.current = queue.slice(input.length);
+  return true;
+}
+
 export function TextEntryPanel({
   focusId,
   title,
@@ -30,13 +41,82 @@ export function TextEntryPanel({
   onSubmit,
   onCancel,
 }: TextEntryPanelProps) {
+  const { stdin } = useStdin();
   const theme = useTheme();
   const { isFocused } = useFocus({ id: focusId, autoFocus: true });
   const [value, setValue] = useState(initialValue);
   const [cursor, setCursor] = useState(initialValue.length);
+  const valueRef = useRef(initialValue);
+  const cursorRef = useRef(initialValue.length);
+  const parserRef = useRef(createTerminalInputParser());
+  const approvedTextRef = useRef("");
+  const suppressedTextRef = useRef("");
+
+  const commitInputChange = useCallback((nextValue: string, nextCursor: number) => {
+    valueRef.current = nextValue;
+    cursorRef.current = nextCursor;
+    setValue(nextValue);
+    setCursor(nextCursor);
+  }, []);
+
+  const insertText = useCallback((text: string) => {
+    if (!text) {
+      return;
+    }
+
+    commitInputChange(
+      insertAt(valueRef.current, cursorRef.current, text),
+      cursorRef.current + text.length,
+    );
+  }, [commitInputChange]);
+
+  useEffect(() => {
+    valueRef.current = value;
+    cursorRef.current = cursor;
+  }, [cursor, value]);
+
+  useEffect(() => {
+    if (!isFocused) {
+      parserRef.current.reset();
+      approvedTextRef.current = "";
+      suppressedTextRef.current = "";
+      return;
+    }
+
+    const handleRawInput = (chunk: Buffer | string) => {
+      const raw = typeof chunk === "string" ? chunk : chunk.toString();
+      const events = parserRef.current.push(raw);
+
+      for (const event of events) {
+        if (event.type === "text") {
+          approvedTextRef.current += event.text;
+          continue;
+        }
+
+        if (event.type === "paste") {
+          insertText(event.text);
+          suppressedTextRef.current += event.text;
+          continue;
+        }
+
+        if (event.leakedText) {
+          suppressedTextRef.current += event.leakedText;
+        }
+      }
+    };
+
+    stdin.on("data", handleRawInput);
+    return () => {
+      stdin.off("data", handleRawInput);
+      parserRef.current.reset();
+      approvedTextRef.current = "";
+      suppressedTextRef.current = "";
+    };
+  }, [insertText, isFocused, stdin]);
 
   useInput((input, key) => {
     if (key.escape) {
+      parserRef.current.clearPendingSequence();
       onCancel();
       return;
     }
@@ -47,19 +127,21 @@ export function TextEntryPanel({
     }
 
     if (key.leftArrow) {
-      setCursor((current) => Math.max(0, current - 1));
+      commitInputChange(valueRef.current, Math.max(0, cursorRef.current - 1));
       return;
     }
 
     if (key.rightArrow) {
-      setCursor((current) => Math.min(value.length, current + 1));
+      commitInputChange(valueRef.current, Math.min(valueRef.current.length, cursorRef.current + 1));
       return;
     }
 
     if (key.backspace || key.delete) {
-      if (cursor === 0) return;
-      setValue((current) => current.slice(0, cursor - 1) + current.slice(cursor));
-      setCursor((current) => Math.max(0, current - 1));
+      if (cursorRef.current === 0) return;
+      commitInputChange(
+        valueRef.current.slice(0, cursorRef.current - 1) + valueRef.current.slice(cursorRef.current),
+        Math.max(0, cursorRef.current - 1),
+      );
       return;
     }
 
@@ -67,8 +149,15 @@ export function TextEntryPanel({
       return;
     }
 
-    setValue((current) => insertAt(current, cursor, input));
-    setCursor((current) => current + input.length);
+    if (consumeQueuedInput(suppressedTextRef, input)) {
+      return;
+    }
+
+    if (!consumeQueuedInput(approvedTextRef, input)) {
+      return;
+    }
+
+    insertText(input);
   }, { isActive: isFocused });
 
   const display = useMemo(() => {

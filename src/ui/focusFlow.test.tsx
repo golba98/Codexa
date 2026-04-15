@@ -405,6 +405,27 @@ function PlanFeedbackHarness() {
   );
 }
 
+function TextEntryProtocolHarness() {
+  const [submitted, setSubmitted] = React.useState("");
+
+  return (
+    <ThemeProvider theme="purple">
+      <Box flexDirection="column">
+        <TextEntryPanel
+          focusId="composer"
+          title="Protocol guard"
+          subtitle="Only printable input should land in the field."
+          inputLabel="Value"
+          footerHint="Enter submit  Esc cancel  Backspace delete"
+          onSubmit={setSubmitted}
+          onCancel={() => {}}
+        />
+        <Text>{`submitted:${JSON.stringify(submitted)}`}</Text>
+      </Box>
+    </ThemeProvider>
+  );
+}
+
 test("focus manager targets the active panel and returns to the composer", async () => {
   const harness = createInkHarness(<FocusRoutingHarness screen="model-picker" />);
 
@@ -611,6 +632,49 @@ test("escape still closes the model picker after ctrl+m opens it", async () => {
   }
 });
 
+test("drops leaked terminal keyboard protocol fragments from the composer", async () => {
+  const harness = createInkHarness(<PasteComposerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("a");
+    await sleep(20);
+    harness.stdin.write("\u001b[67;46;99;1:0:1u");
+    await sleep(80);
+    harness.stdin.write("b");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.equal(getLastComposerValue(output), "ab");
+    assert.doesNotMatch(output, /\[67;46;99;1:0:1u/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("swallows mouse and focus protocol events before they can render into the composer", async () => {
+  const harness = createInkHarness(<PasteComposerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("a");
+    await sleep(20);
+    harness.stdin.write("\u001b[<0;26;24M");
+    await sleep(20);
+    harness.stdin.write("\u001b[I\u001b[O");
+    await sleep(20);
+    harness.stdin.write("b");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.equal(getLastComposerValue(output), "ab");
+    assert.doesNotMatch(output, /\[<0;26;24M/);
+    assert.doesNotMatch(output, /\[I|\[O/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test("focus manager routes through the settings panel and back to the composer", async () => {
   const harness = createInkHarness(<FocusRoutingHarness screen="settings-panel" />);
 
@@ -683,6 +747,31 @@ test("plan feedback entry returns to the picker on esc and submits on enter", as
     assert.match(output, /screen:feedback/);
     assert.match(output, /screen:picker/);
     assert.match(output, /submitted:"scope"/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("text entry panels also drop leaked control sequences instead of submitting them", async () => {
+  const harness = createInkHarness(<TextEntryProtocolHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("a");
+    await sleep(20);
+    harness.stdin.write("\u001b[67;46;99;1:0:1u");
+    await sleep(20);
+    harness.stdin.write("\u001b[<0;26;24M");
+    await sleep(20);
+    harness.stdin.write("b");
+    await sleep(20);
+    harness.stdin.write("\r");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.match(output, /submitted:"ab"/);
+    assert.doesNotMatch(output, /\[67;46;99;1:0:1u/);
+    assert.doesNotMatch(output, /\[<0;26;24M/);
   } finally {
     await harness.cleanup();
   }
