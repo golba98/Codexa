@@ -282,6 +282,7 @@ function ShortcutModelPickerHarness() {
   const [reasoningLevel, setReasoningLevel] = React.useState<ReasoningLevel>("high");
   const [value, setValue] = React.useState("");
   const [cursor, setCursor] = React.useState(0);
+  const [submitCount, setSubmitCount] = React.useState(0);
   const [composerInstanceKey, setComposerInstanceKey] = React.useState(0);
   const previousScreenRef = React.useRef<"main" | "model-picker">("main");
 
@@ -301,6 +302,9 @@ function ShortcutModelPickerHarness() {
     <ThemeProvider theme="purple">
       <Box flexDirection="column">
         <Text>{`screen:${screen}`}</Text>
+        <Text>{`model:${model}`}</Text>
+        <Text>{`submit:${submitCount}`}</Text>
+        <Text>{`value:${JSON.stringify(value)}`}</Text>
         {screen === "model-picker" ? (
           <ModelPicker
             currentModel={model}
@@ -325,7 +329,9 @@ function ShortcutModelPickerHarness() {
               setValue(nextValue);
               setCursor(nextCursor);
             }}
-            onSubmit={() => {}}
+            onSubmit={() => {
+              setSubmitCount((count) => count + 1);
+            }}
             onCancel={() => {}}
             onChangeValue={setValue}
             onChangeCursor={setCursor}
@@ -521,17 +527,57 @@ test("shift+tab toggles plan mode without submitting or mutating the input", asy
   }
 });
 
+test("ctrl+o opens the existing model picker path without submitting", async () => {
+  const harness = createInkHarness(<ShortcutModelPickerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("a");
+    await sleep(20);
+    harness.stdin.write("\x0F"); // Ctrl+O
+    await sleep(120);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+    harness.stdin.write("z");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.match(output, /screen:model-picker/);
+    assert.match(output, /Select model/);
+    assert.match(output, /screen:main/);
+    assert.match(output, /model:gpt-5\.4-mini/);
+    assert.match(output, /submit:0/);
+    assert.equal(getLastComposerValue(output), "az");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test("ctrl+m opens the existing model picker path without submitting", async () => {
   const harness = createInkHarness(<ShortcutModelPickerHarness />);
 
   try {
     await sleep();
+    harness.stdin.write("a");
+    await sleep(20);
     harness.stdin.write("\u001b[109;5u");
     await sleep(120);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+    harness.stdin.write("z");
+    await sleep(80);
 
     const output = harness.getOutput();
     assert.match(output, /screen:model-picker/);
     assert.match(output, /Select model/);
+    assert.match(output, /screen:main/);
+    assert.match(output, /model:gpt-5\.4-mini/);
+    assert.match(output, /submit:0/);
+    assert.equal(getLastComposerValue(output), "az");
   } finally {
     await harness.cleanup();
   }
@@ -542,12 +588,39 @@ test("ctrl+m also opens the model picker when the terminal reports ctrl+enter as
 
   try {
     await sleep();
+    harness.stdin.write("a");
+    await sleep(20);
     harness.stdin.write("\u001b[13;5u");
     await sleep(120);
+    harness.stdin.write("\u001b");
+    await sleep(80);
 
     const output = harness.getOutput();
     assert.match(output, /screen:model-picker/);
     assert.match(output, /Select model/);
+    assert.match(output, /screen:main/);
+    assert.match(output, /submit:0/);
+    assert.equal(getLastComposerValue(output), "a");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("plain enter still submits without opening the model picker", async () => {
+  const harness = createInkHarness(<ShortcutModelPickerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("a");
+    await sleep(20);
+    harness.stdin.write("\r");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.match(output, /screen:main/);
+    assert.match(output, /submit:1/);
+    assert.equal(getLastComposerValue(output), "a");
+    assert.doesNotMatch(output, /Select model/);
   } finally {
     await harness.cleanup();
   }

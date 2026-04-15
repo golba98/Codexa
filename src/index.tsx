@@ -1,5 +1,5 @@
 import React from "react";
-import { render, type Instance } from "ink";
+import { render, type Instance, type RenderOptions } from "ink";
 import { App } from "./app.js";
 import { parseLaunchArgs, type LaunchArgs } from "./config/launchArgs.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
@@ -14,7 +14,11 @@ const HARD_REPAINT_SEQUENCE = "\x1b[2J\x1b[3J\x1b[H";
 const DISABLE_TRANSCRIPT_WHEEL_MODE = "\x1b[?1000l\x1b[?1006l";
 import { SET_TERMINAL_TITLE } from "./core/terminalTitle.js";
 
-type RenderHandle = Pick<Instance, "clear" | "waitUntilExit">;
+type RenderHandle = Pick<Instance, "clear" | "cleanup" | "waitUntilExit">;
+const KITTY_KEYBOARD_OPTIONS: RenderOptions["kittyKeyboard"] = {
+  mode: "auto",
+  flags: ["disambiguateEscapeCodes"],
+};
 
 /**
  * Typed subset of the internal Ink class instance we access for repaint control.
@@ -69,7 +73,7 @@ export interface StartAppDependencies {
   env: Record<string, string | undefined>;
   platform: NodeJS.Platform;
   argv: string[];
-  renderApp: (node: React.ReactElement) => RenderHandle;
+  renderApp: (node: React.ReactElement, options?: RenderOptions) => RenderHandle;
   registerExitHandler: (handler: () => void) => void;
 }
 
@@ -287,6 +291,7 @@ export function startApp({
     cleanupDone = true;
     if (repaintDebounceTimer) clearTimeout(repaintDebounceTimer);
     stdout.off("resize", onResize);
+    renderHandle?.cleanup();
     // Restore terminal state: disable mouse reporting and bracketed paste.
     stdout.write(`${DISABLE_TRANSCRIPT_WHEEL_MODE}\x1b[?2004l`);
     activeRoot = null;
@@ -317,7 +322,9 @@ export function startApp({
   process.on("uncaughtException", handleFatal);
   process.on("unhandledRejection", handleFatal);
 
-  renderHandle = renderApp(<App launchArgs={launchArgs} />);
+  renderHandle = renderApp(<App launchArgs={launchArgs} />, {
+    kittyKeyboard: KITTY_KEYBOARD_OPTIONS,
+  });
 
   // Resolve the real Ink class instance to get access to lastOutput,
   // onRender, calculateLayout, etc.  Gracefully degrades to null in tests.
