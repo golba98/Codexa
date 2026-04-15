@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   DEFAULT_DIRECTORY_DISPLAY_MODE,
   DEFAULT_MODE,
+  USER_SETTING_DEFINITIONS,
   formatDirectoryDisplayModeLabel,
   formatModeLabel,
   formatWorkspaceDisplayPath,
@@ -41,7 +42,22 @@ test("defaults directory display mode to normal", () => {
   assert.equal(formatDirectoryDisplayModeLabel("simple"), "Simple");
 });
 
+test("defines user settings through reusable schemas", () => {
+  assert.deepEqual(USER_SETTING_DEFINITIONS, [
+    {
+      key: "directory",
+      label: "Directory",
+      description: "Controls how the workspace path is displayed in the Codexa UI.",
+      options: [
+        { value: "normal", label: "Normal" },
+        { value: "simple", label: "Simple" },
+      ],
+    },
+  ]);
+});
+
 test("formats workspace display paths without changing root semantics", () => {
+  assert.equal(formatWorkspaceDisplayPath("", "simple"), "");
   assert.equal(
     formatWorkspaceDisplayPath("C:\\Development\\1-JavaScript\\13-Custom CLI", "normal"),
     "C:\\Development\\1-JavaScript\\13-Custom CLI",

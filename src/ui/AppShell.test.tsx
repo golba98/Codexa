@@ -9,6 +9,7 @@ import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 import { AppShell } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "./layout.js";
+import { PlanActionPicker, measurePlanActionPickerRows } from "./PlanActionPicker.js";
 import { ThemeProvider } from "./theme.js";
 
 class TestInput extends PassThrough {
@@ -209,6 +210,52 @@ test("non-main screens center the active panel and keep the composer hidden", as
 
   assert.match(output, /Theme panel/);
   assert.doesNotMatch(output, /AUTO-EDIT  gpt-5\.4 \(medium\)  Ctrl\+M/);
+});
+
+test("main screen keeps the transcript visible while showing the plan action picker", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const layout = createLayoutSnapshot(100, 30);
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <AppShell
+        layout={layout}
+        screen="main"
+        authState="authenticated"
+        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+        staticEvents={EVENTS}
+        activeEvents={[]}
+        uiState={{ kind: "IDLE" }}
+        panel={null}
+        composer={<PlanActionPicker onSelect={() => {}} onCancel={() => {}} />}
+        composerRows={measurePlanActionPickerRows()}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+
+  await sleep(100);
+  const frame = stripAnsi(output);
+  instance.cleanup();
+  await sleep(20);
+
+  assert.match(frame, /Review plan/);
+  assert.match(frame, /Reproduce the resize flicker and fix it\./);
+  assert.match(frame, /Implement plan/);
 });
 
 test("memoized composer re-renders when only the terminal height changes", async () => {

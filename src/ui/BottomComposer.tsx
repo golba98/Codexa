@@ -112,7 +112,7 @@ const COMMANDS = [
   { cmd: "/backend", desc: "Change active backend" },
   { cmd: "/reasoning", desc: "Change reasoning level" },
   { cmd: "/plan", desc: "Show or toggle session plan mode" },
-  { cmd: "/setting", desc: "Show or update user settings" },
+  { cmd: "/setting", desc: "Open the settings picker" },
   { cmd: "/status", desc: "Show effective runtime configuration" },
   { cmd: "/permissions", desc: "Inspect or update permissions and sandbox controls" },
   { cmd: "/runtime", desc: "Compatibility runtime policy controls" },
