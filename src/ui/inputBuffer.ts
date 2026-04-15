@@ -21,13 +21,20 @@ function isLowSurrogate(code: number): boolean {
 }
 
 const LEAKED_SGR_MOUSE_PATTERN = /\[<\d+;\d+;\d+[Mm]?/g;
+const LEAKED_BRACKETED_PASTE_PATTERN = /\[(?:200|201)~/g;
+const LEAKED_MODIFIED_KEY_PATTERN = /\[(?:(?:109|13)(?:;|:)?5u|27;5;13~|\d+(?:[;:]\d+){1,}[~u])/g;
+
+function stripLeakedTerminalFragments(text: string): string {
+  return text
+    .replace(LEAKED_SGR_MOUSE_PATTERN, "")
+    .replace(LEAKED_BRACKETED_PASTE_PATTERN, "")
+    .replace(LEAKED_MODIFIED_KEY_PATTERN, "");
+}
 
 export function normalizeInputText(text: string): string {
   if (!text) return "";
-  // Strip out leaked SGR mouse coordinates that might have been emitted by
-  // the terminal without their ESC prefix (swallowed by readline).
-  const withoutMouse = text.replace(LEAKED_SGR_MOUSE_PATTERN, "");
-  return normalizeLineBreaks(sanitizeTerminalInput(withoutMouse));
+  const sanitized = sanitizeTerminalInput(text);
+  return normalizeLineBreaks(stripLeakedTerminalFragments(sanitized));
 }
 
 export function normalizeCursorOffset(text: string, cursorOffset: number): number {

@@ -95,6 +95,24 @@ test("strips leaked SGR mouse escape sequence fragments from input", () => {
   assert.equal(normalizeInputText(partial), "textmore");
 });
 
+test("strips leaked bracketed-paste and modified-key fragments from input", () => {
+  const leaked = "alpha[200~beta[201~gamma[65;2udelta[109;5uepsilon";
+  assert.equal(normalizeInputText(leaked), "alphabetagammadeltaepsilon");
+});
+
+test("keeps cursor and wrapping stable when protocol junk is present in the buffer", () => {
+  const viewport = createInputViewport({
+    text: "alpha[<0;26;24Mbeta[200~gamma[201~delta",
+    cursorOffset: "alpha[<0;26;24Mbeta[200~gamma[201~delta".length,
+    width: 5,
+    maxVisibleRows: 3,
+  });
+
+  assert.deepEqual(viewport.rows.map((row) => row.text), ["alpha", "betag", "ammad", "elta"]);
+  assert.equal(viewport.cursorRow, 3);
+  assert.equal(viewport.cursorColumn, 4);
+});
+
 test("robustness: rapid sequential typing and deletion", () => {
   let state = { value: "", cursorOffset: 0 };
   

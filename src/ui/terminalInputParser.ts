@@ -1,6 +1,11 @@
 const ESC = "\u001b";
 const CSI = `${ESC}[`;
+const OSC = `${ESC}]`;
 const SS3 = `${ESC}O`;
+const DCS = `${ESC}P`;
+const PM = `${ESC}^`;
+const APC = `${ESC}_`;
+const BEL = "\u0007";
 const BRACKETED_PASTE_START = `${CSI}200~`;
 const BRACKETED_PASTE_END = `${CSI}201~`;
 const DELETE_ESCAPE_SEQUENCE = /^\u001b\[3(?:[;:]\d+(?::\d+)*)?~$/;
@@ -73,6 +78,14 @@ function classifyCsiSequence(sequence: string): TerminalInputEvent {
   return { type: "control", control: "ignored_sequence", leakedText };
 }
 
+function createIgnoredSequenceEvent(sequence: string): TerminalInputEvent {
+  return {
+    type: "control",
+    control: "ignored_sequence",
+    leakedText: sequence.slice(1),
+  };
+}
+
 function pushTextEvent(events: TerminalInputEvent[], text: string) {
   if (!text) {
     return;
@@ -91,6 +104,164 @@ export interface TerminalInputParser {
   push: (chunk: string) => TerminalInputEvent[];
   reset: () => void;
   clearPendingSequence: () => void;
+}
+
+type ParsedEscapeSequence =
+  | { type: "complete"; event: TerminalInputEvent; nextIndex: number }
+  | { type: "incomplete" };
+
+function parseOscSequence(buffer: string, index: number): ParsedEscapeSequence {
+  let cursor = index + OSC.length;
+
+  while (cursor < buffer.length) {
+    const char = buffer[cursor]!;
+    if (char === BEL) {
+      const sequence = buffer.slice(index, cursor + 1);
+      return {
+        type: "complete",
+        event: createIgnoredSequenceEvent(sequence),
+        nextIndex: cursor + 1,
+      };
+    }
+
+    if (char === ESC) {
+      if (cursor + 1 >= buffer.length) {
+        return { type: "incomplete" };
+      }
+
+      if (buffer[cursor + 1] === "\\") {
+        const sequence = buffer.slice(index, cursor + 2);
+        return {
+          type: "complete",
+          event: createIgnoredSequenceEvent(sequence),
+          nextIndex: cursor + 2,
+        };
+      }
+    }
+
+    cursor += 1;
+  }
+
+  return { type: "incomplete" };
+}
+
+function parseStringTerminatedSequence(buffer: string, index: number): ParsedEscapeSequence {
+  let cursor = index + 2;
+
+  while (cursor < buffer.length) {
+    if (buffer[cursor] === ESC) {
+      if (cursor + 1 >= buffer.length) {
+        return { type: "incomplete" };
+      }
+
+      if (buffer[cursor + 1] === "\\") {
+        const sequence = buffer.slice(index, cursor + 2);
+        return {
+          type: "complete",
+          event: createIgnoredSequenceEvent(sequence),
+          nextIndex: cursor + 2,
+        };
+      }
+    }
+
+    cursor += 1;
+  }
+
+  return { type: "incomplete" };
+}
+
+function parseCsiSequence(buffer: string, index: number): ParsedEscapeSequence {
+  if (buffer.startsWith(`${CSI}M`, index)) {
+    const sequenceEnd = index + 6;
+    if (sequenceEnd > buffer.length) {
+      return { type: "incomplete" };
+    }
+
+    const sequence = buffer.slice(index, sequenceEnd);
+    return {
+      type: "complete",
+      event: classifyCsiSequence(sequence),
+      nextIndex: sequenceEnd,
+    };
+  }
+
+  let cursor = index + CSI.length;
+  while (cursor < buffer.length && !isCsiFinalByte(buffer.charCodeAt(cursor))) {
+    cursor += 1;
+  }
+
+  if (cursor >= buffer.length) {
+    return { type: "incomplete" };
+  }
+
+  const sequence = buffer.slice(index, cursor + 1);
+  return {
+    type: "complete",
+    event: classifyCsiSequence(sequence),
+    nextIndex: cursor + 1,
+  };
+}
+
+function parseSs3Sequence(buffer: string, index: number): ParsedEscapeSequence {
+  const sequenceEnd = index + SS3.length + 1;
+  if (sequenceEnd > buffer.length) {
+    return { type: "incomplete" };
+  }
+
+  const finalByte = buffer.charCodeAt(sequenceEnd - 1);
+  if (!isEscapeFinalByte(finalByte)) {
+    return { type: "incomplete" };
+  }
+
+  const sequence = buffer.slice(index, sequenceEnd);
+  return {
+    type: "complete",
+    event: createIgnoredSequenceEvent(sequence),
+    nextIndex: sequenceEnd,
+  };
+}
+
+function parseEscapeSequence(buffer: string, index: number): ParsedEscapeSequence {
+  if (index + 1 >= buffer.length) {
+    return { type: "incomplete" };
+  }
+
+  const next = buffer[index + 1]!;
+
+  if (next === "\u007f") {
+    return {
+      type: "complete",
+      event: { type: "control", control: "backspace" },
+      nextIndex: index + 2,
+    };
+  }
+
+  if (next === "[") {
+    return parseCsiSequence(buffer, index);
+  }
+
+  if (next === "]") {
+    return parseOscSequence(buffer, index);
+  }
+
+  if (next === "O") {
+    return parseSs3Sequence(buffer, index);
+  }
+
+  if (next === "P" || next === "^" || next === "_") {
+    return parseStringTerminatedSequence(buffer, index);
+  }
+
+  if (!isEscapeFinalByte(buffer.charCodeAt(index + 1))) {
+    return { type: "incomplete" };
+  }
+
+  const sequence = buffer.slice(index, index + 2);
+  return {
+    type: "complete",
+    event: createIgnoredSequenceEvent(sequence),
+    nextIndex: index + 2,
+  };
 }
 
 export function createTerminalInputParser(): TerminalInputParser {
@@ -147,65 +318,14 @@ export function createTerminalInputParser(): TerminalInputParser {
         const char = buffer[index]!;
 
         if (char === ESC) {
-          if (index + 1 >= buffer.length) {
+          const parsedSequence = parseEscapeSequence(buffer, index);
+          if (parsedSequence.type === "incomplete") {
             pendingSequence = buffer.slice(index);
             break;
           }
 
-          const next = buffer[index + 1]!;
-
-          if (next === "\u007f") {
-            events.push({ type: "control", control: "backspace" });
-            index += 2;
-            continue;
-          }
-
-          if (next === "[") {
-            let cursor = index + 2;
-
-            while (cursor < buffer.length && !isCsiFinalByte(buffer.charCodeAt(cursor))) {
-              cursor += 1;
-            }
-
-            if (cursor >= buffer.length) {
-              pendingSequence = buffer.slice(index);
-              break;
-            }
-
-            const sequence = buffer.slice(index, cursor + 1);
-            events.push(classifyCsiSequence(sequence));
-            index = cursor + 1;
-            continue;
-          }
-
-          if (next === "O") {
-            if (index + 2 >= buffer.length) {
-              pendingSequence = buffer.slice(index);
-              break;
-            }
-
-            const sequence = buffer.slice(index, index + 3);
-            events.push({
-              type: "control",
-              control: "ignored_sequence",
-              leakedText: sequence.slice(1),
-            });
-            index += 3;
-            continue;
-          }
-
-          if (!isEscapeFinalByte(buffer.charCodeAt(index + 1))) {
-            pendingSequence = buffer.slice(index);
-            break;
-          }
-
-          const sequence = buffer.slice(index, index + 2);
-          events.push({
-            type: "control",
-            control: "ignored_sequence",
-            leakedText: sequence.slice(1),
-          });
-          index += 2;
+          events.push(parsedSequence.event);
+          index = parsedSequence.nextIndex;
           continue;
         }
 
