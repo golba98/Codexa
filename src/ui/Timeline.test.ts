@@ -81,6 +81,7 @@ test("groups user, run, and assistant events into a single turn item", () => {
       type: "assistant",
       createdAt: 3,
       content: "I found the auth router.",
+      contentChunks: [],
       turnId: 10,
     },
     {
@@ -152,6 +153,7 @@ test("separates committed and active turn render state", () => {
       type: "assistant",
       createdAt: 3,
       content: "Done",
+      contentChunks: [],
       turnId: 1,
     },
   ]);
@@ -373,6 +375,7 @@ test("default timeline shows compact processing signals while a run is streaming
       type: "assistant",
       createdAt: 4,
       content: "I created the file and I am verifying it.",
+      contentChunks: [],
       turnId: 99,
     },
   ]);

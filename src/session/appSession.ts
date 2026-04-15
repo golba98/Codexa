@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { AssistantEvent, RunEvent, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./types.js";
+import { getAssistantContent } from "./types.js";
 import {
   appendRunActivity,
   appendRunThinking,
@@ -176,7 +177,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
           ...state,
           activeEvents: state.activeEvents.map((event) =>
             event.type === "assistant" && event.turnId === action.turnId
-              ? { ...event, content: event.content + action.chunk }
+              ? { ...event, contentChunks: [...(event as AssistantEvent).contentChunks, action.chunk] }
               : event
           ),
           uiState: reduceUIState(state.uiState, { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId }),
@@ -227,8 +228,9 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
             ? failRunEvent(runEvent, action.message ?? "Run failed", action.message ?? "Run failed")
             : cancelRunEvent(runEvent);
 
+      const streamedContent = getAssistantContent(assistantEvent);
       const assistantContent = reconcileAssistantContent(
-        assistantEvent?.content,
+        streamedContent,
         action.response,
         action.status,
       );
@@ -239,7 +241,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       if (assistantContent.trim()) {
         additions.push(
           assistantEvent
-            ? { ...assistantEvent, content: assistantContent }
+            ? { ...assistantEvent, content: assistantContent, contentChunks: [] }
             : action.assistantFactory(),
         );
       }
