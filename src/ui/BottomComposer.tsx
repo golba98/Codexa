@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
 import { formatModeLabel } from "../config/settings.js";
 import type { ModelSpec } from "../core/modelSpecs.js";
@@ -23,27 +23,20 @@ import { getTextWidth, splitTextAtColumn } from "./textLayout.js";
 import { useThrottledValue } from "./useThrottledValue.js";
 import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
+import { createTerminalInputParser } from "./terminalInputParser.js";
 
 type ComposerPersona = "idle" | "busy" | "answer" | "error";
 type DeleteIntent = "backspace" | "delete";
-
-const BRACKETED_PASTE_START = /(?:\u001B)?\[200~/;
-const BRACKETED_PASTE_END = /(?:\u001B)?\[201~/;
-const DELETE_ESCAPE_SEQUENCE = /^\u001b\[3(?:;\d+)?~$/;
-const BACKTAB_ESCAPE_SEQUENCE = /\u001b\[Z/;
-const CTRL_M_ESCAPE_SEQUENCE = /^\u001b\[(?:(?:109|13);5u|27;5;13~)$/;
 const MAX_VISIBLE_INPUT_ROWS = 5;
 
-function resolveDeleteIntentFromRawInput(raw: string): DeleteIntent | null {
-  if (raw === "\b" || raw === "\x08" || raw === "\u007f" || raw === "\u001b\u007f") {
-    return "backspace";
+function consumeQueuedInput(queueRef: React.MutableRefObject<string>, input: string): boolean {
+  const queue = queueRef.current;
+  if (!queue || !input || !queue.startsWith(input)) {
+    return false;
   }
 
-  if (DELETE_ESCAPE_SEQUENCE.test(raw)) {
-    return "delete";
-  }
-
-  return null;
+  queueRef.current = queue.slice(input.length);
+  return true;
 }
 
 function formatApprox(n: number): string {
@@ -268,7 +261,9 @@ export function BottomComposer({
   const cursorRef = useRef(cursor);
   const lastPropsValueRef = useRef(value);
   const lastPropsCursorRef = useRef(cursor);
-  const pasteBufferRef = useRef<string | null>(null);
+  const parserRef = useRef(createTerminalInputParser());
+  const approvedTextRef = useRef("");
+  const suppressedTextRef = useRef("");
   const deleteIntentRef = useRef<DeleteIntent | null>(null);
   const backtabEventTickRef = useRef(false);
   const ctrlMEventTickRef = useRef(false);
@@ -276,54 +271,6 @@ export function BottomComposer({
   const backtabEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ctrlMEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mouseEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    const handleRawInput = (chunk: Buffer | string) => {
-      const raw = typeof chunk === "string" ? chunk : chunk.toString();
-      const intent = resolveDeleteIntentFromRawInput(raw);
-      if (intent) {
-        deleteIntentRef.current = intent;
-      }
-
-      if (BACKTAB_ESCAPE_SEQUENCE.test(raw)) {
-        backtabEventTickRef.current = true;
-        if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
-        backtabEventTimeoutRef.current = setTimeout(() => {
-          backtabEventTickRef.current = false;
-        }, 64);
-      }
-
-      // Ctrl+M is not consistently surfaced as input="m" with key.ctrl.
-      // Modified-key reporting terminals may emit CSI-u (ESC[109;5u,
-      // ESC[13;5u) or xterm modifyOtherKeys (ESC[27;5;13~) instead.
-      if (CTRL_M_ESCAPE_SEQUENCE.test(raw)) {
-        ctrlMEventTickRef.current = true;
-        if (ctrlMEventTimeoutRef.current) clearTimeout(ctrlMEventTimeoutRef.current);
-        ctrlMEventTimeoutRef.current = setTimeout(() => {
-          ctrlMEventTickRef.current = false;
-        }, 64);
-      }
-
-      // Explicitly detect terminal mouse reporting escape sequences to swallow
-      // the fragments (e.g. "[<0;26;24M") that Ink's readline parser sequentially
-      // emits after stripping the ESC prefix.
-      if (/\u001b\[<(\d+);(\d+);(\d+)([Mm])/.test(raw) || /\u001b\[M/.test(raw)) {
-        mouseEventTickRef.current = true;
-        if (mouseEventTimeoutRef.current) clearTimeout(mouseEventTimeoutRef.current);
-        mouseEventTimeoutRef.current = setTimeout(() => {
-          mouseEventTickRef.current = false;
-        }, 32);
-      }
-    };
-
-    stdin.on("data", handleRawInput);
-    return () => {
-      stdin.off("data", handleRawInput);
-      if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
-      if (ctrlMEventTimeoutRef.current) clearTimeout(ctrlMEventTimeoutRef.current);
-      if (mouseEventTimeoutRef.current) clearTimeout(mouseEventTimeoutRef.current);
-    };
-  }, [stdin]);
 
   // Sync from props only when props actually change from an external source
   // or after a render cycle has confirmed our local change.
@@ -371,7 +318,7 @@ export function BottomComposer({
     }
   }, [promptViewport.scrollRow, scrollRow]);
 
-  const commitInputChange = (nextValue: string, nextCursor: number) => {
+  const commitInputChange = useCallback((nextValue: string, nextCursor: number) => {
     const normalizedValue = normalizeInputText(nextValue);
     const normalizedCursor = normalizeCursorOffset(normalizedValue, nextCursor);
 
@@ -382,9 +329,32 @@ export function BottomComposer({
     lastPropsCursorRef.current = normalizedCursor;
 
     onChangeInput(normalizedValue, normalizedCursor);
+  }, [onChangeInput]);
+
+  const resetTerminalInputState = () => {
+    parserRef.current.reset();
+    approvedTextRef.current = "";
+    suppressedTextRef.current = "";
+    deleteIntentRef.current = null;
+    backtabEventTickRef.current = false;
+    ctrlMEventTickRef.current = false;
+    mouseEventTickRef.current = false;
+
+    if (backtabEventTimeoutRef.current) {
+      clearTimeout(backtabEventTimeoutRef.current);
+      backtabEventTimeoutRef.current = null;
+    }
+    if (ctrlMEventTimeoutRef.current) {
+      clearTimeout(ctrlMEventTimeoutRef.current);
+      ctrlMEventTimeoutRef.current = null;
+    }
+    if (mouseEventTimeoutRef.current) {
+      clearTimeout(mouseEventTimeoutRef.current);
+      mouseEventTimeoutRef.current = null;
+    }
   };
 
-  const insertText = (text: string) => {
+  const insertText = useCallback((text: string) => {
     if (!text) return;
     const next = insertInputText({
       value: valueRef.current,
@@ -392,42 +362,86 @@ export function BottomComposer({
       text,
     });
     commitInputChange(next.value, next.cursorOffset);
-  };
+  }, [commitInputChange]);
 
-  const handlePastedInput = (chunk: string) => {
-    let remaining = chunk;
+  useEffect(() => {
+    if (!isFocused) {
+      resetTerminalInputState();
+      return;
+    }
 
-    while (remaining.length > 0) {
-      if (pasteBufferRef.current !== null) {
-        const endMatch = BRACKETED_PASTE_END.exec(remaining);
-        if (!endMatch) {
-          pasteBufferRef.current += remaining;
-          return;
+    const handleRawInput = (chunk: Buffer | string) => {
+      const raw = typeof chunk === "string" ? chunk : chunk.toString();
+      const events = parserRef.current.push(raw);
+
+      for (const event of events) {
+        if (event.type === "text") {
+          if (!inputLocked) {
+            approvedTextRef.current += event.text;
+          }
+          continue;
         }
 
-        pasteBufferRef.current += remaining.slice(0, endMatch.index);
-        const pastedText = normalizeInputText(pasteBufferRef.current);
-        pasteBufferRef.current = null;
-        insertText(pastedText);
-        remaining = remaining.slice(endMatch.index + endMatch[0].length);
-        continue;
-      }
+        if (event.type === "paste") {
+          if (!inputLocked) {
+            insertText(event.text);
+            suppressedTextRef.current += event.text;
+          }
+          continue;
+        }
 
-      const startMatch = BRACKETED_PASTE_START.exec(remaining);
-      if (!startMatch) {
-        insertText(normalizeInputText(remaining));
-        return;
-      }
+        if (event.leakedText) {
+          suppressedTextRef.current += event.leakedText;
+        }
 
-      const prefix = remaining.slice(0, startMatch.index);
-      if (prefix) {
-        insertText(normalizeInputText(prefix));
-      }
+        if (inputLocked) {
+          continue;
+        }
 
-      pasteBufferRef.current = "";
-      remaining = remaining.slice(startMatch.index + startMatch[0].length);
-    }
-  };
+        if (event.control === "backspace") {
+          deleteIntentRef.current = "backspace";
+          continue;
+        }
+
+        if (event.control === "delete") {
+          deleteIntentRef.current = "delete";
+          continue;
+        }
+
+        if (event.control === "shift_tab") {
+          backtabEventTickRef.current = true;
+          if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
+          backtabEventTimeoutRef.current = setTimeout(() => {
+            backtabEventTickRef.current = false;
+          }, 64);
+          continue;
+        }
+
+        if (event.control === "ctrl_m") {
+          ctrlMEventTickRef.current = true;
+          if (ctrlMEventTimeoutRef.current) clearTimeout(ctrlMEventTimeoutRef.current);
+          ctrlMEventTimeoutRef.current = setTimeout(() => {
+            ctrlMEventTickRef.current = false;
+          }, 64);
+          continue;
+        }
+
+        if (event.control === "mouse") {
+          mouseEventTickRef.current = true;
+          if (mouseEventTimeoutRef.current) clearTimeout(mouseEventTimeoutRef.current);
+          mouseEventTimeoutRef.current = setTimeout(() => {
+            mouseEventTickRef.current = false;
+          }, 32);
+        }
+      }
+    };
+
+    stdin.on("data", handleRawInput);
+    return () => {
+      stdin.off("data", handleRawInput);
+      resetTerminalInputState();
+    };
+  }, [inputLocked, insertText, isFocused, stdin]);
 
   useInput((input, key) => {
     if (mouseEventTickRef.current) {
@@ -466,6 +480,7 @@ export function BottomComposer({
     }
 
     if (key.escape) {
+      parserRef.current.clearPendingSequence();
       onCancel();
       return;
     }
@@ -580,7 +595,15 @@ export function BottomComposer({
     }
 
     if (!key.ctrl && !key.meta && !key.escape && input && input.length > 0 && input !== "\u007f" && input !== "\b") {
-      handlePastedInput(input);
+      if (consumeQueuedInput(suppressedTextRef, input)) {
+        return;
+      }
+
+      if (!consumeQueuedInput(approvedTextRef, input)) {
+        return;
+      }
+
+      insertText(input);
     }
   }, { isActive: isFocused });
 
