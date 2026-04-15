@@ -3,6 +3,11 @@ import { render, type Instance, type RenderOptions } from "ink";
 import { App } from "./app.js";
 import { parseLaunchArgs, type LaunchArgs } from "./config/launchArgs.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
+import {
+  DISABLE_WIN32_INPUT_MODE,
+  ENABLE_WIN32_INPUT_MODE,
+  installWin32InputTranslator,
+} from "./core/win32Input.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 
 // \x1b[2J clears the visible viewport but on Windows Terminal it pushes the
@@ -125,6 +130,9 @@ export function startApp({
     return { started: false, exitCode: 1 };
   }
   const launchArgs: LaunchArgs = parsedLaunchArgs.value;
+  const uninstallWin32InputTranslator = platform === "win32"
+    ? installWin32InputTranslator(stdin)
+    : () => {};
 
   // Clear the screen and move cursor to home before rendering so no stale
   // content from a previous process (e.g. bun --watch restart) ghosts above
@@ -133,7 +141,7 @@ export function startApp({
   // NOTE: Mouse reporting (\x1b[?1000h / \x1b[?1006h) is NOT enabled here.
   // It is managed exclusively by the React app (app.tsx) and defaults to OFF
   // so native terminal drag-selection and copy work without any special steps.
-  stdout.write(`${SET_TERMINAL_TITLE}${HARD_REPAINT_SEQUENCE}\x1b[?2004h`);
+  stdout.write(`${SET_TERMINAL_TITLE}${HARD_REPAINT_SEQUENCE}\x1b[?2004h${ENABLE_WIN32_INPUT_MODE}`);
 
   let cleanupDone = false;
   let repaintArmed = false;
@@ -288,7 +296,8 @@ export function startApp({
     if (repaintDebounceTimer) clearTimeout(repaintDebounceTimer);
     stdout.off("resize", onResize);
     // Restore terminal state: disable mouse reporting and bracketed paste.
-    stdout.write(`${DISABLE_TRANSCRIPT_WHEEL_MODE}\x1b[?2004l`);
+    stdout.write(`${DISABLE_TRANSCRIPT_WHEEL_MODE}${DISABLE_WIN32_INPUT_MODE}\x1b[?2004l`);
+    uninstallWin32InputTranslator();
     activeRoot = null;
   };
 

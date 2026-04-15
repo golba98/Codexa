@@ -173,6 +173,7 @@ test("hard-repaints once when resize recovers from invalid dimensions", async ()
   // renderHandle.clear() is deferred to scheduleRepaint (150ms).
   assert.equal(harness.stdout.clearCalls, 0);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
+  assert.match(harness.stdout.writes, /\x1b\[\?9001h/);
   // Scrollback-only clear should appear (no \x1b[2J visible)
   assert.match(harness.stdout.writes, /\x1b\[3J/);
 
@@ -219,9 +220,11 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
   assert.equal(harness.stdout.listenerCount("resize"), 0);
   // Verify startup wrote bracketed paste enable only; mouse capture is owned by App.
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
+  assert.match(harness.stdout.writes, /\x1b\[\?9001h/);
   // Verify disable sequences were written during cleanup
   assert.match(harness.stdout.writes, /\x1b\[\?1000l/);
   assert.match(harness.stdout.writes, /\x1b\[\?1006l/);
+  assert.match(harness.stdout.writes, /\x1b\[\?9001l/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004l/);
 
   // Resolving after explicit cleanup should be idempotent.
