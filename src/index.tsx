@@ -1,5 +1,5 @@
 import React from "react";
-import { render, type Instance } from "ink";
+import { render, type Instance, type RenderOptions } from "ink";
 import { App } from "./app.js";
 import { parseLaunchArgs, type LaunchArgs } from "./config/launchArgs.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
@@ -74,7 +74,7 @@ export interface StartAppDependencies {
   env: Record<string, string | undefined>;
   platform: NodeJS.Platform;
   argv: string[];
-  renderApp: (node: React.ReactElement) => RenderHandle;
+  renderApp: (node: React.ReactElement, options?: RenderOptions) => RenderHandle;
   registerExitHandler: (handler: () => void) => void;
 }
 
@@ -326,7 +326,12 @@ export function startApp({
   process.on("uncaughtException", handleFatal);
   process.on("unhandledRejection", handleFatal);
 
-  renderHandle = renderApp(<App launchArgs={launchArgs} />);
+  renderHandle = renderApp(<App launchArgs={launchArgs} />, {
+    kittyKeyboard: {
+      mode: "auto",
+      flags: ["disambiguateEscapeCodes"],
+    },
+  });
 
   // Resolve the real Ink class instance to get access to lastOutput,
   // onRender, calculateLayout, etc.  Gracefully degrades to null in tests.

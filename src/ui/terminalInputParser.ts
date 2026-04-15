@@ -9,7 +9,7 @@ const BEL = "\u0007";
 const BRACKETED_PASTE_START = `${CSI}200~`;
 const BRACKETED_PASTE_END = `${CSI}201~`;
 const DELETE_ESCAPE_SEQUENCE = /^\u001b\[3(?:[;:]\d+(?::\d+)*)?~$/;
-const CTRL_M_ESCAPE_SEQUENCE = /^\u001b\[(?:(?:109|13)(?:;|:)?5u|27;5;13~)$/;
+const CTRL_O_ESCAPE_SEQUENCE = /^\u001b\[(?:111(?:;|:)?5u|27;5;111~)$/;
 const SGR_MOUSE_SEQUENCE = /^\u001b\[<\d+;\d+;\d+[Mm]$/;
 const X10_MOUSE_SEQUENCE = /^\u001b\[M[\s\S]{3}$/;
 const FOCUS_SEQUENCE = /^\u001b\[[IO]$/;
@@ -18,7 +18,7 @@ export type TerminalControlKind =
   | "backspace"
   | "delete"
   | "shift_tab"
-  | "ctrl_m"
+  | "ctrl_o"
   | "mouse"
   | "focus"
   | "ignored_sequence";
@@ -63,8 +63,8 @@ function classifyCsiSequence(sequence: string): TerminalInputEvent {
     return { type: "control", control: "delete", leakedText };
   }
 
-  if (CTRL_M_ESCAPE_SEQUENCE.test(sequence)) {
-    return { type: "control", control: "ctrl_m", leakedText };
+  if (CTRL_O_ESCAPE_SEQUENCE.test(sequence)) {
+    return { type: "control", control: "ctrl_o", leakedText };
   }
 
   if (SGR_MOUSE_SEQUENCE.test(sequence) || X10_MOUSE_SEQUENCE.test(sequence)) {

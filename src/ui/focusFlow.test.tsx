@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
 import { PassThrough } from "node:stream";
-import { Box, Text, render, useFocus, useFocusManager } from "ink";
+import { Box, Text, render, useFocus, useFocusManager, useInput } from "ink";
 import { normalizeReasoningForModel, type AvailableModel, type ReasoningLevel } from "../config/settings.js";
 import { BottomComposer } from "./BottomComposer.js";
 import { getFocusTargetForScreen } from "./focus.js";
@@ -405,6 +405,23 @@ function PlanFeedbackHarness() {
   );
 }
 
+function KeyEventProbe() {
+  const [eventSummary, setEventSummary] = React.useState("none");
+
+  useInput((input, key) => {
+    setEventSummary(JSON.stringify({
+      input,
+      ctrl: key.ctrl,
+      return: key.return,
+      shift: key.shift,
+      meta: key.meta,
+      escape: key.escape,
+    }));
+  });
+
+  return <Text>{`event:${eventSummary}`}</Text>;
+}
+
 function TextEntryProtocolHarness() {
   const [submitted, setSubmitted] = React.useState("");
 
@@ -544,12 +561,12 @@ test("shift+tab toggles plan mode without submitting or mutating the input", asy
   }
 });
 
-test("ctrl+m opens the existing model picker path without submitting", async () => {
+test("ctrl+o opens the existing model picker path without submitting", async () => {
   const harness = createInkHarness(<ShortcutModelPickerHarness />);
 
   try {
     await sleep();
-    harness.stdin.write("\u001b[109;5u");
+    harness.stdin.write("\u001b[111;5u");
     await sleep(120);
 
     const output = harness.getOutput();
@@ -561,7 +578,7 @@ test("ctrl+m opens the existing model picker path without submitting", async () 
   }
 });
 
-test("ctrl+m also opens the model picker when the terminal reports ctrl+enter as CSI-u", async () => {
+test("ctrl+o also opens the model picker when the terminal reports ctrl+enter as CSI-u", async () => {
   const harness = createInkHarness(<ShortcutModelPickerHarness />);
 
   try {
@@ -578,18 +595,69 @@ test("ctrl+m also opens the model picker when the terminal reports ctrl+enter as
   }
 });
 
-test("ctrl+m also opens the model picker when the terminal reports xterm modifyOtherKeys", async () => {
+test("ctrl+o also opens the model picker when the terminal reports xterm modifyOtherKeys", async () => {
   const harness = createInkHarness(<ShortcutModelPickerHarness />);
 
   try {
     await sleep();
-    harness.stdin.write("\u001b[27;5;13~");
+    harness.stdin.write("\u001b[27;5;111~");
     await sleep(120);
 
     const output = harness.getOutput();
     assert.match(output, /screen:model-picker/);
     assert.match(output, /submit:0/);
     assert.match(output, /Select model/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("raw carriage return collapses to the plain enter path in this stack", async () => {
+  const harness = createInkHarness(<KeyEventProbe />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\r");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.match(output, /"input":"\\r"/);
+    assert.match(output, /"return":true/);
+    assert.match(output, /"ctrl":false/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("kitty ctrl+enter preserves ctrl metadata for ctrl+o disambiguation", async () => {
+  const harness = createInkHarness(<KeyEventProbe />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[13;5u");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.match(output, /"input":"\\r"/);
+    assert.match(output, /"return":true/);
+    assert.match(output, /"ctrl":true/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("kitty ctrl+o letter form arrives as ctrl+o instead of enter", async () => {
+  const harness = createInkHarness(<KeyEventProbe />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[111;5u");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.match(output, /"input":"o"/);
+    assert.match(output, /"return":false/);
+    assert.match(output, /"ctrl":true/);
   } finally {
     await harness.cleanup();
   }
@@ -613,12 +681,12 @@ test("plain enter still submits once from the focused composer", async () => {
   }
 });
 
-test("escape still closes the model picker after ctrl+m opens it", async () => {
+test("escape still closes the model picker after ctrl+o opens it", async () => {
   const harness = createInkHarness(<ShortcutModelPickerHarness />);
 
   try {
     await sleep();
-    harness.stdin.write("\u001b[109;5u");
+    harness.stdin.write("\u001b[111;5u");
     await sleep(120);
     harness.stdin.write("\u001b");
     await sleep(120);
@@ -674,7 +742,6 @@ test("swallows mouse and focus protocol events before they can render into the c
     await harness.cleanup();
   }
 });
-
 test("focus manager routes through the settings panel and back to the composer", async () => {
   const harness = createInkHarness(<FocusRoutingHarness screen="settings-panel" />);
 

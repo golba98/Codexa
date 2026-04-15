@@ -266,11 +266,12 @@ export function BottomComposer({
   const suppressedTextRef = useRef("");
   const deleteIntentRef = useRef<DeleteIntent | null>(null);
   const backtabEventTickRef = useRef(false);
-  const ctrlMEventTickRef = useRef(false);
+  const ctrlOEventTickRef = useRef(false);
   const mouseEventTickRef = useRef(false);
   const backtabEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ctrlMEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ctrlOEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mouseEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
   // Sync from props only when props actually change from an external source
   // or after a render cycle has confirmed our local change.
@@ -337,16 +338,16 @@ export function BottomComposer({
     suppressedTextRef.current = "";
     deleteIntentRef.current = null;
     backtabEventTickRef.current = false;
-    ctrlMEventTickRef.current = false;
+    ctrlOEventTickRef.current = false;
     mouseEventTickRef.current = false;
 
     if (backtabEventTimeoutRef.current) {
       clearTimeout(backtabEventTimeoutRef.current);
       backtabEventTimeoutRef.current = null;
     }
-    if (ctrlMEventTimeoutRef.current) {
-      clearTimeout(ctrlMEventTimeoutRef.current);
-      ctrlMEventTimeoutRef.current = null;
+    if (ctrlOEventTimeoutRef.current) {
+      clearTimeout(ctrlOEventTimeoutRef.current);
+      ctrlOEventTimeoutRef.current = null;
     }
     if (mouseEventTimeoutRef.current) {
       clearTimeout(mouseEventTimeoutRef.current);
@@ -417,11 +418,11 @@ export function BottomComposer({
           continue;
         }
 
-        if (event.control === "ctrl_m") {
-          ctrlMEventTickRef.current = true;
-          if (ctrlMEventTimeoutRef.current) clearTimeout(ctrlMEventTimeoutRef.current);
-          ctrlMEventTimeoutRef.current = setTimeout(() => {
-            ctrlMEventTickRef.current = false;
+        if (event.control === "ctrl_o") {
+          ctrlOEventTickRef.current = true;
+          if (ctrlOEventTimeoutRef.current) clearTimeout(ctrlOEventTimeoutRef.current);
+          ctrlOEventTimeoutRef.current = setTimeout(() => {
+            ctrlOEventTickRef.current = false;
           }, 64);
           continue;
         }
@@ -458,11 +459,11 @@ export function BottomComposer({
       return;
     }
 
-    if (ctrlMEventTickRef.current) {
-      ctrlMEventTickRef.current = false;
-      if (ctrlMEventTimeoutRef.current) {
-        clearTimeout(ctrlMEventTimeoutRef.current);
-        ctrlMEventTimeoutRef.current = null;
+    if (ctrlOEventTickRef.current) {
+      ctrlOEventTickRef.current = false;
+      if (ctrlOEventTimeoutRef.current) {
+        clearTimeout(ctrlOEventTimeoutRef.current);
+        ctrlOEventTimeoutRef.current = null;
       }
       if (!inputLocked) {
         onOpenModelPicker();
@@ -492,7 +493,7 @@ export function BottomComposer({
     if (allowCommands && key.ctrl) {
       switch (input) {
         case "b": onOpenBackendPicker(); return;
-        case "m": onOpenModelPicker(); return;
+        case "o": onOpenModelPicker(); return;
         case "p": onOpenModePicker(); return;
         case "t": onOpenThemePicker(); return;
         case "a": onOpenAuthPanel(); return;
@@ -722,7 +723,7 @@ export function BottomComposer({
         <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
           <Box flexGrow={1} flexShrink={1} overflow="hidden">
             <Text color={theme.TEXT} bold>{modeLabel}</Text>
-            <Text color={theme.DIM}>{"  "}{model}{reasoningSuffix}{"  Ctrl+M"}</Text>
+            <Text color={theme.DIM}>{"  "}{model}{reasoningSuffix}{"  Ctrl+O"}</Text>
             {planMode && <Text color={theme.ACCENT}>{"  Plan"}</Text>}
           </Box>
           <Box flexShrink={0}>
