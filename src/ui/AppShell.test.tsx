@@ -70,6 +70,7 @@ const EVENTS: TimelineEvent[] = [
     type: "assistant",
     createdAt: 4,
     content: "Root cause looks like a layout gutter mismatch during resize.\n\nThis response is intentionally a bit longer to force wrapping at smaller widths.",
+    contentChunks: [],
     turnId: 1,
   },
 ];

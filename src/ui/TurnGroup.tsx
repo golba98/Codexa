@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useState } from "react";
 import { Box, Text } from "ink";
 import type { AssistantEvent, RunEvent, RunToolActivity, UIState, UserPromptEvent } from "../session/types.js";
+import { getAssistantContent } from "../session/types.js";
 import { AgentBlock } from "./AgentBlock.js";
 import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
 import { ThinkingBlock, SPINNER_FRAMES } from "./ThinkingBlock.js";
@@ -370,7 +371,7 @@ export function resolveTurnRunPhase(
   }
 
   // Defensive fallback to prevent blank/stale turn cards during rapid state churn.
-  if (assistant?.content?.trim()) {
+  if (getAssistantContent(assistant).trim()) {
     return "streaming";
   }
 

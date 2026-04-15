@@ -57,8 +57,21 @@ export interface UserPromptEvent extends TimelineBaseEvent {
 export interface AssistantEvent extends TimelineBaseEvent {
   type: "assistant";
   content: string;
+  /** Accumulated chunks during streaming — avoids O(n²) string concatenation. */
+  contentChunks: string[];
   /** Links this response back to the originating user prompt + run. */
   turnId: number;
+}
+
+/**
+ * Returns the full assistant content string. During streaming, joins the
+ * accumulated chunks (single O(n) allocation). After finalization, returns
+ * the pre-joined `content` field directly.
+ */
+export function getAssistantContent(event: AssistantEvent | null | undefined): string {
+  if (!event) return "";
+  if (event.contentChunks.length > 0) return event.contentChunks.join("");
+  return event.content;
 }
 
 export interface RunToolActivity {

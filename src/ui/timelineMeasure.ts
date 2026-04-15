@@ -1,4 +1,5 @@
 import type { RunEvent, ShellEvent } from "../session/types.js";
+import { getAssistantContent } from "../session/types.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
 import { sanitizeTerminalLines, sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 import { clampVisualText } from "./layout.js";
@@ -836,29 +837,141 @@ function buildMarkdownRows(segments: Segment[], width: number): TimelineRowSpan[
   return rows.length > 0 ? rows : [];
 }
 
+// ── Incremental row cache for streaming content ─────────────────────────────
+// During streaming, we cache previously computed markdown rows and only re-run
+// the pipeline on new content from the last safe paragraph boundary onward.
+// This reduces per-frame work from O(total_content) to O(new_delta + tail_paragraph).
+interface StreamingRowCache {
+  turnKey: string;
+  width: number;
+  /** Content length up to the last safe boundary that produced cachedRows. */
+  safeBoundaryOffset: number;
+  /** Rows computed for content up to safeBoundaryOffset. */
+  cachedRows: TimelineRowSpan[][];
+  /** Total content length when this cache was last updated. */
+  contentLength: number;
+}
+
+let _streamingRowCache: StreamingRowCache | null = null;
+
+/** Find the last safe paragraph boundary (double newline or closed code fence)
+ *  that we can split content at for incremental rendering. */
+function findSafeBoundary(content: string, searchFrom: number): number {
+  // Look for the last double-newline before the end of content
+  let boundary = content.lastIndexOf("\n\n", content.length - 1);
+  // Only accept boundaries past the previous safe offset
+  if (boundary > searchFrom) return boundary + 2; // include the \n\n
+
+  // Fallback: look for single newline that's past searchFrom
+  boundary = content.lastIndexOf("\n", content.length - 1);
+  if (boundary > searchFrom) return boundary + 1;
+
+  // No safe boundary found — must re-process from searchFrom
+  return searchFrom;
+}
+
 function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number): TimelineRow[] {
   const run = item.item.run!;
   const assistant = item.item.assistant;
   const streaming = item.renderState.runPhase === "streaming";
   const dim = item.renderState.opacity !== "active";
   const contentWidth = Math.max(1, width - 4);
-  const rawContent = assistant?.content ?? "";
-  const sanitized = streaming ? sanitizeStreamChunk(rawContent) : sanitizeOutput(rawContent);
-  const normalized = normalizeOutput(sanitized);
-  const segments = formatForBox(classifyOutput(normalized), contentWidth);
-  const contentRows: TimelineRowSpan[][] = [];
+  const rawContent = getAssistantContent(assistant);
+
+  let contentRows: TimelineRowSpan[][];
+
+  if (streaming && rawContent.length > 0) {
+    // During streaming, content was already sanitized in onAssistantDelta (app.tsx).
+    // Skip redundant sanitizeStreamChunk call — pass directly to normalize.
+    const turnKey = item.key;
+    const cache = _streamingRowCache;
+
+    if (
+      cache
+      && cache.turnKey === turnKey
+      && cache.width === contentWidth
+      && rawContent.length >= cache.contentLength
+    ) {
+      // Content is a strict extension of what we cached — incremental update.
+      const newBoundary = findSafeBoundary(rawContent, cache.safeBoundaryOffset);
+
+      // Re-process only content from the last safe boundary onward
+      const tailContent = rawContent.slice(cache.safeBoundaryOffset);
+      const tailNormalized = normalizeOutput(tailContent);
+      const tailSegments = formatForBox(classifyOutput(tailNormalized), contentWidth);
+      const tailRows = buildMarkdownRows(tailSegments, contentWidth);
+      contentRows = [...cache.cachedRows, ...tailRows];
+
+      if (newBoundary > cache.safeBoundaryOffset) {
+        // New safe boundary found — compute cached rows up to boundary
+        const safePart = rawContent.slice(cache.safeBoundaryOffset, newBoundary);
+        const safeNormalized = normalizeOutput(safePart);
+        const safeSegments = formatForBox(classifyOutput(safeNormalized), contentWidth);
+        const safeRows = buildMarkdownRows(safeSegments, contentWidth);
+
+        _streamingRowCache = {
+          turnKey,
+          width: contentWidth,
+          safeBoundaryOffset: newBoundary,
+          cachedRows: [...cache.cachedRows, ...safeRows],
+          contentLength: rawContent.length,
+        };
+      } else {
+        // No new safe boundary — keep cache as-is, just update content length
+        _streamingRowCache = {
+          ...cache,
+          contentLength: rawContent.length,
+        };
+      }
+    } else {
+      // Cache miss — full rebuild and seed the cache
+      const normalized = normalizeOutput(rawContent);
+      const segments = formatForBox(classifyOutput(normalized), contentWidth);
+      contentRows = buildMarkdownRows(segments, contentWidth);
+
+      const boundary = findSafeBoundary(rawContent, 0);
+      if (boundary > 0 && boundary < rawContent.length) {
+        const safeNormalized = normalizeOutput(rawContent.slice(0, boundary));
+        const safeSegments = formatForBox(classifyOutput(safeNormalized), contentWidth);
+        const safeRows = buildMarkdownRows(safeSegments, contentWidth);
+
+        _streamingRowCache = {
+          turnKey,
+          width: contentWidth,
+          safeBoundaryOffset: boundary,
+          cachedRows: safeRows,
+          contentLength: rawContent.length,
+        };
+      } else {
+        _streamingRowCache = {
+          turnKey,
+          width: contentWidth,
+          safeBoundaryOffset: 0,
+          cachedRows: [],
+          contentLength: rawContent.length,
+        };
+      }
+    }
+  } else {
+    // Not streaming or empty — full pipeline, invalidate cache
+    if (!streaming) _streamingRowCache = null;
+    const sanitized = sanitizeOutput(rawContent);
+    const normalized = normalizeOutput(sanitized);
+    const segments = formatForBox(classifyOutput(normalized), contentWidth);
+    contentRows = buildMarkdownRows(segments, contentWidth);
+  }
 
   if (!streaming && run.status === "failed") {
     const failureMessage = sanitizeTerminalOutput(run.errorMessage ?? run.summary);
+    const failureRows: TimelineRowSpan[][] = [];
     wrapPlainText(failureMessage, Math.max(1, contentWidth - 2)).forEach((row, index) => {
-      contentRows.push([
+      failureRows.push([
         createSpan(index === 0 ? "✕ " : "  ", "error"),
         createSpan(row || " ", "error"),
       ]);
     });
+    contentRows = [...failureRows, ...contentRows];
   }
-
-  contentRows.push(...buildMarkdownRows(segments, contentWidth));
 
   if (streaming) {
     contentRows.push([
@@ -872,7 +985,7 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
       wrapPlainText(sanitizeTerminalOutput(run.summary), contentWidth).forEach((wrapped) => {
         contentRows.push([createSpan(wrapped || " ", "warning")]);
       });
-    } else if (run.status === "completed" && normalized.length === 0) {
+    } else if (run.status === "completed" && rawContent.trim().length === 0) {
       contentRows.push([createSpan("(no output)", "dim")]);
     }
 

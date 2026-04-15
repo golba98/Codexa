@@ -32,7 +32,7 @@ function makeRunEvent(turnId: number): RunEvent {
 }
 
 function makeAssistantEvent(turnId: number, content: string): AssistantEvent {
-  return { id: 3, type: "assistant", createdAt: 3, content, turnId };
+  return { id: 3, type: "assistant", createdAt: 3, content, contentChunks: [], turnId };
 }
 
 function stateWithActiveRun(turnId: number): SessionState {

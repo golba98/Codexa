@@ -147,8 +147,8 @@ import { AppShell } from "./ui/AppShell.js";
 
 let nextEventId = 0;
 let nextTurnId = 0;
-const LIVE_UPDATE_FLUSH_MS = 50;
-const PROGRESS_ONLY_FLUSH_MS = 150;
+const LIVE_UPDATE_FLUSH_MS = 25;
+const PROGRESS_ONLY_FLUSH_MS = 80;
 const MAX_PENDING_PROGRESS_LINES = 5;
 const PLAN_FILE_NAME = "last-plan.md";
 const PLAN_FILE_DIR = ".codexa";
@@ -968,6 +968,7 @@ export function App({ launchArgs }: AppProps) {
         type: "assistant",
         createdAt: Date.now(),
         content: parsed.content?.trim() ? parsed.content : "",
+        contentChunks: [],
         turnId,
       }),
     });
@@ -1521,7 +1522,8 @@ export function App({ launchArgs }: AppProps) {
             id: createEventId(),
             type: "assistant",
             createdAt: Date.now(),
-            content: chunk,
+            content: "",
+            contentChunks: [chunk],
             turnId,
           }),
         });
@@ -1540,8 +1542,19 @@ export function App({ launchArgs }: AppProps) {
       });
     };
 
+    let firstChunkPending = true;
     const scheduleLiveFlush = () => {
       if (liveFlushTimer) return;
+      // First token: use microtask for near-instant rendering
+      if (firstChunkPending && pendingAssistantDelta) {
+        firstChunkPending = false;
+        liveFlushTimer = setTimeout(() => {}, 0); // prevent re-entry
+        queueMicrotask(() => {
+          liveFlushTimer = null;
+          flushLiveUpdates();
+        });
+        return;
+      }
       const interval = pendingAssistantDelta ? LIVE_UPDATE_FLUSH_MS : PROGRESS_ONLY_FLUSH_MS;
       liveFlushTimer = setTimeout(() => {
         liveFlushTimer = null;

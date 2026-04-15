@@ -85,6 +85,7 @@ function makeAssistant(turnId: number, content: string): AssistantEvent {
     type: "assistant",
     createdAt: 3,
     content,
+    contentChunks: [],
     turnId,
   };
 }

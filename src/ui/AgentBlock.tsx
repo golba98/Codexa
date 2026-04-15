@@ -1,6 +1,7 @@
 import React, { memo, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Box, Text } from "ink";
 import type { AssistantEvent, RunEvent } from "../session/types.js";
+import { getAssistantContent } from "../session/types.js";
 import { MemoizedRenderMessage } from "./Markdown.js";
 import { getUsableShellWidth } from "./layout.js";
 import { useTheme } from "./theme.js";
@@ -76,7 +77,7 @@ export function AgentBlock({
   runPhase = streaming ? "streaming" : "final",
 }: AgentBlockProps) {
   const theme = useTheme();
-  const content = assistant?.content ?? "";
+  const content = getAssistantContent(assistant);
   const deferredContent = useDeferredValue(content);
   // During streaming, use content directly for immediate rendering.
   // When not streaming, defer large final content to avoid blocking input.

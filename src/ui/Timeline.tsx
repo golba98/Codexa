@@ -598,28 +598,48 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     [activeItems, allTurnIds, uiState],
   );
   // ── Split snapshot building ──────────────────────────────────────────────
-  // During streaming, activeEvents change every ~50ms but staticEvents stay
-  // the same.  Building the snapshot for ALL items on every frame is
-  // expensive once the conversation has many turns.  By computing the static
-  // and active snapshots separately, the static half is cached and only the
-  // active half (typically 1-2 items) is rebuilt each frame.
+  // During streaming, activeEvents change every frame but staticEvents stay
+  // the same.  We further split the active items into "stable" (user prompt,
+  // run header — don't change during streaming) and "streaming" (assistant
+  // content — changes every frame).  This gives us three cached tiers so only
+  // the streaming assistant item is rebuilt each frame.
   const snapshotWidth = getShellWidth(layout.cols);
   const staticSnapshot = useMemo(
     () => buildTimelineSnapshot(staticRenderItems, { totalWidth: snapshotWidth, verboseMode }),
     [snapshotWidth, staticRenderItems, verboseMode],
   );
-  const activeSnapshot = useMemo(
-    () => buildTimelineSnapshot(activeRenderItems, { totalWidth: snapshotWidth, verboseMode }),
-    [snapshotWidth, activeRenderItems, verboseMode],
+  // Partition active items: non-assistant items are stable during streaming
+  const isStreaming = uiState.kind === "RESPONDING";
+  const activeStableItems = useMemo(
+    () => isStreaming
+      ? activeRenderItems.filter((item) => !(item.type === "turn" && item.item.assistant))
+      : [],
+    [activeRenderItems, isStreaming],
+  );
+  const activeStreamingItems = useMemo(
+    () => isStreaming
+      ? activeRenderItems.filter((item) => item.type === "turn" && item.item.assistant)
+      : activeRenderItems,
+    [activeRenderItems, isStreaming],
+  );
+  const activeStableSnapshot = useMemo(
+    () => activeStableItems.length > 0
+      ? buildTimelineSnapshot(activeStableItems, { totalWidth: snapshotWidth, verboseMode })
+      : { items: [], rows: [], totalRows: 0, itemCount: 0 },
+    [snapshotWidth, activeStableItems, verboseMode],
+  );
+  const activeStreamingSnapshot = useMemo(
+    () => buildTimelineSnapshot(activeStreamingItems, { totalWidth: snapshotWidth, verboseMode }),
+    [snapshotWidth, activeStreamingItems, verboseMode],
   );
   const liveSnapshot = useMemo(
     () => ({
-      items: [...staticSnapshot.items, ...activeSnapshot.items],
-      rows: [...staticSnapshot.rows, ...activeSnapshot.rows],
-      totalRows: staticSnapshot.totalRows + activeSnapshot.totalRows,
-      itemCount: staticSnapshot.itemCount + activeSnapshot.itemCount,
+      items: [...staticSnapshot.items, ...activeStableSnapshot.items, ...activeStreamingSnapshot.items],
+      rows: [...staticSnapshot.rows, ...activeStableSnapshot.rows, ...activeStreamingSnapshot.rows],
+      totalRows: staticSnapshot.totalRows + activeStableSnapshot.totalRows + activeStreamingSnapshot.totalRows,
+      itemCount: staticSnapshot.itemCount + activeStableSnapshot.itemCount + activeStreamingSnapshot.itemCount,
     }),
-    [staticSnapshot, activeSnapshot],
+    [staticSnapshot, activeStableSnapshot, activeStreamingSnapshot],
   );
   const [viewport, setViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(liveSnapshot.totalRows));
   const liveSnapshotRef = useRef(liveSnapshot);
