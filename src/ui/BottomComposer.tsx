@@ -437,9 +437,22 @@ export function BottomComposer({
       }
     };
 
-    stdin.on("data", handleRawInput);
+    // Ink 5 relies on the `readable` event and `stdin.read()` to pull
+    // chunks in non-flowing mode. Attaching a `data` listener switches
+    // the stream to flowing mode, causing `stdin.read()` to return null
+    // and starving Ink's input loop ("keyboard is cut" regression).
+    // Instead, we non-destructively intercept `read()` to spy on verbatim chunks.
+    const originalRead = stdin.read;
+    stdin.read = function (...args: any[]) {
+      const chunk = originalRead.apply(this, args);
+      if (chunk !== null) {
+        handleRawInput(chunk);
+      }
+      return chunk;
+    };
+
     return () => {
-      stdin.off("data", handleRawInput);
+      stdin.read = originalRead;
       resetTerminalInputState();
     };
   }, [inputLocked, insertText, isFocused, stdin]);
