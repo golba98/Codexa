@@ -23,7 +23,6 @@ import { getTextWidth, splitTextAtColumn } from "./textLayout.js";
 import { useThrottledValue } from "./useThrottledValue.js";
 import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
-import { createTerminalInputParser } from "./terminalInputParser.js";
 
 type ComposerPersona = "idle" | "busy" | "answer" | "error";
 type DeleteIntent = "backspace" | "delete";
@@ -261,17 +260,6 @@ export function BottomComposer({
   const cursorRef = useRef(cursor);
   const lastPropsValueRef = useRef(value);
   const lastPropsCursorRef = useRef(cursor);
-  const parserRef = useRef(createTerminalInputParser());
-  const approvedTextRef = useRef("");
-  const suppressedTextRef = useRef("");
-  const deleteIntentRef = useRef<DeleteIntent | null>(null);
-  const backtabEventTickRef = useRef(false);
-  const ctrlOEventTickRef = useRef(false);
-  const mouseEventTickRef = useRef(false);
-  const backtabEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ctrlOEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mouseEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
 
   // Sync from props only when props actually change from an external source
   // or after a render cycle has confirmed our local change.
@@ -332,29 +320,6 @@ export function BottomComposer({
     onChangeInput(normalizedValue, normalizedCursor);
   }, [onChangeInput]);
 
-  const resetTerminalInputState = () => {
-    parserRef.current.reset();
-    approvedTextRef.current = "";
-    suppressedTextRef.current = "";
-    deleteIntentRef.current = null;
-    backtabEventTickRef.current = false;
-    ctrlOEventTickRef.current = false;
-    mouseEventTickRef.current = false;
-
-    if (backtabEventTimeoutRef.current) {
-      clearTimeout(backtabEventTimeoutRef.current);
-      backtabEventTimeoutRef.current = null;
-    }
-    if (ctrlOEventTimeoutRef.current) {
-      clearTimeout(ctrlOEventTimeoutRef.current);
-      ctrlOEventTimeoutRef.current = null;
-    }
-    if (mouseEventTimeoutRef.current) {
-      clearTimeout(mouseEventTimeoutRef.current);
-      mouseEventTimeoutRef.current = null;
-    }
-  };
-
   const insertText = useCallback((text: string) => {
     if (!text) return;
     const next = insertInputText({
@@ -365,122 +330,20 @@ export function BottomComposer({
     commitInputChange(next.value, next.cursorOffset);
   }, [commitInputChange]);
 
-  useEffect(() => {
-    if (!isFocused) {
-      resetTerminalInputState();
-      return;
-    }
-
-    const handleRawInput = (chunk: Buffer | string) => {
-      const raw = typeof chunk === "string" ? chunk : chunk.toString();
-      const events = parserRef.current.push(raw);
-
-      for (const event of events) {
-        if (event.type === "text") {
-          if (!inputLocked) {
-            approvedTextRef.current += event.text;
-          }
-          continue;
-        }
-
-        if (event.type === "paste") {
-          if (!inputLocked) {
-            insertText(event.text);
-            suppressedTextRef.current += event.text;
-          }
-          continue;
-        }
-
-        if (event.leakedText) {
-          suppressedTextRef.current += event.leakedText;
-        }
-
-        if (inputLocked) {
-          continue;
-        }
-
-        if (event.control === "backspace") {
-          deleteIntentRef.current = "backspace";
-          continue;
-        }
-
-        if (event.control === "delete") {
-          deleteIntentRef.current = "delete";
-          continue;
-        }
-
-        if (event.control === "shift_tab") {
-          backtabEventTickRef.current = true;
-          if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
-          backtabEventTimeoutRef.current = setTimeout(() => {
-            backtabEventTickRef.current = false;
-          }, 64);
-          continue;
-        }
-
-        if (event.control === "ctrl_o") {
-          ctrlOEventTickRef.current = true;
-          if (ctrlOEventTimeoutRef.current) clearTimeout(ctrlOEventTimeoutRef.current);
-          ctrlOEventTimeoutRef.current = setTimeout(() => {
-            ctrlOEventTickRef.current = false;
-          }, 64);
-          continue;
-        }
-
-        if (event.control === "mouse") {
-          mouseEventTickRef.current = true;
-          if (mouseEventTimeoutRef.current) clearTimeout(mouseEventTimeoutRef.current);
-          mouseEventTimeoutRef.current = setTimeout(() => {
-            mouseEventTickRef.current = false;
-          }, 32);
-        }
-      }
-    };
-
-    // Ink 5 relies on the `readable` event and `stdin.read()` to pull
-    // chunks in non-flowing mode. Attaching a `data` listener switches
-    // the stream to flowing mode, causing `stdin.read()` to return null
-    // and starving Ink's input loop ("keyboard is cut" regression).
-    // Instead, we non-destructively intercept `read()` to spy on verbatim chunks.
-    const originalRead = stdin.read;
-    stdin.read = function (...args: [size?: number]) {
-      const chunk = originalRead.apply(stdin, args);
-      if (chunk !== null) {
-        handleRawInput(chunk);
-      }
-      return chunk;
-    };
-
-    return () => {
-      stdin.read = originalRead;
-      resetTerminalInputState();
-    };
-  }, [inputLocked, insertText, isFocused, stdin]);
-
   useInput((input, key) => {
-    if (mouseEventTickRef.current) {
-      return;
-    }
-
-    if (backtabEventTickRef.current) {
-      backtabEventTickRef.current = false;
-      if (backtabEventTimeoutRef.current) {
-        clearTimeout(backtabEventTimeoutRef.current);
-        backtabEventTimeoutRef.current = null;
-      }
+    if (key.shift && key.tab && !inputLocked) {
       onTogglePlanMode();
       return;
     }
 
-    if (ctrlOEventTickRef.current) {
-      ctrlOEventTickRef.current = false;
-      if (ctrlOEventTimeoutRef.current) {
-        clearTimeout(ctrlOEventTimeoutRef.current);
-        ctrlOEventTimeoutRef.current = null;
-      }
-      if (!inputLocked) {
-        onOpenModelPicker();
-      }
+    // Swallow known escaped sequence fragments that Ink sometimes fails to trap
+    // (e.g. Focus [I, Mouse [<0;26;24M, Kitty [67;46;99;1:0:1u)
+    if (input && /^\[(?:<0;\d+;\d+[Mm]|\d+;\d+;\d+;\d+:\d+:\d+u|[IO])$/.test(input)) {
+      return;
+    }
+
+    if (input === "[27;5;111~") {
+      if (!inputLocked) onOpenModelPicker();
       return;
     }
 
@@ -578,7 +441,6 @@ export function BottomComposer({
     }
 
     if (key.backspace || input === "\b" || (input === "\u007f" && !key.delete)) {
-      deleteIntentRef.current = null;
       const next = deleteInputBackward({
         value: valueRef.current,
         cursorOffset: cursorRef.current,
@@ -588,18 +450,6 @@ export function BottomComposer({
     }
 
     if (key.delete || (input === "\u007f" && key.delete)) {
-      const deleteIntent = deleteIntentRef.current;
-      deleteIntentRef.current = null;
-
-      if (deleteIntent === "backspace") {
-        const next = deleteInputBackward({
-          value: valueRef.current,
-          cursorOffset: cursorRef.current,
-        });
-        commitInputChange(next.value, next.cursorOffset);
-        return;
-      }
-
       const next = deleteInputForward({
         value: valueRef.current,
         cursorOffset: cursorRef.current,
@@ -609,14 +459,6 @@ export function BottomComposer({
     }
 
     if (!key.ctrl && !key.meta && !key.escape && input && input.length > 0 && input !== "\u007f" && input !== "\b") {
-      if (consumeQueuedInput(suppressedTextRef, input)) {
-        return;
-      }
-
-      if (!consumeQueuedInput(approvedTextRef, input)) {
-        return;
-      }
-
       insertText(input);
     }
   }, { isActive: isFocused });
