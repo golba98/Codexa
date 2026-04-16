@@ -1,6 +1,5 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
-import { formatModeLabel } from "../config/settings.js";
 import type { ModelSpec } from "../core/modelSpecs.js";
 import type { UIState } from "../session/types.js";
 import { FOCUS_IDS } from "./focus.js";
@@ -15,7 +14,7 @@ import {
   normalizeInputText,
   normalizeCursorOffset,
 } from "./inputBuffer.js";
-import { getModeColor } from "./modeColor.js";
+import { getModeDisplaySpec } from "./modeDisplay.js";
 import { measureRunFooterRows, RunFooter } from "./RunFooter.js";
 import { useTheme } from "./theme.js";
 import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
@@ -586,8 +585,7 @@ export function BottomComposer({
     }
   }, { isActive: isFocused });
 
-  const modeColor = getModeColor(mode, theme);
-  const modeLabel = formatModeLabel(mode);
+  const modeDisplay = getModeDisplaySpec(mode, theme);
   const tokenDisplay = getTokenBarDisplay(tokensUsed, modelSpec);
   const tokenColor = tokenDisplay.percentage === null ? theme.DIM
     : tokenDisplay.percentage >= 90 ? theme.ERROR
@@ -700,7 +698,15 @@ export function BottomComposer({
       {layoutMode !== "micro" && !crampedViewport && (
         <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
           <Box flexGrow={1} flexShrink={1} overflow="hidden">
-            <Text color={theme.TEXT} bold>{modeLabel}</Text>
+            <Text
+              color={modeDisplay.ringColor}
+              backgroundColor={modeDisplay.ringFill}
+              bold={modeDisplay.ringBold}
+            >
+              {modeDisplay.ringGlyph}
+            </Text>
+            <Text color={theme.DIM}>{" "}</Text>
+            <Text color={modeDisplay.labelColor} bold={modeDisplay.labelBold}>{modeDisplay.label}</Text>
             <Text color={theme.DIM}>{"  "}{model}{reasoningSuffix}{"  Ctrl+O"}</Text>
             {planMode && <Text color={theme.ACCENT}>{"  Plan"}</Text>}
           </Box>

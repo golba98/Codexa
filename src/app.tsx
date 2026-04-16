@@ -1508,7 +1508,7 @@ export function App({ launchArgs }: AppProps) {
     if (executionModeDecision.autoUpgraded) {
       appendSystemEvent(
         "Mode auto-upgraded",
-        "This prompt looks like a file-editing request, so the run is using AUTO-EDIT instead of SUGGEST.",
+        "This prompt looks like a file-editing request, so the run is using Auto instead of Read-only.",
       );
     }
 
