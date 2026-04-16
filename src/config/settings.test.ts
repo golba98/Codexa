@@ -24,9 +24,9 @@ test("keeps reasoning unchanged for non-mini models", () => {
 
 
 test("formats codex-style mode labels", () => {
-  assert.equal(formatModeLabel("suggest"), "SUGGEST");
-  assert.equal(formatModeLabel("auto-edit"), "AUTO-EDIT");
-  assert.equal(formatModeLabel("full-auto"), "FULL AUTO");
+  assert.equal(formatModeLabel("suggest"), "Read-only");
+  assert.equal(formatModeLabel("auto-edit"), "Auto");
+  assert.equal(formatModeLabel("full-auto"), "Full Access");
 });
 
 test("cycles modes in the same order as Ctrl+Y", () => {

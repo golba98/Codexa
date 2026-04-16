@@ -115,9 +115,9 @@ export function estimateTokens(chars: number): number {
 }
 
 export const AVAILABLE_MODES = [
-  { key: "suggest", label: "SUGGEST" },
-  { key: "auto-edit", label: "AUTO-EDIT" },
-  { key: "full-auto", label: "FULL AUTO" },
+  { key: "suggest", label: "Read-only" },
+  { key: "auto-edit", label: "Auto" },
+  { key: "full-auto", label: "Full Access" },
 ] as const;
 
 export type AvailableMode = (typeof AVAILABLE_MODES)[number]["key"];
