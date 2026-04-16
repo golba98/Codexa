@@ -35,6 +35,12 @@ import {
   type RuntimeSandboxMode,
   type RuntimeServiceTier,
 } from "../config/runtimeConfig.js";
+import {
+  findModelCapability,
+  formatModelCapabilitiesList,
+  getSelectableModelCapabilities,
+  type CodexModelCapabilities,
+} from "../core/codexModelCapabilities.js";
 import type { WorkspaceCommandContext } from "../core/launchContext.js";
 
 export type CommandAction =
@@ -100,6 +106,7 @@ export interface CommandContext {
   };
   workspace: WorkspaceCommandContext;
   tokensUsed?: number;
+  modelCapabilities?: CodexModelCapabilities | null;
 }
 
 const APPROVAL_POLICY_VALUES = ["inherit", "untrusted", "on-request", "never"] as const;
@@ -116,6 +123,19 @@ function formatWritableRoots(roots: readonly string[]): string {
   return roots.length > 0
     ? roots.map((root) => `  - ${root}`).join("\n")
     : "  - none";
+}
+
+function normalizeReasoningCommandArg(arg: string): string {
+  const normalized = arg.toLowerCase();
+  const reasoningAliasMap: Record<string, string> = {
+    "extra high": "xhigh",
+    xhigh: "xhigh",
+  };
+  return reasoningAliasMap[normalized] ?? normalized;
+}
+
+function isKnownFallbackReasoning(value: string): boolean {
+  return AVAILABLE_REASONING_LEVELS.some((item) => item.id === value);
 }
 
 function handlePolicyCommand(
@@ -345,7 +365,14 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
 
     case "model": {
       if (!arg) return { action: "open_model_picker" };
-      if ((AVAILABLE_MODELS as readonly string[]).includes(arg)) {
+      const detectedModels = context.modelCapabilities
+        ? getSelectableModelCapabilities(context.modelCapabilities)
+        : [];
+      const detectedModel = detectedModels.find((model) => model.model === arg || model.id === arg);
+      if (detectedModel) {
+        return { action: "model", value: detectedModel.model, message: `Model switched to ${detectedModel.model}` };
+      }
+      if (!context.modelCapabilities && (AVAILABLE_MODELS as readonly string[]).includes(arg)) {
         return { action: "model", value: arg, message: `Model switched to ${arg}` };
       }
       return {
@@ -372,22 +399,33 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
 
     case "reasoning": {
       if (!arg) return { action: "open_reasoning_picker" };
-      const reasoningAliasMap: Record<string, string> = {
-        "extra high": "xhigh",
-        xhigh: "xhigh",
-      };
-      const normalized = reasoningAliasMap[normalizedArg] ?? normalizedArg;
-      const validLevels = AVAILABLE_REASONING_LEVELS.map((item) => item.id) as string[];
-      if (validLevels.includes(normalized)) {
+      const normalized = normalizeReasoningCommandArg(arg);
+      const modelCapability = findModelCapability(context.modelCapabilities, context.runtime.model);
+      const detectedLevels = modelCapability?.supportedReasoningLevels;
+      if (detectedLevels && detectedLevels.some((item) => item.id === normalized)) {
         return {
           action: "reasoning",
           value: normalized,
           message: `Reasoning level switched to ${formatReasoningLabel(normalized)}`,
         };
       }
+      if (detectedLevels) {
+        const valid = detectedLevels.map((item) => item.id).join(", ");
+        return {
+          action: "unknown",
+          message: `Unknown reasoning level for ${context.runtime.model}: ${arg}. Valid: ${valid}`,
+        };
+      }
+      if (isKnownFallbackReasoning(normalized)) {
+        return {
+          action: "reasoning",
+          value: normalized,
+          message: `Reasoning level switched to ${formatReasoningLabel(normalized)} (runtime metadata unavailable)`,
+        };
+      }
       return {
         action: "unknown",
-        message: `Unknown reasoning level: ${arg}. Valid: low, medium, high, extra high`,
+        message: `Unknown reasoning level: ${arg}. Runtime reasoning metadata is unavailable for ${context.runtime.model}.`,
       };
     }
 
@@ -469,10 +507,15 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
     }
 
     case "models": {
-      const list = AVAILABLE_MODELS.map((model, index) => `  ${index + 1}. ${model}`).join("\n");
+      const list = context.modelCapabilities
+        ? formatModelCapabilitiesList(context.modelCapabilities, context.runtime.model)
+        : AVAILABLE_MODELS.map((model, index) => `  ${index + 1}. ${model}`).join("\n");
+      const prefix = context.modelCapabilities
+        ? "Available models"
+        : "Available models (legacy fallback while runtime discovery is pending)";
       return {
         action: "models",
-        message: `Available models:\n${list}\n\nCurrent: ${context.runtime.model}\nBackend: ${formatBackendLabel(context.runtime.provider)}`,
+        message: `${prefix}:\n${list}\n\nCurrent: ${context.runtime.model}\nBackend: ${formatBackendLabel(context.runtime.provider)}`,
       };
     }
 

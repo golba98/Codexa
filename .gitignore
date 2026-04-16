@@ -56,3 +56,6 @@ GEMINI.md
 PR_DETAILS.md
 docs/audits/codexa-vs-codex-cli-feature-gap.md
 docs/planning/parity-implementation-backlog.md
+
+.gemini/
+gha-creds-*.json

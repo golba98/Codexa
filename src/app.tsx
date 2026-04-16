@@ -29,7 +29,6 @@ import {
   formatThemeLabel,
   formatWorkspaceDisplayPath,
   getNextMode,
-  normalizeReasoningForModel,
 } from "./config/settings.js";
 import {
   AVAILABLE_APPROVAL_POLICIES,
@@ -75,6 +74,16 @@ import {
   resolveExecutionMode,
 } from "./core/codexPrompt.js";
 import { formatHollowResponse } from "./core/hollowResponseFormat.js";
+import {
+  createFallbackModelCapabilities,
+  findModelCapability,
+  formatModelCapabilitiesList,
+  getCodexModelCapabilities,
+  getPreferredModelFromCapabilities,
+  getSelectableModelCapabilities,
+  normalizeReasoningForModelCapabilities,
+  type CodexModelCapabilities,
+} from "./core/codexModelCapabilities.js";
 import { acquireTerminalTitleGuard } from "./core/terminalTitle.js";
 import {
   buildDevLaunchNotice,
@@ -231,6 +240,8 @@ export function App({ launchArgs }: AppProps) {
   // Running character total across the conversation — used to estimate token usage
   const [conversationChars, setConversationChars] = useState(0);
   const [modelSpecs, setModelSpecs] = useState<Partial<Record<AvailableModel, ModelSpec>>>({});
+  const [modelCapabilities, setModelCapabilities] = useState<CodexModelCapabilities | null>(null);
+  const [modelCapabilitiesBusy, setModelCapabilitiesBusy] = useState(false);
   const { stdout } = useStdout();
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [verboseMode, setVerboseMode] = useState(false);
@@ -291,6 +302,15 @@ export function App({ launchArgs }: AppProps) {
   const { provider: backend, model, mode, reasoningLevel, planMode } = runtimeConfig;
   const resolvedRuntimeConfig = useMemo(() => resolveRuntimeConfig(runtimeConfig), [runtimeConfig]);
   const runtimeSummary = useMemo(() => buildRuntimeSummary(resolvedRuntimeConfig), [resolvedRuntimeConfig]);
+  const selectableModelCapabilities = useMemo(
+    () => modelCapabilities ? getSelectableModelCapabilities(modelCapabilities) : [],
+    [modelCapabilities],
+  );
+  const currentModelCapability = useMemo(
+    () => findModelCapability(modelCapabilities, model),
+    [model, modelCapabilities],
+  );
+  const currentReasoningCapabilities = currentModelCapability?.supportedReasoningLevels ?? [];
   const workspaceLabel = useMemo(
     () => formatWorkspaceDisplayPath(workspaceRoot, directoryDisplayMode),
     [directoryDisplayMode, workspaceRoot],
@@ -463,6 +483,31 @@ export function App({ launchArgs }: AppProps) {
     });
   }, [appendStaticEvent]);
 
+  const refreshModelCapabilities = useCallback(async (forceRefresh = false, announce = false) => {
+    setModelCapabilitiesBusy(true);
+    try {
+      const capabilities = await getCodexModelCapabilities({ forceRefresh });
+      setModelCapabilities(capabilities);
+      if (announce) {
+        const modelCount = getSelectableModelCapabilities(capabilities).length;
+        const source = capabilities.status === "ready" ? "Codex runtime" : "fallback compatibility list";
+        appendSystemEvent("Model discovery", `Loaded ${modelCount} models from ${source}.`);
+      }
+    } catch (error) {
+      const fallback = createFallbackModelCapabilities(error);
+      setModelCapabilities(fallback);
+      if (announce) {
+        appendErrorEvent("Model discovery failed", fallback.error ?? "Unable to discover Codex models.");
+      }
+    } finally {
+      setModelCapabilitiesBusy(false);
+    }
+  }, [appendErrorEvent, appendSystemEvent]);
+
+  useEffect(() => {
+    void refreshModelCapabilities(false, false);
+  }, [refreshModelCapabilities]);
+
   const setRuntimeUnauthenticated = useCallback((summary: string) => {
     setAuthStatus({
       state: "unauthenticated",
@@ -526,6 +571,41 @@ export function App({ launchArgs }: AppProps) {
     });
   }, []);
 
+  useEffect(() => {
+    if (modelCapabilities?.status !== "ready") {
+      return;
+    }
+
+    const nextModel = getPreferredModelFromCapabilities(modelCapabilities, model);
+    const nextReasoning = normalizeReasoningForModelCapabilities(
+      nextModel,
+      reasoningLevel,
+      modelCapabilities,
+    );
+
+    if (nextModel === model && nextReasoning === reasoningLevel) {
+      return;
+    }
+
+    updateRuntimeConfig((current) => ({
+      ...current,
+      model: nextModel,
+      reasoningLevel: nextReasoning,
+    }));
+
+    if (nextModel !== model) {
+      appendSystemEvent(
+        "Model updated",
+        `Configured model ${model} is unavailable in the detected Codex runtime. Active model is now ${nextModel}.`,
+      );
+    } else if (nextReasoning !== reasoningLevel) {
+      appendSystemEvent(
+        "Reasoning updated",
+        `Reasoning level is now ${formatReasoningLabel(nextReasoning)} for ${nextModel}.`,
+      );
+    }
+  }, [appendSystemEvent, model, modelCapabilities, reasoningLevel, updateRuntimeConfig]);
+
   const updateRuntimePolicy = useCallback((updater: (current: RuntimeConfig["policy"]) => RuntimeConfig["policy"]) => {
     updateRuntimeConfig((current) => ({
       ...current,
@@ -577,13 +657,22 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
+    const supported = currentModelCapability?.supportedReasoningLevels;
+    if (supported && !supported.some((item) => item.id === nextReasoningLevel)) {
+      appendErrorEvent(
+        "Reasoning unavailable",
+        `${model} does not advertise ${formatReasoningLabel(nextReasoningLevel)} reasoning in the detected Codex runtime.`,
+      );
+      return;
+    }
+
     updateRuntimeConfig((current) => ({
       ...current,
       reasoningLevel: nextReasoningLevel,
     }));
     setScreen("main");
     appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(nextReasoningLevel)}.`);
-  }, [appendSystemEvent, busy, updateRuntimeConfig]);
+  }, [appendErrorEvent, appendSystemEvent, busy, currentModelCapability, model, updateRuntimeConfig]);
 
   const setPlanModeWithNotice = useCallback((nextEnabled: boolean) => {
     const gate = guardConfigMutation("mode", busy);
@@ -616,11 +705,11 @@ export function App({ launchArgs }: AppProps) {
     updateRuntimeConfig((current) => ({
       ...current,
       model: nextModel,
-      reasoningLevel: normalizeReasoningForModel(nextModel, current.reasoningLevel),
+      reasoningLevel: normalizeReasoningForModelCapabilities(nextModel, current.reasoningLevel, modelCapabilities),
     }));
     setScreen("main");
     appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
-  }, [appendSystemEvent, busy, updateRuntimeConfig]);
+  }, [appendSystemEvent, busy, modelCapabilities, updateRuntimeConfig]);
 
   const setModelAndReasoningWithNotice = useCallback((nextModel: AvailableModel, nextReasoning: ReasoningLevel) => {
     const gate = guardConfigMutation("model", busy);
@@ -630,25 +719,26 @@ export function App({ launchArgs }: AppProps) {
     }
 
     const modelChanged = nextModel !== model;
-    const reasoningChanged = nextReasoning !== reasoningLevel;
+    const normalizedReasoning = normalizeReasoningForModelCapabilities(nextModel, nextReasoning, modelCapabilities);
+    const reasoningChanged = normalizedReasoning !== reasoningLevel;
 
     updateRuntimeConfig((current) => ({
       ...current,
       model: nextModel,
-      reasoningLevel: nextReasoning,
+      reasoningLevel: normalizedReasoning,
     }));
     setScreen("main");
 
     if (modelChanged && reasoningChanged) {
-      appendSystemEvent("Model updated", `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(nextReasoning)}.`);
+      appendSystemEvent("Model updated", `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(normalizedReasoning)}.`);
     } else if (modelChanged) {
       appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
     } else if (reasoningChanged) {
-      appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(nextReasoning)}.`);
+      appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(normalizedReasoning)}.`);
     } else {
       // Nothing changed — still close the picker silently.
     }
-  }, [appendSystemEvent, busy, model, reasoningLevel, updateRuntimeConfig]);
+  }, [appendSystemEvent, busy, model, modelCapabilities, reasoningLevel, updateRuntimeConfig]);
 
   const setAuthPreferenceWithNotice = useCallback((nextPreference: AuthPreference) => {
     setAuthPreference(nextPreference);
@@ -793,8 +883,16 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
+    if (!modelCapabilities) {
+      if (!modelCapabilitiesBusy) {
+        void refreshModelCapabilities(true, true);
+      }
+      appendSystemEvent("Model discovery", "Codex model discovery is still running. Try the model picker again in a moment.");
+      return;
+    }
+
     setScreen("model-picker");
-  }, [appendSystemEvent, busy]);
+  }, [appendSystemEvent, busy, modelCapabilities, modelCapabilitiesBusy, refreshModelCapabilities]);
 
   const openModePicker = useCallback(() => {
     const gate = guardConfigMutation("mode", busy);
@@ -813,8 +911,19 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
+    if (!currentModelCapability?.supportedReasoningLevels?.length) {
+      if (!modelCapabilitiesBusy) {
+        void refreshModelCapabilities(true, true);
+      }
+      appendSystemEvent(
+        "Reasoning unavailable",
+        `Codex has not provided reasoning metadata for ${model}. No guessed reasoning levels will be shown.`,
+      );
+      return;
+    }
+
     setScreen("reasoning-picker");
-  }, [appendSystemEvent, busy]);
+  }, [appendSystemEvent, busy, currentModelCapability, model, modelCapabilitiesBusy, refreshModelCapabilities]);
 
   const openThemePicker = useCallback(() => {
     const gate = guardConfigMutation("theme", busy);
@@ -1870,6 +1979,7 @@ export function App({ launchArgs }: AppProps) {
       },
       workspace: workspaceCommandContext,
       tokensUsed: estimateTokens(conversationChars),
+      modelCapabilities,
     });
     const isCommand = commandResult !== null;
 
@@ -2129,6 +2239,7 @@ export function App({ launchArgs }: AppProps) {
     handleWorkspaceRelaunch,
     inputValue,
     layeredRuntimeConfig,
+    modelCapabilities,
     mode,
     openAuthPanel,
     openBackendPicker,
@@ -2194,6 +2305,7 @@ export function App({ launchArgs }: AppProps) {
 
               {screen === "model-picker" && (
                 <ModelReasoningPicker
+                  models={selectableModelCapabilities}
                   currentModel={model}
                   currentReasoning={reasoningLevel}
                   onSelect={(m, r) => setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel)}
@@ -2213,6 +2325,8 @@ export function App({ launchArgs }: AppProps) {
                 <ReasoningPicker
                   currentModel={model}
                   currentReasoning={reasoningLevel}
+                  reasoningLevels={currentReasoningCapabilities}
+                  defaultReasoning={currentModelCapability?.defaultReasoningLevel ?? null}
                   onSelect={(value) => setReasoningWithNotice(value as ReasoningLevel)}
                   onCancel={() => setScreen("main")}
                 />

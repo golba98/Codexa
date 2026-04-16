@@ -1,37 +1,43 @@
 import React, { useState, useCallback, useMemo } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
 import {
-  AVAILABLE_MODELS,
-  getAvailableReasoningForModel,
-  isReasoningInteractive,
-  formatReasoningLabel,
-  getRecommendedReasoningForModel,
-  type AvailableModel,
-  type ReasoningLevel,
-} from "../config/settings.js";
+  type CodexModelCapability,
+  type ReasoningEffortCapability,
+  normalizeReasoningForModelCapabilities,
+} from "../core/codexModelCapabilities.js";
+import { formatReasoningLabel } from "../config/settings.js";
 import { FOCUS_IDS } from "./focus.js";
 import { useTheme } from "./theme.js";
 
-// ── Bar glyphs ─────────────────────────────────────────────────────────────
-// 4 identical discrete blocks. Far left represents lowest, far right highest.
-const BAR_GLYPHS = ["■", "■", "■", "■"] as const;
-
-function glyphForIndex(index: number): string {
-  return BAR_GLYPHS[Math.min(index, BAR_GLYPHS.length - 1)];
-}
-
-// ── Types ──────────────────────────────────────────────────────────────────
-
 interface ModelReasoningPickerProps {
-  currentModel: AvailableModel;
-  currentReasoning: ReasoningLevel;
-  onSelect: (model: AvailableModel, reasoning: ReasoningLevel) => void;
+  models: readonly CodexModelCapability[];
+  currentModel: string;
+  currentReasoning: string;
+  onSelect: (model: string, reasoning: string) => void;
   onCancel: () => void;
 }
 
-// ── Component ──────────────────────────────────────────────────────────────
+function getModelReasoningLevels(model: CodexModelCapability): readonly ReasoningEffortCapability[] {
+  return model.supportedReasoningLevels ?? [];
+}
+
+function getInitialReasoning(model: CodexModelCapability, currentReasoning: string): string {
+  return normalizeReasoningForModelCapabilities(
+    model.model,
+    currentReasoning,
+    {
+      status: "ready",
+      source: model.source,
+      models: [model],
+      discoveredAt: Date.now(),
+      executable: null,
+      error: null,
+    },
+  );
+}
 
 export function ModelReasoningPicker({
+  models,
   currentModel,
   currentReasoning,
   onSelect,
@@ -39,50 +45,55 @@ export function ModelReasoningPicker({
 }: ModelReasoningPickerProps) {
   const theme = useTheme();
   const { isFocused } = useFocus({ id: FOCUS_IDS.modelPicker, autoFocus: true });
+  const visibleModels = models.length > 0 ? models : [];
 
   const [cursor, setCursor] = useState(() =>
-    Math.max(0, AVAILABLE_MODELS.indexOf(currentModel)),
+    Math.max(0, visibleModels.findIndex((model) => model.model === currentModel || model.id === currentModel)),
   );
 
-  const [pendingReasoning, setPendingReasoning] = useState<Record<string, ReasoningLevel>>(() => {
-    const init: Record<string, ReasoningLevel> = {};
-    for (const m of AVAILABLE_MODELS) {
-      const available = getAvailableReasoningForModel(m);
-      init[m] = available.includes(currentReasoning)
-        ? currentReasoning
-        : getRecommendedReasoningForModel(m);
+  const [pendingReasoning, setPendingReasoning] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const model of visibleModels) {
+      init[model.model] = getInitialReasoning(model, currentReasoning);
     }
     return init;
   });
 
-  const highlightedModel = AVAILABLE_MODELS[cursor] as AvailableModel;
+  const highlightedModel = visibleModels[Math.min(cursor, Math.max(0, visibleModels.length - 1))];
 
   const moveReasoning = useCallback(
     (direction: -1 | 1) => {
-      const model = AVAILABLE_MODELS[cursor] as AvailableModel;
-      if (!isReasoningInteractive(model)) return;
+      const model = visibleModels[cursor];
+      if (!model) return;
 
-      const available = getAvailableReasoningForModel(model);
+      const available = getModelReasoningLevels(model);
+      if (available.length <= 1) return;
+
       setPendingReasoning((prev) => {
-        const currentIdx = available.indexOf(prev[model] as ReasoningLevel);
+        const currentValue = prev[model.model] ?? getInitialReasoning(model, currentReasoning);
+        const currentIdx = Math.max(0, available.findIndex((level) => level.id === currentValue));
         const nextIdx = Math.max(0, Math.min(available.length - 1, currentIdx + direction));
         if (nextIdx === currentIdx) return prev;
-        return { ...prev, [model]: available[nextIdx] };
+        return { ...prev, [model.model]: available[nextIdx]!.id };
       });
     },
-    [cursor],
+    [currentReasoning, cursor, visibleModels],
   );
 
   useInput(
-    (input, key) => {
+    (_, key) => {
       if (key.escape) {
         onCancel();
         return;
       }
       if (key.return) {
-        const model = AVAILABLE_MODELS[cursor] as AvailableModel;
-        const reasoning = pendingReasoning[model] as ReasoningLevel;
-        onSelect(model, reasoning);
+        const model = visibleModels[cursor];
+        if (!model) {
+          onCancel();
+          return;
+        }
+        const reasoning = pendingReasoning[model.model] ?? getInitialReasoning(model, currentReasoning);
+        onSelect(model.model, reasoning);
         return;
       }
       if (key.upArrow) {
@@ -90,7 +101,7 @@ export function ModelReasoningPicker({
         return;
       }
       if (key.downArrow) {
-        setCursor((c) => Math.min(AVAILABLE_MODELS.length - 1, c + 1));
+        setCursor((c) => Math.min(visibleModels.length - 1, c + 1));
         return;
       }
       if (key.leftArrow) {
@@ -99,7 +110,6 @@ export function ModelReasoningPicker({
       }
       if (key.rightArrow) {
         moveReasoning(1);
-        return;
       }
     },
     { isActive: isFocused },
@@ -107,24 +117,30 @@ export function ModelReasoningPicker({
 
   const rows = useMemo(
     () =>
-      AVAILABLE_MODELS.map((model) => {
-        const available = getAvailableReasoningForModel(model);
-        const interactive = isReasoningInteractive(model);
-        return { model, available, interactive };
+      visibleModels.map((model) => {
+        const available = getModelReasoningLevels(model);
+        return {
+          model,
+          available,
+          interactive: available.length > 1,
+        };
       }),
-    [],
+    [visibleModels],
   );
 
   const subtitleParts: string[] = ["↑↓ model"];
-  if (isReasoningInteractive(highlightedModel)) {
+  if (highlightedModel && getModelReasoningLevels(highlightedModel).length > 1) {
     subtitleParts.push("←→ reasoning");
   }
   subtitleParts.push("Enter select", "Esc cancel");
   const subtitle = subtitleParts.join("  ·  ");
 
-  // Reasoning label for highlighted model
-  const highlightedPending = pendingReasoning[highlightedModel] as ReasoningLevel;
-  const reasoningHint = `Reasoning: ${formatReasoningLabel(highlightedPending)}`;
+  const highlightedPending = highlightedModel
+    ? pendingReasoning[highlightedModel.model] ?? getInitialReasoning(highlightedModel, currentReasoning)
+    : currentReasoning;
+  const reasoningHint = highlightedModel?.supportedReasoningLevels
+    ? `Reasoning: ${formatReasoningLabel(highlightedPending)}`
+    : "Reasoning metadata unavailable";
 
   return (
     <Box flexDirection="column" width="100%" marginTop={1}>
@@ -157,12 +173,12 @@ export function ModelReasoningPicker({
       >
         {rows.map((row, idx) => {
           const isHighlighted = idx === cursor;
-          const isCommitted = row.model === currentModel;
-          const pending = pendingReasoning[row.model] as ReasoningLevel;
+          const isCommitted = row.model.model === currentModel || row.model.id === currentModel;
+          const pending = pendingReasoning[row.model.model] ?? getInitialReasoning(row.model, currentReasoning);
 
           return (
             <ModelRow
-              key={row.model}
+              key={row.model.id}
               model={row.model}
               availableLevels={row.available}
               interactive={row.interactive}
@@ -178,15 +194,13 @@ export function ModelReasoningPicker({
   );
 }
 
-// ── Row sub-component ────────────────────────────────────────────────────
-
 interface ModelRowProps {
-  model: AvailableModel;
-  availableLevels: readonly ReasoningLevel[];
+  model: CodexModelCapability;
+  availableLevels: readonly ReasoningEffortCapability[];
   interactive: boolean;
   isHighlighted: boolean;
   isCommitted: boolean;
-  selectedReasoning: ReasoningLevel;
+  selectedReasoning: string;
   theme: ReturnType<typeof useTheme>;
 }
 
@@ -202,26 +216,20 @@ function ModelRow({
   const cursorGlyph = isHighlighted ? "▸ " : "  ";
   const nameColor = isHighlighted ? theme.TEXT : theme.MUTED;
   const commitMark = isCommitted ? "  ✓" : "";
-  
-  const selectedIndex = availableLevels.indexOf(selectedReasoning);
+  const selectedIndex = availableLevels.findIndex((level) => level.id === selectedReasoning);
+  const name = model.label === model.model ? model.model : `${model.label} (${model.model})`;
 
   const bars = availableLevels.map((level, i) => {
-    const glyph = glyphForIndex(i);
-    // Radio-button logic: only the exact selected index is highlighted
     const isActive = i === selectedIndex;
-    
-    let color: string;
-    if (!interactive) {
-      color = theme.DIM;
-    } else if (isActive) {
-      color = isHighlighted ? theme.ACCENT : theme.TEXT;
-    } else {
-      color = theme.DIM;
-    }
+    const color = !interactive
+      ? theme.DIM
+      : isActive
+        ? isHighlighted ? theme.ACCENT : theme.TEXT
+        : theme.DIM;
 
     return (
-      <Text key={level} color={color} bold={isActive && isHighlighted && interactive}>
-        {glyph}
+      <Text key={level.id} color={color} bold={isActive && isHighlighted && interactive}>
+        ■
       </Text>
     );
   });
@@ -233,7 +241,7 @@ function ModelRow({
       </Box>
       <Box flexGrow={1}>
         <Text color={nameColor} bold={isHighlighted}>
-          {model}
+          {name}
         </Text>
         <Text color={theme.DIM}>{commitMark}</Text>
       </Box>

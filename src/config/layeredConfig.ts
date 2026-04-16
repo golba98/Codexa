@@ -19,9 +19,7 @@ import {
 } from "./runtimeConfig.js";
 import {
   AVAILABLE_BACKENDS,
-  AVAILABLE_MODELS,
   AVAILABLE_MODES,
-  AVAILABLE_REASONING_LEVELS,
   formatBackendLabel,
   formatModeLabel,
   formatReasoningLabel,
@@ -152,8 +150,8 @@ function extractRuntimePatch(
   const ignoredEntries: string[] = [];
 
   if ("model" in data) {
-    if (typeof data.model === "string" && (AVAILABLE_MODELS as readonly string[]).includes(data.model)) {
-      patch.model = data.model as AvailableModel;
+    if (typeof data.model === "string" && data.model.trim().length > 0) {
+      patch.model = data.model.trim() as AvailableModel;
       addTouchedField(touchedFields, "model");
     } else {
       ignoredEntries.push("model");
@@ -162,9 +160,8 @@ function extractRuntimePatch(
 
   if ("model_reasoning_effort" in data) {
     const value = data.model_reasoning_effort;
-    const validReasoning = AVAILABLE_REASONING_LEVELS.map((item) => item.id) as readonly string[];
-    if (typeof value === "string" && validReasoning.includes(value)) {
-      patch.reasoningLevel = value as ReasoningLevel;
+    if (typeof value === "string" && value.trim().length > 0) {
+      patch.reasoningLevel = value.trim() as ReasoningLevel;
       addTouchedField(touchedFields, "reasoningLevel");
     } else {
       ignoredEntries.push("model_reasoning_effort");

@@ -1,5 +1,4 @@
 import { spawn } from "child_process";
-import { AVAILABLE_MODELS } from "../../config/settings.js";
 import { formatCodexLaunchError, spawnCodexProcess } from "../codexExecutable.js";
 import { prepareCodexExecLaunch } from "../codexLaunch.js";
 import { buildCodexPrompt } from "../codexPrompt.js";
@@ -25,7 +24,7 @@ export const codexSubprocessProvider: BackendProvider = {
   authState: "delegated",
   authLabel: "Authenticated via Codex",
   statusMessage: "Authentication is managed via Codexa.",
-  supportsModels: (model) => (AVAILABLE_MODELS as readonly string[]).includes(model),
+  supportsModels: () => true,
   run: (prompt, options, handlers) => {
     let done = false;
     let cancelled = false;

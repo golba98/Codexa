@@ -48,25 +48,28 @@ export const AVAILABLE_BACKENDS = [
 
 export type AvailableBackend = (typeof AVAILABLE_BACKENDS)[number]["id"];
 
-// Canonical model allowlist — add or remove models here only.
-// All pickers, commands, and validation read from this single source.
-export const AVAILABLE_MODELS = [
+// Legacy fallback only. Runtime model discovery is the source of truth.
+export const LEGACY_FALLBACK_MODELS = [
   "gpt-5.4",
   "gpt-5.4-mini",
   "gpt-5.3-codex",
   "gpt-5.2",
 ] as const;
 
-export type AvailableModel = (typeof AVAILABLE_MODELS)[number];
+export const AVAILABLE_MODELS = LEGACY_FALLBACK_MODELS;
+
+export type AvailableModel = string;
 
 export const AVAILABLE_REASONING_LEVELS = [
+  { id: "none", label: "None" },
+  { id: "minimal", label: "Minimal" },
   { id: "low", label: "Low" },
   { id: "medium", label: "Medium" },
   { id: "high", label: "High" },
   { id: "xhigh", label: "Extra high" },
 ] as const;
 
-export type ReasoningLevel = (typeof AVAILABLE_REASONING_LEVELS)[number]["id"];
+export type ReasoningLevel = string;
 
 export const DIRECTORY_DISPLAY_MODES = ["normal", "simple"] as const;
 
@@ -109,35 +112,6 @@ export const USER_SETTING_DEFINITIONS: readonly UserSettingDefinition[] = [
 /** Rough token estimate: ~4 chars per token */
 export function estimateTokens(chars: number): number {
   return Math.ceil(chars / 4);
-}
-
-export const MODEL_REASONING_RECOMMENDATIONS: Record<AvailableModel, ReasoningLevel> = {
-  "gpt-5.4": "xhigh",
-  "gpt-5.4-mini": "medium",
-  "gpt-5.3-codex": "high",
-  "gpt-5.2": "high",
-};
-
-/**
- * Per-model reasoning level availability — the single source of truth for
- * which reasoning levels each model actually supports.  UI bar counts,
- * selection ranges, and interactive behaviour all derive from this map.
- */
-export const MODEL_AVAILABLE_REASONING: Record<AvailableModel, readonly ReasoningLevel[]> = {
-  "gpt-5.4":       ["low", "medium", "high", "xhigh"],
-  "gpt-5.4-mini":  ["low", "medium", "high", "xhigh"],
-  "gpt-5.3-codex": ["low", "medium", "high", "xhigh"],
-  "gpt-5.2":       ["low", "medium", "high", "xhigh"],
-};
-
-/** Returns the ordered list of reasoning levels a model supports. */
-export function getAvailableReasoningForModel(model: AvailableModel): readonly ReasoningLevel[] {
-  return MODEL_AVAILABLE_REASONING[model] ?? AVAILABLE_REASONING_LEVELS.map((r) => r.id);
-}
-
-/** True when a model supports more than one reasoning level (interactive). */
-export function isReasoningInteractive(model: AvailableModel): boolean {
-  return getAvailableReasoningForModel(model).length > 1;
 }
 
 export const AVAILABLE_MODES = [
@@ -213,7 +187,15 @@ export function formatBackendLabel(backend: string): string {
 
 export function formatReasoningLabel(reasoning: string): string {
   const found = AVAILABLE_REASONING_LEVELS.find((item) => item.id === reasoning);
-  return found?.label ?? reasoning;
+  if (found) {
+    return found.label;
+  }
+
+  return reasoning
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ") || reasoning;
 }
 
 export const AVAILABLE_THEMES = [
@@ -273,19 +255,14 @@ export function formatWorkspaceDisplayPath(
 }
 
 export function getRecommendedReasoningForModel(model: AvailableModel): ReasoningLevel {
-  return MODEL_REASONING_RECOMMENDATIONS[model] ?? DEFAULT_REASONING_LEVEL;
+  return DEFAULT_REASONING_LEVEL;
 }
 
 export function normalizeReasoningForModel(
   model: AvailableModel,
   reasoningLevel: ReasoningLevel,
 ): ReasoningLevel {
-  const available = getAvailableReasoningForModel(model);
-  if (available.includes(reasoningLevel)) {
-    return reasoningLevel;
-  }
-  // If the current level isn't supported, fall back to the recommendation.
-  return getRecommendedReasoningForModel(model);
+  return reasoningLevel || getRecommendedReasoningForModel(model);
 }
 
 export function formatAuthPreferenceLabel(preference: string): string {

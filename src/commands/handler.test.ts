@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { LayeredConfigResult } from "../config/layeredConfig.js";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../config/runtimeConfig.js";
+import { normalizeCodexModelListResponses } from "../core/codexModelCapabilities.js";
 import { handleCommand, type CommandContext } from "./handler.js";
 
 const baseRuntime = normalizeRuntimeConfig({
@@ -66,6 +67,39 @@ function runCommand(command: string, context: Partial<CommandContext> = {}) {
   });
 }
 
+const dynamicCapabilities = normalizeCodexModelListResponses([
+  {
+    data: [
+      {
+        id: "dynamic-four",
+        model: "dynamic-four",
+        displayName: "Dynamic Four",
+        hidden: false,
+        isDefault: true,
+        defaultReasoningEffort: "medium",
+        supportedReasoningEfforts: [
+          { reasoningEffort: "low", description: "Low" },
+          { reasoningEffort: "medium", description: "Medium" },
+          { reasoningEffort: "high", description: "High" },
+          { reasoningEffort: "xhigh", description: "Extra" },
+        ],
+      },
+      {
+        id: "dynamic-two",
+        model: "dynamic-two",
+        displayName: "Dynamic Two",
+        hidden: false,
+        isDefault: false,
+        defaultReasoningEffort: "medium",
+        supportedReasoningEfforts: [
+          { reasoningEffort: "medium", description: "Medium" },
+          { reasoningEffort: "high", description: "High" },
+        ],
+      },
+    ],
+  },
+]);
+
 test("parses /login command", () => {
   const result = runCommand("/login");
   assert.equal(result?.action, "login");
@@ -85,6 +119,15 @@ test("keeps existing /model command behavior", () => {
   const result = runCommand("/model gpt-5.4-mini");
   assert.equal(result?.action, "model");
   assert.equal(result?.value, "gpt-5.4-mini");
+});
+
+test("accepts dynamically detected model ids", () => {
+  const result = runCommand("/model dynamic-two", {
+    modelCapabilities: dynamicCapabilities,
+  });
+
+  assert.equal(result?.action, "model");
+  assert.equal(result?.value, "dynamic-two");
 });
 
 test("resolves canonical and aliased /mode commands", () => {
@@ -120,6 +163,29 @@ test("accepts extra high reasoning aliases", () => {
   const result = runCommand("/reasoning extra high");
   assert.equal(result?.action, "reasoning");
   assert.equal(result?.value, "xhigh");
+});
+
+test("validates reasoning against detected levels for the active model", () => {
+  const runtime = normalizeRuntimeConfig({
+    model: "dynamic-two",
+    reasoningLevel: "medium",
+  });
+
+  const accepted = runCommand("/reasoning high", {
+    runtime,
+    resolvedRuntime: resolveRuntimeConfig(runtime),
+    modelCapabilities: dynamicCapabilities,
+  });
+  assert.equal(accepted?.action, "reasoning");
+  assert.equal(accepted?.value, "high");
+
+  const rejected = runCommand("/reasoning xhigh", {
+    runtime,
+    resolvedRuntime: resolveRuntimeConfig(runtime),
+    modelCapabilities: dynamicCapabilities,
+  });
+  assert.equal(rejected?.action, "unknown");
+  assert.match(rejected?.message ?? "", /Valid: medium, high/i);
 });
 
 test("shows and toggles plan mode", () => {
@@ -184,6 +250,17 @@ test("shows effective runtime status", () => {
   assert.match(result?.message ?? "", /Approval policy: On request/i);
   assert.match(result?.message ?? "", /Sandbox mode: Read only/i);
   assert.match(result?.message ?? "", /Tokens used: ~1,200/i);
+});
+
+test("/models reports dynamic runtime capabilities", () => {
+  const result = runCommand("/models", {
+    modelCapabilities: dynamicCapabilities,
+  });
+
+  assert.equal(result?.action, "models");
+  assert.match(result?.message ?? "", /Detected from Codex runtime/i);
+  assert.match(result?.message ?? "", /dynamic-four.*4 reasoning levels/i);
+  assert.match(result?.message ?? "", /dynamic-two.*2 reasoning levels/i);
 });
 
 test("shows layered config status", () => {

@@ -1,5 +1,4 @@
 import { readFileSync, renameSync, writeFileSync } from "fs";
-import type { AvailableModel } from "../config/settings.js";
 import { MODEL_SPECS_FILE } from "../config/settings.js";
 
 export type ModelSpecStatus = "verified" | "loading" | "unknown";
@@ -23,14 +22,14 @@ export interface PendingModelSpec {
 
 export type ModelSpec = VerifiedModelSpec | PendingModelSpec;
 
-export const MODEL_SPEC_DOC_URLS: Record<AvailableModel, string> = {
+export const MODEL_SPEC_DOC_URLS: Record<string, string> = {
   "gpt-5.4": "https://developers.openai.com/api/docs/models/gpt-5.4",
   "gpt-5.4-mini": "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
   "gpt-5.3-codex": "https://developers.openai.com/api/docs/models/gpt-5.3-codex",
   "gpt-5.2": "https://developers.openai.com/api/docs/models/gpt-5.2",
 };
 
-type ModelSpecCache = Partial<Record<AvailableModel, VerifiedModelSpec>>;
+type ModelSpecCache = Partial<Record<string, VerifiedModelSpec>>;
 
 interface ModelSpecServiceOptions {
   cacheFile?: string;
@@ -39,7 +38,7 @@ interface ModelSpecServiceOptions {
 }
 
 function createPendingModelSpec(
-  model: AvailableModel,
+  model: string,
   status: PendingModelSpec["status"],
   error: string | null = null,
 ): PendingModelSpec {
@@ -47,17 +46,21 @@ function createPendingModelSpec(
     status,
     contextWindow: null,
     maxOutputTokens: null,
-    sourceUrl: MODEL_SPEC_DOC_URLS[model],
+    sourceUrl: getModelSpecDocUrl(model),
     verifiedAt: null,
     error,
   };
 }
 
-export function createLoadingModelSpec(model: AvailableModel): ModelSpec {
+function getModelSpecDocUrl(model: string): string {
+  return MODEL_SPEC_DOC_URLS[model] ?? `https://developers.openai.com/api/docs/models/${encodeURIComponent(model)}`;
+}
+
+export function createLoadingModelSpec(model: string): ModelSpec {
   return createPendingModelSpec(model, "loading");
 }
 
-export function createUnknownModelSpec(model: AvailableModel, error: string | null = null): ModelSpec {
+export function createUnknownModelSpec(model: string, error: string | null = null): ModelSpec {
   return createPendingModelSpec(model, "unknown", error);
 }
 
@@ -91,7 +94,7 @@ export function stripHtmlToText(html: string): string {
 }
 
 export function extractModelSpecFromDocText(
-  model: AvailableModel,
+  model: string,
   text: string,
   verifiedAt = Date.now(),
 ): VerifiedModelSpec | null {
@@ -109,7 +112,7 @@ export function extractModelSpecFromDocText(
     status: "verified",
     contextWindow,
     maxOutputTokens,
-    sourceUrl: MODEL_SPEC_DOC_URLS[model],
+    sourceUrl: getModelSpecDocUrl(model),
     verifiedAt,
   };
 }
@@ -134,9 +137,8 @@ export function loadModelSpecCache(cacheFile = MODEL_SPECS_FILE): ModelSpecCache
     const cache: ModelSpecCache = {};
 
     for (const [model, value] of Object.entries(raw)) {
-      if (!(model in MODEL_SPEC_DOC_URLS)) continue;
       if (isVerifiedModelSpec(value)) {
-        cache[model as AvailableModel] = value;
+        cache[model] = value;
       }
     }
 
@@ -157,11 +159,11 @@ export function saveModelSpecCache(cache: ModelSpecCache, cacheFile = MODEL_SPEC
 }
 
 export async function fetchModelSpecFromDocs(
-  model: AvailableModel,
+  model: string,
   fetchImpl: typeof fetch = fetch,
   verifiedAt = Date.now(),
 ): Promise<VerifiedModelSpec> {
-  const response = await fetchImpl(MODEL_SPEC_DOC_URLS[model], {
+  const response = await fetchImpl(getModelSpecDocUrl(model), {
     headers: {
       Accept: "text/html,application/xhtml+xml",
     },
@@ -197,10 +199,10 @@ export function createModelSpecService(options: ModelSpecServiceOptions = {}) {
   const now = options.now ?? Date.now;
   // Persisted specs are kept for saving, not for live UI trust.
   const cache = loadModelSpecCache(cacheFile);
-  const inflight = new Map<AvailableModel, Promise<ModelSpec>>();
+  const inflight = new Map<string, Promise<ModelSpec>>();
 
   return {
-    async refreshSpec(model: AvailableModel): Promise<ModelSpec> {
+    async refreshSpec(model: string): Promise<ModelSpec> {
       const current = inflight.get(model);
       if (current) return current;
 
