@@ -10,16 +10,20 @@ import {
   buildTimelineItems,
   createFollowTailViewport,
   endTimelineViewport,
+  findAnchorItem,
   homeTimelineViewport,
   pageDownTimelineViewport,
   pageUpTimelineViewport,
   parseWheelScrollDirections,
+  reflowTimelineViewport,
   resolveTurnOpacity,
+  scrollTimelineViewport,
   selectTimelineRows,
   stepDownTimelineViewport,
   stepUpTimelineViewport,
   syncTimelineViewport,
   type RenderTimelineItem,
+  type TimelineViewportState,
 } from "./Timeline.js";
 
 function createRow(key: string): TimelineRow {
@@ -490,4 +494,224 @@ test("home anchors the browse window to the first page and end restores tail fol
   assert.equal(window.window.endRow, 4);
   assert.equal(end.followTail, true);
   assert.equal(end.anchorRow, snapshot.totalRows - 1);
+});
+
+// ─── findAnchorItem ───────────────────────────────────────────────────────────
+
+test("findAnchorItem locates the item and row-within-item for a given anchorRow", () => {
+  // snapshot: 3 items with [2, 3, 2] rows = rows 0-1, 2-4, 5-6
+  const snapshot = createSnapshot([2, 3, 2]);
+
+  // First item, first row
+  assert.deepEqual(findAnchorItem(snapshot, 0), { itemIndex: 0, rowWithinItem: 0 });
+  // First item, last row
+  assert.deepEqual(findAnchorItem(snapshot, 1), { itemIndex: 0, rowWithinItem: 1 });
+  // Second item, first row
+  assert.deepEqual(findAnchorItem(snapshot, 2), { itemIndex: 1, rowWithinItem: 0 });
+  // Second item, middle row
+  assert.deepEqual(findAnchorItem(snapshot, 3), { itemIndex: 1, rowWithinItem: 1 });
+  // Second item, last row
+  assert.deepEqual(findAnchorItem(snapshot, 4), { itemIndex: 1, rowWithinItem: 2 });
+  // Third item, last row
+  assert.deepEqual(findAnchorItem(snapshot, 6), { itemIndex: 2, rowWithinItem: 1 });
+});
+
+test("findAnchorItem clamps to last item when anchorRow is beyond snapshot bounds", () => {
+  const snapshot = createSnapshot([2, 3]);
+  // totalRows = 5, so anchorRow 99 should clamp to last item's last row
+  const result = findAnchorItem(snapshot, 99);
+  assert.equal(result.itemIndex, 1);
+  assert.equal(result.rowWithinItem, 2); // last item has 3 rows → last = 2
+});
+
+// ─── reflowTimelineViewport ───────────────────────────────────────────────────
+
+test("reflowTimelineViewport keeps followTail when user is pinned to bottom", () => {
+  const liveSnapshot = createSnapshot([2, 3, 2]);
+  const pinned = createFollowTailViewport(liveSnapshot.totalRows);
+  const reflowed = reflowTimelineViewport(pinned, liveSnapshot);
+
+  assert.equal(reflowed.followTail, true);
+  assert.equal(reflowed.anchorRow, liveSnapshot.totalRows - 1);
+  assert.equal(reflowed.frozenSnapshot, null);
+});
+
+test("reflowTimelineViewport maps anchor to same item when width decreases (more wrapping)", () => {
+  // Old layout: 2 items with [2, 3] rows.  User is looking at row 1 (end of item-0).
+  const oldFrozen = createSnapshot([2, 3]);
+  const browsing: TimelineViewportState = {
+    anchorRow: 1, // last row of item-0
+    followTail: false,
+    unseenItems: 0,
+    unseenRows: 0,
+    frozenSnapshot: oldFrozen,
+  };
+
+  // New layout (narrower): same 2 items but item-0 now wraps to 4 rows, item-1 to 5 rows
+  const newLive = createSnapshot([4, 5]);
+  const reflowed = reflowTimelineViewport(browsing, newLive);
+
+  assert.equal(reflowed.followTail, false);
+  // item-0 is now 4 rows.  rowWithinItem was 1, still 1 in new layout.
+  // new anchorRow = 0 (rows before item-0) + 1 = 1
+  assert.equal(reflowed.anchorRow, 1);
+  assert.equal(reflowed.frozenSnapshot?.itemCount, 2);
+  assert.equal(reflowed.frozenSnapshot?.totalRows, 9); // 4 + 5
+});
+
+test("reflowTimelineViewport clamps rowWithinItem when width increases (less wrapping)", () => {
+  // Old layout: item-0 has 5 rows.  Anchor at row 4 (last row of item-0).
+  const oldFrozen = createSnapshot([5, 3]);
+  const browsing: TimelineViewportState = {
+    anchorRow: 4,
+    followTail: false,
+    unseenItems: 0,
+    unseenRows: 0,
+    frozenSnapshot: oldFrozen,
+  };
+
+  // New layout (wider): item-0 now wraps to only 2 rows (less wrapping), item-1 to 1 row
+  const newLive = createSnapshot([2, 1]);
+  const reflowed = reflowTimelineViewport(browsing, newLive);
+
+  assert.equal(reflowed.followTail, false);
+  // rowWithinItem was 4, but item-0 only has 2 rows → clamped to 1 (last row)
+  // new anchorRow = 0 + 1 = 1
+  assert.equal(reflowed.anchorRow, 1);
+  assert.equal(reflowed.frozenSnapshot?.totalRows, 3); // 2 + 1
+});
+
+test("reflowTimelineViewport preserves unseenItems and unseenRows after width change", () => {
+  // User scrolled up when there were 2 items.  One more item arrived since then.
+  const oldFrozen = createSnapshot([2, 3]);
+  const browsing: TimelineViewportState = {
+    anchorRow: 4, // last row of item-1 in old frozen
+    followTail: false,
+    unseenItems: 1,
+    unseenRows: 2,
+    frozenSnapshot: oldFrozen,
+  };
+
+  // New layout: 3 items (frozen 2 + 1 unseen), all at new width
+  const newLive = createSnapshot([3, 4, 2]); // 9 total
+  const reflowed = reflowTimelineViewport(browsing, newLive);
+
+  assert.equal(reflowed.followTail, false);
+  // frozenItemCount = 2 → new frozen uses first 2 items from newLive: [3, 4]
+  assert.equal(reflowed.frozenSnapshot?.itemCount, 2);
+  assert.equal(reflowed.frozenSnapshot?.totalRows, 7); // 3 + 4
+  // unseenItems = 3 - 2 = 1
+  assert.equal(reflowed.unseenItems, 1);
+  // unseenRows = 9 - 7 = 2
+  assert.equal(reflowed.unseenRows, 2);
+});
+
+test("reflowTimelineViewport does not snap to bottom during active streaming", () => {
+  // User scrolled up mid-stream.  frozenSnapshot has 3 items (includes partial assistant).
+  const oldFrozen = createSnapshot([1, 2, 3]);
+  const browsing: TimelineViewportState = {
+    anchorRow: 2, // within item-1 (rows 1-2) → rowWithinItem = 1
+    followTail: false,
+    unseenItems: 0,
+    unseenRows: 0,
+    frozenSnapshot: oldFrozen,
+  };
+
+  // Width change arrives mid-stream: liveSnapshot has grown (assistant has more content)
+  // Items 0..2 from frozenSnapshot, item-2 now larger due to more streaming content
+  const newLive = createSnapshot([1, 2, 6]);
+  const reflowed = reflowTimelineViewport(browsing, newLive);
+
+  // Must NOT snap to bottom
+  assert.equal(reflowed.followTail, false);
+  // item-1 has 2 rows in new layout → rowWithinItem=1 preserved
+  // anchorRow = item-0 (1 row) + 1 = 2
+  assert.equal(reflowed.anchorRow, 2);
+  assert.equal(reflowed.frozenSnapshot?.itemCount, 3);
+});
+
+// ─── selectTimelineRows: height-change stability ──────────────────────────────
+
+test("height increase while scrolled up shows more content above without snapping to bottom", () => {
+  const snapshot = createSnapshot([3, 3, 3, 3]); // 12 rows, 4 items
+  // User is at anchorRow=8 (last row of item-2), viewing rows 5-8 at viewportRows=4
+  const browsing: TimelineViewportState = {
+    anchorRow: 8,
+    followTail: false,
+    unseenItems: 0,
+    unseenRows: 0,
+    frozenSnapshot: snapshot,
+  };
+
+  const smallViewport = selectTimelineRows(snapshot, browsing, 4);
+  assert.equal(smallViewport.window.startRow, 5);
+  assert.equal(smallViewport.window.endRow, 9);
+
+  // Terminal grows to 8 rows — more content visible above, bottom anchor preserved
+  const largeViewport = selectTimelineRows(snapshot, browsing, 8);
+  assert.equal(largeViewport.window.startRow, 1);
+  assert.equal(largeViewport.window.endRow, 9);
+  // Confirm not snapped to bottom
+  assert.notEqual(largeViewport.window.endRow, snapshot.totalRows);
+});
+
+test("height decrease while scrolled up preserves bottom anchor", () => {
+  const snapshot = createSnapshot([3, 3, 3, 3]); // 12 rows
+  const browsing: TimelineViewportState = {
+    anchorRow: 8,
+    followTail: false,
+    unseenItems: 0,
+    unseenRows: 0,
+    frozenSnapshot: snapshot,
+  };
+
+  // Viewport shrinks from 4 to 2 rows
+  const shrunk = selectTimelineRows(snapshot, browsing, 2);
+  // Bottom (anchorRow=8) is preserved; only 2 rows visible
+  assert.equal(shrunk.window.endRow, 9);
+  assert.equal(shrunk.window.startRow, 7);
+  assert.equal(shrunk.visibleRows.length, 2);
+});
+
+// ─── streaming while detached does not jump to bottom ────────────────────────
+
+test("streaming deltas while detached do not move the viewport to bottom", () => {
+  const initial = createSnapshot([1, 1, 1, 1]); // 4 items, 4 rows
+  // User pages up — frozen at initial snapshot
+  const browsing = pageUpTimelineViewport(createFollowTailViewport(initial.totalRows), initial, 3);
+  assert.equal(browsing.followTail, false);
+
+  // Multiple streaming deltas arrive (same width — syncTimelineViewport path)
+  const afterDelta1 = syncTimelineViewport(browsing, createSnapshot([1, 1, 1, 1, 2]));
+  const afterDelta2 = syncTimelineViewport(afterDelta1, createSnapshot([1, 1, 1, 1, 4]));
+  const afterDelta3 = syncTimelineViewport(afterDelta2, createSnapshot([1, 1, 1, 1, 6]));
+
+  // Must remain detached throughout
+  assert.equal(afterDelta3.followTail, false);
+  assert.equal(afterDelta3.frozenSnapshot?.itemCount, 4);
+
+  // The visible rows are still from the frozen snapshot, not the live tail
+  const selected = selectTimelineRows(createSnapshot([1, 1, 1, 1, 6]), afterDelta3, 3);
+  assert.equal(selected.sourceSnapshot.itemCount, 4);
+  assert.notEqual(selected.window.endRow, 11); // not snapped to live tail
+});
+
+test("scrolling down to the frozen tail with pending unseen content resumes live follow", () => {
+  const initial = createSnapshot([2, 2]);
+  const browsing = scrollTimelineViewport(
+    createFollowTailViewport(initial.totalRows),
+    initial,
+    4,
+    -2, // scroll up 2 rows
+  );
+  assert.equal(browsing.followTail, false);
+
+  const updated = createSnapshot([2, 2, 3]);
+  const withNew = syncTimelineViewport(browsing, updated);
+  assert.equal(withNew.unseenItems, 1);
+
+  // Scroll down past frozen tail → resume follow
+  const resumed = pageDownTimelineViewport(withNew, updated, 4);
+  assert.equal(resumed.followTail, true);
+  assert.equal(resumed.frozenSnapshot, null);
 });

@@ -230,6 +230,108 @@ export function syncTimelineViewport(
   };
 }
 
+/**
+ * Returns the item index and row-within-item for the given absolute anchorRow
+ * inside a snapshot.  Used by reflowTimelineViewport to translate a row-based
+ * anchor into a layout-independent (item, offset) anchor.
+ */
+export function findAnchorItem(
+  snapshot: TimelineSnapshot,
+  anchorRow: number,
+): { itemIndex: number; rowWithinItem: number } {
+  let rowOffset = 0;
+  for (let i = 0; i < snapshot.items.length; i++) {
+    const item = snapshot.items[i]!;
+    if (rowOffset + item.rowCount > anchorRow) {
+      return { itemIndex: i, rowWithinItem: anchorRow - rowOffset };
+    }
+    rowOffset += item.rowCount;
+  }
+  // anchorRow is at or beyond the last item – clamp to end
+  const lastIdx = Math.max(0, snapshot.items.length - 1);
+  const lastItem = snapshot.items[lastIdx];
+  return {
+    itemIndex: lastIdx,
+    rowWithinItem: lastItem ? Math.max(0, lastItem.rowCount - 1) : 0,
+  };
+}
+
+/**
+ * Rebuilds the frozen viewport snapshot after a terminal width change.
+ *
+ * When the terminal is resized (width changes), all snapshot memos are
+ * rebuilt at the new snapshotWidth, so liveSnapshot already contains
+ * correctly reflowed rows.  However syncTimelineViewport preserves the
+ * old frozenSnapshot (with old-width rows), causing visual corruption.
+ *
+ * This function replaces the stale frozen snapshot with a new one built
+ * from the same items as before (liveSnapshot.items[0..frozenItemCount]),
+ * now correctly wrapped at the new width.  The anchorRow is translated
+ * from the old layout via an item-level anchor so the user's reading
+ * position is preserved across reflow.
+ */
+export function reflowTimelineViewport(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+): TimelineViewportState {
+  if (liveSnapshot.totalRows === 0) {
+    return createFollowTailViewport(0);
+  }
+
+  if (viewport.followTail) {
+    return createFollowTailViewport(liveSnapshot.totalRows);
+  }
+
+  const oldFrozen = viewport.frozenSnapshot ?? liveSnapshot;
+
+  // Translate anchorRow → stable (item, rowWithinItem) anchor
+  const clampedAnchor = clampAnchorRow(viewport.anchorRow, oldFrozen.totalRows);
+  const { itemIndex: anchorItemIdx, rowWithinItem: anchorRowWithinItem } =
+    findAnchorItem(oldFrozen, clampedAnchor);
+
+  // Grab the same items from liveSnapshot (already reflowed at new width)
+  const frozenItemCount = oldFrozen.itemCount;
+  const newFrozenItems = liveSnapshot.items.slice(0, frozenItemCount);
+
+  if (newFrozenItems.length === 0) {
+    return createFollowTailViewport(liveSnapshot.totalRows);
+  }
+
+  // Assemble a new frozen snapshot from the reflowed items
+  const newFrozenRows = newFrozenItems.flatMap((item) => item.rows);
+  const newFrozenSnapshot: TimelineSnapshot = {
+    items: newFrozenItems,
+    rows: newFrozenRows,
+    totalRows: newFrozenRows.length,
+    itemCount: frozenItemCount,
+  };
+
+  // Reconstruct anchorRow in the new layout
+  let newAnchorRow = 0;
+  for (let i = 0; i < anchorItemIdx; i++) {
+    newAnchorRow += newFrozenItems[i]!.rowCount;
+  }
+  const targetItem = newFrozenItems[anchorItemIdx];
+  if (targetItem) {
+    newAnchorRow += Math.min(anchorRowWithinItem, targetItem.rowCount - 1);
+  } else {
+    // Anchor item is beyond the new frozen range (unseen) – clamp to end
+    newAnchorRow = Math.max(0, newFrozenSnapshot.totalRows - 1);
+  }
+  newAnchorRow = clampAnchorRow(newAnchorRow, newFrozenSnapshot.totalRows);
+
+  const unseenItems = Math.max(0, liveSnapshot.itemCount - frozenItemCount);
+  const unseenRows = Math.max(0, liveSnapshot.totalRows - newFrozenSnapshot.totalRows);
+
+  return {
+    anchorRow: newAnchorRow,
+    followTail: false,
+    unseenItems,
+    unseenRows,
+    frozenSnapshot: newFrozenSnapshot,
+  };
+}
+
 export function pageUpTimelineViewport(
   viewport: TimelineViewportState,
   liveSnapshot: TimelineSnapshot,
@@ -643,14 +745,24 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
   );
   const [viewport, setViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(liveSnapshot.totalRows));
   const liveSnapshotRef = useRef(liveSnapshot);
+  // Tracks the previous snapshotWidth so we can detect width changes inside
+  // the liveSnapshot effect and dispatch reflowTimelineViewport instead of
+  // syncTimelineViewport when the terminal has been resized.
+  const snapshotWidthRef = useRef(snapshotWidth);
 
   useEffect(() => {
     liveSnapshotRef.current = liveSnapshot;
   }, [liveSnapshot]);
 
   useEffect(() => {
-    setViewport((current) => syncTimelineViewport(current, liveSnapshot));
-  }, [liveSnapshot]);
+    const widthChanged = snapshotWidthRef.current !== snapshotWidth;
+    snapshotWidthRef.current = snapshotWidth;
+    setViewport((current) =>
+      widthChanged && !current.followTail && current.frozenSnapshot !== null
+        ? reflowTimelineViewport(current, liveSnapshot)
+        : syncTimelineViewport(current, liveSnapshot),
+    );
+  }, [liveSnapshot, snapshotWidth]);
 
   useEffect(() => {
     let scrollDelta = 0;
