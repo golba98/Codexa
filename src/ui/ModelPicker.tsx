@@ -1,19 +1,23 @@
 import React from "react";
-import { AVAILABLE_MODELS } from "../config/settings.js";
+import { type CodexModelCapability } from "../core/codexModelCapabilities.js";
 import { FOCUS_IDS } from "./focus.js";
 import { SelectionPanel } from "./SelectionPanel.js";
 
 interface ModelPickerProps {
+  models: readonly CodexModelCapability[];
   currentModel: string;
   onSelect: (model: string) => void;
   onCancel: () => void;
 }
 
-export function ModelPicker({ currentModel, onSelect, onCancel }: ModelPickerProps) {
-  const items = AVAILABLE_MODELS.map((model) => ({
-    label: model === currentModel ? `${model}  ✓` : model,
-    value: model,
-  }));
+export function ModelPicker({ models, currentModel, onSelect, onCancel }: ModelPickerProps) {
+  const items = models.map((model) => {
+    const label = model.label === model.model ? model.model : `${model.label} (${model.model})`;
+    return {
+      label: model.model === currentModel || model.id === currentModel ? `${label}  ✓` : label,
+      value: model.model,
+    };
+  });
 
   return (
     <SelectionPanel

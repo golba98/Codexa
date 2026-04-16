@@ -4,6 +4,7 @@ import React from "react";
 import { PassThrough } from "node:stream";
 import { Box, Text, render, useFocus, useFocusManager } from "ink";
 import { normalizeReasoningForModel, type AvailableModel, type ReasoningLevel } from "../config/settings.js";
+import { createFallbackModelCapabilities, getSelectableModelCapabilities } from "../core/codexModelCapabilities.js";
 import { BottomComposer } from "./BottomComposer.js";
 import { getFocusTargetForScreen } from "./focus.js";
 import { ModelPicker } from "./ModelPicker.js";
@@ -44,6 +45,7 @@ class TestOutput extends PassThrough {
 }
 
 const TEST_LAYOUT = createLayoutSnapshot(120, 40);
+const TEST_MODEL_CAPABILITIES = getSelectableModelCapabilities(createFallbackModelCapabilities());
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
@@ -145,6 +147,7 @@ function ModelPickerComposerHarness() {
     <ThemeProvider theme="purple">
       {screen === "model-picker" ? (
         <ModelPicker
+          models={TEST_MODEL_CAPABILITIES}
           currentModel={model}
           onSelect={(nextModel) => {
             const resolvedModel = nextModel as AvailableModel;
@@ -307,6 +310,7 @@ function ShortcutModelPickerHarness() {
         <Text>{`value:${JSON.stringify(value)}`}</Text>
         {screen === "model-picker" ? (
           <ModelPicker
+            models={TEST_MODEL_CAPABILITIES}
             currentModel={model}
             onSelect={(nextModel) => {
               const resolvedModel = nextModel as AvailableModel;

@@ -1,9 +1,7 @@
 import { join, posix, win32 } from "path";
 import {
   AVAILABLE_BACKENDS,
-  AVAILABLE_MODELS,
   AVAILABLE_MODES,
-  AVAILABLE_REASONING_LEVELS,
   DEFAULT_BACKEND,
   DEFAULT_MODEL,
   DEFAULT_MODE,
@@ -174,6 +172,12 @@ function isAvailableId<T extends string>(
   return typeof candidate === "string" && values.some((value) => value.id === candidate);
 }
 
+function normalizeRuntimeString(candidate: unknown, fallback: string): string {
+  return typeof candidate === "string" && candidate.trim().length > 0
+    ? candidate.trim()
+    : fallback;
+}
+
 export function normalizeRuntimePolicy(input: Partial<RuntimePolicyConfig> | null | undefined): RuntimePolicyConfig {
   return {
     approvalPolicy: isAvailableId(AVAILABLE_APPROVAL_POLICIES, input?.approvalPolicy)
@@ -199,18 +203,11 @@ export function normalizeRuntimeConfig(input: PartialRuntimeConfig | null | unde
   const provider = isAvailableId(AVAILABLE_BACKENDS, input?.provider)
     ? input!.provider
     : DEFAULT_RUNTIME_CONFIG.provider;
-  const model = isAvailableId(
-    AVAILABLE_MODELS.map((id) => ({ id })),
-    input?.model,
-  )
-    ? input!.model
-    : DEFAULT_RUNTIME_CONFIG.model;
+  const model = normalizeRuntimeString(input?.model, DEFAULT_RUNTIME_CONFIG.model);
   const mode = isAvailableId(AVAILABLE_MODES.map((item) => ({ id: item.key })), input?.mode)
     ? input!.mode
     : DEFAULT_RUNTIME_CONFIG.mode;
-  const reasoningInput = isAvailableId(AVAILABLE_REASONING_LEVELS, input?.reasoningLevel)
-    ? input!.reasoningLevel
-    : DEFAULT_RUNTIME_CONFIG.reasoningLevel;
+  const reasoningInput = normalizeRuntimeString(input?.reasoningLevel, DEFAULT_RUNTIME_CONFIG.reasoningLevel);
 
   return {
     provider,
