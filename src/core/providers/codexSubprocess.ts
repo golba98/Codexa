@@ -69,16 +69,25 @@ export const codexSubprocessProvider: BackendProvider = {
           let rawStderr = "";
           let stdoutLineBuffer = "";
           let mode: "undecided" | "json" | "legacy" = structuredOutput ? "undecided" : "legacy";
+          let legacyProgressSequence = 0;
+
+          const emitLegacyProgress = (source: "stderr" | "transcript", text: string) => {
+            handlers.onProgress?.({
+              id: `${source}-${++legacyProgressSequence}`,
+              source,
+              text,
+            });
+          };
 
           const transcriptParser = createCodexTranscriptStreamParser({
-            onThinkingLine: (line) => handlers.onProgress?.(line),
+            onThinkingLine: (line) => emitLegacyProgress("transcript", line),
             onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
             onToolActivity: (activity) => handlers.onToolActivity?.(activity),
           });
           const transcriptStdoutSanitizer = createStdoutSanitizer();
           const transcriptStderrSanitizer = createStdoutSanitizer();
           const jsonParser = createCodexJsonStreamParser({
-            onProgress: (line) => handlers.onProgress?.(line),
+            onProgress: (update) => handlers.onProgress?.(update),
             onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
             onToolActivity: (activity) => handlers.onToolActivity?.(activity),
           });
@@ -167,7 +176,7 @@ export const codexSubprocessProvider: BackendProvider = {
             for (const line of lines) {
               const trimmed = line.trim();
               if (!trimmed || isStderrNoise(trimmed)) continue;
-              handlers.onProgress?.(trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed);
+              emitLegacyProgress("stderr", trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed);
             }
           });
 

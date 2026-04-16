@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
-import { CODEXA_TRUST_STORE_FILE } from "./settings.js";
+import { getCodexaTrustStoreFile } from "./settings.js";
 import { normalizeWorkspaceRoot } from "../core/workspaceRoot.js";
 
 interface TrustStoreData {
@@ -30,7 +30,8 @@ function parseTrustStoreData(data: unknown): TrustStoreData {
 
 function loadTrustStore(): TrustStoreData {
   try {
-    const text = readFileSync(CODEXA_TRUST_STORE_FILE, "utf-8");
+    const trustStoreFile = getCodexaTrustStoreFile();
+    const text = readFileSync(trustStoreFile, "utf-8");
     return parseTrustStoreData(JSON.parse(text));
   } catch {
     return getDefaultTrustStore();
@@ -39,10 +40,11 @@ function loadTrustStore(): TrustStoreData {
 
 function saveTrustStore(data: TrustStoreData): void {
   try {
-    mkdirSync(dirname(CODEXA_TRUST_STORE_FILE), { recursive: true });
-    const tmpFile = `${CODEXA_TRUST_STORE_FILE}.tmp`;
+    const trustStoreFile = getCodexaTrustStoreFile();
+    mkdirSync(dirname(trustStoreFile), { recursive: true });
+    const tmpFile = `${trustStoreFile}.tmp`;
     writeFileSync(tmpFile, JSON.stringify(data, null, 2), "utf-8");
-    renameSync(tmpFile, CODEXA_TRUST_STORE_FILE);
+    renameSync(tmpFile, trustStoreFile);
   } catch {
     // Best-effort persistence only.
   }

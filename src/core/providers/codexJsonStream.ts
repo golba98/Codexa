@@ -1,3 +1,4 @@
+import type { BackendProgressUpdate } from "./types.js";
 import type { RunToolActivity } from "../../session/types.js";
 
 type CodexThreadEvent =
@@ -59,8 +60,18 @@ type CodexThreadItem =
 
 export interface CodexJsonStreamHandlers {
   onAssistantDelta?: (chunk: string) => void;
-  onProgress?: (line: string) => void;
+  onProgress?: (update: BackendProgressUpdate) => void;
   onToolActivity?: (activity: RunToolActivity) => void;
+}
+
+function normalizeProgressText(text: string | undefined): string | null {
+  if (!text) return null;
+  const normalized = text
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+  return normalized || null;
 }
 
 function firstMeaningfulLine(text: string | undefined): string | null {
@@ -97,7 +108,7 @@ function summarizeTodoList(item: Extract<CodexThreadItem, { type: "todo_list" }>
 }
 
 function summarizeReasoning(item: Extract<CodexThreadItem, { type: "reasoning" }>): string | null {
-  return firstMeaningfulLine(item.text);
+  return normalizeProgressText(item.text);
 }
 
 function summarizeFileChange(item: Extract<CodexThreadItem, { type: "file_change" }>): string | null {
@@ -160,12 +171,16 @@ export function createCodexJsonStreamParser(handlers: CodexJsonStreamHandlers) {
   let finalResponse = "";
   let failureMessage: string | null = null;
 
-  const emitProgress = (key: string, summary: string | null | undefined) => {
-    const next = summary?.trim();
+  const emitProgress = (
+    key: string,
+    source: BackendProgressUpdate["source"],
+    summary: string | null | undefined,
+  ) => {
+    const next = normalizeProgressText(summary ?? "");
     if (!next) return;
     if (progressTextById.get(key) === next) return;
     progressTextById.set(key, next);
-    handlers.onProgress?.(next);
+    handlers.onProgress?.({ id: key, source, text: next });
   };
 
   const emitAssistantText = (itemId: string, nextText: string) => {
@@ -201,25 +216,29 @@ export function createCodexJsonStreamParser(handlers: CodexJsonStreamHandlers) {
         emitAssistantText(item.id, item.text ?? "");
         break;
       case "reasoning":
-        emitProgress(item.id, summarizeReasoning(item));
+        emitProgress(item.id, "reasoning", summarizeReasoning(item));
         break;
       case "todo_list":
-        emitProgress(item.id, summarizeTodoList(item));
+        emitProgress(item.id, "todo", summarizeTodoList(item));
         break;
       case "command_execution":
         upsertTool(item, phase);
-        emitProgress(item.id, item.status === "in_progress" ? `Running ${item.command}` : summarizeCommandExecution(item));
+        emitProgress(item.id, "tool", item.status === "in_progress" ? `Running ${item.command}` : summarizeCommandExecution(item));
         break;
       case "mcp_tool_call":
         upsertTool(item, phase);
-        emitProgress(item.id, item.status === "in_progress" ? `Calling ${item.server}:${item.tool}` : item.error?.message ?? `Completed ${item.server}:${item.tool}`);
+        emitProgress(
+          item.id,
+          "tool",
+          item.status === "in_progress" ? `Calling ${item.server}:${item.tool}` : item.error?.message ?? `Completed ${item.server}:${item.tool}`,
+        );
         break;
       case "web_search":
         upsertTool(item, phase);
-        emitProgress(item.id, `Searching web: ${item.query}`);
+        emitProgress(item.id, "tool", `Searching web: ${item.query}`);
         break;
       case "file_change":
-        emitProgress(item.id, summarizeFileChange(item));
+        emitProgress(item.id, "activity", summarizeFileChange(item));
         break;
       case "error":
         failureMessage = item.message;

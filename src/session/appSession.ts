@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import type { BackendProgressUpdate } from "../core/providers/types.js";
 import type { AssistantEvent, RunEvent, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./types.js";
 import { getAssistantContent } from "./types.js";
 import {
@@ -36,7 +37,7 @@ export type SessionAction =
   | { type: "CLEAR_TRANSCRIPT" }
   | { type: "SET_ACTIVE_EVENTS"; events: TimelineEvent[] }
   | { type: "RUN_APPEND_ACTIVITY"; runId: number; activity: RunFileActivity[] }
-  | { type: "RUN_APPEND_PROGRESS"; runId: number; lines: string[] }
+  | { type: "RUN_APPLY_PROGRESS_UPDATES"; runId: number; updates: BackendProgressUpdate[] }
   | { type: "RUN_UPSERT_TOOL_ACTIVITY"; runId: number; activity: RunToolActivity }
   | { type: "RUN_APPEND_ASSISTANT_DELTA"; turnId: number; chunk: string; eventFactory: () => AssistantEvent }
   | {
@@ -149,12 +150,12 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
             : event
         ),
       };
-    case "RUN_APPEND_PROGRESS":
+    case "RUN_APPLY_PROGRESS_UPDATES":
       return {
         ...state,
         activeEvents: state.activeEvents.map((event) =>
           event.id === action.runId && event.type === "run"
-            ? appendRunThinking(event as RunEvent, action.lines)
+            ? appendRunThinking(event as RunEvent, action.updates)
             : event
         ),
       };

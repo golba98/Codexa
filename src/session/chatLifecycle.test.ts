@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { BackendProgressUpdate } from "../core/providers/types.js";
 import { MAX_CHAT_LINES, MAX_VISIBLE_EVENTS } from "../config/settings.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import {
@@ -28,6 +29,14 @@ function makeSystemEvent(id: number): TimelineEvent {
   };
 }
 
+function makeProgressUpdate(id: string, text: string): BackendProgressUpdate {
+  return {
+    id,
+    source: "reasoning",
+    text,
+  };
+}
+
 test("creates a running run event", () => {
   const run = createRunEvent({
     id: 1,
@@ -39,7 +48,7 @@ test("creates a running run event", () => {
   });
 
   assert.equal(run.status, "running");
-  assert.equal(run.thinkingLines.length, 0);
+  assert.equal(run.progressEntries.length, 0);
   assert.equal(run.truncatedOutput, false);
   assert.equal(run.activity.length, 0);
   assert.equal(run.touchedFileCount, 0);
@@ -55,13 +64,77 @@ test("caps streamed run output and marks truncation", () => {
     turnId: 2,
   });
 
-  const lines = Array.from({ length: MAX_CHAT_LINES + 4 }, (_, index) => `line ${index + 1}`);
-  const capped = appendRunThinking(run, lines);
+  const updates = Array.from(
+    { length: MAX_CHAT_LINES + 4 },
+    (_, index) => makeProgressUpdate(`progress-${index + 1}`, `line ${index + 1}`),
+  );
+  const capped = appendRunThinking(run, updates);
 
-  assert.equal(capped.thinkingLines.length, MAX_CHAT_LINES);
-  assert.equal(capped.thinkingLines[0], `line 5`);
-  assert.equal(capped.thinkingLines[capped.thinkingLines.length - 1], `line ${MAX_CHAT_LINES + 4}`);
+  assert.equal(capped.progressEntries.length, MAX_CHAT_LINES);
+  assert.equal(capped.progressEntries[0]?.text, "line 5");
+  assert.equal(capped.progressEntries[0]?.blocks[0]?.text, "line 5");
+  assert.equal(capped.progressEntries[capped.progressEntries.length - 1]?.text, `line ${MAX_CHAT_LINES + 4}`);
   assert.equal(capped.truncatedOutput, true);
+});
+
+test("streams repeated same-id updates into structured blocks", () => {
+  const run = createRunEvent({
+    id: 22,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Hello",
+    turnId: 22,
+  });
+
+  const first = appendRunThinking(run, [makeProgressUpdate("reason-1", "Checking files")]);
+  const second = appendRunThinking(first, [makeProgressUpdate("reason-1", "Checking files\n")]);
+  const updated = appendRunThinking(second, [makeProgressUpdate("reason-1", "Checking files\n\nComparing results")]);
+
+  assert.equal(updated.progressEntries.length, 1);
+  assert.equal(updated.progressEntries[0]?.sequence, 1);
+  assert.equal(updated.progressEntries[0]?.text, "Checking files\n\nComparing results");
+  assert.equal(updated.progressEntries[0]?.blocks.length, 2);
+  assert.equal(updated.progressEntries[0]?.blocks[0]?.text, "Checking files");
+  assert.equal(updated.progressEntries[0]?.blocks[0]?.status, "completed");
+  assert.equal(updated.progressEntries[0]?.blocks[1]?.text, "Comparing results");
+  assert.equal(updated.progressEntries[0]?.blocks[1]?.status, "active");
+  assert.equal(updated.progressEntries[0]?.pendingNewlineCount, 0);
+});
+
+test("treats multiple blank lines as one new progress block", () => {
+  const run = createRunEvent({
+    id: 23,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Hello",
+    turnId: 23,
+  });
+
+  const updated = appendRunThinking(run, [makeProgressUpdate("reason-2", "Inspecting config\n\n\nComparing defaults")]);
+
+  assert.equal(updated.progressEntries[0]?.blocks.length, 2);
+  assert.equal(updated.progressEntries[0]?.blocks[0]?.text, "Inspecting config");
+  assert.equal(updated.progressEntries[0]?.blocks[1]?.text, "Comparing defaults");
+});
+
+test("rebuilds one progress entry safely when the next update is not a prefix", () => {
+  const run = createRunEvent({
+    id: 24,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Hello",
+    turnId: 24,
+  });
+
+  const initial = appendRunThinking(run, [makeProgressUpdate("reason-3", "Checking files\n\nComparing results")]);
+  const rebuilt = appendRunThinking(initial, [makeProgressUpdate("reason-3", "Comparing results only")]);
+
+  assert.equal(rebuilt.progressEntries[0]?.blocks.length, 1);
+  assert.equal(rebuilt.progressEntries[0]?.blocks[0]?.text, "Comparing results only");
+  assert.equal(rebuilt.progressEntries[0]?.blocks[0]?.status, "active");
 });
 
 test("completes and cancels runs with stable terminal statuses", () => {
@@ -74,7 +147,7 @@ test("completes and cancels runs with stable terminal statuses", () => {
       prompt: "Hello",
       turnId: 3,
     }),
-    ["first line"],
+    [makeProgressUpdate("progress-1", "first line")],
   ), [{
     path: "src/app.tsx",
     operation: "modified",

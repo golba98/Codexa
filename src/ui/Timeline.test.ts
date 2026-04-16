@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { TimelineEvent } from "../session/types.js";
+import type { RunProgressEntry, TimelineEvent } from "../session/types.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import type { TimelineRow, TimelineSnapshot } from "./timelineMeasure.js";
 import { buildTimelineSnapshot } from "./timelineMeasure.js";
@@ -47,6 +47,26 @@ function createSnapshot(rowCounts: number[]): TimelineSnapshot {
   };
 }
 
+function createProgressEntry(sequence: number, text: string, blockTexts: string[] = [text]): RunProgressEntry {
+  return {
+    id: `progress-${sequence}`,
+    source: "reasoning",
+    text,
+    sequence,
+    createdAt: sequence,
+    updatedAt: sequence,
+    pendingNewlineCount: 0,
+    blocks: blockTexts.map((blockText, index) => ({
+      id: `progress-${sequence}-block-${index + 1}`,
+      text: blockText,
+      sequence: index + 1,
+      createdAt: sequence,
+      updatedAt: sequence,
+      status: index === blockTexts.length - 1 ? "active" : "completed",
+    })),
+  };
+}
+
 test("groups user, run, and assistant events into a single turn item", () => {
   const events: TimelineEvent[] = [
     {
@@ -66,7 +86,7 @@ test("groups user, run, and assistant events into a single turn item", () => {
       backendLabel: "Codexa",
       runtime: TEST_RUNTIME,
       prompt: "Implement rate limiting",
-      thinkingLines: ["Scanning routes..."],
+      progressEntries: [createProgressEntry(1, "Scanning routes...")],
       status: "running",
       summary: "Running",
       truncatedOutput: false,
@@ -104,7 +124,7 @@ test("groups user, run, and assistant events into a single turn item", () => {
 
   assert.equal(items[0].turnId, 10);
   assert.equal(items[0].user?.prompt, "Implement rate limiting");
-  assert.equal(items[0].run?.thinkingLines[0], "Scanning routes...");
+  assert.equal(items[0].run?.progressEntries[0]?.text, "Scanning routes...");
   assert.equal(items[0].assistant?.content, "I found the auth router.");
 });
 
@@ -138,7 +158,7 @@ test("separates committed and active turn render state", () => {
       backendLabel: "Codexa",
       runtime: TEST_RUNTIME,
       prompt: "Completed turn",
-      thinkingLines: [],
+      progressEntries: [],
       status: "completed",
       summary: "Completed",
       truncatedOutput: false,
@@ -176,7 +196,7 @@ test("separates committed and active turn render state", () => {
       backendLabel: "Codexa",
       runtime: TEST_RUNTIME,
       prompt: "Live turn",
-      thinkingLines: [],
+      progressEntries: [],
       status: "running",
       summary: "Running",
       truncatedOutput: false,
@@ -238,7 +258,7 @@ test("timeline snapshot keeps the prompt card top border closed", () => {
       backendLabel: "Codexa",
       runtime: TEST_RUNTIME,
       prompt: "Reproduce the prompt border issue",
-      thinkingLines: [],
+      progressEntries: [],
       status: "running",
       summary: "Running",
       truncatedOutput: false,
@@ -347,7 +367,10 @@ test("default timeline shows compact processing signals while a run is streaming
       backendLabel: "Codexa",
       runtime: TEST_RUNTIME,
       prompt: "Create a file",
-      thinkingLines: ["Todo 1/2: Write Hello_World.py", "Verifying generated file"],
+      progressEntries: [
+        createProgressEntry(1, "Todo 1/2: Write Hello_World.py"),
+        createProgressEntry(2, "Verifying generated file"),
+      ],
       status: "running",
       summary: "Running",
       truncatedOutput: false,
@@ -391,6 +414,64 @@ test("default timeline shows compact processing signals while a run is streaming
   assert.match(joined, /python -m pytest/);
   assert.match(joined, /Hello_World\.py/);
   assert.match(joined, /GPT 5\.4/);
+});
+
+test("completed runs keep progress updates as separate readable blocks", () => {
+  const items = buildTimelineItems([
+    {
+      id: 1,
+      type: "user",
+      createdAt: 1,
+      prompt: "Investigate the failure",
+      turnId: 77,
+    },
+    {
+      id: 2,
+      type: "run",
+      createdAt: 2,
+      startedAt: 2,
+      durationMs: 1200,
+      backendId: "codex-subprocess",
+      backendLabel: "Codexa",
+      runtime: TEST_RUNTIME,
+      prompt: "Investigate the failure",
+      progressEntries: [
+        createProgressEntry(1, "Checking the failing test"),
+        createProgressEntry(2, "Reviewing output\n\nComparing expected behavior", [
+          "Reviewing output",
+          "Comparing expected behavior",
+        ]),
+      ],
+      status: "completed",
+      summary: "Completed",
+      truncatedOutput: false,
+      toolActivities: [],
+      activity: [],
+      touchedFileCount: 0,
+      errorMessage: null,
+      turnId: 77,
+    },
+    {
+      id: 3,
+      type: "assistant",
+      createdAt: 3,
+      content: "Done",
+      contentChunks: [],
+      turnId: 77,
+    },
+  ]);
+
+  const renderItems = buildStaticRenderItems(items, [77], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 72 });
+  const joined = snapshot.rows
+    .map((row) => row.spans.map((span) => span.text).join(""))
+    .join("\n");
+
+  assert.match(joined, /Processing/);
+  assert.match(joined, /Update 1/);
+  assert.match(joined, /Update 2/);
+  assert.match(joined, /Checking the failing test/);
+  assert.match(joined, /Comparing expected behavior/);
 });
 
 test("parses sgr mouse wheel directions without treating other mouse events as scroll", () => {

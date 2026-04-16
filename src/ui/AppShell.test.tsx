@@ -55,7 +55,7 @@ const EVENTS: TimelineEvent[] = [
     backendLabel: "Codexa",
     runtime: TEST_RUNTIME,
     prompt: "Reproduce the resize flicker and fix it.",
-    thinkingLines: [],
+    progressEntries: [],
     status: "completed",
     summary: "Completed",
     truncatedOutput: false,

@@ -97,7 +97,7 @@ import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspace
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
-import type { BackendProvider } from "./core/providers/types.js";
+import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
 import type { RunEvent, RunToolActivity, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
 import {
@@ -149,7 +149,6 @@ let nextEventId = 0;
 let nextTurnId = 0;
 const LIVE_UPDATE_FLUSH_MS = 25;
 const PROGRESS_ONLY_FLUSH_MS = 80;
-const MAX_PENDING_PROGRESS_LINES = 5;
 const PLAN_FILE_NAME = "last-plan.md";
 const PLAN_FILE_DIR = ".codexa";
 
@@ -1478,10 +1477,11 @@ export function App({ launchArgs }: AppProps) {
 
     let pendingAssistantDelta = "";
     let streamedAssistantContent = "";
-    let pendingProgressLines: string[] = [];
+    let pendingProgressUpdates: BackendProgressUpdate[] = [];
     let pendingActivity: RunFileActivity[] = [];
     const pendingToolActivities = new Map<string, RunToolActivity>();
     let liveFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    let legacyProgressSequence = 0;
 
     const flushLiveUpdates = () => {
       if (liveFlushTimer) {
@@ -1491,22 +1491,22 @@ export function App({ launchArgs }: AppProps) {
 
       if (!isCurrentRun(activeRunIdRef.current, runId)) {
         pendingAssistantDelta = "";
-        pendingProgressLines = [];
+        pendingProgressUpdates = [];
         pendingActivity = [];
         pendingToolActivities.clear();
         return;
       }
 
       const activity = pendingActivity;
-      const progressLines = pendingProgressLines;
+      const progressUpdates = pendingProgressUpdates;
       const toolActivities = [...pendingToolActivities.values()];
       const chunk = pendingAssistantDelta;
       pendingActivity = [];
-      pendingProgressLines = [];
+      pendingProgressUpdates = [];
       pendingAssistantDelta = "";
       pendingToolActivities.clear();
 
-      if (activity.length === 0 && progressLines.length === 0 && toolActivities.length === 0 && !chunk) {
+      if (activity.length === 0 && progressUpdates.length === 0 && toolActivities.length === 0 && !chunk) {
         return;
       }
 
@@ -1533,8 +1533,8 @@ export function App({ launchArgs }: AppProps) {
         if (activity.length > 0) {
           dispatchSession({ type: "RUN_APPEND_ACTIVITY", runId, activity });
         }
-        if (progressLines.length > 0) {
-          dispatchSession({ type: "RUN_APPEND_PROGRESS", runId, lines: progressLines });
+        if (progressUpdates.length > 0) {
+          dispatchSession({ type: "RUN_APPLY_PROGRESS_UPDATES", runId, updates: progressUpdates });
         }
         for (const toolActivity of toolActivities) {
           dispatchSession({ type: "RUN_UPSERT_TOOL_ACTIVITY", runId, activity: toolActivity });
@@ -1563,9 +1563,9 @@ export function App({ launchArgs }: AppProps) {
     };
 
     const stopProviderRun = provider.run(
-      safeProviderPrompt,
-      { runtime: runtimeForTurn, workspaceRoot },
-      {
+          safeProviderPrompt,
+          { runtime: runtimeForTurn, workspaceRoot },
+          {
         onAssistantDelta: (chunk) => {
           if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) return;
           const safeChunk = sanitizeTerminalOutput(chunk, { preserveTabs: false, tabSize: 2 });
@@ -1651,18 +1651,21 @@ export function App({ launchArgs }: AppProps) {
 
           void finalizePromptRun(runId, turnId, "failed", errorMessage);
         },
-        onProgress: (line) => {
-          const safeLine = sanitizeTerminalOutput(line);
-          if (!safeLine) return;
-          if (isNoiseLine(safeLine)) return;
+        onProgress: (update) => {
+          const safeText = sanitizeTerminalOutput(update.text);
+          if (!safeText) return;
+          if (isNoiseLine(safeText)) return;
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-          // Deduplicate: skip if identical to last pending line
-          if (pendingProgressLines.length > 0 && pendingProgressLines[pendingProgressLines.length - 1] === safeLine) return;
-          // Cap: replace last entry instead of growing unbounded
-          if (pendingProgressLines.length >= MAX_PENDING_PROGRESS_LINES) {
-            pendingProgressLines[pendingProgressLines.length - 1] = safeLine;
+          const safeUpdate: BackendProgressUpdate = {
+            id: update.id?.trim() ? update.id : `legacy-progress-${++legacyProgressSequence}`,
+            source: update.source,
+            text: safeText,
+          };
+          const existingIndex = pendingProgressUpdates.findIndex((entry) => entry.id === safeUpdate.id);
+          if (existingIndex >= 0) {
+            pendingProgressUpdates[existingIndex] = safeUpdate;
           } else {
-            pendingProgressLines.push(safeLine);
+            pendingProgressUpdates.push(safeUpdate);
           }
           scheduleLiveFlush();
         },

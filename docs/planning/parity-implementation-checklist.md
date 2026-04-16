@@ -35,11 +35,11 @@ Update rules:
 - Rank: 1
 - Title: Unified policy and runtime config state
 - Priority: P0
-- Status: `foundation_only`
+- Status: `done`
 - Dependency ranks: None
 - Backlog scope: Add first-class in-memory state for approval policy, sandbox mode, network access, writable roots, service tier, personality, and any session-level policy Codexa needs to forward to `codex`
-- Evidence: [src/config/settings.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/settings.ts>) defines model, mode, reasoning, and sandbox-adjacent state; [src/config/persistence.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/persistence.ts>) persists only backend/model/mode/reasoning/layout/theme/auth preference; [src/app.tsx](</C:/Development/1-JavaScript/13-Custom CLI/src/app.tsx>) wires those settings through the current TUI state.
-- Missing for closure: no first-class approval policy, explicit sandbox policy, network access, writable roots, service tier, or personality state exists in the session or persisted config model.
+- Evidence: [src/config/runtimeConfig.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/runtimeConfig.ts>) defines first-class runtime and resolved-policy types for approval policy, sandbox mode, network access, writable roots, service tier, and personality; [src/config/layeredConfig.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/layeredConfig.ts>) resolves project and user TOML layers plus profile and CLI overrides into that runtime model; [src/app.tsx](</C:/Development/1-JavaScript/13-Custom CLI/src/app.tsx>) keeps layered config and in-session runtime overrides separate while surfacing `/status` and `/runtime`; [src/core/codexExecArgs.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/core/codexExecArgs.ts>) forwards the resolved runtime policy into Codex launch args.
+- Missing for closure: none. Verified via `/status`, `/runtime approval-policy`, `/runtime sandbox`, `/runtime network`, `/runtime writable-roots`, `/runtime service-tier`, and `/runtime personality`; covered by [src/config/runtimeConfig.test.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/runtimeConfig.test.ts>), [src/config/layeredConfig.test.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/layeredConfig.test.ts>), [src/core/codexExecArgs.test.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/core/codexExecArgs.test.ts>), and [src/config/settings.test.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/settings.test.ts>).
 - Done when: Codexa has a unified runtime policy model that is user-visible, persisted or layered where intended, forwarded into execution, and covered by tests proving effective settings resolution.
 
 ### Rank 2 — Permissions and sandbox controls
@@ -47,11 +47,11 @@ Update rules:
 - Rank: 2
 - Title: Permissions and sandbox controls
 - Priority: P0
-- Status: `foundation_only`
+- Status: `done`
 - Dependency ranks: 1
 - Backlog scope: Implement `/permissions` and equivalent picker flows; separate approval policy from mode; expose sandbox mode, network access, and writable roots in a way that actually changes execution
-- Evidence: [src/config/settings.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/settings.ts>) maps `suggest` and `auto-edit` to sandbox flags and `full-auto` to `--full-auto`; [src/config/persistence.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/persistence.ts>) has no permission policy fields; [src/app.tsx](</C:/Development/1-JavaScript/13-Custom CLI/src/app.tsx>) only exposes mode-based execution selection.
-- Missing for closure: mode is still acting as a coarse sandbox proxy, and there is no `/permissions`, no approval-policy control, no network-access control, and no writable-root management.
+- Evidence: [src/commands/handler.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/commands/handler.ts>) implements `/permissions`, `/permissions status`, and independent approval-policy, sandbox, network, and writable-root setters; [src/ui/PermissionsPanel.tsx](</C:/Development/1-JavaScript/13-Custom CLI/src/ui/PermissionsPanel.tsx>) exposes the equivalent picker flow in the TUI; [src/app.tsx](</C:/Development/1-JavaScript/13-Custom CLI/src/app.tsx>) applies those actions as session runtime overrides without changing mode; [src/core/codexExecArgs.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/core/codexExecArgs.ts>) forwards the resulting policy to `codex`.
+- Missing for closure: none. Verified via `/permissions`, `/permissions status`, `/permissions approval-policy`, `/permissions sandbox`, `/permissions network`, and `/permissions writable-roots`; covered by [src/commands/handler.test.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/commands/handler.test.ts>), [src/config/runtimeConfig.test.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/runtimeConfig.test.ts>), and [src/core/codexExecArgs.test.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/core/codexExecArgs.test.ts>).
 - Done when: approval policy, sandbox mode, network access, and writable roots are controllable independently in the TUI and command surface, forwarded to `codex`, and covered by tests for argument building and command handling.
 
 ### Rank 3 — `config.toml`, layered config, profiles, and CLI overrides
@@ -59,11 +59,11 @@ Update rules:
 - Rank: 3
 - Title: `config.toml`, layered config, profiles, and CLI overrides
 - Priority: P0
-- Status: `not_started`
+- Status: `done`
 - Dependency ranks: 1
 - Backlog scope: Replace JSON-only settings as the effective parity surface; support project and user config, profile selection, and `--config`-style overrides; keep Codexa-specific UI preferences separate if needed
-- Evidence: [src/config/persistence.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/persistence.ts>) reads and writes `~/.codexa-settings.json`; [src/config/settings.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/settings.ts>) contains no TOML or layered resolver; [bin/codexa.js](</C:/Development/1-JavaScript/13-Custom CLI/bin/codexa.js>) launches the TUI directly and does not parse config overrides or profiles.
-- Missing for closure: no `config.toml` ingestion, no project plus user layering, no profile selection, no effective-settings resolver, and no launch-time `--config` override support exist.
+- Evidence: [src/config/launchArgs.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/launchArgs.ts>) parses `--profile` and `--config` launch-time overrides; [src/index.tsx](</C:/Development/1-JavaScript/13-Custom CLI/src/index.tsx>) applies those launch args before rendering the app; [src/config/layeredConfig.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/layeredConfig.ts>) resolves user config, trusted project config, nested workspace config, selected profiles, and CLI overrides into the effective runtime; [src/config/persistence.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/persistence.ts>) keeps Codexa-only UI settings in JSON while migrating legacy runtime fields into `config.toml`.
+- Missing for closure: none. Verified via launch-time `--profile` and `--config` handling plus `/config` and `/config trust`; covered by [src/config/launchArgs.test.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/launchArgs.test.ts>), [src/config/layeredConfig.test.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/layeredConfig.test.ts>), and [src/config/persistence.test.ts](</C:/Development/1-JavaScript/13-Custom CLI/src/config/persistence.test.ts>).
 - Done when: Codexa resolves effective config from project and user TOML layers plus explicit overrides, separates Codexa-only UI prefs where needed, and has tests covering precedence and parsing.
 
 ### Rank 4 — Session persistence and core session commands

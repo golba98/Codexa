@@ -22,10 +22,10 @@ import {
   AVAILABLE_MODELS,
   AVAILABLE_MODES,
   AVAILABLE_REASONING_LEVELS,
-  CODEX_CONFIG_FILE,
   formatBackendLabel,
   formatModeLabel,
   formatReasoningLabel,
+  getCodexConfigFile,
   type AvailableBackend,
   type AvailableMode,
   type AvailableModel,
@@ -469,7 +469,8 @@ export function resolveLayeredConfig(options: ResolveLayeredConfigOptions): Laye
   const loadedLayers: ParsedConfigLayer[] = [];
   let profileCandidate: { name: string; source: string } | null = null;
 
-  const userLayer = tryLoadConfigLayer("User config", CODEX_CONFIG_FILE);
+  const userConfigFile = getCodexConfigFile();
+  const userLayer = tryLoadConfigLayer("User config", userConfigFile);
   if ("data" in userLayer) {
     runtime = applyRuntimeLayer(runtime, diagnostics.fieldSources, userLayer.topLevelPatch, "User config");
     diagnostics.layers.push({ label: "User config", status: "loaded", path: userLayer.path });

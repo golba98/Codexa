@@ -57,7 +57,7 @@ function makeRunningRun(turnId: number): RunEvent {
     backendLabel: "Codexa",
     runtime: TEST_RUNTIME,
     prompt: "Do work",
-    thinkingLines: [],
+    progressEntries: [],
     status: "running",
     summary: "Running",
     truncatedOutput: false,

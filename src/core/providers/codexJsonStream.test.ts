@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { BackendProgressUpdate } from "./types.js";
 import type { RunToolActivity } from "../../session/types.js";
 import { createCodexJsonStreamParser } from "./codexJsonStream.js";
 
@@ -62,9 +63,9 @@ test("surfaces command execution lifecycle as tool activity", () => {
 });
 
 test("emits progress updates for todo_list and reasoning items", () => {
-  const progress: string[] = [];
+  const progress: BackendProgressUpdate[] = [];
   const parser = createCodexJsonStreamParser({
-    onProgress: (line) => progress.push(line),
+    onProgress: (update) => progress.push(update),
   });
 
   parser.feedLine(JSON.stringify({
@@ -83,13 +84,42 @@ test("emits progress updates for todo_list and reasoning items", () => {
     item: {
       id: "reason-1",
       type: "reasoning",
-      text: "Verifying the generated output",
+      text: "Verifying the generated output\n\nChecking edge cases",
     },
   }));
 
   assert.deepEqual(progress, [
-    "Todo 1/2: Write file",
-    "Verifying the generated output",
+    { id: "todo-1", source: "todo", text: "Todo 1/2: Write file" },
+    { id: "reason-1", source: "reasoning", text: "Verifying the generated output\n\nChecking edge cases" },
+  ]);
+});
+
+test("reuses the same progress id when a structured update grows", () => {
+  const progress: BackendProgressUpdate[] = [];
+  const parser = createCodexJsonStreamParser({
+    onProgress: (update) => progress.push(update),
+  });
+
+  parser.feedLine(JSON.stringify({
+    type: "item.updated",
+    item: {
+      id: "reason-7",
+      type: "reasoning",
+      text: "Inspecting the config",
+    },
+  }));
+  parser.feedLine(JSON.stringify({
+    type: "item.updated",
+    item: {
+      id: "reason-7",
+      type: "reasoning",
+      text: "Inspecting the config\n\nComparing runtime defaults",
+    },
+  }));
+
+  assert.deepEqual(progress, [
+    { id: "reason-7", source: "reasoning", text: "Inspecting the config" },
+    { id: "reason-7", source: "reasoning", text: "Inspecting the config\n\nComparing runtime defaults" },
   ]);
 });
 

@@ -1,13 +1,18 @@
 import React from "react";
-import { Text } from "ink";
+import { Box, Text } from "ink";
 import type { RunEvent } from "../session/types.js";
-import { clampVisualText, getUsableShellWidth } from "./layout.js";
+import { getUsableShellWidth } from "./layout.js";
 import { useTheme } from "./theme.js";
 import { DashCard } from "./DashCard.js";
+import {
+  formatProgressBlockBodyLines,
+  getProgressUpdateCount,
+  selectVisibleProgressBlocks,
+} from "./progressEntries.js";
 
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
-const MAX_VISIBLE_THINKING_LINES = 5;
+const MAX_VISIBLE_PROGRESS_ENTRIES = 3;
 
 interface ThinkingBlockProps {
   cols: number;
@@ -17,67 +22,39 @@ interface ThinkingBlockProps {
 
 export function ThinkingBlock({ cols, run }: ThinkingBlockProps) {
   const theme = useTheme();
-
-  const latestTool = run.toolActivities[run.toolActivities.length - 1] ?? null;
-  const toolLine = latestTool
-    ? latestTool.status === "running"
-      ? `running: ${latestTool.command}`
-      : latestTool.summary ?? latestTool.command
-    : null;
-
-  const thinkingLines = run.thinkingLines ?? [];
-  const hasThinking = thinkingLines.length > 0;
-  const hasContent = hasThinking || toolLine;
-
-  const hiddenCount = Math.max(0, thinkingLines.length - MAX_VISIBLE_THINKING_LINES);
-  const visibleLines = thinkingLines.slice(-MAX_VISIBLE_THINKING_LINES);
-  const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
-
-  // Build the fixed-height line slots
-  const lineSlots: React.ReactNode[] = [];
-
-  if (!hasContent) {
-    lineSlots.push(
-      <Text key="waiting" color={theme.DIM}>Waiting for response...</Text>,
-    );
-  } else if (hiddenCount > 0) {
-    lineSlots.push(
-      <Text key="hidden" color={theme.DIM}>{`... ${hiddenCount} more above`}</Text>,
-    );
-  }
-
-  // Render visible thinking lines (truncated, not wrapped)
-  if (hasContent) {
-    visibleLines.forEach((line, index) => {
-      const clamped = clampVisualText(line, contentWidth);
-      lineSlots.push(
-        <Text key={`line-${index}`} color={theme.MUTED}>{clamped || " "}</Text>,
-      );
-    });
-  }
-
-  // Pad to MAX_VISIBLE_THINKING_LINES slots for stable height
-  while (lineSlots.length < MAX_VISIBLE_THINKING_LINES) {
-    lineSlots.push(
-      <Text key={`pad-${lineSlots.length}`} color={theme.DIM}>{" "}</Text>,
-    );
-  }
-
-  // Always render tool status row (blank if no tool activity)
-  if (toolLine) {
-    const clampedTool = clampVisualText(toolLine, Math.max(1, contentWidth - 2));
-    lineSlots.push(
-      <Text key="tool" color={theme.INFO}>{"• "}{clampedTool}</Text>,
-    );
-  } else {
-    lineSlots.push(
-      <Text key="tool-empty" color={theme.DIM}>{" "}</Text>,
-    );
-  }
+  const { blocks, hiddenCount, totalCount } = selectVisibleProgressBlocks(run.progressEntries ?? [], MAX_VISIBLE_PROGRESS_ENTRIES);
+  const contentWidth = Math.max(1, getUsableShellWidth(cols, 8));
+  const updateCount = totalCount || getProgressUpdateCount(run.progressEntries ?? []);
+  const rightBadge = run.status === "running"
+    ? "active"
+    : `${updateCount} update${updateCount === 1 ? "" : "s"}`;
 
   return (
-    <DashCard cols={cols} title="Processing" rightBadge="active" borderColor={theme.BORDER_ACTIVE}>
-      {lineSlots}
+    <DashCard
+      cols={cols}
+      title="Processing"
+      rightBadge={rightBadge}
+      borderColor={run.status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE}
+    >
+      {blocks.length === 0 ? (
+        <Text color={theme.DIM}>Waiting for response...</Text>
+      ) : (
+        <Box flexDirection="column" width="100%">
+          {hiddenCount > 0 && (
+            <Text color={theme.DIM}>{`... ${hiddenCount} earlier update${hiddenCount === 1 ? "" : "s"}`}</Text>
+          )}
+          {blocks.map((block, blockIndex) => (
+            <Box key={block.key} flexDirection="column" width="100%" marginTop={blockIndex === 0 && hiddenCount === 0 ? 0 : 1}>
+              <Text color={theme.INFO}>{block.label}</Text>
+              {formatProgressBlockBodyLines(block.text, contentWidth).map((line, lineIndex) => (
+                <Text key={`${block.key}-${lineIndex}`} color={theme.MUTED}>
+                  {line ? `  ${line}` : " "}
+                </Text>
+              ))}
+            </Box>
+          ))}
+        </Box>
+      )}
     </DashCard>
   );
 }

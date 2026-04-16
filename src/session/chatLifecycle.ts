@@ -1,8 +1,9 @@
 import { MAX_CHAT_LINES } from "../config/settings.js";
 import type { AvailableBackend } from "../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
+import type { BackendProgressUpdate } from "../core/providers/types.js";
 import { summarizeRunActivity, type RunFileActivity } from "../core/workspaceActivity.js";
-import type { RunEvent, RunToolActivity, TimelineEvent, UIState } from "./types.js";
+import type { RunEvent, RunProgressBlock, RunProgressEntry, RunToolActivity, TimelineEvent, UIState } from "./types.js";
 
 export const RUN_OUTPUT_TRUNCATION_NOTICE = "Older output was truncated to keep the UI responsive.";
 const ACTION_REQUIRED_BLOCK_PATTERN = /\*{0,2}=+\*{0,2}\s*\n\*{0,2}\[ACTION REQUIRED\]\*{0,2}\s*\n\*{0,2}Verification Question:\*{0,2}\s*\n([\s\S]*?)\n\*{0,2}=+\*{0,2}/i;
@@ -163,7 +164,7 @@ export function createRunEvent(params: {
     backendLabel: params.backendLabel,
     runtime: params.runtime,
     prompt: params.prompt,
-    thinkingLines: [],
+    progressEntries: [],
     status: "running",
     summary: "starting...",
     truncatedOutput: false,
@@ -253,21 +254,197 @@ export function appendRunActivity(event: RunEvent, additions: RunFileActivity[])
   };
 }
 
-export function appendRunThinking(event: RunEvent, newLines: string[]): RunEvent {
-  if (newLines.length === 0) return event;
+function trimProgressText(text: string): string {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n");
+}
 
-  const combined = [...event.thinkingLines, ...newLines];
-  let thinkingLines = combined;
+function createProgressBlock(entryId: string, sequence: number, createdAt: number): RunProgressBlock {
+  return {
+    id: `${entryId}-block-${sequence}`,
+    text: "",
+    sequence,
+    createdAt,
+    updatedAt: createdAt,
+    status: "active",
+  };
+}
+
+function hasCommittedBlockText(blocks: RunProgressBlock[]): boolean {
+  return blocks.some((block) => block.text.length > 0);
+}
+
+function appendDeltaToProgressEntry(
+  entry: RunProgressEntry,
+  delta: string,
+  updatedAt: number,
+): Pick<RunProgressEntry, "blocks" | "pendingNewlineCount"> {
+  let blocks = entry.blocks.slice();
+  let pendingNewlineCount = entry.pendingNewlineCount;
+
+  const ensureActiveBlock = (): number => {
+    const last = blocks[blocks.length - 1];
+    if (last?.status === "active") {
+      return blocks.length - 1;
+    }
+
+    const nextSequence = last?.sequence ?? 0;
+    blocks.push(createProgressBlock(entry.id, nextSequence + 1, updatedAt));
+    return blocks.length - 1;
+  };
+
+  const updateBlock = (index: number, updater: (block: RunProgressBlock) => RunProgressBlock) => {
+    blocks[index] = updater(blocks[index]!);
+  };
+
+  for (const char of delta) {
+    if (char === "\n") {
+      pendingNewlineCount += 1;
+      continue;
+    }
+
+    if (pendingNewlineCount >= 2) {
+      const last = blocks[blocks.length - 1];
+      if (last?.status === "active") {
+        updateBlock(blocks.length - 1, (block) => ({ ...block, status: "completed", updatedAt }));
+      }
+    } else if (pendingNewlineCount === 1 && hasCommittedBlockText(blocks)) {
+      const activeIndex = ensureActiveBlock();
+      updateBlock(activeIndex, (block) => ({
+        ...block,
+        text: `${block.text}\n`,
+        updatedAt,
+      }));
+    }
+
+    pendingNewlineCount = 0;
+    const activeIndex = ensureActiveBlock();
+    updateBlock(activeIndex, (block) => ({
+      ...block,
+      text: `${block.text}${char}`,
+      updatedAt,
+    }));
+  }
+
+  if (pendingNewlineCount >= 2) {
+    const last = blocks[blocks.length - 1];
+    if (last?.status === "active") {
+      updateBlock(blocks.length - 1, (block) => ({ ...block, status: "completed", updatedAt }));
+    }
+  }
+
+  return { blocks, pendingNewlineCount };
+}
+
+function materializeProgressEntry(
+  entry: RunProgressEntry,
+  nextText: string,
+  updatedAt: number,
+  source: BackendProgressUpdate["source"],
+): RunProgressEntry {
+  if (nextText === entry.text) {
+    return {
+      ...entry,
+      source,
+      updatedAt,
+    };
+  }
+
+  if (nextText.startsWith(entry.text)) {
+    const delta = nextText.slice(entry.text.length);
+    const next = appendDeltaToProgressEntry(entry, delta, updatedAt);
+    return {
+      ...entry,
+      source,
+      text: nextText,
+      updatedAt,
+      blocks: next.blocks,
+      pendingNewlineCount: next.pendingNewlineCount,
+    };
+  }
+
+  const rebuiltSeed: RunProgressEntry = {
+    ...entry,
+    source,
+    text: "",
+    updatedAt,
+    blocks: [],
+    pendingNewlineCount: 0,
+  };
+  const rebuilt = appendDeltaToProgressEntry(rebuiltSeed, nextText, updatedAt);
+
+  const blocks = rebuilt.blocks.map((block, index) => {
+    const existing = entry.blocks[index];
+    if (
+      existing
+      && existing.sequence === block.sequence
+      && existing.text === block.text
+      && existing.status === block.status
+    ) {
+      return existing;
+    }
+
+    return {
+      ...block,
+      id: existing?.id ?? block.id,
+      createdAt: existing?.createdAt ?? block.createdAt,
+    };
+  });
+
+  return {
+    ...entry,
+    source,
+    text: nextText,
+    updatedAt,
+    blocks,
+    pendingNewlineCount: rebuilt.pendingNewlineCount,
+  };
+}
+
+export function appendRunThinking(event: RunEvent, updates: BackendProgressUpdate[]): RunEvent {
+  if (updates.length === 0) return event;
+
+  let nextSequence = event.progressEntries[event.progressEntries.length - 1]?.sequence ?? 0;
+  let progressEntries = [...event.progressEntries];
   let truncatedOutput = event.truncatedOutput;
 
-  if (combined.length > MAX_CHAT_LINES) {
-    thinkingLines = combined.slice(-MAX_CHAT_LINES);
+  for (const update of updates) {
+    const text = trimProgressText(update.text ?? "");
+    if (!text.trim()) continue;
+    const updatedAt = Date.now();
+
+    const existingIndex = progressEntries.findIndex((entry) => entry.id === update.id);
+    if (existingIndex >= 0) {
+      const existing = progressEntries[existingIndex]!;
+      progressEntries[existingIndex] = materializeProgressEntry(existing, text, updatedAt, update.source);
+      continue;
+    }
+
+    nextSequence += 1;
+    const createdAt = updatedAt;
+    const seed: RunProgressEntry = {
+      id: update.id,
+      source: update.source,
+      sequence: nextSequence,
+      createdAt,
+      updatedAt,
+      text: "",
+      blocks: [],
+      pendingNewlineCount: 0,
+    };
+    progressEntries.push(materializeProgressEntry(seed, text, updatedAt, update.source));
+  }
+
+  if (progressEntries.length > MAX_CHAT_LINES) {
+    progressEntries = progressEntries.slice(-MAX_CHAT_LINES);
     truncatedOutput = true;
   }
 
   return {
     ...event,
-    thinkingLines,
+    progressEntries,
     truncatedOutput,
     summary: "processing...",
   };
@@ -287,7 +464,7 @@ export function completeRunEvent(event: RunEvent): RunEvent {
     activitySummary: summarizeRunActivity(event.activity),
     toolActivities: finalizePendingToolActivities(event.toolActivities, "completed"),
     errorMessage: null,
-    summary: event.thinkingLines.length > 0 || event.activity.length > 0
+    summary: event.progressEntries.length > 0 || event.activity.length > 0
       ? `Run completed successfully${touchedSuffix}`
       : "Run completed with no visible output",
   };

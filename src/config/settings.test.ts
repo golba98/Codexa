@@ -7,6 +7,9 @@ import {
   formatDirectoryDisplayModeLabel,
   formatModeLabel,
   formatWorkspaceDisplayPath,
+  getCodexConfigFile,
+  getCodexHome,
+  getCodexaTrustStoreFile,
   getNextMode,
   normalizeReasoningForModel,
 } from "./settings.js";
@@ -68,4 +71,21 @@ test("formats workspace display paths without changing root semantics", () => {
   );
   assert.equal(formatWorkspaceDisplayPath("C:\\", "simple"), "C:\\");
   assert.equal(formatWorkspaceDisplayPath("C:\\Workspace\\", "simple"), "Workspace");
+});
+
+test("resolves CODEX_HOME-derived paths from the live environment", () => {
+  const previousCodexHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = "C:\\Temp\\codex-home";
+
+  try {
+    assert.equal(getCodexHome(), "C:\\Temp\\codex-home");
+    assert.equal(getCodexConfigFile(), "C:\\Temp\\codex-home\\config.toml");
+    assert.equal(getCodexaTrustStoreFile(), "C:\\Temp\\codex-home\\codexa-trust.json");
+  } finally {
+    if (previousCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = previousCodexHome;
+    }
+  }
 });
