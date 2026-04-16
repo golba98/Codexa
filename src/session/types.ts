@@ -83,6 +83,40 @@ export interface RunToolActivity {
   summary?: string | null;
 }
 
+export type RunProgressSource =
+  | "reasoning"
+  | "todo"
+  | "tool"
+  | "activity"
+  | "stderr"
+  | "transcript";
+
+export interface RunProgressBlock {
+  id: string;
+  text: string;
+  sequence: number;
+  createdAt: number;
+  updatedAt: number;
+  status: "active" | "completed";
+}
+
+export interface RunProgressEntry {
+  id: string;
+  source: RunProgressSource;
+  /** Latest normalized full text received for this upstream progress item. */
+  text: string;
+  sequence: number;
+  createdAt: number;
+  updatedAt: number;
+  /** Structured visible blocks derived from `text` with stable identities. */
+  blocks: RunProgressBlock[];
+  /**
+   * Count of trailing newlines that have not yet been committed into a block.
+   * This keeps single-newline vs double-newline boundaries streaming-safe.
+   */
+  pendingNewlineCount: number;
+}
+
 export interface SystemEvent extends TimelineBaseEvent {
   type: "system";
   title: string;
@@ -101,7 +135,7 @@ export interface RunEvent extends TimelineBaseEvent {
   backendLabel: string;
   runtime: ResolvedRuntimeConfig;
   prompt: string;
-  thinkingLines: string[];
+  progressEntries: RunProgressEntry[];
   status: "running" | "completed" | "failed" | "canceled";
   summary: string;
   truncatedOutput: boolean;

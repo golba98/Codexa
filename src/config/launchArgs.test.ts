@@ -43,3 +43,25 @@ test("rejects malformed config payloads", () => {
   if (parsed.ok) return;
   assert.match(parsed.error, /key=value/i);
 });
+
+test("parses inline profile and config assignments", () => {
+  const parsed = parseLaunchArgs([
+    "--profile=review",
+    "--config=model=\"gpt-5.4-mini\"",
+    "-c=codexa.mode=\"auto-edit\"",
+  ]);
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  assert.equal(parsed.value.profile, "review");
+  assert.deepEqual(parsed.value.configOverrides, [
+    "model=\"gpt-5.4-mini\"",
+    "codexa.mode=\"auto-edit\"",
+  ]);
+  assert.deepEqual(parsed.value.passthroughArgs, [
+    "--profile=review",
+    "--config=model=\"gpt-5.4-mini\"",
+    "-c=codexa.mode=\"auto-edit\"",
+  ]);
+});

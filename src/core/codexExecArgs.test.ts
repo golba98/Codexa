@@ -147,3 +147,49 @@ test("uses mixed config and direct flags when only approval direct flag is unava
     ],
   });
 });
+
+test("forwards network, writable roots, service tier, and personality as config overrides", () => {
+  const result = buildCodexExecArgs({
+    runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
+      model: "gpt-5.4",
+      policy: {
+        approvalPolicy: "never",
+        sandboxMode: "workspace-write",
+        networkAccess: "enabled",
+        writableRoots: ["C:/repo/tmp", "C:/repo/cache"],
+        serviceTier: "fast",
+        personality: "pragmatic",
+      },
+    })),
+    cwd: "C:/repo",
+  }, fullCapabilities);
+
+  assert.deepEqual(result, {
+    ok: true,
+    strategy: "direct-flags",
+    args: [
+      "exec",
+      "--experimental-json",
+      "--skip-git-repo-check",
+      "--cd",
+      "C:/repo",
+      "--model",
+      "gpt-5.4",
+      "--config",
+      "reasoning.effort=high",
+      "--ask-for-approval",
+      "never",
+      "--sandbox",
+      "workspace-write",
+      "--config",
+      "sandbox_workspace_write.network_access=true",
+      "--config",
+      "sandbox_workspace_write.writable_roots=[\"C:\\\\repo\\\\tmp\",\"C:\\\\repo\\\\cache\"]",
+      "--config",
+      "service_tier=fast",
+      "--config",
+      "personality=pragmatic",
+      "-",
+    ],
+  });
+});

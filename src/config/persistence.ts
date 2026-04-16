@@ -3,12 +3,12 @@ import { dirname } from "path";
 import { Theme } from "../ui/theme.js";
 import {
   AUTH_PREFERENCES,
-  CODEX_CONFIG_FILE,
   DEFAULT_AUTH_PREFERENCE,
   DEFAULT_DIRECTORY_DISPLAY_MODE,
   DEFAULT_LAYOUT_STYLE,
   DEFAULT_THEME,
   DIRECTORY_DISPLAY_MODES,
+  getCodexConfigFile,
   SETTINGS_FILE,
   type AuthPreference,
   type DirectoryDisplayMode,
@@ -164,14 +164,15 @@ function maybeMigrateLegacyRuntime(rawData: unknown): void {
   }
 
   try {
-    const existingConfig = existsSync(CODEX_CONFIG_FILE)
-      ? parseTomlDocument(readFileSync(CODEX_CONFIG_FILE, "utf-8"))
+    const codexConfigFile = getCodexConfigFile();
+    const existingConfig = existsSync(codexConfigFile)
+      ? parseTomlDocument(readFileSync(codexConfigFile, "utf-8"))
       : {};
     const mergedConfig = mergeRuntimeIntoTomlConfig(existingConfig, legacyRuntime);
-    mkdirSync(dirname(CODEX_CONFIG_FILE), { recursive: true });
-    const tmpTomlFile = `${CODEX_CONFIG_FILE}.tmp`;
+    mkdirSync(dirname(codexConfigFile), { recursive: true });
+    const tmpTomlFile = `${codexConfigFile}.tmp`;
     writeFileSync(tmpTomlFile, serializeTomlDocument(mergedConfig), "utf-8");
-    renameSync(tmpTomlFile, CODEX_CONFIG_FILE);
+    renameSync(tmpTomlFile, codexConfigFile);
     writeJsonFile(SETTINGS_FILE, stripLegacyRuntime(rawData));
   } catch {
     // Best-effort migration only; keep legacy JSON intact if anything fails.

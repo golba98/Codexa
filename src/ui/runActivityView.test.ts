@@ -22,7 +22,7 @@ function makeRunEvent(overrides: Partial<RunEvent> = {}): RunEvent {
     backendLabel: "Codex CLI",
     runtime: TEST_RUNTIME,
     prompt: "Build something",
-    thinkingLines: [],
+    progressEntries: [],
     status: "running",
     summary: "Running",
     truncatedOutput: false,
@@ -38,7 +38,7 @@ function makeRunEvent(overrides: Partial<RunEvent> = {}): RunEvent {
 
 test("does not surface raw output fallback while a run is active", () => {
   const event = makeRunEvent({
-    thinkingLines: ["raw line 1", "raw line 2"],
+    progressEntries: [],
     activity: [{ path: "src/app.tsx", operation: "modified", detectedAt: 1 }],
   });
 
@@ -48,7 +48,7 @@ test("does not surface raw output fallback while a run is active", () => {
 
 test("keeps raw output hidden even when no structured activity exists yet", () => {
   const event = makeRunEvent({
-    thinkingLines: ["line 1", "line 2", "line 3", "line 4", "line 5"],
+    progressEntries: [],
   });
 
   assert.equal(shouldShowRawOutputFallback(event), false);

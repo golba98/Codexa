@@ -5,6 +5,11 @@ import { sanitizeTerminalLines, sanitizeTerminalOutput } from "../core/terminalS
 import { clampVisualText } from "./layout.js";
 import type { Segment } from "./Markdown.js";
 import { classifyOutput, formatForBox, normalizeOutput, sanitizeOutput, sanitizeStreamChunk } from "./outputPipeline.js";
+import {
+  formatProgressBlockBodyLines,
+  getProgressUpdateCount,
+  selectVisibleProgressBlocks,
+} from "./progressEntries.js";
 import { selectVisibleRunActivity } from "./runActivityView.js";
 import { getTextUnits, getTextWidth, wrapPlainText } from "./textLayout.js";
 import type { RenderTimelineItem } from "./Timeline.js";
@@ -54,7 +59,7 @@ interface MarkdownInlinePart {
 }
 
 const MAX_SHELL_FAILURE_EXCERPT_LINES = 3;
-const MAX_VISIBLE_THINKING_LINES = 5;
+const MAX_VISIBLE_PROGRESS_ENTRIES = 3;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
 function createSpan(
@@ -407,100 +412,79 @@ function getShellFailureExcerpt(event: ShellEvent): string[] {
  */
 function buildThinkingRows(run: RunEvent, width: number, verbose: boolean): TimelineRow[] {
   const latestTool = run.toolActivities[run.toolActivities.length - 1] ?? null;
-  const thinkingLines = run.thinkingLines ?? [];
+  const progressEntries = run.progressEntries ?? [];
   const recentActivity = run.activity.slice(-2);
   const contentWidth = Math.max(1, width - 4);
   const contentRows: TimelineRowSpan[][] = [];
-  if (!verbose) {
-    const visibleLines = thinkingLines.slice(-2);
-    visibleLines.forEach((line) => {
-      const clamped = clampVisualText(line, contentWidth);
-      if (!clamped.trim()) return;
-      contentRows.push([createSpan(clamped, "muted")]);
-    });
+  const totalProgressBlocks = getProgressUpdateCount(progressEntries);
+  const maxVisibleEntries = verbose ? totalProgressBlocks : MAX_VISIBLE_PROGRESS_ENTRIES;
+  const { blocks: visibleBlocks, hiddenCount, totalCount } = selectVisibleProgressBlocks(progressEntries, maxVisibleEntries);
+  const updateCount = totalCount || totalProgressBlocks;
 
-    if (latestTool) {
-      const toolPrefix = latestTool.status === "failed" ? "✕ " : latestTool.status === "completed" ? "✓ " : "• ";
-      const toolTone = latestTool.status === "failed" ? "error" : latestTool.status === "completed" ? "success" : "info";
-      const toolText = latestTool.status === "running"
-        ? latestTool.command
-        : latestTool.summary ?? latestTool.command;
-      const clampedTool = clampVisualText(toolText, Math.max(1, contentWidth - 2));
-      if (clampedTool.trim()) {
-        contentRows.push([
-          createSpan(toolPrefix, toolTone),
-          createSpan(clampedTool, toolTone),
-        ]);
-      }
+  if (hiddenCount > 0) {
+    contentRows.push([createSpan(`... ${hiddenCount} earlier update${hiddenCount === 1 ? "" : "s"}`, "dim")]);
+  }
+
+  if (visibleBlocks.length === 0 && run.status === "running" && recentActivity.length === 0 && !latestTool) {
+    contentRows.push([createSpan("Waiting for response...", "dim")]);
+  }
+
+  visibleBlocks.forEach((block, blockIndex) => {
+    if (contentRows.length > 0 && (blockIndex > 0 || hiddenCount > 0)) {
+      contentRows.push([createSpan(" ", "dim")]);
     }
 
-    recentActivity.forEach((file) => {
+    contentRows.push([createSpan(block.label, "info")]);
+    formatProgressBlockBodyLines(block.text, Math.max(1, contentWidth - 2)).forEach((line) => {
+      contentRows.push([
+        createSpan("  "),
+        createSpan(line || " ", "muted"),
+      ]);
+    });
+  });
+
+  if (run.status === "running" && latestTool) {
+    const toolPrefix = latestTool.status === "failed" ? "✕ " : latestTool.status === "completed" ? "✓ " : "• ";
+    const toolTone = latestTool.status === "failed" ? "error" : latestTool.status === "completed" ? "success" : "info";
+    const toolText = latestTool.status === "running"
+      ? latestTool.command
+      : latestTool.summary ?? latestTool.command;
+    const clampedTool = clampVisualText(toolText, Math.max(1, contentWidth - 2));
+    if (clampedTool.trim()) {
+      if (contentRows.length > 0) contentRows.push([createSpan(" ", "dim")]);
+      contentRows.push([
+        createSpan(toolPrefix, toolTone),
+        createSpan(clampedTool, toolTone),
+      ]);
+    }
+  }
+
+  if (run.status === "running") {
+    recentActivity.forEach((file, index) => {
       const prefix = file.operation === "created" ? "+ " : file.operation === "deleted" ? "- " : "~ ";
       const tone = file.operation === "created" ? "success" : file.operation === "deleted" ? "error" : "info";
       const text = clampVisualText(file.path, Math.max(1, contentWidth - 2));
       if (!text.trim()) return;
+      if (contentRows.length > 0 && index === 0) contentRows.push([createSpan(" ", "dim")]);
       contentRows.push([
         createSpan(prefix, tone),
         createSpan(text, tone),
       ]);
     });
-
-    if (contentRows.length === 0) {
-      return [];
-    }
-
-    return buildDashCardRows({
-      keyPrefix: `${run.turnId}-thinking`,
-      width,
-      title: "Processing",
-      rightBadge: "active",
-      borderTone: "borderActive",
-      contentRows: contentRows.slice(-4),
-    });
   }
 
-  const toolLine = latestTool
-    ? latestTool.status === "running"
-      ? `running: ${latestTool.command}`
-      : latestTool.summary ?? latestTool.command
-    : null;
-  const hiddenCount = Math.max(0, thinkingLines.length - MAX_VISIBLE_THINKING_LINES);
-  const visibleLines = thinkingLines.slice(-MAX_VISIBLE_THINKING_LINES);
-  const hasContent = thinkingLines.length > 0 || toolLine;
-
-  if (!hasContent) {
-    contentRows.push([createSpan("Waiting for response...", "dim")]);
-  } else if (hiddenCount > 0) {
-    contentRows.push([createSpan(`... ${hiddenCount} more above`, "dim")]);
-  }
-
-  if (hasContent) {
-    visibleLines.forEach((line) => {
-      const clamped = clampVisualText(line, contentWidth);
-      contentRows.push([createSpan(clamped || " ", "muted")]);
-    });
-  }
-
-  while (contentRows.length < MAX_VISIBLE_THINKING_LINES) {
-    contentRows.push([createSpan(" ", "dim")]);
-  }
-
-  if (toolLine) {
-    const clampedTool = clampVisualText(toolLine, Math.max(1, contentWidth - 2));
-    contentRows.push([
-      createSpan("• ", "info"),
-      createSpan(clampedTool, "info"),
-    ]);
-  } else {
-    contentRows.push([createSpan(" ", "dim")]);
+  if (contentRows.length === 0) {
+    return [];
   }
 
   return buildDashCardRows({
     keyPrefix: `${run.turnId}-thinking`,
     width,
     title: "Processing",
-    rightBadge: "active",
-    borderTone: "borderActive",
+    rightBadge: run.status === "running"
+      ? "active"
+      : `${updateCount} update${updateCount === 1 ? "" : "s"}`,
+    borderTone: run.status === "running" ? "borderActive" : "borderSubtle",
     contentRows,
   });
 }
@@ -1319,7 +1303,7 @@ function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, widt
   if (item.item.run) {
     rows.push(buildTaskStatusRow(item, width));
 
-    const processingRows = item.item.run.status === "running"
+    const processingRows = (item.item.run.status === "running" || item.item.run.progressEntries.length > 0)
       ? buildThinkingRows(item.item.run, width, verbose)
       : [];
 
