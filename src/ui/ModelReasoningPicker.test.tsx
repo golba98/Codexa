@@ -161,6 +161,58 @@ test("model picker uses each selected model's own reasoning level count", async 
   }
 });
 
+test("model picker shows a discovery-in-progress hint when no models have been loaded yet", async () => {
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ModelReasoningPicker
+        models={[]}
+        currentModel="model-four"
+        currentReasoning="medium"
+        isLoading
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    assert.match(output, /Select model/);
+    assert.match(output, /Discovering models from the Codex runtime/);
+    assert.doesNotMatch(output, /Try the model picker again in a moment/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("model picker escape still cancels while loading", async () => {
+  let cancelled = false;
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ModelReasoningPicker
+        models={[]}
+        currentModel="model-four"
+        currentReasoning="medium"
+        isLoading
+        onSelect={() => {}}
+        onCancel={() => {
+          cancelled = true;
+        }}
+      />
+    </ThemeProvider>,
+  );
+
+  try {
+    await sleep(80);
+    harness.stdin.write("\u001b");
+    await sleep(80);
+    assert.equal(cancelled, true);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test("reasoning picker renders only detected levels for the selected model", async () => {
   const modelTwo = testModels()[1]!;
   const harness = createInkHarness(

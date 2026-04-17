@@ -13,6 +13,7 @@ interface ModelReasoningPickerProps {
   models: readonly CodexModelCapability[];
   currentModel: string;
   currentReasoning: string;
+  isLoading?: boolean;
   onSelect: (model: string, reasoning: string) => void;
   onCancel: () => void;
 }
@@ -36,7 +37,52 @@ function getInitialReasoning(model: CodexModelCapability, currentReasoning: stri
   );
 }
 
-export function ModelReasoningPicker({
+export function ModelReasoningPicker(props: ModelReasoningPickerProps) {
+  if (props.models.length === 0) {
+    return <LoadingPicker isLoading={props.isLoading ?? false} onCancel={props.onCancel} />;
+  }
+  return <InteractivePicker {...props} models={props.models} />;
+}
+
+function LoadingPicker({ isLoading, onCancel }: { isLoading: boolean; onCancel: () => void }) {
+  const theme = useTheme();
+  const { isFocused } = useFocus({ id: FOCUS_IDS.modelPicker, autoFocus: true });
+
+  useInput(
+    (_, key) => {
+      if (key.escape) onCancel();
+    },
+    { isActive: isFocused },
+  );
+
+  return (
+    <Box flexDirection="column" width="100%" marginTop={1}>
+      <Box
+        borderStyle="round"
+        borderColor={theme.BORDER_SUBTLE}
+        paddingX={2}
+        paddingY={1}
+        width="100%"
+      >
+        <Box flexDirection="column" width="100%">
+          <Box>
+            <Text color={theme.ACCENT} bold>Select model  </Text>
+            <Text color={theme.MUTED}>Esc cancel</Text>
+          </Box>
+          <Box marginTop={0}>
+            <Text color={theme.DIM}>
+              {isLoading
+                ? "Discovering models from the Codex runtime…"
+                : "No models available yet."}
+            </Text>
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+function InteractivePicker({
   models,
   currentModel,
   currentReasoning,
@@ -45,7 +91,7 @@ export function ModelReasoningPicker({
 }: ModelReasoningPickerProps) {
   const theme = useTheme();
   const { isFocused } = useFocus({ id: FOCUS_IDS.modelPicker, autoFocus: true });
-  const visibleModels = models.length > 0 ? models : [];
+  const visibleModels = models;
 
   const [cursor, setCursor] = useState(() =>
     Math.max(0, visibleModels.findIndex((model) => model.model === currentModel || model.id === currentModel)),
