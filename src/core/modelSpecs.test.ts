@@ -9,9 +9,11 @@ import {
   createModelSpecService,
   createUnknownModelSpec,
   extractModelSpecFromDocText,
+  KNOWN_MODEL_SPECS,
   loadModelSpecCache,
   MODEL_SPEC_DOC_URLS,
   parseTokenCount,
+  resolveModelSpec,
   saveModelSpecCache,
   stripHtmlToText,
   type ModelSpec,
@@ -165,6 +167,72 @@ test("refresh returns unknown when there is no cache and verification fails", as
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("resolveModelSpec prefers runtime discovery metadata", () => {
+  const spec = resolveModelSpec("gpt-5.4", {
+    runtimeContextWindow: 2_000_000,
+    runtimeMaxOutputTokens: 256_000,
+    cache: {
+      "gpt-5.4": {
+        status: "verified",
+        contextWindow: 1_050_000,
+        maxOutputTokens: 128_000,
+        sourceUrl: MODEL_SPEC_DOC_URLS["gpt-5.4"]!,
+        verifiedAt: 1,
+      },
+    },
+    now: () => 999,
+  });
+
+  assert.equal(spec.status, "verified");
+  assert.equal(spec.contextWindow, 2_000_000);
+  assert.equal(spec.maxOutputTokens, 256_000);
+});
+
+test("resolveModelSpec falls back to persisted cache when runtime lacks context metadata", () => {
+  const spec = resolveModelSpec("gpt-5.4", {
+    cache: {
+      "gpt-5.4": {
+        status: "verified",
+        contextWindow: 1_050_000,
+        maxOutputTokens: 128_000,
+        sourceUrl: MODEL_SPEC_DOC_URLS["gpt-5.4"]!,
+        verifiedAt: 42,
+      },
+    },
+  });
+
+  assert.equal(spec.status, "verified");
+  assert.equal(spec.contextWindow, 1_050_000);
+  assert.equal(spec.verifiedAt, 42);
+});
+
+test("resolveModelSpec falls back to the static registry when cache is empty", () => {
+  const spec = resolveModelSpec("gpt-5.4-mini", { now: () => 11 });
+  assert.equal(spec.status, "verified");
+  assert.equal(spec.contextWindow, KNOWN_MODEL_SPECS["gpt-5.4-mini"]!.contextWindow);
+  assert.equal(spec.maxOutputTokens, KNOWN_MODEL_SPECS["gpt-5.4-mini"]!.maxOutputTokens);
+});
+
+test("resolveModelSpec returns loading while refresh is in-flight for unmapped models", () => {
+  const spec = resolveModelSpec("gpt-future-9", { refreshInFlight: true });
+  assert.equal(spec.status, "loading");
+  assert.equal(spec.contextWindow, null);
+});
+
+test("resolveModelSpec returns unknown only when no source can supply context metadata", () => {
+  const spec = resolveModelSpec("gpt-future-9");
+  assert.equal(spec.status, "unknown");
+  assert.equal(spec.contextWindow, null);
+});
+
+test("resolveModelSpec selects correct registry entry when switching between known models", () => {
+  const specFour = resolveModelSpec("gpt-5.4");
+  const specTwo = resolveModelSpec("gpt-5.2");
+  assert.notEqual(specFour.contextWindow, specTwo.contextWindow);
+  assert.equal(specFour.contextWindow, KNOWN_MODEL_SPECS["gpt-5.4"]!.contextWindow);
+  assert.equal(specTwo.contextWindow, KNOWN_MODEL_SPECS["gpt-5.2"]!.contextWindow);
 });
 
 test("reports equality across verified and unknown specs", () => {

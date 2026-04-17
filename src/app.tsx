@@ -99,7 +99,12 @@ import {
   getShellWorkspaceGuardMessage,
 } from "./core/workspaceGuard.js";
 import {
-  createUnknownModelSpec,
+  areModelSpecsEqual,
+  createModelSpecService,
+  loadModelSpecCache,
+  resolveModelSpec,
+  type ModelSpec,
+  type VerifiedModelSpec,
 } from "./core/modelSpecs.js";
 import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots, type RunFileActivity } from "./core/workspaceActivity.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
@@ -240,6 +245,16 @@ export function App({ launchArgs }: AppProps) {
   const [conversationChars, setConversationChars] = useState(0);
   const [modelCapabilities, setModelCapabilities] = useState<CodexModelCapabilities | null>(null);
   const [modelCapabilitiesBusy, setModelCapabilitiesBusy] = useState(false);
+  // Seed model specs from the persistent on-disk cache so the footer shows
+  // real context-window numbers on startup without waiting for a network
+  // fetch. Background refresh updates the cache and state as soon as a new
+  // spec is verified.
+  const initialModelSpecCache = useRef<Partial<Record<string, VerifiedModelSpec>>>(loadModelSpecCache());
+  const modelSpecService = useMemo(() => createModelSpecService(), []);
+  const [modelSpecs, setModelSpecs] = useState<Partial<Record<string, ModelSpec>>>(
+    () => ({ ...initialModelSpecCache.current }),
+  );
+  const [modelSpecRefreshes, setModelSpecRefreshes] = useState<Record<string, true>>({});
   const { stdout } = useStdout();
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [verboseMode, setVerboseMode] = useState(false);
@@ -328,10 +343,16 @@ export function App({ launchArgs }: AppProps) {
       && existsSync(planFlow.planFilePath),
     [planFlow],
   );
-  const currentModelSpec = useMemo(
-    () => createUnknownModelSpec(model, "Model spec lookup is deferred until requested."),
-    [model],
-  );
+  const currentModelSpec = useMemo<ModelSpec>(() => {
+    const cachedSpec = modelSpecs[model];
+    if (cachedSpec && cachedSpec.status === "verified") {
+      return cachedSpec;
+    }
+    return resolveModelSpec(model, {
+      cache: modelSpecs as Partial<Record<string, VerifiedModelSpec>>,
+      refreshInFlight: Boolean(modelSpecRefreshes[model]),
+    });
+  }, [model, modelSpecRefreshes, modelSpecs]);
   const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
 
   // Refs for mutable state values — used by stable callbacks below so they
@@ -428,6 +449,34 @@ export function App({ launchArgs }: AppProps) {
   useEffect(() => {
     focusManager.focus(getFocusTargetForScreen(screen));
   }, [composerInstanceKey, focusManager, screen]);
+
+  // Lazily refresh the verified spec for the currently selected model. The
+  // cache + static registry already cover known models synchronously, so the
+  // footer is never stuck on "unknown" for supported models. This effect just
+  // keeps the persistent cache warm. Runs at most once per model per session.
+  useEffect(() => {
+    const existing = modelSpecs[model];
+    if (existing && existing.status === "verified") {
+      return;
+    }
+    if (modelSpecRefreshes[model]) {
+      return;
+    }
+    setModelSpecRefreshes((prev) => ({ ...prev, [model]: true }));
+    void modelSpecService.refreshSpec(model).then((spec) => {
+      if (!isMountedRef.current) return;
+      setModelSpecs((prev) => {
+        const current = prev[model];
+        if (current?.status === "verified" && spec.status !== "verified") {
+          return prev;
+        }
+        if (areModelSpecsEqual(current, spec)) {
+          return prev;
+        }
+        return { ...prev, [model]: spec };
+      });
+    });
+  }, [model, modelSpecRefreshes, modelSpecService, modelSpecs]);
 
   const appendStaticEvent = useCallback((event: TimelineEvent) => {
     dispatchSession({ type: "APPEND_STATIC_EVENT", event });
