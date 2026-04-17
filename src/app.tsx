@@ -108,6 +108,7 @@ import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
+import * as perf from "./core/perf/profiler.js";
 import type { RunEvent, RunToolActivity, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
 import {
   buildFollowUpPrompt,
@@ -1043,6 +1044,7 @@ export function App({ launchArgs }: AppProps) {
     if (!isCurrentRun(activeRunIdRef.current, runId)) {
       return false;
     }
+    perf.mark("finalize_start");
 
     const lifecycle = activeRunLifecycleRef.current;
     const cleanup = cleanupRef.current;
@@ -1080,6 +1082,11 @@ export function App({ launchArgs }: AppProps) {
         turnId,
       }),
     });
+    perf.mark("finalize_done");
+    perf.setMeta("content_length", parsed.content?.length ?? 0);
+    perf.setMeta("status", status);
+    const perfSession = perf.getSession();
+    if (perfSession) perf.persistSession(perfSession);
 
     if (status === "completed") {
       lifecycle?.onCompleted?.({
@@ -1549,6 +1556,8 @@ export function App({ launchArgs }: AppProps) {
     setConversationChars((count) => count + safeProviderPrompt.length);
 
     const runId = createEventId();
+    perf.startSession(String(runId));
+    perf.mark("dispatch_start");
     activeRunIdRef.current = runId;
     activeTurnIdRef.current = turnId;
     activeRunLifecycleRef.current = lifecycle;
@@ -1591,8 +1600,10 @@ export function App({ launchArgs }: AppProps) {
     const pendingToolActivities = new Map<string, RunToolActivity>();
     let liveFlushTimer: ReturnType<typeof setTimeout> | null = null;
     let legacyProgressSequence = 0;
+    let firstRenderFired = false;
 
     const flushLiveUpdates = () => {
+      perf.inc("flushes");
       if (liveFlushTimer) {
         clearTimeout(liveFlushTimer);
         liveFlushTimer = null;
@@ -1623,6 +1634,10 @@ export function App({ launchArgs }: AppProps) {
       // Lower-priority updates (activity, progress, tools) use startTransition
       // so they don't delay streaming text from appearing.
       if (chunk) {
+        if (!firstRenderFired) {
+          firstRenderFired = true;
+          perf.mark("first_render");
+        }
         dispatchSession({
           type: "RUN_APPEND_ASSISTANT_DELTA",
           turnId,
@@ -1671,13 +1686,17 @@ export function App({ launchArgs }: AppProps) {
       }, interval);
     };
 
+    perf.mark("provider_run_start");
     const stopProviderRun = provider.run(
           safeProviderPrompt,
           { runtime: runtimeForTurn, workspaceRoot },
           {
         onAssistantDelta: (chunk) => {
           if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) return;
+          const t0 = performance.now();
           const safeChunk = sanitizeTerminalOutput(chunk, { preserveTabs: false, tabSize: 2 });
+          perf.accumulate("sanitize_ms", performance.now() - t0);
+          perf.inc("chunks");
           if (!safeChunk) return;
           pendingAssistantDelta += safeChunk;
           streamedAssistantContent += safeChunk;
@@ -1691,13 +1710,16 @@ export function App({ launchArgs }: AppProps) {
         },
         onResponse: (response) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+          perf.mark("response_cb_start");
 
           // Force one final synchronous workspace poll before finalizing the run.
           // This closes the race condition where the activity tracker's interval
           // hasn't fired yet and late file changes would be missed.
           if (activityTracker && preRunSnapshot) {
             try {
+              perf.mark("snapshot_start");
               const finalSnapshot = captureWorkspaceSnapshot(workspaceRoot);
+              perf.mark("snapshot_end");
               const lateActivity = diffWorkspaceSnapshots(preRunSnapshot, finalSnapshot);
               if (lateActivity.length > 0) {
                 pendingActivity.push(...lateActivity);
@@ -1761,6 +1783,7 @@ export function App({ launchArgs }: AppProps) {
           void finalizePromptRun(runId, turnId, "failed", errorMessage);
         },
         onProgress: (update) => {
+          perf.inc("progress_updates");
           const safeText = sanitizeTerminalOutput(update.text);
           if (!safeText) return;
           if (isNoiseLine(safeText)) return;
@@ -1939,8 +1962,20 @@ export function App({ launchArgs }: AppProps) {
   }, [appendSystemEvent, planFlow, runPlanGeneration]);
 
   const handleSubmit = useCallback(() => {
+    perf.mark("submit");
     const value = sanitizeTerminalInput(inputValue).trim();
     if (!value) return;
+
+    if (value === "/perf") {
+      const session = perf.getSession();
+      const summary = session
+        ? perf.buildSummary(session)
+        : "No perf data recorded yet. Set CODEXA_PERF=1 and send a prompt first.";
+      appendSystemEvent("Perf report", summary);
+      dispatchSession({ type: "PUSH_HISTORY", value });
+      resetComposer();
+      return;
+    }
 
     if (uiState.kind === "AWAITING_USER_ACTION") {
       const originalUserEvent = findUserPromptForTurn(uiState.turnId);

@@ -9,6 +9,7 @@ import {
   formatProgressBlockBodyLines,
   getProgressUpdateCount,
   selectVisibleProgressBlocks,
+  type VisibleProgressBlock,
 } from "./progressEntries.js";
 import { selectVisibleRunActivity } from "./runActivityView.js";
 import { getTextUnits, getTextWidth, wrapPlainText } from "./textLayout.js";
@@ -60,7 +61,25 @@ interface MarkdownInlinePart {
 
 const MAX_SHELL_FAILURE_EXCERPT_LINES = 3;
 const MAX_VISIBLE_PROGRESS_ENTRIES = 3;
+const COMPACT_PROCESSING_BODY_LINE_CAP = 4;
+const COMPACT_STREAMING_TAIL_CAP = 6;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+
+// Matches sentence-ending punctuation followed (optionally after whitespace) by
+// a capital letter starting a new word. Requires [A-Z] to be followed by [a-z]
+// OR to be a standalone "I" (I'm / I've / I ) so abbreviations like U.S.A.
+// and Python class names like foo.BarClass are left alone — the lookahead
+// fails when the capital is followed by another uppercase or punctuation.
+const SENTENCE_WALL_SPLIT_RE = /([.!?])\s*(?=(?:I(?:['\u2019]|\s)|[A-Z][a-z]))/g;
+
+function splitSentenceWall(text: string): string {
+  if (!text) return text;
+  // Preserve code fences: only transform outside ``` regions.
+  const parts = text.split("```");
+  return parts
+    .map((part, index) => (index % 2 === 0 ? part.replace(SENTENCE_WALL_SPLIT_RE, "$1\n\n") : part))
+    .join("```");
+}
 
 function createSpan(
   text: string,
@@ -405,6 +424,25 @@ function getShellFailureExcerpt(event: ShellEvent): string[] {
     .slice(0, MAX_SHELL_FAILURE_EXCERPT_LINES);
 }
 
+function getProgressBlockMarker(isLive: boolean): { text: string; tone: TimelineTone } {
+  if (isLive) {
+    return { text: "▸ ", tone: "accent" };
+  }
+  return { text: "• ", tone: "info" };
+}
+
+function getCurrentProgressText(block: VisibleProgressBlock | null, latestTool: RunEvent["toolActivities"][number] | null): string | null {
+  if (latestTool?.status === "running") {
+    return latestTool.command;
+  }
+
+  if (!block) {
+    return null;
+  }
+
+  return block.headline.replace(/^Current:\s*/i, "");
+}
+
 /**
  * Verbose mode renders the full reasoning card.
  * Default mode renders a compact live-activity card only when there are
@@ -418,10 +456,25 @@ function buildThinkingRows(run: RunEvent, width: number, verbose: boolean): Time
   const contentRows: TimelineRowSpan[][] = [];
   const totalProgressBlocks = getProgressUpdateCount(progressEntries);
   const maxVisibleEntries = verbose ? totalProgressBlocks : MAX_VISIBLE_PROGRESS_ENTRIES;
-  const { blocks: visibleBlocks, hiddenCount, totalCount } = selectVisibleProgressBlocks(progressEntries, maxVisibleEntries);
+  const {
+    blocks: visibleBlocks,
+    hiddenCount,
+    totalCount,
+    latestBlock,
+    latestActiveBlock,
+  } = selectVisibleProgressBlocks(progressEntries, maxVisibleEntries);
   const updateCount = totalCount || totalProgressBlocks;
+  const currentProgressText = getCurrentProgressText(latestActiveBlock ?? latestBlock, latestTool);
+
+  if (currentProgressText && run.status === "running") {
+    contentRows.push([
+      createSpan("Current: ", "info", { bold: true }),
+      createSpan(clampVisualText(currentProgressText, Math.max(1, contentWidth - 9)), "text"),
+    ]);
+  }
 
   if (hiddenCount > 0) {
+    if (contentRows.length > 0) contentRows.push([createSpan(" ", "dim")]);
     contentRows.push([createSpan(`... ${hiddenCount} earlier update${hiddenCount === 1 ? "" : "s"}`, "dim")]);
   }
 
@@ -430,17 +483,43 @@ function buildThinkingRows(run: RunEvent, width: number, verbose: boolean): Time
   }
 
   visibleBlocks.forEach((block, blockIndex) => {
+    const isLive = run.status === "running" && block.isActive;
     if (contentRows.length > 0 && (blockIndex > 0 || hiddenCount > 0)) {
       contentRows.push([createSpan(" ", "dim")]);
     }
 
-    contentRows.push([createSpan(block.label, "info")]);
-    formatProgressBlockBodyLines(block.text, Math.max(1, contentWidth - 2)).forEach((line) => {
+    const marker = getProgressBlockMarker(isLive);
+    const label = isLive ? "Live" : block.label;
+    contentRows.push([
+      createSpan(marker.text, marker.tone),
+      createSpan(label, isLive ? "accent" : "info", { bold: isLive }),
+    ]);
+
+    const bodyLines = formatProgressBlockBodyLines(block.text, Math.max(1, contentWidth - 4));
+    const lineCap = verbose ? bodyLines.length : COMPACT_PROCESSING_BODY_LINE_CAP;
+    const visibleBodyLines = bodyLines.slice(0, lineCap);
+    const overflowCount = bodyLines.length - visibleBodyLines.length;
+
+    visibleBodyLines.forEach((line) => {
       contentRows.push([
-        createSpan("  "),
-        createSpan(line || " ", "muted"),
+        createSpan(isLive ? "  │ " : "    ", isLive ? "accent" : undefined),
+        createSpan(line || " ", "dim"),
       ]);
     });
+
+    if (overflowCount > 0) {
+      contentRows.push([
+        createSpan("    "),
+        createSpan(`… (${overflowCount} more line${overflowCount === 1 ? "" : "s"})`, "dim"),
+      ]);
+    }
+
+    if (isLive) {
+      contentRows.push([
+        createSpan("  │ ", "accent"),
+        createSpan("▌", "accent"),
+      ]);
+    }
   });
 
   if (run.status === "running" && latestTool) {
@@ -854,13 +933,13 @@ function findSafeBoundary(content: string, searchFrom: number): number {
   return searchFrom;
 }
 
-function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number): TimelineRow[] {
+function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, verbose = false): TimelineRow[] {
   const run = item.item.run!;
   const assistant = item.item.assistant;
   const streaming = item.renderState.runPhase === "streaming";
   const dim = item.renderState.opacity !== "active";
   const contentWidth = Math.max(1, width - 4);
-  const rawContent = getAssistantContent(assistant);
+  const rawContent = splitSentenceWall(getAssistantContent(assistant));
 
   let contentRows: TimelineRowSpan[][];
 
@@ -955,6 +1034,14 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
       ]);
     });
     contentRows = [...failureRows, ...contentRows];
+  }
+
+  if (streaming && !verbose && contentRows.length > COMPACT_STREAMING_TAIL_CAP) {
+    const hiddenRowCount = contentRows.length - COMPACT_STREAMING_TAIL_CAP;
+    contentRows = [
+      [createSpan(`… (${hiddenRowCount} line${hiddenRowCount === 1 ? "" : "s"} above)`, "dim")],
+      ...contentRows.slice(-COMPACT_STREAMING_TAIL_CAP),
+    ];
   }
 
   if (streaming) {
@@ -1312,7 +1399,7 @@ function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, widt
     } else {
       rows.push(...processingRows);
       // Agent response first
-      rows.push(...buildAgentRows(item, width));
+      rows.push(...buildAgentRows(item, width, verbose));
 
       // After the response: either compact impact summary (default) or verbose cards
       if (item.item.run.status !== "running") {

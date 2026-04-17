@@ -119,6 +119,56 @@ test("treats multiple blank lines as one new progress block", () => {
   assert.equal(updated.progressEntries[0]?.blocks[1]?.text, "Comparing defaults");
 });
 
+test("splits long reasoning paragraphs on transition phrases", () => {
+  const run = createRunEvent({
+    id: 25,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Hello",
+    turnId: 25,
+  });
+
+  const text = [
+    "I checked the rendering path and confirmed the stream is being accumulated into one visible block.",
+    "Next I am going to update the chunking rules so completed thoughts stay stable while the active thought grows.",
+    "I found the renderer can keep the same outer card and still separate the content into readable rows.",
+  ].join(" ");
+  const updated = appendRunThinking(run, [makeProgressUpdate("reason-4", text)]);
+
+  assert.equal(updated.progressEntries[0]?.blocks.length, 3);
+  assert.equal(updated.progressEntries[0]?.blocks[0]?.status, "completed");
+  assert.match(updated.progressEntries[0]?.blocks[1]?.text ?? "", /^Next /);
+  assert.match(updated.progressEntries[0]?.blocks[2]?.text ?? "", /^I found /);
+  assert.equal(updated.progressEntries[0]?.blocks[2]?.status, "active");
+});
+
+test("starts a readable block before a new list while keeping list items grouped", () => {
+  const run = createRunEvent({
+    id: 26,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Hello",
+    turnId: 26,
+  });
+
+  const text = [
+    "I inspected the processing card and found the content needs a stronger internal hierarchy.",
+    "- Preserve the outer card",
+    "- Mark the live segment",
+    "- Keep wrapping clean",
+  ].join("\n");
+  const updated = appendRunThinking(run, [makeProgressUpdate("reason-5", text)]);
+
+  assert.equal(updated.progressEntries[0]?.blocks.length, 2);
+  assert.equal(updated.progressEntries[0]?.blocks[0]?.text, "I inspected the processing card and found the content needs a stronger internal hierarchy.");
+  assert.equal(
+    updated.progressEntries[0]?.blocks[1]?.text,
+    "- Preserve the outer card\n- Mark the live segment\n- Keep wrapping clean",
+  );
+});
+
 test("rebuilds one progress entry safely when the next update is not a prefix", () => {
   const run = createRunEvent({
     id: 24,

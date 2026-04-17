@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
 import { formatCodexLaunchError, spawnCodexProcess } from "../codexExecutable.js";
 import { prepareCodexExecLaunch } from "../codexLaunch.js";
+import * as perf from "../perf/profiler.js";
 import { buildCodexPrompt } from "../codexPrompt.js";
 import { createCodexJsonStreamParser } from "./codexJsonStream.js";
 import {
@@ -45,6 +46,7 @@ export const codexSubprocessProvider: BackendProvider = {
 
     const startAttempt = (structuredOutput: boolean) => {
       if (cancelled || done) return;
+      let firstChunkSeen = false;
       void prepareCodexExecLaunch(
         {
           runtime: options.runtime,
@@ -70,6 +72,16 @@ export const codexSubprocessProvider: BackendProvider = {
           let mode: "undecided" | "json" | "legacy" = structuredOutput ? "undecided" : "legacy";
           let legacyProgressSequence = 0;
 
+          // Coalescing state for consecutive transcript thinking lines.
+          // Reset when a non-thinking event (assistant delta or tool activity) breaks the sequence.
+          let activeTranscriptThinkingId: string | null = null;
+          let activeTranscriptThinkingText = "";
+
+          const resetTranscriptCoalescing = () => {
+            activeTranscriptThinkingId = null;
+            activeTranscriptThinkingText = "";
+          };
+
           const emitLegacyProgress = (source: "stderr" | "transcript", text: string) => {
             handlers.onProgress?.({
               id: `${source}-${++legacyProgressSequence}`,
@@ -79,9 +91,27 @@ export const codexSubprocessProvider: BackendProvider = {
           };
 
           const transcriptParser = createCodexTranscriptStreamParser({
-            onThinkingLine: (line) => emitLegacyProgress("transcript", line),
-            onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
-            onToolActivity: (activity) => handlers.onToolActivity?.(activity),
+            onThinkingLine: (line) => {
+              if (activeTranscriptThinkingId === null) {
+                activeTranscriptThinkingId = `transcript-thinking-${++legacyProgressSequence}`;
+                activeTranscriptThinkingText = line;
+              } else {
+                activeTranscriptThinkingText = `${activeTranscriptThinkingText}\n${line}`;
+              }
+              handlers.onProgress?.({
+                id: activeTranscriptThinkingId,
+                source: "transcript",
+                text: activeTranscriptThinkingText,
+              });
+            },
+            onAssistantDelta: (chunk) => {
+              resetTranscriptCoalescing();
+              handlers.onAssistantDelta?.(chunk);
+            },
+            onToolActivity: (activity) => {
+              resetTranscriptCoalescing();
+              handlers.onToolActivity?.(activity);
+            },
           });
           const transcriptStdoutSanitizer = createStdoutSanitizer();
           const transcriptStderrSanitizer = createStdoutSanitizer();
@@ -138,12 +168,15 @@ export const codexSubprocessProvider: BackendProvider = {
           };
 
           proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
+          perf.mark("spawn_done");
 
           proc.stdin?.write(buildCodexPrompt(prompt, options.runtime));
           proc.stdin?.end();
 
           proc.stdout?.on("data", (chunk: Buffer) => {
             if (cancelled || done) return;
+            if (!firstChunkSeen) { firstChunkSeen = true; perf.mark("first_chunk"); }
+            perf.mark("last_chunk");
             const text = chunk.toString();
             currentRawOutput += text;
             rawStdout += text;

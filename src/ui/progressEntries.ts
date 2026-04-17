@@ -6,18 +6,57 @@ export interface VisibleProgressBlock {
   id: string;
   key: string;
   label: string;
+  headline: string;
   text: string;
   source: RunProgressSource;
   entryId: string;
   entrySequence: number;
   blockSequence: number;
   status: RunProgressBlock["status"];
+  isLatest: boolean;
+  isActive: boolean;
 }
 
 export interface VisibleProgressBlocks {
   hiddenCount: number;
   totalCount: number;
   blocks: VisibleProgressBlock[];
+  latestBlock: VisibleProgressBlock | null;
+  latestActiveBlock: VisibleProgressBlock | null;
+}
+
+function sourceLabel(source: RunProgressSource): string {
+  switch (source) {
+    case "reasoning":
+      return "Reasoning";
+    case "todo":
+      return "Todo";
+    case "tool":
+      return "Tool";
+    case "activity":
+      return "Activity";
+    case "stderr":
+      return "Process";
+    case "transcript":
+      return "Progress";
+    default:
+      return "Update";
+  }
+}
+
+function firstMeaningfulLine(text: string): string {
+  return sanitizeTerminalOutput(text)
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean) ?? "";
+}
+
+function buildProgressHeadline(source: RunProgressSource, text: string, status: RunProgressBlock["status"]): string {
+  const label = status === "active" ? "Current" : sourceLabel(source);
+  const firstLine = firstMeaningfulLine(text);
+  return firstLine ? `${label}: ${firstLine}` : label;
 }
 
 function toVisibleProgressBlocks(entries: RunProgressEntry[]): VisibleProgressBlock[] {
@@ -32,17 +71,23 @@ function toVisibleProgressBlocks(entries: RunProgressEntry[]): VisibleProgressBl
         id: block.id,
         key: block.id,
         label: `Update ${visibleSequence}`,
+        headline: buildProgressHeadline(entry.source, block.text, block.status),
         text: block.text,
         source: entry.source,
         entryId: entry.id,
         entrySequence: entry.sequence,
         blockSequence: block.sequence,
         status: block.status,
+        isLatest: false,
+        isActive: block.status === "active",
       });
     }
   }
 
-  return blocks;
+  return blocks.map((block, index) => ({
+    ...block,
+    isLatest: index === blocks.length - 1,
+  }));
 }
 
 export function getProgressUpdateCount(entries: RunProgressEntry[]): number {
@@ -52,18 +97,32 @@ export function getProgressUpdateCount(entries: RunProgressEntry[]): number {
 export function selectVisibleProgressBlocks(entries: RunProgressEntry[], maxVisible: number): VisibleProgressBlocks {
   const blocks = toVisibleProgressBlocks(entries);
   const safeMax = Math.max(0, maxVisible);
+  const findLatestActiveBlock = (candidates: VisibleProgressBlock[]): VisibleProgressBlock | null => {
+    for (let index = candidates.length - 1; index >= 0; index -= 1) {
+      if (candidates[index]?.isActive) {
+        return candidates[index]!;
+      }
+    }
+    return null;
+  };
+
   if (blocks.length <= safeMax) {
     return {
       hiddenCount: 0,
       totalCount: blocks.length,
       blocks,
+      latestBlock: blocks[blocks.length - 1] ?? null,
+      latestActiveBlock: findLatestActiveBlock(blocks),
     };
   }
 
+  const visible = blocks.slice(-safeMax);
   return {
     hiddenCount: blocks.length - safeMax,
     totalCount: blocks.length,
-    blocks: blocks.slice(-safeMax),
+    blocks: visible,
+    latestBlock: visible[visible.length - 1] ?? null,
+    latestActiveBlock: findLatestActiveBlock(visible),
   };
 }
 

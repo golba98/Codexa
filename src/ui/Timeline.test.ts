@@ -71,6 +71,17 @@ function createProgressEntry(sequence: number, text: string, blockTexts: string[
   };
 }
 
+function createCompletedProgressEntry(sequence: number, text: string, blockTexts: string[] = [text]): RunProgressEntry {
+  const entry = createProgressEntry(sequence, text, blockTexts);
+  return {
+    ...entry,
+    blocks: entry.blocks.map((block) => ({
+      ...block,
+      status: "completed",
+    })),
+  };
+}
+
 test("groups user, run, and assistant events into a single turn item", () => {
   const events: TimelineEvent[] = [
     {
@@ -418,6 +429,65 @@ test("default timeline shows compact processing signals while a run is streaming
   assert.match(joined, /python -m pytest/);
   assert.match(joined, /Hello_World\.py/);
   assert.match(joined, /GPT 5\.4/);
+});
+
+test("streaming processing output renders separated readable segments with a live marker", () => {
+  const items = buildTimelineItems([
+    {
+      id: 1,
+      type: "user",
+      createdAt: 1,
+      prompt: "Improve streaming thoughts",
+      turnId: 100,
+    },
+    {
+      id: 2,
+      type: "run",
+      createdAt: 2,
+      startedAt: 2,
+      durationMs: null,
+      backendId: "codex-subprocess",
+      backendLabel: "Codexa",
+      runtime: TEST_RUNTIME,
+      prompt: "Improve streaming thoughts",
+      progressEntries: [
+        createCompletedProgressEntry(1, "I inspected the renderer and found the content is flattened into plain card rows.", [
+          "I inspected the renderer and found the content is flattened into plain card rows.",
+        ]),
+        createProgressEntry(2, "Next I am separating completed thoughts from the active live segment.", [
+          "Next I am separating completed thoughts from the active live segment.",
+        ]),
+      ],
+      status: "running",
+      summary: "Running",
+      truncatedOutput: false,
+      toolActivities: [],
+      activity: [],
+      touchedFileCount: 0,
+      errorMessage: null,
+      turnId: 100,
+    },
+    {
+      id: 3,
+      type: "assistant",
+      createdAt: 4,
+      content: "Working...",
+      contentChunks: [],
+      turnId: 100,
+    },
+  ]);
+
+  const renderItems = buildActiveRenderItems(items, [100], { kind: "RESPONDING", turnId: 100 });
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 54 });
+  const joined = snapshot.rows
+    .map((row) => row.spans.map((span) => span.text).join(""))
+    .join("\n");
+
+  assert.match(joined, /Current: Next I am separating/);
+  assert.match(joined, /Update 1/);
+  assert.match(joined, /Live/);
+  assert.match(joined, /▌/);
+  assert.ok(snapshot.rows.every((row) => row.spans.map((span) => span.text).join("").length <= 54));
 });
 
 test("completed runs keep progress updates as separate readable blocks", () => {
