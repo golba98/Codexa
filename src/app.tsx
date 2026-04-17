@@ -66,6 +66,7 @@ import {
   probeCodexAuthStatus,
 } from "./core/auth/codexAuth.js";
 import { copyToClipboard } from "./core/clipboard.js";
+import { getBlockedCleanupFailure } from "./core/cleanupFastFail.js";
 import { runCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
 import {
   buildPlanExecutionPrompt,
@@ -176,9 +177,9 @@ function createTurnId(): number {
 
 function createInitialAuthStatus(): CodexAuthProbeResult {
   return {
-    state: "unknown",
+    state: "checking",
     checkedAt: 0,
-    rawSummary: "Auth check deferred until requested.",
+    rawSummary: "Auth check pending.",
     recommendedAction: "Run /auth status to check sign-in state.",
   };
 }
@@ -510,6 +511,10 @@ export function App({ launchArgs }: AppProps) {
       setAuthStatusBusy(false);
     }
   }, [appendErrorEvent, appendSystemEvent]);
+
+  useEffect(() => {
+    void refreshAuthStatus(false);
+  }, []);
 
   useEffect(() => {
     const devLaunchNotice = buildDevLaunchNotice(launchContext);
@@ -1585,6 +1590,7 @@ export function App({ launchArgs }: AppProps) {
     let liveFlushTimer: ReturnType<typeof setTimeout> | null = null;
     let legacyProgressSequence = 0;
     let firstRenderFired = false;
+    let blockedCleanupFailureSurfaced = false;
 
     const flushLiveUpdates = () => {
       perf.inc("flushes");
@@ -1671,7 +1677,8 @@ export function App({ launchArgs }: AppProps) {
     };
 
     perf.mark("provider_run_start");
-    const stopProviderRun = provider.run(
+    let stopProviderRun: (() => void) | undefined;
+    stopProviderRun = provider.run(
           safeProviderPrompt,
           { runtime: runtimeForTurn, workspaceRoot },
           {
@@ -1690,6 +1697,15 @@ export function App({ launchArgs }: AppProps) {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
           const existing = pendingToolActivities.get(activity.id);
           pendingToolActivities.set(activity.id, existing ? { ...existing, ...activity } : activity);
+          if (fastCleanupRun && !blockedCleanupFailureSurfaced) {
+            const blockedCleanupFailure = getBlockedCleanupFailure(activity);
+            if (blockedCleanupFailure) {
+              blockedCleanupFailureSurfaced = true;
+              flushLiveUpdates();
+              void finalizePromptRun(runId, turnId, "failed", blockedCleanupFailure);
+              return;
+            }
+          }
           scheduleLiveFlush();
         },
         onResponse: (response) => {
