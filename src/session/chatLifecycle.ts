@@ -272,8 +272,56 @@ function createProgressBlock(entryId: string, sequence: number, createdAt: numbe
   };
 }
 
+const MIN_PROGRESS_BLOCK_CHARS = 36;
+const TRANSITION_PHRASE_PATTERN = String.raw`(?:I(?:'|’)m going to|I(?:'|’)ll|I found|I(?:'|’)m checking|I'm checking|I am checking|Next(?:,|\s)|The highest-value improvements|The highest value improvements)`;
+const INLINE_TRANSITION_PATTERN = new RegExp(String.raw`[.!?]\s+(?=${TRANSITION_PHRASE_PATTERN}\b)`, "i");
+const NEWLINE_TRANSITION_PATTERN = new RegExp(String.raw`\n(?=${TRANSITION_PHRASE_PATTERN}\b)`, "i");
+const LIST_MARKER_PATTERN = /^\s*(?:[-*+]\s+|\d+[.)]\s+)/;
+const NEWLINE_LIST_MARKER_PATTERN = /\n(?=\s*(?:[-*+]\s+|\d+[.)]\s+))/;
+
 function hasCommittedBlockText(blocks: RunProgressBlock[]): boolean {
   return blocks.some((block) => block.text.length > 0);
+}
+
+function hasMeaningfulBlockText(text: string): boolean {
+  return text.trim().length >= MIN_PROGRESS_BLOCK_CHARS;
+}
+
+function findReadableBoundary(text: string): { splitAt: number; trimLeft: boolean } | null {
+  if (!hasMeaningfulBlockText(text)) {
+    return null;
+  }
+
+  const transitionMatch = INLINE_TRANSITION_PATTERN.exec(text);
+  if (transitionMatch && transitionMatch.index + transitionMatch[0].length < text.length) {
+    const splitAt = transitionMatch.index + transitionMatch[0].length;
+    if (hasMeaningfulBlockText(text.slice(0, splitAt))) {
+      return { splitAt, trimLeft: false };
+    }
+  }
+
+  const newlineTransitionMatch = NEWLINE_TRANSITION_PATTERN.exec(text);
+  if (newlineTransitionMatch && newlineTransitionMatch.index > 0) {
+    const splitAt = newlineTransitionMatch.index;
+    if (hasMeaningfulBlockText(text.slice(0, splitAt))) {
+      return { splitAt, trimLeft: true };
+    }
+  }
+
+  const newlineListMatch = NEWLINE_LIST_MARKER_PATTERN.exec(text);
+  if (newlineListMatch && newlineListMatch.index > 0) {
+    const before = text.slice(0, newlineListMatch.index);
+    const after = text.slice(newlineListMatch.index + 1);
+    if (
+      hasMeaningfulBlockText(before)
+      && !LIST_MARKER_PATTERN.test(before.split("\n").findLast((line) => line.trim()) ?? "")
+      && LIST_MARKER_PATTERN.test(after)
+    ) {
+      return { splitAt: newlineListMatch.index, trimLeft: true };
+    }
+  }
+
+  return null;
 }
 
 function appendDeltaToProgressEntry(
@@ -297,6 +345,41 @@ function appendDeltaToProgressEntry(
 
   const updateBlock = (index: number, updater: (block: RunProgressBlock) => RunProgressBlock) => {
     blocks[index] = updater(blocks[index]!);
+  };
+
+  const splitActiveBlockAtReadableBoundary = () => {
+    let activeIndex = -1;
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      if (blocks[index]?.status === "active") {
+        activeIndex = index;
+        break;
+      }
+    }
+    if (activeIndex < 0) return;
+
+    const block = blocks[activeIndex]!;
+    const boundary = findReadableBoundary(block.text);
+    if (!boundary) return;
+
+    const completedText = block.text.slice(0, boundary.splitAt).trimEnd();
+    const activeText = block.text.slice(boundary.splitAt + (boundary.trimLeft ? 1 : 0)).trimStart();
+    if (!completedText || !activeText) return;
+
+    blocks[activeIndex] = {
+      ...block,
+      text: completedText,
+      status: "completed",
+      updatedAt,
+    };
+    blocks.splice(activeIndex + 1, 0, {
+      ...createProgressBlock(entry.id, block.sequence + 1, updatedAt),
+      text: activeText,
+    });
+    blocks = blocks.map((candidate, index) => ({
+      ...candidate,
+      sequence: index + 1,
+      id: `${entry.id}-block-${index + 1}`,
+    }));
   };
 
   for (const char of delta) {
@@ -326,6 +409,7 @@ function appendDeltaToProgressEntry(
       text: `${block.text}${char}`,
       updatedAt,
     }));
+    splitActiveBlockAtReadableBoundary();
   }
 
   if (pendingNewlineCount >= 2) {

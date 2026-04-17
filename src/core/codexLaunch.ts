@@ -2,6 +2,7 @@ import { fileURLToPath } from "url";
 import { buildCodexExecArgs, type BuildCodexExecArgsOptions, type BuildCodexExecArgsResult } from "./codexExecArgs.js";
 import { getCodexCliCapabilities, type CodexCliCapabilities } from "./codexCapabilities.js";
 import { resolveCodexExecutable } from "./codexExecutable.js";
+import * as perf from "./perf/profiler.js";
 
 export interface PreparedCodexExecLaunch {
   executable: string;
@@ -90,8 +91,12 @@ export async function prepareCodexExecLaunch(
 }> {
   const executableResolver = dependencies.resolveExecutable ?? resolveCodexExecutable;
   const capabilityResolver = dependencies.getCapabilities ?? getCodexCliCapabilities;
+  perf.mark("exec_resolve_start");
   const executable = await executableResolver();
+  perf.mark("exec_resolve_end");
+  perf.mark("caps_probe_start");
   const capabilities = await capabilityResolver(executable);
+  perf.mark("caps_probe_end");
   const argsResult = buildCodexExecArgs(options, capabilities);
   const responsibleModulePath = resolveResponsibleModulePath(responsibleModuleUrl);
   const responsibleModuleKind = classifyResponsibleModule(responsibleModulePath);
