@@ -2,10 +2,19 @@ import type { AvailableMode } from "../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 
 const WRITE_INTENT_PATTERNS = [
-  /\b(create|make|build|implement|add|generate|write|scaffold|fix|edit|update|refactor)\b/i,
-  /\b(file|files|app|component|script|cli|project|test|tests|bug|feature)\b/i,
+  /\b(create|make|build|implement|add|generate|write|scaffold|fix|edit|update|refactor|cleanup|clean up|delete|remove|prune|purge)\b/i,
+  /\b(file|files|folder|folders|directory|directories|artifact|artifacts|generated|cache|caches|build|dist|coverage|app|component|script|cli|project|test|tests|bug|feature)\b/i,
   /\b(py|python|ts|tsx|js|jsx|json|md|html|css|sql|yaml|yml|toml)\b/i,
 ];
+
+const GENERATED_CLEANUP_ACTION_PATTERN = /\b(cleanup|clean up|delete|remove|prune|purge)\b/i;
+const GENERATED_CLEANUP_SAFE_TARGET_PATTERN =
+  /\b(clearly safe|safe generated|generated|cache|caches|cached|build artifacts?|temporary|temp|tmp|dist|coverage|out|\.cache|node_modules)\b/i;
+const BROAD_DESTRUCTIVE_CLEANUP_PATTERN =
+  /\b(delete|remove|cleanup|clean up|wipe|purge|prune)\s+(everything|entire|whole|repo|repository|workspace|project)\b/i;
+const BROAD_ALL_FILES_CLEANUP_PATTERN =
+  /\b(delete|remove|cleanup|clean up|wipe|purge|prune)\s+all\s+(?!generated|clearly safe|safe generated)(files|folders|directories|contents)\b/i;
+const FORCEFUL_DELETE_PATTERN = /\b(rm\s+-rf|rmdir\s+\/s|del\s+\/[fsq]|format|nuke|wipe)\b/i;
 
 export interface ExecutionModeDecision {
   mode: AvailableMode;
@@ -38,6 +47,18 @@ export function promptHasWriteIntent(prompt: string): boolean {
   );
 
   return hits >= 2;
+}
+
+export function isClearlySafeGeneratedCleanupRequest(prompt: string): boolean {
+  const normalized = prompt.trim();
+  if (!normalized) return false;
+
+  if (BROAD_DESTRUCTIVE_CLEANUP_PATTERN.test(normalized)) return false;
+  if (BROAD_ALL_FILES_CLEANUP_PATTERN.test(normalized)) return false;
+  if (FORCEFUL_DELETE_PATTERN.test(normalized)) return false;
+
+  return GENERATED_CLEANUP_ACTION_PATTERN.test(normalized)
+    && GENERATED_CLEANUP_SAFE_TARGET_PATTERN.test(normalized);
 }
 
 export function resolveExecutionMode(
@@ -324,11 +345,22 @@ export function buildCodexPrompt(
     mode === "full-auto"
       ? "Act with strong autonomy: inspect the repo, create or update files directly, and run checks when helpful."
       : "Act like a coding agent: inspect the repo, create or update files directly, and prefer real workspace edits over large pasted code blocks.";
+  const generatedCleanupInstructions = isClearlySafeGeneratedCleanupRequest(prompt)
+    ? [
+      "Fast generated-file cleanup guidance:",
+      "- Start with a shallow workspace inspection and act decisively.",
+      "- Delete only conventional generated artifacts, caches, temporary folders, dependency installs, and build outputs inside the workspace.",
+      "- Skip ambiguous, user-authored, source, config, docs, lock, and project files.",
+      "- Do not do branch, bootstrap, package install, or repo setup work for this cleanup.",
+      "- Summarize exactly what was removed and what was skipped.",
+    ]
+    : [];
 
   return [
     "The user request below is the task to handle now.",
     "Do not reply with generic readiness or ask what they want changed if the request is already specific.",
     ...planModeInstructions,
+    ...generatedCleanupInstructions,
     "If the request is actionable, make the change in the workspace before responding.",
     "You are running inside the user's current workspace with write access.",
     autonomyLine,

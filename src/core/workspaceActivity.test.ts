@@ -5,6 +5,7 @@ import { join } from "path";
 import test from "node:test";
 import {
   captureWorkspaceSnapshot,
+  createWorkspaceActivityTracker,
   createTextDiffExcerpt,
   diffWorkspaceSnapshots,
 } from "./workspaceActivity.js";
@@ -85,6 +86,44 @@ test("ignores excluded directories like node_modules and .git", () => {
     const activity = diffWorkspaceSnapshots(before, after, 111);
 
     assert.equal(activity.length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("workspace activity tracker can reuse a provided initial snapshot", async () => {
+  const root = createTempWorkspace();
+  try {
+    writeFileSync(join(root, "edited.txt"), "before\n", "utf8");
+    writeFileSync(join(root, "gone.txt"), "delete me\n", "utf8");
+    const before = captureWorkspaceSnapshot(root);
+
+    writeFileSync(join(root, "new-file.ts"), "const value = 1;\n", "utf8");
+    writeFileSync(join(root, "edited.txt"), "after\n", "utf8");
+    unlinkSync(join(root, "gone.txt"));
+
+    const activity = await new Promise<ReturnType<typeof diffWorkspaceSnapshots>>((resolve, reject) => {
+      let tracker: ReturnType<typeof createWorkspaceActivityTracker> | null = null;
+      const timeout = setTimeout(() => {
+        tracker?.stop();
+        reject(new Error("Timed out waiting for workspace activity."));
+      }, 500);
+      tracker = createWorkspaceActivityTracker({
+        rootDir: root,
+        initialSnapshot: before,
+        pollIntervalMs: 10,
+        onActivity: (items) => {
+          clearTimeout(timeout);
+          tracker?.stop();
+          resolve(items);
+        },
+      });
+    });
+
+    const operationsByPath = new Map(activity.map((item) => [item.path, item.operation]));
+    assert.equal(operationsByPath.get("new-file.ts"), "created");
+    assert.equal(operationsByPath.get("edited.txt"), "modified");
+    assert.equal(operationsByPath.get("gone.txt"), "deleted");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

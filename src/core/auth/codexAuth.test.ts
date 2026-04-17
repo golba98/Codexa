@@ -41,6 +41,12 @@ test("warns but allows runs when auth state is unknown", () => {
   assert.match(decision.warningMessage ?? "", /unknown/i);
 });
 
+test("allows unchecked initial auth state without a warning", () => {
+  const decision = getRunGateDecision("unknown", { warnOnUnknown: false });
+  assert.equal(decision.allowRun, true);
+  assert.equal(decision.warningMessage, undefined);
+});
+
 test("allows runs when authenticated", () => {
   const decision = getRunGateDecision("authenticated");
   assert.equal(decision.allowRun, true);

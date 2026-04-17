@@ -5,6 +5,7 @@ import {
   buildPlanExecutionPrompt,
   buildPlanningPrompt,
   detectHollowResponse,
+  isClearlySafeGeneratedCleanupRequest,
   promptHasWriteIntent,
   resolveExecutionMode,
 } from "./codexPrompt.js";
@@ -27,8 +28,30 @@ test("does not force write mode for general questions", () => {
   assert.equal(promptHasWriteIntent("Explain how array sorting works"), false);
 });
 
+test("detects write intent for generated cleanup requests", () => {
+  assert.equal(promptHasWriteIntent("Delete only clearly safe generated files and folders"), true);
+});
+
+test("detects narrow generated cleanup requests", () => {
+  assert.equal(isClearlySafeGeneratedCleanupRequest("Delete only clearly safe generated files and folders"), true);
+  assert.equal(isClearlySafeGeneratedCleanupRequest("Prune build artifacts and caches"), true);
+});
+
+test("does not fast-path broad destructive cleanup requests", () => {
+  assert.equal(isClearlySafeGeneratedCleanupRequest("delete everything"), false);
+  assert.equal(isClearlySafeGeneratedCleanupRequest("remove all files"), false);
+  assert.equal(isClearlySafeGeneratedCleanupRequest("wipe the workspace"), false);
+});
+
 test("auto-upgrades suggest mode for editing prompts", () => {
   assert.deepEqual(resolveExecutionMode("suggest", "Create a new CLI script and tests"), {
+    mode: "auto-edit",
+    autoUpgraded: true,
+  });
+});
+
+test("auto-upgrades suggest mode for generated cleanup prompts", () => {
+  assert.deepEqual(resolveExecutionMode("suggest", "Delete only clearly safe generated files and folders"), {
     mode: "auto-edit",
     autoUpgraded: true,
   });
@@ -76,6 +99,14 @@ test("builds a write-enabled codex prompt for auto-edit when permissions allow i
   assert.match(prompt, /\[QUESTION\]:/i);
   assert.match(prompt, /do not reply with generic readiness/i);
   assert.match(prompt, /Task:/i);
+});
+
+test("adds fast generated cleanup safety instructions for write-enabled cleanup prompts", () => {
+  const prompt = buildCodexPrompt("Delete only clearly safe generated files and folders", "auto-edit", writePolicy);
+  assert.match(prompt, /Fast generated-file cleanup guidance/i);
+  assert.match(prompt, /shallow workspace inspection/i);
+  assert.match(prompt, /generated artifacts/i);
+  assert.match(prompt, /Do not do branch, bootstrap, package install, or repo setup/i);
 });
 
 test("plan mode keeps write-enabled prompts actionable", () => {

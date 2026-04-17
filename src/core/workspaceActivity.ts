@@ -34,6 +34,7 @@ export interface WorkspaceActivityTrackerOptions {
   rootDir: string;
   onActivity: (activity: RunFileActivity[]) => void;
   pollIntervalMs?: number;
+  initialSnapshot?: Map<string, WorkspaceFileSnapshot>;
 }
 
 export interface WorkspaceFileSnapshot {
@@ -352,7 +353,7 @@ export function createWorkspaceActivityTracker(
   options: WorkspaceActivityTrackerOptions,
 ): WorkspaceActivityTracker {
   let stopped = false;
-  let previous = captureWorkspaceSnapshot(options.rootDir);
+  let previous = options.initialSnapshot ?? captureWorkspaceSnapshot(options.rootDir);
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 
   const poll = () => {

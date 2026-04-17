@@ -71,6 +71,7 @@ import {
   buildPlanExecutionPrompt,
   buildPlanningPrompt,
   detectHollowResponse,
+  isClearlySafeGeneratedCleanupRequest,
   resolveExecutionMode,
 } from "./core/codexPrompt.js";
 import { formatHollowResponse } from "./core/hollowResponseFormat.js";
@@ -97,10 +98,7 @@ import {
   getShellWorkspaceGuardMessage,
 } from "./core/workspaceGuard.js";
 import {
-  areModelSpecsEqual,
-  createLoadingModelSpec,
-  createModelSpecService,
-  type ModelSpec,
+  createUnknownModelSpec,
 } from "./core/modelSpecs.js";
 import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots, type RunFileActivity } from "./core/workspaceActivity.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
@@ -178,10 +176,10 @@ function createTurnId(): number {
 
 function createInitialAuthStatus(): CodexAuthProbeResult {
   return {
-    state: "checking",
+    state: "unknown",
     checkedAt: 0,
-    rawSummary: "Initial auth check pending",
-    recommendedAction: "Run /auth status to refresh.",
+    rawSummary: "Auth check deferred until requested.",
+    recommendedAction: "Run /auth status to check sign-in state.",
   };
 }
 
@@ -219,7 +217,6 @@ export function App({ launchArgs }: AppProps) {
     () => buildWorkspaceCommandContext(launchContext),
     [launchContext],
   );
-  const modelSpecService = useMemo(() => createModelSpecService(), []);
   const terminalLayout = useTerminalViewport();
 
   const [baseLayeredConfig, setBaseLayeredConfig] = useState<LayeredConfigResult>(initialLayeredConfig.current);
@@ -240,7 +237,6 @@ export function App({ launchArgs }: AppProps) {
   const [authStatusBusy, setAuthStatusBusy] = useState(false);
   // Running character total across the conversation — used to estimate token usage
   const [conversationChars, setConversationChars] = useState(0);
-  const [modelSpecs, setModelSpecs] = useState<Partial<Record<AvailableModel, ModelSpec>>>({});
   const [modelCapabilities, setModelCapabilities] = useState<CodexModelCapabilities | null>(null);
   const [modelCapabilitiesBusy, setModelCapabilitiesBusy] = useState(false);
   const { stdout } = useStdout();
@@ -329,7 +325,10 @@ export function App({ launchArgs }: AppProps) {
       && existsSync(planFlow.planFilePath),
     [planFlow],
   );
-  const currentModelSpec = modelSpecs[model] ?? createLoadingModelSpec(model);
+  const currentModelSpec = useMemo(
+    () => createUnknownModelSpec(model, "Model spec lookup is deferred until requested."),
+    [model],
+  );
   const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
 
   // Refs for mutable state values — used by stable callbacks below so they
@@ -427,35 +426,6 @@ export function App({ launchArgs }: AppProps) {
     focusManager.focus(getFocusTargetForScreen(screen));
   }, [composerInstanceKey, focusManager, screen]);
 
-  useEffect(() => {
-    const currentSpec = modelSpecs[model];
-    if (currentSpec?.status === "verified") {
-      return;
-    }
-
-    setModelSpecs((prev) => {
-      const activeSpec = prev[model];
-      if (activeSpec?.status === "verified" || activeSpec?.status === "loading") {
-        return prev;
-      }
-      return { ...prev, [model]: createLoadingModelSpec(model) };
-    });
-
-    void modelSpecService.refreshSpec(model).then((spec) => {
-      if (!isMountedRef.current) return;
-      setModelSpecs((prev) => {
-        const activeSpec = prev[model];
-        if (activeSpec?.status === "verified" && spec.status !== "verified") {
-          return prev;
-        }
-        if (areModelSpecsEqual(activeSpec, spec)) {
-          return prev;
-        }
-        return { ...prev, [model]: spec };
-      });
-    });
-  }, [model, modelSpecService]);
-
   const appendStaticEvent = useCallback((event: TimelineEvent) => {
     dispatchSession({ type: "APPEND_STATIC_EVENT", event });
   }, [dispatchSession]);
@@ -505,10 +475,6 @@ export function App({ launchArgs }: AppProps) {
     }
   }, [appendErrorEvent, appendSystemEvent]);
 
-  useEffect(() => {
-    void refreshModelCapabilities(false, false);
-  }, [refreshModelCapabilities]);
-
   const setRuntimeUnauthenticated = useCallback((summary: string) => {
     setAuthStatus({
       state: "unauthenticated",
@@ -544,10 +510,6 @@ export function App({ launchArgs }: AppProps) {
       setAuthStatusBusy(false);
     }
   }, [appendErrorEvent, appendSystemEvent]);
-
-  useEffect(() => {
-    void refreshAuthStatus(false);
-  }, [refreshAuthStatus]);
 
   useEffect(() => {
     const devLaunchNotice = buildDevLaunchNotice(launchContext);
@@ -1508,14 +1470,30 @@ export function App({ launchArgs }: AppProps) {
       ? { mode: requestedMode, autoUpgraded: false }
       : resolveExecutionMode(requestedMode, safeProviderPrompt);
     const effectiveMode = executionModeDecision.mode;
-    const runtimeForTurn = resolveRuntimeConfig({
+    const runtimeConfigForTurn = {
       ...requestedRuntime,
       mode: effectiveMode,
-    });
+    };
+    let runtimeForTurn = resolveRuntimeConfig(runtimeConfigForTurn);
+    const fastCleanupRun = isClearlySafeGeneratedCleanupRequest(safeProviderPrompt)
+      && effectiveMode !== "suggest"
+      && runtimeForTurn.policy.sandboxMode !== "read-only";
+    if (fastCleanupRun && ["medium", "high", "xhigh"].includes(runtimeForTurn.reasoningLevel)) {
+      runtimeForTurn = resolveRuntimeConfig({
+        ...runtimeConfigForTurn,
+        reasoningLevel: "low",
+      });
+    }
     if (executionModeDecision.autoUpgraded) {
       appendSystemEvent(
         "Mode auto-upgraded",
         "This prompt looks like a file-editing request, so the run is using Auto instead of Read-only.",
+      );
+    }
+    if (fastCleanupRun) {
+      appendSystemEvent(
+        "Fast cleanup path",
+        "Using a low-latency cleanup profile: shallow inspection, generated artifacts only, no branch/bootstrap setup.",
       );
     }
 
@@ -1528,7 +1506,9 @@ export function App({ launchArgs }: AppProps) {
     }
 
     if (backend === "codex-subprocess") {
-      const decision = getRunGateDecision(authStatus.state);
+      const decision = getRunGateDecision(authStatus.state, {
+        warnOnUnknown: authStatus.checkedAt > 0,
+      });
       if (!decision.allowRun) {
         appendErrorEvent("Authentication required", decision.blockMessage ?? "Please sign in with `codex login`.");
         return false;
@@ -1558,6 +1538,8 @@ export function App({ launchArgs }: AppProps) {
     const runId = createEventId();
     perf.startSession(String(runId));
     perf.mark("dispatch_start");
+    perf.setMeta("fast_cleanup", fastCleanupRun);
+    perf.setMeta("reasoning", runtimeForTurn.reasoningLevel);
     activeRunIdRef.current = runId;
     activeTurnIdRef.current = turnId;
     activeRunLifecycleRef.current = lifecycle;
@@ -1579,11 +1561,13 @@ export function App({ launchArgs }: AppProps) {
 
     // Capture the workspace state before the run starts so we can diff on completion.
     let preRunSnapshot: ReturnType<typeof captureWorkspaceSnapshot> | null = null;
+    let finalWorkspacePollDone = false;
     const activityTracker = backend === "codex-subprocess"
       ? (() => {
         preRunSnapshot = captureWorkspaceSnapshot(workspaceRoot);
         return createWorkspaceActivityTracker({
           rootDir: workspaceRoot,
+          initialSnapshot: preRunSnapshot,
           onActivity: (activity) => {
             if (!isCurrentRun(activeRunIdRef.current, runId)) return;
             pendingActivity.push(...activity);
@@ -1726,6 +1710,8 @@ export function App({ launchArgs }: AppProps) {
               }
             } catch {
               // Non-fatal: best-effort final poll
+            } finally {
+              finalWorkspacePollDone = true;
             }
           }
 
@@ -1808,7 +1794,7 @@ export function App({ launchArgs }: AppProps) {
       flushLiveUpdates();
       // Do one final sync poll before stopping the tracker to capture
       // any last-moment file changes that were in-flight.
-      if (activityTracker && preRunSnapshot) {
+      if (activityTracker && preRunSnapshot && !finalWorkspacePollDone) {
         try {
           const cleanupSnapshot = captureWorkspaceSnapshot(workspaceRoot);
           const lastActivity = diffWorkspaceSnapshots(preRunSnapshot, cleanupSnapshot);
@@ -2228,7 +2214,18 @@ export function App({ launchArgs }: AppProps) {
           return;
         case "workspace":
         case "backends":
+          if (commandResult.message) {
+            appendSystemEvent("Command", commandResult.message);
+          }
+          return;
         case "models":
+          if (!modelCapabilities && !modelCapabilitiesBusy) {
+            void refreshModelCapabilities(false, true);
+          }
+          if (commandResult.message) {
+            appendSystemEvent("Command", commandResult.message);
+          }
+          return;
         case "help":
         case "unknown":
           if (commandResult.message) {

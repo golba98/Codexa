@@ -118,7 +118,14 @@ export interface RunGateDecision {
   warningMessage?: string;
 }
 
-export function getRunGateDecision(authState: CodexAuthState): RunGateDecision {
+export interface RunGateDecisionOptions {
+  warnOnUnknown?: boolean;
+}
+
+export function getRunGateDecision(
+  authState: CodexAuthState,
+  options: RunGateDecisionOptions = {},
+): RunGateDecision {
   if (authState === "unauthenticated") {
     return {
       allowRun: false,
@@ -131,6 +138,10 @@ export function getRunGateDecision(authState: CodexAuthState): RunGateDecision {
   }
 
   if (authState === "unknown" || authState === "checking") {
+    if (options.warnOnUnknown === false) {
+      return { allowRun: true };
+    }
+
     return {
       allowRun: true,
       warningMessage:
