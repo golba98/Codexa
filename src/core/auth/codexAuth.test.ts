@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   getRunGateDecision,
+  getAuthStateLabel,
   inferAuthStateFromProbe,
   isLikelyAuthFailure,
 } from "./codexAuth.js";
@@ -56,4 +57,12 @@ test("allows runs when authenticated", () => {
 test("detects runtime auth failure messages", () => {
   const detected = isLikelyAuthFailure("Unauthorized (401): token expired. Run codex login.");
   assert.equal(detected, true);
+});
+
+test("getAuthStateLabel returns Checking for checking state", () => {
+  assert.equal(getAuthStateLabel("checking"), "Checking");
+});
+
+test("getAuthStateLabel returns Unknown for unknown state", () => {
+  assert.equal(getAuthStateLabel("unknown"), "Unknown");
 });

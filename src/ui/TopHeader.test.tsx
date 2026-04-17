@@ -142,6 +142,12 @@ test("full mode always shows wordmark regardless of activity", async () => {
   assert.doesNotMatch(output, /Runtime:/);
 });
 
+test("full mode renders Checking for checking auth state", async () => {
+  const output = await renderHeader(130, "checking");
+  assert.match(output, /Checking/);
+  assert.doesNotMatch(output, /Unknown/);
+});
+
 test("compact mode preserves workspace truncation without runtime text", async () => {
   const output = await renderHeaderWithWorkspace(
     60,
