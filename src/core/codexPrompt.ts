@@ -351,6 +351,9 @@ export function buildCodexPrompt(
       "- Start with a shallow workspace inspection and act decisively.",
       "- Delete only conventional generated artifacts, caches, temporary folders, dependency installs, and build outputs inside the workspace.",
       "- Skip ambiguous, user-authored, source, config, docs, lock, and project files.",
+      "- Attempt each safe cleanup target once.",
+      "- If deletion is blocked by access denied, permission denied, a locked/in-use file, EACCES, EPERM, EBUSY, or Git lock metadata, stop immediately and report the blocked path and cause.",
+      "- Do not retry, force-delete, change permissions, run setup/bootstrap commands, or continue broad analysis after a clear blocked-delete failure.",
       "- Do not do branch, bootstrap, package install, or repo setup work for this cleanup.",
       "- Summarize exactly what was removed and what was skipped.",
     ]

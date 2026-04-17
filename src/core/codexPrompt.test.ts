@@ -106,6 +106,9 @@ test("adds fast generated cleanup safety instructions for write-enabled cleanup 
   assert.match(prompt, /Fast generated-file cleanup guidance/i);
   assert.match(prompt, /shallow workspace inspection/i);
   assert.match(prompt, /generated artifacts/i);
+  assert.match(prompt, /Attempt each safe cleanup target once/i);
+  assert.match(prompt, /stop immediately and report the blocked path and cause/i);
+  assert.match(prompt, /Do not retry, force-delete/i);
   assert.match(prompt, /Do not do branch, bootstrap, package install, or repo setup/i);
 });
 
