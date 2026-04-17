@@ -29,6 +29,22 @@ export const MODEL_SPEC_DOC_URLS: Record<string, string> = {
   "gpt-5.2": "https://developers.openai.com/api/docs/models/gpt-5.2",
 };
 
+// Trusted static registry — used as a fallback when the persistent cache hasn't
+// been populated yet and the runtime discovery response doesn't include context
+// metadata. Values sourced from the same OpenAI docs that fetchModelSpecFromDocs
+// scrapes, so they align with verified cache entries once a refresh completes.
+export interface KnownModelSpec {
+  contextWindow: number;
+  maxOutputTokens: number;
+}
+
+export const KNOWN_MODEL_SPECS: Record<string, KnownModelSpec> = {
+  "gpt-5.4": { contextWindow: 1_050_000, maxOutputTokens: 128_000 },
+  "gpt-5.4-mini": { contextWindow: 400_000, maxOutputTokens: 128_000 },
+  "gpt-5.3-codex": { contextWindow: 400_000, maxOutputTokens: 128_000 },
+  "gpt-5.2": { contextWindow: 400_000, maxOutputTokens: 128_000 },
+};
+
 type ModelSpecCache = Partial<Record<string, VerifiedModelSpec>>;
 
 interface ModelSpecServiceOptions {
@@ -180,6 +196,66 @@ export async function fetchModelSpecFromDocs(
   }
 
   return parsed;
+}
+
+export interface ResolveModelSpecOptions {
+  // Persisted verified cache (loaded synchronously at startup).
+  cache?: Partial<Record<string, VerifiedModelSpec>>;
+  // Runtime discovery contextWindow if/when Codex starts providing it.
+  runtimeContextWindow?: number | null;
+  runtimeMaxOutputTokens?: number | null;
+  // Set true when a background refresh is in progress and no other source
+  // has produced verified numbers — lets callers render a "loading" state
+  // instead of "unknown".
+  refreshInFlight?: boolean;
+  now?: () => number;
+}
+
+// Single authoritative resolver. Precedence:
+//   1. Runtime discovery metadata (if contextWindow is provided)
+//   2. Persistent spec cache (~/.codexa-model-specs.json)
+//   3. Trusted static registry (KNOWN_MODEL_SPECS)
+//   4. Loading (if a background refresh is in-flight)
+//   5. Unknown
+export function resolveModelSpec(model: string, options: ResolveModelSpecOptions = {}): ModelSpec {
+  const now = options.now?.() ?? Date.now();
+
+  const runtimeCtx = options.runtimeContextWindow;
+  const runtimeMax = options.runtimeMaxOutputTokens;
+  if (
+    typeof runtimeCtx === "number" && Number.isFinite(runtimeCtx) && runtimeCtx > 0
+    && typeof runtimeMax === "number" && Number.isFinite(runtimeMax) && runtimeMax > 0
+  ) {
+    return {
+      status: "verified",
+      contextWindow: runtimeCtx,
+      maxOutputTokens: runtimeMax,
+      sourceUrl: getModelSpecDocUrl(model),
+      verifiedAt: now,
+    };
+  }
+
+  const cached = options.cache?.[model];
+  if (cached && cached.status === "verified") {
+    return cached;
+  }
+
+  const known = KNOWN_MODEL_SPECS[model];
+  if (known) {
+    return {
+      status: "verified",
+      contextWindow: known.contextWindow,
+      maxOutputTokens: known.maxOutputTokens,
+      sourceUrl: getModelSpecDocUrl(model),
+      verifiedAt: now,
+    };
+  }
+
+  if (options.refreshInFlight) {
+    return createLoadingModelSpec(model);
+  }
+
+  return createUnknownModelSpec(model);
 }
 
 export function areModelSpecsEqual(left: ModelSpec | undefined, right: ModelSpec): boolean {
