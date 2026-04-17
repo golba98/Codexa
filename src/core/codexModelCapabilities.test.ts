@@ -172,6 +172,63 @@ test("caches successful discovery and refreshes when forced", async () => {
   clearCodexModelCapabilityCache();
 });
 
+test("concurrent callers share a single in-flight discovery promise", async () => {
+  clearCodexModelCapabilityCache();
+  let calls = 0;
+  let resolveDiscover: (value: unknown) => void = () => {};
+  const gate = new Promise<unknown>((resolve) => {
+    resolveDiscover = resolve;
+  });
+
+  const discover = async () => {
+    calls += 1;
+    await gate;
+    return normalizeCodexModelListResponses([
+      {
+        data: [
+          {
+            id: "model-a",
+            model: "model-a",
+            displayName: "Model A",
+            hidden: false,
+            isDefault: true,
+            defaultReasoningEffort: "medium",
+            supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Default" }],
+          },
+        ],
+      },
+    ], { discoveredAt: 1, executable: "codex" });
+  };
+
+  const firstPromise = getCodexModelCapabilities({
+    executable: "codex",
+    discover,
+    now: () => 100,
+    ttlMs: 1000,
+  });
+  const secondPromise = getCodexModelCapabilities({
+    executable: "codex",
+    discover,
+    now: () => 100,
+    ttlMs: 1000,
+  });
+  const thirdPromise = getCodexModelCapabilities({
+    executable: "codex",
+    discover,
+    now: () => 100,
+    ttlMs: 1000,
+  });
+
+  resolveDiscover(undefined);
+  const [first, second, third] = await Promise.all([firstPromise, secondPromise, thirdPromise]);
+
+  assert.equal(calls, 1, "discovery should run exactly once when called concurrently");
+  assert.equal(first.models[0]?.model, "model-a");
+  assert.equal(second.models[0]?.model, "model-a");
+  assert.equal(third.models[0]?.model, "model-a");
+  clearCodexModelCapabilityCache();
+});
+
 test("falls back safely when discovery fails", async () => {
   clearCodexModelCapabilityCache();
   const capabilities = await getCodexModelCapabilities({

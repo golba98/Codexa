@@ -286,6 +286,8 @@ export function App({ launchArgs }: AppProps) {
   const activeTurnIdRef = useRef<number | null>(null);
   const previousScreenRef = useRef<Screen>("main");
   const themePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modelDiscoveryInFlightRef = useRef<Promise<CodexModelCapabilities> | null>(null);
+  const modelDiscoveryAnnounceRef = useRef(false);
   const activeThemeName = getDisplayedThemeName(themeSelection);
   const activeTheme =
     activeThemeName === "custom"
@@ -455,25 +457,48 @@ export function App({ launchArgs }: AppProps) {
     });
   }, [appendStaticEvent]);
 
-  const refreshModelCapabilities = useCallback(async (forceRefresh = false, announce = false) => {
-    setModelCapabilitiesBusy(true);
-    try {
-      const capabilities = await getCodexModelCapabilities({ forceRefresh });
-      setModelCapabilities(capabilities);
+  const refreshModelCapabilities = useCallback((forceRefresh = false, announce = false): Promise<CodexModelCapabilities> => {
+    // Single-flight: concurrent requests share the same in-flight discovery
+    // promise so we never spawn a duplicate discovery job or emit duplicate
+    // transcript messages.
+    if (modelDiscoveryInFlightRef.current && !forceRefresh) {
       if (announce) {
-        const modelCount = getSelectableModelCapabilities(capabilities).length;
-        const source = capabilities.status === "ready" ? "Codex runtime" : "fallback compatibility list";
-        appendSystemEvent("Model discovery", `Loaded ${modelCount} models from ${source}.`);
+        modelDiscoveryAnnounceRef.current = true;
       }
-    } catch (error) {
-      const fallback = createFallbackModelCapabilities(error);
-      setModelCapabilities(fallback);
-      if (announce) {
-        appendErrorEvent("Model discovery failed", fallback.error ?? "Unable to discover Codex models.");
-      }
-    } finally {
-      setModelCapabilitiesBusy(false);
+      return modelDiscoveryInFlightRef.current;
     }
+
+    if (announce) {
+      modelDiscoveryAnnounceRef.current = true;
+    }
+
+    setModelCapabilitiesBusy(true);
+    const promise = (async () => {
+      try {
+        const capabilities = await getCodexModelCapabilities({ forceRefresh });
+        setModelCapabilities(capabilities);
+        if (modelDiscoveryAnnounceRef.current) {
+          const modelCount = getSelectableModelCapabilities(capabilities).length;
+          const source = capabilities.status === "ready" ? "Codex runtime" : "fallback compatibility list";
+          appendSystemEvent("Model discovery", `Loaded ${modelCount} models from ${source}.`);
+        }
+        return capabilities;
+      } catch (error) {
+        const fallback = createFallbackModelCapabilities(error);
+        setModelCapabilities(fallback);
+        if (modelDiscoveryAnnounceRef.current) {
+          appendErrorEvent("Model discovery failed", fallback.error ?? "Unable to discover Codex models.");
+        }
+        return fallback;
+      } finally {
+        setModelCapabilitiesBusy(false);
+        modelDiscoveryInFlightRef.current = null;
+        modelDiscoveryAnnounceRef.current = false;
+      }
+    })();
+
+    modelDiscoveryInFlightRef.current = promise;
+    return promise;
   }, [appendErrorEvent, appendSystemEvent]);
 
   const setRuntimeUnauthenticated = useCallback((summary: string) => {
@@ -851,16 +876,17 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
+    // Kick off discovery if we don't already have capabilities. The helper is
+    // single-flight, so repeated picker opens while discovery is in progress
+    // subscribe to the existing promise instead of spawning duplicate jobs or
+    // log entries. Open the picker immediately; it renders a loading state
+    // until the promise resolves and state updates commit the model list.
     if (!modelCapabilities) {
-      if (!modelCapabilitiesBusy) {
-        void refreshModelCapabilities(true, true);
-      }
-      appendSystemEvent("Model discovery", "Codex model discovery is still running. Try the model picker again in a moment.");
-      return;
+      void refreshModelCapabilities(false, true);
     }
 
     setScreen("model-picker");
-  }, [appendSystemEvent, busy, modelCapabilities, modelCapabilitiesBusy, refreshModelCapabilities]);
+  }, [appendSystemEvent, busy, modelCapabilities, refreshModelCapabilities]);
 
   const openModePicker = useCallback(() => {
     const gate = guardConfigMutation("mode", busy);
@@ -2235,7 +2261,7 @@ export function App({ launchArgs }: AppProps) {
           }
           return;
         case "models":
-          if (!modelCapabilities && !modelCapabilitiesBusy) {
+          if (!modelCapabilities) {
             void refreshModelCapabilities(false, true);
           }
           if (commandResult.message) {
@@ -2356,6 +2382,7 @@ export function App({ launchArgs }: AppProps) {
                   models={selectableModelCapabilities}
                   currentModel={model}
                   currentReasoning={reasoningLevel}
+                  isLoading={modelCapabilitiesBusy && selectableModelCapabilities.length === 0}
                   onSelect={(m, r) => setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel)}
                   onCancel={() => setScreen("main")}
                 />
