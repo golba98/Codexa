@@ -1,4 +1,7 @@
 export interface LaunchArgs {
+  help: boolean;
+  version: boolean;
+  initialPrompt: string | null;
   profile: string | null;
   configOverrides: string[];
   passthroughArgs: string[];
@@ -30,6 +33,9 @@ function parseConfigFlagValue(raw: string | undefined): string | null {
 export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult {
   const passthroughArgs: string[] = [];
   const configOverrides: string[] = [];
+  const promptArgs: string[] = [];
+  let help = false;
+  let version = false;
   let profile: string | null = null;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -39,8 +45,18 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
     }
 
     if (arg === "--") {
-      passthroughArgs.push(...argv.slice(index + 1));
+      promptArgs.push(...argv.slice(index + 1));
       break;
+    }
+
+    if (arg === "--help" || arg === "-h") {
+      help = true;
+      continue;
+    }
+
+    if (arg === "--version" || arg === "-v") {
+      version = true;
+      continue;
     }
 
     if (arg === "--profile") {
@@ -95,12 +111,26 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       continue;
     }
 
+    if (!arg.startsWith("-")) {
+      promptArgs.push(arg, ...argv.slice(index + 1));
+      break;
+    }
+
     passthroughArgs.push(arg);
   }
+
+  const initialPrompt = promptArgs
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim() || null;
 
   return {
     ok: true,
     value: {
+      help,
+      version,
+      initialPrompt,
       profile,
       configOverrides,
       passthroughArgs,

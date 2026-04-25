@@ -108,6 +108,7 @@ import {
 } from "./core/modelSpecs.js";
 import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots, type RunFileActivity } from "./core/workspaceActivity.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
+import { loadProjectInstructions } from "./core/projectInstructions.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
@@ -211,6 +212,10 @@ export function App({ launchArgs }: AppProps) {
   const { exit } = useApp();
   const focusManager = useFocusManager();
   const workspaceRoot = useMemo(() => resolveWorkspaceRoot(), []);
+  const projectInstructionsLoad = useMemo(() => loadProjectInstructions(workspaceRoot), [workspaceRoot]);
+  const projectInstructions = projectInstructionsLoad.status === "loaded"
+    ? projectInstructionsLoad.instructions
+    : null;
   const initialSettings = useRef(loadSettings());
   const initialLayeredConfig = useRef<LayeredConfigResult | null>(null);
   if (initialLayeredConfig.current === null) {
@@ -310,6 +315,7 @@ export function App({ launchArgs }: AppProps) {
   const intendedInputModeRef = useRef<"chat/input" | "model-picker">("chat/input");
   const intendedFocusTargetRef = useRef<string>(FOCUS_IDS.composer);
   const modelSelectionInFlightRef = useRef(false);
+  const initialPromptSubmittedRef = useRef(false);
   const activeThemeName = getDisplayedThemeName(themeSelection);
   const activeTheme =
     activeThemeName === "custom"
@@ -569,6 +575,27 @@ export function App({ launchArgs }: AppProps) {
       content: safeContent,
     });
   }, [appendStaticEvent]);
+
+  useEffect(() => {
+    if (projectInstructionsLoad.status === "loaded") {
+      appendSystemEvent(
+        "Project instructions",
+        `Loaded ${projectInstructionsLoad.instructions.path}.`,
+      );
+      traceInputDebug("project_instructions_loaded", {
+        path: projectInstructionsLoad.instructions.path,
+        content: projectInstructionsLoad.instructions.content,
+      });
+      return;
+    }
+
+    if (projectInstructionsLoad.status === "error") {
+      appendErrorEvent(
+        "Project instructions",
+        `Could not read ${projectInstructionsLoad.path}: ${projectInstructionsLoad.message}`,
+      );
+    }
+  }, [appendErrorEvent, appendSystemEvent, projectInstructionsLoad]);
 
   const refreshModelCapabilities = useCallback((forceRefresh = false, announce = false): Promise<CodexModelCapabilities> => {
     // Single-flight: concurrent requests share the same in-flight discovery
@@ -1926,7 +1953,7 @@ export function App({ launchArgs }: AppProps) {
     let stopProviderRun: (() => void) | undefined;
     stopProviderRun = provider.run(
           safeProviderPrompt,
-          { runtime: runtimeForTurn, workspaceRoot },
+          { runtime: runtimeForTurn, workspaceRoot, projectInstructions },
           {
         onAssistantDelta: (chunk) => {
           if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) return;
@@ -2080,6 +2107,7 @@ export function App({ launchArgs }: AppProps) {
     finalizePromptRun,
     mode,
     provider,
+    projectInstructions,
     dispatchSession,
     setRuntimeUnauthenticated,
     runtimeConfig,
@@ -2208,6 +2236,47 @@ export function App({ launchArgs }: AppProps) {
     setPlanFlow(nextState);
     runPlanGeneration(nextState, feedback);
   }, [appendSystemEvent, planFlow, runPlanGeneration]);
+
+  useEffect(() => {
+    if (initialPromptSubmittedRef.current || busy) {
+      return;
+    }
+
+    const initialPrompt = sanitizeTerminalInput(launchArgs.initialPrompt ?? "").trim();
+    if (!initialPrompt) {
+      return;
+    }
+
+    initialPromptSubmittedRef.current = true;
+
+    const workspaceGuardMessage = getPromptWorkspaceGuardMessage(initialPrompt, workspaceRoot, allowedWritableRoots);
+    if (workspaceGuardMessage) {
+      appendErrorEvent("Workspace boundary", workspaceGuardMessage);
+      return;
+    }
+
+    dispatchSession({ type: "PUSH_HISTORY", value: initialPrompt });
+
+    if (planMode) {
+      const nextPlanState = startPlanGeneration(initialPrompt, mode);
+      setPlanFlow(nextPlanState);
+      runPlanGeneration(nextPlanState, initialPrompt);
+      return;
+    }
+
+    startPromptRun(initialPrompt, initialPrompt);
+  }, [
+    allowedWritableRoots,
+    appendErrorEvent,
+    busy,
+    dispatchSession,
+    launchArgs.initialPrompt,
+    mode,
+    planMode,
+    runPlanGeneration,
+    startPromptRun,
+    workspaceRoot,
+  ]);
 
   const handleSubmit = useCallback(() => {
     perf.mark("submit");

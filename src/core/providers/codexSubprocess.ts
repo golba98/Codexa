@@ -170,7 +170,9 @@ export const codexSubprocessProvider: BackendProvider = {
           proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
           perf.mark("spawn_done");
 
-          proc.stdin?.write(buildCodexPrompt(prompt, options.runtime));
+          proc.stdin?.write(buildCodexPrompt(prompt, options.runtime, undefined, {
+            projectInstructions: options.projectInstructions,
+          }));
           proc.stdin?.end();
 
           proc.stdout?.on("data", (chunk: Buffer) => {

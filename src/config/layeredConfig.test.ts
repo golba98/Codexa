@@ -60,6 +60,9 @@ test("resolves user config, trusted project config, profiles, and CLI overrides 
     const result = layeredConfig.resolveLayeredConfig({
       workspaceRoot,
       launchArgs: {
+        help: false,
+        version: false,
+        initialPrompt: null,
         profile: null,
         configOverrides: [
           "model=\"gpt-5.4-mini\"",
@@ -115,6 +118,9 @@ test("blocks project config when the detected project root is untrusted", async 
     const result = layeredConfig.resolveLayeredConfig({
       workspaceRoot,
       launchArgs: {
+        help: false,
+        version: false,
+        initialPrompt: null,
         profile: null,
         configOverrides: [],
         passthroughArgs: [],

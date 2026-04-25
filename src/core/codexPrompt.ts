@@ -1,5 +1,6 @@
 import type { AvailableMode } from "../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
+import type { ProjectInstructions } from "./projectInstructions.js";
 
 const WRITE_INTENT_PATTERNS = [
   /\b(create|make|build|implement|add|generate|write|scaffold|fix|edit|update|refactor|cleanup|clean up|delete|remove|prune|purge)\b/i,
@@ -35,6 +36,10 @@ export interface PlanExecutionPromptParams {
   task: string;
   approvedPlan: string;
   constraints?: readonly string[];
+}
+
+export interface CodexPromptOptions {
+  projectInstructions?: ProjectInstructions | null;
 }
 
 export function promptHasWriteIntent(prompt: string): boolean {
@@ -284,6 +289,21 @@ function resolvePromptRuntime(
   };
 }
 
+function formatProjectInstructionsSection(projectInstructions: ProjectInstructions | null | undefined): string[] {
+  const content = projectInstructions?.content.trim();
+  if (!content) {
+    return [];
+  }
+  const sourcePath = projectInstructions?.path ?? "unknown";
+
+  return [
+    "Project instructions:",
+    `Loaded from: ${sourcePath}`,
+    content,
+    "",
+  ];
+}
+
 export function buildCodexPrompt(
   prompt: string,
   modeOrRuntime: AvailableMode | Pick<ResolvedRuntimeConfig, "mode" | "policy" | "planMode">,
@@ -292,9 +312,11 @@ export function buildCodexPrompt(
     sandboxMode: string;
     planMode?: boolean;
   },
+  options: CodexPromptOptions = {},
 ): string {
   const enrichedPrompt = enrichFileCreationPrompt(prompt);
   const { mode, sandboxMode, planMode } = resolvePromptRuntime(modeOrRuntime, runtimePolicy);
+  const projectInstructionsSection = formatProjectInstructionsSection(options.projectInstructions);
   const readOnlySandbox = sandboxMode === "read-only";
   const planModeInstructions = planMode
     ? [
@@ -318,6 +340,7 @@ export function buildCodexPrompt(
       "Only ask a blocking follow-up question if proceeding would likely use the wrong file, wrong command, destructive behavior, or produce fundamentally incorrect output.",
       "If you are truly blocked on one critical missing fact, end the response with exactly one line in this format: [QUESTION]: <your question>",
       "",
+      ...projectInstructionsSection,
       "Task:",
       enrichedPrompt,
     ].join("\n");
@@ -336,6 +359,7 @@ export function buildCodexPrompt(
       "Only ask a blocking follow-up question if proceeding would likely use the wrong file, wrong command, destructive behavior, or produce fundamentally incorrect output.",
       "If you are truly blocked on one critical missing fact, end the response with exactly one line in this format: [QUESTION]: <your question>",
       "",
+      ...projectInstructionsSection,
       "Task:",
       enrichedPrompt,
     ].join("\n");
@@ -374,6 +398,7 @@ export function buildCodexPrompt(
     "If you are truly blocked on one critical missing fact, end the response with exactly one line in this format: [QUESTION]: <your question>",
     "After doing the work, summarize what changed.",
     "",
+    ...projectInstructionsSection,
     "Task:",
     enrichedPrompt,
   ].join("\n");

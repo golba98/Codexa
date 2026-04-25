@@ -59,3 +59,4 @@ docs/planning/parity-implementation-backlog.md
 
 .gemini/
 gha-creds-*.json
+.aider*
