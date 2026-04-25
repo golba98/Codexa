@@ -1,10 +1,70 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "child_process";
+import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 process.title = "CODEXA";
+
+const currentFile = fileURLToPath(import.meta.url);
+const packageRoot = dirname(dirname(currentFile));
+const forwardArgs = process.argv.slice(2);
+
+function hasFlag(args, longFlag, shortFlag) {
+  for (const arg of args) {
+    if (arg === "--") return false;
+    if (arg === longFlag || arg === shortFlag) return true;
+  }
+  return false;
+}
+
+function readPackageVersion() {
+  try {
+    const raw = readFileSync(join(packageRoot, "package.json"), "utf8");
+    const parsed = JSON.parse(raw);
+    return typeof parsed.version === "string" && parsed.version.trim()
+      ? parsed.version.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function printHelp() {
+  const version = readPackageVersion();
+  const versionLine = version ? `codexa ${version}` : "codexa";
+  console.log(`${versionLine}
+
+Usage:
+  codexa
+  codexa "explain this repo"
+  codexa [options] [prompt]
+
+Options:
+  -h, --help              Show this help text and exit.
+  -v, --version           Show the installed Codexa version and exit.
+      --profile <name>    Load a Codex profile from config.
+  -c, --config <key=val>  Override a runtime config value.
+
+Inside Codexa:
+  /help                   Show interactive commands.
+  /model                  Open model selection.
+  /mode                   Open mode selection.
+  /exit                   Exit the interactive UI.
+`);
+}
+
+if (hasFlag(forwardArgs, "--help", "-h")) {
+  printHelp();
+  process.exit(0);
+}
+
+if (hasFlag(forwardArgs, "--version", "-v")) {
+  console.log(readPackageVersion() ?? "unknown");
+  process.exit(0);
+}
+
 process.stdout.write("\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07");
 
 /**
@@ -69,11 +129,8 @@ if (!bunExecutable) {
   process.exit(1);
 }
 
-const currentFile = fileURLToPath(import.meta.url);
-const packageRoot = dirname(dirname(currentFile));
 const appEntry = join(packageRoot, "src", "index.tsx");
 const workspaceRoot = process.cwd();
-const forwardArgs = process.argv.slice(2);
 
 // Detect if parent process has a real TTY
 const parentHasTTY = process.stdin.isTTY && process.stdout.isTTY;

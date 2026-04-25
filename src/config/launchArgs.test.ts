@@ -15,6 +15,9 @@ test("parses profile and repeated config overrides", () => {
   assert.equal(parsed.ok, true);
   if (!parsed.ok) return;
 
+  assert.equal(parsed.value.help, false);
+  assert.equal(parsed.value.version, false);
+  assert.equal(parsed.value.initialPrompt, null);
   assert.equal(parsed.value.profile, "review");
   assert.deepEqual(parsed.value.configOverrides, [
     "model=\"gpt-5.4\"",
@@ -64,4 +67,35 @@ test("parses inline profile and config assignments", () => {
     "--config=model=\"gpt-5.4-mini\"",
     "-c=codexa.mode=\"auto-edit\"",
   ]);
+});
+
+test("parses help and version flags without passthrough", () => {
+  const parsed = parseLaunchArgs(["--help", "-v"]);
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  assert.equal(parsed.value.help, true);
+  assert.equal(parsed.value.version, true);
+  assert.equal(parsed.value.initialPrompt, null);
+  assert.deepEqual(parsed.value.passthroughArgs, []);
+});
+
+test("parses positional arguments as an initial prompt", () => {
+  const parsed = parseLaunchArgs(["--profile", "review", "explain", "this", "repo"]);
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  assert.equal(parsed.value.profile, "review");
+  assert.equal(parsed.value.initialPrompt, "explain this repo");
+  assert.deepEqual(parsed.value.passthroughArgs, ["--profile", "review"]);
+});
+
+test("parses arguments after -- as an initial prompt", () => {
+  const parsed = parseLaunchArgs(["--", "--help", "as", "text"]);
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  assert.equal(parsed.value.help, false);
+  assert.equal(parsed.value.initialPrompt, "--help as text");
+  assert.deepEqual(parsed.value.passthroughArgs, []);
 });

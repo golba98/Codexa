@@ -32,21 +32,31 @@ const checks = {
   },
 
   cliHelpVersion() {
-    const path = join(repoRoot, "src", "config", "launchArgs.ts");
-    if (!existsSync(path)) {
-      return { pass: false, evidence: [], reason: "launchArgs.ts not found" };
+    const launchArgsPath = join(repoRoot, "src", "config", "launchArgs.ts");
+    const launcherPath = join(repoRoot, "bin", "codexa.js");
+    if (!existsSync(launchArgsPath) || !existsSync(launcherPath)) {
+      return { pass: false, evidence: [], reason: "launch arg parser or launcher not found" };
     }
     
-    const content = readFileSync(path, "utf-8");
-    const hasHelp = /--help|-h/.test(content);
-    const hasVersion = /--version|-v/.test(content);
+    const launchArgsContent = readFileSync(launchArgsPath, "utf-8");
+    const launcherContent = readFileSync(launcherPath, "utf-8");
+    const combined = `${launchArgsContent}\n${launcherContent}`;
+    const hasHelp = /--help/.test(combined) && /["']-h["']/.test(combined);
+    const hasVersion = /--version/.test(combined) && /["']-v["']/.test(combined);
+    const exitsBeforeInk = /process\.exit\(0\)/.test(launcherContent) && !/render\(/.test(launcherContent);
+    const readsPackageVersion = /package\.json/.test(launcherContent) && /version/.test(launcherContent);
     
     return {
-      pass: hasHelp && hasVersion,
-      evidence: [path],
-      reason: hasHelp && hasVersion
-        ? "--help and --version flags parsed"
-        : `Only ${hasHelp ? "--help" : hasVersion ? "--version" : "neither"} parsed`
+      pass: hasHelp && hasVersion && exitsBeforeInk && readsPackageVersion,
+      evidence: [launchArgsPath, launcherPath],
+      reason: hasHelp && hasVersion && exitsBeforeInk && readsPackageVersion
+        ? "--help/-h and --version/-v exit from launcher before Ink and version reads package.json"
+        : `Missing evidence: ${[
+          hasHelp ? null : "help flags",
+          hasVersion ? null : "version flags",
+          exitsBeforeInk ? null : "early exit before Ink",
+          readsPackageVersion ? null : "package.json version read",
+        ].filter(Boolean).join(", ")}`
     };
   },
 
@@ -61,8 +71,10 @@ const checks = {
     const launchContent = readFileSync(path, "utf-8");
     const appContent = readFileSync(appPath, "utf-8");
     
-    const hasExtraction = /passthroughArgs|initialPrompt/.test(launchContent);
-    const hasUsage = /launchArgs.*prompt|initialPrompt/.test(appContent);
+    const hasExtraction = /initialPrompt/.test(launchContent) && /promptArgs/.test(launchContent);
+    const hasUsage = /launchArgs\.initialPrompt/.test(appContent)
+      && /initialPromptSubmittedRef/.test(appContent)
+      && /startPromptRun\(initialPrompt,\s*initialPrompt\)/.test(appContent);
     
     return {
       pass: hasExtraction && hasUsage,
@@ -130,25 +142,41 @@ const checks = {
   },
 
   agentsmdSupport() {
-    const agentsPath = join(repoRoot, "AGENTS.md");
+    const loaderPath = join(repoRoot, "src", "core", "projectInstructions.ts");
     const appPath = join(repoRoot, "src", "app.tsx");
+    const promptPath = join(repoRoot, "src", "core", "codexPrompt.ts");
+    const providerPath = join(repoRoot, "src", "core", "providers", "codexSubprocess.ts");
     
-    const agentsExists = existsSync(agentsPath);
-    let agentsLoaded = false;
-    
-    if (agentsExists && existsSync(appPath)) {
-      const appContent = readFileSync(appPath, "utf-8");
-      agentsLoaded = /AGENTS|agents\.md|project.*instruction/.test(appContent);
+    const paths = [loaderPath, appPath, promptPath, providerPath];
+    const existing = paths.filter(p => existsSync(p));
+    if (existing.length !== paths.length) {
+      return {
+        pass: false,
+        evidence: existing,
+        reason: `Found ${existing.length}/4 AGENTS.md support files`
+      };
     }
     
+    const loaderContent = readFileSync(loaderPath, "utf-8");
+    const appContent = readFileSync(appPath, "utf-8");
+    const promptContent = readFileSync(promptPath, "utf-8");
+    const providerContent = readFileSync(providerPath, "utf-8");
+    const discoversAgents = /AGENTS\.md/.test(loaderContent) && /\.codex/.test(loaderContent);
+    const appLoadsAgents = /loadProjectInstructions/.test(appContent) && /projectInstructions/.test(appContent);
+    const promptInjectsAgents = /Project instructions:/.test(promptContent) && /projectInstructions/.test(promptContent);
+    const providerPassesAgents = /projectInstructions/.test(providerContent) && /buildCodexPrompt/.test(providerContent);
+
     return {
-      pass: agentsExists && agentsLoaded,
-      evidence: agentsExists ? [agentsPath, appPath] : [],
-      reason: agentsLoaded
-        ? "AGENTS.md file exists and is loaded by app"
-        : agentsExists
-        ? "AGENTS.md exists but NOT loaded by app"
-        : "AGENTS.md file not found"
+      pass: discoversAgents && appLoadsAgents && promptInjectsAgents && providerPassesAgents,
+      evidence: paths,
+      reason: discoversAgents && appLoadsAgents && promptInjectsAgents && providerPassesAgents
+        ? "AGENTS.md/.codex/AGENTS.md discovery, app loading, and prompt injection present"
+        : `Missing evidence: ${[
+          discoversAgents ? null : "discovery",
+          appLoadsAgents ? null : "app loading",
+          promptInjectsAgents ? null : "prompt injection",
+          providerPassesAgents ? null : "provider pass-through",
+        ].filter(Boolean).join(", ")}`
     };
   },
 
@@ -192,18 +220,52 @@ const checks = {
   },
 
   diffRenderer() {
-    const uiPath = join(repoRoot, "src", "ui");
-    if (!existsSync(uiPath)) {
-      return { pass: false, evidence: [], reason: "src/ui not found" };
+    const rendererPath = join(repoRoot, "src", "ui", "diffRenderer.ts");
+    const testPath = join(repoRoot, "src", "ui", "diffRenderer.test.ts");
+    const markdownPath = join(repoRoot, "src", "ui", "Markdown.tsx");
+    const timelinePath = join(repoRoot, "src", "ui", "timelineMeasure.ts");
+    const paths = [rendererPath, testPath, markdownPath, timelinePath];
+    const existing = paths.filter(p => existsSync(p));
+
+    if (existing.length !== paths.length) {
+      return {
+        pass: false,
+        evidence: existing,
+        reason: `Found ${existing.length}/4 diff renderer files/integrations`
+      };
     }
 
-    const hasDiffComponent = existsSync(join(uiPath, "DiffViewer.tsx")) ||
-                           existsSync(join(uiPath, "FileDiff.tsx"));
+    const rendererContent = readFileSync(rendererPath, "utf-8");
+    const testContent = readFileSync(testPath, "utf-8");
+    const markdownContent = readFileSync(markdownPath, "utf-8");
+    const timelineContent = readFileSync(timelinePath, "utf-8");
+    const exportsUtility = /export\s+function\s+isUnifiedDiff/.test(rendererContent)
+      && /export\s+function\s+renderUnifiedDiff/.test(rendererContent)
+      && /export\s+function\s+maybeRenderDiff/.test(rendererContent)
+      && /DiffRenderLine/.test(rendererContent);
+    const detectsUnifiedDiff = /DIFF_GIT_HEADER_PATTERN/.test(rendererContent)
+      && /HUNK_HEADER_PATTERN/.test(rendererContent)
+      && /OLD_FILE_HEADER_PATTERN/.test(rendererContent)
+      && /NEW_FILE_HEADER_PATTERN/.test(rendererContent);
+    const hasFocusedTests = /isUnifiedDiff/.test(testContent)
+      && /renderUnifiedDiff/.test(testContent)
+      && /ANSI|control/i.test(testContent)
+      && /normal text|normal prose/i.test(testContent);
+    const markdownIntegrated = /diffRenderer/.test(markdownContent) && /maybeRenderDiff/.test(markdownContent);
+    const timelineIntegrated = /diffRenderer/.test(timelineContent) && /maybeRenderDiff/.test(timelineContent);
     
     return {
-      pass: hasDiffComponent,
-      evidence: hasDiffComponent ? [uiPath] : [],
-      reason: hasDiffComponent ? "Diff rendering component found" : "Diff renderer not found"
+      pass: exportsUtility && detectsUnifiedDiff && hasFocusedTests && markdownIntegrated && timelineIntegrated,
+      evidence: paths,
+      reason: exportsUtility && detectsUnifiedDiff && hasFocusedTests && markdownIntegrated && timelineIntegrated
+        ? "Unified diff renderer utility, tests, and UI integrations present"
+        : `Missing evidence: ${[
+          exportsUtility ? null : "utility exports",
+          detectsUnifiedDiff ? null : "unified diff detection",
+          hasFocusedTests ? null : "focused tests",
+          markdownIntegrated ? null : "Markdown integration",
+          timelineIntegrated ? null : "timeline integration",
+        ].filter(Boolean).join(", ")}`
     };
   },
 

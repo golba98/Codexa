@@ -101,6 +101,20 @@ test("builds a write-enabled codex prompt for auto-edit when permissions allow i
   assert.match(prompt, /Task:/i);
 });
 
+test("injects project instructions before the task", () => {
+  const prompt = buildCodexPrompt("Explain this repo", "suggest", writePolicy, {
+    projectInstructions: {
+      path: "/workspace/AGENTS.md",
+      content: "Prefer small, focused changes.",
+    },
+  });
+
+  assert.match(prompt, /Project instructions:/i);
+  assert.match(prompt, /Loaded from: \/workspace\/AGENTS\.md/i);
+  assert.match(prompt, /Prefer small, focused changes\./i);
+  assert.ok(prompt.indexOf("Project instructions:") < prompt.indexOf("Task:"));
+});
+
 test("adds fast generated cleanup safety instructions for write-enabled cleanup prompts", () => {
   const prompt = buildCodexPrompt("Delete only clearly safe generated files and folders", "auto-edit", writePolicy);
   assert.match(prompt, /Fast generated-file cleanup guidance/i);

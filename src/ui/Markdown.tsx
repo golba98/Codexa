@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { useTheme } from "./theme.js";
 import { Panel } from "./Panel.js";
+import { maybeRenderDiff, type DiffRenderLineType } from "./diffRenderer.js";
 
 type InlinePart =
   | { kind: "text"; text: string }
@@ -174,37 +175,21 @@ function isTreeLine(line: string): boolean {
   return /^[│├└─\s]+/.test(line);
 }
 
-/**
- * Detect a "strong" diff signal: hunk header, file header, or paired +++ / ---
- * markers.  Used as Tier 1 in the two-tier detection to avoid false-positives
- * from prose or code that begins with + or - (arithmetic, CLI flags, etc.).
- */
-function hasStrongDiffSignal(lines: string[]): boolean {
-  return lines.some((line) =>
-    line.startsWith("@@")
-    || line.startsWith("diff --")
-    || line.startsWith("index ")
-    || (line.startsWith("+++ ") && lines.some((l) => l.startsWith("--- ")))
-    || (line.startsWith("--- ") && lines.some((l) => l.startsWith("+++ ")))
-  );
-}
-
-/**
- * Map a unified-diff line to a theme colour for Ink rendering.
- *
- * Colour convention (matches terminal standard):
- *   + additions  → theme.SUCCESS (green)
- *   - deletions  → theme.ERROR   (red)
- *   @@ hunks    → theme.ACCENT  (cyan/blue)
- *   file headers → theme.INFO    (blue)
- *   context      → theme.MUTED   (neutral)
- */
-function getDiffColor(line: string, theme: ReturnType<typeof useTheme>): string {
-  if (line.startsWith("+") && !line.startsWith("+++")) return theme.SUCCESS;
-  if (line.startsWith("-") && !line.startsWith("---")) return theme.ERROR;
-  if (line.startsWith("@@")) return theme.ACCENT;
-  if (line.startsWith("diff --") || line.startsWith("index ") || line.startsWith("+++ ") || line.startsWith("--- ")) return theme.INFO;
-  return theme.MUTED;
+function getDiffColor(kind: DiffRenderLineType, theme: ReturnType<typeof useTheme>): string {
+  switch (kind) {
+    case "add":
+      return theme.SUCCESS;
+    case "remove":
+      return theme.ERROR;
+    case "hunk":
+      return theme.ACCENT;
+    case "file":
+    case "meta":
+      return theme.INFO;
+    case "context":
+    default:
+      return theme.MUTED;
+  }
 }
 
 export function RenderMessage({ segments, width }: { segments: Segment[]; width: number }) {
@@ -217,18 +202,6 @@ export function RenderMessage({ segments, width }: { segments: Segment[]; width:
 
         if (segment.type === "code") {
           const lang = (segment.lang || "").toLowerCase();
-          // Two-tier diff detection (matches timelineMeasure.ts):
-          //   Tier 1 — explicit lang=diff OR at least one strong diff signal
-          //   Tier 2 — at least one addition/deletion line (+/-)
-          // This prevents false-positives from code with arithmetic (+1, -1),
-          // CLI flags (-v, --verbose), or other prose starting with + or -.
-          const isExplicitDiff = lang === "diff";
-          const strongSignal = isExplicitDiff || hasStrongDiffSignal(segment.lines);
-          const isDiffBlock = strongSignal
-            && segment.lines.some((line) =>
-              (line.startsWith("+") && !line.startsWith("+++ "))
-              || (line.startsWith("-") && !line.startsWith("--- "))
-            );
           const looksLikeTree = segment.lines.some((line) => isTreeLine(line));
 
           let title = segment.lang || "code";
@@ -241,6 +214,7 @@ export function RenderMessage({ segments, width }: { segments: Segment[]; width:
 
           const rightTitle = segment.lang ? `${segment.lang.toUpperCase()} ⎘ Copy Code` : "⎘ Copy Code";
           const panelWidth = Math.max(10, width);
+          const diffLines = maybeRenderDiff(codeLines.join("\n"), { force: lang === "diff" });
 
           return (
             <Box
@@ -251,22 +225,24 @@ export function RenderMessage({ segments, width }: { segments: Segment[]; width:
               width="100%"
             >
               <Panel cols={panelWidth} title={title} rightTitle={rightTitle}>
-                {codeLines.map((line, lineIndex) => (
-                  looksLikeTree ? (
-                    <TreeLine key={lineIndex} line={line || " "} />
-                  ) : isDiffBlock ? (
-                    <Text key={lineIndex} color={getDiffColor(line, theme)} wrap="wrap">
-                      {line || " "}
+                {diffLines
+                  ? diffLines.map((line, lineIndex) => (
+                    <Text key={lineIndex} color={getDiffColor(line.type, theme)} wrap="wrap">
+                      {line.text || " "}
                     </Text>
-                  ) : (
-                    <Box key={lineIndex}>
-                      <Box width={3} flexShrink={0} marginRight={1} justifyContent="flex-end">
-                        <Text color={theme.DIM}>{lineIndex + 1}</Text>
+                  ))
+                  : codeLines.map((line, lineIndex) => (
+                    looksLikeTree ? (
+                      <TreeLine key={lineIndex} line={line || " "} />
+                    ) : (
+                      <Box key={lineIndex}>
+                        <Box width={3} flexShrink={0} marginRight={1} justifyContent="flex-end">
+                          <Text color={theme.DIM}>{lineIndex + 1}</Text>
+                        </Box>
+                        <Text color={theme.MUTED} wrap="wrap">{line || " "}</Text>
                       </Box>
-                      <Text color={theme.MUTED} wrap="wrap">{line || " "}</Text>
-                    </Box>
-                  )
-                ))}
+                    )
+                  ))}
               </Panel>
             </Box>
           );

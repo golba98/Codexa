@@ -5,6 +5,7 @@ import { sanitizeTerminalLines, sanitizeTerminalOutput } from "../core/terminalS
 import { clampVisualText } from "./layout.js";
 import type { Segment } from "./Markdown.js";
 import { classifyOutput, formatForBox, normalizeOutput, sanitizeOutput, sanitizeStreamChunk } from "./outputPipeline.js";
+import { maybeRenderDiff, type DiffRenderLineType } from "./diffRenderer.js";
 import {
   formatProgressBlockBodyLines,
   getProgressUpdateCount,
@@ -696,61 +697,21 @@ function buildWrappedMarkdownLine(
     .map((row, index) => padSpansToWidth(row, width));
 }
 
-/**
- * Map a unified-diff line to a timeline tone for colour-coded rendering.
- *
- * Standard unified diff format:
- *   diff --git a/... b/...   → file header   (info)
- *   index abc..def 100644    → file metadata  (info)
- *   --- a/...               → left-file marker (info)
- *   +++ b/...               → right-file marker (info)
- *   @@ -1,4 +1,4 @@         → hunk header    (accent/cyan)
- *   +added line             → addition        (success/green)
- *   -removed line           → deletion        (error/red)
- *   ("unchanged" context)   → muted/default
- */
-function getDiffTone(line: string): TimelineTone {
-  // Additions: any line starting with + that is not the +++ file marker
-  if (line.startsWith("+") && !line.startsWith("+++")) return "success";
-  // Deletions: any line starting with - that is not the --- file marker
-  if (line.startsWith("-") && !line.startsWith("---")) return "error";
-  // Hunk headers: @@ -1,4 +1,4 @@ (optional context)
-  if (line.startsWith("@@")) return "accent";
-  // File-level header lines (diff/index/---/+++) shown in info tone
-  if (
-    line.startsWith("diff --")
-    || line.startsWith("index ")
-    || line.startsWith("+++ ")
-    || line.startsWith("--- ")
-  ) {
-    return "info";
+function getDiffTone(kind: DiffRenderLineType): TimelineTone {
+  switch (kind) {
+    case "add":
+      return "success";
+    case "remove":
+      return "error";
+    case "hunk":
+      return "accent";
+    case "file":
+    case "meta":
+      return "info";
+    case "context":
+    default:
+      return "muted";
   }
-  // Context / unchanged lines
-  return "muted";
-}
-
-/**
- * Detect whether a paragraph-style block looks like a unified diff.
- * Requires at least one strong diff signal (hunk header, file header) to
- * avoid false-positives from prose that starts with '+' or '-'.
- */
-function isDiffParagraph(lines: string[]): boolean {
-  // Need at least 2 lines to be a plausible diff
-  if (lines.length < 2) return false;
-  // A strong signal: hunk header or diff/index/file-header line
-  const hasStrongSignal = lines.some((line) =>
-    line.startsWith("@@")
-    || line.startsWith("diff --")
-    || line.startsWith("index ")
-    || (line.startsWith("+++ ") && lines.some((l) => l.startsWith("--- ")))
-    || (line.startsWith("--- ") && lines.some((l) => l.startsWith("+++ ")))
-  );
-  if (!hasStrongSignal) return false;
-  // Also verify at least one addition or deletion line is present
-  return lines.some((line) =>
-    (line.startsWith("+") && !line.startsWith("+++ "))
-    || (line.startsWith("-") && !line.startsWith("--- "))
-  );
 }
 
 function buildCodePanelRows(keyPrefix: string, segment: Extract<Segment, { type: "code" }>, width: number): TimelineRowSpan[][] {
@@ -766,45 +727,28 @@ function buildCodePanelRows(keyPrefix: string, segment: Extract<Segment, { type:
   const panelWidth = Math.max(10, width - 2);
   const panelContentWidth = Math.max(1, panelWidth - 4);
 
-  // Detect diff blocks using a two-tier test:
-  //   Tier 1 — "strong signal": explicit lang=diff, @@ hunk header, diff --git/--unified,
-  //            index <sha>, or a paired +++ / --- file-header pair.
-  //   Tier 2 — addition / deletion lines (+/-) are only treated as diff colouring when
-  //            Tier 1 fired.  This prevents false-positives from code that contains
-  //            arithmetic (+1, -1), CLI flags (-v, --verbose), POSIX permissions (+x),
-  //            or any other prose that starts with + or -.
-  const isExplicitDiff = segment.lang.toLowerCase() === "diff";
-  const hasStrongDiffSignal = isExplicitDiff
-    || codeLines.some((line) =>
-      line.startsWith("@@")
-      || line.startsWith("diff --")
-      || line.startsWith("index ")
-      || (line.startsWith("+++ ") && codeLines.some((l) => l.startsWith("--- ")))
-      || (line.startsWith("--- ") && codeLines.some((l) => l.startsWith("+++ ")))
-    );
-  const isDiffBlock = hasStrongDiffSignal
-    && codeLines.some((line) =>
-      (line.startsWith("+") && !line.startsWith("+++ "))
-      || (line.startsWith("-") && !line.startsWith("--- "))
-    );
+  const diffLines = maybeRenderDiff(codeLines.join("\n"), {
+    force: segment.lang.toLowerCase() === "diff",
+  });
   const contentRows: TimelineRowSpan[][] = [];
 
-  codeLines.forEach((line, index) => {
-    if (isDiffBlock) {
-      wrapPlainText(line, panelContentWidth).forEach((wrapped) => {
-        contentRows.push([createSpan(wrapped || " ", getDiffTone(line))]);
+  if (diffLines) {
+    diffLines.forEach((line) => {
+      wrapPlainText(line.text, panelContentWidth).forEach((wrapped) => {
+        contentRows.push([createSpan(wrapped || " ", getDiffTone(line.type))]);
       });
-      return;
-    }
-
-    const wrappedRows = wrapPlainText(line, Math.max(1, panelContentWidth - 4));
-    wrappedRows.forEach((wrapped, rowIndex) => {
-      contentRows.push([
-        createSpan(rowIndex === 0 ? `${String(index + 1).padStart(3, " ")} ` : "    ", "dim"),
-        createSpan(wrapped || " ", "muted"),
-      ]);
     });
-  });
+  } else {
+    codeLines.forEach((line, index) => {
+      const wrappedRows = wrapPlainText(line, Math.max(1, panelContentWidth - 4));
+      wrappedRows.forEach((wrapped, rowIndex) => {
+        contentRows.push([
+          createSpan(rowIndex === 0 ? `${String(index + 1).padStart(3, " ")} ` : "    ", "dim"),
+          createSpan(wrapped || " ", "muted"),
+        ]);
+      });
+    });
+  }
 
   const panelRows = buildPanelRows({
     keyPrefix,
@@ -870,7 +814,11 @@ function buildMarkdownRows(segments: Segment[], width: number): TimelineRowSpan[
     const rawParaLines = segment.lines.map((parts) =>
       normalizeMarkdownParts(parts).map((p) => p.text).join(""),
     );
-    const segmentIsDiffPara = isDiffParagraph(rawParaLines);
+    const diffLines = maybeRenderDiff(rawParaLines.join("\n"));
+    const diffLineByIndex = new Map<number, NonNullable<ReturnType<typeof maybeRenderDiff>>[number]>();
+    diffLines?.forEach((line, index) => {
+      diffLineByIndex.set(index, line);
+    });
 
     segment.lines.forEach((parts, lineIndex) => {
       const normalizedParts = normalizeMarkdownParts(parts);
@@ -881,14 +829,9 @@ function buildMarkdownRows(segments: Segment[], width: number): TimelineRowSpan[
         return;
       }
 
-      // If all parts are plain text and the paragraph looks like a unified diff,
-      // apply diff tones instead of the default 'text' tone for better readability.
-      const rawLineText = normalizedParts.map((p) => p.text).join("");
-      // isDiffParagraph is checked per-segment (below), so we use a captured flag.
-      if (segmentIsDiffPara) {
-        const tone = getDiffTone(rawLineText);
-        // Wrap and apply the diff tone to the entire line
-        wrapStyledSpans([createSpan(rawLineText, tone)], width)
+      const diffLine = diffLineByIndex.get(lineIndex);
+      if (diffLine) {
+        wrapStyledSpans([createSpan(diffLine.text, getDiffTone(diffLine.type))], width)
           .forEach((row) => rows.push(padSpansToWidth(row, width)));
         return;
       }
@@ -1094,9 +1037,6 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
     borderTone,
     contentRows,
   }));
-
-  // 3. Add bottom margin for separation from the next section / turn.
-  rows.push(createBlankRow(`${item.key}-agent-bottom-gap`, width));
 
   return rows;
 }

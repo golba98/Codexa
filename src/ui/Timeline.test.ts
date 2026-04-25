@@ -548,6 +548,67 @@ test("completed runs keep progress updates as separate readable blocks", () => {
   assert.match(joined, /Comparing expected behavior/);
 });
 
+test("assistant unified diffs render with semantic tones", () => {
+  const diff = [
+    "diff --git a/src/example.ts b/src/example.ts",
+    "index 1111111..2222222 100644",
+    "--- a/src/example.ts",
+    "+++ b/src/example.ts",
+    "@@ -1,3 +1,4 @@",
+    " const name = \"Codexa\";",
+    "-console.log(\"old\");",
+    "+console.log(\"new\");",
+    "+console.log(\"added\");",
+    " export default name;",
+  ].join("\n");
+  const items = buildTimelineItems([
+    {
+      id: 1,
+      type: "user",
+      createdAt: 1,
+      prompt: "Show a diff",
+      turnId: 120,
+    },
+    {
+      id: 2,
+      type: "run",
+      createdAt: 2,
+      startedAt: 2,
+      durationMs: 100,
+      backendId: "codex-subprocess",
+      backendLabel: "Codexa",
+      runtime: TEST_RUNTIME,
+      prompt: "Show a diff",
+      progressEntries: [],
+      status: "completed",
+      summary: "Completed",
+      truncatedOutput: false,
+      toolActivities: [],
+      activity: [],
+      touchedFileCount: 0,
+      errorMessage: null,
+      turnId: 120,
+    },
+    {
+      id: 3,
+      type: "assistant",
+      createdAt: 3,
+      content: diff,
+      contentChunks: [],
+      turnId: 120,
+    },
+  ]);
+
+  const renderItems = buildStaticRenderItems(items, [120], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 88 });
+  const spans = snapshot.rows.flatMap((row) => row.spans);
+
+  assert.equal(spans.find((span) => span.text.includes("diff --git"))?.tone, "info");
+  assert.equal(spans.find((span) => span.text.includes("@@ -1,3 +1,4 @@"))?.tone, "accent");
+  assert.equal(spans.find((span) => span.text.includes("-console.log(\"old\");"))?.tone, "error");
+  assert.equal(spans.find((span) => span.text.includes("+console.log(\"new\");"))?.tone, "success");
+});
+
 test("parses sgr mouse wheel directions without treating other mouse events as scroll", () => {
   const raw = "\u001b[<64;12;9M\u001b[<65;12;10M\u001b[<0;12;10M";
   assert.deepEqual(parseWheelScrollDirections(raw), ["up", "down"]);
