@@ -8,6 +8,7 @@ import { createFallbackModelCapabilities, getSelectableModelCapabilities } from 
 import { BottomComposer } from "./BottomComposer.js";
 import { getFocusTargetForScreen } from "./focus.js";
 import { ModelPicker } from "./ModelPicker.js";
+import { ModelReasoningPicker } from "./ModelReasoningPicker.js";
 import { PlanActionPicker } from "./PlanActionPicker.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { TextEntryPanel } from "./TextEntryPanel.js";
@@ -357,6 +358,100 @@ function ShortcutModelPickerHarness() {
   );
 }
 
+function ShortcutModelReasoningPickerHarness({ delayedModels = false }: { delayedModels?: boolean } = {}) {
+  const focusManager = useFocusManager();
+  const [screen, setScreen] = React.useState<"main" | "model-picker">("main");
+  const [model, setModel] = React.useState<AvailableModel>("gpt-5.4");
+  const [reasoningLevel, setReasoningLevel] = React.useState<ReasoningLevel>("high");
+  const [models, setModels] = React.useState(() => delayedModels ? [] : TEST_MODEL_CAPABILITIES);
+  const [value, setValue] = React.useState("");
+  const [cursor, setCursor] = React.useState(0);
+  const [submitCount, setSubmitCount] = React.useState(0);
+  const [composerInstanceKey, setComposerInstanceKey] = React.useState(0);
+  const previousScreenRef = React.useRef<"main" | "model-picker">("main");
+
+  React.useEffect(() => {
+    if (!delayedModels) return;
+
+    const timer = setTimeout(() => setModels(TEST_MODEL_CAPABILITIES), 90);
+    return () => clearTimeout(timer);
+  }, [delayedModels]);
+
+  const returnToChatMode = React.useCallback(() => {
+    setScreen("main");
+    focusManager.focus("composer");
+  }, [focusManager]);
+
+  React.useEffect(() => {
+    const previousScreen = previousScreenRef.current;
+    if (shouldBumpComposerInstance(previousScreen, screen)) {
+      setComposerInstanceKey((currentKey) => currentKey + 1);
+    }
+    previousScreenRef.current = screen;
+  }, [screen]);
+
+  React.useEffect(() => {
+    focusManager.focus(getFocusTargetForScreen(screen));
+  }, [composerInstanceKey, focusManager, screen]);
+
+  return (
+    <ThemeProvider theme="purple">
+      <Box flexDirection="column">
+        <Text>{`screen:${screen}`}</Text>
+        <Text>{`model:${model}`}</Text>
+        <Text>{`reasoning:${reasoningLevel}`}</Text>
+        <Text>{`submit:${submitCount}`}</Text>
+        <Text>{`value:${JSON.stringify(value)}`}</Text>
+        {screen === "model-picker" ? (
+          <ModelReasoningPicker
+            models={models}
+            currentModel={model}
+            currentReasoning={reasoningLevel}
+            isLoading={models.length === 0}
+            onSelect={(nextModel, nextReasoning) => {
+              setModel(nextModel as AvailableModel);
+              setReasoningLevel(nextReasoning as ReasoningLevel);
+              returnToChatMode();
+            }}
+            onCancel={returnToChatMode}
+          />
+        ) : (
+          <BottomComposer
+            key={composerInstanceKey}
+            layout={TEST_LAYOUT}
+            uiState={{ kind: "IDLE" }}
+            value={value}
+            cursor={cursor}
+            onChangeInput={(nextValue, nextCursor) => {
+              setValue(nextValue);
+              setCursor(nextCursor);
+            }}
+            onSubmit={() => {
+              setSubmitCount((count) => count + 1);
+              setValue("");
+              setCursor(0);
+            }}
+            onCancel={() => {}}
+            onChangeValue={setValue}
+            onChangeCursor={setCursor}
+            onHistoryUp={() => {}}
+            onHistoryDown={() => {}}
+            onOpenBackendPicker={() => {}}
+            onOpenModelPicker={() => setScreen((currentScreen) => currentScreen === "model-picker" ? currentScreen : "model-picker")}
+            onOpenModePicker={() => {}}
+            onOpenThemePicker={() => {}}
+            onOpenAuthPanel={() => {}}
+            onTogglePlanMode={() => {}}
+            onClear={() => {}}
+            onCycleMode={() => {}}
+            onQuit={() => {}}
+          />
+        )}
+      </Box>
+    </ThemeProvider>
+  );
+}
+
 function PlanActionPickerHarness() {
   const [selection, setSelection] = React.useState<string>("none");
   const [cancelCount, setCancelCount] = React.useState(0);
@@ -554,6 +649,74 @@ test("ctrl+o opens the existing model picker path without submitting", async () 
     assert.match(output, /model:gpt-5\.4-mini/);
     assert.match(output, /submit:0/);
     assert.equal(getLastComposerValue(output), "az");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("ctrl+o model reasoning picker returns to chat after escape and selection", async () => {
+  const harness = createInkHarness(<ShortcutModelReasoningPickerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\x0F"); // Ctrl+O immediately after startup
+    await sleep(120);
+    harness.stdin.write("\u001b");
+    await sleep(120);
+    harness.stdin.write("a");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(120);
+    harness.stdin.write("\x0F");
+    await sleep(120);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(120);
+    harness.stdin.write("b");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(120);
+
+    const output = harness.getOutput();
+    assert.match(output, /screen:model-picker/);
+    assert.match(output, /screen:main/);
+    assert.match(output, /model:gpt-5\.4-mini/);
+    assert.match(output, /submit:2/);
+    assert.equal(getLastComposerValue(output), "");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("ctrl+o remains usable when startup model loading resolves while picker is open", async () => {
+  const harness = createInkHarness(<ShortcutModelReasoningPickerHarness delayedModels />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\x0F"); // Ctrl+O immediately after startup
+    await sleep(180);
+    harness.stdin.write("\u001b");
+    await sleep(100);
+    harness.stdin.write("/");
+    await sleep(20);
+    harness.stdin.write("h");
+    await sleep(20);
+    harness.stdin.write("e");
+    await sleep(20);
+    harness.stdin.write("l");
+    await sleep(20);
+    harness.stdin.write("p");
+    await sleep(20);
+    harness.stdin.write("\r");
+    await sleep(120);
+
+    const output = harness.getOutput();
+    assert.match(output, /Discovering models from the Codex runtime/);
+    assert.match(output, /screen:model-picker/);
+    assert.match(output, /screen:main/);
+    assert.match(output, /submit:1/);
+    assert.equal(getLastComposerValue(output), "");
   } finally {
     await harness.cleanup();
   }

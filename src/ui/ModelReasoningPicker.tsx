@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
 import {
   type CodexModelCapability,
@@ -6,8 +6,11 @@ import {
   normalizeReasoningForModelCapabilities,
 } from "../core/codexModelCapabilities.js";
 import { formatReasoningLabel } from "../config/settings.js";
+import { traceInputDebug } from "../core/inputDebug.js";
 import { FOCUS_IDS } from "./focus.js";
 import { useTheme } from "./theme.js";
+
+type ModelPickerCloseReason = "escape" | "empty-selection";
 
 interface ModelReasoningPickerProps {
   models: readonly CodexModelCapability[];
@@ -15,7 +18,7 @@ interface ModelReasoningPickerProps {
   currentReasoning: string;
   isLoading?: boolean;
   onSelect: (model: string, reasoning: string) => void;
-  onCancel: () => void;
+  onCancel: (reason?: ModelPickerCloseReason) => void;
 }
 
 function getModelReasoningLevels(model: CodexModelCapability): readonly ReasoningEffortCapability[] {
@@ -37,73 +40,128 @@ function getInitialReasoning(model: CodexModelCapability, currentReasoning: stri
   );
 }
 
-export function ModelReasoningPicker(props: ModelReasoningPickerProps) {
-  if (props.models.length === 0) {
-    return <LoadingPicker isLoading={props.isLoading ?? false} onCancel={props.onCancel} />;
+function getInitialCursor(models: readonly CodexModelCapability[], currentModel: string): number {
+  return Math.max(0, models.findIndex((model) => model.model === currentModel || model.id === currentModel));
+}
+
+function buildPendingReasoning(
+  models: readonly CodexModelCapability[],
+  currentReasoning: string,
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const model of models) {
+    next[model.model] = getInitialReasoning(model, currentReasoning);
   }
-  return <InteractivePicker {...props} models={props.models} />;
+  return next;
 }
 
-function LoadingPicker({ isLoading, onCancel }: { isLoading: boolean; onCancel: () => void }) {
-  const theme = useTheme();
-  const { isFocused } = useFocus({ id: FOCUS_IDS.modelPicker, autoFocus: true });
-
-  useInput(
-    (_, key) => {
-      if (key.escape) onCancel();
-    },
-    { isActive: isFocused },
-  );
-
-  return (
-    <Box flexDirection="column" width="100%" marginTop={1}>
-      <Box
-        borderStyle="round"
-        borderColor={theme.BORDER_SUBTLE}
-        paddingX={2}
-        paddingY={1}
-        width="100%"
-      >
-        <Box flexDirection="column" width="100%">
-          <Box>
-            <Text color={theme.ACCENT} bold>Select model  </Text>
-            <Text color={theme.MUTED}>Esc cancel</Text>
-          </Box>
-          <Box marginTop={0}>
-            <Text color={theme.DIM}>
-              {isLoading
-                ? "Discovering models from the Codex runtime…"
-                : "No models available yet."}
-            </Text>
-          </Box>
-        </Box>
-      </Box>
-    </Box>
-  );
+function describeInputKey(
+  input: string,
+  key: {
+    escape?: boolean;
+    return?: boolean;
+    upArrow?: boolean;
+    downArrow?: boolean;
+    leftArrow?: boolean;
+    rightArrow?: boolean;
+    ctrl?: boolean;
+    meta?: boolean;
+  },
+) {
+  return {
+    input,
+    escape: Boolean(key.escape),
+    return: Boolean(key.return),
+    upArrow: Boolean(key.upArrow),
+    downArrow: Boolean(key.downArrow),
+    leftArrow: Boolean(key.leftArrow),
+    rightArrow: Boolean(key.rightArrow),
+    ctrl: Boolean(key.ctrl),
+    meta: Boolean(key.meta),
+  };
 }
 
-function InteractivePicker({
+export function ModelReasoningPicker({
   models,
   currentModel,
   currentReasoning,
+  isLoading = false,
   onSelect,
   onCancel,
 }: ModelReasoningPickerProps) {
   const theme = useTheme();
   const { isFocused } = useFocus({ id: FOCUS_IDS.modelPicker, autoFocus: true });
   const visibleModels = models;
+  const initializedModelsRef = useRef(false);
 
   const [cursor, setCursor] = useState(() =>
-    Math.max(0, visibleModels.findIndex((model) => model.model === currentModel || model.id === currentModel)),
+    getInitialCursor(visibleModels, currentModel),
   );
 
-  const [pendingReasoning, setPendingReasoning] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    for (const model of visibleModels) {
-      init[model.model] = getInitialReasoning(model, currentReasoning);
+  const [pendingReasoning, setPendingReasoning] = useState<Record<string, string>>(() =>
+    buildPendingReasoning(visibleModels, currentReasoning)
+  );
+
+  useEffect(() => {
+    traceInputDebug("model_picker_mounted", {
+      focusTarget: FOCUS_IDS.modelPicker,
+      modelCount: visibleModels.length,
+      isLoading,
+    });
+    return () => {
+      traceInputDebug("model_picker_unmounted", {
+        focusTarget: FOCUS_IDS.modelPicker,
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    traceInputDebug("model_picker_focus", {
+      isFocused,
+      focusTarget: FOCUS_IDS.modelPicker,
+      modelCount: visibleModels.length,
+      isLoading,
+    });
+  }, [isFocused, isLoading, visibleModels.length]);
+
+  useEffect(() => {
+    traceInputDebug("model_picker_models_state", {
+      isLoading,
+      modelCount: visibleModels.length,
+      currentModel,
+    });
+
+    if (visibleModels.length === 0) {
+      initializedModelsRef.current = false;
+      setCursor(0);
+      setPendingReasoning({});
+      return;
     }
-    return init;
-  });
+
+    setCursor((currentCursor) => {
+      const maxCursor = Math.max(0, visibleModels.length - 1);
+      if (!initializedModelsRef.current) {
+        initializedModelsRef.current = true;
+        return Math.min(getInitialCursor(visibleModels, currentModel), maxCursor);
+      }
+      return Math.min(Math.max(0, currentCursor), maxCursor);
+    });
+
+    setPendingReasoning((prev) => {
+      const next: Record<string, string> = {};
+      let changed = Object.keys(prev).length !== visibleModels.length;
+
+      for (const model of visibleModels) {
+        const value = prev[model.model] ?? getInitialReasoning(model, currentReasoning);
+        next[model.model] = value;
+        if (prev[model.model] !== value) {
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [currentModel, currentReasoning, isLoading, visibleModels]);
 
   const highlightedModel = visibleModels[Math.min(cursor, Math.max(0, visibleModels.length - 1))];
 
@@ -127,18 +185,42 @@ function InteractivePicker({
   );
 
   useInput(
-    (_, key) => {
+    (input, key) => {
+      traceInputDebug("model_picker_input", {
+        handler: "ModelReasoningPicker.useInput",
+        key: describeInputKey(input, key),
+        isFocused,
+        isLoading,
+        modelCount: visibleModels.length,
+        cursor,
+      });
+
       if (key.escape) {
-        onCancel();
+        traceInputDebug("model_picker_close_request", {
+          reason: "escape",
+          handler: "ModelReasoningPicker.useInput",
+          modelCount: visibleModels.length,
+        });
+        onCancel("escape");
         return;
       }
       if (key.return) {
         const model = visibleModels[cursor];
         if (!model) {
-          onCancel();
+          traceInputDebug("model_picker_close_request", {
+            reason: "empty-selection",
+            handler: "ModelReasoningPicker.useInput",
+            modelCount: visibleModels.length,
+          });
+          onCancel("empty-selection");
           return;
         }
         const reasoning = pendingReasoning[model.model] ?? getInitialReasoning(model, currentReasoning);
+        traceInputDebug("model_selection_start", {
+          handler: "ModelReasoningPicker.useInput",
+          model: model.model,
+          reasoning,
+        });
         onSelect(model.model, reasoning);
         return;
       }
@@ -174,6 +256,80 @@ function InteractivePicker({
     [visibleModels],
   );
 
+  if (visibleModels.length === 0) {
+    return <LoadingPickerView theme={theme} isLoading={isLoading} />;
+  }
+
+  return (
+    <InteractivePickerView
+      rows={rows}
+      cursor={cursor}
+      currentModel={currentModel}
+      currentReasoning={currentReasoning}
+      pendingReasoning={pendingReasoning}
+      highlightedModel={highlightedModel}
+      theme={theme}
+    />
+  );
+}
+
+function LoadingPickerView({
+  theme,
+  isLoading,
+}: {
+  theme: ReturnType<typeof useTheme>;
+  isLoading: boolean;
+}) {
+  return (
+    <Box flexDirection="column" width="100%" marginTop={1}>
+      <Box
+        borderStyle="round"
+        borderColor={theme.BORDER_SUBTLE}
+        paddingX={2}
+        paddingY={1}
+        width="100%"
+      >
+        <Box flexDirection="column" width="100%">
+          <Box>
+            <Text color={theme.ACCENT} bold>Select model  </Text>
+            <Text color={theme.MUTED}>Esc cancel</Text>
+          </Box>
+          <Box marginTop={0}>
+            <Text color={theme.DIM}>
+              {isLoading
+                ? "Discovering models from the Codex runtime…"
+                : "No models available yet."}
+            </Text>
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+interface InteractivePickerViewProps {
+  rows: Array<{
+    model: CodexModelCapability;
+    available: readonly ReasoningEffortCapability[];
+    interactive: boolean;
+  }>;
+  cursor: number;
+  currentModel: string;
+  currentReasoning: string;
+  pendingReasoning: Record<string, string>;
+  highlightedModel: CodexModelCapability | undefined;
+  theme: ReturnType<typeof useTheme>;
+}
+
+function InteractivePickerView({
+  rows,
+  cursor,
+  currentModel,
+  currentReasoning,
+  pendingReasoning,
+  highlightedModel,
+  theme,
+}: InteractivePickerViewProps) {
   const subtitleParts: string[] = ["↑↓ model"];
   if (highlightedModel && getModelReasoningLevels(highlightedModel).length > 1) {
     subtitleParts.push("←→ reasoning");

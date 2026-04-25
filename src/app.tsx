@@ -2,7 +2,7 @@ import React, { startTransition, useCallback, useEffect, useMemo, useRef, useSta
 import { spawn } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import { Box, Text, useApp, useFocusManager, useStdout } from "ink";
+import { Box, Text, useApp, useFocusManager, useStdin, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
 import {
   applyLayeredRuntimeOverride,
@@ -112,6 +112,7 @@ import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
+import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import type { RunEvent, RunToolActivity, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
 import {
@@ -237,6 +238,8 @@ export function App({ launchArgs }: AppProps) {
   });
   const [customTheme, setCustomTheme] = useState(initialSettings.current.ui.customTheme);
   const [screen, setScreen] = useState<Screen>("main");
+  const screenRef = useRef<Screen>("main");
+  screenRef.current = screen;
   const [composerInstanceKey, setComposerInstanceKey] = useState(0);
   const { state: sessionState, dispatch: dispatchSession } = useAppSessionState();
   const [authStatus, setAuthStatus] = useState<CodexAuthProbeResult>(createInitialAuthStatus());
@@ -256,6 +259,7 @@ export function App({ launchArgs }: AppProps) {
   );
   const [modelSpecRefreshes, setModelSpecRefreshes] = useState<Record<string, true>>({});
   const { stdout } = useStdout();
+  const { stdin } = useStdin();
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [verboseMode, setVerboseMode] = useState(false);
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
@@ -303,6 +307,9 @@ export function App({ launchArgs }: AppProps) {
   const themePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modelDiscoveryInFlightRef = useRef<Promise<CodexModelCapabilities> | null>(null);
   const modelDiscoveryAnnounceRef = useRef(false);
+  const intendedInputModeRef = useRef<"chat/input" | "model-picker">("chat/input");
+  const intendedFocusTargetRef = useRef<string>(FOCUS_IDS.composer);
+  const modelSelectionInFlightRef = useRef(false);
   const activeThemeName = getDisplayedThemeName(themeSelection);
   const activeTheme =
     activeThemeName === "custom"
@@ -364,6 +371,10 @@ export function App({ launchArgs }: AppProps) {
   cursorRef.current = cursor;
 
   const busy = isUiBusy(uiState);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const modelCapabilitiesBusyRef = useRef(modelCapabilitiesBusy);
+  modelCapabilitiesBusyRef.current = modelCapabilitiesBusy;
   const composerRows = useMemo(() => {
     if (planFlow.kind === "awaiting_action") {
       return measurePlanActionPickerRows(hasPlanFileAvailable);
@@ -397,6 +408,26 @@ export function App({ launchArgs }: AppProps) {
   ]);
 
   const provider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
+
+  const getInputDebugSnapshot = useCallback((extra: Record<string, unknown> = {}) => {
+    const currentScreen = screenRef.current;
+    const currentBusy = busyRef.current;
+    const currentModelLoading = modelCapabilitiesBusyRef.current;
+
+    return {
+      screen: currentScreen,
+      mode: intendedInputModeRef.current,
+      modelPickerOpen: currentScreen === "model-picker",
+      composerEnabled: currentScreen === "main" && !currentBusy,
+      inputLocked: currentBusy,
+      busy: currentBusy,
+      modelLoading: currentModelLoading,
+      modelSelection: modelSelectionInFlightRef.current,
+      focusTarget: intendedFocusTargetRef.current,
+      stdin: getStdinDebugState(stdin),
+      ...extra,
+    };
+  }, [stdin]);
 
   useEffect(() => {
     baseRuntimeConfigRef.current = baseLayeredConfig.runtime;
@@ -447,8 +478,41 @@ export function App({ launchArgs }: AppProps) {
   }, [screen]);
 
   useEffect(() => {
-    focusManager.focus(getFocusTargetForScreen(screen));
-  }, [composerInstanceKey, focusManager, screen]);
+    const focusTarget = getFocusTargetForScreen(screen);
+    intendedFocusTargetRef.current = focusTarget;
+    traceInputDebug("focus_route", getInputDebugSnapshot({ focusTarget }));
+    focusManager.focus(focusTarget);
+  }, [composerInstanceKey, focusManager, getInputDebugSnapshot, screen]);
+
+  useEffect(() => {
+    if (screen === "model-picker" || intendedInputModeRef.current !== "model-picker") {
+      return;
+    }
+
+    traceInputDebug("safety_recovery", getInputDebugSnapshot({
+      reason: "model-picker-closed-with-stale-input-mode",
+      restoredMode: "chat/input",
+      restoredFocusTarget: FOCUS_IDS.composer,
+    }));
+    intendedInputModeRef.current = "chat/input";
+    intendedFocusTargetRef.current = FOCUS_IDS.composer;
+    focusManager.focus(FOCUS_IDS.composer);
+  }, [focusManager, getInputDebugSnapshot, screen]);
+
+  const returnToChatMode = useCallback((reason = "unknown") => {
+    intendedInputModeRef.current = "chat/input";
+    intendedFocusTargetRef.current = FOCUS_IDS.composer;
+    traceInputDebug("model_picker_close", getInputDebugSnapshot({
+      reason,
+      restoredMode: "chat/input",
+      restoredModelPickerOpen: false,
+      restoredComposerEnabled: true,
+      restoredInputLocked: false,
+      restoredFocusTarget: FOCUS_IDS.composer,
+    }));
+    setScreen("main");
+    focusManager.focus(FOCUS_IDS.composer);
+  }, [focusManager, getInputDebugSnapshot]);
 
   // Lazily refresh the verified spec for the currently selected model. The
   // cache + static registry already cover known models synchronously, so the
@@ -511,6 +575,7 @@ export function App({ launchArgs }: AppProps) {
     // promise so we never spawn a duplicate discovery job or emit duplicate
     // transcript messages.
     if (modelDiscoveryInFlightRef.current && !forceRefresh) {
+      traceInputDebug("model_loading_inflight", getInputDebugSnapshot({ forceRefresh, announce }));
       if (announce) {
         modelDiscoveryAnnounceRef.current = true;
       }
@@ -522,10 +587,22 @@ export function App({ launchArgs }: AppProps) {
     }
 
     setModelCapabilitiesBusy(true);
+    traceInputDebug("model_loading_start", getInputDebugSnapshot({ forceRefresh, announce }));
     const promise = (async () => {
       try {
         const capabilities = await getCodexModelCapabilities({ forceRefresh });
         setModelCapabilities(capabilities);
+        traceInputDebug("model_loading_success", getInputDebugSnapshot({
+          status: capabilities.status,
+          source: capabilities.source,
+          modelCount: getSelectableModelCapabilities(capabilities).length,
+        }));
+        if (capabilities.status === "fallback") {
+          traceInputDebug("model_loading_failure", getInputDebugSnapshot({
+            status: capabilities.status,
+            error: capabilities.error,
+          }));
+        }
         if (modelDiscoveryAnnounceRef.current) {
           const modelCount = getSelectableModelCapabilities(capabilities).length;
           const source = capabilities.status === "ready" ? "Codex runtime" : "fallback compatibility list";
@@ -535,6 +612,9 @@ export function App({ launchArgs }: AppProps) {
       } catch (error) {
         const fallback = createFallbackModelCapabilities(error);
         setModelCapabilities(fallback);
+        traceInputDebug("model_loading_failure", getInputDebugSnapshot({
+          error: error instanceof Error ? error.message : String(error),
+        }));
         if (modelDiscoveryAnnounceRef.current) {
           appendErrorEvent("Model discovery failed", fallback.error ?? "Unable to discover Codex models.");
         }
@@ -543,12 +623,13 @@ export function App({ launchArgs }: AppProps) {
         setModelCapabilitiesBusy(false);
         modelDiscoveryInFlightRef.current = null;
         modelDiscoveryAnnounceRef.current = false;
+        traceInputDebug("model_loading_finished", getInputDebugSnapshot({ forceRefresh, announce }));
       }
     })();
 
     modelDiscoveryInFlightRef.current = promise;
     return promise;
-  }, [appendErrorEvent, appendSystemEvent]);
+  }, [appendErrorEvent, appendSystemEvent, getInputDebugSnapshot]);
 
   const setRuntimeUnauthenticated = useCallback((summary: string) => {
     setAuthStatus({
@@ -740,47 +821,107 @@ export function App({ launchArgs }: AppProps) {
   const setModelWithNotice = useCallback((nextModel: AvailableModel) => {
     const gate = guardConfigMutation("model", busy);
     if (!gate.allowed) {
+      traceInputDebug("model_selection_blocked", getInputDebugSnapshot({
+        handler: "setModelWithNotice",
+        model: nextModel,
+        reason: "busy",
+      }));
       appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing the model.");
       return;
     }
 
-    updateRuntimeConfig((current) => ({
-      ...current,
+    modelSelectionInFlightRef.current = true;
+    traceInputDebug("model_selection_app_start", getInputDebugSnapshot({
+      handler: "setModelWithNotice",
       model: nextModel,
-      reasoningLevel: normalizeReasoningForModelCapabilities(nextModel, current.reasoningLevel, modelCapabilities),
     }));
-    setScreen("main");
-    appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
-  }, [appendSystemEvent, busy, modelCapabilities, updateRuntimeConfig]);
+
+    try {
+      updateRuntimeConfig((current) => ({
+        ...current,
+        model: nextModel,
+        reasoningLevel: normalizeReasoningForModelCapabilities(nextModel, current.reasoningLevel, modelCapabilities),
+      }));
+      traceInputDebug("model_selection_app_success", getInputDebugSnapshot({
+        handler: "setModelWithNotice",
+        model: nextModel,
+      }));
+      appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      traceInputDebug("model_selection_app_failure", getInputDebugSnapshot({
+        handler: "setModelWithNotice",
+        model: nextModel,
+        error: message,
+      }));
+      appendErrorEvent("Model selection failed", message);
+    } finally {
+      modelSelectionInFlightRef.current = false;
+      returnToChatMode("selection");
+    }
+  }, [appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, modelCapabilities, returnToChatMode, updateRuntimeConfig]);
 
   const setModelAndReasoningWithNotice = useCallback((nextModel: AvailableModel, nextReasoning: ReasoningLevel) => {
     const gate = guardConfigMutation("model", busy);
     if (!gate.allowed) {
+      traceInputDebug("model_selection_blocked", getInputDebugSnapshot({
+        handler: "setModelAndReasoningWithNotice",
+        model: nextModel,
+        reasoning: nextReasoning,
+        reason: "busy",
+      }));
       appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing the model.");
+      returnToChatMode("selection-blocked");
       return;
     }
 
-    const modelChanged = nextModel !== model;
-    const normalizedReasoning = normalizeReasoningForModelCapabilities(nextModel, nextReasoning, modelCapabilities);
-    const reasoningChanged = normalizedReasoning !== reasoningLevel;
-
-    updateRuntimeConfig((current) => ({
-      ...current,
+    modelSelectionInFlightRef.current = true;
+    traceInputDebug("model_selection_app_start", getInputDebugSnapshot({
+      handler: "setModelAndReasoningWithNotice",
       model: nextModel,
-      reasoningLevel: normalizedReasoning,
+      reasoning: nextReasoning,
     }));
-    setScreen("main");
 
-    if (modelChanged && reasoningChanged) {
-      appendSystemEvent("Model updated", `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(normalizedReasoning)}.`);
-    } else if (modelChanged) {
-      appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
-    } else if (reasoningChanged) {
-      appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(normalizedReasoning)}.`);
-    } else {
-      // Nothing changed — still close the picker silently.
+    try {
+      const modelChanged = nextModel !== model;
+      const normalizedReasoning = normalizeReasoningForModelCapabilities(nextModel, nextReasoning, modelCapabilities);
+      const reasoningChanged = normalizedReasoning !== reasoningLevel;
+
+      updateRuntimeConfig((current) => ({
+        ...current,
+        model: nextModel,
+        reasoningLevel: normalizedReasoning,
+      }));
+
+      traceInputDebug("model_selection_app_success", getInputDebugSnapshot({
+        handler: "setModelAndReasoningWithNotice",
+        model: nextModel,
+        reasoning: normalizedReasoning,
+      }));
+
+      if (modelChanged && reasoningChanged) {
+        appendSystemEvent("Model updated", `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(normalizedReasoning)}.`);
+      } else if (modelChanged) {
+        appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
+      } else if (reasoningChanged) {
+        appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(normalizedReasoning)}.`);
+      } else {
+        // Nothing changed — still close the picker silently.
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      traceInputDebug("model_selection_app_failure", getInputDebugSnapshot({
+        handler: "setModelAndReasoningWithNotice",
+        model: nextModel,
+        reasoning: nextReasoning,
+        error: message,
+      }));
+      appendErrorEvent("Model selection failed", message);
+    } finally {
+      modelSelectionInFlightRef.current = false;
+      returnToChatMode("selection");
     }
-  }, [appendSystemEvent, busy, model, modelCapabilities, reasoningLevel, updateRuntimeConfig]);
+  }, [appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, model, modelCapabilities, reasoningLevel, returnToChatMode, updateRuntimeConfig]);
 
   const setAuthPreferenceWithNotice = useCallback((nextPreference: AuthPreference) => {
     setAuthPreference(nextPreference);
@@ -919,9 +1060,29 @@ export function App({ launchArgs }: AppProps) {
   }, [appendSystemEvent, busy]);
 
   const openModelPicker = useCallback(() => {
+    traceInputDebug("model_picker_open_request", getInputDebugSnapshot({
+      handler: "openModelPicker",
+      currentScreen: screen,
+    }));
+
     const gate = guardConfigMutation("model", busy);
     if (!gate.allowed) {
+      traceInputDebug("model_picker_open_blocked", getInputDebugSnapshot({
+        handler: "openModelPicker",
+        reason: "busy",
+      }));
       appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing the model.");
+      return;
+    }
+
+    if (screen === "model-picker") {
+      intendedInputModeRef.current = "model-picker";
+      intendedFocusTargetRef.current = FOCUS_IDS.modelPicker;
+      traceInputDebug("model_picker_open_duplicate", getInputDebugSnapshot({
+        handler: "openModelPicker",
+        focusTarget: FOCUS_IDS.modelPicker,
+      }));
+      focusManager.focus(FOCUS_IDS.modelPicker);
       return;
     }
 
@@ -931,11 +1092,21 @@ export function App({ launchArgs }: AppProps) {
     // log entries. Open the picker immediately; it renders a loading state
     // until the promise resolves and state updates commit the model list.
     if (!modelCapabilities) {
+      traceInputDebug("model_picker_loading_trigger", getInputDebugSnapshot({
+        handler: "openModelPicker",
+      }));
       void refreshModelCapabilities(false, true);
     }
 
+    intendedInputModeRef.current = "model-picker";
+    intendedFocusTargetRef.current = FOCUS_IDS.modelPicker;
     setScreen("model-picker");
-  }, [appendSystemEvent, busy, modelCapabilities, refreshModelCapabilities]);
+    traceInputDebug("model_picker_opened", getInputDebugSnapshot({
+      handler: "openModelPicker",
+      nextScreen: "model-picker",
+      focusTarget: FOCUS_IDS.modelPicker,
+    }));
+  }, [appendSystemEvent, busy, focusManager, getInputDebugSnapshot, modelCapabilities, refreshModelCapabilities, screen]);
 
   const openModePicker = useCallback(() => {
     const gate = guardConfigMutation("mode", busy);
@@ -2433,7 +2604,7 @@ export function App({ launchArgs }: AppProps) {
                   currentReasoning={reasoningLevel}
                   isLoading={modelCapabilitiesBusy && selectableModelCapabilities.length === 0}
                   onSelect={(m, r) => setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel)}
-                  onCancel={() => setScreen("main")}
+                  onCancel={returnToChatMode}
                 />
               )}
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
 import { PassThrough } from "node:stream";
-import { render } from "ink";
+import { Box, Text, render } from "ink";
 import { normalizeCodexModelListResponses, type CodexModelCapability } from "../core/codexModelCapabilities.js";
 import { ThemeProvider } from "./theme.js";
 import { ModelReasoningPicker } from "./ModelReasoningPicker.js";
@@ -111,6 +111,44 @@ function testModels(): readonly CodexModelCapability[] {
   ]).models;
 }
 
+function DelayedModelReasoningPickerHarness() {
+  const [models, setModels] = React.useState<readonly CodexModelCapability[]>([]);
+  const [closed, setClosed] = React.useState(false);
+  const [cancelCount, setCancelCount] = React.useState(0);
+  const [selected, setSelected] = React.useState("none");
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => setModels(testModels()), 80);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <ThemeProvider theme="purple">
+      <Box flexDirection="column">
+        {closed ? null : (
+          <ModelReasoningPicker
+            models={models}
+            currentModel="model-four"
+            currentReasoning="medium"
+            isLoading={models.length === 0}
+            onSelect={(model, reasoning) => {
+              setSelected(`${model}:${reasoning}`);
+              setClosed(true);
+            }}
+            onCancel={() => {
+              setCancelCount((count) => count + 1);
+              setClosed(true);
+            }}
+          />
+        )}
+        <Text>{`closed:${closed ? "yes" : "no"}`}</Text>
+        <Text>{`cancel:${cancelCount}`}</Text>
+        <Text>{`selected:${selected}`}</Text>
+      </Box>
+    </ThemeProvider>
+  );
+}
+
 test("model picker renders dynamic models and the highlighted model's reasoning bar count", async () => {
   const harness = createInkHarness(
     <ThemeProvider theme="purple">
@@ -208,6 +246,42 @@ test("model picker escape still cancels while loading", async () => {
     harness.stdin.write("\u001b");
     await sleep(80);
     assert.equal(cancelled, true);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("model picker keeps escape active after loading swaps to interactive models", async () => {
+  const harness = createInkHarness(<DelayedModelReasoningPickerHarness />);
+
+  try {
+    await sleep(180);
+    harness.stdin.write("\u001b");
+    await sleep(100);
+
+    const output = harness.getOutput();
+    assert.match(output, /Discovering models from the Codex runtime/);
+    assert.match(output, /Model Four \(model-four\)/);
+    assert.match(output, /closed:yes/);
+    assert.match(output, /cancel:1/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("model picker keeps enter selection active after loading swaps to interactive models", async () => {
+  const harness = createInkHarness(<DelayedModelReasoningPickerHarness />);
+
+  try {
+    await sleep(180);
+    harness.stdin.write("\r");
+    await sleep(100);
+
+    const output = harness.getOutput();
+    assert.match(output, /Discovering models from the Codex runtime/);
+    assert.match(output, /Model Four \(model-four\)/);
+    assert.match(output, /closed:yes/);
+    assert.match(output, /selected:model-four:medium/);
   } finally {
     await harness.cleanup();
   }
