@@ -10,7 +10,8 @@
     "start": "bun run --silent src/index.tsx",
     "dev": "bun --watch --silent src/index.tsx",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "audit:codexa-gap": "node scripts/audit-codexa-capabilities.mjs"
   },
   "dependencies": {
     "ink": "^7.0.0",
