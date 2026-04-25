@@ -21,6 +21,7 @@ import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { getTextWidth, splitTextAtColumn } from "./textLayout.js";
 import { useThrottledValue } from "./useThrottledValue.js";
 import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { getStdinDebugState, traceInputDebug } from "../core/inputDebug.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
 
 type ComposerPersona = "idle" | "busy" | "answer" | "error";
@@ -451,6 +452,14 @@ export function BottomComposer({
         ctrlMEventTimeoutRef.current = null;
       }
       if (!inputLocked) {
+        traceInputDebug("model_picker_shortcut_received", {
+          handler: "BottomComposer.useInput",
+          source: "ctrl-m-csi-u",
+          inputLocked,
+          allowCommands,
+          isFocused,
+          stdin: getStdinDebugState(stdin),
+        });
         onOpenModelPicker();
       }
       return;
@@ -478,7 +487,17 @@ export function BottomComposer({
       switch (input) {
         case "b": onOpenBackendPicker(); return;
         case "m": onOpenModelPicker(); return;
-        case "o": onOpenModelPicker(); return;
+        case "o":
+          traceInputDebug("ctrl_o_received", {
+            handler: "BottomComposer.useInput",
+            source: "ctrl-o",
+            inputLocked,
+            allowCommands,
+            isFocused,
+            stdin: getStdinDebugState(stdin),
+          });
+          onOpenModelPicker();
+          return;
         case "p": onOpenModePicker(); return;
         case "t": onOpenThemePicker(); return;
         case "a": onOpenAuthPanel(); return;

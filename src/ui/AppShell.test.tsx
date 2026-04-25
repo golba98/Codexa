@@ -213,6 +213,72 @@ test("non-main screens center the active panel and keep the composer hidden", as
   assert.doesNotMatch(output, /◎ Auto  gpt-5\.4 \(medium\)  Ctrl\+O/);
 });
 
+test("non-main panel content updates while the active screen is unchanged", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const layout = createLayoutSnapshot(100, 30);
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <AppShell
+        layout={layout}
+        screen="model-picker"
+        authState="authenticated"
+        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+        staticEvents={EVENTS}
+        activeEvents={[]}
+        uiState={{ kind: "IDLE" }}
+        panel={<Text>Loading model list</Text>}
+        composer={null}
+        composerRows={0}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+
+  try {
+    await sleep(80);
+    instance.rerender(
+      <ThemeProvider theme="purple">
+        <AppShell
+          layout={layout}
+          screen="model-picker"
+          authState="authenticated"
+          workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
+          runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+          staticEvents={EVENTS}
+          activeEvents={[]}
+          uiState={{ kind: "IDLE" }}
+          panel={<Text>Interactive model list</Text>}
+          composer={null}
+          composerRows={0}
+        />
+      </ThemeProvider>,
+    );
+    await sleep(80);
+
+    const frame = stripAnsi(output);
+    assert.match(frame, /Loading model list/);
+    assert.match(frame, /Interactive model list/);
+  } finally {
+    instance.cleanup();
+    await sleep(20);
+  }
+});
+
 test("main screen keeps the transcript visible while showing the plan action picker", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();

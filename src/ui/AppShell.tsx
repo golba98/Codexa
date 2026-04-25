@@ -109,12 +109,16 @@ function AppShellInner({
  * re-render when the layout, screen, event lists, uiState, or composer
  * layout rows actually change.
  *
- * ReactNode props (panel, panelHint) are excluded — their visibility is fully
- * determined by `screen`, which IS compared.  `composer` must remain in the
- * comparator because MemoizedBottomComposer receives value/cursor updates
- * through this prop; without it the composer would display stale input.
+ * `composer` must remain in the comparator because MemoizedBottomComposer
+ * receives value/cursor updates through this prop; without it the composer
+ * would display stale input. Non-main panels are compared so picker content can
+ * refresh while the active screen stays unchanged, such as model discovery
+ * replacing the loading model picker with the interactive picker.
  */
 export const AppShell = memo(AppShellInner, (prev, next) => {
+  const panelPropsEqual = next.screen === "main"
+    || (prev.panel === next.panel && prev.panelHint === next.panelHint);
+
   return (
     prev.layout.cols     === next.layout.cols     &&
     prev.layout.rows     === next.layout.rows     &&
@@ -128,6 +132,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.uiState         === next.uiState         &&
     prev.composerRows    === next.composerRows    &&
     prev.composer        === next.composer        &&
-    prev.verboseMode     === next.verboseMode
+    prev.verboseMode     === next.verboseMode     &&
+    panelPropsEqual
   );
 });
