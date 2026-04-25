@@ -48,6 +48,12 @@ export function parseMarkdown(content: string): Segment[] {
 
   while (index < lines.length) {
     const line = lines[index]!;
+
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
     const fenceMatch = FENCE_RE.exec(line);
     if (fenceMatch) {
       const codeLines: string[] = [];
@@ -100,7 +106,7 @@ export function parseMarkdown(content: string): Segment[] {
     }
 
     const paraLines: InlinePart[][] = [];
-    while (index < lines.length && !isBlockStart(lines[index]!)) {
+    while (index < lines.length && !isBlockStart(lines[index]!) && lines[index]!.trim() !== '') {
       paraLines.push(parseInline(lines[index]!));
       index += 1;
     }

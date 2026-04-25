@@ -1,0 +1,84 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { parseMarkdown } from "./Markdown.js";
+import type { ParaSegment, CodeSegment } from "./Markdown.js";
+
+const SAMPLE = [
+  "# Summary",
+  "",
+  "The current rendering path is flattening the assistant response into a dense block.",
+  "",
+  "What needs to improve:",
+  "",
+  "- Preserve paragraph spacing.",
+  "- Keep bullet lists readable.",
+  "- Keep code blocks separate.",
+  "- Avoid merging activity logs with final answers.",
+  "",
+  "Steps:",
+  "",
+  "1. Sanitize unsafe control characters.",
+  "2. Preserve markdown structure.",
+  "3. Render semantic blocks with spacing.",
+  "4. Verify streaming still works.",
+  "",
+  "Example command:",
+  "",
+  "```powershell",
+  "npm run typecheck",
+  "npm run build",
+  "```",
+  "",
+  "Assistant: Done. Formatting pipeline is now applied.",
+].join("\n");
+
+test("sample response produces separate segments, not one dense para", () => {
+  const segments = parseMarkdown(SAMPLE);
+  const types = segments.map((s) => s.type);
+
+  assert.ok(
+    segments.length >= 7,
+    `expected ≥7 segments, got ${segments.length}: ${JSON.stringify(types)}`,
+  );
+  assert.equal(segments[0]?.type, "header", "first segment must be the header");
+  assert.ok(types.includes("code"), "expected a code segment");
+  assert.ok(types.includes("list"), "expected a list segment");
+});
+
+test("blank lines between paragraphs produce separate ParaSegments", () => {
+  const segments = parseMarkdown(SAMPLE);
+  const paras = segments.filter((s): s is ParaSegment => s.type === "para");
+
+  for (const para of paras) {
+    const text = para.lines.flat().map((p) => p.text).join(" ");
+    assert.ok(
+      !(text.includes("rendering path") && text.includes("What needs to improve")),
+      "two distinct paragraphs must not share one ParaSegment",
+    );
+  }
+});
+
+test("blank lines inside code blocks are preserved", () => {
+  const input = "```\nline1\n\nline3\n```";
+  const segments = parseMarkdown(input);
+  assert.equal(segments.length, 1);
+  assert.equal(segments[0]?.type, "code");
+  const code = segments[0] as CodeSegment;
+  assert.deepEqual(code.lines, ["line1", "", "line3"]);
+});
+
+test("plain paragraphs with no blank lines stay in one segment", () => {
+  const input = "Line one.\nLine two.\nLine three.";
+  const segments = parseMarkdown(input);
+  assert.equal(segments.length, 1);
+  assert.equal(segments[0]?.type, "para");
+  const para = segments[0] as ParaSegment;
+  assert.equal(para.lines.length, 3);
+});
+
+test("header immediately followed by text produces two segments", () => {
+  const input = "# Title\n\nSome text here.";
+  const segments = parseMarkdown(input);
+  assert.equal(segments[0]?.type, "header");
+  assert.equal(segments[1]?.type, "para");
+});
