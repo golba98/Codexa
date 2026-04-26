@@ -1,0 +1,160 @@
+import type { BackendProgressUpdate } from "../core/providers/types.js";
+import type { RunFileActivity } from "../core/workspaceActivity.js";
+import type { RunToolActivity } from "./types.js";
+
+export type LiveRenderUpdate =
+  | { type: "assistant"; chunk: string }
+  | { type: "progress"; update: BackendProgressUpdate }
+  | { type: "activity"; activity: RunFileActivity[] }
+  | { type: "tool"; activity: RunToolActivity };
+
+type TimerHandle = ReturnType<typeof setTimeout>;
+
+export interface LiveRenderSchedulerOptions {
+  flush: (updates: LiveRenderUpdate[]) => void;
+  assistantFlushMs: number;
+  progressOnlyFlushMs: number;
+  setTimer?: (callback: () => void, delayMs: number) => TimerHandle;
+  clearTimer?: (timer: TimerHandle) => void;
+  queueMicrotaskFn?: (callback: () => void) => void;
+}
+
+export interface LiveRenderScheduler {
+  enqueue: (update: LiveRenderUpdate) => void;
+  flushNow: () => boolean;
+  cancel: () => void;
+  hasPendingUpdates: () => boolean;
+}
+
+function mergeLiveRenderUpdate(updates: LiveRenderUpdate[], update: LiveRenderUpdate): boolean {
+  const previous = updates[updates.length - 1];
+
+  if (update.type === "assistant") {
+    if (previous?.type === "assistant") {
+      previous.chunk += update.chunk;
+    } else {
+      updates.push({ ...update });
+    }
+    return true;
+  }
+
+  if (update.type === "progress") {
+    if (previous?.type === "progress" && previous.update.id === update.update.id) {
+      previous.update = update.update;
+    } else {
+      updates.push(update);
+    }
+    return false;
+  }
+
+  if (update.type === "tool") {
+    if (previous?.type === "tool" && previous.activity.id === update.activity.id) {
+      previous.activity = { ...previous.activity, ...update.activity };
+    } else {
+      updates.push(update);
+    }
+    return false;
+  }
+
+  if (previous?.type === "activity") {
+    previous.activity.push(...update.activity);
+  } else {
+    updates.push({ type: "activity", activity: [...update.activity] });
+  }
+  return false;
+}
+
+export function createLiveRenderScheduler({
+  flush,
+  assistantFlushMs,
+  progressOnlyFlushMs,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+  queueMicrotaskFn = queueMicrotask,
+}: LiveRenderSchedulerOptions): LiveRenderScheduler {
+  let pendingUpdates: LiveRenderUpdate[] = [];
+  let hasPendingAssistantDelta = false;
+  let firstFlushPending = true;
+  let timer: TimerHandle | null = null;
+  let microtaskScheduled = false;
+  let isFlushing = false;
+  let flushAgain = false;
+
+  const cancelScheduledFlush = () => {
+    if (timer) {
+      clearTimer(timer);
+      timer = null;
+    }
+    microtaskScheduled = false;
+  };
+
+  const drain = (): boolean => {
+    if (isFlushing) {
+      flushAgain = true;
+      return false;
+    }
+
+    cancelScheduledFlush();
+
+    if (pendingUpdates.length === 0) {
+      hasPendingAssistantDelta = false;
+      return false;
+    }
+
+    isFlushing = true;
+    let flushed = false;
+    try {
+      do {
+        flushAgain = false;
+        const updates = pendingUpdates;
+        pendingUpdates = [];
+        hasPendingAssistantDelta = false;
+        if (updates.length > 0) {
+          flushed = true;
+          flush(updates);
+        }
+      } while (flushAgain || pendingUpdates.length > 0);
+    } finally {
+      isFlushing = false;
+    }
+
+    return flushed;
+  };
+
+  const schedule = () => {
+    if (timer || microtaskScheduled || isFlushing) return;
+
+    if (firstFlushPending) {
+      firstFlushPending = false;
+      microtaskScheduled = true;
+      queueMicrotaskFn(() => {
+        microtaskScheduled = false;
+        drain();
+      });
+      return;
+    }
+
+    const interval = hasPendingAssistantDelta ? assistantFlushMs : progressOnlyFlushMs;
+    timer = setTimer(() => {
+      timer = null;
+      drain();
+    }, interval);
+  };
+
+  return {
+    enqueue(update) {
+      const addedAssistant = mergeLiveRenderUpdate(pendingUpdates, update);
+      hasPendingAssistantDelta ||= addedAssistant;
+      schedule();
+    },
+    flushNow: drain,
+    cancel() {
+      cancelScheduledFlush();
+      pendingUpdates = [];
+      hasPendingAssistantDelta = false;
+    },
+    hasPendingUpdates() {
+      return pendingUpdates.length > 0;
+    },
+  };
+}

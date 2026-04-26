@@ -21,6 +21,7 @@ export interface PreparedCodexExecLaunch {
 interface PrepareCodexExecLaunchDependencies {
   resolveExecutable?: typeof resolveCodexExecutable;
   getCapabilities?: typeof getCodexCliCapabilities;
+  diagnosticsLogger?: (message: string) => void;
 }
 
 function resolveResponsibleModulePath(moduleUrl: string): string {
@@ -50,8 +51,9 @@ function shouldLogCodexLaunchDiagnostics(): boolean {
 function logCodexLaunchDiagnostics(
   options: BuildCodexExecArgsOptions,
   prepared: PreparedCodexExecLaunch,
+  logger: ((message: string) => void) | undefined,
 ): void {
-  if (!shouldLogCodexLaunchDiagnostics()) {
+  if (!logger || !shouldLogCodexLaunchDiagnostics()) {
     return;
   }
 
@@ -75,7 +77,7 @@ function logCodexLaunchDiagnostics(
     `  final argv: ${JSON.stringify(prepared.args)}`,
   ];
 
-  console.error(debugLines.join("\n"));
+  logger(debugLines.join("\n"));
 }
 
 export async function prepareCodexExecLaunch(
@@ -91,6 +93,7 @@ export async function prepareCodexExecLaunch(
 }> {
   const executableResolver = dependencies.resolveExecutable ?? resolveCodexExecutable;
   const capabilityResolver = dependencies.getCapabilities ?? getCodexCliCapabilities;
+  const diagnosticsLogger = dependencies.diagnosticsLogger;
   perf.mark("exec_resolve_start");
   const executable = await executableResolver();
   perf.mark("exec_resolve_end");
@@ -127,7 +130,7 @@ export async function prepareCodexExecLaunch(
     launchContext,
   };
 
-  logCodexLaunchDiagnostics(options, prepared);
+  logCodexLaunchDiagnostics(options, prepared, diagnosticsLogger);
 
   return {
     ...argsResult,

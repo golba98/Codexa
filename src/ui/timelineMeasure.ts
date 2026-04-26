@@ -73,7 +73,6 @@ const MAX_VISIBLE_PROGRESS_ENTRIES = 3;
 const COMPACT_PROCESSING_BODY_LINE_CAP = 4;
 const COMPACT_STREAMING_TAIL_CAP = 6;
 const VISIBLE_THINKING_SOURCES = new Set(["reasoning", "todo"]);
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
 // Matches sentence-ending punctuation followed (optionally after whitespace) by
 // a capital letter starting a new word. Requires [A-Z] to be followed by [a-z]
@@ -386,7 +385,6 @@ function buildTaskStatusRow(item: Extract<RenderTimelineItem, { type: "turn" }>,
   // PERF: Do NOT call Date.now() here — this function runs inside buildTimelineSnapshot
   // which is computed inside a useMemo in Timeline.tsx.  Using Date.now() prevents the
   // snapshot from ever fully stabilising, causing unnecessary downstream invalidation.
-  // The spinner animation is handled by TurnGroup/StatusLine via its own setInterval.
   // We use a static frame so the data-layer row is deterministic and memo-stable.
   const spinnerPlaceholder = "⠿";
   const isActive = run.status === "running";
@@ -408,10 +406,11 @@ function buildTaskStatusRow(item: Extract<RenderTimelineItem, { type: "turn" }>,
     );
   }
 
-  // Active state — spinner + concise status
+  // Active state — static concise status. The bottom status slot owns the
+  // live busy animation so transcript rows do not repaint on animation ticks.
   const statusText = item.renderState.runPhase === "streaming"
-    ? "Codex is streaming..."
-    : "Codex is thinking...";
+    ? "Codex is streaming"
+    : "Codex is working";
 
   return createRow(
     `${item.key}-status`,
@@ -489,7 +488,7 @@ function buildThinkingRows(run: RunEvent, width: number, verbose: boolean): Time
   }
 
   if (visibleBlocks.length === 0 && run.status === "running" && recentActivity.length === 0 && !latestTool) {
-    contentRows.push([createSpan("Codex is thinking...", "dim")]);
+    contentRows.push([createSpan("Codex is working...", "dim")]);
   }
 
   visibleBlocks.forEach((block, blockIndex) => {
@@ -1583,7 +1582,7 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
 
   if (events.length === 0 && run.status === "running") {
     rows.push(...buildCodexPlainRows(`${item.key}-codex-running`, width, [
-      [createSpan("Codex is thinking...", "dim")],
+      [createSpan("Codex is working...", "dim")],
       [createSpan("▌", "accent")],
     ]));
   }

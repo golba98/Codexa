@@ -105,7 +105,7 @@ import {
   type ModelSpec,
   type VerifiedModelSpec,
 } from "./core/modelSpecs.js";
-import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots, type RunFileActivity } from "./core/workspaceActivity.js";
+import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots } from "./core/workspaceActivity.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import { loadProjectInstructions } from "./core/projectInstructions.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
@@ -114,7 +114,7 @@ import type { BackendProgressUpdate, BackendProvider } from "./core/providers/ty
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
-import type { RunEvent, RunToolActivity, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
+import type { RunEvent, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
 import {
   buildFollowUpPrompt,
   createRunEvent,
@@ -123,6 +123,7 @@ import {
   isCurrentRun,
 } from "./session/chatLifecycle.js";
 import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
+import { createLiveRenderScheduler, type LiveRenderUpdate } from "./session/liveRenderScheduler.js";
 import { schedulePromptRunStartAfterVisibleCommit } from "./session/promptRunSchedule.js";
 import {
   approvePlanExecution,
@@ -160,6 +161,7 @@ import {
 } from "./ui/themeFlow.js";
 import { isBusy as isUiBusy } from "./session/types.js";
 import { AppShell } from "./ui/AppShell.js";
+import { BUSY_STATUS_FRAME_MS, getBusyStatusFrame } from "./ui/busyStatusAnimation.js";
 
 let nextEventId = 0;
 let nextTurnId = 0;
@@ -182,6 +184,29 @@ function createEventId(): number {
 
 function createTurnId(): number {
   return nextTurnId++;
+}
+
+function useBusyStatusFrame(isBusy: boolean): string {
+  const [frameIndex, setFrameIndex] = useState(0);
+
+  useEffect(() => {
+    if (!isBusy) {
+      setFrameIndex(0);
+      return;
+    }
+
+    setFrameIndex(0);
+    const timer = setInterval(() => {
+      setFrameIndex((current) => current + 1);
+    }, BUSY_STATUS_FRAME_MS);
+    timer.unref?.();
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [isBusy]);
+
+  return getBusyStatusFrame(frameIndex);
 }
 
 function createInitialAuthStatus(): CodexAuthProbeResult {
@@ -369,6 +394,7 @@ export function App({ launchArgs }: AppProps) {
   cursorRef.current = cursor;
 
   const busy = isUiBusy(uiState);
+  const busyStatusFrame = useBusyStatusFrame(busy);
   const busyRef = useRef(busy);
   busyRef.current = busy;
   const modelCapabilitiesBusyRef = useRef(modelCapabilitiesBusy);
@@ -1814,141 +1840,48 @@ export function App({ launchArgs }: AppProps) {
       },
     ] });
 
-    type PendingLiveUpdate =
-      | { type: "assistant"; chunk: string }
-      | { type: "progress"; update: BackendProgressUpdate }
-      | { type: "activity"; activity: RunFileActivity[] }
-      | { type: "tool"; activity: RunToolActivity };
-
-    let pendingLiveUpdates: PendingLiveUpdate[] = [];
-    let hasPendingAssistantDelta = false;
     let streamedAssistantContent = "";
-    let liveFlushTimer: ReturnType<typeof setTimeout> | null = null;
     let legacyProgressSequence = 0;
     let firstRenderFired = false;
     let blockedCleanupFailureSurfaced = false;
-
-    const queueLiveUpdate = (update: PendingLiveUpdate) => {
-      if (update.type === "assistant") {
-        const previous = pendingLiveUpdates[pendingLiveUpdates.length - 1];
-        if (previous?.type === "assistant") {
-          previous.chunk += update.chunk;
-        } else {
-          pendingLiveUpdates.push(update);
-        }
-        hasPendingAssistantDelta = true;
-        return;
-      }
-
-      if (update.type === "progress") {
-        const previous = pendingLiveUpdates[pendingLiveUpdates.length - 1];
-        if (previous?.type === "progress" && previous.update.id === update.update.id) {
-          previous.update = update.update;
-        } else {
-          pendingLiveUpdates.push(update);
-        }
-        return;
-      }
-
-      if (update.type === "tool") {
-        const previous = pendingLiveUpdates[pendingLiveUpdates.length - 1];
-        if (previous?.type === "tool" && previous.activity.id === update.activity.id) {
-          previous.activity = { ...previous.activity, ...update.activity };
-        } else {
-          pendingLiveUpdates.push(update);
-        }
-        return;
-      }
-
-      const previous = pendingLiveUpdates[pendingLiveUpdates.length - 1];
-      if (previous?.type === "activity") {
-        previous.activity.push(...update.activity);
-      } else {
-        pendingLiveUpdates.push(update);
-      }
-    };
 
     let preRunSnapshot: ReturnType<typeof captureWorkspaceSnapshot> | null = null;
     let finalWorkspacePollDone = false;
     let activityTracker: ReturnType<typeof createWorkspaceActivityTracker> | null = null;
 
-    const flushLiveUpdates = (): boolean => {
-      perf.inc("flushes");
-      if (liveFlushTimer) {
-        clearTimeout(liveFlushTimer);
-        liveFlushTimer = null;
-      }
-
-      if (!isCurrentRun(activeRunIdRef.current, runId)) {
-        pendingLiveUpdates = [];
-        hasPendingAssistantDelta = false;
-        return false;
-      }
-
-      const updates = pendingLiveUpdates;
-      pendingLiveUpdates = [];
-      hasPendingAssistantDelta = false;
-
-      if (updates.length === 0) {
-        return false;
-      }
-
-      for (const update of updates) {
-        if (update.type === "activity") {
-          dispatchSession({ type: "RUN_APPEND_ACTIVITY", runId, activity: update.activity });
-          continue;
+    const liveScheduler = createLiveRenderScheduler({
+      assistantFlushMs: LIVE_UPDATE_FLUSH_MS,
+      progressOnlyFlushMs: PROGRESS_ONLY_FLUSH_MS,
+      flush: (updates: LiveRenderUpdate[]) => {
+        if (!isCurrentRun(activeRunIdRef.current, runId)) {
+          return;
         }
 
-        if (update.type === "progress") {
-          dispatchSession({ type: "RUN_APPLY_PROGRESS_UPDATES", runId, updates: [update.update] });
-          continue;
-        }
-
-        if (update.type === "tool") {
-          dispatchSession({ type: "RUN_UPSERT_TOOL_ACTIVITY", runId, activity: update.activity });
-          continue;
-        }
-
-        if (!firstRenderFired) {
+        if (!firstRenderFired && updates.some((update) => update.type === "assistant")) {
           firstRenderFired = true;
           perf.mark("first_render");
         }
+
         dispatchSession({
-          type: "RUN_APPEND_ASSISTANT_DELTA",
+          type: "RUN_APPLY_LIVE_UPDATES",
           turnId,
           runId,
-          chunk: update.chunk,
-          eventFactory: () => ({
+          updates,
+          assistantEventFactory: (chunk) => ({
             id: createEventId(),
             type: "assistant",
             createdAt: Date.now(),
             content: "",
-            contentChunks: [update.chunk],
+            contentChunks: [chunk],
             turnId,
           }),
         });
-      }
-      return true;
-    };
+      },
+    });
 
-    let firstLiveFlushPending = true;
-    const scheduleLiveFlush = () => {
-      if (liveFlushTimer) return;
-      // First visible event: use microtask for near-instant rendering.
-      if (firstLiveFlushPending) {
-        firstLiveFlushPending = false;
-        liveFlushTimer = setTimeout(() => {}, 0); // prevent re-entry
-        queueMicrotask(() => {
-          liveFlushTimer = null;
-          flushLiveUpdates();
-        });
-        return;
-      }
-      const interval = hasPendingAssistantDelta ? LIVE_UPDATE_FLUSH_MS : PROGRESS_ONLY_FLUSH_MS;
-      liveFlushTimer = setTimeout(() => {
-        liveFlushTimer = null;
-        flushLiveUpdates();
-      }, interval);
+    const flushLiveUpdates = (): boolean => {
+      perf.inc("flushes");
+      return liveScheduler.flushNow();
     };
 
     let stopProviderRun: (() => void) | undefined;
@@ -1969,8 +1902,7 @@ export function App({ launchArgs }: AppProps) {
           initialSnapshot: preRunSnapshot,
           onActivity: (activity) => {
             if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-            queueLiveUpdate({ type: "activity", activity });
-            scheduleLiveFlush();
+            liveScheduler.enqueue({ type: "activity", activity });
           },
         });
       }
@@ -1987,13 +1919,12 @@ export function App({ launchArgs }: AppProps) {
           perf.accumulate("sanitize_ms", performance.now() - t0);
           perf.inc("chunks");
           if (!safeChunk) return;
-          queueLiveUpdate({ type: "assistant", chunk: safeChunk });
+          liveScheduler.enqueue({ type: "assistant", chunk: safeChunk });
           streamedAssistantContent += safeChunk;
-          scheduleLiveFlush();
         },
         onToolActivity: (activity) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-          queueLiveUpdate({ type: "tool", activity });
+          liveScheduler.enqueue({ type: "tool", activity });
           if (activity.status === "running") {
             flushLiveUpdates();
             return;
@@ -2007,7 +1938,6 @@ export function App({ launchArgs }: AppProps) {
               return;
             }
           }
-          scheduleLiveFlush();
         },
         onResponse: (response) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
@@ -2023,7 +1953,7 @@ export function App({ launchArgs }: AppProps) {
               perf.mark("snapshot_end");
               const lateActivity = diffWorkspaceSnapshots(preRunSnapshot, finalSnapshot);
               if (lateActivity.length > 0) {
-                queueLiveUpdate({ type: "activity", activity: lateActivity });
+                liveScheduler.enqueue({ type: "activity", activity: lateActivity });
               }
             } catch {
               // Non-fatal: best-effort final poll
@@ -2114,8 +2044,7 @@ export function App({ launchArgs }: AppProps) {
             source: update.source,
             text: safeText,
           };
-          queueLiveUpdate({ type: "progress", update: safeUpdate });
-          scheduleLiveFlush();
+          liveScheduler.enqueue({ type: "progress", update: safeUpdate });
         },
       },
       );
@@ -2733,6 +2662,7 @@ export function App({ launchArgs }: AppProps) {
         planMode={planMode}
         tokensUsed={estimateTokens(conversationChars)}
         modelSpec={currentModelSpec}
+        busyStatusFrame={busyStatusFrame}
         value={inputValue}
         cursor={cursor}
         onChangeInput={handleChangeInput}
@@ -2769,6 +2699,7 @@ export function App({ launchArgs }: AppProps) {
     planMode,
     conversationChars,
     currentModelSpec,
+    busyStatusFrame,
     inputValue,
     cursor,
     handleChangeInput,

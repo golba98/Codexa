@@ -241,6 +241,62 @@ test("reducer preserves response action response ordering across dispatched call
   assert.equal(runEvent.responseSegments?.[1]?.chunks.join(""), "Second segment.");
 });
 
+test("RUN_APPLY_LIVE_UPDATES applies ordered busy updates in one reducer action", () => {
+  const turnId = 34;
+  let state = stateWithActiveRun(turnId);
+
+  state = reduceSessionState(state, {
+    type: "UI_ACTION",
+    action: { type: "PROMPT_RUN_STARTED", turnId },
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_APPLY_LIVE_UPDATES",
+    turnId,
+    runId: 2,
+    updates: [
+      { type: "progress", update: makeProgressUpdate("think-1", "Inspecting files") },
+      {
+        type: "tool",
+        activity: {
+          id: "tool-1",
+          command: "Get-Content README.md",
+          status: "running",
+          startedAt: 10,
+        },
+      },
+      { type: "assistant", chunk: "First segment." },
+      {
+        type: "tool",
+        activity: {
+          id: "tool-1",
+          command: "Get-Content README.md",
+          status: "completed",
+          startedAt: 10,
+          completedAt: 20,
+        },
+      },
+      { type: "assistant", chunk: "Second segment." },
+    ],
+    assistantEventFactory: (chunk) => ({
+      ...makeAssistantEvent(turnId, ""),
+      contentChunks: [chunk],
+    }),
+  });
+
+  const runEvent = state.activeEvents.find((event): event is RunEvent => event.type === "run");
+  const assistantEvent = state.activeEvents.find((event): event is AssistantEvent => event.type === "assistant");
+  assert.ok(runEvent);
+  assert.ok(assistantEvent);
+  assert.equal(state.uiState.kind, "RESPONDING");
+  assert.deepEqual(
+    runEvent.streamItems?.map((item) => item.kind),
+    ["thinking", "action", "response"],
+  );
+  assert.equal(assistantEvent.id, 3);
+  assert.deepEqual(assistantEvent.contentChunks, ["First segment.", "Second segment."]);
+  assert.equal(runEvent.toolActivities[0]?.status, "completed");
+});
+
 test("first prompt lifecycle exposes progress before finalization and preserves chronological stream order", () => {
   const turnId = 33;
   const userEvent = makeUserEvent(turnId);

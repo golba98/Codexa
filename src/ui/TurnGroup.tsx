@@ -425,7 +425,7 @@ function StreamEventList({
   return (
     <Box flexDirection="column" width="100%">
       {events.length === 0 && run.status === "running" && (
-        <CodexStatusBlock text="Codex is thinking..." showCursor />
+        <CodexStatusBlock text="Codex is working..." showCursor />
       )}
 
       {events.map((event, index) => {
