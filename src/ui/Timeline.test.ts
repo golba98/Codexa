@@ -424,11 +424,12 @@ test("default timeline shows compact processing signals while a run is streaming
     .map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
-  assert.match(joined, /thinking/);
+  assert.match(joined, /Codex/);
   assert.match(joined, /Verifying generated file/);
   assert.match(joined, /python -m pytest/);
   assert.match(joined, /Hello_World\.py/);
-  assert.match(joined, /GPT 5\.4/);
+  assert.match(joined, /action/);
+  assert.doesNotMatch(joined, /^\s*thinking\b/m);
 });
 
 test("streaming processing output renders separated readable segments with a live marker", () => {
@@ -484,7 +485,7 @@ test("streaming processing output renders separated readable segments with a liv
     .join("\n");
 
   assert.match(joined, /Next I am separating/);
-  assert.match(joined, /thinking/);
+  assert.match(joined, /Codex/);
   assert.match(joined, /▌/);
   assert.ok(snapshot.rows.every((row) => row.spans.map((span) => span.text).join("").length <= 54));
 });
@@ -540,9 +541,10 @@ test("completed runs keep progress updates as separate readable blocks", () => {
     .map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
-  assert.match(joined, /thinking/);
+  assert.match(joined, /Codex/);
   assert.match(joined, /Checking the failing test/);
   assert.match(joined, /Comparing expected behavior/);
+  assert.doesNotMatch(joined, /^\s*thinking\b/m);
 });
 
 test("assistant unified diffs render with semantic tones", () => {
@@ -1034,9 +1036,11 @@ test("unified stream renders action before response by stream sequence", () => {
     lastStreamSeq: 2,
   }), 300);
 
-  assert.ok(joined.indexOf("action") < joined.indexOf("response"));
+  assert.ok(joined.indexOf("action") < joined.indexOf("Purpose"));
   assert.match(joined, /List files/);
   assert.match(joined, /rg --files/);
+  assert.match(joined, /Codex/);
+  assert.doesNotMatch(joined, /^\s*response\b/m);
 });
 
 test("unified stream preserves thinking action response ordering", () => {
@@ -1082,8 +1086,10 @@ test("unified stream preserves thinking action response ordering", () => {
     lastStreamSeq: 3,
   }), 301);
 
-  assert.ok(joined.indexOf("thinking") < joined.indexOf("action"));
-  assert.ok(joined.indexOf("action") < joined.indexOf("response"));
+  assert.ok(joined.indexOf("I need to inspect") < joined.indexOf("action"));
+  assert.ok(joined.indexOf("action") < joined.indexOf("Purpose"));
+  assert.match(joined, /Codex/);
+  assert.doesNotMatch(joined, /^\s*response\b/m);
 });
 
 test("unified stream preserves response action response interleaving", () => {
@@ -1122,6 +1128,83 @@ test("unified stream preserves response action response interleaving", () => {
 
   assert.ok(joined.indexOf("First segment") < joined.indexOf("action"));
   assert.ok(joined.indexOf("action") < joined.indexOf("Second segment"));
+  assert.doesNotMatch(joined, /^\s*response\b/m);
+});
+
+test("stream renders Codex text outside bordered action boxes", () => {
+  const joined = renderJoinedTurn(makeChronologicalTurnEvents(305, {
+    toolActivities: [{
+      id: "tool-1",
+      command: "Get-Content README.md",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 426,
+      streamSeq: 2,
+    }],
+    responseSegments: [
+      {
+        id: "response-1",
+        streamSeq: 1,
+        chunks: ["I am checking the README."],
+        status: "completed",
+        startedAt: 1,
+      },
+      {
+        id: "response-2",
+        streamSeq: 3,
+        chunks: ["Purpose: this project wraps Codex in a terminal UI."],
+        status: "completed",
+        startedAt: 2,
+      },
+    ],
+    streamItems: [
+      { streamSeq: 1, kind: "response", refId: "response-1" },
+      { streamSeq: 2, kind: "action", refId: "tool-1" },
+      { streamSeq: 3, kind: "response", refId: "response-2" },
+    ],
+    lastStreamSeq: 3,
+  }), 305);
+
+  const codexLine = joined.split("\n").find((line) => line.includes("I am checking the README."));
+  const actionLine = joined.split("\n").find((line) => line.includes("Read file"));
+
+  assert.match(joined, /Codex/);
+  assert.match(joined, /╭── action/);
+  assert.ok(codexLine && !codexLine.includes("│"), "Codex narration should not be inside a bordered row");
+  assert.ok(actionLine && actionLine.includes("│"), "action execution should be inside a bordered row");
+  assert.doesNotMatch(joined, /^\s*response\b/m);
+});
+
+test("consecutive actions render as separate action boxes", () => {
+  const joined = renderJoinedTurn(makeChronologicalTurnEvents(306, {
+    toolActivities: [
+      {
+        id: "tool-1",
+        command: "Get-ChildItem -Force",
+        status: "completed",
+        startedAt: 10,
+        completedAt: 488,
+        streamSeq: 1,
+      },
+      {
+        id: "tool-2",
+        command: "Get-Content src\\App.tsx",
+        status: "completed",
+        startedAt: 20,
+        completedAt: 452,
+        streamSeq: 2,
+      },
+    ],
+    streamItems: [
+      { streamSeq: 1, kind: "action", refId: "tool-1" },
+      { streamSeq: 2, kind: "action", refId: "tool-2" },
+    ],
+    lastStreamSeq: 2,
+  }), 306);
+
+  assert.equal((joined.match(/╭── action/g) ?? []).length, 2);
+  assert.match(joined, /List files/);
+  assert.match(joined, /Read file/);
 });
 
 test("completed final response is not forced above earlier actions", () => {

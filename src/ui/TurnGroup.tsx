@@ -268,7 +268,140 @@ function resolveStreamEvents(
   return resolved;
 }
 
-function UnifiedStreamCard({
+function ActionEventCard({
+  cols,
+  tool,
+  opacity,
+  isLiveCursorTarget,
+}: {
+  cols: number;
+  tool: RunToolActivity;
+  opacity: TurnOpacity;
+  isLiveCursorTarget: boolean;
+}) {
+  const theme = useTheme();
+  const dim = opacity !== "active";
+  const actionNormalized = normalizeCommand(tool.command);
+  const actionLabel = getFriendlyActionLabel(actionNormalized);
+  const borderColor = dim ? theme.BORDER_SUBTLE : tool.status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE;
+
+  return (
+    <DashCard cols={cols} title="action" borderColor={borderColor}>
+      <Box>
+        <Text color={tool.status === "failed" ? theme.ERROR : tool.status === "completed" ? theme.SUCCESS : theme.INFO}>
+          {`${tool.status === "failed" ? "✕" : tool.status === "completed" ? "✓" : "•"} `}
+        </Text>
+        <Text color={dim ? theme.DIM : theme.TEXT}>{actionLabel ?? actionNormalized}</Text>
+        {tool.completedAt && (
+          <Text color={theme.DIM}>  {formatDuration(tool.completedAt - tool.startedAt)}</Text>
+        )}
+      </Box>
+      {actionLabel && (
+        <Text color={theme.MUTED} wrap="wrap">  {actionNormalized}</Text>
+      )}
+      {isLiveCursorTarget && tool.status === "running" && (
+        <Text color={theme.ACCENT}>  ▌</Text>
+      )}
+    </DashCard>
+  );
+}
+
+function CodexThinkingBlock({
+  block,
+  cols,
+  isLiveCursorTarget,
+  verboseMode,
+}: {
+  block: RunProgressBlock;
+  cols: number;
+  isLiveCursorTarget: boolean;
+  verboseMode: boolean;
+}) {
+  const theme = useTheme();
+  const contentWidth = Math.max(1, getUsableShellWidth(cols, 0));
+
+  return (
+    <Box flexDirection="column" width="100%" paddingX={1}>
+      <Text color={theme.MUTED} bold>Codex</Text>
+      {formatProgressBlockBodyLines(block.text, contentWidth)
+        .slice(0, verboseMode ? undefined : COMPACT_PROCESSING_BODY_LINE_CAP)
+        .map((line, i) => (
+          <Text key={i} color={theme.DIM}>{line || " "}</Text>
+        ))}
+      {isLiveCursorTarget && block.status === "active" && (
+        <Text color={theme.ACCENT}>▌</Text>
+      )}
+    </Box>
+  );
+}
+
+function CodexResponseBlock({
+  run,
+  segment,
+  cols,
+  streaming,
+  isLast,
+  isLiveCursorTarget,
+  verboseMode,
+}: {
+  run: RunEvent;
+  segment: RunResponseSegment;
+  cols: number;
+  streaming: boolean;
+  isLast: boolean;
+  isLiveCursorTarget: boolean;
+  verboseMode: boolean;
+}) {
+  const theme = useTheme();
+  const contentWidth = Math.max(1, getUsableShellWidth(cols, 0));
+
+  const formatted = useMemo(() => {
+    const raw = formatTerminalAnswerInline(getResponseSegmentText(segment));
+    const sanitized = segment.status === "active"
+      ? sanitizeStreamChunk(raw)
+      : sanitizeOutput(raw);
+    const normalized = normalizeOutput(sanitized);
+    const classified = classifyOutput(normalized);
+    return formatForBox(classified, contentWidth);
+  }, [contentWidth, segment]);
+
+  const segmentStreaming = segment.status === "active";
+  const showTail = !segmentStreaming && !verboseMode && formatted.length > COMPACT_STREAMING_TAIL_CAP;
+
+  return (
+    <Box flexDirection="column" width="100%" paddingX={1}>
+      <Text color={theme.MUTED} bold>Codex</Text>
+      {run.status === "failed" && !streaming && isLast && (
+        <Box flexDirection="column">
+          {wrapPlainText(sanitizeTerminalOutput(run.errorMessage ?? run.summary), contentWidth).map((row, i) => (
+            <Text key={i} color={theme.ERROR}>{i === 0 ? `✕ ${row}` : `  ${row}`}</Text>
+          ))}
+        </Box>
+      )}
+      <MemoizedRenderMessage
+        segments={showTail ? formatted.slice(-COMPACT_STREAMING_TAIL_CAP) : formatted}
+        width={contentWidth}
+      />
+      {isLiveCursorTarget && segmentStreaming && (
+        <Text color={theme.ACCENT}>▌</Text>
+      )}
+    </Box>
+  );
+}
+
+function CodexStatusBlock({ text, showCursor }: { text: string; showCursor: boolean }) {
+  const theme = useTheme();
+
+  return (
+    <Box flexDirection="column" width="100%" paddingX={1}>
+      <Text color={theme.MUTED} bold>Codex</Text>
+      <Text color={theme.DIM}>{text}</Text>
+      {showCursor && <Text color={theme.ACCENT}>▌</Text>}
+    </Box>
+  );
+}
+
+function StreamEventList({
   cols,
   run,
   assistant,
@@ -283,127 +416,61 @@ function UnifiedStreamCard({
   opacity: TurnOpacity;
   verboseMode: boolean;
 }) {
-  const theme = useTheme();
   const streaming = runPhase === "streaming";
-  const dim = opacity !== "active";
-  const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
-
   const events = useMemo(
     () => resolveStreamEvents(run, assistant, streaming),
     [run, assistant, streaming],
   );
 
-  // Pre-format response segment text through the terminal-answer formatter
-  // (collapses local Markdown links and absolute paths). Done per-segment.
-  const formattedSegmentBySeg = useMemo(() => {
-    const map = new Map<string, ReturnType<typeof formatForBox>>();
-    for (const event of events) {
-      if (event.kind !== "response") continue;
-      const raw = formatTerminalAnswerInline(getResponseSegmentText(event.segment));
-      const sanitized = event.segment.status === "active"
-        ? sanitizeStreamChunk(raw)
-        : sanitizeOutput(raw);
-      const normalized = normalizeOutput(sanitized);
-      const classified = classifyOutput(normalized);
-      map.set(event.segment.id, formatForBox(classified, contentWidth));
-    }
-    return map;
-  }, [events, contentWidth]);
-
-  const heading = run.runtime.model ? run.runtime.model.toUpperCase().replace(/-/g, " ") : "AGENT RESPONSE";
-  const runStatus = streaming
-    ? "streaming"
-    : run.status === "completed"
-      ? "complete"
-      : run.status ?? "running";
-  
-  const rightBadge = run.durationMs != null && !streaming
-    ? `${runStatus} • ${formatDuration(run.durationMs)}`
-    : runStatus;
-
-  const borderColor = dim ? theme.BORDER_SUBTLE : (streaming ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE);
-
   return (
-    <DashCard cols={cols} title={heading} rightBadge={rightBadge} borderColor={borderColor}>
+    <Box flexDirection="column" width="100%">
+      {events.length === 0 && run.status === "running" && (
+        <CodexStatusBlock text="Running..." showCursor />
+      )}
+
       {events.map((event, index) => {
         const isLast = index === events.length - 1;
         const isLiveCursorTarget = run.status === "running" && isLast;
-        const actionNormalized = event.kind === "action" ? normalizeCommand(event.tool.command) : "";
-        const actionLabel = event.kind === "action" ? getFriendlyActionLabel(actionNormalized) : null;
 
         return (
           <Box key={`${event.kind}-${event.streamSeq}`} flexDirection="column" marginTop={index > 0 ? 1 : 0}>
             {event.kind === "thinking" && (
-              <>
-                <Text color={theme.DIM}>  thinking</Text>
-                {formatProgressBlockBodyLines(event.block.text, contentWidth - 4)
-                  .slice(0, verboseMode ? undefined : COMPACT_PROCESSING_BODY_LINE_CAP)
-                  .map((line, i) => (
-                    <Text key={i} color={theme.DIM}>    {line || " "}</Text>
-                  ))}
-                {isLiveCursorTarget && event.block.status === "active" && (
-                  <Text color={theme.ACCENT}>    ▌</Text>
-                )}
-              </>
+              <CodexThinkingBlock
+                block={event.block}
+                cols={cols}
+                isLiveCursorTarget={isLiveCursorTarget}
+                verboseMode={verboseMode}
+              />
             )}
-
             {event.kind === "action" && (
-              <>
-                <Text color={theme.DIM}>  action</Text>
-                <Box>
-                  <Text color={event.tool.status === "failed" ? theme.ERROR : event.tool.status === "completed" ? theme.SUCCESS : theme.INFO}>
-                    {`  ${event.tool.status === "failed" ? "✕" : event.tool.status === "completed" ? "✓" : "•"} `}
-                  </Text>
-                  <Text color={dim ? theme.DIM : theme.TEXT}>{actionLabel ?? actionNormalized}</Text>
-                  {event.tool.completedAt && (
-                    <Text color={theme.DIM}>  {formatDuration(event.tool.completedAt - event.tool.startedAt)}</Text>
-                  )}
-                </Box>
-                {actionLabel && (
-                  <Text color={theme.MUTED} wrap="wrap">    {actionNormalized}</Text>
-                )}
-                {isLiveCursorTarget && event.tool.status === "running" && (
-                  <Text color={theme.ACCENT}>    ▌</Text>
-                )}
-              </>
+              <ActionEventCard
+                cols={cols}
+                tool={event.tool}
+                opacity={opacity}
+                isLiveCursorTarget={isLiveCursorTarget}
+              />
             )}
-
-            {event.kind === "response" && (() => {
-              const formatted = formattedSegmentBySeg.get(event.segment.id) ?? [];
-              const segmentStreaming = event.segment.status === "active";
-              const showTail = !segmentStreaming && !verboseMode && formatted.length > COMPACT_STREAMING_TAIL_CAP;
-              return (
-                <>
-                  <Text color={theme.DIM}>  response</Text>
-                  {run.status === "failed" && !streaming && isLast && (
-                    <Box flexDirection="column">
-                      {wrapPlainText(sanitizeTerminalOutput(run.errorMessage ?? run.summary), contentWidth - 2).map((row, i) => (
-                        <Text key={i} color={theme.ERROR}>{i === 0 ? `  ✕ ${row}` : `    ${row}`}</Text>
-                      ))}
-                    </Box>
-                  )}
-                  <Box paddingLeft={2} flexDirection="column">
-                    <MemoizedRenderMessage
-                      segments={showTail ? formatted.slice(-COMPACT_STREAMING_TAIL_CAP) : formatted}
-                      width={contentWidth - 2}
-                    />
-                  </Box>
-                  {isLiveCursorTarget && segmentStreaming && (
-                    <Text color={theme.ACCENT}>    ▌</Text>
-                  )}
-                </>
-              );
-            })()}
+            {event.kind === "response" && (
+              <CodexResponseBlock
+                run={run}
+                segment={event.segment}
+                cols={cols}
+                streaming={streaming}
+                isLast={isLast}
+                isLiveCursorTarget={isLiveCursorTarget}
+                verboseMode={verboseMode}
+              />
+            )}
           </Box>
         );
       })}
 
       {run.status !== "running" && !verboseMode && (
-        <Box marginTop={1} borderStyle="single" borderTop={true} borderBottom={false} borderLeft={false} borderRight={false} borderColor={theme.BORDER_SUBTLE} paddingTop={0}>
+        <Box marginTop={1}>
           <ImpactSummary run={run} cols={cols} />
         </Box>
       )}
-    </DashCard>
+    </Box>
   );
 }
 
@@ -429,7 +496,7 @@ export function TurnGroup({
       />
 
       {run && (
-        <UnifiedStreamCard
+        <StreamEventList
           cols={cols}
           run={run}
           assistant={assistant}
