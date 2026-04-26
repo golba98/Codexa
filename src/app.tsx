@@ -86,7 +86,6 @@ import {
   normalizeReasoningForModelCapabilities,
   type CodexModelCapabilities,
 } from "./core/codexModelCapabilities.js";
-import { acquireTerminalTitleGuard } from "./core/terminalTitle.js";
 import {
   buildDevLaunchNotice,
   buildWorkspaceCommandContext,
@@ -280,18 +279,8 @@ export function App({ launchArgs }: AppProps) {
   const mouseCapture = mouseOverride ?? true;
 
   useEffect(() => {
-    const assertTitle = () => {
-      try { process.title = "CODEXA"; } catch { /* ignore */ }
-      stdout.write("\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07");
-    };
-    assertTitle();
-    const t1 = setTimeout(assertTitle, 300);
-    const t2 = setTimeout(assertTitle, 1200);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [stdout]);
+    try { process.title = "CODEXA"; } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     // \x1b[?1000h: Enable basic mouse reporting (click/scroll)
@@ -1571,13 +1560,6 @@ export function App({ launchArgs }: AppProps) {
 
     const shellId = createEventId();
     const startTime = Date.now();
-    const stopTitleGuard = acquireTerminalTitleGuard();
-    let titleGuardReleased = false;
-    const releaseTitleGuard = () => {
-      if (titleGuardReleased) return;
-      titleGuardReleased = true;
-      stopTitleGuard();
-    };
 
     const initialEvent: ShellEvent = {
       id: shellId,
@@ -1661,11 +1643,9 @@ export function App({ launchArgs }: AppProps) {
         shellFlushTimer = null;
       }
       runner.cancel();
-      releaseTitleGuard();
     };
 
     void runner.result.then((result) => {
-      releaseTitleGuard();
       if (activeRunIdRef.current !== shellId) return;
       flushShellLines();
       activeRunIdRef.current = null;
@@ -1801,13 +1781,6 @@ export function App({ launchArgs }: AppProps) {
     }
 
     const turnId = createTurnId();
-    const stopTitleGuard = acquireTerminalTitleGuard();
-    let titleGuardReleased = false;
-    const releaseTitleGuard = () => {
-      if (titleGuardReleased) return;
-      titleGuardReleased = true;
-      stopTitleGuard();
-    };
     const userEvent: UserPromptEvent = {
       id: createEventId(),
       type: "user",
@@ -2169,7 +2142,6 @@ export function App({ launchArgs }: AppProps) {
       }
       activityTracker?.stop();
       stopProviderRun?.();
-      releaseTitleGuard();
     };
 
     return true;
