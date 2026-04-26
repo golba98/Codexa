@@ -50,7 +50,7 @@ function sleep(ms = 50): Promise<void> {
 
 const TEST_LAYOUT = createLayoutSnapshot(120, 40);
 
-function LifecycleHarness({ uiState, value }: { uiState: UIState; value: string }) {
+function LifecycleHarness({ uiState, value, busyStatusFrame }: { uiState: UIState; value: string; busyStatusFrame?: string }) {
   const showComposer = !isBusy(uiState);
 
   return (
@@ -64,6 +64,7 @@ function LifecycleHarness({ uiState, value }: { uiState: UIState; value: string 
             model="gpt-5.4"
             reasoningLevel="balanced"
             tokensUsed={100}
+            busyStatusFrame={busyStatusFrame}
             value={value}
             cursor={value.length}
             onChangeInput={() => {}}
@@ -84,7 +85,7 @@ function LifecycleHarness({ uiState, value }: { uiState: UIState; value: string 
             onQuit={() => {}}
           />
         ) : (
-          <RunFooter uiState={uiState} onCancel={() => {}} onQuit={() => {}} />
+          <RunFooter uiState={uiState} busyStatusFrame={busyStatusFrame} onCancel={() => {}} onQuit={() => {}} />
         )}
       </Box>
     </ThemeProvider>
@@ -120,6 +121,39 @@ test("collapses composer during thinking so input buffer artifacts are removed",
   frame = stripAnsi(output);
   assert.doesNotMatch(frame, /draft prompt/i);
   assert.match(frame, /Codex is thinking/i);
+
+  instance.unmount();
+});
+
+test("busy footer advances when a new shared status frame is rendered", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const instance = render(
+    <LifecycleHarness uiState={{ kind: "THINKING", turnId: 1 }} value="" busyStatusFrame=" .  " />,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+    },
+  );
+
+  await sleep();
+  let frame = stripAnsi(output);
+  assert.match(frame, /Codex is thinking \./);
+
+  output = "";
+  instance.rerender(<LifecycleHarness uiState={{ kind: "THINKING", turnId: 1 }} value="" busyStatusFrame=" ..."/>);
+  await sleep();
+  frame = stripAnsi(output);
+  assert.match(frame, /Codex is thinking \.\.\./);
 
   instance.unmount();
 });

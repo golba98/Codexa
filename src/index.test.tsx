@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import type { RenderOptions } from "ink";
 import { startApp } from "./index.js";
 
@@ -202,20 +203,19 @@ test("resize repaint does not erase terminal scrollback buffer", async () => {
 
   await new Promise((resolve) => setTimeout(resolve, 200));
 
-  // The debounced repaint must have fired (mock path calls renderHandle.clear()).
-  assert.ok(harness.stdout.clearCalls >= 1, "debounced repaint should have called clear()");
+  // Normal valid resize is a soft repaint and must not call Ink.clear().
+  assert.equal(harness.stdout.clearCalls, 0, "normal resize must not call clear()");
 
-  // Post-resize writes must not contain the scrollback-erase sequence.
-  // In the mock (no inkInstance) the fallback path calls clear() only, so
-  // resizeWrites may be empty — which still satisfies doesNotMatch.
+  // Post-resize writes must not contain full/viewport clear sequences.
   const resizeWrites = harness.stdout.writes.slice(startupEnd);
   assert.doesNotMatch(resizeWrites, /\x1b\[3J/, "scrollback must not be erased on resize");
+  assert.doesNotMatch(resizeWrites, /\x1b\[2J/, "normal resize must not clear the viewport");
 
   harness.resolveExit();
   await flushMicrotasks();
 });
 
-test("hard-repaints when resize occurs without invalid dimensions", async () => {
+test("soft-repaints when resize occurs without invalid dimensions", async () => {
   const harness = createSupportedHarness();
   startApp(harness.deps);
 
@@ -225,14 +225,15 @@ test("hard-repaints when resize occurs without invalid dimensions", async () => 
   harness.stdout.columns = 80;
   harness.stdout.emit("resize");
 
-  // No writes happen immediately — scrollback clear is deferred to the
-  // debounced repaint so rapid resize events don't cause visible flashing.
+  // No writes happen immediately.
   const immediateWrites = harness.stdout.writes.slice(writesBefore.length);
   assert.equal(immediateWrites, "");
 
-  // After debounce fires, the full hard repaint + Ink.clear() is called.
+  // After debounce fires, valid resize still avoids terminal clear writes.
   await new Promise((resolve) => setTimeout(resolve, 200));
-  assert.ok(harness.stdout.clearCalls >= 1);
+  assert.equal(harness.stdout.clearCalls, 0);
+  const delayedWrites = harness.stdout.writes.slice(writesBefore.length);
+  assert.doesNotMatch(delayedWrites, /\x1b\[2J|\x1b\[3J/);
 
   harness.resolveExit();
   await flushMicrotasks();
@@ -313,24 +314,23 @@ test("debounced repaint fires after rapid resizes to identical dimensions", asyn
     harness.stdout.emit("resize");
     harness.stdout.emit("resize");
 
-    // No writes happen immediately — scrollback clear is deferred.
+    // No writes happen immediately.
 
-    // No clear() yet — deferred to the debounced repaint
     assert.equal(harness.stdout.clearCalls, 0);
 
     // Wait for the 150ms debounce to fire
     await new Promise((resolve) => setTimeout(resolve, 200));
 
-    // renderHandle.clear() should have been called by the debounced repaint.
-    // (In mocks inkInstance is null so the fallback path runs.)
-    assert.ok(harness.stdout.clearCalls >= 1, `expected >=1 clear calls, got ${harness.stdout.clearCalls}`);
+    // Valid resize remains a soft repaint, even when rapid events collapse.
+    assert.equal(harness.stdout.clearCalls, 0);
+    assert.equal(harness.stdout.writes, "");
   } finally {
     harness.resolveExit();
     await flushMicrotasks();
   }
 });
 
-test("scheduled repaint calls renderHandle.clear when inkInstance is null", async () => {
+test("scheduled soft repaint does not call renderHandle.clear when inkInstance is null", async () => {
   const harness = createSupportedHarness();
   startApp(harness.deps);
 
@@ -349,12 +349,17 @@ test("scheduled repaint calls renderHandle.clear when inkInstance is null", asyn
   // Wait for the 150ms debounce to fire
   await new Promise((resolve) => setTimeout(resolve, 200));
 
-  // In test mocks, inkInstance is null so scheduleRepaint uses the fallback
-  // path that calls renderHandle.clear() (no HARD_REPAINT_SEQUENCE written
-  // in the fallback branch — the full sequence is only used when inkInstance
-  // is available).
-  assert.ok(harness.stdout.clearCalls >= 1, `expected >=1 clear calls, got ${harness.stdout.clearCalls}`);
+  // In test mocks inkInstance is null; normal valid resize should still avoid
+  // the fallback clear path.
+  assert.equal(harness.stdout.clearCalls, 0);
+  assert.equal(harness.stdout.writes, "");
 
   harness.resolveExit();
   await flushMicrotasks();
+});
+
+test("render startup does not introduce alternate-screen mode", () => {
+  const source = readFileSync(new URL("./index.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /write\([^)]*1049h/);
+  assert.doesNotMatch(source, /const\s+\w+\s*=\s*["'`][^"'`]*1049h/);
 });

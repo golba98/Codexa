@@ -12,9 +12,8 @@ import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 // immediately after so nothing accumulates there.
 const HARD_REPAINT_SEQUENCE = "\x1b[2J\x1b[3J\x1b[H";
 // Clears the visible viewport and homes the cursor but does NOT erase the
-// scrollback buffer — used for debounced resize repaints so terminal history
-// survives window resize.  Only the initial startup write needs \x1b[3J (to
-// prevent the Windows Terminal "stacked UI" artifact on the very first frame).
+// scrollback buffer. This is reserved for invalid-dimension recovery only;
+// normal valid resizes use a soft repaint path.
 const VIEWPORT_CLEAR_SEQUENCE = "\x1b[2J\x1b[H";
 const DISABLE_TRANSCRIPT_WHEEL_MODE = "\x1b[?1000l\x1b[?1006l";
 import { SET_TERMINAL_TITLE } from "./core/terminalTitle.js";
@@ -91,6 +90,8 @@ interface ActiveRootState {
   cleanup: () => void;
 }
 
+type RepaintMode = "soft" | "recovery";
+
 let activeRoot: ActiveRootState | null = null;
 
 function hasInvalidRestoreDimensions(stdout: Pick<AppStdout, "columns" | "rows">): boolean {
@@ -150,6 +151,7 @@ export function startApp({
   let renderHandle: RenderHandle | null = null;
   let inkInstance: InkInstance | null = null;
   let repaintDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingRepaintMode: RepaintMode = "soft";
 
   const performHardRepaint = () => {
     stdout.write(HARD_REPAINT_SEQUENCE);
@@ -174,10 +176,18 @@ export function startApp({
     // desyncs logUpdate and causes duplicated UI.
   };
 
-  const scheduleRepaint = () => {
+  const scheduleRepaint = (mode: RepaintMode = "soft") => {
+    if (mode === "recovery") {
+      pendingRepaintMode = "recovery";
+    } else if (!repaintDebounceTimer) {
+      pendingRepaintMode = "soft";
+    }
+
     if (repaintDebounceTimer) clearTimeout(repaintDebounceTimer);
     repaintDebounceTimer = setTimeout(() => {
       repaintDebounceTimer = null;
+      const repaintMode = pendingRepaintMode;
+      pendingRepaintMode = "soft";
 
       // If dimensions are still invalid when the timer fires, skip the
       // destructive repaint — the old content is still on-screen (we never
@@ -193,9 +203,13 @@ export function startApp({
       if (renderHandle && inkInstance) {
         // By now (150ms later) React state has settled — useTerminalViewport's
         // 100ms settle timer has fired, so dimensions are correct.
-        // Use VIEWPORT_CLEAR_SEQUENCE (no \x1b[3J) to preserve terminal
-        // scrollback — only the initial startup write needs to erase it.
-        stdout.write(VIEWPORT_CLEAR_SEQUENCE);
+        // Normal valid resize is a soft repaint: reset Ink's cached frame and
+        // ask it to render once. Only invalid-dimension recovery uses an ANSI
+        // viewport clear, preserving busy-state stability during ordinary
+        // resize/layout updates.
+        if (repaintMode === "recovery") {
+          stdout.write(VIEWPORT_CLEAR_SEQUENCE);
+        }
 
         // Reset ALL Ink output state BEFORE calling clear().
         // Ink.clear() internally calls log.sync(this.lastOutputToRender || …)
@@ -207,7 +221,9 @@ export function startApp({
         inkInstance.lastOutputToRender = "";
         inkInstance.lastOutputHeight = 0;
 
-        renderHandle.clear();
+        if (repaintMode === "recovery") {
+          renderHandle.clear();
+        }
 
         // Cancel ALL pending throttled callbacks — including onRender's own
         // throttle — so the forced render below executes immediately rather
@@ -238,10 +254,10 @@ export function startApp({
             scheduleRepaint();
           }
         }, 350);
-      } else if (renderHandle) {
-        // Fallback: no Ink instance resolved (e.g. test mock).
+      } else if (renderHandle && repaintMode === "recovery") {
+        // Fallback recovery path: no Ink instance resolved (e.g. test mock).
         renderHandle.clear();
-      } else {
+      } else if (repaintMode === "recovery") {
         pendingRecoveryRepaint = true;
       }
     }, 150);
@@ -264,10 +280,11 @@ export function startApp({
       // new one that fires 150ms after the LAST event.  By then the
       // terminal has settled and dims are valid.
       repaintArmed = true;
-      scheduleRepaint();
+      scheduleRepaint("recovery");
       return;
     }
 
+    const recoveringFromInvalidDimensions = repaintArmed;
     if (repaintArmed) {
       repaintArmed = false;
     }
@@ -280,15 +297,13 @@ export function startApp({
     //  1. Reset Ink's output cache so the React-driven re-render (triggered
     //     by useTerminalViewport's state update) writes fresh output to
     //     stdout instead of short-circuiting due to lastOutput matching.
-    //  2. Schedule a full clean repaint (HARD_REPAINT_SEQUENCE includes
-    //     \x1b[3J to clear scrollback) for after the layout dimensions settle.
-    //     Deferring scrollback-clear to the debounced repaint avoids writing
-    //     \x1b[3J on every resize event during rapid window-drag resizing,
-    //     which can cause visible flashing on Windows Terminal.
+    //  2. Schedule one settled repaint after dimensions stop changing. Normal
+    //     valid resizes do not clear the viewport; only recovery from invalid
+    //     dimensions uses a targeted visible-viewport clear.
     if (inkInstance) {
       inkInstance.lastOutput = "";
     }
-    scheduleRepaint();
+    scheduleRepaint(recoveringFromInvalidDimensions ? "recovery" : "soft");
   };
 
   const cleanup = () => {

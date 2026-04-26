@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import type { UIState } from "../session/types.js";
 import { useTheme } from "./theme.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
+import { isAnimatedBusyState } from "./busyStatusAnimation.js";
 
 export function measureRunFooterRows(): number {
   return 3;
@@ -17,14 +18,15 @@ export function getRunFooterStatus(uiState: UIState): string {
 
 interface RunFooterProps {
   uiState: UIState;
+  busyStatusFrame?: string;
   onCancel: () => void;
   onQuit: () => void;
 }
 
-export function RunFooter({ uiState }: RunFooterProps) {
+export function RunFooter({ uiState, busyStatusFrame }: RunFooterProps) {
   const theme = useTheme();
   // THINKING/RESPONDING/SHELL_RUNNING indicate active processing
-  const isActive = uiState.kind === "THINKING" || uiState.kind === "RESPONDING" || uiState.kind === "SHELL_RUNNING";
+  const isActive = isAnimatedBusyState(uiState.kind);
 
   return (
     <Box flexDirection="column" paddingBottom={1} width="100%">
@@ -32,7 +34,7 @@ export function RunFooter({ uiState }: RunFooterProps) {
       <Box paddingX={1} width="100%" justifyContent="space-between" overflow="hidden">
         <Box flexShrink={1} flexGrow={1} overflow="hidden">
           <Text color={theme.INFO}>{"✧ "}</Text>
-          <AnimatedStatusText baseText={getRunFooterStatus(uiState)} isActive={isActive} />
+          <AnimatedStatusText baseText={getRunFooterStatus(uiState)} isActive={isActive} animationFrame={busyStatusFrame} />
         </Box>
         <Box flexShrink={0}>
           <Text color={theme.DIM}>Esc cancel  Ctrl+C quit</Text>

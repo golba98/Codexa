@@ -327,7 +327,7 @@ test("first active run fallback immediately shows Codex thinking status", () => 
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 56 });
   const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 
-  assert.match(joined, /Codex is thinking\.\.\./);
+  assert.match(joined, /Codex is working/);
   assert.doesNotMatch(joined, /Running\.\.\./);
   assert.doesNotMatch(joined, /Waiting for response/i);
 });

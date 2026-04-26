@@ -23,6 +23,7 @@ import { useThrottledValue } from "./useThrottledValue.js";
 import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 import { getStdinDebugState, traceInputDebug } from "../core/inputDebug.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
+import { isAnimatedBusyState } from "./busyStatusAnimation.js";
 
 type ComposerPersona = "idle" | "busy" | "answer" | "error";
 type DeleteIntent = "backspace" | "delete";
@@ -72,6 +73,7 @@ interface BottomComposerProps {
   planMode?: boolean;
   tokensUsed?: number;
   modelSpec?: ModelSpec;
+  busyStatusFrame?: string;
   value: string;
   cursor: number;
   onChangeInput: (value: string, cursor: number) => void;
@@ -135,7 +137,7 @@ const FALLBACK_MODEL_SPEC: ModelSpec = {
 };
 
 export function getComposerPersona(uiState: UIState): ComposerPersona {
-  if (uiState.kind === "THINKING" || uiState.kind === "RESPONDING" || uiState.kind === "SHELL_RUNNING") {
+  if (isAnimatedBusyState(uiState.kind)) {
     return "busy";
   }
   if (uiState.kind === "AWAITING_USER_ACTION") {
@@ -229,6 +231,7 @@ export function BottomComposer({
   planMode = false,
   tokensUsed = 0,
   modelSpec = FALLBACK_MODEL_SPEC,
+  busyStatusFrame,
   value,
   cursor,
   onChangeInput,
@@ -660,7 +663,7 @@ export function BottomComposer({
   );
 
   if (showBusyFooter) {
-    return <RunFooter uiState={uiState} onCancel={onCancel} onQuit={onQuit} />;
+    return <RunFooter uiState={uiState} busyStatusFrame={busyStatusFrame} onCancel={onCancel} onQuit={onQuit} />;
   }
 
   return (
@@ -703,6 +706,7 @@ export function BottomComposer({
             <AnimatedStatusText 
               baseText={rawStatusLine} 
               isActive={inputLocked} 
+              animationFrame={busyStatusFrame}
               isError={persona === "error"} 
             />
           </Box>
@@ -744,7 +748,7 @@ function getUiStateKey(uiState: UIState): string {
   // Only re-render when the kind changes to a different persona-relevant state
   // THINKING/RESPONDING/AWAITING_USER_ACTION are all "busy" states
   // We don't need to re-render for every streaming update within RESPONDING
-  if (uiState.kind === "THINKING" || uiState.kind === "RESPONDING" || uiState.kind === "SHELL_RUNNING") {
+  if (isAnimatedBusyState(uiState.kind)) {
     return "busy";
   }
   if (uiState.kind === "AWAITING_USER_ACTION") {
@@ -773,6 +777,7 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   if (prev.reasoningLevel !== next.reasoningLevel) return false;
   if (prev.planMode !== next.planMode) return false;
   if (prev.tokensUsed !== next.tokensUsed) return false;
+  if (prev.busyStatusFrame !== next.busyStatusFrame) return false;
   
   // Re-render if layout changes
   if (prev.layout.cols !== next.layout.cols) return false;

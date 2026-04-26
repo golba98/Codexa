@@ -17,6 +17,7 @@ import {
 } from "./chatLifecycle.js";
 import type { RunFileActivity } from "../core/workspaceActivity.js";
 import type { RunToolActivity } from "./types.js";
+import type { LiveRenderUpdate } from "./liveRenderScheduler.js";
 
 export interface SessionState {
   staticEvents: TimelineEvent[];
@@ -47,6 +48,13 @@ export type SessionAction =
     runId: number;
     chunk: string;
     eventFactory: () => AssistantEvent;
+  }
+  | {
+    type: "RUN_APPLY_LIVE_UPDATES";
+    turnId: number;
+    runId: number;
+    updates: LiveRenderUpdate[];
+    assistantEventFactory: (chunk: string) => AssistantEvent;
   }
   | {
     type: "FINALIZE_RUN";
@@ -206,6 +214,40 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         uiState: reduceUIState(state.uiState, { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId }),
       };
     }
+    case "RUN_APPLY_LIVE_UPDATES":
+      return action.updates.reduce((currentState, update) => {
+        if (update.type === "activity") {
+          return reduceSessionState(currentState, {
+            type: "RUN_APPEND_ACTIVITY",
+            runId: action.runId,
+            activity: update.activity,
+          });
+        }
+
+        if (update.type === "progress") {
+          return reduceSessionState(currentState, {
+            type: "RUN_APPLY_PROGRESS_UPDATES",
+            runId: action.runId,
+            updates: [update.update],
+          });
+        }
+
+        if (update.type === "tool") {
+          return reduceSessionState(currentState, {
+            type: "RUN_UPSERT_TOOL_ACTIVITY",
+            runId: action.runId,
+            activity: update.activity,
+          });
+        }
+
+        return reduceSessionState(currentState, {
+          type: "RUN_APPEND_ASSISTANT_DELTA",
+          turnId: action.turnId,
+          runId: action.runId,
+          chunk: update.chunk,
+          eventFactory: () => action.assistantEventFactory(update.chunk),
+        });
+      }, state);
     case "FINALIZE_RUN": {
       const userEvent = state.activeEvents.find(
         (event): event is UserPromptEvent => event.type === "user" && event.turnId === action.turnId,
