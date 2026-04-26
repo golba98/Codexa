@@ -42,6 +42,16 @@ export interface CodexPromptOptions {
   projectInstructions?: ProjectInstructions | null;
 }
 
+const TERMINAL_RESPONSE_INSTRUCTIONS = [
+  "Final answer style for this terminal UI:",
+  "- Keep answers compact unless the user asks for detail.",
+  "- Prefer terminal-native section labels like Purpose:, Main parts:, Result:, and Next:.",
+  "- Reference local files with short relative paths such as src/App.tsx, not Markdown links.",
+  "- Do not include absolute local paths like C:/Users/... or file://... unless the user explicitly asks for them.",
+  "- Preserve useful file references, but avoid web-style local Markdown links in final answers.",
+  "- Answer simple questions simply and do not over-explain.",
+];
+
 export function promptHasWriteIntent(prompt: string): boolean {
   const normalized = prompt.trim();
   if (!normalized) return false;
@@ -339,6 +349,7 @@ export function buildCodexPrompt(
       "If multiple paths are possible, choose one sensible path and continue.",
       "Only ask a blocking follow-up question if proceeding would likely use the wrong file, wrong command, destructive behavior, or produce fundamentally incorrect output.",
       "If you are truly blocked on one critical missing fact, end the response with exactly one line in this format: [QUESTION]: <your question>",
+      ...TERMINAL_RESPONSE_INSTRUCTIONS,
       "",
       ...projectInstructionsSection,
       "Task:",
@@ -358,6 +369,7 @@ export function buildCodexPrompt(
       "If multiple paths are possible, choose one sensible path and continue.",
       "Only ask a blocking follow-up question if proceeding would likely use the wrong file, wrong command, destructive behavior, or produce fundamentally incorrect output.",
       "If you are truly blocked on one critical missing fact, end the response with exactly one line in this format: [QUESTION]: <your question>",
+      ...TERMINAL_RESPONSE_INSTRUCTIONS,
       "",
       ...projectInstructionsSection,
       "Task:",
@@ -397,6 +409,7 @@ export function buildCodexPrompt(
     "Only ask a blocking follow-up question if proceeding would likely use the wrong file, wrong command, destructive behavior, or produce fundamentally incorrect output.",
     "If you are truly blocked on one critical missing fact, end the response with exactly one line in this format: [QUESTION]: <your question>",
     "After doing the work, summarize what changed.",
+    ...TERMINAL_RESPONSE_INSTRUCTIONS,
     "",
     ...projectInstructionsSection,
     "Task:",

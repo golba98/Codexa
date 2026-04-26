@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseMarkdown } from "./Markdown.js";
-import type { ParaSegment, CodeSegment } from "./Markdown.js";
+import type { ParaSegment, CodeSegment, Segment } from "./Markdown.js";
 
 const SAMPLE = [
   "# Summary",
@@ -31,6 +31,15 @@ const SAMPLE = [
   "",
   "Assistant: Done. Formatting pipeline is now applied.",
 ].join("\n");
+
+function segmentText(segments: Segment[]): string {
+  return segments.flatMap((segment) => {
+    if (segment.type === "code") return segment.lines;
+    if (segment.type === "header") return segment.parts.map((part) => part.text);
+    if (segment.type === "list") return segment.items.flatMap((item) => item.parts.map((part) => part.text));
+    return segment.lines.flatMap((line) => line.map((part) => part.text));
+  }).join("\n");
+}
 
 test("sample response produces separate segments, not one dense para", () => {
   const segments = parseMarkdown(SAMPLE);
@@ -81,4 +90,68 @@ test("header immediately followed by text produces two segments", () => {
   const segments = parseMarkdown(input);
   assert.equal(segments[0]?.type, "header");
   assert.equal(segments[1]?.type, "para");
+});
+
+test("cleans local markdown file links into compact terminal paths", () => {
+  const input = "The app shell lives in [`src/App.tsx`](C:/Users/jorda/OneDrive/Desktop/Project/src/App.tsx#L22).";
+  const text = segmentText(parseMarkdown(input));
+
+  assert.match(text, /src\/App\.tsx:22/);
+  assert.doesNotMatch(text, /C:\/Users/);
+  assert.doesNotMatch(text, /\]\(/);
+});
+
+test("cleans Windows absolute paths in prose", () => {
+  const input = "Formal proof: C:\\Users\\jorda\\OneDrive\\Desktop\\Project\\docs\\proof.md#L26";
+  const text = segmentText(parseMarkdown(input));
+
+  assert.match(text, /docs\/proof\.md:26/);
+  assert.doesNotMatch(text, /C:\\Users/);
+});
+
+test("cleans file paths with encoded spaces", () => {
+  const input = "Overview: [README.md](file:///C:/Users/jorda/OneDrive/Desktop/5-Date%20Verification/README.md)";
+  const text = segmentText(parseMarkdown(input));
+
+  assert.match(text, /README\.md/);
+  assert.doesNotMatch(text, /file:\/\//);
+  assert.doesNotMatch(text, /5-Date%20Verification/);
+});
+
+test("cleans local line ranges", () => {
+  const input = "See [proof](C:/Users/jorda/OneDrive/Desktop/Project/docs/proof.md#L26-L31).";
+  const text = segmentText(parseMarkdown(input));
+
+  assert.match(text, /proof \(docs\/proof\.md:26-31\)/);
+  assert.doesNotMatch(text, /C:\/Users/);
+});
+
+test("external web markdown links remain unchanged", () => {
+  const input = "Docs: [OpenAI](https://platform.openai.com/docs).";
+  const text = segmentText(parseMarkdown(input));
+
+  assert.match(text, /\[OpenAI\]\(https:\/\/platform\.openai\.com\/docs\)/);
+});
+
+test("inline-code web links remain unchanged", () => {
+  const input = "Use `https://platform.openai.com/docs` for reference.";
+  const text = segmentText(parseMarkdown(input));
+
+  assert.match(text, /https:\/\/platform\.openai\.com\/docs/);
+});
+
+test("code blocks are not rewritten by terminal answer cleanup", () => {
+  const input = [
+    "```text",
+    "C:/Users/jorda/Project/src/App.tsx#L22",
+    "[README.md](file:///C:/Project/README.md)",
+    "```",
+  ].join("\n");
+  const segments = parseMarkdown(input);
+  const code = segments[0] as CodeSegment;
+
+  assert.deepEqual(code.lines, [
+    "C:/Users/jorda/Project/src/App.tsx#L22",
+    "[README.md](file:///C:/Project/README.md)",
+  ]);
 });

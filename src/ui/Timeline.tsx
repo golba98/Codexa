@@ -749,6 +749,10 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
   // the liveSnapshot effect and dispatch reflowTimelineViewport instead of
   // syncTimelineViewport when the terminal has been resized.
   const snapshotWidthRef = useRef(snapshotWidth);
+  // Tracks previous totalRows so we can skip setViewport when no new rows
+  // arrived — avoiding a second React render / Ink stdout write per streaming
+  // flush when the viewport already reflects the correct state.
+  const prevTotalRowsRef = useRef(liveSnapshot.totalRows);
 
   useEffect(() => {
     liveSnapshotRef.current = liveSnapshot;
@@ -757,11 +761,35 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
   useEffect(() => {
     const widthChanged = snapshotWidthRef.current !== snapshotWidth;
     snapshotWidthRef.current = snapshotWidth;
-    setViewport((current) =>
-      widthChanged && !current.followTail && current.frozenSnapshot !== null
-        ? reflowTimelineViewport(current, liveSnapshot)
-        : syncTimelineViewport(current, liveSnapshot),
-    );
+
+    const totalRows = liveSnapshot.totalRows;
+    const totalRowsGrew = totalRows > prevTotalRowsRef.current;
+    prevTotalRowsRef.current = totalRows;
+
+    setViewport((current) => {
+      // Width change: always reflow or sync to wrap text at the new width.
+      if (widthChanged) {
+        return !current.followTail && current.frozenSnapshot !== null
+          ? reflowTimelineViewport(current, liveSnapshot)
+          : syncTimelineViewport(current, liveSnapshot);
+      }
+
+      // Frozen (user scrolled up): call sync only when rows grew so the
+      // unseen-item counters stay accurate; skip otherwise — returning the
+      // same reference makes React bail out of the re-render entirely.
+      if (!current.followTail) {
+        return totalRowsGrew ? syncTimelineViewport(current, liveSnapshot) : current;
+      }
+
+      // Follow-tail: only advance anchorRow when content actually grew.
+      // Streaming is append-only so shrinking rows is rare; if it happens the
+      // anchorRow stays at the old position until the next growth tick.
+      if (!totalRowsGrew) {
+        return current;
+      }
+
+      return syncTimelineViewport(current, liveSnapshot);
+    });
   }, [liveSnapshot, snapshotWidth]);
 
   useEffect(() => {

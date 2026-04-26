@@ -1,4 +1,4 @@
-import React, { memo, useDeferredValue, useEffect, useMemo, useState } from "react";
+import React, { memo, useDeferredValue, useMemo } from "react";
 import { Box, Text } from "ink";
 import type { AssistantEvent, RunEvent } from "../session/types.js";
 import { getAssistantContent } from "../session/types.js";
@@ -17,14 +17,6 @@ import {
 } from "./outputPipeline.js";
 import { DashCard } from "./DashCard.js";
 
-function useStreamingCursor() {
-  const [visible, setVisible] = useState(true);
-  useEffect(() => {
-    const id = setInterval(() => setVisible((current) => !current), 500);
-    return () => clearInterval(id);
-  }, []);
-  return visible;
-}
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -55,12 +47,6 @@ const MemoizedMessageBody = memo(function MessageBody({
 
 const StreamingCursor = memo(function StreamingCursor() {
   const theme = useTheme();
-  const cursorVisible = useStreamingCursor();
-
-  if (!cursorVisible) {
-    return null;
-  }
-
   return (
     <Box width="100%" paddingLeft={2}>
       <Text color={theme.ACCENT}>{"▌"}</Text>

@@ -63,6 +63,7 @@ test("FINALIZE_RUN preserves streamed content when response is undefined", () =>
   state = reduceSessionState(state, {
     type: "RUN_APPEND_ASSISTANT_DELTA",
     turnId,
+    runId: 2,
     chunk: "Streamed response text",
     eventFactory: () => makeAssistantEvent(turnId, "Streamed response text"),
   });
@@ -92,6 +93,7 @@ test("FINALIZE_RUN replaces streamed content when response differs", () => {
   state = reduceSessionState(state, {
     type: "RUN_APPEND_ASSISTANT_DELTA",
     turnId,
+    runId: 2,
     chunk: "Partial streamed text",
     eventFactory: () => makeAssistantEvent(turnId, "Partial streamed text"),
   });
@@ -125,6 +127,7 @@ test("RUN_APPEND_ASSISTANT_DELTA transitions UI state to RESPONDING", () => {
   state = reduceSessionState(state, {
     type: "RUN_APPEND_ASSISTANT_DELTA",
     turnId,
+    runId: 2,
     chunk: "First chunk",
     eventFactory: () => makeAssistantEvent(turnId, "First chunk"),
   });
@@ -195,6 +198,43 @@ test("RUN_APPLY_PROGRESS_UPDATES keeps completed block identities stable while t
   assert.strictEqual(afterSecondUpdate.progressEntries[0]?.blocks[0], completedBlock);
   assert.notStrictEqual(afterSecondUpdate.progressEntries[0]?.blocks[1], activeBlock);
   assert.equal(afterSecondUpdate.progressEntries[0]?.blocks[1]?.text, "Switching to scratch files in repo root");
+});
+
+test("reducer preserves response action response ordering across dispatched callbacks", () => {
+  const turnId = 32;
+  let state = stateWithActiveRun(turnId);
+
+  state = reduceSessionState(state, {
+    type: "RUN_APPEND_ASSISTANT_DELTA",
+    turnId,
+    runId: 2,
+    chunk: "First segment.",
+    eventFactory: () => makeAssistantEvent(turnId, "First segment."),
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_UPSERT_TOOL_ACTIVITY",
+    runId: 2,
+    activity: {
+      id: "tool-1",
+      command: "Get-Content README.md",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 20,
+    },
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_APPEND_ASSISTANT_DELTA",
+    turnId,
+    runId: 2,
+    chunk: "Second segment.",
+    eventFactory: () => makeAssistantEvent(turnId, "Second segment."),
+  });
+
+  const runEvent = state.activeEvents.find((event): event is RunEvent => event.type === "run");
+  assert.ok(runEvent);
+  assert.deepEqual(runEvent.streamItems?.map((item) => item.kind), ["response", "action", "response"]);
+  assert.equal(runEvent.responseSegments?.[0]?.chunks.join(""), "First segment.");
+  assert.equal(runEvent.responseSegments?.[1]?.chunks.join(""), "Second segment.");
 });
 
 test("finalized runs retain their runtime snapshot after unrelated state changes", () => {

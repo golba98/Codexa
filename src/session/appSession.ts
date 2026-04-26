@@ -4,11 +4,13 @@ import type { AssistantEvent, RunEvent, ShellEvent, TimelineEvent, UIState, User
 import { getAssistantContent } from "./types.js";
 import {
   appendRunActivity,
+  appendRunResponseChunk,
   appendRunThinking,
   appendStaticEvents,
   cancelRunEvent,
   completeRunEvent,
   failRunEvent,
+  finalizeResponseSegments,
   reduceUIState,
   upsertRunToolActivity,
   type UIStateAction,
@@ -39,7 +41,13 @@ export type SessionAction =
   | { type: "RUN_APPEND_ACTIVITY"; runId: number; activity: RunFileActivity[] }
   | { type: "RUN_APPLY_PROGRESS_UPDATES"; runId: number; updates: BackendProgressUpdate[] }
   | { type: "RUN_UPSERT_TOOL_ACTIVITY"; runId: number; activity: RunToolActivity }
-  | { type: "RUN_APPEND_ASSISTANT_DELTA"; turnId: number; chunk: string; eventFactory: () => AssistantEvent }
+  | {
+    type: "RUN_APPEND_ASSISTANT_DELTA";
+    turnId: number;
+    runId: number;
+    chunk: string;
+    eventFactory: () => AssistantEvent;
+  }
   | {
     type: "FINALIZE_RUN";
     runId: number;
@@ -173,21 +181,28 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         (event): event is AssistantEvent => event.type === "assistant" && event.turnId === action.turnId,
       );
 
+      const updateRun = (event: TimelineEvent): TimelineEvent => (
+        event.id === action.runId && event.type === "run"
+          ? appendRunResponseChunk(event as RunEvent, action.chunk)
+          : event
+      );
+
       if (existingAssistant) {
         return {
           ...state,
-          activeEvents: state.activeEvents.map((event) =>
-            event.type === "assistant" && event.turnId === action.turnId
-              ? { ...event, contentChunks: [...(event as AssistantEvent).contentChunks, action.chunk] }
-              : event
-          ),
+          activeEvents: state.activeEvents.map((event) => {
+            if (event.type === "assistant" && event.turnId === action.turnId) {
+              return { ...event, contentChunks: [...(event as AssistantEvent).contentChunks, action.chunk] };
+            }
+            return updateRun(event);
+          }),
           uiState: reduceUIState(state.uiState, { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId }),
         };
       }
 
       return {
         ...state,
-        activeEvents: [...state.activeEvents, action.eventFactory()],
+        activeEvents: [...state.activeEvents.map(updateRun), action.eventFactory()],
         uiState: reduceUIState(state.uiState, { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId }),
       };
     }
@@ -222,7 +237,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         };
       }
 
-      const finalizedRun =
+      const baseFinalizedRun =
         action.status === "completed"
           ? completeRunEvent(runEvent)
           : action.status === "failed"
@@ -235,6 +250,17 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         action.response,
         action.status,
       );
+
+      // Reconcile response segments with the authoritative final text.
+      // If the authoritative text differs from streamed (or no segments exist),
+      // rewrite/synthesize the trailing segment so the rendered timeline
+      // shows the final answer in chronological position.
+      const trimmedFinal = assistantContent.trim();
+      const streamedTrim = streamedContent.trim();
+      const overrideSegmentText = trimmedFinal && trimmedFinal !== streamedTrim
+        ? assistantContent
+        : undefined;
+      const finalizedRun = finalizeResponseSegments(baseFinalizedRun, overrideSegmentText);
 
       const additions: TimelineEvent[] = [];
       if (userEvent) additions.push(userEvent);
