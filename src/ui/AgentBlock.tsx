@@ -91,7 +91,7 @@ export function AgentBlock({
   const rightBadge = run?.durationMs != null && runPhase !== "streaming"
     ? `${runStatus} • ${formatDuration(run.durationMs)}`
     : runStatus;
-  const heading = run?.runtime.model ? run.runtime.model.toUpperCase().replace(/-/g, " ") : `AGENT RESPONSE`;
+  const heading = run?.runtime.model ? run.runtime.model.toUpperCase().replace(/-/g, " ") : "Codex";
 
   const borderColor = dim ? theme.BORDER_SUBTLE : (runPhase === "streaming" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE);
 

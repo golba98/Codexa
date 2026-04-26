@@ -1024,7 +1024,7 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
     }
   }
 
-  const heading = run.runtime.model ? run.runtime.model.toUpperCase().replace(/-/g, " ") : "AGENT RESPONSE";
+  const heading = run.runtime.model ? run.runtime.model.toUpperCase().replace(/-/g, " ") : "Codex";
   const runStatus = streaming
     ? "streaming"
     : run.status === "completed"
@@ -1041,10 +1041,10 @@ function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, wid
   // 1. Add top margin for separation from the task status line above.
   rows.push(createBlankRow(`${item.key}-agent-top-gap`, width));
 
-  // 2. Render the agent response inside a DashCard — visually consistent with
+  // 2. Render the Codex output inside a DashCard — visually consistent with
   //    every other block in the timeline: USER INPUT, Processing, File Scan,
   //    and Activity all use the same ╭──...──╮ frame.  The title is the model
-  //    name (e.g. "GPT 4O") or the generic "AGENT RESPONSE" fallback.
+  //    name (e.g. "GPT 4O") or the generic "Codex" fallback.
   rows.push(...buildDashCardRows({
     keyPrefix: `${item.key}-agent`,
     width,
@@ -1344,12 +1344,168 @@ type StreamEvent =
   | { kind: "response"; streamSeq: number; segment: RunResponseSegment }
   | { kind: "action"; streamSeq: number; tool: RunToolActivity };
 
+function buildCodexPlainRows(
+  keyPrefix: string,
+  width: number,
+  contentRows: TimelineRowSpan[][],
+): TimelineRow[] {
+  const rows: TimelineRow[] = [
+    createRow(`${keyPrefix}-label`, [createSpan("Codex", "muted", { bold: true })], width),
+  ];
+
+  contentRows.forEach((row, index) => {
+    rows.push(createRow(`${keyPrefix}-content-${index}`, row.length > 0 ? row : [createSpan(" ")], width));
+  });
+
+  return rows;
+}
+
+function buildCodexThinkingRows(params: {
+  keyPrefix: string;
+  width: number;
+  event: Extract<StreamEvent, { kind: "thinking" }>;
+  isLive: boolean;
+  verbose: boolean;
+}): TimelineRow[] {
+  const contentRows: TimelineRowSpan[][] = [];
+  const bodyLines = formatProgressBlockBodyLines(params.event.block.text, params.width);
+  const lineCap = params.verbose ? bodyLines.length : COMPACT_PROCESSING_BODY_LINE_CAP;
+  const visibleBodyLines = bodyLines.slice(0, lineCap);
+  const overflowCount = bodyLines.length - visibleBodyLines.length;
+
+  visibleBodyLines.forEach((line) => {
+    contentRows.push([createSpan(line || " ", "dim")]);
+  });
+
+  if (overflowCount > 0) {
+    contentRows.push([
+      createSpan(`… (${overflowCount} more line${overflowCount === 1 ? "" : "s"})`, "dim"),
+    ]);
+  }
+
+  if (params.isLive && params.event.isActive) {
+    contentRows.push([createSpan("▌", "accent")]);
+  }
+
+  return buildCodexPlainRows(params.keyPrefix, params.width, contentRows);
+}
+
+function buildActionEventRows(params: {
+  keyPrefix: string;
+  width: number;
+  event: Extract<StreamEvent, { kind: "action" }>;
+  borderTone: TimelineTone;
+  verbose: boolean;
+  isLive: boolean;
+}): TimelineRow[] {
+  const contentWidth = Math.max(1, params.width - 4);
+  const contentRows: TimelineRowSpan[][] = [];
+  const tool = params.event.tool;
+  const icon = tool.status === "failed" ? "✕" : tool.status === "completed" ? "✓" : "•";
+  const iconTone = tool.status === "failed" ? "error" : tool.status === "completed" ? "success" : "info";
+  const duration = tool.completedAt && tool.startedAt
+    ? `  ${formatDuration(tool.completedAt - tool.startedAt)}`
+    : "";
+  const normalized = normalizeCommand(tool.command);
+  const label = getFriendlyActionLabel(normalized);
+
+  if (label) {
+    contentRows.push([
+      createSpan(`${icon} `, iconTone),
+      createSpan(label, "text"),
+      ...(duration ? [createSpan(duration, "dim")] : []),
+    ]);
+    wrapPlainText(normalized, Math.max(1, contentWidth - 2)).forEach((row) => {
+      contentRows.push([
+        createSpan("  "),
+        createSpan(row || " ", "muted"),
+      ]);
+    });
+  } else {
+    const headRows = wrapPlainText(normalized, Math.max(1, contentWidth - 2));
+    headRows.forEach((row, rowIndex) => {
+      contentRows.push([
+        createSpan(rowIndex === 0 ? `${icon} ` : "  ", iconTone),
+        createSpan(row || " ", "text"),
+        ...(rowIndex === 0 && duration ? [createSpan(duration, "dim")] : []),
+      ]);
+    });
+  }
+
+  if (tool.summary && params.verbose) {
+    wrapPlainText(tool.summary, Math.max(1, contentWidth - 2)).forEach((row) => {
+      contentRows.push([
+        createSpan("  "),
+        createSpan(row || " ", "muted"),
+      ]);
+    });
+  }
+
+  if (params.isLive && tool.status === "running") {
+    contentRows.push([createSpan("▌", "accent")]);
+  }
+
+  return buildDashCardRows({
+    keyPrefix: params.keyPrefix,
+    width: params.width,
+    title: "action",
+    borderTone: params.borderTone,
+    contentRows: contentRows.length > 0 ? contentRows : [[createSpan(" ")]],
+  });
+}
+
+function buildCodexResponseRows(params: {
+  keyPrefix: string;
+  width: number;
+  run: RunEvent;
+  event: Extract<StreamEvent, { kind: "response" }>;
+  streaming: boolean;
+  isLastEvent: boolean;
+  isLive: boolean;
+  verbose: boolean;
+}): TimelineRow[] {
+  let responseRows: TimelineRowSpan[][] = [];
+  const rawContent = splitSentenceWall(formatTerminalAnswerInline(getResponseSegmentText(params.event.segment)));
+  const segmentStreaming = params.event.segment.status === "active";
+
+  if (!params.streaming) _streamingRowCache = null;
+  const sanitized = segmentStreaming ? sanitizeStreamChunk(rawContent) : sanitizeOutput(rawContent);
+  const normalized = normalizeOutput(sanitized);
+  const segments = formatForBox(classifyOutput(normalized), params.width);
+  responseRows = buildMarkdownRows(segments, params.width);
+
+  if (!params.streaming && params.run.status === "failed" && params.isLastEvent) {
+    const failureMessage = sanitizeTerminalOutput(params.run.errorMessage ?? params.run.summary);
+    const failureRows: TimelineRowSpan[][] = [];
+    wrapPlainText(failureMessage, Math.max(1, params.width - 2)).forEach((row, index) => {
+      failureRows.push([
+        createSpan(index === 0 ? "✕ " : "  ", "error"),
+        createSpan(row || " ", "error"),
+      ]);
+    });
+    responseRows = [...failureRows, ...responseRows];
+  }
+
+  if (segmentStreaming && !params.verbose && responseRows.length > COMPACT_STREAMING_TAIL_CAP) {
+    const hiddenRowCount = responseRows.length - COMPACT_STREAMING_TAIL_CAP;
+    responseRows = [
+      [createSpan(`… (${hiddenRowCount} line${hiddenRowCount === 1 ? "" : "s"} above)`, "dim")],
+      ...responseRows.slice(-COMPACT_STREAMING_TAIL_CAP),
+    ];
+  }
+
+  if (params.isLive && segmentStreaming) {
+    responseRows.push([createSpan("▌", "accent")]);
+  }
+
+  return buildCodexPlainRows(params.keyPrefix, params.width, responseRows);
+}
+
 function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, verbose = false): TimelineRow[] {
   const run = item.item.run!;
   const assistant = item.item.assistant;
   const streaming = item.renderState.runPhase === "streaming";
   const dim = item.renderState.opacity !== "active";
-  const contentWidth = Math.max(1, width - 4);
   const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
 
   const blocksById = new Map<string, RunProgressBlock>();
@@ -1423,206 +1579,89 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
     events.push({ kind: "response", streamSeq: 1, segment: synthetic });
   }
 
-  const contentRows: TimelineRowSpan[][] = [];
+  const rows: TimelineRow[] = [];
+
+  if (events.length === 0 && run.status === "running") {
+    rows.push(...buildCodexPlainRows(`${item.key}-codex-running`, width, [
+      [createSpan("Running...", "dim")],
+      [createSpan("▌", "accent")],
+    ]));
+  }
 
   events.forEach((event, index) => {
     const isLastEvent = index === events.length - 1;
     const isLive = run.status === "running" && isLastEvent; // The cursor is on the last event
 
     if (index > 0) {
-      contentRows.push([createSpan("")]);
+      rows.push(createBlankRow(`${item.key}-stream-gap-${index}`, width));
     }
 
     if (event.kind === "thinking") {
-      contentRows.push([
-        createSpan("  thinking", "dim")
-      ]);
-      const bodyLines = formatProgressBlockBodyLines(event.block.text, Math.max(1, contentWidth - 4));
-      const lineCap = verbose ? bodyLines.length : COMPACT_PROCESSING_BODY_LINE_CAP;
-      const visibleBodyLines = bodyLines.slice(0, lineCap);
-      const overflowCount = bodyLines.length - visibleBodyLines.length;
-
-      visibleBodyLines.forEach((line) => {
-        contentRows.push([
-          createSpan("  ", "dim"),
-          createSpan(line || " ", "dim")
-        ]);
-      });
-
-      if (overflowCount > 0) {
-        contentRows.push([
-          createSpan("  ", "dim"),
-          createSpan(`… (${overflowCount} more line${overflowCount === 1 ? "" : "s"})`, "dim")
-        ]);
-      }
-
-      if (isLive && event.isActive) {
-        contentRows.push([
-          createSpan("  ", "dim"),
-          createSpan("▌", "accent")
-        ]);
-      }
+      rows.push(...buildCodexThinkingRows({
+        keyPrefix: `${item.key}-codex-thinking-${event.streamSeq}`,
+        width,
+        event,
+        isLive,
+        verbose,
+      }));
     } else if (event.kind === "action") {
-      contentRows.push([
-        createSpan("  action", "dim")
-      ]);
-      const tool = event.tool;
-      const icon = tool.status === "failed" ? "✕" : tool.status === "completed" ? "✓" : "•";
-      const iconTone = tool.status === "failed" ? "error" : tool.status === "completed" ? "success" : "info";
-      const duration = tool.completedAt && tool.startedAt
-        ? `  ${formatDuration(tool.completedAt - tool.startedAt)}`
-        : "";
-      const normalized = normalizeCommand(tool.command);
-      const label = getFriendlyActionLabel(normalized);
-      if (label) {
-        // Labeled: show friendly label + duration on first line, normalized command muted below
-        contentRows.push([
-          createSpan(`  ${icon} `, iconTone),
-          createSpan(label, "text"),
-          ...(duration ? [createSpan(duration, "dim")] : []),
-        ]);
-        wrapPlainText(normalized, Math.max(1, contentWidth - 6)).forEach((row) => {
-          contentRows.push([
-            createSpan("    "),
-            createSpan(row || " ", "muted"),
-          ]);
-        });
-      } else {
-        // No label: show normalized command (wrapped) as the primary content
-        const headRows = wrapPlainText(normalized, Math.max(1, contentWidth - 4));
-        headRows.forEach((row, rowIndex) => {
-          contentRows.push([
-            createSpan(`  ${rowIndex === 0 ? icon + " " : "  "}`, iconTone),
-            createSpan(row || " ", "text"),
-            ...(rowIndex === 0 && duration ? [createSpan(duration, "dim")] : []),
-          ]);
-        });
-      }
-      if (tool.summary && verbose) {
-        wrapPlainText(tool.summary, Math.max(1, contentWidth - 4)).forEach((row) => {
-          contentRows.push([
-            createSpan("    "),
-            createSpan(row || " ", "muted"),
-          ]);
-        });
-      }
-      if (isLive && tool.status === "running") {
-        contentRows.push([
-          createSpan("  ", "dim"),
-          createSpan("▌", "accent")
-        ]);
-      }
+      rows.push(...buildActionEventRows({
+        keyPrefix: `${item.key}-action-${event.streamSeq}`,
+        width,
+        event,
+        borderTone,
+        verbose,
+        isLive,
+      }));
     } else if (event.kind === "response") {
-      contentRows.push([
-        createSpan("  response", "dim")
-      ]);
-
-      let responseRows: TimelineRowSpan[][] = [];
-      const responseWidth = Math.max(1, contentWidth - 2);
-      const rawContent = splitSentenceWall(formatTerminalAnswerInline(getResponseSegmentText(event.segment)));
-      const segmentStreaming = event.segment.status === "active";
-
-      if (!streaming) _streamingRowCache = null;
-      const sanitized = segmentStreaming ? sanitizeStreamChunk(rawContent) : sanitizeOutput(rawContent);
-      const normalized = normalizeOutput(sanitized);
-      const segments = formatForBox(classifyOutput(normalized), responseWidth);
-      responseRows = buildMarkdownRows(segments, responseWidth);
-
-      if (!streaming && run.status === "failed" && isLastEvent) {
-        const failureMessage = sanitizeTerminalOutput(run.errorMessage ?? run.summary);
-        const failureRows: TimelineRowSpan[][] = [];
-        wrapPlainText(failureMessage, Math.max(1, responseWidth)).forEach((row, index) => {
-          failureRows.push([
-            createSpan(index === 0 ? "✕ " : "  ", "error"),
-            createSpan(row || " ", "error"),
-          ]);
-        });
-        responseRows = [...failureRows, ...responseRows];
-      }
-
-      if (segmentStreaming && !verbose && responseRows.length > COMPACT_STREAMING_TAIL_CAP) {
-        const hiddenRowCount = responseRows.length - COMPACT_STREAMING_TAIL_CAP;
-        responseRows = [
-          [createSpan(`… (${hiddenRowCount} line${hiddenRowCount === 1 ? "" : "s"} above)`, "dim")],
-          ...responseRows.slice(-COMPACT_STREAMING_TAIL_CAP),
-        ];
-      }
-
-      // Indent response rows by 2 spaces to align with 'response' label
-      responseRows.forEach(row => {
-        contentRows.push([
-          createSpan("  "),
-          ...row
-        ]);
-      });
-
-      if (isLive && segmentStreaming) {
-        contentRows.push([
-          createSpan("  "),
-          createSpan("▌", "accent"),
-        ]);
-      }
+      rows.push(...buildCodexResponseRows({
+        keyPrefix: `${item.key}-codex-response-${event.streamSeq}`,
+        width,
+        run,
+        event,
+        streaming,
+        isLastEvent,
+        isLive,
+        verbose,
+      }));
     }
   });
 
   if (!streaming && run.status !== "running") {
     if (run.status === "canceled") {
-      wrapPlainText(sanitizeTerminalOutput(run.summary), contentWidth).forEach((wrapped) => {
-        contentRows.push([createSpan(wrapped || " ", "warning")]);
-      });
+      rows.push(createBlankRow(`${item.key}-cancel-gap`, width));
+      rows.push(...buildCodexPlainRows(
+        `${item.key}-cancel`,
+        width,
+        wrapPlainText(sanitizeTerminalOutput(run.summary), width).map((wrapped) => [createSpan(wrapped || " ", "warning")]),
+      ));
     } else if (
       run.status === "completed"
       && !events.some((event) => event.kind === "response" && getResponseSegmentText(event.segment).trim())
     ) {
-      // contentRows.push([createSpan("(no output)", "dim")]); // Optional
+      // Keep empty completed turns quiet.
     }
 
     if (run.truncatedOutput) {
-      contentRows.push([createSpan(RUN_OUTPUT_TRUNCATION_NOTICE, "dim")]);
+      rows.push(...buildCodexPlainRows(`${item.key}-truncated`, width, [[createSpan(RUN_OUTPUT_TRUNCATION_NOTICE, "dim")]]));
     }
 
-    // Add footer (Impact Summary or File Scan) inside the card
     if (verbose) {
       if (run.touchedFileCount > 0) {
-        const fileScanRows = buildFileScanRows(item, contentWidth);
+        const fileScanRows = buildFileScanRows(item, width);
         if (fileScanRows.length > 0) {
-          contentRows.push([createSpan("─".repeat(contentWidth), "borderSubtle")]);
-          fileScanRows.forEach(row => {
-            contentRows.push(row.spans);
-          });
+          rows.push(createBlankRow(`${item.key}-files-gap`, width));
+          rows.push(...fileScanRows);
         }
       }
     } else {
-      const impactRows = buildImpactSummaryRows(item, contentWidth);
+      const impactRows = buildImpactSummaryRows(item, width);
       if (impactRows.length > 0) {
-        contentRows.push([createSpan("─".repeat(contentWidth), "borderSubtle")]);
-        impactRows.forEach(row => {
-          contentRows.push(row.spans);
-        });
+        rows.push(createBlankRow(`${item.key}-impact-gap`, width));
+        rows.push(...impactRows);
       }
     }
   }
-
-  const heading = run.runtime.model ? run.runtime.model.toUpperCase().replace(/-/g, " ") : "AGENT RESPONSE";
-  const runStatus = streaming
-    ? "streaming"
-    : run.status === "completed"
-      ? "complete"
-      : run.status ?? "running";
-  const rightBadge = run.durationMs != null && !streaming
-    ? `${runStatus} • ${formatDuration(run.durationMs)}`
-    : runStatus;
-
-  const rows: TimelineRow[] = [];
-
-  rows.push(...buildDashCardRows({
-    keyPrefix: `${item.key}-unified`,
-    width,
-    title: heading,
-    rightBadge,
-    borderTone,
-    contentRows: contentRows.length > 0 ? contentRows : [[createSpan(" ")]],
-  }));
 
   return rows;
 }

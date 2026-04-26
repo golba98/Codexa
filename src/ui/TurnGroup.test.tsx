@@ -161,7 +161,8 @@ test("unmounts thinking view before streaming view appears for the same turn", a
 
   await sleep();
   frame = harness.readOutput();
-  assert.match(frame, /streaming/i);
+  assert.match(frame, /Codex/);
+  assert.match(frame, /Streaming line/i);
 
   harness.instance.unmount();
 });
@@ -269,7 +270,7 @@ test("finalization with same content does not cause visual flash", async () => {
   let finalFrame = harness.readOutput();
   // Content should still be present — no flash/disappearance
   assert.match(finalFrame, /response content stays/i);
-  assert.match(finalFrame, /complete/i);
+  assert.match(finalFrame, /Codex/);
 
   harness.instance.unmount();
 });
@@ -309,7 +310,8 @@ test("snaps cleanly from streaming cursor view to completion view", async () => 
 
   await sleep();
   let frame = harness.readOutput();
-  assert.match(frame, /streaming/i);
+  assert.match(frame, /final response text/i);
+  assert.match(frame, /▌/);
 
   harness.resetOutput();
   harness.instance.rerender(
@@ -331,9 +333,8 @@ test("snaps cleanly from streaming cursor view to completion view", async () => 
 
   await sleep();
   frame = harness.readOutput();
-  assert.match(frame, /complete/i);
   assert.match(frame, /final response text/i);
-  assert.doesNotMatch(frame, /streaming/i);
+  assert.doesNotMatch(frame, /▌/);
 
   harness.instance.unmount();
 });
