@@ -169,18 +169,47 @@ test("hard-repaints once when resize recovers from invalid dimensions", async ()
   harness.stdout.rows = 40;
   harness.stdout.emit("resize");
 
-  // New behaviour: onResize only clears scrollback (\x1b[3J]) immediately.
-  // renderHandle.clear() is deferred to scheduleRepaint (150ms).
+  // onResize does NOT erase scrollback — it defers only a visible-viewport
+  // clear (\x1b[2J\x1b[H) to scheduleRepaint (150ms).
   assert.equal(harness.stdout.clearCalls, 0);
   assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
   assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
-  // Scrollback-only clear should appear (no \x1b[2J visible)
-  assert.match(harness.stdout.writes, /\x1b\[3J/);
+  // \x1b[3J must NOT appear in post-startup writes (scrollback preserved).
+  const writesAfterStart = harness.stdout.writes.indexOf("\x1b[?2004h") + "\x1b[?2004h".length;
+  assert.doesNotMatch(harness.stdout.writes.slice(writesAfterStart), /\x1b\[3J/);
 
   // After the debounce fires, the full repaint + clear happens.
   await new Promise((resolve) => setTimeout(resolve, 200));
   assert.ok(harness.stdout.clearCalls >= 1);
+
+  harness.resolveExit();
+  await flushMicrotasks();
+});
+
+test("resize repaint does not erase terminal scrollback buffer", async () => {
+  const harness = createSupportedHarness();
+  startApp(harness.deps);
+
+  // Startup legitimately contains \x1b[3J (prevents Windows Terminal stacked-UI artifact).
+  assert.match(harness.stdout.writes, /\x1b\[3J/, "startup should erase scrollback once");
+
+  // Capture offset so we can inspect only post-startup writes.
+  const startupEnd = harness.stdout.writes.length;
+
+  harness.stdout.columns = 80;
+  harness.stdout.emit("resize");
+
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  // The debounced repaint must have fired (mock path calls renderHandle.clear()).
+  assert.ok(harness.stdout.clearCalls >= 1, "debounced repaint should have called clear()");
+
+  // Post-resize writes must not contain the scrollback-erase sequence.
+  // In the mock (no inkInstance) the fallback path calls clear() only, so
+  // resizeWrites may be empty — which still satisfies doesNotMatch.
+  const resizeWrites = harness.stdout.writes.slice(startupEnd);
+  assert.doesNotMatch(resizeWrites, /\x1b\[3J/, "scrollback must not be erased on resize");
 
   harness.resolveExit();
   await flushMicrotasks();
@@ -196,10 +225,10 @@ test("hard-repaints when resize occurs without invalid dimensions", async () => 
   harness.stdout.columns = 80;
   harness.stdout.emit("resize");
 
-  // New behaviour: only scrollback clear is written immediately.
-  // The visible viewport is NOT cleared — content stays on-screen.
+  // No writes happen immediately — scrollback clear is deferred to the
+  // debounced repaint so rapid resize events don't cause visible flashing.
   const immediateWrites = harness.stdout.writes.slice(writesBefore.length);
-  assert.match(immediateWrites, /\x1b\[3J/);
+  assert.equal(immediateWrites, "");
 
   // After debounce fires, the full hard repaint + Ink.clear() is called.
   await new Promise((resolve) => setTimeout(resolve, 200));
@@ -284,8 +313,7 @@ test("debounced repaint fires after rapid resizes to identical dimensions", asyn
     harness.stdout.emit("resize");
     harness.stdout.emit("resize");
 
-    // Each resize writes a scrollback-only clear (\x1b[3J)
-    assert.match(harness.stdout.writes, /\x1b\[3J/);
+    // No writes happen immediately — scrollback clear is deferred.
 
     // No clear() yet — deferred to the debounced repaint
     assert.equal(harness.stdout.clearCalls, 0);
@@ -310,13 +338,13 @@ test("scheduled repaint calls renderHandle.clear when inkInstance is null", asyn
   harness.stdout.clearCalls = 0;
   harness.stdout.writes = "";
 
-  // Emit a normal resize — triggers scrollback clear + scheduleRepaint
+  // Emit a normal resize — triggers scheduleRepaint (no immediate writes)
   harness.stdout.columns = 80;
   harness.stdout.emit("resize");
 
-  // Immediately after resize: only scrollback clear, no renderHandle.clear()
+  // Immediately after resize: no writes and no renderHandle.clear() yet
   assert.equal(harness.stdout.clearCalls, 0);
-  assert.match(harness.stdout.writes, /\x1b\[3J/);
+  assert.equal(harness.stdout.writes, "");
 
   // Wait for the 150ms debounce to fire
   await new Promise((resolve) => setTimeout(resolve, 200));

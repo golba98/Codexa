@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { startTransition, useEffect, useState } from "react";
 import { Text } from "ink";
 import { useTheme } from "./theme.js";
 
@@ -11,7 +11,11 @@ export function Spinner({ color }: { color?: string }) {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setFrame((f) => (f + 1) % frames.length);
+      // startTransition marks this as low-priority so React can coalesce or
+      // defer it when a higher-priority streaming render is already pending.
+      startTransition(() => {
+        setFrame((f) => (f + 1) % frames.length);
+      });
     }, 80);
 
     return () => clearInterval(timer);

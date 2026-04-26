@@ -5,6 +5,7 @@ import { MAX_CHAT_LINES, MAX_VISIBLE_EVENTS } from "../config/settings.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import {
   appendRunActivity,
+  appendRunResponseChunk,
   appendRunThinking,
   appendStaticEvents,
   buildFollowUpPrompt,
@@ -16,6 +17,7 @@ import {
   reduceUIState,
   guardConfigMutation,
   isCurrentRun,
+  upsertRunToolActivity,
 } from "./chatLifecycle.js";
 import type { TimelineEvent, UIState } from "./types.js";
 
@@ -37,6 +39,14 @@ function makeProgressUpdate(id: string, text: string): BackendProgressUpdate {
   };
 }
 
+function makeProgressUpdateWithSource(
+  id: string,
+  source: BackendProgressUpdate["source"],
+  text: string,
+): BackendProgressUpdate {
+  return { id, source, text };
+}
+
 test("creates a running run event", () => {
   const run = createRunEvent({
     id: 1,
@@ -52,6 +62,112 @@ test("creates a running run event", () => {
   assert.equal(run.truncatedOutput, false);
   assert.equal(run.activity.length, 0);
   assert.equal(run.touchedFileCount, 0);
+  assert.deepEqual(run.streamItems, []);
+  assert.deepEqual(run.responseSegments, []);
+  assert.equal(run.lastStreamSeq, 0);
+  assert.equal(run.activeResponseSegmentId, null);
+});
+
+test("assigns stream sequence in append order across thinking action and response", () => {
+  let run = createRunEvent({
+    id: 30,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Hello",
+    turnId: 30,
+  });
+
+  run = appendRunThinking(run, [makeProgressUpdate("reason-1", "I need to inspect the project files.")]);
+  run = upsertRunToolActivity(run, {
+    id: "tool-1",
+    command: "rg --files",
+    status: "completed",
+    startedAt: 10,
+    completedAt: 20,
+  });
+  run = appendRunResponseChunk(run, "Purpose\n5-Date Verification");
+
+  assert.deepEqual(run.streamItems?.map((item) => item.kind), ["thinking", "action", "response"]);
+  assert.deepEqual(run.streamItems?.map((item) => item.streamSeq), [1, 2, 3]);
+});
+
+test("splits response segments when an action interrupts assistant streaming", () => {
+  let run = createRunEvent({
+    id: 31,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Hello",
+    turnId: 31,
+  });
+
+  run = appendRunResponseChunk(run, "First ");
+  run = appendRunResponseChunk(run, "segment.");
+  run = upsertRunToolActivity(run, {
+    id: "tool-1",
+    command: "Get-Content README.md",
+    status: "completed",
+    startedAt: 10,
+    completedAt: 20,
+  });
+  run = appendRunResponseChunk(run, "Second segment.");
+
+  assert.equal(run.responseSegments?.length, 2);
+  assert.equal(run.responseSegments?.[0]?.chunks.join(""), "First segment.");
+  assert.equal(run.responseSegments?.[1]?.chunks.join(""), "Second segment.");
+  assert.deepEqual(run.streamItems?.map((item) => item.kind), ["response", "action", "response"]);
+  assert.deepEqual(run.streamItems?.map((item) => item.streamSeq), [1, 2, 3]);
+});
+
+test("does not duplicate stream items when tool and thinking entries are patched", () => {
+  let run = createRunEvent({
+    id: 32,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Hello",
+    turnId: 32,
+  });
+
+  run = appendRunThinking(run, [makeProgressUpdate("reason-1", "Inspecting files")]);
+  run = appendRunThinking(run, [makeProgressUpdate("reason-1", "Inspecting files carefully")]);
+  run = upsertRunToolActivity(run, {
+    id: "tool-1",
+    command: "git status",
+    status: "running",
+    startedAt: 10,
+  });
+  run = upsertRunToolActivity(run, {
+    id: "tool-1",
+    command: "git status",
+    status: "completed",
+    startedAt: 10,
+    completedAt: 20,
+  });
+
+  assert.deepEqual(run.streamItems?.map((item) => item.kind), ["thinking", "action"]);
+  assert.equal(run.streamItems?.length, 2);
+});
+
+test("raw tool and terminal progress sources do not become thinking stream items", () => {
+  const rawSources: BackendProgressUpdate["source"][] = ["tool", "stdout", "stderr", "activity", "transcript"];
+  for (const source of rawSources) {
+    const run = appendRunThinking(
+      createRunEvent({
+        id: 40,
+        backendId: "codex-subprocess",
+        backendLabel: "Codex CLI",
+        runtime: TEST_RUNTIME,
+        prompt: "Hello",
+        turnId: 40,
+      }),
+      [makeProgressUpdateWithSource("raw-1", source, "Directory: C:\\Users\\jorda\\Project\n\nimport { useMemo } from \"react\";")],
+    );
+
+    assert.equal(run.streamItems?.length, 0, `${source} should not render as thinking`);
+    assert.equal(run.progressEntries[0]?.blocks.length, 2);
+  }
 });
 
 test("caps streamed run output and marks truncation", () => {

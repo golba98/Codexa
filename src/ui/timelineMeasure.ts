@@ -1,5 +1,13 @@
-import type { RunEvent, ShellEvent } from "../session/types.js";
-import { getAssistantContent } from "../session/types.js";
+import type {
+  RunEvent,
+  ShellEvent,
+  RunProgressBlock,
+  RunResponseSegment,
+  RunToolActivity,
+} from "../session/types.js";
+import { getAssistantContent, getResponseSegmentText } from "../session/types.js";
+import { normalizeCommand, getFriendlyActionLabel } from "./commandNormalize.js";
+import { formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
 import { sanitizeTerminalLines, sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 import { clampVisualText } from "./layout.js";
@@ -64,6 +72,7 @@ const MAX_SHELL_FAILURE_EXCERPT_LINES = 3;
 const MAX_VISIBLE_PROGRESS_ENTRIES = 3;
 const COMPACT_PROCESSING_BODY_LINE_CAP = 4;
 const COMPACT_STREAMING_TAIL_CAP = 6;
+const VISIBLE_THINKING_SOURCES = new Set(["reasoning", "todo"]);
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
 // Matches sentence-ending punctuation followed (optionally after whitespace) by
@@ -860,6 +869,13 @@ interface StreamingRowCache {
 
 let _streamingRowCache: StreamingRowCache | null = null;
 
+// Per-entry row cache for completed (non-streaming) timeline entries.
+// Key: `${item.key}:${width}:${verboseMode}` — automatically invalidated when
+// width or verboseMode changes because those are baked into the key.  Entries
+// for completed turns are immutable so cached rows are always valid for the
+// same (key, width, verboseMode) triple.
+const _staticRowCache = new Map<string, TimelineRow[]>();
+
 /** Find the last safe paragraph boundary (double newline or closed code fence)
  *  that we can split content at for incremental rendering. */
 function findSafeBoundary(content: string, searchFrom: number): number {
@@ -1322,39 +1338,302 @@ function applyTurnOpacity(rows: TimelineRow[], opacity: "active" | "recent" | "d
   }));
 }
 
+
+type StreamEvent =
+  | { kind: "thinking"; streamSeq: number; block: RunProgressBlock; isActive: boolean }
+  | { kind: "response"; streamSeq: number; segment: RunResponseSegment }
+  | { kind: "action"; streamSeq: number; tool: RunToolActivity };
+
+function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, verbose = false): TimelineRow[] {
+  const run = item.item.run!;
+  const assistant = item.item.assistant;
+  const streaming = item.renderState.runPhase === "streaming";
+  const dim = item.renderState.opacity !== "active";
+  const contentWidth = Math.max(1, width - 4);
+  const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
+
+  const blocksById = new Map<string, RunProgressBlock>();
+  for (const entry of run.progressEntries ?? []) {
+    for (const block of entry.blocks) blocksById.set(block.id, block);
+  }
+  const toolsById = new Map(run.toolActivities.map((tool) => [tool.id, tool] as const));
+  const segmentsById = new Map((run.responseSegments ?? []).map((seg) => [seg.id, seg] as const));
+
+  const events: StreamEvent[] = [];
+  const sortedItems = (run.streamItems ?? []).slice().sort((a, b) => a.streamSeq - b.streamSeq);
+  for (const it of sortedItems) {
+    if (it.kind === "thinking") {
+      const block = blocksById.get(it.refId);
+      if (block && block.text.trim().length > 0) {
+        events.push({
+          kind: "thinking",
+          streamSeq: it.streamSeq,
+          block,
+          isActive: run.status === "running" && block.status === "active",
+        });
+      }
+    } else if (it.kind === "action") {
+      const tool = toolsById.get(it.refId);
+      if (tool) events.push({ kind: "action", streamSeq: it.streamSeq, tool });
+    } else if (it.kind === "response") {
+      const segment = segmentsById.get(it.refId);
+      if (segment) events.push({ kind: "response", streamSeq: it.streamSeq, segment });
+    }
+  }
+
+  // Backward-compat fallback for older session data that predates streamItems.
+  // New runs always use the streamItems path above.
+  if (events.length === 0 && sortedItems.length === 0) {
+    let legacySeq = 0;
+    for (const entry of run.progressEntries ?? []) {
+      if (!VISIBLE_THINKING_SOURCES.has(entry.source)) continue;
+      for (const block of entry.blocks) {
+        if (!block.text.trim()) continue;
+        legacySeq += 1;
+        events.push({
+          kind: "thinking",
+          streamSeq: legacySeq,
+          block,
+          isActive: run.status === "running" && block.status === "active",
+        });
+      }
+    }
+
+    for (const tool of run.toolActivities ?? []) {
+      legacySeq += 1;
+      events.push({ kind: "action", streamSeq: legacySeq, tool });
+    }
+
+    for (const segment of run.responseSegments ?? []) {
+      if (!getResponseSegmentText(segment).trim() && !streaming) continue;
+      legacySeq += 1;
+      events.push({ kind: "response", streamSeq: legacySeq, segment });
+    }
+  }
+
+  // First-render fallback: nothing resolvable yet but assistant text exists.
+  if (events.length === 0 && (getAssistantContent(assistant).length > 0 || streaming)) {
+    const synthetic: RunResponseSegment = {
+      id: `synthetic-${run.id}`,
+      streamSeq: 1,
+      chunks: [getAssistantContent(assistant)],
+      status: streaming ? "active" : "completed",
+      startedAt: run.startedAt,
+    };
+    events.push({ kind: "response", streamSeq: 1, segment: synthetic });
+  }
+
+  const contentRows: TimelineRowSpan[][] = [];
+
+  events.forEach((event, index) => {
+    const isLastEvent = index === events.length - 1;
+    const isLive = run.status === "running" && isLastEvent; // The cursor is on the last event
+
+    if (index > 0) {
+      contentRows.push([createSpan("")]);
+    }
+
+    if (event.kind === "thinking") {
+      contentRows.push([
+        createSpan("  thinking", "dim")
+      ]);
+      const bodyLines = formatProgressBlockBodyLines(event.block.text, Math.max(1, contentWidth - 4));
+      const lineCap = verbose ? bodyLines.length : COMPACT_PROCESSING_BODY_LINE_CAP;
+      const visibleBodyLines = bodyLines.slice(0, lineCap);
+      const overflowCount = bodyLines.length - visibleBodyLines.length;
+
+      visibleBodyLines.forEach((line) => {
+        contentRows.push([
+          createSpan("  ", "dim"),
+          createSpan(line || " ", "dim")
+        ]);
+      });
+
+      if (overflowCount > 0) {
+        contentRows.push([
+          createSpan("  ", "dim"),
+          createSpan(`… (${overflowCount} more line${overflowCount === 1 ? "" : "s"})`, "dim")
+        ]);
+      }
+
+      if (isLive && event.isActive) {
+        contentRows.push([
+          createSpan("  ", "dim"),
+          createSpan("▌", "accent")
+        ]);
+      }
+    } else if (event.kind === "action") {
+      contentRows.push([
+        createSpan("  action", "dim")
+      ]);
+      const tool = event.tool;
+      const icon = tool.status === "failed" ? "✕" : tool.status === "completed" ? "✓" : "•";
+      const iconTone = tool.status === "failed" ? "error" : tool.status === "completed" ? "success" : "info";
+      const duration = tool.completedAt && tool.startedAt
+        ? `  ${formatDuration(tool.completedAt - tool.startedAt)}`
+        : "";
+      const normalized = normalizeCommand(tool.command);
+      const label = getFriendlyActionLabel(normalized);
+      if (label) {
+        // Labeled: show friendly label + duration on first line, normalized command muted below
+        contentRows.push([
+          createSpan(`  ${icon} `, iconTone),
+          createSpan(label, "text"),
+          ...(duration ? [createSpan(duration, "dim")] : []),
+        ]);
+        wrapPlainText(normalized, Math.max(1, contentWidth - 6)).forEach((row) => {
+          contentRows.push([
+            createSpan("    "),
+            createSpan(row || " ", "muted"),
+          ]);
+        });
+      } else {
+        // No label: show normalized command (wrapped) as the primary content
+        const headRows = wrapPlainText(normalized, Math.max(1, contentWidth - 4));
+        headRows.forEach((row, rowIndex) => {
+          contentRows.push([
+            createSpan(`  ${rowIndex === 0 ? icon + " " : "  "}`, iconTone),
+            createSpan(row || " ", "text"),
+            ...(rowIndex === 0 && duration ? [createSpan(duration, "dim")] : []),
+          ]);
+        });
+      }
+      if (tool.summary && verbose) {
+        wrapPlainText(tool.summary, Math.max(1, contentWidth - 4)).forEach((row) => {
+          contentRows.push([
+            createSpan("    "),
+            createSpan(row || " ", "muted"),
+          ]);
+        });
+      }
+      if (isLive && tool.status === "running") {
+        contentRows.push([
+          createSpan("  ", "dim"),
+          createSpan("▌", "accent")
+        ]);
+      }
+    } else if (event.kind === "response") {
+      contentRows.push([
+        createSpan("  response", "dim")
+      ]);
+
+      let responseRows: TimelineRowSpan[][] = [];
+      const responseWidth = Math.max(1, contentWidth - 2);
+      const rawContent = splitSentenceWall(formatTerminalAnswerInline(getResponseSegmentText(event.segment)));
+      const segmentStreaming = event.segment.status === "active";
+
+      if (!streaming) _streamingRowCache = null;
+      const sanitized = segmentStreaming ? sanitizeStreamChunk(rawContent) : sanitizeOutput(rawContent);
+      const normalized = normalizeOutput(sanitized);
+      const segments = formatForBox(classifyOutput(normalized), responseWidth);
+      responseRows = buildMarkdownRows(segments, responseWidth);
+
+      if (!streaming && run.status === "failed" && isLastEvent) {
+        const failureMessage = sanitizeTerminalOutput(run.errorMessage ?? run.summary);
+        const failureRows: TimelineRowSpan[][] = [];
+        wrapPlainText(failureMessage, Math.max(1, responseWidth)).forEach((row, index) => {
+          failureRows.push([
+            createSpan(index === 0 ? "✕ " : "  ", "error"),
+            createSpan(row || " ", "error"),
+          ]);
+        });
+        responseRows = [...failureRows, ...responseRows];
+      }
+
+      if (segmentStreaming && !verbose && responseRows.length > COMPACT_STREAMING_TAIL_CAP) {
+        const hiddenRowCount = responseRows.length - COMPACT_STREAMING_TAIL_CAP;
+        responseRows = [
+          [createSpan(`… (${hiddenRowCount} line${hiddenRowCount === 1 ? "" : "s"} above)`, "dim")],
+          ...responseRows.slice(-COMPACT_STREAMING_TAIL_CAP),
+        ];
+      }
+
+      // Indent response rows by 2 spaces to align with 'response' label
+      responseRows.forEach(row => {
+        contentRows.push([
+          createSpan("  "),
+          ...row
+        ]);
+      });
+
+      if (isLive && segmentStreaming) {
+        contentRows.push([
+          createSpan("  "),
+          createSpan("▌", "accent"),
+        ]);
+      }
+    }
+  });
+
+  if (!streaming && run.status !== "running") {
+    if (run.status === "canceled") {
+      wrapPlainText(sanitizeTerminalOutput(run.summary), contentWidth).forEach((wrapped) => {
+        contentRows.push([createSpan(wrapped || " ", "warning")]);
+      });
+    } else if (
+      run.status === "completed"
+      && !events.some((event) => event.kind === "response" && getResponseSegmentText(event.segment).trim())
+    ) {
+      // contentRows.push([createSpan("(no output)", "dim")]); // Optional
+    }
+
+    if (run.truncatedOutput) {
+      contentRows.push([createSpan(RUN_OUTPUT_TRUNCATION_NOTICE, "dim")]);
+    }
+
+    // Add footer (Impact Summary or File Scan) inside the card
+    if (verbose) {
+      if (run.touchedFileCount > 0) {
+        const fileScanRows = buildFileScanRows(item, contentWidth);
+        if (fileScanRows.length > 0) {
+          contentRows.push([createSpan("─".repeat(contentWidth), "borderSubtle")]);
+          fileScanRows.forEach(row => {
+            contentRows.push(row.spans);
+          });
+        }
+      }
+    } else {
+      const impactRows = buildImpactSummaryRows(item, contentWidth);
+      if (impactRows.length > 0) {
+        contentRows.push([createSpan("─".repeat(contentWidth), "borderSubtle")]);
+        impactRows.forEach(row => {
+          contentRows.push(row.spans);
+        });
+      }
+    }
+  }
+
+  const heading = run.runtime.model ? run.runtime.model.toUpperCase().replace(/-/g, " ") : "AGENT RESPONSE";
+  const runStatus = streaming
+    ? "streaming"
+    : run.status === "completed"
+      ? "complete"
+      : run.status ?? "running";
+  const rightBadge = run.durationMs != null && !streaming
+    ? `${runStatus} • ${formatDuration(run.durationMs)}`
+    : runStatus;
+
+  const rows: TimelineRow[] = [];
+
+  rows.push(...buildDashCardRows({
+    keyPrefix: `${item.key}-unified`,
+    width,
+    title: heading,
+    rightBadge,
+    borderTone,
+    contentRows: contentRows.length > 0 ? contentRows : [[createSpan(" ")]],
+  }));
+
+  return rows;
+}
+
 function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, verbose = false): TimelineRow[] {
   const rows: TimelineRow[] = [];
 
   rows.push(...buildUserInputRows(item, width));
 
   if (item.item.run) {
-    rows.push(buildTaskStatusRow(item, width));
-
-    const processingRows = (item.item.run.status === "running" || item.item.run.progressEntries.length > 0)
-      ? buildThinkingRows(item.item.run, width, verbose)
-      : [];
-
-    if (item.renderState.runPhase === "thinking") {
-      rows.push(...processingRows);
-    } else {
-      rows.push(...processingRows);
-      // Agent response first
-      rows.push(...buildAgentRows(item, width, verbose));
-
-      // After the response: either compact impact summary (default) or verbose cards
-      if (item.item.run.status !== "running") {
-        if (verbose) {
-          if (item.item.run.touchedFileCount > 0) {
-            rows.push(...buildFileScanRows(item, width));
-          }
-          if (item.item.run.toolActivities.length > 0) {
-            rows.push(...buildActivityRows(item, width));
-          }
-        } else {
-          rows.push(...buildImpactSummaryRows(item, width));
-        }
-      }
-    }
+    rows.push(...buildUnifiedStreamRows(item, width, verbose));
   }
 
   rows.push(...buildActionRequiredRows(item, width));
@@ -1388,9 +1667,37 @@ export function buildTimelineSnapshot(
   const verbose = options.verboseMode ?? false;
   const builtItems = items.map((item) => {
     const innerWidth = Math.max(10, options.totalWidth - (item.padded ? 2 : 0));
-    const builtRows = item.type === "event"
-      ? buildStandaloneEventRows(item, innerWidth)
-      : buildTurnRows(item, innerWidth, verbose);
+
+    let builtRows: TimelineRow[];
+
+    if (item.type === "event") {
+      // Standalone events (system, error, etc.) are immutable — cache by key+width.
+      const cacheKey = `e:${item.key}:${innerWidth}`;
+      builtRows = _staticRowCache.get(cacheKey)
+        ?? (() => {
+          const r = buildStandaloneEventRows(item, innerWidth);
+          _staticRowCache.set(cacheKey, r);
+          return r;
+        })();
+    } else {
+      const { runPhase, opacity } = item.renderState;
+      // Only cache completed turns (runPhase "none"/"final") at a stable
+      // opacity.  Streaming and thinking items change every tick and use the
+      // _streamingRowCache instead.
+      const cacheable = runPhase !== "streaming" && runPhase !== "thinking";
+      if (cacheable) {
+        const cacheKey = `t:${item.key}:${innerWidth}:${verbose}:${runPhase}:${opacity}`;
+        builtRows = _staticRowCache.get(cacheKey)
+          ?? (() => {
+            const r = buildTurnRows(item, innerWidth, verbose);
+            _staticRowCache.set(cacheKey, r);
+            return r;
+          })();
+      } else {
+        builtRows = buildTurnRows(item, innerWidth, verbose);
+      }
+    }
+
     const rows = wrapItemRows(builtRows, options.totalWidth, item.padded, item.key);
     return {
       key: item.key,

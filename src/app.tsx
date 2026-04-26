@@ -163,7 +163,9 @@ import { AppShell } from "./ui/AppShell.js";
 
 let nextEventId = 0;
 let nextTurnId = 0;
-const LIVE_UPDATE_FLUSH_MS = 25;
+// 33ms ≈ 30fps: imperceptible for streaming text; reduces LCM with the 80ms
+// spinner interval from 200ms to 2640ms, greatly cutting coincident Ink writes.
+const LIVE_UPDATE_FLUSH_MS = 33;
 const PROGRESS_ONLY_FLUSH_MS = 80;
 const PLAN_FILE_NAME = "last-plan.md";
 const PLAN_FILE_DIR = ".codexa";
@@ -1837,6 +1839,66 @@ export function App({ launchArgs }: AppProps) {
       },
     ] });
 
+    type PendingLiveUpdate =
+      | { type: "assistant"; chunk: string }
+      | { type: "progress"; update: BackendProgressUpdate }
+      | { type: "activity"; activity: RunFileActivity[] }
+      | { type: "tool"; activity: RunToolActivity };
+
+    let pendingLiveUpdates: PendingLiveUpdate[] = [];
+    let hasPendingAssistantDelta = false;
+    let streamedAssistantContent = "";
+    let liveFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    let legacyProgressSequence = 0;
+    let firstRenderFired = false;
+    let blockedCleanupFailureSurfaced = false;
+
+    const queueLiveUpdate = (update: PendingLiveUpdate) => {
+      if (update.type === "assistant") {
+        const previous = pendingLiveUpdates[pendingLiveUpdates.length - 1];
+        if (previous?.type === "assistant") {
+          previous.chunk += update.chunk;
+        } else {
+          pendingLiveUpdates.push(update);
+        }
+        hasPendingAssistantDelta = true;
+        return;
+      }
+
+      if (update.type === "progress") {
+        const existing = pendingLiveUpdates.find(
+          (entry): entry is Extract<PendingLiveUpdate, { type: "progress" }> =>
+            entry.type === "progress" && entry.update.id === update.update.id,
+        );
+        if (existing) {
+          existing.update = update.update;
+        } else {
+          pendingLiveUpdates.push(update);
+        }
+        return;
+      }
+
+      if (update.type === "tool") {
+        const existing = pendingLiveUpdates.find(
+          (entry): entry is Extract<PendingLiveUpdate, { type: "tool" }> =>
+            entry.type === "tool" && entry.activity.id === update.activity.id,
+        );
+        if (existing) {
+          existing.activity = { ...existing.activity, ...update.activity };
+        } else {
+          pendingLiveUpdates.push(update);
+        }
+        return;
+      }
+
+      const previous = pendingLiveUpdates[pendingLiveUpdates.length - 1];
+      if (previous?.type === "activity") {
+        previous.activity.push(...update.activity);
+      } else {
+        pendingLiveUpdates.push(update);
+      }
+    };
+
     // Capture the workspace state before the run starts so we can diff on completion.
     let preRunSnapshot: ReturnType<typeof captureWorkspaceSnapshot> | null = null;
     let finalWorkspacePollDone = false;
@@ -1848,22 +1910,12 @@ export function App({ launchArgs }: AppProps) {
           initialSnapshot: preRunSnapshot,
           onActivity: (activity) => {
             if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-            pendingActivity.push(...activity);
+            queueLiveUpdate({ type: "activity", activity });
             scheduleLiveFlush();
           },
         });
       })()
       : null;
-
-    let pendingAssistantDelta = "";
-    let streamedAssistantContent = "";
-    let pendingProgressUpdates: BackendProgressUpdate[] = [];
-    let pendingActivity: RunFileActivity[] = [];
-    const pendingToolActivities = new Map<string, RunToolActivity>();
-    let liveFlushTimer: ReturnType<typeof setTimeout> | null = null;
-    let legacyProgressSequence = 0;
-    let firstRenderFired = false;
-    let blockedCleanupFailureSurfaced = false;
 
     const flushLiveUpdates = () => {
       perf.inc("flushes");
@@ -1873,58 +1925,54 @@ export function App({ launchArgs }: AppProps) {
       }
 
       if (!isCurrentRun(activeRunIdRef.current, runId)) {
-        pendingAssistantDelta = "";
-        pendingProgressUpdates = [];
-        pendingActivity = [];
-        pendingToolActivities.clear();
+        pendingLiveUpdates = [];
+        hasPendingAssistantDelta = false;
         return;
       }
 
-      const activity = pendingActivity;
-      const progressUpdates = pendingProgressUpdates;
-      const toolActivities = [...pendingToolActivities.values()];
-      const chunk = pendingAssistantDelta;
-      pendingActivity = [];
-      pendingProgressUpdates = [];
-      pendingAssistantDelta = "";
-      pendingToolActivities.clear();
+      const updates = pendingLiveUpdates;
+      pendingLiveUpdates = [];
+      hasPendingAssistantDelta = false;
 
-      if (activity.length === 0 && progressUpdates.length === 0 && toolActivities.length === 0 && !chunk) {
+      if (updates.length === 0) {
         return;
-      }
-
-      // Assistant deltas are dispatched at normal priority for immediate rendering.
-      // Lower-priority updates (activity, progress, tools) use startTransition
-      // so they don't delay streaming text from appearing.
-      if (chunk) {
-        if (!firstRenderFired) {
-          firstRenderFired = true;
-          perf.mark("first_render");
-        }
-        dispatchSession({
-          type: "RUN_APPEND_ASSISTANT_DELTA",
-          turnId,
-          chunk,
-          eventFactory: () => ({
-            id: createEventId(),
-            type: "assistant",
-            createdAt: Date.now(),
-            content: "",
-            contentChunks: [chunk],
-            turnId,
-          }),
-        });
       }
 
       startTransition(() => {
-        if (activity.length > 0) {
-          dispatchSession({ type: "RUN_APPEND_ACTIVITY", runId, activity });
-        }
-        if (progressUpdates.length > 0) {
-          dispatchSession({ type: "RUN_APPLY_PROGRESS_UPDATES", runId, updates: progressUpdates });
-        }
-        for (const toolActivity of toolActivities) {
-          dispatchSession({ type: "RUN_UPSERT_TOOL_ACTIVITY", runId, activity: toolActivity });
+        for (const update of updates) {
+          if (update.type === "activity") {
+            dispatchSession({ type: "RUN_APPEND_ACTIVITY", runId, activity: update.activity });
+            continue;
+          }
+
+          if (update.type === "progress") {
+            dispatchSession({ type: "RUN_APPLY_PROGRESS_UPDATES", runId, updates: [update.update] });
+            continue;
+          }
+
+          if (update.type === "tool") {
+            dispatchSession({ type: "RUN_UPSERT_TOOL_ACTIVITY", runId, activity: update.activity });
+            continue;
+          }
+
+          if (!firstRenderFired) {
+            firstRenderFired = true;
+            perf.mark("first_render");
+          }
+          dispatchSession({
+            type: "RUN_APPEND_ASSISTANT_DELTA",
+            turnId,
+            runId,
+            chunk: update.chunk,
+            eventFactory: () => ({
+              id: createEventId(),
+              type: "assistant",
+              createdAt: Date.now(),
+              content: "",
+              contentChunks: [update.chunk],
+              turnId,
+            }),
+          });
         }
       });
     };
@@ -1933,7 +1981,7 @@ export function App({ launchArgs }: AppProps) {
     const scheduleLiveFlush = () => {
       if (liveFlushTimer) return;
       // First token: use microtask for near-instant rendering
-      if (firstChunkPending && pendingAssistantDelta) {
+      if (firstChunkPending && hasPendingAssistantDelta) {
         firstChunkPending = false;
         liveFlushTimer = setTimeout(() => {}, 0); // prevent re-entry
         queueMicrotask(() => {
@@ -1942,7 +1990,7 @@ export function App({ launchArgs }: AppProps) {
         });
         return;
       }
-      const interval = pendingAssistantDelta ? LIVE_UPDATE_FLUSH_MS : PROGRESS_ONLY_FLUSH_MS;
+      const interval = hasPendingAssistantDelta ? LIVE_UPDATE_FLUSH_MS : PROGRESS_ONLY_FLUSH_MS;
       liveFlushTimer = setTimeout(() => {
         liveFlushTimer = null;
         flushLiveUpdates();
@@ -1962,14 +2010,13 @@ export function App({ launchArgs }: AppProps) {
           perf.accumulate("sanitize_ms", performance.now() - t0);
           perf.inc("chunks");
           if (!safeChunk) return;
-          pendingAssistantDelta += safeChunk;
+          queueLiveUpdate({ type: "assistant", chunk: safeChunk });
           streamedAssistantContent += safeChunk;
           scheduleLiveFlush();
         },
         onToolActivity: (activity) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-          const existing = pendingToolActivities.get(activity.id);
-          pendingToolActivities.set(activity.id, existing ? { ...existing, ...activity } : activity);
+          queueLiveUpdate({ type: "tool", activity });
           if (fastCleanupRun && !blockedCleanupFailureSurfaced) {
             const blockedCleanupFailure = getBlockedCleanupFailure(activity);
             if (blockedCleanupFailure) {
@@ -1995,7 +2042,7 @@ export function App({ launchArgs }: AppProps) {
               perf.mark("snapshot_end");
               const lateActivity = diffWorkspaceSnapshots(preRunSnapshot, finalSnapshot);
               if (lateActivity.length > 0) {
-                pendingActivity.push(...lateActivity);
+                queueLiveUpdate({ type: "activity", activity: lateActivity });
               }
             } catch {
               // Non-fatal: best-effort final poll
@@ -2068,12 +2115,7 @@ export function App({ launchArgs }: AppProps) {
             source: update.source,
             text: safeText,
           };
-          const existingIndex = pendingProgressUpdates.findIndex((entry) => entry.id === safeUpdate.id);
-          if (existingIndex >= 0) {
-            pendingProgressUpdates[existingIndex] = safeUpdate;
-          } else {
-            pendingProgressUpdates.push(safeUpdate);
-          }
+          queueLiveUpdate({ type: "progress", update: safeUpdate });
           scheduleLiveFlush();
         },
       },
@@ -2644,6 +2686,105 @@ export function App({ launchArgs }: AppProps) {
     workspaceRoot,
   ]);
 
+  // Memoize the composer element so AppShell's memo check (prev.composer ===
+  // next.composer) passes during streaming. Without this, a new JSX element is
+  // created on every App render, forcing the entire AppShell tree (header +
+  // timeline + footer) to re-render on every 25ms streaming flush.
+  const composerElement = useMemo(() => {
+    if (planFlow.kind === "awaiting_action") {
+      return (
+        <PlanActionPicker
+          hasPlanFile={hasPlanFileAvailable}
+          onSelect={handlePlanAction}
+          onCancel={handleCancel}
+        />
+      );
+    }
+    if (planFlow.kind === "collecting_feedback") {
+      return (
+        <TextEntryPanel
+          focusId={FOCUS_IDS.composer}
+          title={planFlow.mode === "revise" ? "Revise plan" : "Add constraints"}
+          subtitle={planFlow.mode === "revise"
+            ? "Describe what should change in the plan. Enter regenerates it."
+            : "Add extra instructions for the plan. Enter regenerates it."}
+          inputLabel={planFlow.mode === "revise" ? "Revision" : "Constraint"}
+          placeholder={planFlow.mode === "revise"
+            ? "e.g. keep it to one file and add tests"
+            : "e.g. keep it minimal and avoid touching other files"}
+          footerHint="Enter regenerate  Esc back  Backspace delete"
+          onSubmit={handlePlanFeedbackSubmit}
+          onCancel={() => setPlanFlow((current) => cancelPlanFeedback(current))}
+        />
+      );
+    }
+    return (
+      <MemoizedBottomComposer
+        key={composerInstanceKey}
+        layout={terminalLayout}
+        uiState={uiState}
+        mode={mode}
+        model={model}
+        themeName={activeThemeName}
+        reasoningLevel={reasoningLevel}
+        planMode={planMode}
+        tokensUsed={estimateTokens(conversationChars)}
+        modelSpec={currentModelSpec}
+        value={inputValue}
+        cursor={cursor}
+        onChangeInput={handleChangeInput}
+        onSubmit={handleSubmit}
+        onCancel={handleCancel}
+        onChangeValue={handleChangeValue}
+        onChangeCursor={handleChangeCursor}
+        onHistoryUp={handleHistoryUp}
+        onHistoryDown={handleHistoryDown}
+        onOpenBackendPicker={openBackendPicker}
+        onOpenModelPicker={openModelPicker}
+        onOpenModePicker={openModePicker}
+        onOpenThemePicker={openThemePicker}
+        onOpenAuthPanel={openAuthPanel}
+        onTogglePlanMode={togglePlanModeWithNotice}
+        onClear={handleClear}
+        onCycleMode={cycleModeWithNotice}
+        onQuit={handleQuit}
+      />
+    );
+  }, [
+    planFlow,
+    hasPlanFileAvailable,
+    handlePlanAction,
+    handleCancel,
+    handlePlanFeedbackSubmit,
+    composerInstanceKey,
+    terminalLayout,
+    uiState,
+    mode,
+    model,
+    activeThemeName,
+    reasoningLevel,
+    planMode,
+    conversationChars,
+    currentModelSpec,
+    inputValue,
+    cursor,
+    handleChangeInput,
+    handleSubmit,
+    handleChangeValue,
+    handleChangeCursor,
+    handleHistoryUp,
+    handleHistoryDown,
+    openBackendPicker,
+    openModelPicker,
+    openModePicker,
+    openThemePicker,
+    openAuthPanel,
+    togglePlanModeWithNotice,
+    handleClear,
+    cycleModeWithNotice,
+    handleQuit,
+  ]);
+
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
       <AppShell
@@ -2861,59 +3002,7 @@ export function App({ launchArgs }: AppProps) {
               )}
           </>
         }
-        composer={planFlow.kind === "awaiting_action" ? (
-          <PlanActionPicker
-            hasPlanFile={hasPlanFileAvailable}
-            onSelect={handlePlanAction}
-            onCancel={handleCancel}
-          />
-        ) : planFlow.kind === "collecting_feedback" ? (
-          <TextEntryPanel
-            focusId={FOCUS_IDS.composer}
-            title={planFlow.mode === "revise" ? "Revise plan" : "Add constraints"}
-            subtitle={planFlow.mode === "revise"
-              ? "Describe what should change in the plan. Enter regenerates it."
-              : "Add extra instructions for the plan. Enter regenerates it."}
-            inputLabel={planFlow.mode === "revise" ? "Revision" : "Constraint"}
-            placeholder={planFlow.mode === "revise"
-              ? "e.g. keep it to one file and add tests"
-              : "e.g. keep it minimal and avoid touching other files"}
-            footerHint="Enter regenerate  Esc back  Backspace delete"
-            onSubmit={handlePlanFeedbackSubmit}
-            onCancel={() => setPlanFlow((current) => cancelPlanFeedback(current))}
-          />
-        ) : (
-          <MemoizedBottomComposer
-            key={composerInstanceKey}
-            layout={terminalLayout}
-            uiState={uiState}
-            mode={mode}
-            model={model}
-            themeName={activeThemeName}
-            reasoningLevel={reasoningLevel}
-            planMode={planMode}
-            tokensUsed={estimateTokens(conversationChars)}
-            modelSpec={currentModelSpec}
-            value={inputValue}
-            cursor={cursor}
-            onChangeInput={handleChangeInput}
-            onSubmit={handleSubmit}
-            onCancel={handleCancel}
-            onChangeValue={handleChangeValue}
-            onChangeCursor={handleChangeCursor}
-            onHistoryUp={handleHistoryUp}
-            onHistoryDown={handleHistoryDown}
-            onOpenBackendPicker={openBackendPicker}
-            onOpenModelPicker={openModelPicker}
-            onOpenModePicker={openModePicker}
-            onOpenThemePicker={openThemePicker}
-            onOpenAuthPanel={openAuthPanel}
-            onTogglePlanMode={togglePlanModeWithNotice}
-            onClear={handleClear}
-            onCycleMode={cycleModeWithNotice}
-            onQuit={handleQuit}
-          />
-        )}
+        composer={composerElement}
         composerRows={composerRows}
         panelHint={screen !== "main" ? (
           <Box marginTop={1} paddingX={1}>

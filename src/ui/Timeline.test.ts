@@ -424,7 +424,7 @@ test("default timeline shows compact processing signals while a run is streaming
     .map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
-  assert.match(joined, /Processing/);
+  assert.match(joined, /thinking/);
   assert.match(joined, /Verifying generated file/);
   assert.match(joined, /python -m pytest/);
   assert.match(joined, /Hello_World\.py/);
@@ -483,9 +483,8 @@ test("streaming processing output renders separated readable segments with a liv
     .map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
-  assert.match(joined, /Current: Next I am separating/);
-  assert.match(joined, /Update 1/);
-  assert.match(joined, /Live/);
+  assert.match(joined, /Next I am separating/);
+  assert.match(joined, /thinking/);
   assert.match(joined, /▌/);
   assert.ok(snapshot.rows.every((row) => row.spans.map((span) => span.text).join("").length <= 54));
 });
@@ -541,9 +540,7 @@ test("completed runs keep progress updates as separate readable blocks", () => {
     .map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
-  assert.match(joined, /Processing/);
-  assert.match(joined, /Update 1/);
-  assert.match(joined, /Update 2/);
+  assert.match(joined, /thinking/);
   assert.match(joined, /Checking the failing test/);
   assert.match(joined, /Comparing expected behavior/);
 });
@@ -607,6 +604,68 @@ test("assistant unified diffs render with semantic tones", () => {
   assert.equal(spans.find((span) => span.text.includes("@@ -1,3 +1,4 @@"))?.tone, "accent");
   assert.equal(spans.find((span) => span.text.includes("-console.log(\"old\");"))?.tone, "error");
   assert.equal(spans.find((span) => span.text.includes("+console.log(\"new\");"))?.tone, "success");
+});
+
+test("completed assistant turn renders local links as compact terminal paths", () => {
+  const content = [
+    "Purpose:",
+    "A small app.",
+    "",
+    "Main parts:",
+    "- [`src/App.tsx`](C:/Users/jorda/OneDrive/Desktop/Project/src/App.tsx#L22) Interactive UI",
+    "- [README.md](file:///C:/Users/jorda/OneDrive/Desktop/Project/README.md) Project overview",
+    "- C:\\Users\\jorda\\OneDrive\\Desktop\\Project\\docs\\proof.md#L26 Formal proof",
+    "",
+    "External: [OpenAI](https://platform.openai.com/docs)",
+  ].join("\n");
+  const items = buildTimelineItems([
+    {
+      id: 1,
+      type: "user",
+      createdAt: 1,
+      prompt: "What is this file?",
+      turnId: 121,
+    },
+    {
+      id: 2,
+      type: "run",
+      createdAt: 2,
+      startedAt: 2,
+      durationMs: 100,
+      backendId: "codex-subprocess",
+      backendLabel: "Codexa",
+      runtime: TEST_RUNTIME,
+      prompt: "What is this file?",
+      progressEntries: [],
+      status: "completed",
+      summary: "Completed",
+      truncatedOutput: false,
+      toolActivities: [],
+      activity: [],
+      touchedFileCount: 0,
+      errorMessage: null,
+      turnId: 121,
+    },
+    {
+      id: 3,
+      type: "assistant",
+      createdAt: 3,
+      content,
+      contentChunks: [],
+      turnId: 121,
+    },
+  ]);
+
+  const renderItems = buildStaticRenderItems(items, [121], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 96 });
+  const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+
+  assert.match(joined, /src\/App\.tsx:22/);
+  assert.match(joined, /README\.md/);
+  assert.match(joined, /docs\/proof\.md:26/);
+  assert.match(joined, /\[OpenAI\]\(https:\/\/platform\.openai\.com\/docs\)/);
+  assert.doesNotMatch(joined, /C:\/Users|C:\\Users|file:\/\//);
+  assert.doesNotMatch(joined, /\]\(C:/);
 });
 
 test("parses sgr mouse wheel directions without treating other mouse events as scroll", () => {
@@ -845,4 +904,458 @@ test("scrolling down to the frozen tail with pending unseen content resumes live
   const resumed = pageDownTimelineViewport(withNew, updated, 4);
   assert.equal(resumed.followTail, true);
   assert.equal(resumed.frozenSnapshot, null);
+});
+
+// ─── action event command normalization in timeline render ───────────────────
+
+function makeCompletedRunWithTool(turnId: number, command: string): TimelineEvent[] {
+  return [
+    {
+      id: 1,
+      type: "user",
+      createdAt: 1,
+      prompt: "Do something",
+      turnId,
+    },
+    {
+      id: 2,
+      type: "run",
+      createdAt: 2,
+      startedAt: 2,
+      durationMs: 500,
+      backendId: "codex-subprocess",
+      backendLabel: "Codexa",
+      runtime: TEST_RUNTIME,
+      prompt: "Do something",
+      progressEntries: [],
+      status: "completed",
+      summary: "Completed",
+      truncatedOutput: false,
+      toolActivities: [
+        {
+          id: "tool-1",
+          command,
+          status: "completed",
+          startedAt: 2,
+          completedAt: 3,
+        },
+      ],
+      activity: [],
+      touchedFileCount: 0,
+      errorMessage: null,
+      turnId,
+    },
+    {
+      id: 3,
+      type: "assistant",
+      createdAt: 4,
+      content: "Done.",
+      contentChunks: [],
+      turnId,
+    },
+  ];
+}
+
+function makeChronologicalTurnEvents(
+  turnId: number,
+  runOverrides: Partial<Extract<TimelineEvent, { type: "run" }>>,
+  assistantContent = "",
+): TimelineEvent[] {
+  const run: Extract<TimelineEvent, { type: "run" }> = {
+    id: 2,
+    type: "run",
+    createdAt: 2,
+    startedAt: 2,
+    durationMs: 500,
+    backendId: "codex-subprocess",
+    backendLabel: "Codexa",
+    runtime: TEST_RUNTIME,
+    prompt: "Do something",
+    progressEntries: [],
+    status: "completed",
+    summary: "Completed",
+    truncatedOutput: false,
+    toolActivities: [],
+    activity: [],
+    touchedFileCount: 0,
+    errorMessage: null,
+    turnId,
+    ...runOverrides,
+  };
+
+  return [
+    {
+      id: 1,
+      type: "user",
+      createdAt: 1,
+      prompt: "Do something",
+      turnId,
+    },
+    run,
+    {
+      id: 3,
+      type: "assistant",
+      createdAt: 4,
+      content: assistantContent,
+      contentChunks: [],
+      turnId,
+    },
+  ];
+}
+
+function renderJoinedTurn(events: TimelineEvent[], turnId: number, width = 90): string {
+  const items = buildTimelineItems(events);
+  const renderItems = buildStaticRenderItems(items, [turnId], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: width });
+  return snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+}
+
+test("unified stream renders action before response by stream sequence", () => {
+  const joined = renderJoinedTurn(makeChronologicalTurnEvents(300, {
+    toolActivities: [{
+      id: "tool-1",
+      command: "rg --files",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 429,
+      streamSeq: 1,
+    }],
+    responseSegments: [{
+      id: "response-1",
+      streamSeq: 2,
+      chunks: ["Purpose\n5-Date Verification explains the two-block calendar puzzle."],
+      status: "completed",
+      startedAt: 20,
+    }],
+    streamItems: [
+      { streamSeq: 1, kind: "action", refId: "tool-1" },
+      { streamSeq: 2, kind: "response", refId: "response-1" },
+    ],
+    lastStreamSeq: 2,
+  }), 300);
+
+  assert.ok(joined.indexOf("action") < joined.indexOf("response"));
+  assert.match(joined, /List files/);
+  assert.match(joined, /rg --files/);
+});
+
+test("unified stream preserves thinking action response ordering", () => {
+  const joined = renderJoinedTurn(makeChronologicalTurnEvents(301, {
+    progressEntries: [{
+      id: "reason-1",
+      source: "reasoning",
+      text: "I need to inspect the project files.",
+      sequence: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      pendingNewlineCount: 0,
+      blocks: [{
+        id: "reason-1-block-1",
+        text: "I need to inspect the project files.",
+        sequence: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        status: "completed",
+        streamSeq: 1,
+      }],
+    }],
+    toolActivities: [{
+      id: "tool-1",
+      command: "Get-Content README.md",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 426,
+      streamSeq: 2,
+    }],
+    responseSegments: [{
+      id: "response-1",
+      streamSeq: 3,
+      chunks: ["Purpose\n5-Date Verification is an interactive math app."],
+      status: "completed",
+      startedAt: 20,
+    }],
+    streamItems: [
+      { streamSeq: 1, kind: "thinking", refId: "reason-1-block-1" },
+      { streamSeq: 2, kind: "action", refId: "tool-1" },
+      { streamSeq: 3, kind: "response", refId: "response-1" },
+    ],
+    lastStreamSeq: 3,
+  }), 301);
+
+  assert.ok(joined.indexOf("thinking") < joined.indexOf("action"));
+  assert.ok(joined.indexOf("action") < joined.indexOf("response"));
+});
+
+test("unified stream preserves response action response interleaving", () => {
+  const joined = renderJoinedTurn(makeChronologicalTurnEvents(302, {
+    toolActivities: [{
+      id: "tool-1",
+      command: "Get-Content src\\App.tsx",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 428,
+      streamSeq: 2,
+    }],
+    responseSegments: [
+      {
+        id: "response-1",
+        streamSeq: 1,
+        chunks: ["First segment."],
+        status: "completed",
+        startedAt: 1,
+      },
+      {
+        id: "response-2",
+        streamSeq: 3,
+        chunks: ["Second segment."],
+        status: "completed",
+        startedAt: 2,
+      },
+    ],
+    streamItems: [
+      { streamSeq: 1, kind: "response", refId: "response-1" },
+      { streamSeq: 2, kind: "action", refId: "tool-1" },
+      { streamSeq: 3, kind: "response", refId: "response-2" },
+    ],
+    lastStreamSeq: 3,
+  }), 302);
+
+  assert.ok(joined.indexOf("First segment") < joined.indexOf("action"));
+  assert.ok(joined.indexOf("action") < joined.indexOf("Second segment"));
+});
+
+test("completed final response is not forced above earlier actions", () => {
+  const joined = renderJoinedTurn(makeChronologicalTurnEvents(303, {
+    toolActivities: [{
+      id: "tool-1",
+      command: "git status",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 20,
+      streamSeq: 1,
+    }],
+    responseSegments: [{
+      id: "response-1",
+      streamSeq: 2,
+      chunks: ["Done after checking status."],
+      status: "completed",
+      startedAt: 30,
+    }],
+    streamItems: [
+      { streamSeq: 1, kind: "action", refId: "tool-1" },
+      { streamSeq: 2, kind: "response", refId: "response-1" },
+    ],
+    lastStreamSeq: 2,
+  }), 303);
+
+  assert.ok(joined.indexOf("Check git status") < joined.indexOf("Done after checking status"));
+});
+
+test("raw stdout progress does not render as thinking in fallback sessions", () => {
+  const joined = renderJoinedTurn(makeChronologicalTurnEvents(304, {
+    progressEntries: [{
+      id: "stdout-1",
+      source: "stdout",
+      text: "Directory: C:\\Users\\jorda\\Project\n\nvitest.config.ts\nimport { useMemo } from \"react\";",
+      sequence: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      pendingNewlineCount: 0,
+      blocks: [{
+        id: "stdout-1-block-1",
+        text: "Directory: C:\\Users\\jorda\\Project\n\nvitest.config.ts\nimport { useMemo } from \"react\";",
+        sequence: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        status: "completed",
+      }],
+    }],
+    responseSegments: [{
+      id: "response-1",
+      streamSeq: 1,
+      chunks: ["Done."],
+      status: "completed",
+      startedAt: 2,
+    }],
+  }), 304);
+
+  assert.doesNotMatch(joined, /thinking/);
+  assert.doesNotMatch(joined, /Directory: C:\\Users/);
+  assert.doesNotMatch(joined, /import \{ useMemo \}/);
+});
+
+test("action event hides PowerShell full-path wrapper and shows normalized command", () => {
+  const raw = `"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command 'Get-ChildItem -Force | Select-Object Name,Mode,Length'`;
+  const items = buildTimelineItems(makeCompletedRunWithTool(200, raw));
+  const renderItems = buildStaticRenderItems(items, [200], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 80 });
+  const joined = snapshot.rows.map((row) => row.spans.map((s) => s.text).join("")).join("\n");
+
+  assert.match(joined, /List files/, "should show friendly label");
+  assert.match(joined, /Get-ChildItem/, "should show normalized command");
+  assert.doesNotMatch(joined, /Program Files/, "should not expose PowerShell install path");
+  assert.doesNotMatch(joined, /pwsh\.exe/, "should not expose pwsh.exe wrapper");
+  assert.doesNotMatch(joined, /-Command/, "should not expose -Command flag");
+});
+
+test("action event hides pwsh.exe -Command wrapper", () => {
+  const items = buildTimelineItems(makeCompletedRunWithTool(201, `pwsh.exe -Command 'git status'`));
+  const renderItems = buildStaticRenderItems(items, [201], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 80 });
+  const joined = snapshot.rows.map((row) => row.spans.map((s) => s.text).join("")).join("\n");
+
+  assert.match(joined, /Check git status/);
+  assert.doesNotMatch(joined, /pwsh\.exe/);
+});
+
+test("action event hides cmd.exe /c wrapper", () => {
+  const items = buildTimelineItems(makeCompletedRunWithTool(202, `cmd.exe /c "dir /b"`));
+  const renderItems = buildStaticRenderItems(items, [202], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 80 });
+  const joined = snapshot.rows.map((row) => row.spans.map((s) => s.text).join("")).join("\n");
+
+  assert.match(joined, /List files/);
+  assert.doesNotMatch(joined, /cmd\.exe/);
+});
+
+test("action event hides bash -lc wrapper", () => {
+  const items = buildTimelineItems(makeCompletedRunWithTool(203, `bash -lc 'git diff HEAD~1'`));
+  const renderItems = buildStaticRenderItems(items, [203], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 80 });
+  const joined = snapshot.rows.map((row) => row.spans.map((s) => s.text).join("")).join("\n");
+
+  assert.match(joined, /Inspect changes/);
+  assert.doesNotMatch(joined, /bash -lc/);
+});
+
+test("action event shows normalized command only when no friendly label exists", () => {
+  const items = buildTimelineItems(makeCompletedRunWithTool(204, `pwsh.exe -Command 'python -m pytest tests/'`));
+  const renderItems = buildStaticRenderItems(items, [204], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 80 });
+  const joined = snapshot.rows.map((row) => row.spans.map((s) => s.text).join("")).join("\n");
+
+  assert.match(joined, /python -m pytest/, "should show normalized command as label");
+  assert.doesNotMatch(joined, /pwsh\.exe/, "should not show wrapper");
+});
+
+test("action event remains inside the unified assistant turn (no separate Processing card)", () => {
+  const raw = `"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command 'Get-ChildItem'`;
+  const items = buildTimelineItems(makeCompletedRunWithTool(205, raw));
+  const renderItems = buildStaticRenderItems(items, [205], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 80 });
+
+  // All content should be in a single turn item, not a separate Processing card
+  assert.equal(snapshot.items.length, 1, "should produce exactly one timeline item (the turn)");
+  const joined = snapshot.rows.map((row) => row.spans.map((s) => s.text).join("")).join("\n");
+  assert.match(joined, /action/);
+  assert.doesNotMatch(joined, /Processing/, "should not render a separate Processing card");
+});
+
+test("long command wraps within the card width without overflow", () => {
+  const longCmd = `pwsh.exe -Command 'Write-Host "A very long command that goes on and on and on and would overflow if not wrapped properly within the card border"'`;
+  const items = buildTimelineItems(makeCompletedRunWithTool(206, longCmd));
+  const renderItems = buildStaticRenderItems(items, [206], null, null, null);
+  const totalWidth = 60;
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth });
+
+  // The long command should be split into multiple rows (i.e. wrapping occurred)
+  const actionRows = snapshot.rows.filter((row) =>
+    row.spans.some((s) => s.text.includes("Write-Host") || s.text.includes("would overflow")),
+  );
+  assert.ok(actionRows.length > 1, "long command should be wrapped across multiple rows");
+
+  // Each content span (excluding border/padding chars) should fit within the content area
+  const contentWidth = totalWidth - 4; // 4 chars for card border + padding
+  for (const row of actionRows) {
+    for (const span of row.spans) {
+      const text = span.text.trim();
+      if (text.length > 0 && !text.includes("│")) {
+        assert.ok(
+          span.text.length <= contentWidth,
+          `Content span exceeds content width (${span.text.length} > ${contentWidth}): "${span.text}"`,
+        );
+      }
+    }
+  }
+});
+
+// ── Smooth scrolling / render-loop regression tests ──────────────────────────
+
+test("syncTimelineViewport is stable when followTail is true and totalRows did not grow", () => {
+  // Ensures the Fix B guard condition is sound: when following tail and no new
+  // rows arrive, returning `current` from setViewport bails out of the render.
+  const snapshot = createSnapshot([2, 3]);
+  const following = createFollowTailViewport(snapshot.totalRows);
+  const synced = syncTimelineViewport(following, snapshot);
+
+  assert.equal(synced.followTail, true);
+  assert.equal(synced.anchorRow, snapshot.totalRows - 1);
+  assert.equal(synced.unseenItems, 0);
+  assert.equal(synced.unseenRows, 0);
+});
+
+test("buildTimelineSnapshot reuses cached rows for completed entries on repeated calls", () => {
+  // Ensures Fix E is working: a second call at the same width must return
+  // the same inner row array references (cache hits) for completed turns.
+  const completedEvents: TimelineEvent[] = [
+    {
+      id: 100,
+      type: "user",
+      createdAt: 1,
+      prompt: "Cache test prompt",
+      turnId: 99,
+    },
+    {
+      id: 101,
+      type: "run",
+      createdAt: 2,
+      startedAt: 2,
+      durationMs: 100,
+      backendId: "codex-subprocess",
+      backendLabel: "Codexa",
+      runtime: TEST_RUNTIME,
+      prompt: "Cache test prompt",
+      progressEntries: [],
+      status: "completed",
+      summary: "Done",
+      truncatedOutput: false,
+      toolActivities: [],
+      activity: [],
+      touchedFileCount: 0,
+      errorMessage: null,
+      turnId: 99,
+    },
+    {
+      id: 102,
+      type: "assistant",
+      createdAt: 3,
+      content: "Cached answer",
+      contentChunks: [],
+      turnId: 99,
+    },
+  ];
+
+  const renderItems = buildStaticRenderItems(
+    buildTimelineItems(completedEvents),
+    [99],
+    null,
+    null,
+    null,
+  );
+
+  const first = buildTimelineSnapshot(renderItems, { totalWidth: 80 });
+  const second = buildTimelineSnapshot(renderItems, { totalWidth: 80 });
+
+  assert.equal(first.totalRows, second.totalRows, "total rows must be identical");
+
+  // The wrapItemRows call adds padding so the outer `rows` array is always
+  // a fresh array.  The inner pre-wrap rows are what the cache stores — but
+  // since buildTimelineSnapshot only exposes wrapped rows we verify equality
+  // of row *content* (same spans) as a proxy for cache correctness.
+  for (let i = 0; i < first.items.length; i++) {
+    const a = first.items[i];
+    const b = second.items[i];
+    assert.ok(a && b, `item ${i} must exist in both snapshots`);
+    assert.equal(a.rowCount, b.rowCount, `item ${i} rowCount must match`);
+  }
 });

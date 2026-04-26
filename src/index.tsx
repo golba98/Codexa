@@ -11,6 +11,11 @@ import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 // again — causing the "stacked UI" artifact.  \x1b[3J erases the scrollback
 // immediately after so nothing accumulates there.
 const HARD_REPAINT_SEQUENCE = "\x1b[2J\x1b[3J\x1b[H";
+// Clears the visible viewport and homes the cursor but does NOT erase the
+// scrollback buffer — used for debounced resize repaints so terminal history
+// survives window resize.  Only the initial startup write needs \x1b[3J (to
+// prevent the Windows Terminal "stacked UI" artifact on the very first frame).
+const VIEWPORT_CLEAR_SEQUENCE = "\x1b[2J\x1b[H";
 const DISABLE_TRANSCRIPT_WHEEL_MODE = "\x1b[?1000l\x1b[?1006l";
 import { SET_TERMINAL_TITLE } from "./core/terminalTitle.js";
 
@@ -188,7 +193,9 @@ export function startApp({
       if (renderHandle && inkInstance) {
         // By now (150ms later) React state has settled — useTerminalViewport's
         // 100ms settle timer has fired, so dimensions are correct.
-        stdout.write(HARD_REPAINT_SEQUENCE);
+        // Use VIEWPORT_CLEAR_SEQUENCE (no \x1b[3J) to preserve terminal
+        // scrollback — only the initial startup write needs to erase it.
+        stdout.write(VIEWPORT_CLEAR_SEQUENCE);
 
         // Reset ALL Ink output state BEFORE calling clear().
         // Ink.clear() internally calls log.sync(this.lastOutputToRender || …)
@@ -270,16 +277,14 @@ export function startApp({
     // Don't clear the visible viewport (\x1b[2J]) immediately — that would
     // create a blank frame while React processes the new dimensions.
     //
-    //  1. Clear only the scrollback buffer (\x1b[3J]) so old frames don't
-    //     ghost when the terminal is expanded (the stacked-UI artifact).
-    //     Do NOT clear the visible viewport — keep old content on-screen
-    //     so the user never sees a blank frame.
-    //  2. Reset Ink's output cache so the React-driven re-render (triggered
+    //  1. Reset Ink's output cache so the React-driven re-render (triggered
     //     by useTerminalViewport's state update) writes fresh output to
     //     stdout instead of short-circuiting due to lastOutput matching.
-    //  3. Schedule a full clean repaint (clear + forced render) for after
-    //     the layout dimensions settle, as a safety net.
-    stdout.write("\x1b[3J");
+    //  2. Schedule a full clean repaint (HARD_REPAINT_SEQUENCE includes
+    //     \x1b[3J to clear scrollback) for after the layout dimensions settle.
+    //     Deferring scrollback-clear to the debounced repaint avoids writing
+    //     \x1b[3J on every resize event during rapid window-drag resizing,
+    //     which can cause visible flashing on Windows Terminal.
     if (inkInstance) {
       inkInstance.lastOutput = "";
     }

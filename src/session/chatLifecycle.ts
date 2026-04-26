@@ -3,7 +3,16 @@ import type { AvailableBackend } from "../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
 import { summarizeRunActivity, type RunFileActivity } from "../core/workspaceActivity.js";
-import type { RunEvent, RunProgressBlock, RunProgressEntry, RunToolActivity, TimelineEvent, UIState } from "./types.js";
+import type {
+  RunEvent,
+  RunProgressBlock,
+  RunProgressEntry,
+  RunResponseSegment,
+  RunStreamItem,
+  RunToolActivity,
+  TimelineEvent,
+  UIState,
+} from "./types.js";
 
 export const RUN_OUTPUT_TRUNCATION_NOTICE = "Older output was truncated to keep the UI responsive.";
 const ACTION_REQUIRED_BLOCK_PATTERN = /\*{0,2}=+\*{0,2}\s*\n\*{0,2}\[ACTION REQUIRED\]\*{0,2}\s*\n\*{0,2}Verification Question:\*{0,2}\s*\n([\s\S]*?)\n\*{0,2}=+\*{0,2}/i;
@@ -173,20 +182,45 @@ export function createRunEvent(params: {
     touchedFileCount: 0,
     errorMessage: null,
     turnId: params.turnId,
+    streamItems: [],
+    responseSegments: [],
+    lastStreamSeq: 0,
+    activeResponseSegmentId: null,
   };
+}
+
+function appendStreamItem(items: RunStreamItem[], item: RunStreamItem): RunStreamItem[] {
+  return [...items, item];
 }
 
 export function upsertRunToolActivity(event: RunEvent, activity: RunToolActivity): RunEvent {
   const existingIndex = event.toolActivities.findIndex((item) => item.id === activity.id);
   if (existingIndex < 0) {
+    const streamSeq = (event.lastStreamSeq ?? 0) + 1;
+    const enriched: RunToolActivity = { ...activity, streamSeq };
     return {
       ...event,
-      toolActivities: [...event.toolActivities, activity],
+      toolActivities: [...event.toolActivities, enriched],
+      streamItems: appendStreamItem(event.streamItems ?? [], {
+        streamSeq,
+        kind: "action",
+        refId: enriched.id,
+      }),
+      lastStreamSeq: streamSeq,
+      // A new tool interrupts the current response segment; the next assistant
+      // delta will start a fresh segment with a larger streamSeq.
+      activeResponseSegmentId: null,
     };
   }
 
+  const existing = event.toolActivities[existingIndex]!;
+  const merged: RunToolActivity = {
+    ...existing,
+    ...activity,
+    streamSeq: existing.streamSeq, // preserve original assignment
+  };
   const nextToolActivities = [...event.toolActivities];
-  nextToolActivities[existingIndex] = { ...nextToolActivities[existingIndex]!, ...activity };
+  nextToolActivities[existingIndex] = merged;
   return {
     ...event,
     toolActivities: nextToolActivities,
@@ -487,6 +521,9 @@ function materializeProgressEntry(
   };
 }
 
+/** Sources that surface as user-facing thinking items. */
+const THINKING_SOURCES = new Set(["reasoning", "todo"]);
+
 export function appendRunThinking(event: RunEvent, updates: BackendProgressUpdate[]): RunEvent {
   if (updates.length === 0) return event;
 
@@ -521,6 +558,38 @@ export function appendRunThinking(event: RunEvent, updates: BackendProgressUpdat
     progressEntries.push(materializeProgressEntry(seed, text, updatedAt, update.source));
   }
 
+  // Assign turn-global streamSeq to newly visible thinking blocks. Only
+  // reasoning/todo entries surface as thinking — tool/stderr/transcript
+  // text is diagnostic and never becomes a stream item.
+  let streamItems = event.streamItems ?? [];
+  let lastStreamSeq = event.lastStreamSeq ?? 0;
+  let activeResponseSegmentId = event.activeResponseSegmentId ?? null;
+  let anyVisibleNewBlock = false;
+
+  progressEntries = progressEntries.map((entry) => {
+    if (!THINKING_SOURCES.has(entry.source)) return entry;
+    let entryChanged = false;
+    const blocks = entry.blocks.map((block) => {
+      if (block.streamSeq != null) return block;
+      if (block.text.trim().length === 0) return block;
+      anyVisibleNewBlock = true;
+      lastStreamSeq += 1;
+      const next: RunProgressBlock = { ...block, streamSeq: lastStreamSeq };
+      streamItems = appendStreamItem(streamItems, {
+        streamSeq: lastStreamSeq,
+        kind: "thinking",
+        refId: block.id,
+      });
+      entryChanged = true;
+      return next;
+    });
+    return entryChanged ? { ...entry, blocks } : entry;
+  });
+
+  if (anyVisibleNewBlock) {
+    activeResponseSegmentId = null;
+  }
+
   if (progressEntries.length > MAX_CHAT_LINES) {
     progressEntries = progressEntries.slice(-MAX_CHAT_LINES);
     truncatedOutput = true;
@@ -530,8 +599,98 @@ export function appendRunThinking(event: RunEvent, updates: BackendProgressUpdat
     ...event,
     progressEntries,
     truncatedOutput,
+    streamItems,
+    lastStreamSeq,
+    activeResponseSegmentId,
     summary: "processing...",
   };
+}
+
+/**
+ * Append a response chunk. Extends the currently active response segment if
+ * one exists (`activeResponseSegmentId`); otherwise opens a new segment with
+ * a freshly allocated streamSeq, becoming the new active segment.
+ *
+ * A thinking or action event between deltas clears `activeResponseSegmentId`,
+ * which is what produces correct response → action → response interleaving.
+ */
+export function appendRunResponseChunk(event: RunEvent, chunk: string): RunEvent {
+  if (!chunk) return event;
+
+  const segments = event.responseSegments ?? [];
+  const activeId = event.activeResponseSegmentId ?? null;
+
+  if (activeId) {
+    const index = segments.findIndex((segment) => segment.id === activeId);
+    if (index >= 0) {
+      const existing = segments[index]!;
+      const updated: RunResponseSegment = { ...existing, chunks: [...existing.chunks, chunk] };
+      const nextSegments = [...segments];
+      nextSegments[index] = updated;
+      return { ...event, responseSegments: nextSegments };
+    }
+  }
+
+  const streamSeq = (event.lastStreamSeq ?? 0) + 1;
+  const segmentId = `response-${event.id}-${streamSeq}`;
+  const newSegment: RunResponseSegment = {
+    id: segmentId,
+    streamSeq,
+    chunks: [chunk],
+    status: "active",
+    startedAt: Date.now(),
+  };
+
+  return {
+    ...event,
+    responseSegments: [...segments, newSegment],
+    streamItems: appendStreamItem(event.streamItems ?? [], {
+      streamSeq,
+      kind: "response",
+      refId: segmentId,
+    }),
+    lastStreamSeq: streamSeq,
+    activeResponseSegmentId: segmentId,
+  };
+}
+
+/**
+ * Mark all response segments completed. Optionally rewrite the trailing
+ * segment's chunks to an authoritative final response (e.g. when the
+ * backend returns a different response than what was streamed).
+ */
+export function finalizeResponseSegments(event: RunEvent, finalResponse?: string): RunEvent {
+  const segments = event.responseSegments ?? [];
+  if (segments.length === 0) {
+    if (!finalResponse) return event;
+    const seq = (event.lastStreamSeq ?? 0) + 1;
+    const id = `response-final-${event.id}-${seq}`;
+    return {
+      ...event,
+      responseSegments: [{
+        id,
+        streamSeq: seq,
+        chunks: [finalResponse],
+        status: "completed",
+        startedAt: Date.now(),
+      }],
+      streamItems: appendStreamItem(event.streamItems ?? [], {
+        streamSeq: seq,
+        kind: "response",
+        refId: id,
+      }),
+      lastStreamSeq: seq,
+      activeResponseSegmentId: null,
+    };
+  }
+
+  const nextSegments = segments.map((segment, index) => {
+    if (index === segments.length - 1 && finalResponse != null) {
+      return { ...segment, chunks: [finalResponse], status: "completed" as const };
+    }
+    return segment.status === "active" ? { ...segment, status: "completed" as const } : segment;
+  });
+  return { ...event, responseSegments: nextSegments, activeResponseSegmentId: null };
 }
 
 export const appendRunOutput = appendRunThinking;

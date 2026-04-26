@@ -74,6 +74,11 @@ export function getAssistantContent(event: AssistantEvent | null | undefined): s
   return event.content;
 }
 
+export function getResponseSegmentText(segment: RunResponseSegment | null | undefined): string {
+  if (!segment) return "";
+  return segment.chunks.join("");
+}
+
 export interface RunToolActivity {
   id: string;
   command: string;
@@ -81,11 +86,14 @@ export interface RunToolActivity {
   startedAt: number;
   completedAt?: number | null;
   summary?: string | null;
+  /** Turn-global ordering against thinking blocks and response segments. */
+  streamSeq?: number;
 }
 
 export type RunProgressSource =
   | "reasoning"
   | "todo"
+  | "stdout"
   | "tool"
   | "activity"
   | "stderr"
@@ -98,6 +106,23 @@ export interface RunProgressBlock {
   createdAt: number;
   updatedAt: number;
   status: "active" | "completed";
+  /** Turn-global ordering against tools and response segments. Set when block first becomes visible. */
+  streamSeq?: number;
+}
+
+export interface RunResponseSegment {
+  id: string;
+  streamSeq: number;
+  chunks: string[];
+  status: "active" | "completed";
+  startedAt: number;
+}
+
+export interface RunStreamItem {
+  streamSeq: number;
+  kind: "thinking" | "action" | "response";
+  /** block.id, tool.id, or response-segment id depending on kind. */
+  refId: string;
 }
 
 export interface RunProgressEntry {
@@ -148,6 +173,14 @@ export interface RunEvent extends TimelineBaseEvent {
   errorMessage?: string | null;
   /** Links this run to its user prompt for TurnGroup rendering. */
   turnId: number;
+  /** Chronologically ordered references to thinking/action/response items. */
+  streamItems?: RunStreamItem[];
+  /** Discrete response segments — interrupted by thinking/action events. */
+  responseSegments?: RunResponseSegment[];
+  /** Monotonic counter the reducer uses to assign streamSeq across all events. */
+  lastStreamSeq?: number;
+  /** When set, the next assistant delta extends this segment; cleared by thinking/action. */
+  activeResponseSegmentId?: string | null;
 }
 
 export interface ShellEvent extends TimelineBaseEvent {

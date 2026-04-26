@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import { useTheme } from "./theme.js";
 import { Panel } from "./Panel.js";
 import { maybeRenderDiff, type DiffRenderLineType } from "./diffRenderer.js";
+import { formatLocalPathForTerminal, formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 
 type InlinePart =
   | { kind: "text"; text: string }
@@ -10,20 +11,21 @@ type InlinePart =
   | { kind: "bold"; text: string };
 
 function parseInline(text: string): InlinePart[] {
+  const formattedText = formatTerminalAnswerInline(text);
   const parts: InlinePart[] = [];
   const pat = /`([^`\n]+)`|\*\*([^*\n]+)\*\*/g;
   let last = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = pat.exec(text)) !== null) {
-    if (match.index > last) parts.push({ kind: "text", text: text.slice(last, match.index) });
-    if (match[1] !== undefined) parts.push({ kind: "code", text: match[1] });
+  while ((match = pat.exec(formattedText)) !== null) {
+    if (match.index > last) parts.push({ kind: "text", text: formattedText.slice(last, match.index) });
+    if (match[1] !== undefined) parts.push({ kind: "code", text: formatLocalPathForTerminal(match[1]) });
     if (match[2] !== undefined) parts.push({ kind: "bold", text: match[2] });
     last = pat.lastIndex;
   }
 
-  if (last < text.length) parts.push({ kind: "text", text: text.slice(last) });
-  return parts.length > 0 ? parts : [{ kind: "text", text }];
+  if (last < formattedText.length) parts.push({ kind: "text", text: formattedText.slice(last) });
+  return parts.length > 0 ? parts : [{ kind: "text", text: formattedText }];
 }
 
 export type CodeSegment = { type: "code"; lang: string; lines: string[] };

@@ -101,6 +101,16 @@ test("builds a write-enabled codex prompt for auto-edit when permissions allow i
   assert.match(prompt, /Task:/i);
 });
 
+test("codex prompts include terminal-native final answer guidance", () => {
+  const prompt = buildCodexPrompt("Explain this repo", "suggest", writePolicy);
+
+  assert.match(prompt, /Final answer style for this terminal UI/i);
+  assert.match(prompt, /short relative paths such as src\/App\.tsx/i);
+  assert.match(prompt, /Do not include absolute local paths like C:\/Users/i);
+  assert.match(prompt, /avoid web-style local Markdown links/i);
+  assert.match(prompt, /Answer simple questions simply/i);
+});
+
 test("injects project instructions before the task", () => {
   const prompt = buildCodexPrompt("Explain this repo", "suggest", writePolicy, {
     projectInstructions: {
