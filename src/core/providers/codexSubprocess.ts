@@ -170,11 +170,6 @@ export const codexSubprocessProvider: BackendProvider = {
           proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
           perf.mark("spawn_done");
 
-          proc.stdin?.write(buildCodexPrompt(prompt, options.runtime, undefined, {
-            projectInstructions: options.projectInstructions,
-          }));
-          proc.stdin?.end();
-
           proc.stdout?.on("data", (chunk: Buffer) => {
             if (cancelled || done) return;
             if (!firstChunkSeen) { firstChunkSeen = true; perf.mark("first_chunk"); }
@@ -262,6 +257,11 @@ export const codexSubprocessProvider: BackendProvider = {
             const errno = err as NodeJS.ErrnoException;
             finishError(formatCodexLaunchError(errno));
           });
+
+          proc.stdin?.write(buildCodexPrompt(prompt, options.runtime, undefined, {
+            projectInstructions: options.projectInstructions,
+          }));
+          proc.stdin?.end();
         })
         .catch((error) => {
           const errno = error as NodeJS.ErrnoException;

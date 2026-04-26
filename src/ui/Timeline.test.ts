@@ -293,6 +293,45 @@ test("timeline snapshot keeps the prompt card top border closed", () => {
   assert.doesNotMatch(topBorder ?? "", / ──╮$/);
 });
 
+test("first active run fallback immediately shows Codex thinking status", () => {
+  const items = buildTimelineItems([
+    {
+      id: 1,
+      type: "user",
+      createdAt: 1,
+      prompt: "Inspect the project",
+      turnId: 11,
+    },
+    {
+      id: 2,
+      type: "run",
+      createdAt: 2,
+      startedAt: 2,
+      durationMs: null,
+      backendId: "codex-subprocess",
+      backendLabel: "Codexa",
+      runtime: TEST_RUNTIME,
+      prompt: "Inspect the project",
+      progressEntries: [],
+      status: "running",
+      summary: "Codexa is thinking...",
+      truncatedOutput: false,
+      toolActivities: [],
+      activity: [],
+      touchedFileCount: 0,
+      errorMessage: null,
+      turnId: 11,
+    },
+  ]);
+  const renderItems = buildActiveRenderItems(items, [11], { kind: "THINKING", turnId: 11 });
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 56 });
+  const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+
+  assert.match(joined, /Codex is thinking\.\.\./);
+  assert.doesNotMatch(joined, /Running\.\.\./);
+  assert.doesNotMatch(joined, /Waiting for response/i);
+});
+
 test("keeps a frozen browse snapshot while live rows continue to arrive", () => {
   const live = createSnapshot([2, 2]);
   const browsing = pageUpTimelineViewport(createFollowTailViewport(live.totalRows), live, 3);

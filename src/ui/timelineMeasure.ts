@@ -410,8 +410,8 @@ function buildTaskStatusRow(item: Extract<RenderTimelineItem, { type: "turn" }>,
 
   // Active state — spinner + concise status
   const statusText = item.renderState.runPhase === "streaming"
-    ? "Streaming response..."
-    : "CODEXA is working...";
+    ? "Codex is streaming..."
+    : "Codex is thinking...";
 
   return createRow(
     `${item.key}-status`,
@@ -489,7 +489,7 @@ function buildThinkingRows(run: RunEvent, width: number, verbose: boolean): Time
   }
 
   if (visibleBlocks.length === 0 && run.status === "running" && recentActivity.length === 0 && !latestTool) {
-    contentRows.push([createSpan("Waiting for response...", "dim")]);
+    contentRows.push([createSpan("Codex is thinking...", "dim")]);
   }
 
   visibleBlocks.forEach((block, blockIndex) => {
@@ -1583,7 +1583,7 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
 
   if (events.length === 0 && run.status === "running") {
     rows.push(...buildCodexPlainRows(`${item.key}-codex-running`, width, [
-      [createSpan("Running...", "dim")],
+      [createSpan("Codex is thinking...", "dim")],
       [createSpan("▌", "accent")],
     ]));
   }
