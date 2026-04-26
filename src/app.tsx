@@ -124,6 +124,7 @@ import {
   isCurrentRun,
 } from "./session/chatLifecycle.js";
 import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
+import { schedulePromptRunStartAfterVisibleCommit } from "./session/promptRunSchedule.js";
 import {
   approvePlanExecution,
   beginPlanFeedback,
@@ -1784,6 +1785,7 @@ export function App({ launchArgs }: AppProps) {
       );
       return false;
     }
+    const runProvider = provider.run;
 
     if (backend === "codex-subprocess") {
       const decision = getRunGateDecision(authStatus.state, {
@@ -1835,7 +1837,7 @@ export function App({ launchArgs }: AppProps) {
           prompt: safeProviderPrompt,
           turnId,
         }),
-        summary: "Codexa is thinking...",
+        summary: "Codex is starting...",
       },
     ] });
 
@@ -1866,12 +1868,9 @@ export function App({ launchArgs }: AppProps) {
       }
 
       if (update.type === "progress") {
-        const existing = pendingLiveUpdates.find(
-          (entry): entry is Extract<PendingLiveUpdate, { type: "progress" }> =>
-            entry.type === "progress" && entry.update.id === update.update.id,
-        );
-        if (existing) {
-          existing.update = update.update;
+        const previous = pendingLiveUpdates[pendingLiveUpdates.length - 1];
+        if (previous?.type === "progress" && previous.update.id === update.update.id) {
+          previous.update = update.update;
         } else {
           pendingLiveUpdates.push(update);
         }
@@ -1879,12 +1878,9 @@ export function App({ launchArgs }: AppProps) {
       }
 
       if (update.type === "tool") {
-        const existing = pendingLiveUpdates.find(
-          (entry): entry is Extract<PendingLiveUpdate, { type: "tool" }> =>
-            entry.type === "tool" && entry.activity.id === update.activity.id,
-        );
-        if (existing) {
-          existing.activity = { ...existing.activity, ...update.activity };
+        const previous = pendingLiveUpdates[pendingLiveUpdates.length - 1];
+        if (previous?.type === "tool" && previous.activity.id === update.activity.id) {
+          previous.activity = { ...previous.activity, ...update.activity };
         } else {
           pendingLiveUpdates.push(update);
         }
@@ -1899,25 +1895,11 @@ export function App({ launchArgs }: AppProps) {
       }
     };
 
-    // Capture the workspace state before the run starts so we can diff on completion.
     let preRunSnapshot: ReturnType<typeof captureWorkspaceSnapshot> | null = null;
     let finalWorkspacePollDone = false;
-    const activityTracker = backend === "codex-subprocess"
-      ? (() => {
-        preRunSnapshot = captureWorkspaceSnapshot(workspaceRoot);
-        return createWorkspaceActivityTracker({
-          rootDir: workspaceRoot,
-          initialSnapshot: preRunSnapshot,
-          onActivity: (activity) => {
-            if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-            queueLiveUpdate({ type: "activity", activity });
-            scheduleLiveFlush();
-          },
-        });
-      })()
-      : null;
+    let activityTracker: ReturnType<typeof createWorkspaceActivityTracker> | null = null;
 
-    const flushLiveUpdates = () => {
+    const flushLiveUpdates = (): boolean => {
       perf.inc("flushes");
       if (liveFlushTimer) {
         clearTimeout(liveFlushTimer);
@@ -1927,7 +1909,7 @@ export function App({ launchArgs }: AppProps) {
       if (!isCurrentRun(activeRunIdRef.current, runId)) {
         pendingLiveUpdates = [];
         hasPendingAssistantDelta = false;
-        return;
+        return false;
       }
 
       const updates = pendingLiveUpdates;
@@ -1935,54 +1917,53 @@ export function App({ launchArgs }: AppProps) {
       hasPendingAssistantDelta = false;
 
       if (updates.length === 0) {
-        return;
+        return false;
       }
 
-      startTransition(() => {
-        for (const update of updates) {
-          if (update.type === "activity") {
-            dispatchSession({ type: "RUN_APPEND_ACTIVITY", runId, activity: update.activity });
-            continue;
-          }
-
-          if (update.type === "progress") {
-            dispatchSession({ type: "RUN_APPLY_PROGRESS_UPDATES", runId, updates: [update.update] });
-            continue;
-          }
-
-          if (update.type === "tool") {
-            dispatchSession({ type: "RUN_UPSERT_TOOL_ACTIVITY", runId, activity: update.activity });
-            continue;
-          }
-
-          if (!firstRenderFired) {
-            firstRenderFired = true;
-            perf.mark("first_render");
-          }
-          dispatchSession({
-            type: "RUN_APPEND_ASSISTANT_DELTA",
-            turnId,
-            runId,
-            chunk: update.chunk,
-            eventFactory: () => ({
-              id: createEventId(),
-              type: "assistant",
-              createdAt: Date.now(),
-              content: "",
-              contentChunks: [update.chunk],
-              turnId,
-            }),
-          });
+      for (const update of updates) {
+        if (update.type === "activity") {
+          dispatchSession({ type: "RUN_APPEND_ACTIVITY", runId, activity: update.activity });
+          continue;
         }
-      });
+
+        if (update.type === "progress") {
+          dispatchSession({ type: "RUN_APPLY_PROGRESS_UPDATES", runId, updates: [update.update] });
+          continue;
+        }
+
+        if (update.type === "tool") {
+          dispatchSession({ type: "RUN_UPSERT_TOOL_ACTIVITY", runId, activity: update.activity });
+          continue;
+        }
+
+        if (!firstRenderFired) {
+          firstRenderFired = true;
+          perf.mark("first_render");
+        }
+        dispatchSession({
+          type: "RUN_APPEND_ASSISTANT_DELTA",
+          turnId,
+          runId,
+          chunk: update.chunk,
+          eventFactory: () => ({
+            id: createEventId(),
+            type: "assistant",
+            createdAt: Date.now(),
+            content: "",
+            contentChunks: [update.chunk],
+            turnId,
+          }),
+        });
+      }
+      return true;
     };
 
-    let firstChunkPending = true;
+    let firstLiveFlushPending = true;
     const scheduleLiveFlush = () => {
       if (liveFlushTimer) return;
-      // First token: use microtask for near-instant rendering
-      if (firstChunkPending && hasPendingAssistantDelta) {
-        firstChunkPending = false;
+      // First visible event: use microtask for near-instant rendering.
+      if (firstLiveFlushPending) {
+        firstLiveFlushPending = false;
         liveFlushTimer = setTimeout(() => {}, 0); // prevent re-entry
         queueMicrotask(() => {
           liveFlushTimer = null;
@@ -1997,9 +1978,32 @@ export function App({ launchArgs }: AppProps) {
       }, interval);
     };
 
-    perf.mark("provider_run_start");
     let stopProviderRun: (() => void) | undefined;
-    stopProviderRun = provider.run(
+    let cancelScheduledProviderStart: (() => void) | null = null;
+    let providerStartCancelled = false;
+
+    const startProviderRun = () => {
+      if (providerStartCancelled || !isCurrentRun(activeRunIdRef.current, runId)) {
+        return;
+      }
+
+      // Capture the workspace state after the visible run has had a chance to
+      // render, so first-prompt filesystem work cannot block initial progress.
+      if (backend === "codex-subprocess") {
+        preRunSnapshot = captureWorkspaceSnapshot(workspaceRoot);
+        activityTracker = createWorkspaceActivityTracker({
+          rootDir: workspaceRoot,
+          initialSnapshot: preRunSnapshot,
+          onActivity: (activity) => {
+            if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+            queueLiveUpdate({ type: "activity", activity });
+            scheduleLiveFlush();
+          },
+        });
+      }
+
+      perf.mark("provider_run_start");
+      stopProviderRun = runProvider(
           safeProviderPrompt,
           { runtime: runtimeForTurn, workspaceRoot, projectInstructions },
           {
@@ -2017,6 +2021,10 @@ export function App({ launchArgs }: AppProps) {
         onToolActivity: (activity) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
           queueLiveUpdate({ type: "tool", activity });
+          if (activity.status === "running") {
+            flushLiveUpdates();
+            return;
+          }
           if (fastCleanupRun && !blockedCleanupFailureSurfaced) {
             const blockedCleanupFailure = getBlockedCleanupFailure(activity);
             if (blockedCleanupFailure) {
@@ -2051,58 +2059,76 @@ export function App({ launchArgs }: AppProps) {
             }
           }
 
-          flushLiveUpdates();
-          const safeResponse = sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 });
-          setConversationChars((count) => count + safeResponse.length);
+          const flushedLiveUpdates = flushLiveUpdates();
+          const finalizeResponse = () => {
+            if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+            const safeResponse = sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 });
+            setConversationChars((count) => count + safeResponse.length);
 
-          // Validate response quality for write-intent/destructive prompts:
-          // If the backend returned filler like "Hello." instead of execution
-          // feedback, inject a warning so the user isn't silently misled.
-          if (effectiveMode !== "suggest") {
-            const hollow = detectHollowResponse(safeProviderPrompt, safeResponse);
-            if (hollow.isHollow) {
-              const formatted = formatHollowResponse(hollow, safeResponse);
-              void finalizePromptRun(runId, turnId, "completed", undefined, formatted);
-              return;
+            // Validate response quality for write-intent/destructive prompts:
+            // If the backend returned filler like "Hello." instead of execution
+            // feedback, inject a warning so the user isn't silently misled.
+            if (effectiveMode !== "suggest") {
+              const hollow = detectHollowResponse(safeProviderPrompt, safeResponse);
+              if (hollow.isHollow) {
+                const formatted = formatHollowResponse(hollow, safeResponse);
+                void finalizePromptRun(runId, turnId, "completed", undefined, formatted);
+                return;
+              }
             }
-          }
 
-          // If the streamed content matches the sanitized response (after
-          // normalizing whitespace), pass undefined so FINALIZE_RUN preserves
-          // the already-rendered streamed content — avoiding a visual flash.
-          const normalizeWs = (s: string) => s.replace(/\s+/g, " ").trim();
-          const streamedNorm = normalizeWs(streamedAssistantContent);
-          const responseNorm = normalizeWs(safeResponse);
-          const finalResponse =
-            streamedNorm && (
-              streamedNorm === responseNorm ||
-              (responseNorm.startsWith(streamedNorm) && streamedNorm.length / responseNorm.length > 0.8)
-            )
-              ? undefined
-              : safeResponse;
-          void finalizePromptRun(runId, turnId, "completed", undefined, finalResponse);
+            // If the streamed content matches the sanitized response (after
+            // normalizing whitespace), pass undefined so FINALIZE_RUN preserves
+            // the already-rendered streamed content — avoiding a visual flash.
+            const normalizeWs = (s: string) => s.replace(/\s+/g, " ").trim();
+            const streamedNorm = normalizeWs(streamedAssistantContent);
+            const responseNorm = normalizeWs(safeResponse);
+            const finalResponse =
+              streamedNorm && (
+                streamedNorm === responseNorm ||
+                (responseNorm.startsWith(streamedNorm) && streamedNorm.length / responseNorm.length > 0.8)
+              )
+                ? undefined
+                : safeResponse;
+            void finalizePromptRun(runId, turnId, "completed", undefined, finalResponse);
+          };
+
+          if (flushedLiveUpdates) {
+            setTimeout(finalizeResponse, 0);
+          } else {
+            finalizeResponse();
+          }
         },
         onError: (message, rawOutput) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
-          flushLiveUpdates();
-          const safeMessage = sanitizeTerminalOutput(message);
-          const safeRawOutput = sanitizeTerminalOutput(rawOutput ?? "");
-          const combinedOutput = [safeMessage, safeRawOutput].filter(Boolean).join("\n");
-          const errorMessage = isLikelyAuthFailure(combinedOutput)
-            ? [
-              "Codexa reported an authentication/session error.",
-              "Recovery:",
-              "  codex login",
-              "",
-              `Raw error: ${safeMessage}`,
-            ].join("\n")
-            : safeMessage;
+          const flushedLiveUpdates = flushLiveUpdates();
+          const finalizeError = () => {
+            if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+            const safeMessage = sanitizeTerminalOutput(message);
+            const safeRawOutput = sanitizeTerminalOutput(rawOutput ?? "");
+            const combinedOutput = [safeMessage, safeRawOutput].filter(Boolean).join("\n");
+            const errorMessage = isLikelyAuthFailure(combinedOutput)
+              ? [
+                "Codexa reported an authentication/session error.",
+                "Recovery:",
+                "  codex login",
+                "",
+                `Raw error: ${safeMessage}`,
+              ].join("\n")
+              : safeMessage;
 
-          if (isLikelyAuthFailure(combinedOutput)) {
-            setRuntimeUnauthenticated("Auth/session failure detected in neural link.");
+            if (isLikelyAuthFailure(combinedOutput)) {
+              setRuntimeUnauthenticated("Auth/session failure detected in neural link.");
+            }
+
+            void finalizePromptRun(runId, turnId, "failed", errorMessage);
+          };
+
+          if (flushedLiveUpdates) {
+            setTimeout(finalizeError, 0);
+          } else {
+            finalizeError();
           }
-
-          void finalizePromptRun(runId, turnId, "failed", errorMessage);
         },
         onProgress: (update) => {
           perf.inc("progress_updates");
@@ -2119,9 +2145,14 @@ export function App({ launchArgs }: AppProps) {
           scheduleLiveFlush();
         },
       },
-    );
+      );
+    };
+
+    cancelScheduledProviderStart = schedulePromptRunStartAfterVisibleCommit(startProviderRun);
 
     cleanupRef.current = () => {
+      providerStartCancelled = true;
+      cancelScheduledProviderStart?.();
       flushLiveUpdates();
       // Do one final sync poll before stopping the tracker to capture
       // any last-moment file changes that were in-flight.

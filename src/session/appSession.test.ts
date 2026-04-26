@@ -36,10 +36,14 @@ function makeAssistantEvent(turnId: number, content: string): AssistantEvent {
   return { id: 3, type: "assistant", createdAt: 3, content, contentChunks: [], turnId };
 }
 
-function makeProgressUpdate(id: string, text: string): BackendProgressUpdate {
+function makeProgressUpdate(
+  id: string,
+  text: string,
+  source: BackendProgressUpdate["source"] = "reasoning",
+): BackendProgressUpdate {
   return {
     id,
-    source: "reasoning",
+    source,
     text,
   };
 }
@@ -235,6 +239,80 @@ test("reducer preserves response action response ordering across dispatched call
   assert.deepEqual(runEvent.streamItems?.map((item) => item.kind), ["response", "action", "response"]);
   assert.equal(runEvent.responseSegments?.[0]?.chunks.join(""), "First segment.");
   assert.equal(runEvent.responseSegments?.[1]?.chunks.join(""), "Second segment.");
+});
+
+test("first prompt lifecycle exposes progress before finalization and preserves chronological stream order", () => {
+  const turnId = 33;
+  const userEvent = makeUserEvent(turnId);
+  const runEvent = { ...makeRunEvent(turnId), summary: "Codex is starting..." };
+  let state = createInitialSessionState();
+
+  state = reduceSessionState(state, {
+    type: "UI_ACTION",
+    action: { type: "PROMPT_RUN_STARTED", turnId },
+  });
+  state = reduceSessionState(state, {
+    type: "SET_ACTIVE_EVENTS",
+    events: [userEvent, runEvent],
+  });
+
+  assert.equal(state.uiState.kind, "THINKING");
+  assert.deepEqual(state.activeEvents.map((event) => event.type), ["user", "run"]);
+  assert.equal((state.activeEvents[1] as RunEvent).summary, "Codex is starting...");
+
+  state = reduceSessionState(state, {
+    type: "RUN_APPLY_PROGRESS_UPDATES",
+    runId: 2,
+    updates: [makeProgressUpdate("think-1", "Codex is checking project structure.")],
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_UPSERT_TOOL_ACTIVITY",
+    runId: 2,
+    activity: {
+      id: "tool-1",
+      command: "Get-ChildItem",
+      status: "running",
+      startedAt: 10,
+    },
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_APPLY_PROGRESS_UPDATES",
+    runId: 2,
+    updates: [makeProgressUpdate("think-2", "Codex is validating the startup flow.")],
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_APPEND_ASSISTANT_DELTA",
+    turnId,
+    runId: 2,
+    chunk: "Final answer.",
+    eventFactory: () => makeAssistantEvent(turnId, "Final answer."),
+  });
+
+  const activeRun = state.activeEvents.find((event): event is RunEvent => event.type === "run");
+  assert.ok(activeRun);
+  assert.deepEqual(
+    activeRun.streamItems?.map((item) => item.kind),
+    ["thinking", "action", "thinking", "response"],
+  );
+
+  state = reduceSessionState(state, {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "completed",
+    response: undefined,
+    assistantFactory: () => makeAssistantEvent(turnId, ""),
+  });
+
+  const finalizedRun = state.staticEvents.find((event): event is RunEvent => event.type === "run");
+  const finalizedAssistant = state.staticEvents.find((event): event is AssistantEvent => event.type === "assistant");
+  assert.ok(finalizedRun);
+  assert.ok(finalizedAssistant);
+  assert.deepEqual(
+    finalizedRun.streamItems?.map((item) => item.kind),
+    ["thinking", "action", "thinking", "response"],
+  );
+  assert.equal(finalizedAssistant.content, "Final answer.");
 });
 
 test("finalized runs retain their runtime snapshot after unrelated state changes", () => {

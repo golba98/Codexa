@@ -9,10 +9,10 @@ export function measureRunFooterRows(): number {
 }
 
 export function getRunFooterStatus(uiState: UIState): string {
-  if (uiState.kind === "THINKING") return "Analysing request";
-  if (uiState.kind === "RESPONDING") return "Streaming response";
-  if (uiState.kind === "SHELL_RUNNING") return "Executing shell command";
-  return "Working";
+  if (uiState.kind === "THINKING") return "Codex is thinking";
+  if (uiState.kind === "RESPONDING") return "Codex is streaming";
+  if (uiState.kind === "SHELL_RUNNING") return "Codex is running command";
+  return "Codex is working";
 }
 
 interface RunFooterProps {

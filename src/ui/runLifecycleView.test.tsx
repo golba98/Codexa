@@ -119,7 +119,7 @@ test("collapses composer during thinking so input buffer artifacts are removed",
   await sleep();
   frame = stripAnsi(output);
   assert.doesNotMatch(frame, /draft prompt/i);
-  assert.match(frame, /analysing request/i);
+  assert.match(frame, /Codex is thinking/i);
 
   instance.unmount();
 });

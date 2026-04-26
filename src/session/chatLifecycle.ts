@@ -522,7 +522,7 @@ function materializeProgressEntry(
 }
 
 /** Sources that surface as user-facing thinking items. */
-const THINKING_SOURCES = new Set(["reasoning", "todo"]);
+const THINKING_SOURCES = new Set(["reasoning", "todo", "transcript"]);
 
 export function appendRunThinking(event: RunEvent, updates: BackendProgressUpdate[]): RunEvent {
   if (updates.length === 0) return event;

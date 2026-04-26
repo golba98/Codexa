@@ -151,7 +151,7 @@ test("does not duplicate stream items when tool and thinking entries are patched
 });
 
 test("raw tool and terminal progress sources do not become thinking stream items", () => {
-  const rawSources: BackendProgressUpdate["source"][] = ["tool", "stdout", "stderr", "activity", "transcript"];
+  const rawSources: BackendProgressUpdate["source"][] = ["tool", "stdout", "stderr", "activity"];
   for (const source of rawSources) {
     const run = appendRunThinking(
       createRunEvent({
@@ -168,6 +168,55 @@ test("raw tool and terminal progress sources do not become thinking stream items
     assert.equal(run.streamItems?.length, 0, `${source} should not render as thinking`);
     assert.equal(run.progressEntries[0]?.blocks.length, 2);
   }
+});
+
+test("transcript progress becomes a visible thinking stream item", () => {
+  const run = appendRunThinking(
+    createRunEvent({
+      id: 41,
+      backendId: "codex-subprocess",
+      backendLabel: "Codex CLI",
+      runtime: TEST_RUNTIME,
+      prompt: "Hello",
+      turnId: 41,
+    }),
+    [makeProgressUpdateWithSource("transcript-1", "transcript", "Codex is checking project structure...")],
+  );
+
+  assert.deepEqual(run.streamItems?.map((item) => item.kind), ["thinking"]);
+  assert.equal(run.progressEntries[0]?.blocks[0]?.streamSeq, 1);
+  assert.equal(run.progressEntries[0]?.blocks[0]?.text, "Codex is checking project structure...");
+});
+
+test("preserves progress action progress action response stream ordering", () => {
+  let run = createRunEvent({
+    id: 42,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Hello",
+    turnId: 42,
+  });
+
+  run = appendRunThinking(run, [makeProgressUpdateWithSource("transcript-1", "transcript", "Codex is checking project structure...")]);
+  run = upsertRunToolActivity(run, {
+    id: "tool-1",
+    command: "Get-ChildItem -Force",
+    status: "completed",
+    startedAt: 10,
+    completedAt: 20,
+  });
+  run = appendRunThinking(run, [makeProgressUpdate("reason-1", "Codex is validating the result...")]);
+  run = upsertRunToolActivity(run, {
+    id: "tool-2",
+    command: "bun test",
+    status: "running",
+    startedAt: 30,
+  });
+  run = appendRunResponseChunk(run, "Done.");
+
+  assert.deepEqual(run.streamItems?.map((item) => item.kind), ["thinking", "action", "thinking", "action", "response"]);
+  assert.deepEqual(run.streamItems?.map((item) => item.streamSeq), [1, 2, 3, 4, 5]);
 });
 
 test("caps streamed run output and marks truncation", () => {

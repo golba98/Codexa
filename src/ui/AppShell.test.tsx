@@ -196,8 +196,15 @@ test("larger terminals keep the composer metadata row", async () => {
 test("cramped busy state uses the run footer in app composition", async () => {
   const output = await renderShell(80, 24, { kind: "THINKING", turnId: 1 });
 
-  assert.match(output, /Analysing request/i);
+  assert.match(output, /Codex is thinking/i);
   assert.doesNotMatch(output, /CODEXA AGENT/);
+});
+
+test("cramped streaming state avoids response-labelled footer text", async () => {
+  const output = await renderShell(80, 24, { kind: "RESPONDING", turnId: 1 });
+
+  assert.match(output, /Codex is streaming/i);
+  assert.doesNotMatch(output, /Streaming response/i);
 });
 
 test("non-main screens center the active panel and keep the composer hidden", async () => {

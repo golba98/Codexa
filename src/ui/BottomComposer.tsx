@@ -197,9 +197,9 @@ export function measureBottomComposerRows({
 }
 
 function getStatusLine(uiState: UIState): string | null {
-  if (uiState.kind === "THINKING") return "✧ Analysing request";
-  if (uiState.kind === "RESPONDING") return "✧ Streaming response";
-  if (uiState.kind === "SHELL_RUNNING") return "✧ Executing shell command";
+  if (uiState.kind === "THINKING") return "✧ Codex is thinking";
+  if (uiState.kind === "RESPONDING") return "✧ Codex is streaming";
+  if (uiState.kind === "SHELL_RUNNING") return "✧ Codex is running command";
   if (uiState.kind === "AWAITING_USER_ACTION") return "✧ waiting for your answer";
   if (uiState.kind === "ERROR") return uiState.message;
   return null;
