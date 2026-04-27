@@ -291,13 +291,13 @@ function ActionEventCard({
         <Text color={tool.status === "failed" ? theme.ERROR : tool.status === "completed" ? theme.SUCCESS : theme.INFO}>
           {`${tool.status === "failed" ? "✕" : tool.status === "completed" ? "✓" : "•"} `}
         </Text>
-        <Text color={dim ? theme.DIM : theme.TEXT}>{actionLabel ?? actionNormalized}</Text>
+        <Text color={dim ? theme.DIM : theme.TEXT} wrap="truncate">{actionLabel ?? actionNormalized}</Text>
         {tool.completedAt && (
           <Text color={theme.DIM}>  {formatDuration(tool.completedAt - tool.startedAt)}</Text>
         )}
       </Box>
       {actionLabel && (
-        <Text color={theme.MUTED} wrap="wrap">  {actionNormalized}</Text>
+        <Text color={theme.MUTED} wrap="truncate">  {actionNormalized}</Text>
       )}
       {isLiveCursorTarget && tool.status === "running" && (
         <Text color={theme.ACCENT}>  ▌</Text>
@@ -305,6 +305,17 @@ function ActionEventCard({
     </DashCard>
   );
 }
+
+const MemoizedActionEventCard = memo(ActionEventCard, (prev, next) =>
+  prev.tool.id            === next.tool.id            &&
+  prev.tool.status        === next.tool.status        &&
+  prev.tool.command       === next.tool.command       &&
+  prev.tool.completedAt   === next.tool.completedAt   &&
+  prev.tool.summary       === next.tool.summary       &&
+  prev.cols               === next.cols               &&
+  prev.opacity            === next.opacity            &&
+  prev.isLiveCursorTarget === next.isLiveCursorTarget
+);
 
 function CodexThinkingBlock({
   block,
@@ -443,7 +454,7 @@ function StreamEventList({
               />
             )}
             {event.kind === "action" && (
-              <ActionEventCard
+              <MemoizedActionEventCard
                 cols={cols}
                 tool={event.tool}
                 opacity={opacity}
