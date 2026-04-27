@@ -150,8 +150,16 @@ function createRow(key: string, spans: TimelineRowSpan[], width: number): Timeli
   };
 }
 
+const _blankRowCache = new Map<string, TimelineRow>();
+
 function createBlankRow(key: string, width: number): TimelineRow {
-  return createRow(key, [createSpan(" ".repeat(Math.max(0, width)))], width);
+  const cacheKey = `${key}:${width}`;
+  let row = _blankRowCache.get(cacheKey);
+  if (!row) {
+    row = createRow(key, [createSpan(" ".repeat(Math.max(0, width)))], width);
+    _blankRowCache.set(cacheKey, row);
+  }
+  return row;
 }
 
 function wrapStyledSpans(spans: TimelineRowSpan[], width: number): TimelineRowSpan[][] {
@@ -523,13 +531,6 @@ function buildThinkingRows(run: RunEvent, width: number, verbose: boolean): Time
         createSpan(`… (${overflowCount} more line${overflowCount === 1 ? "" : "s"})`, "dim"),
       ]);
     }
-
-    if (isLive) {
-      contentRows.push([
-        createSpan("  │ ", "accent"),
-        createSpan("▌", "accent"),
-      ]);
-    }
   });
 
   if (run.status === "running" && latestTool) {
@@ -877,6 +878,7 @@ let _streamingRowCache: StreamingRowCache | null = null;
 const _staticRowCache = new Map<string, TimelineRow[]>();
 const STREAMING_BLOCK_ROW_CACHE_LIMIT = 200;
 let _streamingBlockRowCache = new Map<string, TimelineRow[]>();
+const _completedActionRowCache = new Map<string, TimelineRow[]>();
 let _wrappedRowCache = new WeakMap<TimelineRow, Map<string, TimelineRow>>();
 const _wrappedBlankRowCache = new Map<string, TimelineRow>();
 interface ActionDisplayDescriptor {
@@ -934,7 +936,9 @@ function getCachedStreamingBlockRows(cacheKey: string, build: () => TimelineRow[
 export function __clearTimelineMeasureCachesForTests(): void {
   _streamingRowCache = null;
   _staticRowCache.clear();
+  _blankRowCache.clear();
   _streamingBlockRowCache.clear();
+  _completedActionRowCache.clear();
   _wrappedRowCache = new WeakMap<TimelineRow, Map<string, TimelineRow>>();
   _wrappedBlankRowCache.clear();
   _actionDisplayCache.clear();
@@ -1567,16 +1571,29 @@ export function buildActionEventRows(params: {
     actionDisplayToken(descriptor),
   ]);
 
-  const cached = _streamingBlockRowCache.get(cacheKey);
-  renderDebug.traceFlickerEvent("actionRowBuild", {
-    cache: cached ? "hit" : "miss",
-    actionId: tool.id,
-    status: tool.status,
-    rowKey: params.keyPrefix,
-    displayedToken: actionDisplayToken(descriptor),
-  });
+  const isCompleted = tool.status !== "running";
+  if (isCompleted) {
+    const cached = _completedActionRowCache.get(cacheKey);
+    renderDebug.traceFlickerEvent("actionRowBuild", {
+      cache: cached ? "hit-completed" : "miss-completed",
+      actionId: tool.id,
+      status: tool.status,
+      rowKey: params.keyPrefix,
+      displayedToken: actionDisplayToken(descriptor),
+    });
+    if (cached) return cached;
+  } else {
+    const cached = _streamingBlockRowCache.get(cacheKey);
+    renderDebug.traceFlickerEvent("actionRowBuild", {
+      cache: cached ? "hit-streaming" : "miss-streaming",
+      actionId: tool.id,
+      status: tool.status,
+      rowKey: params.keyPrefix,
+      displayedToken: actionDisplayToken(descriptor),
+    });
+  }
 
-  return getCachedStreamingBlockRows(cacheKey, () => {
+  const buildActionRows = () => {
     const contentWidth = Math.max(1, params.width - 4);
     const contentRows: TimelineRowSpan[][] = [];
 
@@ -1612,10 +1629,6 @@ export function buildActionEventRows(params: {
       });
     }
 
-    if (descriptor.showLiveCursor) {
-      contentRows.push([createSpan("▌", "accent")]);
-    }
-
     return buildDashCardRows({
       keyPrefix: params.keyPrefix,
       width: params.width,
@@ -1623,7 +1636,15 @@ export function buildActionEventRows(params: {
       borderTone: descriptor.borderTone,
       contentRows: contentRows.length > 0 ? contentRows : [[createSpan(" ")]],
     });
-  });
+  };
+
+  if (isCompleted) {
+    const rows = buildActionRows();
+    _completedActionRowCache.set(cacheKey, rows);
+    return rows;
+  }
+
+  return getCachedStreamingBlockRows(cacheKey, buildActionRows);
 }
 
 function buildCodexResponseRows(params: {
@@ -1676,10 +1697,6 @@ function buildCodexResponseRows(params: {
         [createSpan(`… (${hiddenRowCount} line${hiddenRowCount === 1 ? "" : "s"} above)`, "dim")],
         ...responseRows.slice(-COMPACT_STREAMING_TAIL_CAP),
       ];
-    }
-
-    if (params.isLive && segmentStreaming) {
-      responseRows.push([createSpan("▌", "accent")]);
     }
 
     return buildCodexPlainRows(params.keyPrefix, params.width, responseRows);
