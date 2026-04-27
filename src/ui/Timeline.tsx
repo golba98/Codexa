@@ -10,6 +10,7 @@ import type {
   UIState,
   UserPromptEvent,
 } from "../session/types.js";
+import * as renderDebug from "../core/perf/renderDebug.js";
 import { getShellWidth, type Layout } from "./layout.js";
 import type { TimelineRow, TimelineSnapshot, TimelineTone } from "./timelineMeasure.js";
 import { buildTimelineSnapshot } from "./timelineMeasure.js";
@@ -652,6 +653,11 @@ function getToneColor(theme: ReturnType<typeof useTheme>, tone: TimelineTone | u
 }
 
 const TimelineRowView = memo(function TimelineRowView({ row }: { row: TimelineRow }) {
+  renderDebug.useRenderDebug("TimelineRow", {
+    rowKey: row.key,
+    row,
+  });
+
   const theme = useTheme();
 
   return (
@@ -673,6 +679,19 @@ const TimelineRowView = memo(function TimelineRowView({ row }: { row: TimelineRo
 }, (prev, next) => prev.row === next.row);
 
 export const Timeline = memo(function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows, verboseMode = false }: TimelineProps) {
+  renderDebug.useRenderDebug("Transcript", {
+    staticEvents,
+    activeEvents,
+    staticEventsLength: staticEvents.length,
+    activeEventsLength: activeEvents.length,
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+    uiStateKind: uiState.kind,
+    viewportRows,
+    verboseMode,
+  });
+
   const { stdin } = useStdin();
   const staticItems = useMemo(() => buildTimelineItems(staticEvents), [staticEvents]);
   const activeItems = useMemo(() => buildTimelineItems(activeEvents), [activeEvents]);

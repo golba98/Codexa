@@ -114,6 +114,7 @@ import type { BackendProgressUpdate, BackendProvider } from "./core/providers/ty
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
+import * as renderDebug from "./core/perf/renderDebug.js";
 import type { RunEvent, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
 import {
   buildFollowUpPrompt,
@@ -161,7 +162,6 @@ import {
 } from "./ui/themeFlow.js";
 import { isBusy as isUiBusy } from "./session/types.js";
 import { AppShell } from "./ui/AppShell.js";
-import { BUSY_STATUS_FRAME_MS, getBusyStatusFrame } from "./ui/busyStatusAnimation.js";
 
 let nextEventId = 0;
 let nextTurnId = 0;
@@ -184,29 +184,6 @@ function createEventId(): number {
 
 function createTurnId(): number {
   return nextTurnId++;
-}
-
-function useBusyStatusFrame(isBusy: boolean): string {
-  const [frameIndex, setFrameIndex] = useState(0);
-
-  useEffect(() => {
-    if (!isBusy) {
-      setFrameIndex(0);
-      return;
-    }
-
-    setFrameIndex(0);
-    const timer = setInterval(() => {
-      setFrameIndex((current) => current + 1);
-    }, BUSY_STATUS_FRAME_MS);
-    timer.unref?.();
-
-    return () => {
-      clearInterval(timer);
-    };
-  }, [isBusy]);
-
-  return getBusyStatusFrame(frameIndex);
 }
 
 function createInitialAuthStatus(): CodexAuthProbeResult {
@@ -311,11 +288,14 @@ export function App({ launchArgs }: AppProps) {
     // \x1b[?1000h: Enable basic mouse reporting (click/scroll)
     // \x1b[?1006h: Enable SGR extended mouse reporting (high-res coords)
     if (mouseCapture) {
+      renderDebug.traceTerminalWrite("stdout", "src/app.tsx:mouseCapture.enable", "\x1b[?1000h\x1b[?1006h");
       stdout.write("\x1b[?1000h\x1b[?1006h");
     } else {
+      renderDebug.traceTerminalWrite("stdout", "src/app.tsx:mouseCapture.disable", "\x1b[?1000l\x1b[?1006l");
       stdout.write("\x1b[?1000l\x1b[?1006l");
     }
     return () => {
+      renderDebug.traceTerminalWrite("stdout", "src/app.tsx:mouseCapture.cleanup", "\x1b[?1000l\x1b[?1006l");
       stdout.write("\x1b[?1000l\x1b[?1006l");
     };
   }, [mouseCapture, stdout]);
@@ -394,7 +374,6 @@ export function App({ launchArgs }: AppProps) {
   cursorRef.current = cursor;
 
   const busy = isUiBusy(uiState);
-  const busyStatusFrame = useBusyStatusFrame(busy);
   const busyRef = useRef(busy);
   busyRef.current = busy;
   const modelCapabilitiesBusyRef = useRef(modelCapabilitiesBusy);
@@ -430,6 +409,25 @@ export function App({ launchArgs }: AppProps) {
     terminalLayout,
     uiState,
   ]);
+
+  renderDebug.useRenderDebug("Root", {
+    screen,
+    uiStateKind: uiState.kind,
+    staticEvents,
+    activeEvents,
+    activeEventsLength: activeEvents.length,
+    inputValue,
+    cursor,
+    busy,
+    composerRows,
+    cols: terminalLayout.cols,
+    rows: terminalLayout.rows,
+    layoutEpoch: terminalLayout.layoutEpoch,
+    planFlowKind: planFlow.kind,
+    mode,
+    model,
+    reasoningLevel,
+  });
 
   const provider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
 
@@ -2662,7 +2660,6 @@ export function App({ launchArgs }: AppProps) {
         planMode={planMode}
         tokensUsed={estimateTokens(conversationChars)}
         modelSpec={currentModelSpec}
-        busyStatusFrame={busyStatusFrame}
         value={inputValue}
         cursor={cursor}
         onChangeInput={handleChangeInput}
@@ -2699,7 +2696,6 @@ export function App({ launchArgs }: AppProps) {
     planMode,
     conversationChars,
     currentModelSpec,
-    busyStatusFrame,
     inputValue,
     cursor,
     handleChangeInput,

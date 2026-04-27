@@ -6,9 +6,11 @@ import test from "node:test";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-test("busy status text is pure and has no local animation timer", () => {
+test("busy status text owns the local animation timer", () => {
   const source = readFileSync(join(here, "AnimatedStatusText.tsx"), "utf8");
 
-  assert.doesNotMatch(source, /setInterval|setTimeout|useEffect|useState/);
+  assert.match(source, /setInterval/);
+  assert.match(source, /useEffect/);
+  assert.match(source, /useState/);
   assert.doesNotMatch(source, /useAnimatedDots|useThrottledValue/);
 });

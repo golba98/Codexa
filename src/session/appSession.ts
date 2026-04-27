@@ -18,6 +18,7 @@ import {
 import type { RunFileActivity } from "../core/workspaceActivity.js";
 import type { RunToolActivity } from "./types.js";
 import type { LiveRenderUpdate } from "./liveRenderScheduler.js";
+import * as renderDebug from "../core/perf/renderDebug.js";
 
 export interface SessionState {
   staticEvents: TimelineEvent[];
@@ -376,6 +377,10 @@ export function useAppSessionState() {
       const queued = queueRef.current.splice(0, queueRef.current.length);
       if (queued.length === 0) return;
 
+      renderDebug.traceTimelineUpdate({
+        queuedActions: queued.length,
+        actionTypes: queued.map((item) => item.type),
+      });
       setState((current) => queued.reduce(reduceSessionState, current));
     });
   }, []);

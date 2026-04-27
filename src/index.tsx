@@ -3,6 +3,7 @@ import { render, type Instance, type RenderOptions } from "ink";
 import { App } from "./app.js";
 import { parseLaunchArgs, type LaunchArgs } from "./config/launchArgs.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
+import * as renderDebug from "./core/perf/renderDebug.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 
 // \x1b[2J clears the visible viewport but on Windows Terminal it pushes the
@@ -113,9 +114,21 @@ export function startApp({
     process.on("exit", handler);
   },
 }: Partial<StartAppDependencies> = {}): StartAppResult {
+  renderDebug.configureRenderDebug(env);
+
   if (activeRoot) {
     return { started: true, exitCode: 0 };
   }
+
+  const writeStdout = (chunk: string, source: string): boolean => {
+    renderDebug.traceTerminalWrite("stdout", source, chunk);
+    return stdout.write(chunk);
+  };
+
+  const writeStderr = (chunk: string, source: string): boolean => {
+    renderDebug.traceTerminalWrite("stderr", source, chunk);
+    return stderr.write(chunk);
+  };
 
   const capability = getTerminalCapability({
     stdinIsTTY: Boolean(stdin.isTTY),
@@ -125,13 +138,13 @@ export function startApp({
   });
 
   if (!capability.supported) {
-    stderr.write(`${capability.message}\n`);
+    writeStderr(`${capability.message}\n`, "src/index.tsx:unsupportedTerminal");
     return { started: false, exitCode: 1 };
   }
 
   const parsedLaunchArgs = parseLaunchArgs(argv);
   if (!parsedLaunchArgs.ok) {
-    stderr.write(`${parsedLaunchArgs.error}\n`);
+    writeStderr(`${parsedLaunchArgs.error}\n`, "src/index.tsx:launchArgs");
     return { started: false, exitCode: 1 };
   }
   const launchArgs: LaunchArgs = parsedLaunchArgs.value;
@@ -143,7 +156,8 @@ export function startApp({
   // NOTE: Mouse reporting (\x1b[?1000h / \x1b[?1006h) is NOT enabled here.
   // It is managed exclusively by the React app (app.tsx) and defaults to OFF
   // so native terminal drag-selection and copy work without any special steps.
-  stdout.write(`${SET_TERMINAL_TITLE}${HARD_REPAINT_SEQUENCE}\x1b[?2004h`);
+  renderDebug.traceTerminalClear("src/index.tsx:startup", { mode: "hard" });
+  writeStdout(`${SET_TERMINAL_TITLE}${HARD_REPAINT_SEQUENCE}\x1b[?2004h`, "src/index.tsx:startup");
 
   let cleanupDone = false;
   let repaintArmed = false;
@@ -154,7 +168,8 @@ export function startApp({
   let pendingRepaintMode: RepaintMode = "soft";
 
   const performHardRepaint = () => {
-    stdout.write(HARD_REPAINT_SEQUENCE);
+    renderDebug.traceTerminalClear("src/index.tsx:performHardRepaint", { mode: "hard" });
+    writeStdout(HARD_REPAINT_SEQUENCE, "src/index.tsx:performHardRepaint");
     if (inkInstance) {
       // Reset ALL Ink output state BEFORE calling clear().
       // Ink.clear() internally calls log.sync(this.lastOutputToRender || …)
@@ -167,6 +182,7 @@ export function startApp({
       inkInstance.lastOutputHeight = 0;
     }
     if (renderHandle) {
+      renderDebug.traceTerminalClear("src/index.tsx:performHardRepaint.renderHandleClear", { mode: "inkClear" });
       renderHandle.clear();
     }
     // Do NOT call onRender() here — let React's own re-render cycle
@@ -208,7 +224,8 @@ export function startApp({
         // viewport clear, preserving busy-state stability during ordinary
         // resize/layout updates.
         if (repaintMode === "recovery") {
-          stdout.write(VIEWPORT_CLEAR_SEQUENCE);
+          renderDebug.traceTerminalClear("src/index.tsx:scheduleRepaint", { mode: "viewportRecovery" });
+          writeStdout(VIEWPORT_CLEAR_SEQUENCE, "src/index.tsx:scheduleRepaint");
         }
 
         // Reset ALL Ink output state BEFORE calling clear().
@@ -222,6 +239,7 @@ export function startApp({
         inkInstance.lastOutputHeight = 0;
 
         if (repaintMode === "recovery") {
+          renderDebug.traceTerminalClear("src/index.tsx:scheduleRepaint.renderHandleClear", { mode: "inkClear" });
           renderHandle.clear();
         }
 
@@ -256,6 +274,7 @@ export function startApp({
         }, 350);
       } else if (renderHandle && repaintMode === "recovery") {
         // Fallback recovery path: no Ink instance resolved (e.g. test mock).
+        renderDebug.traceTerminalClear("src/index.tsx:scheduleRepaint.fallbackClear", { mode: "inkClear" });
         renderHandle.clear();
       } else if (repaintMode === "recovery") {
         pendingRecoveryRepaint = true;
@@ -264,6 +283,12 @@ export function startApp({
   };
 
   const onResize = () => {
+    renderDebug.traceEvent("terminal", "resize", {
+      cols: stdout.columns,
+      rows: stdout.rows,
+      invalid: hasInvalidRestoreDimensions(stdout),
+    });
+
     if (hasInvalidRestoreDimensions(stdout)) {
       // Transient invalid dimensions (e.g. during maximize/restore on
       // Windows).  Don't clear the screen or reset Ink's cache — we want
@@ -313,16 +338,16 @@ export function startApp({
     stdout.off("resize", onResize);
     renderHandle?.cleanup();
     // Restore terminal state: disable mouse reporting and bracketed paste.
-    stdout.write(`${DISABLE_TRANSCRIPT_WHEEL_MODE}\x1b[?2004l`);
+    writeStdout(`${DISABLE_TRANSCRIPT_WHEEL_MODE}\x1b[?2004l`, "src/index.tsx:cleanup");
     activeRoot = null;
   };
 
   const handleFatal = (error: unknown) => {
     cleanup();
     if (error instanceof Error) {
-      stderr.write(`${error.stack || error.message}\n`);
+      writeStderr(`${error.stack || error.message}\n`, "src/index.tsx:fatalError");
     } else if (error) {
-      stderr.write(`${String(error)}\n`);
+      writeStderr(`${String(error)}\n`, "src/index.tsx:fatalUnknown");
     }
     process.exit(1);
   };

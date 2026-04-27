@@ -5,6 +5,7 @@ import type {
   RunResponseSegment,
   RunToolActivity,
 } from "../session/types.js";
+import * as renderDebug from "../core/perf/renderDebug.js";
 import { getAssistantContent, getResponseSegmentText } from "../session/types.js";
 import { normalizeCommand, getFriendlyActionLabel } from "./commandNormalize.js";
 import { formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
@@ -1366,6 +1367,13 @@ function buildCodexThinkingRows(params: {
   isLive: boolean;
   verbose: boolean;
 }): TimelineRow[] {
+  renderDebug.traceRender("ThinkingBlock", params.event.block.status, {
+    keyPrefix: params.keyPrefix,
+    streamSeq: params.event.streamSeq,
+    isLive: params.isLive,
+    textLength: params.event.block.text.length,
+  });
+
   const contentRows: TimelineRowSpan[][] = [];
   const bodyLines = formatProgressBlockBodyLines(params.event.block.text, params.width);
   const lineCap = params.verbose ? bodyLines.length : COMPACT_PROCESSING_BODY_LINE_CAP;
@@ -1397,6 +1405,13 @@ function buildActionEventRows(params: {
   verbose: boolean;
   isLive: boolean;
 }): TimelineRow[] {
+  renderDebug.traceRender("ActionLog", params.event.tool.status, {
+    keyPrefix: params.keyPrefix,
+    streamSeq: params.event.streamSeq,
+    isLive: params.isLive,
+    commandLength: params.event.tool.command.length,
+  });
+
   const contentWidth = Math.max(1, params.width - 4);
   const contentRows: TimelineRowSpan[][] = [];
   const tool = params.event.tool;
@@ -1463,6 +1478,15 @@ function buildCodexResponseRows(params: {
   isLive: boolean;
   verbose: boolean;
 }): TimelineRow[] {
+  renderDebug.traceRender("ActiveMessage", params.event.segment.status, {
+    keyPrefix: params.keyPrefix,
+    streamSeq: params.event.streamSeq,
+    streaming: params.streaming,
+    isLive: params.isLive,
+    chunkCount: params.event.segment.chunks.length,
+    textLength: getResponseSegmentText(params.event.segment).length,
+  });
+
   let responseRows: TimelineRowSpan[][] = [];
   const rawContent = splitSentenceWall(formatTerminalAnswerInline(getResponseSegmentText(params.event.segment)));
   const segmentStreaming = params.event.segment.status === "active";
@@ -1703,6 +1727,12 @@ export function buildTimelineSnapshot(
   },
 ): TimelineSnapshot {
   const verbose = options.verboseMode ?? false;
+  renderDebug.traceEvent("timeline", "buildSnapshot", {
+    items: items.length,
+    totalWidth: options.totalWidth,
+    verbose,
+  });
+
   const builtItems = items.map((item) => {
     const innerWidth = Math.max(10, options.totalWidth - (item.padded ? 2 : 0));
 
@@ -1711,12 +1741,16 @@ export function buildTimelineSnapshot(
     if (item.type === "event") {
       // Standalone events (system, error, etc.) are immutable — cache by key+width.
       const cacheKey = `e:${item.key}:${innerWidth}`;
-      builtRows = _staticRowCache.get(cacheKey)
-        ?? (() => {
-          const r = buildStandaloneEventRows(item, innerWidth);
-          _staticRowCache.set(cacheKey, r);
-          return r;
-        })();
+      const cached = _staticRowCache.get(cacheKey);
+      if (cached) {
+        renderDebug.traceEvent("timeline", "staticCacheHit", { cacheKey, itemType: "event" });
+        builtRows = cached;
+      } else {
+        renderDebug.traceEvent("timeline", "staticCacheMiss", { cacheKey, itemType: "event" });
+        const r = buildStandaloneEventRows(item, innerWidth);
+        _staticRowCache.set(cacheKey, r);
+        builtRows = r;
+      }
     } else {
       const { runPhase, opacity } = item.renderState;
       // Only cache completed turns (runPhase "none"/"final") at a stable
@@ -1725,13 +1759,18 @@ export function buildTimelineSnapshot(
       const cacheable = runPhase !== "streaming" && runPhase !== "thinking";
       if (cacheable) {
         const cacheKey = `t:${item.key}:${innerWidth}:${verbose}:${runPhase}:${opacity}`;
-        builtRows = _staticRowCache.get(cacheKey)
-          ?? (() => {
-            const r = buildTurnRows(item, innerWidth, verbose);
-            _staticRowCache.set(cacheKey, r);
-            return r;
-          })();
+        const cached = _staticRowCache.get(cacheKey);
+        if (cached) {
+          renderDebug.traceEvent("timeline", "staticCacheHit", { cacheKey, itemType: "turn", runPhase, opacity });
+          builtRows = cached;
+        } else {
+          renderDebug.traceEvent("timeline", "staticCacheMiss", { cacheKey, itemType: "turn", runPhase, opacity });
+          const r = buildTurnRows(item, innerWidth, verbose);
+          _staticRowCache.set(cacheKey, r);
+          builtRows = r;
+        }
       } else {
+        renderDebug.traceEvent("timeline", "activeBuild", { itemKey: item.key, runPhase, opacity });
         builtRows = buildTurnRows(item, innerWidth, verbose);
       }
     }
