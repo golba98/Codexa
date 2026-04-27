@@ -1842,6 +1842,7 @@ export function App({ launchArgs }: AppProps) {
     let legacyProgressSequence = 0;
     let firstRenderFired = false;
     let blockedCleanupFailureSurfaced = false;
+    const seenRunningToolIds = new Set<string>();
 
     let preRunSnapshot: ReturnType<typeof captureWorkspaceSnapshot> | null = null;
     let finalWorkspacePollDone = false;
@@ -1924,7 +1925,10 @@ export function App({ launchArgs }: AppProps) {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
           liveScheduler.enqueue({ type: "tool", activity });
           if (activity.status === "running") {
-            flushLiveUpdates();
+            if (!seenRunningToolIds.has(activity.id)) {
+              seenRunningToolIds.add(activity.id);
+              flushLiveUpdates();
+            }
             return;
           }
           if (fastCleanupRun && !blockedCleanupFailureSurfaced) {
