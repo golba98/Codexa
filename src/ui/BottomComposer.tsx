@@ -22,6 +22,7 @@ import { getTextWidth, splitTextAtColumn } from "./textLayout.js";
 import { useThrottledValue } from "./useThrottledValue.js";
 import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
 import { getStdinDebugState, traceInputDebug } from "../core/inputDebug.js";
+import * as renderDebug from "../core/perf/renderDebug.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
 import { isAnimatedBusyState } from "./busyStatusAnimation.js";
 
@@ -73,7 +74,6 @@ interface BottomComposerProps {
   planMode?: boolean;
   tokensUsed?: number;
   modelSpec?: ModelSpec;
-  busyStatusFrame?: string;
   value: string;
   cursor: number;
   onChangeInput: (value: string, cursor: number) => void;
@@ -231,7 +231,6 @@ export function BottomComposer({
   planMode = false,
   tokensUsed = 0,
   modelSpec = FALLBACK_MODEL_SPEC,
-  busyStatusFrame,
   value,
   cursor,
   onChangeInput,
@@ -251,6 +250,22 @@ export function BottomComposer({
   onCycleMode,
   onQuit,
 }: BottomComposerProps) {
+  renderDebug.useRenderDebug("Composer", {
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+    uiStateKind: uiState.kind,
+    themeName,
+    runtimeMode: mode,
+    model,
+    reasoningLevel,
+    planMode,
+    tokensUsed,
+    modelSpecStatus: modelSpec.status,
+    value,
+    cursor,
+  });
+
   const { stdin } = useStdin();
   const theme = useTheme();
   const { cols, mode: layoutMode } = layout;
@@ -663,7 +678,7 @@ export function BottomComposer({
   );
 
   if (showBusyFooter) {
-    return <RunFooter uiState={uiState} busyStatusFrame={busyStatusFrame} onCancel={onCancel} onQuit={onQuit} />;
+    return <RunFooter uiState={uiState} onCancel={onCancel} onQuit={onQuit} />;
   }
 
   return (
@@ -706,7 +721,6 @@ export function BottomComposer({
             <AnimatedStatusText 
               baseText={rawStatusLine} 
               isActive={inputLocked} 
-              animationFrame={busyStatusFrame}
               isError={persona === "error"} 
             />
           </Box>
@@ -777,7 +791,6 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   if (prev.reasoningLevel !== next.reasoningLevel) return false;
   if (prev.planMode !== next.planMode) return false;
   if (prev.tokensUsed !== next.tokensUsed) return false;
-  if (prev.busyStatusFrame !== next.busyStatusFrame) return false;
   
   // Re-render if layout changes
   if (prev.layout.cols !== next.layout.cols) return false;

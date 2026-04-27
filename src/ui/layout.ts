@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStdout } from "ink";
 import stringWidth from "string-width";
+import * as renderDebug from "../core/perf/renderDebug.js";
 
 export const BREAKPOINT_FULL    = 110; // ≥ this → full
 export const BREAKPOINT_COMPACT =  60; // ≥ this → compact; below → micro
@@ -193,6 +194,11 @@ export function useTerminalViewport(): TerminalViewport {
     };
 
     const onResize = () => {
+      renderDebug.traceEvent("terminal", "viewportHookResize", {
+        cols: stdout.columns,
+        rows: stdout.rows,
+        renderable: isRenderableViewport(stdout.columns, stdout.rows),
+      });
       commit();
       if (settleTimerRef.current) {
         clearTimeout(settleTimerRef.current);

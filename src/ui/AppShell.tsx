@@ -2,6 +2,7 @@ import React, { memo, useMemo } from "react";
 import { Box } from "ink";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
+import * as renderDebug from "../core/perf/renderDebug.js";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
 import { getShellHeight, getShellWidth, type Layout } from "./layout.js";
 import { Timeline } from "./Timeline.js";
@@ -42,6 +43,22 @@ function AppShellInner({
   panelHint,
   verboseMode = false,
 }: AppShellProps) {
+  renderDebug.useRenderDebug("AppShell", {
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+    screen,
+    authState,
+    workspaceLabel,
+    runtimeSummary,
+    staticEvents,
+    activeEvents,
+    uiState,
+    composer,
+    composerRows,
+    verboseMode,
+  });
+
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
   const showComposer = screen === "main";

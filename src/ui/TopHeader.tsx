@@ -4,6 +4,7 @@ import { APP_VERSION } from "../config/settings.js";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../core/auth/codexAuth.js";
+import * as renderDebug from "../core/perf/renderDebug.js";
 import { useTheme } from "./theme.js";
 import type { Layout } from "./layout.js";
 
@@ -36,6 +37,14 @@ function truncatePath(path: string, maxWidth: number): string {
 }
 
 export function TopHeader({ authState, workspaceLabel, layout }: TopHeaderProps) {
+  renderDebug.useRenderDebug("Header", {
+    authState,
+    workspaceLabel,
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+  });
+
   const { cols, mode } = layout;
   const theme = useTheme();
 

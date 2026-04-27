@@ -1,6 +1,7 @@
 import type { BackendProgressUpdate } from "../core/providers/types.js";
 import type { RunFileActivity } from "../core/workspaceActivity.js";
 import type { RunToolActivity } from "./types.js";
+import * as renderDebug from "../core/perf/renderDebug.js";
 
 export type LiveRenderUpdate =
   | { type: "assistant"; chunk: string }
@@ -111,7 +112,17 @@ export function createLiveRenderScheduler({
         hasPendingAssistantDelta = false;
         if (updates.length > 0) {
           flushed = true;
+          const startedAt = performance.now();
           flush(updates);
+          renderDebug.traceSchedulerFlush({
+            reason: updates.some((update) => update.type === "assistant") ? "stream" : "progress",
+            updates: updates.length,
+            assistantChunks: updates.filter((update) => update.type === "assistant").length,
+            progressUpdates: updates.filter((update) => update.type === "progress").length,
+            toolUpdates: updates.filter((update) => update.type === "tool").length,
+            activityUpdates: updates.filter((update) => update.type === "activity").length,
+            durationMs: Math.round(performance.now() - startedAt),
+          });
         }
       } while (flushAgain || pendingUpdates.length > 0);
     } finally {
