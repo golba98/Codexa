@@ -1410,10 +1410,25 @@ test("syncTimelineViewport is stable when followTail is true and totalRows did n
   const following = createFollowTailViewport(snapshot.totalRows);
   const synced = syncTimelineViewport(following, snapshot);
 
+  assert.strictEqual(synced, following);
   assert.equal(synced.followTail, true);
   assert.equal(synced.anchorRow, snapshot.totalRows - 1);
   assert.equal(synced.unseenItems, 0);
   assert.equal(synced.unseenRows, 0);
+});
+
+test("selectTimelineRows preserves visible row object references", () => {
+  const snapshot = createSnapshot([4, 4, 4]);
+  const viewport = createFollowTailViewport(snapshot.totalRows);
+
+  const first = selectTimelineRows(snapshot, viewport, 5);
+  const second = selectTimelineRows(snapshot, viewport, 5);
+
+  assert.notStrictEqual(second.visibleRows, first.visibleRows);
+  assert.equal(second.visibleRows.length, first.visibleRows.length);
+  for (let index = 0; index < first.visibleRows.length; index += 1) {
+    assert.strictEqual(second.visibleRows[index], first.visibleRows[index]);
+  }
 });
 
 test("buildTimelineSnapshot reuses cached rows for completed entries on repeated calls", () => {

@@ -11,9 +11,12 @@ export function measureRunFooterRows(): number {
 }
 
 export function getRunFooterStatus(uiState: UIState): string {
+  if (uiState.kind === "IDLE") return "";
   if (uiState.kind === "THINKING") return "Codex is thinking";
   if (uiState.kind === "RESPONDING") return "Codex is streaming";
   if (uiState.kind === "SHELL_RUNNING") return "Codex is running command";
+  if (uiState.kind === "ERROR") return uiState.message;
+  if (uiState.kind === "AWAITING_USER_ACTION") return "Codex needs your answer";
   return "Codex is working";
 }
 

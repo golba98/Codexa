@@ -506,3 +506,25 @@ test("reduces ui state across thinking responding awaiting and shell states", ()
   state = reduceUIState(state, { type: "SHELL_FINISHED", shellId: 4 });
   assert.deepEqual(state, { kind: "IDLE" });
 });
+
+test("terminal run actions force terminal state for matching turn from any turn predecessor", () => {
+  assert.deepEqual(
+    reduceUIState({ kind: "AWAITING_USER_ACTION", turnId: 9, question: "Use Redis?" }, { type: "RUN_COMPLETED", turnId: 9 }),
+    { kind: "IDLE" },
+  );
+  assert.deepEqual(
+    reduceUIState({ kind: "ERROR", turnId: 9, message: "Previous error" }, { type: "RUN_CANCELED", turnId: 9 }),
+    { kind: "IDLE" },
+  );
+  assert.deepEqual(
+    reduceUIState({ kind: "AWAITING_USER_ACTION", turnId: 9, question: "Use Redis?" }, { type: "RUN_FAILED", turnId: 9, message: "Run failed" }),
+    { kind: "ERROR", turnId: 9, message: "Run failed" },
+  );
+});
+
+test("terminal run actions leave mismatched turn state unchanged", () => {
+  const responding: UIState = { kind: "RESPONDING", turnId: 10 };
+  assert.strictEqual(reduceUIState(responding, { type: "RUN_COMPLETED", turnId: 9 }), responding);
+  assert.strictEqual(reduceUIState(responding, { type: "RUN_CANCELED", turnId: 9 }), responding);
+  assert.strictEqual(reduceUIState(responding, { type: "RUN_FAILED", turnId: 9, message: "stale" }), responding);
+});

@@ -875,6 +875,74 @@ let _streamingRowCache: StreamingRowCache | null = null;
 // for completed turns are immutable so cached rows are always valid for the
 // same (key, width, verboseMode) triple.
 const _staticRowCache = new Map<string, TimelineRow[]>();
+const STREAMING_BLOCK_ROW_CACHE_LIMIT = 200;
+let _streamingBlockRowCache = new Map<string, TimelineRow[]>();
+let _wrappedRowCache = new WeakMap<TimelineRow, Map<string, TimelineRow>>();
+const _wrappedBlankRowCache = new Map<string, TimelineRow>();
+interface ActionDisplayDescriptor {
+  id: string;
+  status: RunToolActivity["status"];
+  label: string | null;
+  command: string;
+  duration: string;
+  summary: string;
+  icon: string;
+  iconTone: TimelineTone;
+  showLiveCursor: boolean;
+  borderTone: TimelineTone;
+  width: number;
+  verbose: boolean;
+}
+
+const _actionDisplayCache = new Map<string, ActionDisplayDescriptor>();
+
+function hashString(value: string): string {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function textCacheToken(value: string | null | undefined): string {
+  const text = value ?? "";
+  return `${text.length}:${hashString(text)}`;
+}
+
+function rowCacheKey(parts: unknown[]): string {
+  return JSON.stringify(parts);
+}
+
+function getCachedStreamingBlockRows(cacheKey: string, build: () => TimelineRow[]): TimelineRow[] {
+  const cached = _streamingBlockRowCache.get(cacheKey);
+  if (cached) {
+    _streamingBlockRowCache.delete(cacheKey);
+    _streamingBlockRowCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  const rows = build();
+  _streamingBlockRowCache.set(cacheKey, rows);
+  while (_streamingBlockRowCache.size > STREAMING_BLOCK_ROW_CACHE_LIMIT) {
+    const oldestKey = _streamingBlockRowCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    _streamingBlockRowCache.delete(oldestKey);
+  }
+  return rows;
+}
+
+export function __clearTimelineMeasureCachesForTests(): void {
+  _streamingRowCache = null;
+  _staticRowCache.clear();
+  _streamingBlockRowCache.clear();
+  _wrappedRowCache = new WeakMap<TimelineRow, Map<string, TimelineRow>>();
+  _wrappedBlankRowCache.clear();
+  _actionDisplayCache.clear();
+}
+
+export function __getStreamingBlockRowCacheSizeForTests(): number {
+  return _streamingBlockRowCache.size;
+}
 
 /** Find the last safe paragraph boundary (double newline or closed code fence)
  *  that we can split content at for incremental rendering. */
@@ -1339,7 +1407,7 @@ function applyTurnOpacity(rows: TimelineRow[], opacity: "active" | "recent" | "d
 }
 
 
-type StreamEvent =
+export type StreamEvent =
   | { kind: "thinking"; streamSeq: number; block: RunProgressBlock; isActive: boolean }
   | { kind: "response"; streamSeq: number; segment: RunResponseSegment }
   | { kind: "action"; streamSeq: number; tool: RunToolActivity };
@@ -1374,30 +1442,101 @@ function buildCodexThinkingRows(params: {
     textLength: params.event.block.text.length,
   });
 
-  const contentRows: TimelineRowSpan[][] = [];
-  const bodyLines = formatProgressBlockBodyLines(params.event.block.text, params.width);
-  const lineCap = params.verbose ? bodyLines.length : COMPACT_PROCESSING_BODY_LINE_CAP;
-  const visibleBodyLines = bodyLines.slice(0, lineCap);
-  const overflowCount = bodyLines.length - visibleBodyLines.length;
+  const block = params.event.block;
+  const cacheKey = rowCacheKey([
+    "thinking",
+    params.keyPrefix,
+    block.id,
+    block.status,
+    block.updatedAt,
+    textCacheToken(block.text),
+    params.width,
+    params.verbose,
+    params.isLive,
+    params.event.isActive,
+  ]);
 
-  visibleBodyLines.forEach((line) => {
-    contentRows.push([createSpan(line || " ", "dim")]);
+  return getCachedStreamingBlockRows(cacheKey, () => {
+    const contentRows: TimelineRowSpan[][] = [];
+    const bodyLines = formatProgressBlockBodyLines(params.event.block.text, params.width);
+    const lineCap = params.verbose ? bodyLines.length : COMPACT_PROCESSING_BODY_LINE_CAP;
+    const visibleBodyLines = bodyLines.slice(0, lineCap);
+    const overflowCount = bodyLines.length - visibleBodyLines.length;
+
+    visibleBodyLines.forEach((line) => {
+      contentRows.push([createSpan(line || " ", "dim")]);
+    });
+
+    if (overflowCount > 0) {
+      contentRows.push([
+        createSpan(`… (${overflowCount} more line${overflowCount === 1 ? "" : "s"})`, "dim"),
+      ]);
+    }
+
+    if (params.isLive && params.event.isActive) {
+      contentRows.push([createSpan("▌", "accent")]);
+    }
+
+    return buildCodexPlainRows(params.keyPrefix, params.width, contentRows);
   });
-
-  if (overflowCount > 0) {
-    contentRows.push([
-      createSpan(`… (${overflowCount} more line${overflowCount === 1 ? "" : "s"})`, "dim"),
-    ]);
-  }
-
-  if (params.isLive && params.event.isActive) {
-    contentRows.push([createSpan("▌", "accent")]);
-  }
-
-  return buildCodexPlainRows(params.keyPrefix, params.width, contentRows);
 }
 
-function buildActionEventRows(params: {
+function actionDisplayToken(descriptor: ActionDisplayDescriptor): string {
+  return rowCacheKey([
+    descriptor.id,
+    descriptor.status,
+    descriptor.label,
+    descriptor.command,
+    descriptor.duration,
+    descriptor.summary,
+    descriptor.icon,
+    descriptor.iconTone,
+    descriptor.showLiveCursor,
+    descriptor.borderTone,
+    descriptor.width,
+    descriptor.verbose,
+  ]);
+}
+
+function getActionDisplayDescriptor(params: {
+  keyPrefix: string;
+  tool: RunToolActivity;
+  width: number;
+  verbose: boolean;
+  isLive: boolean;
+  borderTone: TimelineTone;
+}): ActionDisplayDescriptor {
+  const command = normalizeCommand(params.tool.command);
+  const label = getFriendlyActionLabel(command);
+  const duration = params.tool.completedAt != null
+    ? `  ${formatDuration(params.tool.completedAt - params.tool.startedAt)}`
+    : "";
+  const summary = params.verbose ? params.tool.summary ?? "" : "";
+  const showLiveCursor = params.isLive && params.tool.status === "running";
+  const descriptor: ActionDisplayDescriptor = {
+    id: params.tool.id,
+    status: params.tool.status,
+    label,
+    command,
+    duration,
+    summary,
+    icon: params.tool.status === "failed" ? "✕" : params.tool.status === "completed" ? "✓" : "•",
+    iconTone: params.tool.status === "failed" ? "error" : params.tool.status === "completed" ? "success" : "info",
+    showLiveCursor,
+    borderTone: params.borderTone,
+    width: params.width,
+    verbose: params.verbose,
+  };
+  const cacheKey = `${params.keyPrefix}:${params.tool.id}`;
+  const cached = _actionDisplayCache.get(cacheKey);
+  if (cached && actionDisplayToken(cached) === actionDisplayToken(descriptor)) {
+    return cached;
+  }
+  _actionDisplayCache.set(cacheKey, descriptor);
+  return descriptor;
+}
+
+export function buildActionEventRows(params: {
   keyPrefix: string;
   width: number;
   event: Extract<StreamEvent, { kind: "action" }>;
@@ -1405,66 +1544,85 @@ function buildActionEventRows(params: {
   verbose: boolean;
   isLive: boolean;
 }): TimelineRow[] {
+  const tool = params.event.tool;
+  const descriptor = getActionDisplayDescriptor({
+    keyPrefix: params.keyPrefix,
+    tool,
+    width: params.width,
+    verbose: params.verbose,
+    isLive: params.isLive,
+    borderTone: params.borderTone,
+  });
   renderDebug.traceRender("ActionLog", params.event.tool.status, {
     keyPrefix: params.keyPrefix,
     streamSeq: params.event.streamSeq,
     isLive: params.isLive,
     commandLength: params.event.tool.command.length,
+    displayedToken: actionDisplayToken(descriptor),
   });
 
-  const contentWidth = Math.max(1, params.width - 4);
-  const contentRows: TimelineRowSpan[][] = [];
-  const tool = params.event.tool;
-  const icon = tool.status === "failed" ? "✕" : tool.status === "completed" ? "✓" : "•";
-  const iconTone = tool.status === "failed" ? "error" : tool.status === "completed" ? "success" : "info";
-  const duration = tool.completedAt && tool.startedAt
-    ? `  ${formatDuration(tool.completedAt - tool.startedAt)}`
-    : "";
-  const normalized = normalizeCommand(tool.command);
-  const label = getFriendlyActionLabel(normalized);
+  const cacheKey = rowCacheKey([
+    "action",
+    params.keyPrefix,
+    actionDisplayToken(descriptor),
+  ]);
 
-  if (label) {
-    contentRows.push([
-      createSpan(`${icon} `, iconTone),
-      createSpan(label, "text"),
-      ...(duration ? [createSpan(duration, "dim")] : []),
-    ]);
-    wrapPlainText(normalized, Math.max(1, contentWidth - 2)).forEach((row) => {
+  const cached = _streamingBlockRowCache.get(cacheKey);
+  renderDebug.traceFlickerEvent("actionRowBuild", {
+    cache: cached ? "hit" : "miss",
+    actionId: tool.id,
+    status: tool.status,
+    rowKey: params.keyPrefix,
+    displayedToken: actionDisplayToken(descriptor),
+  });
+
+  return getCachedStreamingBlockRows(cacheKey, () => {
+    const contentWidth = Math.max(1, params.width - 4);
+    const contentRows: TimelineRowSpan[][] = [];
+
+    if (descriptor.label) {
       contentRows.push([
-        createSpan("  "),
-        createSpan(row || " ", "muted"),
+        createSpan(`${descriptor.icon} `, descriptor.iconTone),
+        createSpan(descriptor.label, "text"),
+        ...(descriptor.duration ? [createSpan(descriptor.duration, "dim")] : []),
       ]);
-    });
-  } else {
-    const headRows = wrapPlainText(normalized, Math.max(1, contentWidth - 2));
-    headRows.forEach((row, rowIndex) => {
-      contentRows.push([
-        createSpan(rowIndex === 0 ? `${icon} ` : "  ", iconTone),
-        createSpan(row || " ", "text"),
-        ...(rowIndex === 0 && duration ? [createSpan(duration, "dim")] : []),
-      ]);
-    });
-  }
+      wrapPlainText(descriptor.command, Math.max(1, contentWidth - 2)).forEach((row) => {
+        contentRows.push([
+          createSpan("  "),
+          createSpan(row || " ", "muted"),
+        ]);
+      });
+    } else {
+      const headRows = wrapPlainText(descriptor.command, Math.max(1, contentWidth - 2));
+      headRows.forEach((row, rowIndex) => {
+        contentRows.push([
+          createSpan(rowIndex === 0 ? `${descriptor.icon} ` : "  ", descriptor.iconTone),
+          createSpan(row || " ", "text"),
+          ...(rowIndex === 0 && descriptor.duration ? [createSpan(descriptor.duration, "dim")] : []),
+        ]);
+      });
+    }
 
-  if (tool.summary && params.verbose) {
-    wrapPlainText(tool.summary, Math.max(1, contentWidth - 2)).forEach((row) => {
-      contentRows.push([
-        createSpan("  "),
-        createSpan(row || " ", "muted"),
-      ]);
+    if (descriptor.summary) {
+      wrapPlainText(descriptor.summary, Math.max(1, contentWidth - 2)).forEach((row) => {
+        contentRows.push([
+          createSpan("  "),
+          createSpan(row || " ", "muted"),
+        ]);
+      });
+    }
+
+    if (descriptor.showLiveCursor) {
+      contentRows.push([createSpan("▌", "accent")]);
+    }
+
+    return buildDashCardRows({
+      keyPrefix: params.keyPrefix,
+      width: params.width,
+      title: "action",
+      borderTone: descriptor.borderTone,
+      contentRows: contentRows.length > 0 ? contentRows : [[createSpan(" ")]],
     });
-  }
-
-  if (params.isLive && tool.status === "running") {
-    contentRows.push([createSpan("▌", "accent")]);
-  }
-
-  return buildDashCardRows({
-    keyPrefix: params.keyPrefix,
-    width: params.width,
-    title: "action",
-    borderTone: params.borderTone,
-    contentRows: contentRows.length > 0 ? contentRows : [[createSpan(" ")]],
   });
 }
 
@@ -1487,41 +1645,67 @@ function buildCodexResponseRows(params: {
     textLength: getResponseSegmentText(params.event.segment).length,
   });
 
-  let responseRows: TimelineRowSpan[][] = [];
-  const rawContent = splitSentenceWall(formatTerminalAnswerInline(getResponseSegmentText(params.event.segment)));
+  const segmentText = getResponseSegmentText(params.event.segment);
   const segmentStreaming = params.event.segment.status === "active";
 
-  if (!params.streaming) _streamingRowCache = null;
-  const sanitized = segmentStreaming ? sanitizeStreamChunk(rawContent) : sanitizeOutput(rawContent);
-  const normalized = normalizeOutput(sanitized);
-  const segments = formatForBox(classifyOutput(normalized), params.width);
-  responseRows = buildMarkdownRows(segments, params.width);
+  const buildRows = (): TimelineRow[] => {
+    let responseRows: TimelineRowSpan[][] = [];
+    const rawContent = splitSentenceWall(formatTerminalAnswerInline(segmentText));
 
-  if (!params.streaming && params.run.status === "failed" && params.isLastEvent) {
-    const failureMessage = sanitizeTerminalOutput(params.run.errorMessage ?? params.run.summary);
-    const failureRows: TimelineRowSpan[][] = [];
-    wrapPlainText(failureMessage, Math.max(1, params.width - 2)).forEach((row, index) => {
-      failureRows.push([
-        createSpan(index === 0 ? "✕ " : "  ", "error"),
-        createSpan(row || " ", "error"),
-      ]);
-    });
-    responseRows = [...failureRows, ...responseRows];
+    if (!params.streaming) _streamingRowCache = null;
+    const sanitized = segmentStreaming ? sanitizeStreamChunk(rawContent) : sanitizeOutput(rawContent);
+    const normalized = normalizeOutput(sanitized);
+    const segments = formatForBox(classifyOutput(normalized), params.width);
+    responseRows = buildMarkdownRows(segments, params.width);
+
+    if (!params.streaming && params.run.status === "failed" && params.isLastEvent) {
+      const failureMessage = sanitizeTerminalOutput(params.run.errorMessage ?? params.run.summary);
+      const failureRows: TimelineRowSpan[][] = [];
+      wrapPlainText(failureMessage, Math.max(1, params.width - 2)).forEach((row, index) => {
+        failureRows.push([
+          createSpan(index === 0 ? "✕ " : "  ", "error"),
+          createSpan(row || " ", "error"),
+        ]);
+      });
+      responseRows = [...failureRows, ...responseRows];
+    }
+
+    if (segmentStreaming && !params.verbose && responseRows.length > COMPACT_STREAMING_TAIL_CAP) {
+      const hiddenRowCount = responseRows.length - COMPACT_STREAMING_TAIL_CAP;
+      responseRows = [
+        [createSpan(`… (${hiddenRowCount} line${hiddenRowCount === 1 ? "" : "s"} above)`, "dim")],
+        ...responseRows.slice(-COMPACT_STREAMING_TAIL_CAP),
+      ];
+    }
+
+    if (params.isLive && segmentStreaming) {
+      responseRows.push([createSpan("▌", "accent")]);
+    }
+
+    return buildCodexPlainRows(params.keyPrefix, params.width, responseRows);
+  };
+
+  if (!segmentStreaming) {
+    const failureMessage = !params.streaming && params.run.status === "failed" && params.isLastEvent
+      ? params.run.errorMessage ?? params.run.summary
+      : "";
+    const cacheKey = rowCacheKey([
+      "response",
+      params.keyPrefix,
+      params.event.segment.id,
+      params.event.segment.status,
+      textCacheToken(segmentText),
+      params.width,
+      params.verbose,
+      params.streaming,
+      params.run.status,
+      params.isLastEvent,
+      textCacheToken(failureMessage),
+    ]);
+    return getCachedStreamingBlockRows(cacheKey, buildRows);
   }
 
-  if (segmentStreaming && !params.verbose && responseRows.length > COMPACT_STREAMING_TAIL_CAP) {
-    const hiddenRowCount = responseRows.length - COMPACT_STREAMING_TAIL_CAP;
-    responseRows = [
-      [createSpan(`… (${hiddenRowCount} line${hiddenRowCount === 1 ? "" : "s"} above)`, "dim")],
-      ...responseRows.slice(-COMPACT_STREAMING_TAIL_CAP),
-    ];
-  }
-
-  if (params.isLive && segmentStreaming) {
-    responseRows.push([createSpan("▌", "accent")]);
-  }
-
-  return buildCodexPlainRows(params.keyPrefix, params.width, responseRows);
+  return buildRows();
 }
 
 function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, verbose = false): TimelineRow[] {
@@ -1705,17 +1889,37 @@ function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, widt
 function wrapItemRows(rows: TimelineRow[], totalWidth: number, padded: boolean, keyPrefix: string): TimelineRow[] {
   const leftPad = padded ? 1 : 0;
   const innerWidth = Math.max(1, totalWidth - (leftPad * 2));
-  const prefixedRows = rows.map((row, index) => createRow(
-    `${keyPrefix}-wrapped-${index}`,
-    [
-      ...(leftPad > 0 ? [createSpan(" ".repeat(leftPad))] : []),
-      ...padSpansToWidth(row.spans, innerWidth),
-      ...(leftPad > 0 ? [createSpan(" ".repeat(leftPad))] : []),
-    ],
-    totalWidth,
-  ));
+  const prefixedRows = rows.map((row) => {
+    const cacheKey = `${keyPrefix}:${row.key}:${totalWidth}:${innerWidth}:${leftPad}`;
+    let rowCache = _wrappedRowCache.get(row);
+    if (!rowCache) {
+      rowCache = new Map<string, TimelineRow>();
+      _wrappedRowCache.set(row, rowCache);
+    }
 
-  prefixedRows.push(createBlankRow(`${keyPrefix}-margin`, totalWidth));
+    const cached = rowCache.get(cacheKey);
+    if (cached) return cached;
+
+    const wrapped = createRow(
+      `${keyPrefix}-wrapped-${row.key}`,
+      [
+        ...(leftPad > 0 ? [createSpan(" ".repeat(leftPad))] : []),
+        ...padSpansToWidth(row.spans, innerWidth),
+        ...(leftPad > 0 ? [createSpan(" ".repeat(leftPad))] : []),
+      ],
+      totalWidth,
+    );
+    rowCache.set(cacheKey, wrapped);
+    return wrapped;
+  });
+
+  const marginKey = `${keyPrefix}:${totalWidth}:margin`;
+  let margin = _wrappedBlankRowCache.get(marginKey);
+  if (!margin) {
+    margin = createBlankRow(`${keyPrefix}-margin`, totalWidth);
+    _wrappedBlankRowCache.set(marginKey, margin);
+  }
+  prefixedRows.push(margin);
   return prefixedRows;
 }
 
@@ -1724,10 +1928,17 @@ export function buildTimelineSnapshot(
   options: {
     totalWidth: number;
     verboseMode?: boolean;
+    debugLabel?: string;
   },
 ): TimelineSnapshot {
   const verbose = options.verboseMode ?? false;
   renderDebug.traceEvent("timeline", "buildSnapshot", {
+    items: items.length,
+    totalWidth: options.totalWidth,
+    verbose,
+  });
+  renderDebug.traceFlickerEvent("snapshotBuild", {
+    reason: options.debugLabel ?? "unknown",
     items: items.length,
     totalWidth: options.totalWidth,
     verbose,

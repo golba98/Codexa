@@ -412,7 +412,7 @@ function CodexStatusBlock({ text, showCursor }: { text: string; showCursor: bool
   );
 }
 
-function StreamEventList({
+const StreamEventList = memo(function StreamEventList({
   cols,
   run,
   assistant,
@@ -483,7 +483,14 @@ function StreamEventList({
       )}
     </Box>
   );
-}
+}, (prev, next) => (
+  prev.cols === next.cols
+  && prev.run === next.run
+  && prev.assistant === next.assistant
+  && prev.runPhase === next.runPhase
+  && prev.opacity === next.opacity
+  && prev.verboseMode === next.verboseMode
+));
 
 // ─── TurnGroup ───────────────────────────────────────────────────────────────
 

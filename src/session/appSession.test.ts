@@ -4,6 +4,7 @@ import type { BackendProgressUpdate } from "../core/providers/types.js";
 import type { AssistantEvent, RunEvent, UserPromptEvent } from "./types.js";
 import { createInitialSessionState, reduceSessionState, type SessionState } from "./appSession.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
+import { isAnimatedBusyState } from "../ui/busyStatusAnimation.js";
 
 function makeUserEvent(turnId: number): UserPromptEvent {
   return { id: 1, type: "user", createdAt: 1, prompt: "Do work", turnId };
@@ -137,6 +138,99 @@ test("RUN_APPEND_ASSISTANT_DELTA transitions UI state to RESPONDING", () => {
   });
 
   assert.equal(state.uiState.kind, "RESPONDING");
+});
+
+test("FINALIZE_RUN after assistant delta transitions UI state to IDLE", () => {
+  const turnId = 35;
+  let state = stateWithActiveRun(turnId);
+  state = reduceSessionState(state, {
+    type: "UI_ACTION",
+    action: { type: "PROMPT_RUN_STARTED", turnId },
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_APPEND_ASSISTANT_DELTA",
+    turnId,
+    runId: 2,
+    chunk: "Done.",
+    eventFactory: () => makeAssistantEvent(turnId, "Done."),
+  });
+
+  state = reduceSessionState(state, {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "completed",
+    response: undefined,
+    assistantFactory: () => makeAssistantEvent(turnId, ""),
+  });
+
+  assert.equal(state.uiState.kind, "IDLE");
+  assert.equal(isAnimatedBusyState(state.uiState.kind), false);
+});
+
+test("FINALIZE_RUN for canceled thinking-only run transitions UI state to IDLE", () => {
+  const turnId = 36;
+  let state = stateWithActiveRun(turnId);
+  state = reduceSessionState(state, {
+    type: "UI_ACTION",
+    action: { type: "PROMPT_RUN_STARTED", turnId },
+  });
+
+  state = reduceSessionState(state, {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "canceled",
+    assistantFactory: () => makeAssistantEvent(turnId, ""),
+  });
+
+  assert.equal(state.uiState.kind, "IDLE");
+  assert.equal(isAnimatedBusyState(state.uiState.kind), false);
+});
+
+test("FINALIZE_RUN for failed run records error and exits busy animation", () => {
+  const turnId = 37;
+  let state = stateWithActiveRun(turnId);
+  state = reduceSessionState(state, {
+    type: "UI_ACTION",
+    action: { type: "PROMPT_RUN_STARTED", turnId },
+  });
+
+  state = reduceSessionState(state, {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "failed",
+    message: "Provider exploded",
+    assistantFactory: () => makeAssistantEvent(turnId, ""),
+  });
+
+  const runEvent = state.staticEvents.find((event): event is RunEvent => event.type === "run");
+  assert.ok(runEvent);
+  assert.equal(runEvent.status, "failed");
+  assert.equal(runEvent.errorMessage, "Provider exploded");
+  assert.deepEqual(state.uiState, { kind: "ERROR", turnId, message: "Provider exploded" });
+  assert.equal(isAnimatedBusyState(state.uiState.kind), false);
+});
+
+test("stale RUN_APPEND_ASSISTANT_DELTA does not mutate current UI state", () => {
+  const currentTurnId = 38;
+  let state = stateWithActiveRun(currentTurnId);
+  state = reduceSessionState(state, {
+    type: "UI_ACTION",
+    action: { type: "PROMPT_RUN_STARTED", turnId: currentTurnId },
+  });
+
+  const afterStaleDelta = reduceSessionState(state, {
+    type: "RUN_APPEND_ASSISTANT_DELTA",
+    turnId: currentTurnId - 1,
+    runId: 2,
+    chunk: "late chunk",
+    eventFactory: () => makeAssistantEvent(currentTurnId - 1, "late chunk"),
+  });
+
+  assert.strictEqual(afterStaleDelta, state);
+  assert.deepEqual(afterStaleDelta.uiState, { kind: "THINKING", turnId: currentTurnId });
 });
 
 test("RUN_APPLY_PROGRESS_UPDATES preserves separate entries and updates by id", () => {

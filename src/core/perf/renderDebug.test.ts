@@ -7,6 +7,9 @@ import {
   configureRenderDebug,
   getRenderDebugLogPath,
   traceEvent,
+  traceLifecycleTransition,
+  traceFlickerEvent,
+  traceStatusTick,
   traceRender,
 } from "./renderDebug.js";
 
@@ -42,6 +45,55 @@ test("render debug writes JSONL only when explicitly enabled", () => {
     assert.equal(records[1]?.kind, "render");
     assert.equal(records[1]?.component, "EnabledComponent");
     assert.equal(records[1]?.reason, "unit");
+  } finally {
+    configureRenderDebug({});
+    clean(logPath);
+  }
+});
+
+test("lifecycle trace is gated by CODEXA_DEBUG_LIFECYCLE", () => {
+  const logPath = join(tmpdir(), `codexa-lifecycle-debug-${process.pid}.jsonl`);
+  clean(logPath);
+
+  try {
+    configureRenderDebug({
+      CODEXA_DEBUG_LIFECYCLE: "1",
+      CODEXA_RENDER_DEBUG_FILE: logPath,
+    });
+    traceLifecycleTransition({
+      prevKind: "THINKING",
+      nextKind: "IDLE",
+      reason: "unit",
+    });
+
+    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(records.length, 1);
+    assert.equal(records[0]?.kind, "lifecycle");
+    assert.equal(records[0]?.reason, "unit");
+  } finally {
+    configureRenderDebug({});
+    clean(logPath);
+  }
+});
+
+test("flicker trace is gated by CODEXA_DEBUG_FLICKER", () => {
+  const logPath = join(tmpdir(), `codexa-flicker-debug-${process.pid}.jsonl`);
+  clean(logPath);
+
+  try {
+    configureRenderDebug({
+      CODEXA_DEBUG_FLICKER: "1",
+      CODEXA_RENDER_DEBUG_FILE: logPath,
+    });
+    traceFlickerEvent("timelineRender", { reason: "unit" });
+    traceStatusTick({ owner: "Status", label: "Codex is thinking" });
+
+    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(records.length, 2);
+    assert.equal(records[0]?.kind, "flicker");
+    assert.equal(records[0]?.event, "timelineRender");
+    assert.equal(records[1]?.kind, "flicker");
+    assert.equal(records[1]?.event, "statusTick");
   } finally {
     configureRenderDebug({});
     clean(logPath);

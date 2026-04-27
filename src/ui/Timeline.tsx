@@ -653,10 +653,25 @@ function getToneColor(theme: ReturnType<typeof useTheme>, tone: TimelineTone | u
 }
 
 const TimelineRowView = memo(function TimelineRowView({ row }: { row: TimelineRow }) {
+  const isActionRow = row.key.includes("-action-");
   renderDebug.useRenderDebug("TimelineRow", {
     rowKey: row.key,
     row,
   });
+  if (isActionRow) {
+    renderDebug.traceFlickerEvent("timelineRowRender", {
+      rowKey: row.key,
+      spanToken: row.spans.map((span) => span.text).join("|"),
+    });
+  }
+
+  useEffect(() => {
+    if (!isActionRow) return;
+    renderDebug.traceFlickerEvent("timelineRowMount", { rowKey: row.key });
+    return () => {
+      renderDebug.traceFlickerEvent("timelineRowUnmount", { rowKey: row.key });
+    };
+  }, [isActionRow, row.key]);
 
   const theme = useTheme();
 
@@ -679,6 +694,18 @@ const TimelineRowView = memo(function TimelineRowView({ row }: { row: TimelineRo
 }, (prev, next) => prev.row === next.row);
 
 export const Timeline = memo(function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows, verboseMode = false }: TimelineProps) {
+  renderDebug.useFlickerDebug("timelineRender", {
+    staticEvents,
+    activeEvents,
+    staticEventsLength: staticEvents.length,
+    activeEventsLength: activeEvents.length,
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+    uiStateKind: uiState.kind,
+    viewportRows,
+    verboseMode,
+  });
   renderDebug.useRenderDebug("Transcript", {
     staticEvents,
     activeEvents,
@@ -726,7 +753,7 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
   // the streaming assistant item is rebuilt each frame.
   const snapshotWidth = getShellWidth(layout.cols);
   const staticSnapshot = useMemo(
-    () => buildTimelineSnapshot(staticRenderItems, { totalWidth: snapshotWidth, verboseMode }),
+    () => buildTimelineSnapshot(staticRenderItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "static" }),
     [snapshotWidth, staticRenderItems, verboseMode],
   );
   // Partition active items: non-assistant items are stable during streaming
@@ -745,12 +772,12 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
   );
   const activeStableSnapshot = useMemo(
     () => activeStableItems.length > 0
-      ? buildTimelineSnapshot(activeStableItems, { totalWidth: snapshotWidth, verboseMode })
+      ? buildTimelineSnapshot(activeStableItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-stable" })
       : { items: [], rows: [], totalRows: 0, itemCount: 0 },
     [snapshotWidth, activeStableItems, verboseMode],
   );
   const activeStreamingSnapshot = useMemo(
-    () => buildTimelineSnapshot(activeStreamingItems, { totalWidth: snapshotWidth, verboseMode }),
+    () => buildTimelineSnapshot(activeStreamingItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-streaming" }),
     [snapshotWidth, activeStreamingItems, verboseMode],
   );
   const liveSnapshot = useMemo(
@@ -788,26 +815,57 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     setViewport((current) => {
       // Width change: always reflow or sync to wrap text at the new width.
       if (widthChanged) {
-        return !current.followTail && current.frozenSnapshot !== null
+        const next = !current.followTail && current.frozenSnapshot !== null
           ? reflowTimelineViewport(current, liveSnapshot)
           : syncTimelineViewport(current, liveSnapshot);
+        renderDebug.traceFlickerEvent("viewportSync", {
+          reason: "width-change",
+          result: next === current ? "skipped" : "updated",
+          totalRows,
+          anchorRow: next.anchorRow,
+          followTail: next.followTail,
+        });
+        return next;
       }
 
       // Frozen (user scrolled up): call sync only when rows grew so the
       // unseen-item counters stay accurate; skip otherwise — returning the
       // same reference makes React bail out of the re-render entirely.
       if (!current.followTail) {
-        return totalRowsGrew ? syncTimelineViewport(current, liveSnapshot) : current;
+        const next = totalRowsGrew ? syncTimelineViewport(current, liveSnapshot) : current;
+        renderDebug.traceFlickerEvent("viewportSync", {
+          reason: totalRowsGrew ? "detached-growth" : "detached-no-growth",
+          result: next === current ? "skipped" : "updated",
+          totalRows,
+          anchorRow: next.anchorRow,
+          followTail: next.followTail,
+        });
+        return next;
       }
 
       // Follow-tail: only advance anchorRow when content actually grew.
       // Streaming is append-only so shrinking rows is rare; if it happens the
       // anchorRow stays at the old position until the next growth tick.
       if (!totalRowsGrew) {
+        renderDebug.traceFlickerEvent("viewportSync", {
+          reason: "follow-tail-no-growth",
+          result: "skipped",
+          totalRows,
+          anchorRow: current.anchorRow,
+          followTail: current.followTail,
+        });
         return current;
       }
 
-      return syncTimelineViewport(current, liveSnapshot);
+      const next = syncTimelineViewport(current, liveSnapshot);
+      renderDebug.traceFlickerEvent("viewportSync", {
+        reason: "follow-tail-growth",
+        result: next === current ? "skipped" : "updated",
+        totalRows,
+        anchorRow: next.anchorRow,
+        followTail: next.followTail,
+      });
+      return next;
     });
   }, [liveSnapshot, snapshotWidth]);
 
@@ -875,10 +933,18 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     }
   });
 
-  const { visibleRows } = useMemo(
-    () => selectTimelineRows(liveSnapshot, viewport, viewportRows),
-    [liveSnapshot, viewport, viewportRows],
-  );
+  const { visibleRows } = useMemo(() => {
+    const selection = selectTimelineRows(liveSnapshot, viewport, viewportRows);
+    renderDebug.traceFlickerEvent("viewportSlice", {
+      visibleRows: selection.visibleRows.length,
+      startRow: selection.window.startRow,
+      endRow: selection.window.endRow,
+      anchorRow: selection.window.anchorRow,
+      followTail: viewport.followTail,
+      totalRows: selection.sourceSnapshot.totalRows,
+    });
+    return selection;
+  }, [liveSnapshot, viewport, viewportRows]);
 
   if (visibleRows.length === 0) {
     return <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} />;
