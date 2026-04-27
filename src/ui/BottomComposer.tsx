@@ -150,7 +150,7 @@ export function getComposerPersona(uiState: UIState): ComposerPersona {
 }
 
 export function shouldRenderBusyFooter(layout: Layout, uiState: UIState): boolean {
-  return layout.rows <= 24 && getComposerPersona(uiState) === "busy";
+  return false;
 }
 
 export function measureBottomComposerRows({
@@ -184,7 +184,9 @@ export function measureBottomComposerRows({
   const suggestions = showSuggestions
     ? COMMANDS.filter((command) => command.cmd.startsWith(cmdPrefix)).slice(0, 5)
     : [];
-  const showStatusLine = (getStatusLine(uiState) ?? "").length > 0 && persona !== "answer";
+  
+  // ALWAYS reserve 1 row for the status line to prevent height shifting between idle and busy states.
+  const statusLineReservedRows = 1;
   const showMetadata = layout.mode !== "micro" && layout.rows > 24;
   const bottomPadding = layout.mode === "micro" || layout.rows <= 24 ? 0 : 1;
 
@@ -192,7 +194,7 @@ export function measureBottomComposerRows({
     promptViewport.visibleRows.length
     + 2
     + (suggestions.length > 0 ? 1 : 0)
-    + (showStatusLine ? 1 : 0)
+    + statusLineReservedRows
     + (showMetadata ? 1 : 0)
     + bottomPadding
   );
@@ -715,22 +717,25 @@ export function BottomComposer({
         </Box>
       )}
 
-      {showStatusLine && (
-        <Box paddingX={1} marginTop={0} width="100%" justifyContent="space-between" overflow="hidden">
-          <Box flexShrink={1} flexGrow={1} overflow="hidden">
-            <AnimatedStatusText 
-              baseText={rawStatusLine} 
-              isActive={inputLocked} 
-              isError={persona === "error"} 
-            />
-          </Box>
-          {inputLocked && (
-            <Box flexShrink={0}>
-              <Text color={theme.DIM}>Esc cancel  Ctrl+C quit</Text>
+      {/* Always reserve the status line height */}
+      <Box paddingX={1} marginTop={0} height={1} width="100%" justifyContent="space-between" overflow="hidden">
+        {showStatusLine && (
+          <>
+            <Box flexShrink={1} flexGrow={1} overflow="hidden">
+              <AnimatedStatusText 
+                baseText={rawStatusLine} 
+                isActive={inputLocked} 
+                isError={persona === "error"} 
+              />
             </Box>
-          )}
-        </Box>
-      )}
+            {inputLocked && (
+              <Box flexShrink={0}>
+                <Text color={theme.DIM}>Esc cancel  Ctrl+C quit</Text>
+              </Box>
+            )}
+          </>
+        )}
+      </Box>
 
       {layoutMode !== "micro" && !crampedViewport && (
         <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
