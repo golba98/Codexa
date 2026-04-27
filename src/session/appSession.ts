@@ -115,6 +115,119 @@ function reconcileAssistantContent(
   return response;                                          // different → authoritative response wins
 }
 
+function isAnimatedLifecycleKind(kind: UIState["kind"]): boolean {
+  return kind === "THINKING" || kind === "RESPONDING" || kind === "SHELL_RUNNING";
+}
+
+function stateMatchesTurn(state: UIState, turnId: number): boolean {
+  return "turnId" in state && state.turnId === turnId;
+}
+
+function getUIActionTurnId(action: UIStateAction): number | null {
+  return "turnId" in action ? action.turnId : null;
+}
+
+function getUIStateTurnId(state: UIState): number | null {
+  return "turnId" in state ? state.turnId : null;
+}
+
+function traceUITransition(params: {
+  previous: UIState;
+  next: UIState;
+  reason: string;
+  runId?: number;
+  turnId?: number | null;
+}): void {
+  if (params.previous === params.next) return;
+
+  renderDebug.traceLifecycleTransition({
+    runId: params.runId,
+    turnId: params.turnId ?? getUIStateTurnId(params.next) ?? getUIStateTurnId(params.previous),
+    prevKind: params.previous.kind,
+    nextKind: params.next.kind,
+    reason: params.reason,
+    composerEnabled: !isAnimatedLifecycleKind(params.next.kind),
+    animationActive: isAnimatedLifecycleKind(params.next.kind),
+    ts: Date.now(),
+  });
+}
+
+function reduceTracedUIState(
+  state: UIState,
+  action: UIStateAction,
+  options: { reason?: string; runId?: number } = {},
+): UIState {
+  const next = reduceUIState(state, action);
+  traceUITransition({
+    previous: state,
+    next,
+    reason: options.reason ?? action.type,
+    runId: options.runId,
+    turnId: getUIActionTurnId(action),
+  });
+  return next;
+}
+
+function terminalActionForFinalize(action: Extract<SessionAction, { type: "FINALIZE_RUN" }>): UIStateAction {
+  if (action.status === "completed") {
+    return action.question
+      ? { type: "AWAITING_USER_ACTION", turnId: action.turnId, question: action.question }
+      : { type: "RUN_COMPLETED", turnId: action.turnId };
+  }
+
+  if (action.status === "failed") {
+    return { type: "RUN_FAILED", turnId: action.turnId, message: action.message ?? "Run failed" };
+  }
+
+  return { type: "RUN_CANCELED", turnId: action.turnId };
+}
+
+function enforceFinalizePostCondition(
+  previous: UIState,
+  reduced: UIState,
+  action: Extract<SessionAction, { type: "FINALIZE_RUN" }>,
+): UIState {
+  if (!stateMatchesTurn(previous, action.turnId)) {
+    return reduced;
+  }
+
+  const forced: UIState = action.status === "completed" && action.question
+    ? { kind: "AWAITING_USER_ACTION", turnId: action.turnId, question: action.question }
+    : action.status === "failed"
+      ? { kind: "ERROR", turnId: action.turnId, message: action.message ?? "Run failed" }
+      : { kind: "IDLE" };
+
+  if (
+    reduced.kind === forced.kind
+    && getUIStateTurnId(reduced) === getUIStateTurnId(forced)
+    && (!("message" in forced) || ("message" in reduced && reduced.message === forced.message))
+    && (!("question" in forced) || ("question" in reduced && reduced.question === forced.question))
+  ) {
+    return reduced;
+  }
+
+  traceUITransition({
+    previous: reduced,
+    next: forced,
+    reason: "FINALIZE_RUN_POST_CONDITION",
+    runId: action.runId,
+    turnId: action.turnId,
+  });
+  return forced;
+}
+
+function reduceFinalizeUIState(
+  state: UIState,
+  action: Extract<SessionAction, { type: "FINALIZE_RUN" }>,
+): UIState {
+  const reduced = reduceTracedUIState(
+    state,
+    terminalActionForFinalize(action),
+    { reason: `FINALIZE_RUN:${action.status}`, runId: action.runId },
+  );
+  return enforceFinalizePostCondition(state, reduced, action);
+}
+
 export function reduceSessionState(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case "APPEND_STATIC_EVENT":
@@ -154,11 +267,14 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ...state,
         staticEvents: [],
         activeEvents: [],
-        uiState: reduceUIState(state.uiState, { type: "DISMISS_TRANSIENT" }),
+        uiState: reduceTracedUIState(state.uiState, { type: "DISMISS_TRANSIENT" }),
       };
     case "SET_ACTIVE_EVENTS":
       return { ...state, activeEvents: action.events };
-    case "RUN_APPEND_ACTIVITY":
+    case "RUN_APPEND_ACTIVITY": {
+      if (!state.activeEvents.some((event) => event.id === action.runId && event.type === "run")) {
+        return state;
+      }
       return {
         ...state,
         activeEvents: state.activeEvents.map((event) =>
@@ -167,7 +283,11 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
             : event
         ),
       };
-    case "RUN_APPLY_PROGRESS_UPDATES":
+    }
+    case "RUN_APPLY_PROGRESS_UPDATES": {
+      if (!state.activeEvents.some((event) => event.id === action.runId && event.type === "run")) {
+        return state;
+      }
       return {
         ...state,
         activeEvents: state.activeEvents.map((event) =>
@@ -176,7 +296,11 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
             : event
         ),
       };
-    case "RUN_UPSERT_TOOL_ACTIVITY":
+    }
+    case "RUN_UPSERT_TOOL_ACTIVITY": {
+      if (!state.activeEvents.some((event) => event.id === action.runId && event.type === "run")) {
+        return state;
+      }
       return {
         ...state,
         activeEvents: state.activeEvents.map((event) =>
@@ -185,7 +309,16 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
             : event
         ),
       };
+    }
     case "RUN_APPEND_ASSISTANT_DELTA": {
+      const existingRun = state.activeEvents.find(
+        (event): event is RunEvent =>
+          event.type === "run" && event.id === action.runId && event.turnId === action.turnId,
+      );
+      if (!existingRun) {
+        return state;
+      }
+
       const existingAssistant = state.activeEvents.find(
         (event): event is AssistantEvent => event.type === "assistant" && event.turnId === action.turnId,
       );
@@ -205,14 +338,22 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
             }
             return updateRun(event);
           }),
-          uiState: reduceUIState(state.uiState, { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId }),
+          uiState: reduceTracedUIState(
+            state.uiState,
+            { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId },
+            { runId: action.runId },
+          ),
         };
       }
 
       return {
         ...state,
         activeEvents: [...state.activeEvents.map(updateRun), action.eventFactory()],
-        uiState: reduceUIState(state.uiState, { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId }),
+        uiState: reduceTracedUIState(
+          state.uiState,
+          { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId },
+          { runId: action.runId },
+        ),
       };
     }
     case "RUN_APPLY_LIVE_UPDATES":
@@ -270,13 +411,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         return {
           ...state,
           activeEvents: remainingEvents,
-          uiState: action.status === "completed"
-            ? action.question
-              ? reduceUIState(state.uiState, { type: "AWAITING_USER_ACTION", turnId: action.turnId, question: action.question })
-              : reduceUIState(state.uiState, { type: "RUN_COMPLETED", turnId: action.turnId })
-            : action.status === "failed"
-              ? reduceUIState(state.uiState, { type: "RUN_FAILED", turnId: action.turnId, message: action.message ?? "Run failed" })
-              : reduceUIState(state.uiState, { type: "RUN_CANCELED", turnId: action.turnId }),
+          uiState: reduceFinalizeUIState(state.uiState, action),
         };
       }
 
@@ -320,13 +455,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ...state,
         staticEvents: appendStaticEvents(state.staticEvents, additions),
         activeEvents: remainingEvents,
-        uiState: action.status === "completed"
-          ? action.question
-            ? reduceUIState(state.uiState, { type: "AWAITING_USER_ACTION", turnId: action.turnId, question: action.question })
-            : reduceUIState(state.uiState, { type: "RUN_COMPLETED", turnId: action.turnId })
-          : action.status === "failed"
-            ? reduceUIState(state.uiState, { type: "RUN_FAILED", turnId: action.turnId, message: action.message ?? "Run failed" })
-            : reduceUIState(state.uiState, { type: "RUN_CANCELED", turnId: action.turnId }),
+        uiState: reduceFinalizeUIState(state.uiState, action),
       };
     }
     case "FINALIZE_SHELL":
@@ -334,7 +463,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ...state,
         staticEvents: appendStaticEvents(state.staticEvents, [action.finalEvent]),
         activeEvents: state.activeEvents.filter((event) => !(event.type === "shell" && event.id === action.shellId)),
-        uiState: reduceUIState(state.uiState, { type: "SHELL_FINISHED", shellId: action.shellId }),
+        uiState: reduceTracedUIState(state.uiState, { type: "SHELL_FINISHED", shellId: action.shellId }),
       };
     case "UPDATE_SHELL_LINES":
       return {
@@ -356,7 +485,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ),
       };
     case "UI_ACTION":
-      return { ...state, uiState: reduceUIState(state.uiState, action.action) };
+      return { ...state, uiState: reduceTracedUIState(state.uiState, action.action) };
     default:
       return state;
   }

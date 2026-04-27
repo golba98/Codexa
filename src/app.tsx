@@ -2073,6 +2073,7 @@ export function App({ launchArgs }: AppProps) {
       }
       activityTracker?.stop();
       stopProviderRun?.();
+      liveScheduler.cancel();
     };
 
     return true;

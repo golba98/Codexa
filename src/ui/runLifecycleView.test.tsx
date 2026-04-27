@@ -7,7 +7,7 @@ import type { UIState } from "../session/types.js";
 import { isBusy } from "../session/types.js";
 import { BottomComposer } from "./BottomComposer.js";
 import { createLayoutSnapshot } from "./layout.js";
-import { RunFooter } from "./RunFooter.js";
+import { getRunFooterStatus, RunFooter } from "./RunFooter.js";
 import { ThemeProvider } from "./theme.js";
 
 class TestInput extends PassThrough {
@@ -49,6 +49,10 @@ function sleep(ms = 50): Promise<void> {
 }
 
 const TEST_LAYOUT = createLayoutSnapshot(120, 40);
+
+test("idle footer status is empty by contract", () => {
+  assert.equal(getRunFooterStatus({ kind: "IDLE" }), "");
+});
 
 function LifecycleHarness({ uiState, value }: { uiState: UIState; value: string }) {
   const showComposer = !isBusy(uiState);

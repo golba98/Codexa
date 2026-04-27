@@ -108,6 +108,10 @@ export function buildFollowUpPrompt(params: {
   ].join("\n");
 }
 
+function stateMatchesTurn(state: UIState, turnId: number): boolean {
+  return "turnId" in state && state.turnId === turnId;
+}
+
 export function reduceUIState(state: UIState, action: UIStateAction): UIState {
   switch (action.type) {
     case "PROMPT_RUN_STARTED":
@@ -118,20 +122,17 @@ export function reduceUIState(state: UIState, action: UIStateAction): UIState {
       }
       return state;
     case "RUN_COMPLETED":
-      if (
-        (state.kind === "THINKING" || state.kind === "RESPONDING" || state.kind === "ERROR")
-        && state.turnId === action.turnId
-      ) {
+      if (stateMatchesTurn(state, action.turnId)) {
         return { kind: "IDLE" };
       }
       return state;
     case "RUN_FAILED":
-      return { kind: "ERROR", turnId: action.turnId, message: action.message };
+      if (stateMatchesTurn(state, action.turnId)) {
+        return { kind: "ERROR", turnId: action.turnId, message: action.message };
+      }
+      return state;
     case "RUN_CANCELED":
-      if (
-        (state.kind === "THINKING" || state.kind === "RESPONDING" || state.kind === "ERROR" || state.kind === "AWAITING_USER_ACTION")
-        && state.turnId === action.turnId
-      ) {
+      if (stateMatchesTurn(state, action.turnId)) {
         return { kind: "IDLE" };
       }
       return state;

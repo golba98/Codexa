@@ -186,9 +186,23 @@ export function useTerminalViewport(): TerminalViewport {
           current.rawCols === nextViewport.rawCols &&
           current.rawRows === nextViewport.rawRows
         ) {
+          renderDebug.traceFlickerEvent("measurementUpdate", {
+            result: "skipped",
+            cols: nextViewport.cols,
+            rows: nextViewport.rows,
+            mode: nextViewport.mode,
+            unstable: nextViewport.unstable,
+          });
           return current;
         }
 
+        renderDebug.traceFlickerEvent("measurementUpdate", {
+          result: "updated",
+          cols: nextViewport.cols,
+          rows: nextViewport.rows,
+          mode: nextViewport.mode,
+          unstable: nextViewport.unstable,
+        });
         return nextViewport;
       });
     };

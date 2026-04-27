@@ -7,12 +7,16 @@ type DebugEnv = Record<string, string | undefined>;
 
 let configured = false;
 let enabled = false;
+let lifecycleEnabled = false;
+let flickerEnabled = false;
 let logPath = join(homedir(), ".codexa-render-debug.jsonl");
 let sessionId = `${Date.now()}-${process.pid}`;
 const counters = new Map<string, number>();
 
 function configureFromEnv(env: DebugEnv = process.env): void {
   enabled = env["CODEXA_RENDER_DEBUG"] === "1";
+  lifecycleEnabled = env["CODEXA_DEBUG_LIFECYCLE"] === "1";
+  flickerEnabled = env["CODEXA_DEBUG_FLICKER"] === "1";
   logPath = env["CODEXA_RENDER_DEBUG_FILE"]?.trim() || join(homedir(), ".codexa-render-debug.jsonl");
   sessionId = `${Date.now()}-${process.pid}`;
   configured = true;
@@ -31,6 +35,20 @@ export function isRenderDebugEnabled(): boolean {
     configureFromEnv();
   }
   return enabled;
+}
+
+export function isLifecycleDebugEnabled(): boolean {
+  if (!configured) {
+    configureFromEnv();
+  }
+  return lifecycleEnabled;
+}
+
+export function isFlickerDebugEnabled(): boolean {
+  if (!configured) {
+    configureFromEnv();
+  }
+  return flickerEnabled;
 }
 
 export function getRenderDebugLogPath(): string {
@@ -65,7 +83,6 @@ function sanitizeValue(value: unknown): unknown {
 }
 
 function writeRecord(kind: string, fields: Record<string, unknown>): void {
-  if (!isRenderDebugEnabled()) return;
   try {
     appendFileSync(
       logPath,
@@ -170,6 +187,25 @@ export function useRenderDebug(
   previous.current = watched;
 }
 
+export function useFlickerDebug(
+  event: string,
+  watched: Record<string, unknown> = {},
+): void {
+  const renderCount = useRef(0);
+  const previous = useRef<Record<string, unknown> | null>(null);
+  renderCount.current += 1;
+  const reason = diffKeys(previous.current, watched);
+  if (isFlickerDebugEnabled()) {
+    writeRecord("flicker", {
+      event,
+      count: renderCount.current,
+      reason,
+      watched: summarizeWatched(watched),
+    });
+  }
+  previous.current = watched;
+}
+
 export function traceEvent(
   channel: string,
   event: string,
@@ -186,10 +222,26 @@ export function traceSchedulerFlush(fields: Record<string, unknown>): void {
 
 export function traceStatusTick(fields: Record<string, unknown>): void {
   traceEvent("status", "tick", fields);
+  traceFlickerEvent("statusTick", fields);
 }
 
 export function traceTimelineUpdate(fields: Record<string, unknown>): void {
   traceEvent("timeline", "update", fields);
+}
+
+/**
+ * Set CODEXA_DEBUG_LIFECYCLE=1 to write one JSONL record for every UIState
+ * transition, including the derived composer and animation state.
+ */
+export function traceLifecycleTransition(fields: Record<string, unknown>): void {
+  if (!isLifecycleDebugEnabled()) return;
+  writeRecord("lifecycle", fields);
+}
+
+export function traceFlickerEvent(event: string, fields: Record<string, unknown> = {}): void {
+  if (!isFlickerDebugEnabled()) return;
+  const count = nextCounter(`flicker.${event}`);
+  writeRecord("flicker", { event, count, ...fields });
 }
 
 export function traceTerminalWrite(
