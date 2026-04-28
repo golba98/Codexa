@@ -879,6 +879,7 @@ const _staticRowCache = new Map<string, TimelineRow[]>();
 const STREAMING_BLOCK_ROW_CACHE_LIMIT = 200;
 let _streamingBlockRowCache = new Map<string, TimelineRow[]>();
 const _completedActionRowCache = new Map<string, TimelineRow[]>();
+const _completedActionTokenById = new Map<string, string>();
 let _wrappedRowCache = new WeakMap<TimelineRow, Map<string, TimelineRow>>();
 const _wrappedBlankRowCache = new Map<string, TimelineRow>();
 interface ActionDisplayDescriptor {
@@ -939,6 +940,7 @@ export function __clearTimelineMeasureCachesForTests(): void {
   _blankRowCache.clear();
   _streamingBlockRowCache.clear();
   _completedActionRowCache.clear();
+  _completedActionTokenById.clear();
   _wrappedRowCache = new WeakMap<TimelineRow, Map<string, TimelineRow>>();
   _wrappedBlankRowCache.clear();
   _actionDisplayCache.clear();
@@ -1540,6 +1542,33 @@ function getActionDisplayDescriptor(params: {
   return descriptor;
 }
 
+function buildPlainActionDebugRows(params: {
+  keyPrefix: string;
+  width: number;
+  descriptor: ActionDisplayDescriptor;
+}): TimelineRow[] {
+  const statusText = params.descriptor.label
+    ? `${params.descriptor.label}: ${params.descriptor.command}`
+    : params.descriptor.command;
+  const suffix = params.descriptor.duration ? params.descriptor.duration : "";
+  const text = clampVisualText(`${params.descriptor.icon} ${statusText}${suffix}`, Math.max(1, params.width - 1));
+  renderDebug.traceEvent("action", "plainActionRow", {
+    actionId: params.descriptor.id,
+    status: params.descriptor.status,
+    keyPrefix: params.keyPrefix,
+    width: params.width,
+  });
+  return [
+    createRow(
+      `${params.keyPrefix}-plain`,
+      [
+        createSpan(text || " ", params.descriptor.iconTone),
+      ],
+      params.width,
+    ),
+  ];
+}
+
 export function buildActionEventRows(params: {
   keyPrefix: string;
   width: number;
@@ -1565,6 +1594,14 @@ export function buildActionEventRows(params: {
     displayedToken: actionDisplayToken(descriptor),
   });
 
+  if (renderDebug.isPlainActionsDebugEnabled()) {
+    return buildPlainActionDebugRows({
+      keyPrefix: params.keyPrefix,
+      width: params.width,
+      descriptor,
+    });
+  }
+
   const cacheKey = rowCacheKey([
     "action",
     params.keyPrefix,
@@ -1574,12 +1611,22 @@ export function buildActionEventRows(params: {
   const isCompleted = tool.status !== "running";
   if (isCompleted) {
     const cached = _completedActionRowCache.get(cacheKey);
+    const completedActionTokenKey = `${params.keyPrefix}:${tool.id}`;
+    const displayedToken = actionDisplayToken(descriptor);
+    const previousCompletedToken = _completedActionTokenById.get(completedActionTokenKey);
+    if (previousCompletedToken && previousCompletedToken !== displayedToken) {
+      renderDebug.traceEvent("action", "completedSnapshotInvalidation", {
+        actionId: tool.id,
+        status: tool.status,
+        rowKey: params.keyPrefix,
+      });
+    }
     renderDebug.traceFlickerEvent("actionRowBuild", {
       cache: cached ? "hit-completed" : "miss-completed",
       actionId: tool.id,
       status: tool.status,
       rowKey: params.keyPrefix,
-      displayedToken: actionDisplayToken(descriptor),
+      displayedToken,
     });
     if (cached) return cached;
   } else {
@@ -1641,6 +1688,7 @@ export function buildActionEventRows(params: {
   if (isCompleted) {
     const rows = buildActionRows();
     _completedActionRowCache.set(cacheKey, rows);
+    _completedActionTokenById.set(`${params.keyPrefix}:${tool.id}`, actionDisplayToken(descriptor));
     return rows;
   }
 
@@ -1971,9 +2019,21 @@ export function buildTimelineSnapshot(
       const cacheKey = `e:${item.key}:${innerWidth}`;
       const cached = _staticRowCache.get(cacheKey);
       if (cached) {
+        renderDebug.traceEvent("timeline", "rowGeneration", {
+          itemKey: item.key,
+          itemType: "event",
+          cache: "hit",
+          innerWidth,
+        });
         renderDebug.traceEvent("timeline", "staticCacheHit", { cacheKey, itemType: "event" });
         builtRows = cached;
       } else {
+        renderDebug.traceEvent("timeline", "rowGeneration", {
+          itemKey: item.key,
+          itemType: "event",
+          cache: "miss",
+          innerWidth,
+        });
         renderDebug.traceEvent("timeline", "staticCacheMiss", { cacheKey, itemType: "event" });
         const r = buildStandaloneEventRows(item, innerWidth);
         _staticRowCache.set(cacheKey, r);
@@ -1989,15 +2049,39 @@ export function buildTimelineSnapshot(
         const cacheKey = `t:${item.key}:${innerWidth}:${verbose}:${runPhase}:${opacity}`;
         const cached = _staticRowCache.get(cacheKey);
         if (cached) {
+          renderDebug.traceEvent("timeline", "rowGeneration", {
+            itemKey: item.key,
+            itemType: "turn",
+            runPhase,
+            opacity,
+            cache: "hit",
+            innerWidth,
+          });
           renderDebug.traceEvent("timeline", "staticCacheHit", { cacheKey, itemType: "turn", runPhase, opacity });
           builtRows = cached;
         } else {
+          renderDebug.traceEvent("timeline", "rowGeneration", {
+            itemKey: item.key,
+            itemType: "turn",
+            runPhase,
+            opacity,
+            cache: "miss",
+            innerWidth,
+          });
           renderDebug.traceEvent("timeline", "staticCacheMiss", { cacheKey, itemType: "turn", runPhase, opacity });
           const r = buildTurnRows(item, innerWidth, verbose);
           _staticRowCache.set(cacheKey, r);
           builtRows = r;
         }
       } else {
+        renderDebug.traceEvent("timeline", "rowGeneration", {
+          itemKey: item.key,
+          itemType: "turn",
+          runPhase,
+          opacity,
+          cache: "active",
+          innerWidth,
+        });
         renderDebug.traceEvent("timeline", "activeBuild", { itemKey: item.key, runPhase, opacity });
         builtRows = buildTurnRows(item, innerWidth, verbose);
       }

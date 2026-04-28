@@ -80,6 +80,11 @@ export interface TimelineViewportState {
   frozenSnapshot: TimelineSnapshot | null;
 }
 
+interface FinalizeContinuityOptions {
+  previousTotalRows: number;
+  viewportRows: number;
+}
+
 function isStandaloneEvent(event: TimelineEvent): event is StandaloneTimelineEvent {
   return event.type === "system" || event.type === "error" || event.type === "shell";
 }
@@ -91,6 +96,36 @@ function getActiveTurnId(uiState: UIState): number | null {
     || uiState.kind === "ERROR"
     ? uiState.turnId
     : null;
+}
+
+function isBusyUiState(uiState: UIState): boolean {
+  return uiState.kind === "THINKING" || uiState.kind === "RESPONDING" || uiState.kind === "SHELL_RUNNING";
+}
+
+function getRunningTurnIds(events: TimelineEvent[]): number[] {
+  return events
+    .filter((event): event is RunEvent => event.type === "run" && event.status === "running")
+    .map((event) => event.turnId);
+}
+
+function getFinalizedTurnIds(events: TimelineEvent[]): number[] {
+  return events
+    .filter((event): event is RunEvent => event.type === "run" && event.status !== "running")
+    .map((event) => event.turnId);
+}
+
+function hasFinalizeTransition(params: {
+  previousRunningTurnIds: number[];
+  nextRunningTurnIds: number[];
+  nextFinalizedTurnIds: number[];
+  previousBusy: boolean;
+  nextBusy: boolean;
+}): boolean {
+  if (!params.previousBusy || params.nextBusy) return false;
+  return params.previousRunningTurnIds.some((turnId) =>
+    !params.nextRunningTurnIds.includes(turnId)
+    && params.nextFinalizedTurnIds.includes(turnId)
+  );
 }
 
 function isHomeInput(input: string): boolean {
@@ -178,6 +213,46 @@ export function createFollowTailViewport(totalRows: number): TimelineViewportSta
   };
 }
 
+function createAnchoredViewport(snapshot: TimelineSnapshot, anchorRow: number): TimelineViewportState {
+  return {
+    anchorRow: clampAnchorRow(anchorRow, snapshot.totalRows),
+    followTail: false,
+    unseenItems: 0,
+    unseenRows: 0,
+    frozenSnapshot: snapshot,
+  };
+}
+
+function findFinalResponseStartRow(snapshot: TimelineSnapshot, previousTotalRows: number, viewportRows: number): number | null {
+  const searchFloor = Math.max(0, previousTotalRows - Math.max(1, viewportRows));
+  const responseIndex = snapshot.rows.findIndex((row, index) =>
+    index >= searchFloor && row.key.includes("-codex-response-")
+  );
+  return responseIndex >= 0 ? responseIndex : null;
+}
+
+export function createFinalizeContinuityViewport(
+  snapshot: TimelineSnapshot,
+  options: FinalizeContinuityOptions,
+): TimelineViewportState {
+  if (snapshot.totalRows === 0) {
+    return createFollowTailViewport(0);
+  }
+
+  const responseStartRow = findFinalResponseStartRow(
+    snapshot,
+    options.previousTotalRows,
+    options.viewportRows,
+  );
+  const answerPreviewRows = Math.min(3, Math.max(1, Math.floor(options.viewportRows / 4)));
+  const fallbackAnchor = options.previousTotalRows + answerPreviewRows - 1;
+  const anchorRow = responseStartRow === null
+    ? fallbackAnchor
+    : responseStartRow + answerPreviewRows - 1;
+
+  return createAnchoredViewport(snapshot, Math.min(snapshot.totalRows - 1, Math.max(0, anchorRow)));
+}
+
 function getFrozenSnapshot(
   viewport: TimelineViewportState,
   liveSnapshot: TimelineSnapshot,
@@ -190,12 +265,17 @@ function getFrozenSnapshot(
 export function syncTimelineViewport(
   viewport: TimelineViewportState,
   liveSnapshot: TimelineSnapshot,
+  options: { finalizeContinuity?: FinalizeContinuityOptions } = {},
 ): TimelineViewportState {
   if (liveSnapshot.totalRows === 0) {
     return createFollowTailViewport(0);
   }
 
   if (viewport.followTail) {
+    if (options.finalizeContinuity) {
+      return createFinalizeContinuityViewport(liveSnapshot, options.finalizeContinuity);
+    }
+
     const nextAnchor = liveSnapshot.totalRows - 1;
     if (
       viewport.anchorRow === nextAnchor
@@ -694,6 +774,18 @@ const TimelineRowView = memo(function TimelineRowView({ row }: { row: TimelineRo
 }, (prev, next) => prev.row === next.row);
 
 export const Timeline = memo(function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows, verboseMode = false }: TimelineProps) {
+  renderDebug.useRenderDebug("Timeline", {
+    staticEvents,
+    activeEvents,
+    staticEventsLength: staticEvents.length,
+    activeEventsLength: activeEvents.length,
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+    uiStateKind: uiState.kind,
+    viewportRows,
+    verboseMode,
+  });
   renderDebug.useFlickerDebug("timelineRender", {
     staticEvents,
     activeEvents,
@@ -723,6 +815,24 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
   const staticItems = useMemo(() => buildTimelineItems(staticEvents), [staticEvents]);
   const activeItems = useMemo(() => buildTimelineItems(activeEvents), [activeEvents]);
   const activeTurnId = getActiveTurnId(uiState);
+  const runningTurnIds = useMemo(() => getRunningTurnIds(activeEvents), [activeEvents]);
+  const finalizedTurnIds = useMemo(() => getFinalizedTurnIds(staticEvents), [staticEvents]);
+  const finalizeTransitionRef = useRef<{
+    runningTurnIds: number[];
+    finalizedTurnIds: number[];
+    busy: boolean;
+  }>({
+    runningTurnIds,
+    finalizedTurnIds,
+    busy: isBusyUiState(uiState),
+  });
+  const finalizeTransition = hasFinalizeTransition({
+    previousRunningTurnIds: finalizeTransitionRef.current.runningTurnIds,
+    nextRunningTurnIds: runningTurnIds,
+    nextFinalizedTurnIds: finalizedTurnIds,
+    previousBusy: finalizeTransitionRef.current.busy,
+    nextBusy: isBusyUiState(uiState),
+  });
   const questionTurnId = uiState.kind === "AWAITING_USER_ACTION" ? uiState.turnId : null;
   const question = uiState.kind === "AWAITING_USER_ACTION" ? uiState.question : null;
   const staticTurnIds = useMemo(
@@ -809,7 +919,9 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     snapshotWidthRef.current = snapshotWidth;
 
     const totalRows = liveSnapshot.totalRows;
-    const totalRowsGrew = totalRows > prevTotalRowsRef.current;
+    const previousTotalRows = prevTotalRowsRef.current;
+    const rowGrowth = totalRows - previousTotalRows;
+    const totalRowsGrew = rowGrowth > 0;
     prevTotalRowsRef.current = totalRows;
 
     setViewport((current) => {
@@ -821,9 +933,13 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
         renderDebug.traceFlickerEvent("viewportSync", {
           reason: "width-change",
           result: next === current ? "skipped" : "updated",
+          previousTotalRows,
           totalRows,
+          rowGrowth,
+          previousAnchorRow: current.anchorRow,
           anchorRow: next.anchorRow,
           followTail: next.followTail,
+          viewportRows,
         });
         return next;
       }
@@ -836,9 +952,13 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
         renderDebug.traceFlickerEvent("viewportSync", {
           reason: totalRowsGrew ? "detached-growth" : "detached-no-growth",
           result: next === current ? "skipped" : "updated",
+          previousTotalRows,
           totalRows,
+          rowGrowth,
+          previousAnchorRow: current.anchorRow,
           anchorRow: next.anchorRow,
           followTail: next.followTail,
+          viewportRows,
         });
         return next;
       }
@@ -850,24 +970,45 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
         renderDebug.traceFlickerEvent("viewportSync", {
           reason: "follow-tail-no-growth",
           result: "skipped",
+          previousTotalRows,
           totalRows,
+          rowGrowth,
+          previousAnchorRow: current.anchorRow,
           anchorRow: current.anchorRow,
           followTail: current.followTail,
+          viewportRows,
         });
         return current;
       }
 
-      const next = syncTimelineViewport(current, liveSnapshot);
+      const useFinalizeContinuity = finalizeTransition && rowGrowth > Math.max(1, Math.floor(viewportRows / 2));
+      const next = syncTimelineViewport(current, liveSnapshot, {
+        finalizeContinuity: useFinalizeContinuity
+          ? { previousTotalRows, viewportRows }
+          : undefined,
+      });
       renderDebug.traceFlickerEvent("viewportSync", {
-        reason: "follow-tail-growth",
+        reason: useFinalizeContinuity ? "finalize-continuity" : "follow-tail-growth",
         result: next === current ? "skipped" : "updated",
+        previousTotalRows,
         totalRows,
+        rowGrowth,
+        previousAnchorRow: current.anchorRow,
         anchorRow: next.anchorRow,
         followTail: next.followTail,
+        viewportRows,
       });
       return next;
     });
-  }, [liveSnapshot, snapshotWidth]);
+  }, [finalizeTransition, liveSnapshot, snapshotWidth, viewportRows]);
+
+  useEffect(() => {
+    finalizeTransitionRef.current = {
+      runningTurnIds,
+      finalizedTurnIds,
+      busy: isBusyUiState(uiState),
+    };
+  }, [finalizedTurnIds, runningTurnIds, uiState]);
 
   useEffect(() => {
     let scrollDelta = 0;
@@ -935,6 +1076,15 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
 
   const { visibleRows } = useMemo(() => {
     const selection = selectTimelineRows(liveSnapshot, viewport, viewportRows);
+    renderDebug.traceEvent("viewport", "slice", {
+      visibleRows: selection.visibleRows.length,
+      startRow: selection.window.startRow,
+      endRow: selection.window.endRow,
+      anchorRow: selection.window.anchorRow,
+      followTail: viewport.followTail,
+      totalRows: selection.sourceSnapshot.totalRows,
+      viewportRows,
+    });
     renderDebug.traceFlickerEvent("viewportSlice", {
       visibleRows: selection.visibleRows.length,
       startRow: selection.window.startRow,

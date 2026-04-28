@@ -3,7 +3,7 @@ import { Text } from "ink";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { useTheme } from "./theme.js";
 import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
-import { BUSY_STATUS_FRAME_MS, getBusyStatusFrame } from "./busyStatusAnimation.js";
+import { BUSY_STATUS_FRAME_MS, BUSY_STATUS_FRAMES, getBusyStatusFrame } from "./busyStatusAnimation.js";
 
 interface AnimatedStatusTextProps {
   baseText: string;
@@ -14,9 +14,10 @@ interface AnimatedStatusTextProps {
 
 function useLocalBusyStatusFrame(isActive: boolean, label: string): string {
   const [frameIndex, setFrameIndex] = useState(0);
+  const staticStatus = process.env.CODEXA_DEBUG_STATIC_STATUS === "1";
 
   useEffect(() => {
-    if (!isActive) {
+    if (!isActive || staticStatus) {
       setFrameIndex(0);
       return;
     }
@@ -34,8 +35,11 @@ function useLocalBusyStatusFrame(isActive: boolean, label: string): string {
     return () => {
       clearInterval(timer);
     };
-  }, [isActive, label]);
+  }, [isActive, label, staticStatus]);
 
+  if (isActive && staticStatus) {
+    return BUSY_STATUS_FRAMES[BUSY_STATUS_FRAMES.length - 1]!;
+  }
   return getBusyStatusFrame(frameIndex);
 }
 

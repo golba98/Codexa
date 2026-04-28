@@ -159,3 +159,44 @@ test("busy footer advances from local status state without a parent rerender", a
 
   instance.unmount();
 });
+
+test("static status debug flag reserves status text without dot ticks", async () => {
+  const previous = process.env.CODEXA_DEBUG_STATIC_STATUS;
+  process.env.CODEXA_DEBUG_STATIC_STATUS = "1";
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const instance = render(
+    <LifecycleHarness uiState={{ kind: "THINKING", turnId: 1 }} value="" />,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+    },
+  );
+
+  try {
+    await sleep();
+    let frame = stripAnsi(output);
+    assert.match(frame, /Codex is thinking \.\.\./);
+
+    output = "";
+    await sleep(420);
+    frame = stripAnsi(output);
+    assert.equal(frame, "");
+  } finally {
+    instance.unmount();
+    if (previous === undefined) {
+      delete process.env.CODEXA_DEBUG_STATIC_STATUS;
+    } else {
+      process.env.CODEXA_DEBUG_STATIC_STATUS = previous;
+    }
+  }
+});
