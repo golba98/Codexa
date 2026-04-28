@@ -215,6 +215,21 @@ test("resize repaint does not erase terminal scrollback buffer", async () => {
   await flushMicrotasks();
 });
 
+test("normal app render writes do not clear the terminal after startup", async () => {
+  const harness = createSupportedHarness();
+  startApp(harness.deps);
+
+  const appWriteStart = harness.stdout.writes.indexOf("\x1b[?1000h");
+  assert.ok(appWriteStart >= 0, "mock app render should write mouse mode");
+  const appWrites = harness.stdout.writes.slice(appWriteStart);
+
+  assert.equal(harness.stdout.clearCalls, 0);
+  assert.doesNotMatch(appWrites, /\x1b\[2J|\x1b\[3J/);
+
+  harness.resolveExit();
+  await flushMicrotasks();
+});
+
 test("soft-repaints when resize occurs without invalid dimensions", async () => {
   const harness = createSupportedHarness();
   startApp(harness.deps);

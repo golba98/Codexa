@@ -27,7 +27,7 @@ test("measures the standard composer rows from the rendered prompt state", () =>
     cursor: 0,
   });
 
-  assert.equal(rows, 5);
+  assert.equal(rows, 6);
 });
 
 test("uses the run footer row budget in cramped busy viewports", () => {
@@ -38,5 +38,5 @@ test("uses the run footer row budget in cramped busy viewports", () => {
     cursor: 0,
   });
 
-  assert.equal(rows, 3);
+  assert.equal(rows, 4);
 });

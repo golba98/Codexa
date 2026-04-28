@@ -17,7 +17,6 @@ export interface LiveRenderSchedulerOptions {
   progressOnlyFlushMs: number;
   setTimer?: (callback: () => void, delayMs: number) => TimerHandle;
   clearTimer?: (timer: TimerHandle) => void;
-  queueMicrotaskFn?: (callback: () => void) => void;
 }
 
 export interface LiveRenderScheduler {
@@ -71,13 +70,10 @@ export function createLiveRenderScheduler({
   progressOnlyFlushMs,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
-  queueMicrotaskFn = queueMicrotask,
 }: LiveRenderSchedulerOptions): LiveRenderScheduler {
   let pendingUpdates: LiveRenderUpdate[] = [];
   let hasPendingAssistantDelta = false;
-  let firstFlushPending = true;
   let timer: TimerHandle | null = null;
-  let microtaskScheduled = false;
   let isFlushing = false;
   let flushAgain = false;
 
@@ -86,7 +82,6 @@ export function createLiveRenderScheduler({
       clearTimer(timer);
       timer = null;
     }
-    microtaskScheduled = false;
   };
 
   const drain = (): boolean => {
@@ -133,17 +128,7 @@ export function createLiveRenderScheduler({
   };
 
   const schedule = () => {
-    if (timer || microtaskScheduled || isFlushing) return;
-
-    if (firstFlushPending) {
-      firstFlushPending = false;
-      microtaskScheduled = true;
-      queueMicrotaskFn(() => {
-        microtaskScheduled = false;
-        drain();
-      });
-      return;
-    }
+    if (timer || isFlushing) return;
 
     const interval = hasPendingAssistantDelta ? assistantFlushMs : progressOnlyFlushMs;
     timer = setTimer(() => {
