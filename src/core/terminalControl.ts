@@ -16,6 +16,13 @@ export const TERMINAL_SEQUENCES = {
 export type TerminalWrite = (chunk: string) => boolean | void;
 export type TerminalChannel = "stdout" | "stderr";
 
+// Tracks current UI state kind for diagnostic assertions.
+let currentUIStateKind: string = "IDLE";
+
+export function setTerminalControlUIState(kind: string): void {
+  currentUIStateKind = kind;
+}
+
 export function writeTerminalControl(
   write: TerminalWrite,
   channel: TerminalChannel,
@@ -23,6 +30,20 @@ export function writeTerminalControl(
   sequence: string,
 ): boolean {
   renderDebug.traceTerminalWrite(channel, source, sequence);
+
+  // Diagnostic: warn if a viewport-clearing sequence fires during streaming.
+  if (
+    renderDebug.isRenderDebugEnabled()
+    && (currentUIStateKind === "RESPONDING" || currentUIStateKind === "THINKING")
+    && (sequence.includes("\x1b[2J") || sequence.includes("\x1b[3J"))
+  ) {
+    renderDebug.traceEvent("terminal", "unexpectedClearDuringStreaming", {
+      source,
+      uiStateKind: currentUIStateKind,
+      sequenceLength: sequence.length,
+    });
+  }
+
   return write(sequence) !== false;
 }
 

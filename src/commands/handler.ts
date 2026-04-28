@@ -1,3 +1,4 @@
+import { dumpRenderCounts } from "../core/perf/renderDebug.js";
 import {
   AUTH_PREFERENCES,
   AVAILABLE_BACKENDS,
@@ -330,6 +331,16 @@ function handlePolicyCommand(
           : `Unknown ${commandPrefix.slice(1)} command. Use /permissions <approval-policy|sandbox|network|writable-roots>.`,
       };
   }
+}
+
+function formatRenderCounts(): string {
+  const counts = dumpRenderCounts();
+  const lines = Object.entries(counts)
+    .sort(([, a], [, b]) => b - a)
+    .map(([name, count]) => `  ${name}: ${count}`);
+  return lines.length > 0
+    ? `Render counts:\n${lines.join("\n")}`
+    : "No render counts recorded. Set CODEXA_RENDER_DEBUG=1 to enable.";
 }
 
 export function handleCommand(text: string, context: CommandContext): CommandResult | null {
@@ -665,8 +676,17 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       return { action: "mouse_toggle" };
 
     case "verbose":
-    case "debug":
       return { action: "verbose_toggle" };
+
+    case "debug": {
+      if (normalizedArg === "renders") {
+        return {
+          action: "verbose_toggle",
+          message: formatRenderCounts(),
+        };
+      }
+      return { action: "verbose_toggle" };
+    }
 
     case "help":
       return {

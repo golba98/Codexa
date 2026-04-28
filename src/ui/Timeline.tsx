@@ -1140,13 +1140,15 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     });
     return selection;
   }, [liveSnapshot, viewport, viewportRows]);
+  const frozenRowsRef = useRef<TimelineRow[]>([]);
+  const liveRowsRef = useRef<TimelineRow[]>([]);
   const { frozenVisibleRows, liveVisibleRows } = useMemo(() => {
     if (!STABLE_RENDER_ENABLED) {
       return { frozenVisibleRows: visibleRows, liveVisibleRows: [] };
     }
 
-    const frozen: TimelineRow[] = [];
-    const live: TimelineRow[] = [];
+    let frozen: TimelineRow[] = [];
+    let live: TimelineRow[] = [];
     for (const row of visibleRows) {
       if (liveRowSet.has(row)) {
         live.push(row);
@@ -1154,6 +1156,20 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
         frozen.push(row);
       }
     }
+
+    // Preserve array identity when elements haven't changed, so
+    // TimelineRowsView's memo comparator can skip re-render entirely.
+    if (rowArraysEqual(frozen, frozenRowsRef.current)) {
+      frozen = frozenRowsRef.current;
+    } else {
+      frozenRowsRef.current = frozen;
+    }
+    if (rowArraysEqual(live, liveRowsRef.current)) {
+      live = liveRowsRef.current;
+    } else {
+      liveRowsRef.current = live;
+    }
+
     return { frozenVisibleRows: frozen, liveVisibleRows: live };
   }, [liveRowSet, visibleRows]);
 
