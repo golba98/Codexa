@@ -132,6 +132,9 @@ export function startApp({
     writeStderr(`${capability.message}\n`, "src/index.tsx:unsupportedTerminal");
     return { started: false, exitCode: 1 };
   }
+  if (capability.warning) {
+    writeStderr(`${capability.warning}\n`, "src/index.tsx:terminalCapabilityWarning");
+  }
 
   const parsedLaunchArgs = parseLaunchArgs(argv);
   if (!parsedLaunchArgs.ok) {
