@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useMemo, useRef } from "react";
 import { Box } from "ink";
+import { useTheme } from "./theme.js";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
@@ -61,6 +62,7 @@ function AppShellInner({
 
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
+  const theme = useTheme();
   const showComposer = screen === "main";
   const showTimeline = screen === "main";
   const showPanelStage = screen !== "main";
@@ -119,7 +121,16 @@ function AppShellInner({
     <Box flexDirection="column" width="100%" height={shellHeight}>
       <Box flexDirection="column" width={shellWidth}>
         {showTimeline && (
-          <Box flexDirection="column" borderBottom={true} flexShrink={0}>
+          <Box
+            flexDirection="column"
+            borderStyle="single"
+            borderBottom={true}
+            borderTop={false}
+            borderLeft={false}
+            borderRight={false}
+            borderColor={theme.BORDER_SUBTLE}
+            flexShrink={0}
+          >
             {/* MemoizedTopHeader already has its own comparator — stable during streaming. */}
             <MemoizedTopHeader authState={authState} workspaceLabel={workspaceLabel} layout={layout} runtimeSummary={runtimeSummary} />
           </Box>

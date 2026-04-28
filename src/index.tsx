@@ -33,6 +33,8 @@ interface InkInstance {
   unsubscribeResize?: () => void;
   rootNode: { onRender: { cancel?: () => void } };
   throttledLog: { cancel?: () => void };
+  /** log-update renderer — exposes reset() for incremental rendering resets. */
+  log: { reset?: () => void };
 }
 
 /**
@@ -236,6 +238,13 @@ export function startApp({
         if (repaintMode === "recovery") {
           traceTerminalClear("src/index.tsx:scheduleRepaint.renderHandleClear", { mode: "inkClear" });
           renderHandle.clear();
+        } else {
+          // Soft repaint: reset log-update's internal previousLines/previousOutput
+          // so the incremental renderer treats every line as new and rewrites the
+          // entire frame with ESC[K.  Without this, stale previousLines from the
+          // pre-resize frame cause the incremental diff to skip lines that actually
+          // need clearing (e.g. border rows that moved to different positions).
+          inkInstance.log?.reset?.();
         }
 
         // Cancel ALL pending throttled callbacks — including onRender's own
@@ -366,6 +375,16 @@ export function startApp({
 
   renderHandle = renderApp(<App launchArgs={launchArgs} />, {
     kittyKeyboard: KITTY_KEYBOARD_OPTIONS,
+    // Incremental rendering mode diffs output line-by-line and appends
+    // ESC[K (erase-to-end-of-line) after each changed line.  This is
+    // critical because Ink's Output.get() calls .trimEnd() on every
+    // line, stripping the trailing spaces we use for full-width padding.
+    // Without incremental mode, the standard renderer erases ALL lines
+    // and rewrites the full frame — but trimmed lines leave stale
+    // border/box characters visible in the rightmost columns.
+    // Incremental mode also skips unchanged lines entirely, reducing
+    // flicker during streaming.
+    incrementalRendering: true,
   });
 
   // Resolve the real Ink class instance to get access to lastOutput,
