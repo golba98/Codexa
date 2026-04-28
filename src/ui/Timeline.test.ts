@@ -8,6 +8,7 @@ import {
   buildActiveRenderItems,
   buildStaticRenderItems,
   buildTimelineItems,
+  createFinalizeContinuityViewport,
   createFollowTailViewport,
   endTimelineViewport,
   findAnchorItem,
@@ -1271,6 +1272,160 @@ test("completed final response is not forced above earlier actions", () => {
   }), 303);
 
   assert.ok(joined.indexOf("Check git status") < joined.indexOf("Done after checking status"));
+});
+
+test("completed action/read-file rows remain before the final response", () => {
+  const joined = renderJoinedTurn(makeChronologicalTurnEvents(307, {
+    toolActivities: [
+      {
+        id: "tool-1",
+        command: "Get-Content 5-Date-Verification.md",
+        status: "completed",
+        startedAt: 10,
+        completedAt: 20,
+        streamSeq: 1,
+      },
+      {
+        id: "tool-2",
+        command: "Get-Content README.md",
+        status: "completed",
+        startedAt: 21,
+        completedAt: 30,
+        streamSeq: 2,
+      },
+    ],
+    responseSegments: [{
+      id: "response-1",
+      streamSeq: 3,
+      chunks: ["Final answer: 5-Date Verification explains the date-checking rule."],
+      status: "completed",
+      startedAt: 40,
+    }],
+    streamItems: [
+      { streamSeq: 1, kind: "action", refId: "tool-1" },
+      { streamSeq: 2, kind: "action", refId: "tool-2" },
+      { streamSeq: 3, kind: "response", refId: "response-1" },
+    ],
+    lastStreamSeq: 3,
+  }), 307);
+
+  assert.equal((joined.match(/╭── action/g) ?? []).length, 2);
+  assert.ok(joined.indexOf("Read file") < joined.indexOf("Final answer"));
+});
+
+test("finalize continuity viewport shows construction plus the beginning of the final answer", () => {
+  const turnId = 308;
+  const prompt = "What is the point of this file ie 5-Date Verification";
+  const toolActivities = Array.from({ length: 6 }, (_, index) => ({
+    id: `tool-${index + 1}`,
+    command: `Get-Content date-file-${index + 1}.md`,
+    status: "completed" as const,
+    startedAt: 10 + index,
+    completedAt: 20 + index,
+    summary: `Read ${10 + index} lines`,
+    streamSeq: index + 2,
+  }));
+  const progressEntry: RunProgressEntry = {
+    id: "reason-1",
+    source: "reasoning",
+    text: "I need to inspect the date verification files.",
+    sequence: 1,
+    createdAt: 1,
+    updatedAt: 1,
+    pendingNewlineCount: 0,
+    blocks: [{
+      id: "reason-1-block-1",
+      text: "I need to inspect the date verification files.",
+      sequence: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      status: "completed",
+      streamSeq: 1,
+    }],
+  };
+  const userEvent: TimelineEvent = {
+    id: 1,
+    type: "user",
+    createdAt: 1,
+    prompt,
+    turnId,
+  };
+  const runningRun: Extract<TimelineEvent, { type: "run" }> = {
+    id: 2,
+    type: "run",
+    createdAt: 2,
+    startedAt: 2,
+    durationMs: null,
+    backendId: "codex-subprocess",
+    backendLabel: "Codexa",
+    runtime: TEST_RUNTIME,
+    prompt,
+    progressEntries: [progressEntry],
+    status: "running",
+    summary: "Running",
+    truncatedOutput: false,
+    toolActivities,
+    activity: [],
+    touchedFileCount: 0,
+    errorMessage: null,
+    turnId,
+    streamItems: [
+      { streamSeq: 1, kind: "thinking", refId: "reason-1-block-1" },
+      ...toolActivities.map((tool) => ({ streamSeq: tool.streamSeq!, kind: "action" as const, refId: tool.id })),
+    ],
+    responseSegments: [],
+    lastStreamSeq: 7,
+    activeResponseSegmentId: null,
+  };
+  const finalAnswer = Array.from(
+    { length: 16 },
+    (_, index) => `Final answer line ${index + 1}: explanation of 5-Date Verification.`,
+  ).join("\n");
+  const finalizedRun: Extract<TimelineEvent, { type: "run" }> = {
+    ...runningRun,
+    status: "completed",
+    durationMs: 1000,
+    responseSegments: [{
+      id: "response-final-2-8",
+      streamSeq: 8,
+      chunks: [finalAnswer],
+      status: "completed",
+      startedAt: 40,
+    }],
+    streamItems: [
+      ...(runningRun.streamItems ?? []),
+      { streamSeq: 8, kind: "response", refId: "response-final-2-8" },
+    ],
+    lastStreamSeq: 8,
+  };
+  const assistantEvent: TimelineEvent = {
+    id: 3,
+    type: "assistant",
+    createdAt: 3,
+    content: finalAnswer,
+    contentChunks: [],
+    turnId,
+  };
+  const activeItems = buildTimelineItems([userEvent, runningRun]);
+  const activeRenderItems = buildActiveRenderItems(activeItems, [turnId], { kind: "THINKING", turnId });
+  const activeSnapshot = buildTimelineSnapshot(activeRenderItems, { totalWidth: 90 });
+  const finalItems = buildTimelineItems([userEvent, finalizedRun, assistantEvent]);
+  const finalRenderItems = buildStaticRenderItems(finalItems, [turnId], null, null, null);
+  const finalSnapshot = buildTimelineSnapshot(finalRenderItems, { totalWidth: 90 });
+  const continuity = createFinalizeContinuityViewport(finalSnapshot, {
+    previousTotalRows: activeSnapshot.totalRows,
+    viewportRows: 18,
+  });
+  const visible = selectTimelineRows(finalSnapshot, continuity, 18).visibleRows
+    .map((row) => row.spans.map((span) => span.text).join(""))
+    .join("\n");
+
+  assert.equal(continuity.followTail, false);
+  assert.notEqual(continuity.anchorRow, finalSnapshot.totalRows - 1);
+  assert.match(visible, /╭── action/);
+  assert.match(visible, /Read file/);
+  assert.match(visible, /Final answer line 1/);
+  assert.doesNotMatch(visible, /Final answer line 10/);
 });
 
 test("raw stdout progress does not render as thinking in fallback sessions", () => {

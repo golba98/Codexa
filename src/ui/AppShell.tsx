@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from "react";
+import React, { memo, useEffect, useMemo, useRef } from "react";
 import { Box } from "ink";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
@@ -64,6 +64,12 @@ function AppShellInner({
   const showComposer = screen === "main";
   const showTimeline = screen === "main";
   const showPanelStage = screen !== "main";
+  const previousMeasurements = useRef<{
+    headerRows: number;
+    timelineRows: number;
+    composerRows: number;
+    shellHeight: number;
+  } | null>(null);
 
   // Memoize headerRows — only changes when layout mode/cols changes, not on streaming.
   const headerRows = useMemo(
@@ -76,6 +82,38 @@ function AppShellInner({
     () => Math.max(1, shellHeight - headerRows - (showComposer ? composerRows : 0)),
     [shellHeight, headerRows, showComposer, composerRows],
   );
+
+  useEffect(() => {
+    const previous = previousMeasurements.current;
+    const changed: string[] = [];
+    if (!previous) {
+      changed.push("mount");
+    } else {
+      if (previous.headerRows !== headerRows) changed.push("headerRows");
+      if (previous.timelineRows !== timelineRows) changed.push("availableTimelineRows");
+      if (previous.composerRows !== composerRows) changed.push("composerRows");
+      if (previous.shellHeight !== shellHeight) changed.push("height");
+    }
+
+    if (changed.length > 0) {
+      renderDebug.traceEvent("layout", "measurementUpdate", {
+        reason: changed.join(","),
+        headerRows,
+        availableTimelineRows: timelineRows,
+        composerRows,
+        shellHeight,
+        showComposer,
+        showTimeline,
+      });
+    }
+
+    previousMeasurements.current = {
+      headerRows,
+      timelineRows,
+      composerRows,
+      shellHeight,
+    };
+  }, [composerRows, headerRows, shellHeight, showComposer, showTimeline, timelineRows]);
 
   return (
     <Box flexDirection="column" width="100%" height={shellHeight}>

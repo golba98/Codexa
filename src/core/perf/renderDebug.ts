@@ -7,16 +7,20 @@ type DebugEnv = Record<string, string | undefined>;
 
 let configured = false;
 let enabled = false;
+let renderTraceEnabled = false;
 let lifecycleEnabled = false;
 let flickerEnabled = false;
+let plainActionsEnabled = false;
 let logPath = join(homedir(), ".codexa-render-debug.jsonl");
 let sessionId = `${Date.now()}-${process.pid}`;
 const counters = new Map<string, number>();
 
 function configureFromEnv(env: DebugEnv = process.env): void {
-  enabled = env["CODEXA_RENDER_DEBUG"] === "1";
+  renderTraceEnabled = env["CODEXA_DEBUG_RENDER_TRACE"] === "1";
+  enabled = env["CODEXA_RENDER_DEBUG"] === "1" || renderTraceEnabled;
   lifecycleEnabled = env["CODEXA_DEBUG_LIFECYCLE"] === "1";
   flickerEnabled = env["CODEXA_DEBUG_FLICKER"] === "1";
+  plainActionsEnabled = env["CODEXA_DEBUG_PLAIN_ACTIONS"] === "1";
   logPath = env["CODEXA_RENDER_DEBUG_FILE"]?.trim() || join(homedir(), ".codexa-render-debug.jsonl");
   sessionId = `${Date.now()}-${process.pid}`;
   configured = true;
@@ -37,6 +41,13 @@ export function isRenderDebugEnabled(): boolean {
   return enabled;
 }
 
+export function isRenderTraceEnabled(): boolean {
+  if (!configured) {
+    configureFromEnv();
+  }
+  return renderTraceEnabled;
+}
+
 export function isLifecycleDebugEnabled(): boolean {
   if (!configured) {
     configureFromEnv();
@@ -49,6 +60,13 @@ export function isFlickerDebugEnabled(): boolean {
     configureFromEnv();
   }
   return flickerEnabled;
+}
+
+export function isPlainActionsDebugEnabled(): boolean {
+  if (!configured) {
+    configureFromEnv();
+  }
+  return plainActionsEnabled;
 }
 
 export function getRenderDebugLogPath(): string {
@@ -195,7 +213,7 @@ export function useFlickerDebug(
   const previous = useRef<Record<string, unknown> | null>(null);
   renderCount.current += 1;
   const reason = diffKeys(previous.current, watched);
-  if (isFlickerDebugEnabled()) {
+  if (isFlickerDebugEnabled() || isRenderTraceEnabled()) {
     writeRecord("flicker", {
       event,
       count: renderCount.current,
@@ -239,7 +257,7 @@ export function traceLifecycleTransition(fields: Record<string, unknown>): void 
 }
 
 export function traceFlickerEvent(event: string, fields: Record<string, unknown> = {}): void {
-  if (!isFlickerDebugEnabled()) return;
+  if (!isFlickerDebugEnabled() && !isRenderTraceEnabled()) return;
   const count = nextCounter(`flicker.${event}`);
   writeRecord("flicker", { event, count, ...fields });
 }

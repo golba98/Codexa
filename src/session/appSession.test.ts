@@ -465,6 +465,59 @@ test("first prompt lifecycle exposes progress before finalization and preserves 
   assert.equal(finalizedAssistant.content, "Final answer.");
 });
 
+test("FINALIZE_RUN preserves construction trail and appends final response after actions", () => {
+  const turnId = 34;
+  const userEvent = makeUserEvent(turnId);
+  const runEvent = { ...makeRunEvent(turnId), summary: "Codex is starting..." };
+  let state = createInitialSessionState();
+
+  state = reduceSessionState(state, {
+    type: "UI_ACTION",
+    action: { type: "PROMPT_RUN_STARTED", turnId },
+  });
+  state = reduceSessionState(state, {
+    type: "SET_ACTIVE_EVENTS",
+    events: [userEvent, runEvent],
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_APPLY_PROGRESS_UPDATES",
+    runId: 2,
+    updates: [makeProgressUpdate("think-1", "Inspecting 5-Date Verification.")],
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_UPSERT_TOOL_ACTIVITY",
+    runId: 2,
+    activity: {
+      id: "tool-1",
+      command: "Get-Content 5-Date-Verification.md",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 20,
+      summary: "Read 42 lines",
+    },
+  });
+  state = reduceSessionState(state, {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "completed",
+    response: "Final answer.",
+    assistantFactory: () => makeAssistantEvent(turnId, "Final answer."),
+  });
+
+  const finalizedRun = state.staticEvents.find((event): event is RunEvent => event.type === "run");
+  const finalizedAssistant = state.staticEvents.find((event): event is AssistantEvent => event.type === "assistant");
+  assert.ok(finalizedRun);
+  assert.ok(finalizedAssistant);
+  assert.deepEqual(
+    finalizedRun.streamItems?.map((item) => item.kind),
+    ["thinking", "action", "response"],
+  );
+  assert.equal(finalizedRun.toolActivities[0]?.status, "completed");
+  assert.equal(finalizedRun.responseSegments?.[0]?.chunks.join(""), "Final answer.");
+  assert.equal(finalizedAssistant.content, "Final answer.");
+});
+
 test("finalized runs retain their runtime snapshot after unrelated state changes", () => {
   const turnId = 4;
   let state = stateWithActiveRun(turnId);

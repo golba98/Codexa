@@ -51,6 +51,30 @@ test("render debug writes JSONL only when explicitly enabled", () => {
   }
 });
 
+test("render trace flag enables compact render diagnostics", () => {
+  const logPath = join(tmpdir(), `codexa-render-trace-${process.pid}.jsonl`);
+  clean(logPath);
+
+  try {
+    configureRenderDebug({
+      CODEXA_DEBUG_RENDER_TRACE: "1",
+      CODEXA_RENDER_DEBUG_FILE: logPath,
+    });
+    traceRender("TraceComponent", "unit");
+    traceFlickerEvent("viewportSlice", { reason: "unit" });
+
+    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(records[0]?.kind, "session");
+    assert.equal(records[1]?.kind, "render");
+    assert.equal(records[1]?.component, "TraceComponent");
+    assert.equal(records[2]?.kind, "flicker");
+    assert.equal(records[2]?.event, "viewportSlice");
+  } finally {
+    configureRenderDebug({});
+    clean(logPath);
+  }
+});
+
 test("lifecycle trace is gated by CODEXA_DEBUG_LIFECYCLE", () => {
   const logPath = join(tmpdir(), `codexa-lifecycle-debug-${process.pid}.jsonl`);
   clean(logPath);

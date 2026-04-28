@@ -94,7 +94,12 @@ test("streaming row cache size is bounded", () => {
   __clearTimelineMeasureCachesForTests();
 
   for (let index = 0; index < 225; index += 1) {
-    buildRows(makeTool({ id: `tool-${index}`, summary: `Read ${index} lines` }));
+    buildRows(makeTool({
+      id: `tool-${index}`,
+      status: "running",
+      completedAt: null,
+      summary: `Read ${index} lines`,
+    }));
   }
 
   assert.equal(__getStreamingBlockRowCacheSizeForTests(), 200);

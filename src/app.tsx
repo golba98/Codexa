@@ -428,6 +428,39 @@ export function App({ launchArgs }: AppProps) {
     model,
     reasoningLevel,
   });
+  const previousRootMeasurements = useRef<{
+    composerRows: number;
+    cols: number;
+    rows: number;
+    layoutEpoch: number;
+  } | null>(null);
+  useEffect(() => {
+    const previous = previousRootMeasurements.current;
+    const changed: string[] = [];
+    if (!previous) {
+      changed.push("mount");
+    } else {
+      if (previous.composerRows !== composerRows) changed.push("composerRows");
+      if (previous.cols !== terminalLayout.cols) changed.push("width");
+      if (previous.rows !== terminalLayout.rows) changed.push("height");
+      if (previous.layoutEpoch !== terminalLayout.layoutEpoch) changed.push("layoutEpoch");
+    }
+    if (changed.length > 0) {
+      renderDebug.traceEvent("layout", "rootMeasurementUpdate", {
+        reason: changed.join(","),
+        composerRows,
+        cols: terminalLayout.cols,
+        rows: terminalLayout.rows,
+        layoutEpoch: terminalLayout.layoutEpoch,
+      });
+    }
+    previousRootMeasurements.current = {
+      composerRows,
+      cols: terminalLayout.cols,
+      rows: terminalLayout.rows,
+      layoutEpoch: terminalLayout.layoutEpoch,
+    };
+  }, [composerRows, terminalLayout.cols, terminalLayout.layoutEpoch, terminalLayout.rows]);
 
   const provider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
 
