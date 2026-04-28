@@ -13,7 +13,7 @@ import type {
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { getShellWidth, type Layout } from "./layout.js";
 import type { TimelineRow, TimelineSnapshot, TimelineTone } from "./timelineMeasure.js";
-import { buildStableTimelineSnapshot, buildTimelineSnapshot } from "./timelineMeasure.js";
+import { buildStableTimelineSnapshot, buildTimelineSnapshot, createViewportFillerRow } from "./timelineMeasure.js";
 import { resolveTurnRunPhase, type TurnOpacity, type TurnRunPhase } from "./TurnGroup.js";
 import { useTheme } from "./theme.js";
 
@@ -1140,16 +1140,48 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     });
     return selection;
   }, [liveSnapshot, viewport, viewportRows]);
+
+  // ── Viewport filler rows ──────────────────────────────────────────────────
+  // When content rows don't fill the entire viewport height, Ink's
+  // differential renderer (log-update) only overwrites N content lines.
+  // The remaining (viewportRows - N) lines retain whatever the terminal
+  // previously showed — stale borders, old text, ghost artifacts.
+  //
+  // Fix: append explicit full-width blank rows so every viewport line has
+  // actual content.  log-update overwrites ALL lines and stale fragments
+  // are replaced with clean spaces.
+  const paddedVisibleRows = useMemo(() => {
+    const safeViewport = Math.max(1, viewportRows);
+    if (visibleRows.length >= safeViewport) {
+      return visibleRows;
+    }
+
+    const fillerCount = safeViewport - visibleRows.length;
+    const fillers: TimelineRow[] = [];
+    for (let i = 0; i < fillerCount; i++) {
+      fillers.push(createViewportFillerRow(i, snapshotWidth));
+    }
+
+    renderDebug.traceEvent("viewport", "fillerRows", {
+      contentRows: visibleRows.length,
+      fillerCount,
+      viewportRows: safeViewport,
+      snapshotWidth,
+    });
+
+    return [...visibleRows, ...fillers];
+  }, [visibleRows, viewportRows, snapshotWidth]);
+
   const frozenRowsRef = useRef<TimelineRow[]>([]);
   const liveRowsRef = useRef<TimelineRow[]>([]);
   const { frozenVisibleRows, liveVisibleRows } = useMemo(() => {
     if (!STABLE_RENDER_ENABLED) {
-      return { frozenVisibleRows: visibleRows, liveVisibleRows: [] };
+      return { frozenVisibleRows: paddedVisibleRows, liveVisibleRows: [] };
     }
 
     let frozen: TimelineRow[] = [];
     let live: TimelineRow[] = [];
-    for (const row of visibleRows) {
+    for (const row of paddedVisibleRows) {
       if (liveRowSet.has(row)) {
         live.push(row);
       } else {
@@ -1171,11 +1203,7 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     }
 
     return { frozenVisibleRows: frozen, liveVisibleRows: live };
-  }, [liveRowSet, visibleRows]);
-
-  if (visibleRows.length === 0) {
-    return <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} />;
-  }
+  }, [liveRowSet, paddedVisibleRows]);
 
   return (
     <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} overflow="hidden">

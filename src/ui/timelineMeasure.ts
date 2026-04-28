@@ -203,6 +203,23 @@ function createBlankRow(key: string, width: number): TimelineRow {
   return row;
 }
 
+/**
+ * Creates a full-width blank filler row for viewport padding.
+ *
+ * When the timeline's visible content has fewer rows than the viewport
+ * height, the unused rows must be explicitly filled with full-width
+ * spaces.  Without this, Ink's differential rendering leaves stale
+ * terminal content (border fragments, old text) visible in the
+ * unfilled area — the classic "shimmer/ghost" artifact.
+ *
+ * Rows are cached by (index, width) so repeated renders reuse the
+ * same object identity, preventing unnecessary React reconciliation.
+ */
+export function createViewportFillerRow(index: number, width: number): TimelineRow {
+  return createBlankRow(`viewport-filler-${index}`, width);
+}
+
+
 function wrapStyledSpans(spans: TimelineRowSpan[], width: number): TimelineRowSpan[][] {
   const safeWidth = Math.max(1, width);
   const rows: TimelineRowSpan[][] = [];

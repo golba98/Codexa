@@ -17,7 +17,7 @@ const counters = new Map<string, number>();
 
 function configureFromEnv(env: DebugEnv = process.env): void {
   renderTraceEnabled = env["CODEXA_DEBUG_RENDER_TRACE"] === "1";
-  enabled = env["CODEXA_RENDER_DEBUG"] === "1" || renderTraceEnabled;
+  enabled = env["CODEXA_RENDER_DEBUG"] === "1" || env["CODEXA_DEBUG_RENDER"] === "1" || renderTraceEnabled;
   lifecycleEnabled = env["CODEXA_DEBUG_LIFECYCLE"] === "1";
   flickerEnabled = env["CODEXA_DEBUG_FLICKER"] === "1";
   plainActionsEnabled = env["CODEXA_DEBUG_PLAIN_ACTIONS"] === "1";
@@ -302,4 +302,28 @@ export function dumpRenderCounts(): Record<string, number> {
     }
   }
   return result;
+}
+
+/**
+ * Under CODEXA_DEBUG_RENDER=1 / CODEXA_RENDER_DEBUG=1, logs a diagnostic
+ * whenever a rendered row width doesn't match the expected terminal width.
+ * Call this from components that render frame-level rows (header borders,
+ * timeline rows, composer borders, spacers).
+ */
+export function traceRowWidthAudit(
+  component: string,
+  fields: {
+    expectedWidth: number;
+    actualWidth: number;
+    rowKey?: string;
+    zone?: string;
+  },
+): void {
+  if (!isRenderDebugEnabled()) return;
+  if (fields.actualWidth === fields.expectedWidth) return;
+  writeRecord("rowWidthAudit", {
+    component,
+    mismatch: fields.actualWidth - fields.expectedWidth,
+    ...fields,
+  });
 }
