@@ -15,7 +15,7 @@ import {
   normalizeCursorOffset,
 } from "./inputBuffer.js";
 import { getModeDisplaySpec } from "./modeDisplay.js";
-import { measureRunFooterRows, RunFooter } from "./RunFooter.js";
+import { measureRunFooterRows, MemoizedRunFooter } from "./RunFooter.js";
 import { useTheme } from "./theme.js";
 import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { getTextWidth, splitTextAtColumn } from "./textLayout.js";
@@ -680,7 +680,7 @@ export function BottomComposer({
   );
 
   if (showBusyFooter) {
-    return <RunFooter uiState={uiState} onCancel={onCancel} onQuit={onQuit} />;
+    return <MemoizedRunFooter uiState={uiState} onCancel={onCancel} onQuit={onQuit} />;
   }
 
   return (

@@ -228,6 +228,15 @@ function reduceFinalizeUIState(
   return enforceFinalizePostCondition(state, reduced, action);
 }
 
+function preserveUIStateIdentity(previous: UIState, next: UIState): UIState {
+  if (previous === next) return previous;
+  if (previous.kind !== next.kind) return next;
+  if ("message" in previous && "message" in next && previous.message !== next.message) return next;
+  if ("question" in previous && "question" in next && previous.question !== next.question) return next;
+  if ("turnId" in previous && "turnId" in next && previous.turnId !== next.turnId) return next;
+  return previous;
+}
+
 export function reduceSessionState(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case "APPEND_STATIC_EVENT":
@@ -510,7 +519,18 @@ export function useAppSessionState() {
         queuedActions: queued.length,
         actionTypes: queued.map((item) => item.type),
       });
-      setState((current) => queued.reduce(reduceSessionState, current));
+      setState((current) => {
+        const next = queued.reduce(reduceSessionState, current);
+        // Preserve uiState identity when nothing meaningful changed,
+        // so AppShell's memo check (prev.uiState === next.uiState) can bail out.
+        if (next !== current && next.uiState !== current.uiState) {
+          const preserved = preserveUIStateIdentity(current.uiState, next.uiState);
+          if (preserved === current.uiState) {
+            return { ...next, uiState: preserved };
+          }
+        }
+        return next;
+      });
     });
   }, []);
 

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 import type { UIState } from "../session/types.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
@@ -26,7 +26,7 @@ interface RunFooterProps {
   onQuit: () => void;
 }
 
-export function RunFooter({ uiState }: RunFooterProps) {
+function RunFooter({ uiState }: RunFooterProps) {
   renderDebug.useRenderDebug("Footer", {
     uiStateKind: uiState.kind,
   });
@@ -50,3 +50,9 @@ export function RunFooter({ uiState }: RunFooterProps) {
     </Box>
   );
 }
+
+export const MemoizedRunFooter = memo(RunFooter, (prev, next) => {
+  return prev.uiState.kind === next.uiState.kind;
+});
+
+export { RunFooter };

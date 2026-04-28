@@ -288,3 +288,18 @@ export function traceTerminalWrite(
 export function traceTerminalClear(source: string, fields: Record<string, unknown> = {}): void {
   traceEvent("terminal", "clearScreen", { source, ...fields });
 }
+
+/**
+ * Returns accumulated render counts for all tracked components.
+ * Useful with `/debug renders` to verify that Header/Composer/Footer
+ * stay low during streaming while Timeline updates frequently.
+ */
+export function dumpRenderCounts(): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const [key, value] of counters) {
+    if (key.startsWith("render.")) {
+      result[key.slice("render.".length)] = value;
+    }
+  }
+  return result;
+}
