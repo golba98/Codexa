@@ -9,6 +9,7 @@ export interface TerminalCapabilityResult {
   supported: boolean;
   reason: "supported" | "notty" | "unsupported-terminal";
   message: string;
+  warning?: string;
 }
 
 const WINDOWS_SUPPORTED_TERM_PATTERNS = [
@@ -44,6 +45,14 @@ export function getTerminalCapability(input: TerminalCapabilityInput): TerminalC
     };
   }
 
+  if (input.env.CODEXA_FORCE_VT === "1") {
+    return {
+      supported: true,
+      reason: "supported",
+      message: "",
+    };
+  }
+
   const term = (input.env.TERM ?? "").trim().toLowerCase();
   if (term === "dumb") {
     return {
@@ -69,9 +78,20 @@ export function getTerminalCapability(input: TerminalCapabilityInput): TerminalC
     };
   }
 
+  const message = "This terminal does not advertise VT control sequence support. Codexa will continue because modern Windows terminals usually support VT; set CODEXA_REQUIRE_VT=1 to hard-fail when support is not detected.";
+
+  if (input.env.CODEXA_REQUIRE_VT === "1") {
+    return {
+      supported: false,
+      reason: "unsupported-terminal",
+      message: "This terminal does not appear to support the VT control sequences required by the Codexa UI. Use Windows Terminal, the VS Code terminal, or another VT-compatible terminal, or set CODEXA_FORCE_VT=1 to bypass this check.",
+    };
+  }
+
   return {
-    supported: false,
-    reason: "unsupported-terminal",
-    message: "This terminal does not appear to support the VT control sequences required by the Codexa UI. Use Windows Terminal, the VS Code terminal, or another VT-compatible terminal.",
+    supported: true,
+    reason: "supported",
+    message: "",
+    warning: message,
   };
 }

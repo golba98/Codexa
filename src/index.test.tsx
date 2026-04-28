@@ -84,11 +84,65 @@ function createSupportedHarness() {
   };
 }
 
-test("refuses unsupported terminals without writing bracketed paste sequences", () => {
+test("strict VT mode refuses unsupported terminals without writing bracketed paste sequences", () => {
   let stdoutWrites = "";
   let stderrWrites = "";
   let renderCalled = false;
   let exitHandlerRegistered = false;
+
+  const result = startApp({
+    stdin: { isTTY: true },
+    stdout: {
+      isTTY: true,
+      columns: 120,
+      rows: 40,
+      on() {
+        return this;
+      },
+      off() {
+        return this;
+      },
+      write(chunk: string) {
+        stdoutWrites += chunk;
+        return true;
+      },
+    },
+    stderr: {
+      write(chunk: string) {
+        stderrWrites += chunk;
+        return true;
+      },
+    },
+    env: { CODEXA_REQUIRE_VT: "1" },
+    platform: "win32",
+    renderApp(_node: React.ReactElement) {
+      renderCalled = true;
+      return {
+        clear() {},
+        cleanup() {},
+        waitUntilExit() {
+          return Promise.resolve();
+        },
+      };
+    },
+    registerExitHandler() {
+      exitHandlerRegistered = true;
+    },
+  });
+
+  assert.deepEqual(result, { started: false, exitCode: 1 });
+  assert.equal(renderCalled, false);
+  assert.equal(exitHandlerRegistered, false);
+  assert.equal(stdoutWrites, "");
+  assert.doesNotMatch(stderrWrites, /\?2004[hl]/);
+  assert.match(stderrWrites, /VT control sequences/i);
+});
+
+test("uncertain Windows VT support warns but continues without stdout probing", () => {
+  let stdoutWrites = "";
+  let stderrWrites = "";
+  let renderCalled = false;
+  const registeredHandlers: Array<() => void> = [];
 
   const result = startApp({
     stdin: { isTTY: true },
@@ -125,17 +179,17 @@ test("refuses unsupported terminals without writing bracketed paste sequences", 
         },
       };
     },
-    registerExitHandler() {
-      exitHandlerRegistered = true;
+    registerExitHandler(handler) {
+      registeredHandlers.push(handler);
     },
   });
 
-  assert.deepEqual(result, { started: false, exitCode: 1 });
-  assert.equal(renderCalled, false);
-  assert.equal(exitHandlerRegistered, false);
-  assert.equal(stdoutWrites, "");
-  assert.doesNotMatch(stderrWrites, /\?2004[hl]/);
-  assert.match(stderrWrites, /VT control sequences/i);
+  assert.deepEqual(result, { started: true, exitCode: 0 });
+  assert.equal(renderCalled, true);
+  assert.match(stderrWrites, /will continue/i);
+  assert.doesNotMatch(stdoutWrites, /\x1b(?:\[6n|\[>c|\[c|c)/);
+
+  registeredHandlers[0]?.();
 });
 
 test("enforces a single render root while active", async () => {
