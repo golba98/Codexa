@@ -284,6 +284,11 @@ function ActionEventCard({
   const actionNormalized = normalizeCommand(tool.command);
   const actionLabel = getFriendlyActionLabel(actionNormalized);
   const borderColor = dim ? theme.BORDER_SUBTLE : tool.status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE;
+  const detailText = isLiveCursorTarget && tool.status === "running"
+    ? "▌"
+    : tool.summary?.trim()
+      ? tool.summary
+      : " ";
 
   return (
     <DashCard cols={cols} title="action" borderColor={borderColor}>
@@ -299,9 +304,11 @@ function ActionEventCard({
       {actionLabel && (
         <Text color={theme.MUTED} wrap="truncate">  {actionNormalized}</Text>
       )}
-      {isLiveCursorTarget && tool.status === "running" && (
-        <Text color={theme.ACCENT}>  ▌</Text>
+      <Text color={theme.MUTED} wrap="truncate">  {" "}</Text>
+      {!actionLabel && (
+        <Text color={theme.MUTED} wrap="truncate">  {" "}</Text>
       )}
+      <Text color={isLiveCursorTarget && tool.status === "running" ? theme.ACCENT : theme.MUTED} wrap="truncate">  {detailText}</Text>
     </DashCard>
   );
 }

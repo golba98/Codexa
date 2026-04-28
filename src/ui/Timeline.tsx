@@ -13,7 +13,7 @@ import type {
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { getShellWidth, type Layout } from "./layout.js";
 import type { TimelineRow, TimelineSnapshot, TimelineTone } from "./timelineMeasure.js";
-import { buildTimelineSnapshot } from "./timelineMeasure.js";
+import { buildStableTimelineSnapshot, buildTimelineSnapshot } from "./timelineMeasure.js";
 import { resolveTurnRunPhase, type TurnOpacity, type TurnRunPhase } from "./TurnGroup.js";
 import { useTheme } from "./theme.js";
 
@@ -71,6 +71,7 @@ const WHEEL_SCROLL_STEP = 3;
 const HOME_KEY_INPUTS = new Set(["\u001b[H", "\u001b[1~", "\u001bOH"]);
 const END_KEY_INPUTS = new Set(["\u001b[F", "\u001b[4~", "\u001bOF"]);
 const SGR_WHEEL_EVENT_PATTERN = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
+const STABLE_RENDER_ENABLED = process.env.CODEXA_STABLE_RENDER !== "0";
 
 export interface TimelineViewportState {
   anchorRow: number;
@@ -773,6 +774,25 @@ const TimelineRowView = memo(function TimelineRowView({ row }: { row: TimelineRo
   );
 }, (prev, next) => prev.row === next.row);
 
+function rowArraysEqual(left: TimelineRow[], right: TimelineRow[]): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+const TimelineRowsView = memo(function TimelineRowsView({ rows }: { rows: TimelineRow[] }) {
+  return (
+    <>
+      {rows.map((row) => (
+        <TimelineRowView key={row.key} row={row} />
+      ))}
+    </>
+  );
+}, (prev, next) => rowArraysEqual(prev.rows, next.rows));
+
 export const Timeline = memo(function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows, verboseMode = false }: TimelineProps) {
   renderDebug.useRenderDebug("Timeline", {
     staticEvents,
@@ -881,23 +901,48 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     [activeRenderItems, isStreaming],
   );
   const activeStableSnapshot = useMemo(
-    () => activeStableItems.length > 0
+    () => STABLE_RENDER_ENABLED
+      ? { items: [], rows: [], totalRows: 0, itemCount: 0 }
+      : activeStableItems.length > 0
       ? buildTimelineSnapshot(activeStableItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-stable" })
       : { items: [], rows: [], totalRows: 0, itemCount: 0 },
     [snapshotWidth, activeStableItems, verboseMode],
   );
   const activeStreamingSnapshot = useMemo(
-    () => buildTimelineSnapshot(activeStreamingItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-streaming" }),
+    () => STABLE_RENDER_ENABLED
+      ? { items: [], rows: [], totalRows: 0, itemCount: 0 }
+      : buildTimelineSnapshot(activeStreamingItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-streaming" }),
     [snapshotWidth, activeStreamingItems, verboseMode],
   );
+  const stableActiveSnapshot = useMemo(
+    () => STABLE_RENDER_ENABLED
+      ? buildStableTimelineSnapshot(activeRenderItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-stable-render" })
+      : null,
+    [snapshotWidth, activeRenderItems, verboseMode],
+  );
   const liveSnapshot = useMemo(
-    () => ({
-      items: [...staticSnapshot.items, ...activeStableSnapshot.items, ...activeStreamingSnapshot.items],
-      rows: [...staticSnapshot.rows, ...activeStableSnapshot.rows, ...activeStreamingSnapshot.rows],
-      totalRows: staticSnapshot.totalRows + activeStableSnapshot.totalRows + activeStreamingSnapshot.totalRows,
-      itemCount: staticSnapshot.itemCount + activeStableSnapshot.itemCount + activeStreamingSnapshot.itemCount,
-    }),
-    [staticSnapshot, activeStableSnapshot, activeStreamingSnapshot],
+    () => {
+      if (stableActiveSnapshot) {
+        return {
+          items: [...staticSnapshot.items, ...stableActiveSnapshot.snapshot.items],
+          rows: [...staticSnapshot.rows, ...stableActiveSnapshot.snapshot.rows],
+          totalRows: staticSnapshot.totalRows + stableActiveSnapshot.snapshot.totalRows,
+          itemCount: staticSnapshot.itemCount + stableActiveSnapshot.snapshot.itemCount,
+        };
+      }
+
+      return {
+        items: [...staticSnapshot.items, ...activeStableSnapshot.items, ...activeStreamingSnapshot.items],
+        rows: [...staticSnapshot.rows, ...activeStableSnapshot.rows, ...activeStreamingSnapshot.rows],
+        totalRows: staticSnapshot.totalRows + activeStableSnapshot.totalRows + activeStreamingSnapshot.totalRows,
+        itemCount: staticSnapshot.itemCount + activeStableSnapshot.itemCount + activeStreamingSnapshot.itemCount,
+      };
+    },
+    [staticSnapshot, stableActiveSnapshot, activeStableSnapshot, activeStreamingSnapshot],
+  );
+  const liveRowSet = useMemo(
+    () => new WeakSet(stableActiveSnapshot?.liveRows ?? []),
+    [stableActiveSnapshot],
   );
   const [viewport, setViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(liveSnapshot.totalRows));
   const liveSnapshotRef = useRef(liveSnapshot);
@@ -1095,6 +1140,22 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     });
     return selection;
   }, [liveSnapshot, viewport, viewportRows]);
+  const { frozenVisibleRows, liveVisibleRows } = useMemo(() => {
+    if (!STABLE_RENDER_ENABLED) {
+      return { frozenVisibleRows: visibleRows, liveVisibleRows: [] };
+    }
+
+    const frozen: TimelineRow[] = [];
+    const live: TimelineRow[] = [];
+    for (const row of visibleRows) {
+      if (liveRowSet.has(row)) {
+        live.push(row);
+      } else {
+        frozen.push(row);
+      }
+    }
+    return { frozenVisibleRows: frozen, liveVisibleRows: live };
+  }, [liveRowSet, visibleRows]);
 
   if (visibleRows.length === 0) {
     return <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} />;
@@ -1102,9 +1163,8 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
 
   return (
     <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} overflow="hidden">
-      {visibleRows.map((row) => (
-        <TimelineRowView key={row.key} row={row} />
-      ))}
+      <TimelineRowsView rows={frozenVisibleRows} />
+      <TimelineRowsView rows={liveVisibleRows} />
     </Box>
   );
 }, (prev, next) => {

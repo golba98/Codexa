@@ -1,9 +1,13 @@
-import * as renderDebug from "./perf/renderDebug.js";
+import {
+  TERMINAL_SEQUENCES,
+  TERMINAL_TITLE,
+  writeTerminalControl,
+} from "./terminalControl.js";
 
-export const TERMINAL_TITLE = "CODEXA";
+export { TERMINAL_TITLE };
 
 /** ANSI OSC sequence that sets the terminal window title to "CODEXA". */
-export const SET_TERMINAL_TITLE = "\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07";
+export const SET_TERMINAL_TITLE = TERMINAL_SEQUENCES.title;
 
 /** Write the title sequence to stdout to (re-)assert the window title. */
 export function reassertTerminalTitle(
@@ -16,8 +20,7 @@ export function reassertTerminalTitle(
   } catch {
     // Ignore hosts where process.title cannot be updated.
   }
-  renderDebug.traceTerminalWrite("stdout", "src/core/terminalTitle.ts:reassertTerminalTitle", SET_TERMINAL_TITLE);
-  write(SET_TERMINAL_TITLE);
+  writeTerminalControl(write, "stdout", "src/core/terminalTitle.ts:reassertTerminalTitle", SET_TERMINAL_TITLE);
 }
 
 /**

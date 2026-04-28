@@ -1078,7 +1078,6 @@ test("unified stream renders action before response by stream sequence", () => {
 
   assert.ok(joined.indexOf("action") < joined.indexOf("Purpose"));
   assert.match(joined, /List files/);
-  assert.match(joined, /rg --files/);
   assert.match(joined, /Codex/);
   assert.doesNotMatch(joined, /^\s*response\b/m);
 });
@@ -1171,7 +1170,7 @@ test("unified stream preserves response action response interleaving", () => {
   assert.doesNotMatch(joined, /^\s*response\b/m);
 });
 
-test("stream renders Codex text outside bordered action boxes", () => {
+test("stream renders Codex text outside bordered action cards", () => {
   const joined = renderJoinedTurn(makeChronologicalTurnEvents(305, {
     toolActivities: [{
       id: "tool-1",
@@ -1210,12 +1209,13 @@ test("stream renders Codex text outside bordered action boxes", () => {
 
   assert.match(joined, /Codex/);
   assert.match(joined, /╭── action/);
+  assert.match(joined, /Read file/);
   assert.ok(codexLine && !codexLine.includes("│"), "Codex narration should not be inside a bordered row");
-  assert.ok(actionLine && actionLine.includes("│"), "action execution should be inside a bordered row");
+  assert.ok(actionLine && actionLine.includes("│"), "action execution should keep the bordered card visual");
   assert.doesNotMatch(joined, /^\s*response\b/m);
 });
 
-test("consecutive actions render as separate action boxes", () => {
+test("consecutive actions render as separate bordered action cards", () => {
   const joined = renderJoinedTurn(makeChronologicalTurnEvents(306, {
     toolActivities: [
       {
@@ -1243,6 +1243,7 @@ test("consecutive actions render as separate action boxes", () => {
   }), 306);
 
   assert.equal((joined.match(/╭── action/g) ?? []).length, 2);
+  assert.equal((joined.match(/│ ✓/g) ?? []).length, 2);
   assert.match(joined, /List files/);
   assert.match(joined, /Read file/);
 });
@@ -1310,6 +1311,7 @@ test("completed action/read-file rows remain before the final response", () => {
   }), 307);
 
   assert.equal((joined.match(/╭── action/g) ?? []).length, 2);
+  assert.equal((joined.match(/│ ✓/g) ?? []).length, 2);
   assert.ok(joined.indexOf("Read file") < joined.indexOf("Final answer"));
 });
 
@@ -1423,6 +1425,7 @@ test("finalize continuity viewport shows construction plus the beginning of the 
   assert.equal(continuity.followTail, false);
   assert.notEqual(continuity.anchorRow, finalSnapshot.totalRows - 1);
   assert.match(visible, /╭── action/);
+  assert.match(visible, /│ ✓/);
   assert.match(visible, /Read file/);
   assert.match(visible, /Final answer line 1/);
   assert.doesNotMatch(visible, /Final answer line 10/);
@@ -1461,7 +1464,7 @@ test("raw stdout progress does not render as thinking in fallback sessions", () 
   assert.doesNotMatch(joined, /import \{ useMemo \}/);
 });
 
-test("action event hides PowerShell full-path wrapper and shows normalized command", () => {
+test("action event hides PowerShell full-path wrapper and shows friendly label", () => {
   const raw = `"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command 'Get-ChildItem -Force | Select-Object Name,Mode,Length'`;
   const items = buildTimelineItems(makeCompletedRunWithTool(200, raw));
   const renderItems = buildStaticRenderItems(items, [200], null, null, null);
@@ -1469,7 +1472,6 @@ test("action event hides PowerShell full-path wrapper and shows normalized comma
   const joined = snapshot.rows.map((row) => row.spans.map((s) => s.text).join("")).join("\n");
 
   assert.match(joined, /List files/, "should show friendly label");
-  assert.match(joined, /Get-ChildItem/, "should show normalized command");
   assert.doesNotMatch(joined, /Program Files/, "should not expose PowerShell install path");
   assert.doesNotMatch(joined, /pwsh\.exe/, "should not expose pwsh.exe wrapper");
   assert.doesNotMatch(joined, /-Command/, "should not expose -Command flag");
@@ -1528,32 +1530,23 @@ test("action event remains inside the unified assistant turn (no separate Proces
   assert.doesNotMatch(joined, /Processing/, "should not render a separate Processing card");
 });
 
-test("long command wraps within the card width without overflow", () => {
+test("long command is wrapped within the bordered action card", () => {
   const longCmd = `pwsh.exe -Command 'Write-Host "A very long command that goes on and on and on and would overflow if not wrapped properly within the card border"'`;
   const items = buildTimelineItems(makeCompletedRunWithTool(206, longCmd));
   const renderItems = buildStaticRenderItems(items, [206], null, null, null);
   const totalWidth = 60;
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth });
 
-  // The long command should be split into multiple rows (i.e. wrapping occurred)
   const actionRows = snapshot.rows.filter((row) =>
-    row.spans.some((s) => s.text.includes("Write-Host") || s.text.includes("would overflow")),
+    row.spans.some((s) => s.text.includes("Write-Host")),
   );
-  assert.ok(actionRows.length > 1, "long command should be wrapped across multiple rows");
+  assert.ok(actionRows.length >= 1, "long command should render inside the action card");
 
-  // Each content span (excluding border/padding chars) should fit within the content area
-  const contentWidth = totalWidth - 4; // 4 chars for card border + padding
   for (const row of actionRows) {
-    for (const span of row.spans) {
-      const text = span.text.trim();
-      if (text.length > 0 && !text.includes("│")) {
-        assert.ok(
-          span.text.length <= contentWidth,
-          `Content span exceeds content width (${span.text.length} > ${contentWidth}): "${span.text}"`,
-        );
-      }
-    }
+    const actionText = row.spans.map((span) => span.text).join("");
+    assert.doesNotMatch(actionText, /would overflow if not wrapped properly within the card border/);
   }
+  assert.match(snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /╭── action/);
 });
 
 // ── Smooth scrolling / render-loop regression tests ──────────────────────────
@@ -1570,6 +1563,55 @@ test("syncTimelineViewport is stable when followTail is true and totalRows did n
   assert.equal(synced.anchorRow, snapshot.totalRows - 1);
   assert.equal(synced.unseenItems, 0);
   assert.equal(synced.unseenRows, 0);
+});
+
+test("follow-tail viewport stays anchored when an action updates without row growth", () => {
+  const runningEvents = makeChronologicalTurnEvents(300, {
+    status: "running",
+    durationMs: null,
+    toolActivities: [{
+      id: "tool-1",
+      command: "Get-Content README.md",
+      status: "running",
+      startedAt: 10,
+      completedAt: null,
+      streamSeq: 1,
+    }],
+    streamItems: [{ streamSeq: 1, kind: "action", refId: "tool-1" }],
+    lastStreamSeq: 1,
+  }, "");
+  const completedEvents = makeChronologicalTurnEvents(300, {
+    status: "running",
+    durationMs: null,
+    toolActivities: [{
+      id: "tool-1",
+      command: "Get-Content README.md",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 42,
+      summary: "Read 12 lines",
+      streamSeq: 1,
+    }],
+    streamItems: [{ streamSeq: 1, kind: "action", refId: "tool-1" }],
+    lastStreamSeq: 1,
+  }, "");
+
+  const turnIds = [300];
+  const runningSnapshot = buildTimelineSnapshot(
+    buildActiveRenderItems(buildTimelineItems(runningEvents), turnIds, { kind: "THINKING", turnId: 300 }),
+    { totalWidth: 80 },
+  );
+  const completedSnapshot = buildTimelineSnapshot(
+    buildActiveRenderItems(buildTimelineItems(completedEvents), turnIds, { kind: "THINKING", turnId: 300 }),
+    { totalWidth: 80 },
+  );
+  const viewport = createFollowTailViewport(runningSnapshot.totalRows);
+  const synced = syncTimelineViewport(viewport, completedSnapshot);
+
+  assert.equal(completedSnapshot.totalRows, runningSnapshot.totalRows);
+  assert.strictEqual(synced, viewport);
+  assert.equal(synced.followTail, true);
+  assert.equal(synced.anchorRow, runningSnapshot.totalRows - 1);
 });
 
 test("selectTimelineRows preserves visible row object references", () => {

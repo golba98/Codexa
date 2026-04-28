@@ -112,6 +112,7 @@ import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
+import { createTerminalModeController } from "./core/terminalControl.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
@@ -165,10 +166,10 @@ import { AppShell } from "./ui/AppShell.js";
 
 let nextEventId = 0;
 let nextTurnId = 0;
-// 33ms ≈ 30fps: imperceptible for streaming text; reduces LCM with the 80ms
-// spinner interval from 200ms to 2640ms, greatly cutting coincident Ink writes.
-const LIVE_UPDATE_FLUSH_MS = 33;
-const PROGRESS_ONLY_FLUSH_MS = 80;
+// 50ms keeps assistant text live while avoiding frame-wide terminal repaint
+// churn during streaming/action updates.
+const LIVE_UPDATE_FLUSH_MS = 50;
+const PROGRESS_ONLY_FLUSH_MS = 50;
 const PLAN_FILE_NAME = "last-plan.md";
 const PLAN_FILE_DIR = ".codexa";
 
@@ -269,6 +270,7 @@ export function App({ launchArgs }: AppProps) {
   const [modelSpecRefreshes, setModelSpecRefreshes] = useState<Record<string, true>>({});
   const { stdout } = useStdout();
   const { stdin } = useStdin();
+  const terminalControl = useMemo(() => createTerminalModeController((chunk) => stdout.write(chunk)), [stdout]);
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [verboseMode, setVerboseMode] = useState(false);
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
@@ -287,18 +289,11 @@ export function App({ launchArgs }: AppProps) {
   useEffect(() => {
     // \x1b[?1000h: Enable basic mouse reporting (click/scroll)
     // \x1b[?1006h: Enable SGR extended mouse reporting (high-res coords)
-    if (mouseCapture) {
-      renderDebug.traceTerminalWrite("stdout", "src/app.tsx:mouseCapture.enable", "\x1b[?1000h\x1b[?1006h");
-      stdout.write("\x1b[?1000h\x1b[?1006h");
-    } else {
-      renderDebug.traceTerminalWrite("stdout", "src/app.tsx:mouseCapture.disable", "\x1b[?1000l\x1b[?1006l");
-      stdout.write("\x1b[?1000l\x1b[?1006l");
-    }
+    terminalControl.setMouseReporting(mouseCapture, mouseCapture ? "src/app.tsx:mouseCapture.enable" : "src/app.tsx:mouseCapture.disable");
     return () => {
-      renderDebug.traceTerminalWrite("stdout", "src/app.tsx:mouseCapture.cleanup", "\x1b[?1000l\x1b[?1006l");
-      stdout.write("\x1b[?1000l\x1b[?1006l");
+      terminalControl.setMouseReporting(false, "src/app.tsx:mouseCapture.cleanup");
     };
-  }, [mouseCapture, stdout]);
+  }, [mouseCapture, terminalControl]);
 
   const cleanupRef = useRef<(() => void) | null>(null);
   const activeRunLifecycleRef = useRef<PromptRunLifecycle | null>(null);
@@ -1875,7 +1870,6 @@ export function App({ launchArgs }: AppProps) {
     let legacyProgressSequence = 0;
     let firstRenderFired = false;
     let blockedCleanupFailureSurfaced = false;
-    const seenRunningToolIds = new Set<string>();
 
     let preRunSnapshot: ReturnType<typeof captureWorkspaceSnapshot> | null = null;
     let finalWorkspacePollDone = false;
@@ -1958,10 +1952,6 @@ export function App({ launchArgs }: AppProps) {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
           liveScheduler.enqueue({ type: "tool", activity });
           if (activity.status === "running") {
-            if (!seenRunningToolIds.has(activity.id)) {
-              seenRunningToolIds.add(activity.id);
-              flushLiveUpdates();
-            }
             return;
           }
           if (fastCleanupRun && !blockedCleanupFailureSurfaced) {

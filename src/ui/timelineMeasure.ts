@@ -64,6 +64,12 @@ export interface TimelineSnapshot {
   itemCount: number;
 }
 
+export interface StableTimelineSnapshot {
+  snapshot: TimelineSnapshot;
+  frozenRows: TimelineRow[];
+  liveRows: TimelineRow[];
+}
+
 interface MarkdownInlinePart {
   kind: "text" | "code" | "bold";
   text: string;
@@ -143,11 +149,46 @@ function padSpansToWidth(spans: TimelineRowSpan[], width: number): TimelineRowSp
   return next;
 }
 
+const ROW_CONTENT_CACHE_LIMIT = 2500;
+const _rowContentCache = new Map<string, TimelineRow>();
+
+function spanCacheToken(span: TimelineRowSpan): string {
+  return [
+    span.text,
+    span.tone ?? "",
+    span.backgroundTone ?? "",
+    span.bold ? "1" : "0",
+  ].join("\u001f");
+}
+
+function rememberRow(cacheKey: string, row: TimelineRow): TimelineRow {
+  if (_rowContentCache.has(cacheKey)) {
+    _rowContentCache.delete(cacheKey);
+  }
+  _rowContentCache.set(cacheKey, row);
+  if (_rowContentCache.size > ROW_CONTENT_CACHE_LIMIT) {
+    const oldestKey = _rowContentCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      _rowContentCache.delete(oldestKey);
+    }
+  }
+  return row;
+}
+
 function createRow(key: string, spans: TimelineRowSpan[], width: number): TimelineRow {
-  return {
+  const paddedSpans = padSpansToWidth(spans, width);
+  const cacheKey = `${key}:${width}:${paddedSpans.map(spanCacheToken).join("\u001e")}`;
+  const cached = _rowContentCache.get(cacheKey);
+  if (cached) {
+    _rowContentCache.delete(cacheKey);
+    _rowContentCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  return rememberRow(cacheKey, {
     key,
-    spans: padSpansToWidth(spans, width),
-  };
+    spans: paddedSpans,
+  });
 }
 
 const _blankRowCache = new Map<string, TimelineRow>();
@@ -880,6 +921,8 @@ const STREAMING_BLOCK_ROW_CACHE_LIMIT = 200;
 let _streamingBlockRowCache = new Map<string, TimelineRow[]>();
 const _completedActionRowCache = new Map<string, TimelineRow[]>();
 const _completedActionTokenById = new Map<string, string>();
+const FROZEN_ROW_GROUP_CACHE_LIMIT = 1200;
+const _frozenRowGroupCache = new Map<string, TimelineRow[]>();
 let _wrappedRowCache = new WeakMap<TimelineRow, Map<string, TimelineRow>>();
 const _wrappedBlankRowCache = new Map<string, TimelineRow>();
 interface ActionDisplayDescriptor {
@@ -934,13 +977,33 @@ function getCachedStreamingBlockRows(cacheKey: string, build: () => TimelineRow[
   return rows;
 }
 
+function getCachedFrozenRows(cacheKey: string, build: () => TimelineRow[]): TimelineRow[] {
+  const cached = _frozenRowGroupCache.get(cacheKey);
+  if (cached) {
+    _frozenRowGroupCache.delete(cacheKey);
+    _frozenRowGroupCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  const rows = build();
+  _frozenRowGroupCache.set(cacheKey, rows);
+  while (_frozenRowGroupCache.size > FROZEN_ROW_GROUP_CACHE_LIMIT) {
+    const oldestKey = _frozenRowGroupCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    _frozenRowGroupCache.delete(oldestKey);
+  }
+  return rows;
+}
+
 export function __clearTimelineMeasureCachesForTests(): void {
   _streamingRowCache = null;
+  _rowContentCache.clear();
   _staticRowCache.clear();
   _blankRowCache.clear();
   _streamingBlockRowCache.clear();
   _completedActionRowCache.clear();
   _completedActionTokenById.clear();
+  _frozenRowGroupCache.clear();
   _wrappedRowCache = new WeakMap<TimelineRow, Map<string, TimelineRow>>();
   _wrappedBlankRowCache.clear();
   _actionDisplayCache.clear();
@@ -1642,6 +1705,12 @@ export function buildActionEventRows(params: {
 
   const buildActionRows = () => {
     const contentWidth = Math.max(1, params.width - 4);
+    const commandWidth = Math.max(1, contentWidth - 2);
+    const detailText = descriptor.showLiveCursor
+      ? "▌"
+      : descriptor.summary.trim()
+        ? descriptor.summary
+        : " ";
     const contentRows: TimelineRowSpan[][] = [];
 
     if (descriptor.label) {
@@ -1650,31 +1719,33 @@ export function buildActionEventRows(params: {
         createSpan(descriptor.label, "text"),
         ...(descriptor.duration ? [createSpan(descriptor.duration, "dim")] : []),
       ]);
-      wrapPlainText(descriptor.command, Math.max(1, contentWidth - 2)).forEach((row) => {
+      wrapPlainText(descriptor.command, commandWidth).forEach((row) => {
         contentRows.push([
           createSpan("  "),
           createSpan(row || " ", "muted"),
         ]);
       });
     } else {
-      const headRows = wrapPlainText(descriptor.command, Math.max(1, contentWidth - 2));
+      const headRows = wrapPlainText(descriptor.command, commandWidth);
       headRows.forEach((row, rowIndex) => {
         contentRows.push([
-          createSpan(rowIndex === 0 ? `${descriptor.icon} ` : "  ", descriptor.iconTone),
+          createSpan(rowIndex === 0 ? `${descriptor.icon} ` : "  ", rowIndex === 0 ? descriptor.iconTone : undefined),
           createSpan(row || " ", "text"),
           ...(rowIndex === 0 && descriptor.duration ? [createSpan(descriptor.duration, "dim")] : []),
         ]);
       });
     }
 
-    if (descriptor.summary) {
-      wrapPlainText(descriptor.summary, Math.max(1, contentWidth - 2)).forEach((row) => {
-        contentRows.push([
-          createSpan("  "),
-          createSpan(row || " ", "muted"),
-        ]);
-      });
+    if (!descriptor.label) {
+      contentRows.push([
+        createSpan("  "),
+        createSpan(" ", "muted"),
+      ]);
     }
+    contentRows.push([
+      createSpan("  "),
+      createSpan(detailText, descriptor.showLiveCursor ? "accent" : "muted"),
+    ]);
 
     return buildDashCardRows({
       keyPrefix: params.keyPrefix,
@@ -1779,77 +1850,7 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
   const streaming = item.renderState.runPhase === "streaming";
   const dim = item.renderState.opacity !== "active";
   const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
-
-  const blocksById = new Map<string, RunProgressBlock>();
-  for (const entry of run.progressEntries ?? []) {
-    for (const block of entry.blocks) blocksById.set(block.id, block);
-  }
-  const toolsById = new Map(run.toolActivities.map((tool) => [tool.id, tool] as const));
-  const segmentsById = new Map((run.responseSegments ?? []).map((seg) => [seg.id, seg] as const));
-
-  const events: StreamEvent[] = [];
-  const sortedItems = (run.streamItems ?? []).slice().sort((a, b) => a.streamSeq - b.streamSeq);
-  for (const it of sortedItems) {
-    if (it.kind === "thinking") {
-      const block = blocksById.get(it.refId);
-      if (block && block.text.trim().length > 0) {
-        events.push({
-          kind: "thinking",
-          streamSeq: it.streamSeq,
-          block,
-          isActive: run.status === "running" && block.status === "active",
-        });
-      }
-    } else if (it.kind === "action") {
-      const tool = toolsById.get(it.refId);
-      if (tool) events.push({ kind: "action", streamSeq: it.streamSeq, tool });
-    } else if (it.kind === "response") {
-      const segment = segmentsById.get(it.refId);
-      if (segment) events.push({ kind: "response", streamSeq: it.streamSeq, segment });
-    }
-  }
-
-  // Backward-compat fallback for older session data that predates streamItems.
-  // New runs always use the streamItems path above.
-  if (events.length === 0 && sortedItems.length === 0) {
-    let legacySeq = 0;
-    for (const entry of run.progressEntries ?? []) {
-      if (!VISIBLE_THINKING_SOURCES.has(entry.source)) continue;
-      for (const block of entry.blocks) {
-        if (!block.text.trim()) continue;
-        legacySeq += 1;
-        events.push({
-          kind: "thinking",
-          streamSeq: legacySeq,
-          block,
-          isActive: run.status === "running" && block.status === "active",
-        });
-      }
-    }
-
-    for (const tool of run.toolActivities ?? []) {
-      legacySeq += 1;
-      events.push({ kind: "action", streamSeq: legacySeq, tool });
-    }
-
-    for (const segment of run.responseSegments ?? []) {
-      if (!getResponseSegmentText(segment).trim() && !streaming) continue;
-      legacySeq += 1;
-      events.push({ kind: "response", streamSeq: legacySeq, segment });
-    }
-  }
-
-  // First-render fallback: nothing resolvable yet but assistant text exists.
-  if (events.length === 0 && (getAssistantContent(assistant).length > 0 || streaming)) {
-    const synthetic: RunResponseSegment = {
-      id: `synthetic-${run.id}`,
-      streamSeq: 1,
-      chunks: [getAssistantContent(assistant)],
-      status: streaming ? "active" : "completed",
-      startedAt: run.startedAt,
-    };
-    events.push({ kind: "response", streamSeq: 1, segment: synthetic });
-  }
+  const events = collectStreamEvents(item, streaming);
 
   const rows: TimelineRow[] = [];
 
@@ -1938,6 +1939,86 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
   return rows;
 }
 
+function collectStreamEvents(
+  item: Extract<RenderTimelineItem, { type: "turn" }>,
+  streaming: boolean,
+): StreamEvent[] {
+  const run = item.item.run!;
+  const assistant = item.item.assistant;
+  const blocksById = new Map<string, RunProgressBlock>();
+  for (const entry of run.progressEntries ?? []) {
+    for (const block of entry.blocks) blocksById.set(block.id, block);
+  }
+  const toolsById = new Map(run.toolActivities.map((tool) => [tool.id, tool] as const));
+  const segmentsById = new Map((run.responseSegments ?? []).map((seg) => [seg.id, seg] as const));
+
+  const events: StreamEvent[] = [];
+  const sortedItems = (run.streamItems ?? []).slice().sort((a, b) => a.streamSeq - b.streamSeq);
+  for (const it of sortedItems) {
+    if (it.kind === "thinking") {
+      const block = blocksById.get(it.refId);
+      if (block && block.text.trim().length > 0) {
+        events.push({
+          kind: "thinking",
+          streamSeq: it.streamSeq,
+          block,
+          isActive: run.status === "running" && block.status === "active",
+        });
+      }
+    } else if (it.kind === "action") {
+      const tool = toolsById.get(it.refId);
+      if (tool) events.push({ kind: "action", streamSeq: it.streamSeq, tool });
+    } else if (it.kind === "response") {
+      const segment = segmentsById.get(it.refId);
+      if (segment) events.push({ kind: "response", streamSeq: it.streamSeq, segment });
+    }
+  }
+
+  // Backward-compat fallback for older session data that predates streamItems.
+  // New runs always use the streamItems path above.
+  if (events.length === 0 && sortedItems.length === 0) {
+    let legacySeq = 0;
+    for (const entry of run.progressEntries ?? []) {
+      if (!VISIBLE_THINKING_SOURCES.has(entry.source)) continue;
+      for (const block of entry.blocks) {
+        if (!block.text.trim()) continue;
+        legacySeq += 1;
+        events.push({
+          kind: "thinking",
+          streamSeq: legacySeq,
+          block,
+          isActive: run.status === "running" && block.status === "active",
+        });
+      }
+    }
+
+    for (const tool of run.toolActivities ?? []) {
+      legacySeq += 1;
+      events.push({ kind: "action", streamSeq: legacySeq, tool });
+    }
+
+    for (const segment of run.responseSegments ?? []) {
+      if (!getResponseSegmentText(segment).trim() && !streaming) continue;
+      legacySeq += 1;
+      events.push({ kind: "response", streamSeq: legacySeq, segment });
+    }
+  }
+
+  // First-render fallback: nothing resolvable yet but assistant text exists.
+  if (events.length === 0 && (getAssistantContent(assistant).length > 0 || streaming)) {
+    const synthetic: RunResponseSegment = {
+      id: `synthetic-${run.id}`,
+      streamSeq: 1,
+      chunks: [getAssistantContent(assistant)],
+      status: streaming ? "active" : "completed",
+      startedAt: run.startedAt,
+    };
+    events.push({ kind: "response", streamSeq: 1, segment: synthetic });
+  }
+
+  return events;
+}
+
 function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, verbose = false): TimelineRow[] {
   const rows: TimelineRow[] = [];
 
@@ -1951,7 +2032,13 @@ function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, widt
   return applyTurnOpacity(rows, item.renderState.opacity);
 }
 
-function wrapItemRows(rows: TimelineRow[], totalWidth: number, padded: boolean, keyPrefix: string): TimelineRow[] {
+function wrapRows(
+  rows: TimelineRow[],
+  totalWidth: number,
+  padded: boolean,
+  keyPrefix: string,
+  includeMargin: boolean,
+): TimelineRow[] {
   const leftPad = padded ? 1 : 0;
   const innerWidth = Math.max(1, totalWidth - (leftPad * 2));
   const prefixedRows = rows.map((row) => {
@@ -1978,14 +2065,261 @@ function wrapItemRows(rows: TimelineRow[], totalWidth: number, padded: boolean, 
     return wrapped;
   });
 
-  const marginKey = `${keyPrefix}:${totalWidth}:margin`;
-  let margin = _wrappedBlankRowCache.get(marginKey);
-  if (!margin) {
-    margin = createBlankRow(`${keyPrefix}-margin`, totalWidth);
-    _wrappedBlankRowCache.set(marginKey, margin);
+  if (includeMargin) {
+    const marginKey = `${keyPrefix}:${totalWidth}:margin`;
+    let margin = _wrappedBlankRowCache.get(marginKey);
+    if (!margin) {
+      margin = createBlankRow(`${keyPrefix}-margin`, totalWidth);
+      _wrappedBlankRowCache.set(marginKey, margin);
+    }
+    prefixedRows.push(margin);
   }
-  prefixedRows.push(margin);
   return prefixedRows;
+}
+
+function wrapItemRows(rows: TimelineRow[], totalWidth: number, padded: boolean, keyPrefix: string): TimelineRow[] {
+  return wrapRows(rows, totalWidth, padded, keyPrefix, true);
+}
+
+function rowsToSnapshot(items: BuiltTimelineItem[]): TimelineSnapshot {
+  const rows = items.flatMap((item) => item.rows);
+  return {
+    items,
+    rows,
+    totalRows: rows.length,
+    itemCount: items.length,
+  };
+}
+
+function buildStableEventRows(item: Extract<RenderTimelineItem, { type: "event" }>, innerWidth: number): TimelineRow[] {
+  const cacheKey = rowCacheKey([
+    "stable-event",
+    item.key,
+    item.event.type,
+    item.event.id,
+    innerWidth,
+    textCacheToken("title" in item.event ? item.event.title : item.event.command),
+    textCacheToken("content" in item.event ? item.event.content : item.event.summary ?? ""),
+    "status" in item.event ? item.event.status : "",
+    "durationMs" in item.event ? item.event.durationMs : "",
+  ]);
+  return getCachedFrozenRows(cacheKey, () => buildStandaloneEventRows(item, innerWidth));
+}
+
+function buildStableFrozenTurnRows(
+  item: Extract<RenderTimelineItem, { type: "turn" }>,
+  innerWidth: number,
+  verbose: boolean,
+): TimelineRow[] {
+  const run = item.item.run;
+  const user = item.item.user;
+  const cacheKey = rowCacheKey([
+    "stable-turn",
+    item.key,
+    innerWidth,
+    verbose,
+    item.renderState.opacity,
+    item.renderState.runPhase,
+    user?.id,
+    textCacheToken(user?.prompt),
+    run?.id,
+    run?.status,
+    run?.durationMs,
+    textCacheToken(run?.summary),
+    textCacheToken(item.item.assistant?.content),
+    textCacheToken(item.item.assistant?.contentChunks.join("")),
+    run?.toolActivities.map((tool) => `${tool.id}:${tool.status}:${tool.startedAt}:${tool.completedAt ?? ""}:${textCacheToken(tool.command)}:${textCacheToken(tool.summary)}`).join("|"),
+    run?.responseSegments?.map((segment) => `${segment.id}:${segment.status}:${textCacheToken(getResponseSegmentText(segment))}`).join("|"),
+    run?.progressEntries.map((entry) => `${entry.id}:${entry.blocks.map((block) => `${block.id}:${block.status}:${block.updatedAt}:${textCacheToken(block.text)}`).join(",")}`).join("|"),
+  ]);
+  return getCachedFrozenRows(cacheKey, () => buildTurnRows(item, innerWidth, verbose));
+}
+
+function isLiveStreamEvent(event: StreamEvent, run: RunEvent): boolean {
+  if (run.status !== "running") return false;
+  if (event.kind === "response") return event.segment.status === "active";
+  if (event.kind === "action") return event.tool.status === "running";
+  return event.block.status === "active";
+}
+
+function buildStableActiveTurnGroups(
+  item: Extract<RenderTimelineItem, { type: "turn" }>,
+  innerWidth: number,
+  verbose: boolean,
+): { frozenRows: TimelineRow[]; liveRows: TimelineRow[] } {
+  const run = item.item.run;
+  if (!run || (item.renderState.runPhase !== "streaming" && item.renderState.runPhase !== "thinking")) {
+    return {
+      frozenRows: buildStableFrozenTurnRows(item, innerWidth, verbose),
+      liveRows: [],
+    };
+  }
+
+  const streaming = item.renderState.runPhase === "streaming";
+  const dim = item.renderState.opacity !== "active";
+  const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
+  const events = collectStreamEvents(item, streaming);
+  let frozenRows = getCachedFrozenRows(rowCacheKey([
+    "stable-active-user",
+    item.key,
+    innerWidth,
+    item.renderState.opacity,
+    textCacheToken(item.item.user?.prompt),
+  ]), () => buildUserInputRows(item, innerWidth));
+  let liveRows: TimelineRow[] = [];
+
+  if (events.length === 0 && run.status === "running") {
+    liveRows = [
+      ...liveRows,
+      ...buildCodexPlainRows(`${item.key}-codex-running`, innerWidth, [
+        [createSpan("Codex is working...", "dim")],
+        [createSpan("▌", "accent")],
+      ]),
+    ];
+  }
+
+  events.forEach((event, index) => {
+    const liveEvent = isLiveStreamEvent(event, run);
+    const targetRows: TimelineRow[] = [];
+    const isLastEvent = index === events.length - 1;
+
+    if (index > 0) {
+      targetRows.push(createBlankRow(`${item.key}-stream-gap-${index}`, innerWidth));
+    }
+
+    if (event.kind === "thinking") {
+      const build = () => buildCodexThinkingRows({
+        keyPrefix: `${item.key}-codex-thinking-${event.streamSeq}`,
+        width: innerWidth,
+        event,
+        isLive: liveEvent,
+        verbose,
+      });
+      targetRows.push(...(liveEvent ? build() : getCachedFrozenRows(rowCacheKey([
+        "stable-thinking",
+        item.key,
+        innerWidth,
+        verbose,
+        event.block.id,
+        event.block.status,
+        event.block.updatedAt,
+        textCacheToken(event.block.text),
+      ]), build)));
+    } else if (event.kind === "action") {
+      const build = () => buildActionEventRows({
+        keyPrefix: `${item.key}-action-${event.streamSeq}`,
+        width: innerWidth,
+        event,
+        borderTone,
+        verbose,
+        isLive: liveEvent,
+      });
+      targetRows.push(...(liveEvent ? build() : getCachedFrozenRows(rowCacheKey([
+        "stable-action",
+        item.key,
+        innerWidth,
+        verbose,
+        event.tool.id,
+        event.tool.status,
+        event.tool.startedAt,
+        event.tool.completedAt ?? "",
+        textCacheToken(event.tool.command),
+      ]), build)));
+    } else {
+      const build = () => buildCodexResponseRows({
+        keyPrefix: `${item.key}-codex-response-${event.streamSeq}`,
+        width: innerWidth,
+        run,
+        event,
+        streaming,
+        isLastEvent,
+        isLive: liveEvent,
+        verbose,
+      });
+      targetRows.push(...(liveEvent ? build() : getCachedFrozenRows(rowCacheKey([
+        "stable-response",
+        item.key,
+        innerWidth,
+        verbose,
+        run.status,
+        event.segment.id,
+        event.segment.status,
+        textCacheToken(getResponseSegmentText(event.segment)),
+      ]), build)));
+    }
+
+    if (liveEvent) {
+      liveRows = [...liveRows, ...targetRows];
+    } else {
+      frozenRows = [...frozenRows, ...targetRows];
+    }
+  });
+
+  const questionRows = buildActionRequiredRows(item, innerWidth);
+  if (questionRows.length > 0) {
+    liveRows = [...liveRows, ...questionRows];
+  }
+
+  frozenRows = applyTurnOpacity(frozenRows, item.renderState.opacity);
+  liveRows = applyTurnOpacity(liveRows, item.renderState.opacity);
+  return { frozenRows, liveRows };
+}
+
+export function buildStableTimelineSnapshot(
+  items: RenderTimelineItem[],
+  options: {
+    totalWidth: number;
+    verboseMode?: boolean;
+    debugLabel?: string;
+  },
+): StableTimelineSnapshot {
+  const verbose = options.verboseMode ?? false;
+  renderDebug.traceFlickerEvent("snapshotBuild", {
+    reason: options.debugLabel ?? "stable",
+    items: items.length,
+    totalWidth: options.totalWidth,
+    verbose,
+    stable: true,
+  });
+
+  const builtItems: BuiltTimelineItem[] = [];
+  const frozenRows: TimelineRow[] = [];
+  const liveRows: TimelineRow[] = [];
+
+  for (const item of items) {
+    const innerWidth = Math.max(10, options.totalWidth - (item.padded ? 2 : 0));
+    let itemFrozenRows: TimelineRow[];
+    let itemLiveRows: TimelineRow[];
+
+    if (item.type === "event") {
+      itemFrozenRows = buildStableEventRows(item, innerWidth);
+      itemLiveRows = [];
+    } else {
+      const groups = buildStableActiveTurnGroups(item, innerWidth, verbose);
+      itemFrozenRows = groups.frozenRows;
+      itemLiveRows = groups.liveRows;
+    }
+
+    const hasLiveRows = itemLiveRows.length > 0;
+    const wrappedFrozenRows = wrapRows(itemFrozenRows, options.totalWidth, item.padded, item.key, !hasLiveRows);
+    const wrappedLiveRows = hasLiveRows
+      ? wrapRows(itemLiveRows, options.totalWidth, item.padded, item.key, true)
+      : [];
+    const rows = [...wrappedFrozenRows, ...wrappedLiveRows];
+    frozenRows.push(...wrappedFrozenRows);
+    liveRows.push(...wrappedLiveRows);
+    builtItems.push({
+      key: item.key,
+      rows,
+      rowCount: rows.length,
+    });
+  }
+
+  return {
+    snapshot: rowsToSnapshot(builtItems),
+    frozenRows,
+    liveRows,
+  };
 }
 
 export function buildTimelineSnapshot(
@@ -2095,12 +2429,5 @@ export function buildTimelineSnapshot(
     };
   });
 
-  const rows = builtItems.flatMap((item) => item.rows);
-
-  return {
-    items: builtItems,
-    rows,
-    totalRows: rows.length,
-    itemCount: builtItems.length,
-  };
+  return rowsToSnapshot(builtItems);
 }

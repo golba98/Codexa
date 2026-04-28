@@ -5,19 +5,13 @@ import { parseLaunchArgs, type LaunchArgs } from "./config/launchArgs.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
-
-// \x1b[2J clears the visible viewport but on Windows Terminal it pushes the
-// cleared content into the scrollback buffer.  When the terminal is later
-// expanded (maximise / snap-restore) those buffered frames become visible
-// again — causing the "stacked UI" artifact.  \x1b[3J erases the scrollback
-// immediately after so nothing accumulates there.
-const HARD_REPAINT_SEQUENCE = "\x1b[2J\x1b[3J\x1b[H";
-// Clears the visible viewport and homes the cursor but does NOT erase the
-// scrollback buffer. This is reserved for invalid-dimension recovery only;
-// normal valid resizes use a soft repaint path.
-const VIEWPORT_CLEAR_SEQUENCE = "\x1b[2J\x1b[H";
-const DISABLE_TRANSCRIPT_WHEEL_MODE = "\x1b[?1000l\x1b[?1006l";
 import { SET_TERMINAL_TITLE } from "./core/terminalTitle.js";
+import {
+  createTerminalModeController,
+  TERMINAL_SEQUENCES,
+  traceTerminalClear,
+  writeTerminalControl,
+} from "./core/terminalControl.js";
 
 type RenderHandle = Pick<Instance, "clear" | "cleanup" | "waitUntilExit">;
 const KITTY_KEYBOARD_OPTIONS: RenderOptions["kittyKeyboard"] = {
@@ -120,14 +114,11 @@ export function startApp({
     return { started: true, exitCode: 0 };
   }
 
-  const writeStdout = (chunk: string, source: string): boolean => {
-    renderDebug.traceTerminalWrite("stdout", source, chunk);
-    return stdout.write(chunk);
-  };
+  const terminal = createTerminalModeController((chunk) => stdout.write(chunk));
+  const writeStdout = (chunk: string, source: string): boolean => terminal.write(chunk, source);
 
   const writeStderr = (chunk: string, source: string): boolean => {
-    renderDebug.traceTerminalWrite("stderr", source, chunk);
-    return stderr.write(chunk);
+    return writeTerminalControl((value) => stderr.write(value), "stderr", source, chunk);
   };
 
   const capability = getTerminalCapability({
@@ -156,8 +147,9 @@ export function startApp({
   // NOTE: Mouse reporting (\x1b[?1000h / \x1b[?1006h) is NOT enabled here.
   // It is managed exclusively by the React app (app.tsx) and defaults to OFF
   // so native terminal drag-selection and copy work without any special steps.
-  renderDebug.traceTerminalClear("src/index.tsx:startup", { mode: "hard" });
-  writeStdout(`${SET_TERMINAL_TITLE}${HARD_REPAINT_SEQUENCE}\x1b[?2004h`, "src/index.tsx:startup");
+  traceTerminalClear("src/index.tsx:startup", { mode: "hard" });
+  writeStdout(`${SET_TERMINAL_TITLE}${TERMINAL_SEQUENCES.hardRepaint}`, "src/index.tsx:startup");
+  terminal.setBracketedPaste(true, "src/index.tsx:startup.bracketedPaste");
 
   let cleanupDone = false;
   let repaintArmed = false;
@@ -168,8 +160,8 @@ export function startApp({
   let pendingRepaintMode: RepaintMode = "soft";
 
   const performHardRepaint = () => {
-    renderDebug.traceTerminalClear("src/index.tsx:performHardRepaint", { mode: "hard" });
-    writeStdout(HARD_REPAINT_SEQUENCE, "src/index.tsx:performHardRepaint");
+    traceTerminalClear("src/index.tsx:performHardRepaint", { mode: "hard" });
+    writeStdout(TERMINAL_SEQUENCES.hardRepaint, "src/index.tsx:performHardRepaint");
     if (inkInstance) {
       // Reset ALL Ink output state BEFORE calling clear().
       // Ink.clear() internally calls log.sync(this.lastOutputToRender || …)
@@ -182,7 +174,7 @@ export function startApp({
       inkInstance.lastOutputHeight = 0;
     }
     if (renderHandle) {
-      renderDebug.traceTerminalClear("src/index.tsx:performHardRepaint.renderHandleClear", { mode: "inkClear" });
+      traceTerminalClear("src/index.tsx:performHardRepaint.renderHandleClear", { mode: "inkClear" });
       renderHandle.clear();
     }
     // Do NOT call onRender() here — let React's own re-render cycle
@@ -224,8 +216,8 @@ export function startApp({
         // viewport clear, preserving busy-state stability during ordinary
         // resize/layout updates.
         if (repaintMode === "recovery") {
-          renderDebug.traceTerminalClear("src/index.tsx:scheduleRepaint", { mode: "viewportRecovery" });
-          writeStdout(VIEWPORT_CLEAR_SEQUENCE, "src/index.tsx:scheduleRepaint");
+          traceTerminalClear("src/index.tsx:scheduleRepaint", { mode: "viewportRecovery" });
+          writeStdout(TERMINAL_SEQUENCES.viewportClear, "src/index.tsx:scheduleRepaint");
         }
 
         // Reset ALL Ink output state BEFORE calling clear().
@@ -239,7 +231,7 @@ export function startApp({
         inkInstance.lastOutputHeight = 0;
 
         if (repaintMode === "recovery") {
-          renderDebug.traceTerminalClear("src/index.tsx:scheduleRepaint.renderHandleClear", { mode: "inkClear" });
+          traceTerminalClear("src/index.tsx:scheduleRepaint.renderHandleClear", { mode: "inkClear" });
           renderHandle.clear();
         }
 
@@ -274,7 +266,7 @@ export function startApp({
         }, 350);
       } else if (renderHandle && repaintMode === "recovery") {
         // Fallback recovery path: no Ink instance resolved (e.g. test mock).
-        renderDebug.traceTerminalClear("src/index.tsx:scheduleRepaint.fallbackClear", { mode: "inkClear" });
+        traceTerminalClear("src/index.tsx:scheduleRepaint.fallbackClear", { mode: "inkClear" });
         renderHandle.clear();
       } else if (repaintMode === "recovery") {
         pendingRecoveryRepaint = true;
@@ -338,7 +330,9 @@ export function startApp({
     stdout.off("resize", onResize);
     renderHandle?.cleanup();
     // Restore terminal state: disable mouse reporting and bracketed paste.
-    writeStdout(`${DISABLE_TRANSCRIPT_WHEEL_MODE}\x1b[?2004l`, "src/index.tsx:cleanup");
+    terminal.setMouseReporting(false, "src/index.tsx:cleanup.mouse");
+    terminal.setBracketedPaste(false, "src/index.tsx:cleanup.bracketedPaste");
+    terminal.resetModes();
     activeRoot = null;
   };
 

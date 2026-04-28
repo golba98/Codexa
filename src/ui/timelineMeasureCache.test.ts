@@ -7,6 +7,7 @@ import {
   __clearTimelineMeasureCachesForTests,
   __getStreamingBlockRowCacheSizeForTests,
   buildActionEventRows,
+  buildStableTimelineSnapshot,
   buildTimelineSnapshot,
   type StreamEvent,
 } from "./timelineMeasure.js";
@@ -53,12 +54,14 @@ test("buildActionEventRows reuses row array for stable tool inputs", () => {
   assert.strictEqual(second, first);
 });
 
-test("buildActionEventRows returns new rows when tool summary changes", () => {
+test("buildActionEventRows preserves bordered action card shape when summary changes", () => {
   __clearTimelineMeasureCachesForTests();
   const first = buildRows(makeTool({ summary: "Read 12 lines" }));
   const second = buildRows(makeTool({ summary: "Read 14 lines" }));
 
-  assert.notStrictEqual(second, first);
+  assert.equal(second.length, first.length);
+  assert.deepEqual(second.map((row) => row.key), first.map((row) => row.key));
+  assert.match(first.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /╭── action/);
 });
 
 test("completed action rows ignore live-target changes that do not render", () => {
@@ -71,14 +74,60 @@ test("completed action rows ignore live-target changes that do not render", () =
   assert.strictEqual(second, first);
 });
 
-test("running action rows change when live cursor display changes", () => {
+test("running action rows keep their shape when live cursor display changes", () => {
   __clearTimelineMeasureCachesForTests();
   const tool = makeTool({ status: "running", completedAt: null });
 
   const first = buildRows(tool, { isLive: true });
   const second = buildRows(tool, { isLive: false });
 
-  assert.notStrictEqual(second, first);
+  assert.equal(second.length, first.length);
+  assert.match(first.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /▌/);
+  assert.doesNotMatch(second.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /▌/);
+  assert.deepEqual(second.map((row) => row.key), first.map((row) => row.key));
+});
+
+test("running to completed action update keeps row count and keys stable", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const running = buildRows(makeTool({
+    status: "running",
+    completedAt: null,
+    summary: null,
+  }), { isLive: true });
+  const completed = buildRows(makeTool({
+    status: "completed",
+    completedAt: 42,
+    summary: "Read 12 lines",
+  }), { isLive: false });
+
+  assert.equal(completed.length, running.length);
+  assert.deepEqual(completed.map((row) => row.key), running.map((row) => row.key));
+});
+
+test("action summary updates do not resize bordered action cards", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const first = buildRows(makeTool({ summary: null }));
+  const second = buildRows(makeTool({ summary: "Read 14 lines and summarized the file contents" }));
+
+  assert.equal(second.length, first.length);
+  assert.deepEqual(second.map((row) => row.key), first.map((row) => row.key));
+});
+
+test("bordered action cards show duration only after completion", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const running = buildRows(makeTool({ status: "running", completedAt: null }), { isLive: true });
+  const completed = buildRows(makeTool({ status: "completed", completedAt: 42 }), { isLive: false });
+  const runningText = running.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+  const completedText = completed.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+
+  assert.equal(running.length, completed.length);
+  assert.match(runningText, /╭── action/);
+  assert.match(runningText, /Read file/);
+  assert.doesNotMatch(runningText, /ms|s/);
+  assert.match(completedText, /Read file\s+32ms/);
 });
 
 test("completed action rows ignore invisible timestamp changes when duration is unchanged", () => {
@@ -184,6 +233,65 @@ function makeRenderItem(thinkingText: string): RenderTimelineItem {
   };
 }
 
+function makeStreamingResponseRenderItem(text: string): RenderTimelineItem {
+  const user: UserPromptEvent = {
+    id: 10,
+    type: "user",
+    createdAt: 1,
+    prompt: "Compare algorithms",
+    turnId: 2,
+  };
+  const run: RunEvent = {
+    id: 11,
+    type: "run",
+    createdAt: 1,
+    startedAt: 1,
+    durationMs: null,
+    backendId: "codex-subprocess",
+    backendLabel: "Codexa",
+    runtime: TEST_RUNTIME,
+    prompt: "Compare algorithms",
+    progressEntries: [],
+    status: "running",
+    summary: "streaming...",
+    truncatedOutput: false,
+    toolActivities: [],
+    activity: [],
+    touchedFileCount: 0,
+    errorMessage: null,
+    turnId: 2,
+    streamItems: [{ streamSeq: 1, kind: "response", refId: "response-1" }],
+    responseSegments: [{
+      id: "response-1",
+      streamSeq: 1,
+      chunks: [text],
+      status: "active",
+      startedAt: 1,
+    }],
+    lastStreamSeq: 1,
+    activeResponseSegmentId: "response-1",
+  };
+
+  return {
+    key: "turn-2",
+    type: "turn",
+    padded: true,
+    item: {
+      type: "turn",
+      turnId: 2,
+      turnIndex: 1,
+      user,
+      run,
+      assistant: null,
+    },
+    renderState: {
+      opacity: "active",
+      question: null,
+      runPhase: "streaming",
+    },
+  };
+}
+
 test("completed action wrapped rows stay stable when earlier thinking grows", () => {
   __clearTimelineMeasureCachesForTests();
 
@@ -205,4 +313,48 @@ test("completed action wrapped rows stay stable when earlier thinking grows", ()
   for (let index = 0; index < firstActionRows.length; index += 1) {
     assert.strictEqual(secondActionRows[index], firstActionRows[index]);
   }
+});
+
+test("stable timeline freezes completed action rows while active text changes", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const first = buildStableTimelineSnapshot(
+    [makeRenderItem("Inspecting proof files.")],
+    { totalWidth: 72, debugLabel: "stable-before" },
+  );
+  const second = buildStableTimelineSnapshot(
+    [makeRenderItem("Inspecting proof files and reading surrounding documentation before summarizing the verification workflow.")],
+    { totalWidth: 72, debugLabel: "stable-after" },
+  );
+
+  const firstActionRows = first.frozenRows.filter((row) => row.key.includes("-action-2-"));
+  const secondActionRows = second.frozenRows.filter((row) => row.key.includes("-action-2-"));
+
+  assert.ok(firstActionRows.length > 0);
+  assert.equal(secondActionRows.length, firstActionRows.length);
+  for (let index = 0; index < firstActionRows.length; index += 1) {
+    assert.strictEqual(secondActionRows[index], firstActionRows[index]);
+  }
+});
+
+test("unchanged active response rows keep references while streaming text grows", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const first = buildTimelineSnapshot(
+    [makeStreamingResponseRenderItem("Line one.\nLine two.")],
+    { totalWidth: 72, debugLabel: "response-before" },
+  );
+  const second = buildTimelineSnapshot(
+    [makeStreamingResponseRenderItem("Line one.\nLine two.\nLine three is arriving.")],
+    { totalWidth: 72, debugLabel: "response-after" },
+  );
+
+  const firstStableLine = first.rows.find((row) =>
+    row.key.includes("-codex-response-1-content-0")
+    && row.spans.some((span) => span.text.includes("Line one.")),
+  );
+  const secondStableLine = second.rows.find((row) => row.key === firstStableLine?.key);
+
+  assert.ok(firstStableLine);
+  assert.strictEqual(secondStableLine, firstStableLine);
 });
