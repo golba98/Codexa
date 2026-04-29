@@ -78,6 +78,10 @@ export function createTerminalModeController(write: TerminalWrite): TerminalMode
       writeStdout(enabled ? TERMINAL_SEQUENCES.bracketedPasteEnable : TERMINAL_SEQUENCES.bracketedPasteDisable, source);
     },
     resetModes() {
+      renderDebug.traceEvent("terminal", "resetModes", {
+        mouseReporting,
+        bracketedPaste,
+      });
       mouseReporting = null;
       bracketedPaste = null;
     },

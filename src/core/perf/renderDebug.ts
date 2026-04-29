@@ -1,7 +1,6 @@
-import { appendFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
-import { useRef } from "react";
+import { appendFileSync, mkdirSync } from "fs";
+import { dirname, join } from "path";
+import { useEffect, useRef } from "react";
 
 type DebugEnv = Record<string, string | undefined>;
 
@@ -11,7 +10,7 @@ let renderTraceEnabled = false;
 let lifecycleEnabled = false;
 let flickerEnabled = false;
 let plainActionsEnabled = false;
-let logPath = join(homedir(), ".codexa-render-debug.jsonl");
+let logPath = join(process.cwd(), ".codexa-debug", "render-debug.log");
 let sessionId = `${Date.now()}-${process.pid}`;
 const counters = new Map<string, number>();
 
@@ -23,7 +22,7 @@ function configureFromEnv(env: DebugEnv = process.env): void {
   lifecycleEnabled = env["CODEXA_DEBUG_LIFECYCLE"] === "1";
   flickerEnabled = env["CODEXA_DEBUG_FLICKER"] === "1";
   plainActionsEnabled = env["CODEXA_DEBUG_PLAIN_ACTIONS"] === "1";
-  logPath = env["CODEXA_RENDER_DEBUG_FILE"]?.trim() || join(homedir(), ".codexa-render-debug.jsonl");
+  logPath = env["CODEXA_RENDER_DEBUG_FILE"]?.trim() || join(process.cwd(), ".codexa-debug", "render-debug.log");
   sessionId = `${Date.now()}-${process.pid}`;
   configured = true;
 }
@@ -104,6 +103,7 @@ function sanitizeValue(value: unknown): unknown {
 
 function writeRecord(kind: string, fields: Record<string, unknown>): void {
   try {
+    mkdirSync(dirname(logPath), { recursive: true });
     appendFileSync(
       logPath,
       JSON.stringify({
@@ -118,6 +118,61 @@ function writeRecord(kind: string, fields: Record<string, unknown>): void {
   } catch {
     // Debug logging must never disturb the TUI.
   }
+}
+
+export function traceLifecycleEvent(
+  component: string,
+  event: "mount" | "unmount" | "blankFrame" | "emptyFrame" | "stateTransition" | string,
+  fields: Record<string, unknown> = {},
+): void {
+  if (!isRenderDebugEnabled()) return;
+  const count = nextCounter(`lifecycle.${component}.${event}`);
+  writeRecord("lifecycle", { component, event, count, ...fields });
+}
+
+export function useLifecycleDebug(
+  component: string,
+  fields: Record<string, unknown> = {},
+): void {
+  useEffect(() => {
+    traceLifecycleEvent(component, "mount", fields);
+    return () => {
+      traceLifecycleEvent(component, "unmount", fields);
+    };
+  }, []);
+}
+
+export function traceBlankFrame(
+  component: string,
+  fields: Record<string, unknown> = {},
+): void {
+  if (!isRenderDebugEnabled()) return;
+  const count = nextCounter(`blankFrame.${component}`);
+  writeRecord("blankFrame", { component, event: "blankFrame", count, ...fields });
+}
+
+export function traceLayoutValidity(
+  component: string,
+  fields: Record<string, unknown> = {},
+): void {
+  if (!isRenderDebugEnabled()) return;
+  const values = Object.entries(fields).filter(([, value]) => typeof value === "number") as Array<[string, number]>;
+  const invalidValues = values
+    .filter(([, value]) => !Number.isFinite(value) || value <= 0)
+    .map(([key, value]) => ({ key, value }));
+  const count = nextCounter(`layoutValidity.${component}`);
+  writeRecord("layout", {
+    event: invalidValues.length > 0 ? "invalidLayout" : "validLayout",
+    component,
+    count,
+    invalidValues,
+    ...fields,
+  });
+}
+
+export function traceStateTransition(fields: Record<string, unknown>): void {
+  if (!isRenderDebugEnabled() && !isLifecycleDebugEnabled()) return;
+  writeRecord("state", { event: "transition", ...fields });
 }
 
 function diffKeys(
@@ -259,7 +314,7 @@ export function traceLifecycleTransition(fields: Record<string, unknown>): void 
 }
 
 export function traceFlickerEvent(event: string, fields: Record<string, unknown> = {}): void {
-  if (!isFlickerDebugEnabled() && !isRenderTraceEnabled()) return;
+  if (!isRenderDebugEnabled() && !isFlickerDebugEnabled() && !isRenderTraceEnabled()) return;
   const count = nextCounter(`flicker.${event}`);
   writeRecord("flicker", { event, count, ...fields });
 }
@@ -282,8 +337,13 @@ export function traceTerminalWrite(
     bytes: Buffer.byteLength(text),
     containsViewportClear: text.includes("\x1b[2J"),
     containsScrollbackClear: text.includes("\x1b[3J"),
+    containsCursorHome: text.includes("\x1b[H"),
+    containsTerminalReset: text.includes("\x1bc"),
     containsAlternateScreen: text.includes("\x1b[?1049h"),
     containsTitleSequence: text.includes("\x1b]0;") || text.includes("\x1b]2;"),
+    containsBracketedPaste: text.includes("\x1b[?2004h") || text.includes("\x1b[?2004l"),
+    containsMouseMode: text.includes("\x1b[?1000h") || text.includes("\x1b[?1000l")
+      || text.includes("\x1b[?1006h") || text.includes("\x1b[?1006l"),
   });
 }
 

@@ -61,6 +61,12 @@ function AppShellInner({
     composerRows,
     verboseMode,
   });
+  renderDebug.useLifecycleDebug("AppShell", {
+    screen,
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+  });
 
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
@@ -85,6 +91,15 @@ function AppShellInner({
     () => Math.max(1, shellHeight - headerRows - (showComposer ? composerRows : 0)),
     [shellHeight, headerRows, showComposer, composerRows],
   );
+  renderDebug.traceLayoutValidity("AppShell", {
+    cols: layout.cols,
+    rows: layout.rows,
+    shellWidth,
+    shellHeight,
+    headerRows,
+    timelineRows,
+    composerRows,
+  });
 
   useEffect(() => {
     const previous = previousMeasurements.current;

@@ -288,6 +288,12 @@ test("action rows update without remounting when a running action completes", as
 });
 
 test("first action activity keeps the shell frame mounted and visible", async () => {
+  const logPath = join(tmpdir(), `codexa-first-action-shell-${process.pid}.jsonl`);
+  rmSync(logPath, { force: true });
+  renderDebug.configureRenderDebug({
+    CODEXA_RENDER_DEBUG: "1",
+    CODEXA_RENDER_DEBUG_FILE: logPath,
+  });
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
@@ -313,8 +319,23 @@ test("first action activity keeps the shell frame mounted and visible", async ()
     assert.match(frame, /What is the point of 5-Date Verification/);
     assert.match(frame, /Codex is thinking/i);
     assert.match(frame, /Get-Content README\.md/);
+
+    const records = readRecords(logPath);
+    const unexpectedUnmounts = records
+      .filter((record) => record.kind === "lifecycle" && record.event === "unmount")
+      .map((record) => String(record.component ?? ""))
+      .filter((component) => ["AppShell", "Timeline", "Header", "Composer", "Status"].includes(component));
+    assert.deepEqual(unexpectedUnmounts, []);
+    assert.equal(
+      countMatching(records, (record) =>
+        record.kind === "blankFrame" && record.reason === "visible-rows-zero-with-events"
+      ),
+      0,
+    );
   } finally {
     instance.unmount();
+    renderDebug.configureRenderDebug({});
+    rmSync(logPath, { force: true });
   }
 });
 

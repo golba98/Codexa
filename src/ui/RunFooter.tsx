@@ -30,6 +30,9 @@ function RunFooter({ uiState }: RunFooterProps) {
   renderDebug.useRenderDebug("Footer", {
     uiStateKind: uiState.kind,
   });
+  renderDebug.useLifecycleDebug("Footer", {
+    uiStateKind: uiState.kind,
+  });
 
   const theme = useTheme();
   // THINKING/RESPONDING/SHELL_RUNNING indicate active processing

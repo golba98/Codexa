@@ -423,6 +423,48 @@ export function App({ launchArgs }: AppProps) {
     model,
     reasoningLevel,
   });
+  renderDebug.useLifecycleDebug("App", {
+    screen,
+    uiStateKind: uiState.kind,
+  });
+  renderDebug.traceLayoutValidity("Root", {
+    cols: terminalLayout.cols,
+    rows: terminalLayout.rows,
+    rawCols: terminalLayout.rawCols,
+    rawRows: terminalLayout.rawRows,
+    composerRows,
+  });
+  const previousUiStateKindRef = useRef(uiState.kind);
+  useEffect(() => {
+    const previousKind = previousUiStateKindRef.current;
+    if (previousKind !== uiState.kind) {
+      renderDebug.traceStateTransition({
+        component: "App",
+        prevKind: previousKind,
+        nextKind: uiState.kind,
+        activeEventsLength: activeEvents.length,
+        staticEventsLength: staticEvents.length,
+        screen,
+      });
+      previousUiStateKindRef.current = uiState.kind;
+    }
+  }, [activeEvents.length, screen, staticEvents.length, uiState.kind]);
+  const previousEventCountRef = useRef(staticEvents.length + activeEvents.length);
+  useEffect(() => {
+    const previousCount = previousEventCountRef.current;
+    const nextCount = staticEvents.length + activeEvents.length;
+    if (previousCount > 0 && nextCount === 0) {
+      renderDebug.traceBlankFrame("Root", {
+        reason: "event-count-dropped-to-zero",
+        previousCount,
+        staticEventsLength: staticEvents.length,
+        activeEventsLength: activeEvents.length,
+        uiStateKind: uiState.kind,
+        screen,
+      });
+    }
+    previousEventCountRef.current = nextCount;
+  }, [activeEvents.length, screen, staticEvents.length, uiState.kind]);
   const previousRootMeasurements = useRef<{
     composerRows: number;
     cols: number;

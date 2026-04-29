@@ -51,6 +51,11 @@ export function AnimatedStatusText({ baseText, isActive, isError = false, animat
     isError,
     animationFrame: animationFrame ?? localFrame,
   });
+  renderDebug.useLifecycleDebug("Status", {
+    baseText,
+    isActive,
+    isError,
+  });
 
   const theme = useTheme();
   const renderedText = sanitizeTerminalOutput(baseText);

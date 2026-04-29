@@ -213,6 +213,10 @@ export function useTerminalViewport(): TerminalViewport {
         rows: stdout.rows,
         renderable: isRenderableViewport(stdout.columns, stdout.rows),
       });
+      renderDebug.traceLayoutValidity("useTerminalViewport", {
+        rawCols: stdout.columns,
+        rawRows: stdout.rows,
+      });
       commit();
       if (settleTimerRef.current) {
         clearTimeout(settleTimerRef.current);

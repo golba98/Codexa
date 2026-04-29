@@ -269,6 +269,16 @@ export function BottomComposer({
     value,
     cursor,
   });
+  renderDebug.useLifecycleDebug("Composer", {
+    uiStateKind: uiState.kind,
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+  });
+  renderDebug.traceLayoutValidity("Composer", {
+    cols: layout.cols,
+    rows: layout.rows,
+  });
 
   const { stdin } = useStdin();
   const theme = useTheme();

@@ -749,8 +749,10 @@ const TimelineRowView = memo(function TimelineRowView({ row }: { row: TimelineRo
   useEffect(() => {
     if (!isActionRow) return;
     renderDebug.traceFlickerEvent("timelineRowMount", { rowKey: row.key });
+    renderDebug.traceLifecycleEvent("ActionRow", "mount", { rowKey: row.key });
     return () => {
       renderDebug.traceFlickerEvent("timelineRowUnmount", { rowKey: row.key });
+      renderDebug.traceLifecycleEvent("ActionRow", "unmount", { rowKey: row.key });
     };
   }, [isActionRow, row.key]);
 
@@ -805,6 +807,17 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     uiStateKind: uiState.kind,
     viewportRows,
     verboseMode,
+  });
+  renderDebug.useLifecycleDebug("Timeline", {
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+    viewportRows,
+  });
+  renderDebug.traceLayoutValidity("Timeline", {
+    cols: layout.cols,
+    rows: layout.rows,
+    viewportRows,
   });
   renderDebug.useFlickerDebug("timelineRender", {
     staticEvents,
@@ -1136,13 +1149,36 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     });
     return selection;
   }, [liveSnapshot, viewport, viewportRows]);
+  const lastNonEmptyVisibleRowsRef = useRef<TimelineRow[]>([]);
+  const transcriptEventCount = staticEvents.length + activeEvents.length;
+  if (visibleRows.length > 0) {
+    lastNonEmptyVisibleRowsRef.current = visibleRows;
+  }
+  const preservedVisibleRows =
+    visibleRows.length === 0 && transcriptEventCount > 0
+      ? lastNonEmptyVisibleRowsRef.current
+      : visibleRows;
+
   if (visibleRows.length === 0) {
+    renderDebug.traceBlankFrame("Timeline", {
+      reason: transcriptEventCount > 0 ? "visible-rows-zero-with-events" : "visible-rows-zero-no-events",
+      staticEventsLength: staticEvents.length,
+      activeEventsLength: activeEvents.length,
+      transcriptEventCount,
+      totalRows: liveSnapshot.totalRows,
+      viewportRows,
+      preservedRows: preservedVisibleRows.length,
+      uiStateKind: uiState.kind,
+    });
+  }
+
+  if (preservedVisibleRows.length === 0) {
     return <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} />;
   }
 
   return (
     <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} overflow="hidden">
-      <TimelineRowsView rows={visibleRows} />
+      <TimelineRowsView rows={preservedVisibleRows} />
     </Box>
   );
 }, (prev, next) => {

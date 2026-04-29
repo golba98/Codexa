@@ -44,6 +44,12 @@ export function TopHeader({ authState, workspaceLabel, layout }: TopHeaderProps)
     rows: layout.rows,
     mode: layout.mode,
   });
+  renderDebug.useLifecycleDebug("Header", {
+    authState,
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+  });
 
   const { cols, mode } = layout;
   const theme = useTheme();
