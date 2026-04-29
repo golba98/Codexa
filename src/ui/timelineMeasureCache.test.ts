@@ -485,3 +485,77 @@ test("unchanged active response rows keep references while streaming text grows"
   assert.ok(firstStableLine);
   assert.strictEqual(secondStableLine, firstStableLine);
 });
+
+
+test("timeline measurement coverage for THINKING -> RESPONDING -> FINALIZE_RUN", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const tool = makeTool({ id: "tool-1", status: "running", completedAt: null, summary: null, streamSeq: 1 });
+  const runEvent: RunEvent = {
+    id: 2,
+    type: "run",
+    createdAt: 2,
+    startedAt: 2,
+    durationMs: null,
+    backendId: "codex-subprocess",
+    backendLabel: "Test",
+    runtime: TEST_RUNTIME,
+    prompt: "Test",
+    progressEntries: [],
+    status: "running",
+    summary: "Running",
+    truncatedOutput: false,
+    toolActivities: [tool],
+    activity: [],
+    touchedFileCount: 0,
+    errorMessage: null,
+    turnId: 1,
+    streamItems: [{ kind: "action", streamSeq: 1, refId: "tool-1" }],
+    responseSegments: [],
+    lastStreamSeq: 1,
+    activeResponseSegmentId: null,
+  };
+
+  const item1: RenderTimelineItem = {
+    key: "turn-1",
+    type: "turn",
+    padded: true,
+    item: { type: "turn", turnId: 1, turnIndex: 1, user: null, run: runEvent, assistant: null },
+    renderState: { opacity: "active", question: null, runPhase: "thinking" },
+  };
+
+  const snapshot1 = buildTimelineSnapshot([item1], { totalWidth: 120 });
+  const actionKeys1 = snapshot1.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  assert.ok(actionKeys1.length > 0);
+
+  // Complete action
+  tool.status = "completed";
+  const snapshot2 = buildTimelineSnapshot([item1], { totalWidth: 120 });
+  const actionKeys2 = snapshot2.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  assert.deepEqual(actionKeys2, actionKeys1);
+
+  // Add response
+  runEvent.responseSegments = [{
+    id: "resp-1",
+    streamSeq: 2,
+    chunks: ["Answer starts"],
+    status: "active",
+    startedAt: 3,
+  }];
+  runEvent.streamItems = [...(runEvent.streamItems ?? []), { kind: "response", streamSeq: 2, refId: "resp-1" }];
+  item1.renderState.runPhase = "streaming";
+
+  const snapshot3 = buildTimelineSnapshot([item1], { totalWidth: 120 });
+  const actionKeys3 = snapshot3.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  assert.deepEqual(actionKeys3, actionKeys1);
+
+  // Finalize
+  runEvent.status = "completed";
+  runEvent.durationMs = 100;
+  runEvent.responseSegments[0].status = "completed";
+  item1.renderState.runPhase = "none";
+
+  const snapshot4 = buildTimelineSnapshot([item1], { totalWidth: 120 });
+  const actionKeys4 = snapshot4.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  assert.deepEqual(actionKeys4, actionKeys1);
+});

@@ -112,7 +112,7 @@ import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
-import { createTerminalModeController } from "./core/terminalControl.js";
+import { createTerminalModeController, setTerminalControlUIState } from "./core/terminalControl.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
@@ -435,6 +435,10 @@ export function App({ launchArgs }: AppProps) {
     composerRows,
   });
   const previousUiStateKindRef = useRef(uiState.kind);
+  useEffect(() => {
+    setTerminalControlUIState(uiState.kind);
+  }, [uiState.kind]);
+
   useEffect(() => {
     const previousKind = previousUiStateKindRef.current;
     if (previousKind !== uiState.kind) {

@@ -36,7 +36,11 @@ function truncatePath(path: string, maxWidth: number): string {
   return "... " + path.slice(path.length - (maxWidth - 4));
 }
 
-export function TopHeader({ authState, workspaceLabel, layout }: TopHeaderProps) {
+export function TopHeader({
+  authState,
+  workspaceLabel,
+  layout,
+}: TopHeaderProps) {
   renderDebug.useRenderDebug("Header", {
     authState,
     workspaceLabel,

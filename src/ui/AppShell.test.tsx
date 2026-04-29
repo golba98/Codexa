@@ -197,6 +197,7 @@ test("cramped busy state uses the run footer in app composition", async () => {
   const output = await renderShell(80, 24, { kind: "THINKING", turnId: 1 });
 
   assert.match(output, /Codex is thinking/i);
+  assert.doesNotMatch(output, /CODEXA\s+\|\s+gpt-5\.4/i);
   assert.doesNotMatch(output, /CODEXA AGENT/);
 });
 

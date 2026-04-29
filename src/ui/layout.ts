@@ -42,7 +42,8 @@ function isValidDimension(value: number | undefined): value is number {
 
 export function normalizeDimension(value: number | undefined, fallback: number): number {
   if (!isValidDimension(value)) {
-    return fallback;
+    // If even the fallback is invalid, use an absolute floor.
+    return isValidDimension(fallback) ? Math.floor(fallback) : 10;
   }
 
   return Math.floor(value);

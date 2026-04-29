@@ -31,6 +31,7 @@ import {
   formatForBox,
 } from "./outputPipeline.js";
 import { normalizeCommand, getFriendlyActionLabel } from "./commandNormalize.js";
+import * as renderDebug from "../core/perf/renderDebug.js";
 
 export type TurnOpacity = "active" | "recent" | "dim";
 
@@ -284,6 +285,12 @@ function ActionEventCard({
   const dim = opacity !== "active";
   const actionNormalized = normalizeCommand(tool.command);
   const actionLabel = getFriendlyActionLabel(actionNormalized);
+  renderDebug.traceEvent("action", "commandNormalized", {
+    actionId: tool.id,
+    status: tool.status,
+    streamSeq: tool.streamSeq ?? null,
+    changed: actionNormalized !== tool.command,
+  });
   const borderColor = dim ? theme.BORDER_SUBTLE : tool.status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE;
   const detailText = isLiveCursorTarget && tool.status === "running"
     ? "▌"

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "child_process";
-import { readFileSync } from "fs";
+import { appendFileSync, mkdirSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -10,6 +10,31 @@ process.title = "CODEXA";
 const currentFile = fileURLToPath(import.meta.url);
 const packageRoot = dirname(dirname(currentFile));
 const forwardArgs = process.argv.slice(2);
+const workspaceRoot = process.cwd();
+
+function writeRenderDebugRecord(kind, fields) {
+  if (process.env.CODEXA_RENDER_DEBUG !== "1" && process.env.CODEXA_DEBUG_RENDER !== "1") {
+    return;
+  }
+
+  try {
+    const debugDir = join(workspaceRoot, ".codexa-debug");
+    mkdirSync(debugDir, { recursive: true });
+    appendFileSync(
+      join(debugDir, "render-debug.log"),
+      JSON.stringify({
+        ts: Date.now(),
+        pid: process.pid,
+        sessionId: `launcher-${Date.now()}-${process.pid}`,
+        kind,
+        ...fields,
+      }) + "\n",
+      "utf8",
+    );
+  } catch {
+    // Debug logging must never disturb launcher startup.
+  }
+}
 
 function hasFlag(args, longFlag, shortFlag) {
   for (const arg of args) {
@@ -65,7 +90,18 @@ if (hasFlag(forwardArgs, "--version", "-v")) {
   process.exit(0);
 }
 
-process.stdout.write("\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07");
+const titleSequence = "\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07";
+writeRenderDebugRecord("stdout", {
+  event: "directWrite",
+  source: "bin/codexa.js:title",
+  bytes: Buffer.byteLength(titleSequence),
+  containsViewportClear: false,
+  containsScrollbackClear: false,
+  containsCursorHome: false,
+  containsTerminalReset: false,
+  containsTitleSequence: true,
+});
+process.stdout.write(titleSequence);
 
 /**
  * Filters out terminal mouse reporting escape sequences from stdin data.
@@ -130,7 +166,6 @@ if (!bunExecutable) {
 }
 
 const appEntry = join(packageRoot, "src", "index.tsx");
-const workspaceRoot = process.cwd();
 
 // Detect if parent process has a real TTY
 const parentHasTTY = process.stdin.isTTY && process.stdout.isTTY;

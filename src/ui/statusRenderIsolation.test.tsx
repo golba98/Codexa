@@ -10,6 +10,7 @@ import type { TimelineEvent, UIState } from "../session/types.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { AppShell } from "./AppShell.js";
+import { Timeline } from "./Timeline.js";
 import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { ThemeProvider } from "./theme.js";
@@ -381,6 +382,103 @@ test("appending a second action does not remount existing action rows", async ()
       .filter((rowKey) => rowKey.includes("-action-2-"));
 
     assert.deepEqual(firstActionUnmounts, []);
+  } finally {
+    instance.unmount();
+    renderDebug.configureRenderDebug({});
+    rmSync(logPath, { force: true });
+  }
+});
+
+
+test("THINKING -> RESPONDING -> FINALIZE_RUN preserves action rows and renders response below", async () => {
+  const logPath = join(tmpdir(), `codexa-action-response-finalize-${process.pid}.jsonl`);
+  rmSync(logPath, { force: true });
+  renderDebug.configureRenderDebug({
+    CODEXA_DEBUG_RENDER_TRACE: "1",
+    CODEXA_RENDER_DEBUG_FILE: logPath,
+  });
+
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  let runningEvents: TimelineEvent[] = makeActiveEvents("running");
+  let uiState: UIState = { kind: "THINKING", turnId: 1 };
+  
+  const TestTimeline = (props: {
+    staticEvents: TimelineEvent[];
+    activeEvents: TimelineEvent[];
+    uiState: UIState;
+  }) => {
+    const layout = createLayoutSnapshot(120, 40);
+    return <Timeline
+      staticEvents={props.staticEvents}
+      activeEvents={props.activeEvents}
+      layout={layout}
+      uiState={props.uiState}
+      viewportRows={30}
+      verboseMode={true}
+    />;
+  };
+
+  const instance = render(<TestTimeline staticEvents={[]} activeEvents={runningEvents} uiState={uiState} />, {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: true,
+    exitOnCtrlC: false,
+  });
+
+  try {
+    await sleep(100);
+    const beforeUpdates = readRecords(logPath);
+    
+    // RESPONDING
+    let streamingEvents = JSON.parse(JSON.stringify(runningEvents)) as TimelineEvent[];
+    let streamingTurn = streamingEvents[1] as Extract<TimelineEvent, { type: "run" }>;
+    streamingTurn.toolActivities[0].status = "completed";
+    streamingTurn.responseSegments = [{
+      id: "resp-1",
+      streamSeq: 3,
+      chunks: ["Final response text"],
+      status: "active",
+      startedAt: 5,
+    }];
+    streamingTurn.streamItems = [
+      ...(streamingTurn.streamItems ?? []),
+      { kind: "response", streamSeq: 3, refId: "resp-1" },
+    ];
+    uiState = { kind: "RESPONDING", turnId: 1 };
+    
+    instance.rerender(<TestTimeline staticEvents={[]} activeEvents={streamingEvents} uiState={uiState} />);
+    await sleep(100);
+
+    // FINALIZE_RUN
+    let completedEvents = JSON.parse(JSON.stringify(streamingEvents)) as TimelineEvent[];
+    let completedTurn = completedEvents[1] as Extract<TimelineEvent, { type: "run" }>;
+    completedTurn.status = "completed";
+    completedTurn.responseSegments = (completedTurn.responseSegments ?? []).map((segment, index) =>
+      index === 0 ? { ...segment, status: "completed" } : segment
+    );
+    uiState = { kind: "IDLE" };
+    
+    instance.rerender(<TestTimeline staticEvents={completedEvents} activeEvents={[]} uiState={uiState} />);
+    await sleep(100);
+
+    const frame = stripAnsi(output);
+    
+    const unmounts = readRecords(logPath)
+      .filter((record) => record.kind === "flicker" && record.event === "timelineRowUnmount")
+      .map((record) => String(record.rowKey ?? ""))
+      .filter((rowKey) => rowKey.includes("-action-"));
+      
+    assert.deepEqual(unmounts, [], "Action rows should not unmount during response and finalize");
+    assert.match(frame, /Final response text/i, "Answer text should appear");
+    assert.match(frame, /action/i, "Action card should remain");
+    
   } finally {
     instance.unmount();
     renderDebug.configureRenderDebug({});
