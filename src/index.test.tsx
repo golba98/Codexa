@@ -32,7 +32,24 @@ function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-function createSupportedHarness() {
+function createSupportedHarness(options: {
+  inkInstance?: {
+    lastOutput: string;
+    lastOutputToRender: string;
+    lastOutputHeight: number;
+    calculateLayoutCalls: number;
+    onRenderCalls: number;
+    unsubscribeResizeCalls: number;
+    throttledLogCancelCalls: number;
+    rootOnRenderCancelCalls: number;
+    onRenderCancelCalls: number;
+    calculateLayout: () => void;
+    onRender: (() => void) & { cancel: () => void };
+    unsubscribeResize: () => void;
+    throttledLog: { cancel: () => void };
+    rootNode: { onRender: { cancel: () => void } };
+  } | null;
+} = {}) {
   const stdout = new MockStdout();
   const stderr = new MockStderr();
   const registeredHandlers: Array<() => void> = [];
@@ -80,8 +97,55 @@ function createSupportedHarness() {
       registerExitHandler(handler: () => void) {
         registeredHandlers.push(handler);
       },
+      resolveInkInstanceForStdout() {
+        return options.inkInstance ?? null;
+      },
     },
   };
+}
+
+function createFakeInkInstance() {
+  const fake = {
+    lastOutput: "previous-frame",
+    lastOutputToRender: "previous-frame-to-render",
+    lastOutputHeight: 12,
+    calculateLayoutCalls: 0,
+    onRenderCalls: 0,
+    unsubscribeResizeCalls: 0,
+    throttledLogCancelCalls: 0,
+    rootOnRenderCancelCalls: 0,
+    onRenderCancelCalls: 0,
+    calculateLayout() {
+      fake.calculateLayoutCalls += 1;
+    },
+    onRender: Object.assign(
+      () => {
+        fake.onRenderCalls += 1;
+      },
+      {
+        cancel() {
+          fake.onRenderCancelCalls += 1;
+        },
+      },
+    ),
+    unsubscribeResize() {
+      fake.unsubscribeResizeCalls += 1;
+    },
+    throttledLog: {
+      cancel() {
+        fake.throttledLogCancelCalls += 1;
+      },
+    },
+    rootNode: {
+      onRender: {
+        cancel() {
+          fake.rootOnRenderCancelCalls += 1;
+        },
+      },
+    },
+  };
+
+  return fake;
 }
 
 test("strict VT mode refuses unsupported terminals without writing bracketed paste sequences", () => {
@@ -302,6 +366,43 @@ test("soft-repaints when resize occurs without invalid dimensions", async () => 
   assert.equal(harness.stdout.clearCalls, 0);
   const delayedWrites = harness.stdout.writes.slice(writesBefore.length);
   assert.doesNotMatch(delayedWrites, /\x1b\[2J|\x1b\[3J/);
+
+  harness.resolveExit();
+  await flushMicrotasks();
+});
+
+test("post-startup resize does not force Ink internals or blank cached output", async () => {
+  const inkInstance = createFakeInkInstance();
+  const harness = createSupportedHarness({ inkInstance });
+  startApp(harness.deps);
+
+  assert.equal(inkInstance.unsubscribeResizeCalls, 1, "startup still disables Ink's competing resize listener");
+
+  const initialLastOutput = inkInstance.lastOutput;
+  const initialLastOutputToRender = inkInstance.lastOutputToRender;
+  const initialLastOutputHeight = inkInstance.lastOutputHeight;
+  const startupEnd = harness.stdout.writes.length;
+
+  harness.stdout.columns = 15;
+  harness.stdout.rows = 8;
+  harness.stdout.emit("resize");
+
+  harness.stdout.columns = 100;
+  harness.stdout.rows = 32;
+  harness.stdout.emit("resize");
+
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  assert.equal(harness.stdout.clearCalls, 0);
+  assert.doesNotMatch(harness.stdout.writes.slice(startupEnd), /\x1b\[2J|\x1b\[3J/);
+  assert.equal(inkInstance.lastOutput, initialLastOutput);
+  assert.equal(inkInstance.lastOutputToRender, initialLastOutputToRender);
+  assert.equal(inkInstance.lastOutputHeight, initialLastOutputHeight);
+  assert.equal(inkInstance.calculateLayoutCalls, 0);
+  assert.equal(inkInstance.onRenderCalls, 0);
+  assert.equal(inkInstance.throttledLogCancelCalls, 0);
+  assert.equal(inkInstance.rootOnRenderCancelCalls, 0);
+  assert.equal(inkInstance.onRenderCancelCalls, 0);
 
   harness.resolveExit();
   await flushMicrotasks();

@@ -20,19 +20,12 @@ const KITTY_KEYBOARD_OPTIONS: RenderOptions["kittyKeyboard"] = {
 };
 
 /**
- * Typed subset of the internal Ink class instance we access for repaint control.
- * The render() wrapper only exposes clear/waitUntilExit/etc — the real properties
- * (lastOutput, onRender, calculateLayout, unsubscribeResize) live on the Ink class.
+ * Typed subset of the internal Ink class instance we access to disable Ink's
+ * built-in resize listener. Post-startup repainting is driven by React layout
+ * state, not by forcing Ink's private render buffers.
  */
 interface InkInstance {
-  lastOutput: string;
-  lastOutputToRender: string;
-  lastOutputHeight: number;
-  onRender: (() => void) & { cancel?: () => void };
-  calculateLayout: () => void;
   unsubscribeResize?: () => void;
-  rootNode: { onRender: { cancel?: () => void } };
-  throttledLog: { cancel?: () => void };
 }
 
 /**
@@ -73,6 +66,7 @@ export interface StartAppDependencies {
   platform: NodeJS.Platform;
   argv: string[];
   renderApp: (node: React.ReactElement, options?: RenderOptions) => RenderHandle;
+  resolveInkInstanceForStdout: (stdout: AppStdout) => InkInstance | null;
   registerExitHandler: (handler: () => void) => void;
 }
 
@@ -102,6 +96,7 @@ export function startApp({
   platform = process.platform,
   argv = process.argv.slice(2),
   renderApp = render,
+  resolveInkInstanceForStdout = resolveInkInstance,
   registerExitHandler = (handler) => {
     process.on("exit", handler);
   },
@@ -156,67 +151,6 @@ export function startApp({
   let repaintArmed = false;
   let renderHandle: RenderHandle | null = null;
   let inkInstance: InkInstance | null = null;
-  let repaintDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const scheduleRepaint = () => {
-    if (repaintDebounceTimer) clearTimeout(repaintDebounceTimer);
-    repaintDebounceTimer = setTimeout(() => {
-      repaintDebounceTimer = null;
-
-      // If dimensions are still invalid when the timer fires, skip the
-      // destructive repaint — the old content is still on-screen (we never
-      // cleared the viewport during the unstable phase) so the user sees
-      // stale-but-visible UI instead of a blank frame.  The next resize
-      // event with valid dimensions will schedule a fresh repaint.
-      if (hasInvalidRestoreDimensions(stdout)) {
-        return;
-      }
-
-      repaintArmed = false;
-
-      if (renderHandle && inkInstance) {
-        // By now (150ms later) React state has settled — useTerminalViewport's
-        // 100ms settle timer has fired, so dimensions are correct.
-        // Reset Ink output state before forcing a render. Do not call
-        // renderHandle.clear() or emit a viewport clear here: after startup,
-        // resize recovery must keep the previous frame visible until the
-        // replacement frame is ready.
-        inkInstance.lastOutput = "";
-        inkInstance.lastOutputToRender = "";
-        inkInstance.lastOutputHeight = 0;
-
-        // Cancel ALL pending throttled callbacks — including onRender's own
-        // throttle — so the forced render below executes immediately rather
-        // than being silently deferred by a stale throttle window.
-        inkInstance.throttledLog?.cancel?.();
-        inkInstance.rootNode?.onRender?.cancel?.();
-        if (typeof inkInstance.onRender?.cancel === "function") {
-          inkInstance.onRender.cancel();
-        }
-
-        // Force a synchronous layout + render pass.
-        inkInstance.calculateLayout();
-        inkInstance.onRender();
-
-        // Safety: reset lastOutput after the forced render so the very next
-        // React-driven render cycle also writes output.  This recovers from
-        // edge cases where the forced onRender above produced a frame that
-        // was buffered/lost by the terminal during its resize animation.
-        inkInstance.lastOutput = "";
-
-        // Verification: monitor switches and DPI changes can take 200-500ms
-        // to settle.  Check if dims changed after the forced render and, if
-        // so, trigger another repaint cycle.
-        const renderedCols = stdout.columns;
-        const renderedRows = stdout.rows;
-        setTimeout(() => {
-          if (stdout.columns !== renderedCols || stdout.rows !== renderedRows) {
-            scheduleRepaint();
-          }
-        }, 350);
-      }
-    }, 150);
-  };
 
   const onResize = () => {
     renderDebug.traceEvent("terminal", "resize", {
@@ -227,49 +161,24 @@ export function startApp({
 
     if (hasInvalidRestoreDimensions(stdout)) {
       // Transient invalid dimensions (e.g. during maximize/restore on
-      // Windows).  Don't clear the screen or reset Ink's cache — we want
-      // the old content to stay visible while dimensions are unstable.
-      //
-      // CRITICAL: always schedule a repaint rather than cancelling the
-      // pending timer.  On Windows Terminal, restore-down can emit resize
-      // events in this order:
-      //   1. valid dims (restored size)  → scheduleRepaint at t+150
-      //   2. invalid dims (trailing glitch) → THIS branch
-      // Previously this branch cancelled the timer from step 1, leaving
-      // the app with repaintArmed=true and no timer — permanent blank.
-      // Now the scheduleRepaint call here replaces the old timer with a
-      // new one that fires 150ms after the LAST event.  By then the
-      // terminal has settled and dims are valid.
+      // Windows). Keep the previous frame visible and let useTerminalViewport
+      // preserve the last renderable layout until valid dimensions return.
       repaintArmed = true;
-      scheduleRepaint();
       return;
     }
 
-    const recoveringFromInvalidDimensions = repaintArmed;
     if (repaintArmed) {
       repaintArmed = false;
     }
 
-    // ── Resize strategy: preserve visible content during the transition ──
-    //
-    // Don't clear the visible viewport (\x1b[2J]) immediately — that would
-    // create a blank frame while React processes the new dimensions.
-    //
-    //  1. Reset Ink's output cache so the React-driven re-render (triggered
-    //     by useTerminalViewport's state update) writes fresh output to
-    //     stdout instead of short-circuiting due to lastOutput matching.
-    //  2. Schedule one settled repaint after dimensions stop changing. Both
-    //     normal resizes and invalid-dimension recovery avoid viewport clears.
-    if (inkInstance) {
-      inkInstance.lastOutput = "";
-    }
-    scheduleRepaint();
+    // useTerminalViewport owns resize-driven React state. Do not clear the
+    // terminal, reset Ink output caches, or force Ink renders here; those
+    // imperative paths can produce a transient empty frame during streaming.
   };
 
   const cleanup = () => {
     if (cleanupDone) return;
     cleanupDone = true;
-    if (repaintDebounceTimer) clearTimeout(repaintDebounceTimer);
     stdout.off("resize", onResize);
     renderHandle?.cleanup();
     // Restore terminal state: disable mouse reporting and bracketed paste.
@@ -310,7 +219,7 @@ export function startApp({
 
   // Resolve the real Ink class instance to get access to lastOutput,
   // onRender, calculateLayout, etc.  Gracefully degrades to null in tests.
-  inkInstance = resolveInkInstance(stdout);
+  inkInstance = resolveInkInstanceForStdout(stdout);
 
   // Remove Ink's own resize handler so the app is the sole resize handler.
   // This eliminates the race where Ink's resized() fires alongside our

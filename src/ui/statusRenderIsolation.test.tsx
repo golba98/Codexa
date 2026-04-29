@@ -72,11 +72,13 @@ function makeToolActivity(id: string, command: string, status: ActionStatus, str
   };
 }
 
-function makeActiveEvents(actionStatus: ActionStatus = "completed", secondActionStatus?: ActionStatus): TimelineEvent[] {
-  const toolActivities = [
-    makeToolActivity("tool-1", "Get-Content README.md", actionStatus, 2),
-    ...(secondActionStatus ? [makeToolActivity("tool-2", "Get-Content package.json", secondActionStatus, 3)] : []),
-  ];
+function makeActiveEvents(actionStatus: ActionStatus | null = "completed", secondActionStatus?: ActionStatus): TimelineEvent[] {
+  const toolActivities = actionStatus === null
+    ? []
+    : [
+        makeToolActivity("tool-1", "Get-Content README.md", actionStatus, 2),
+        ...(secondActionStatus ? [makeToolActivity("tool-2", "Get-Content package.json", secondActionStatus, 3)] : []),
+      ];
   return [
     {
       id: 1,
@@ -136,7 +138,7 @@ function Harness({
   actionStatus = "completed",
   secondActionStatus,
 }: {
-  actionStatus?: ActionStatus;
+  actionStatus?: ActionStatus | null;
   secondActionStatus?: ActionStatus;
 }) {
   const layout = createLayoutSnapshot(120, 40);
@@ -195,6 +197,10 @@ function Harness({
       />
     </ThemeProvider>
   );
+}
+
+function stripAnsi(text: string): string {
+  return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
 test("status dot ticks do not invalidate timeline rendering", async () => {
@@ -278,6 +284,37 @@ test("action rows update without remounting when a running action completes", as
     instance.unmount();
     renderDebug.configureRenderDebug({});
     rmSync(logPath, { force: true });
+  }
+});
+
+test("first action activity keeps the shell frame mounted and visible", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const instance = render(<Harness actionStatus={null} />, {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: true,
+    exitOnCtrlC: false,
+  });
+
+  try {
+    await sleep(100);
+    instance.rerender(<Harness actionStatus="running" />);
+    await sleep(100);
+
+    const frame = stripAnsi(output);
+    assert.match(frame, /workspace/);
+    assert.match(frame, /What is the point of 5-Date Verification/);
+    assert.match(frame, /Codex is thinking/i);
+    assert.match(frame, /Get-Content README\.md/);
+  } finally {
+    instance.unmount();
   }
 });
 

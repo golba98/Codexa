@@ -8,8 +8,10 @@ import { getShellHeight, getShellWidth, type Layout } from "./layout.js";
 import { Timeline } from "./Timeline.js";
 import { measureTopHeaderRows, MemoizedTopHeader } from "./TopHeader.js";
 
+type AppShellLayout = Layout & { layoutEpoch?: number };
+
 export interface AppShellProps {
-  layout: Layout;
+  layout: AppShellLayout;
   screen: Screen;
   authState: CodexAuthState;
   workspaceLabel: string;
@@ -47,6 +49,7 @@ function AppShellInner({
     cols: layout.cols,
     rows: layout.rows,
     mode: layout.mode,
+    layoutEpoch: layout.layoutEpoch,
     screen,
     authState,
     workspaceLabel,
@@ -178,6 +181,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.layout.cols     === next.layout.cols     &&
     prev.layout.rows     === next.layout.rows     &&
     prev.layout.mode     === next.layout.mode     &&
+    prev.layout.layoutEpoch === next.layout.layoutEpoch &&
     prev.screen          === next.screen          &&
     prev.authState       === next.authState       &&
     prev.workspaceLabel  === next.workspaceLabel  &&
