@@ -292,6 +292,80 @@ function makeStreamingResponseRenderItem(text: string): RenderTimelineItem {
   };
 }
 
+function makeActionSequenceRenderItem(tools: RunToolActivity[]): RenderTimelineItem {
+  const user: UserPromptEvent = {
+    id: 20,
+    type: "user",
+    createdAt: 1,
+    prompt: "Inspect files",
+    turnId: 3,
+  };
+  const run: RunEvent = {
+    id: 21,
+    type: "run",
+    createdAt: 1,
+    startedAt: 1,
+    durationMs: null,
+    backendId: "codex-subprocess",
+    backendLabel: "Codexa",
+    runtime: TEST_RUNTIME,
+    prompt: "Inspect files",
+    progressEntries: [],
+    status: "running",
+    summary: "running...",
+    truncatedOutput: false,
+    toolActivities: tools,
+    activity: [],
+    touchedFileCount: 0,
+    errorMessage: null,
+    turnId: 3,
+    streamItems: tools.map((tool) => ({
+      streamSeq: tool.streamSeq ?? 0,
+      kind: "action" as const,
+      refId: tool.id,
+    })),
+    responseSegments: [],
+    lastStreamSeq: tools.reduce((max, tool) => Math.max(max, tool.streamSeq ?? 0), 0),
+    activeResponseSegmentId: null,
+  };
+
+  return {
+    key: "turn-3",
+    type: "turn",
+    padded: true,
+    item: {
+      type: "turn",
+      turnId: 3,
+      turnIndex: 2,
+      user,
+      run,
+      assistant: null,
+    },
+    renderState: {
+      opacity: "active",
+      question: null,
+      runPhase: "streaming",
+    },
+  };
+}
+
+function stableRowsForTools(tools: RunToolActivity[]) {
+  return buildStableTimelineSnapshot(
+    [makeActionSequenceRenderItem(tools)],
+    { totalWidth: 72, debugLabel: "action-sequence" },
+  ).snapshot.rows;
+}
+
+function actionRows(rows: Array<{ key: string }>, streamSeq: number): string[] {
+  return rows
+    .map((row) => row.key)
+    .filter((key) => key.includes(`-action-${streamSeq}-`));
+}
+
+function actionTopIndex(rows: Array<{ key: string }>, streamSeq: number): number {
+  return rows.findIndex((row) => row.key.includes(`-action-${streamSeq}-top`));
+}
+
 test("completed action wrapped rows stay stable when earlier thinking grows", () => {
   __clearTimelineMeasureCachesForTests();
 
@@ -326,6 +400,46 @@ test("active thinking rows are omitted while action rows remain visible", () => 
 
   assert.doesNotMatch(joined, /Inspecting proof files/i);
   assert.match(joined, /Read file/i);
+});
+
+test("stable active action sequence appends without moving existing action keys", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const firstRunningRows = stableRowsForTools([
+    makeTool({ id: "tool-1", status: "running", completedAt: null, summary: null, streamSeq: 1 }),
+  ]);
+  const firstCompletedRows = stableRowsForTools([
+    makeTool({ id: "tool-1", status: "completed", completedAt: 42, summary: "Read 12 lines", streamSeq: 1 }),
+  ]);
+  const secondRunningRows = stableRowsForTools([
+    makeTool({ id: "tool-1", status: "completed", completedAt: 42, summary: "Read 12 lines", streamSeq: 1 }),
+    makeTool({ id: "tool-2", command: "Get-Content package.json", status: "running", completedAt: null, summary: null, streamSeq: 2 }),
+  ]);
+  const bothCompletedRows = stableRowsForTools([
+    makeTool({ id: "tool-1", status: "completed", completedAt: 42, summary: "Read 12 lines", streamSeq: 1 }),
+    makeTool({ id: "tool-2", command: "Get-Content package.json", status: "completed", completedAt: 56, summary: "Read package", streamSeq: 2 }),
+  ]);
+
+  const firstActionKeys = actionRows(firstRunningRows, 1);
+  assert.ok(firstActionKeys.length > 0);
+  assert.deepEqual(actionRows(firstCompletedRows, 1), firstActionKeys);
+  assert.deepEqual(actionRows(secondRunningRows, 1), firstActionKeys);
+  assert.deepEqual(actionRows(bothCompletedRows, 1), firstActionKeys);
+  assert.ok(actionTopIndex(secondRunningRows, 1) < actionTopIndex(secondRunningRows, 2));
+  assert.ok(actionTopIndex(bothCompletedRows, 1) < actionTopIndex(bothCompletedRows, 2));
+});
+
+test("stable active action rows keep stream order when a later action completes first", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const rows = stableRowsForTools([
+    makeTool({ id: "tool-1", status: "running", completedAt: null, summary: null, streamSeq: 1 }),
+    makeTool({ id: "tool-2", command: "Get-Content package.json", status: "completed", completedAt: 56, summary: "Read package", streamSeq: 2 }),
+  ]);
+
+  assert.ok(actionTopIndex(rows, 1) >= 0);
+  assert.ok(actionTopIndex(rows, 2) >= 0);
+  assert.ok(actionTopIndex(rows, 1) < actionTopIndex(rows, 2));
 });
 
 test("stable timeline freezes completed action rows while active text changes", () => {

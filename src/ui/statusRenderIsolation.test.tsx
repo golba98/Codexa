@@ -58,8 +58,25 @@ function countMatching(records: Array<Record<string, unknown>>, predicate: (reco
   return records.filter(predicate).length;
 }
 
-function makeActiveEvents(actionStatus: "running" | "completed" = "completed"): TimelineEvent[] {
-  const actionCompletedAt = actionStatus === "completed" ? 4 : null;
+type ActionStatus = "running" | "completed";
+
+function makeToolActivity(id: string, command: string, status: ActionStatus, streamSeq: number) {
+  return {
+    id,
+    command,
+    status,
+    startedAt: streamSeq + 1,
+    completedAt: status === "completed" ? streamSeq + 3 : null,
+    summary: status === "completed" ? "Read 12 lines" : null,
+    streamSeq,
+  };
+}
+
+function makeActiveEvents(actionStatus: ActionStatus = "completed", secondActionStatus?: ActionStatus): TimelineEvent[] {
+  const toolActivities = [
+    makeToolActivity("tool-1", "Get-Content README.md", actionStatus, 2),
+    ...(secondActionStatus ? [makeToolActivity("tool-2", "Get-Content package.json", secondActionStatus, 3)] : []),
+  ];
   return [
     {
       id: 1,
@@ -99,31 +116,29 @@ function makeActiveEvents(actionStatus: "running" | "completed" = "completed"): 
       status: "running",
       summary: "Running",
       truncatedOutput: false,
-      toolActivities: [{
-        id: "tool-1",
-        command: "Get-Content README.md",
-        status: actionStatus,
-        startedAt: 3,
-        completedAt: actionCompletedAt,
-        summary: actionStatus === "completed" ? "Read 12 lines" : null,
-        streamSeq: 2,
-      }],
+      toolActivities,
       activity: [],
       touchedFileCount: 0,
       errorMessage: null,
       turnId: 1,
       streamItems: [
         { kind: "thinking", streamSeq: 1, refId: "thinking-1-block-1" },
-        { kind: "action", streamSeq: 2, refId: "tool-1" },
+        ...toolActivities.map((tool) => ({ kind: "action" as const, streamSeq: tool.streamSeq, refId: tool.id })),
       ],
       responseSegments: [],
-      lastStreamSeq: 2,
+      lastStreamSeq: toolActivities.at(-1)?.streamSeq ?? 1,
       activeResponseSegmentId: null,
     },
   ];
 }
 
-function Harness({ actionStatus = "completed" }: { actionStatus?: "running" | "completed" }) {
+function Harness({
+  actionStatus = "completed",
+  secondActionStatus,
+}: {
+  actionStatus?: ActionStatus;
+  secondActionStatus?: ActionStatus;
+}) {
   const layout = createLayoutSnapshot(120, 40);
   const uiState: UIState = { kind: "THINKING", turnId: 1 };
   const composerRows = measureBottomComposerRows({
@@ -145,7 +160,7 @@ function Harness({ actionStatus = "completed" }: { actionStatus?: "running" | "c
         workspaceLabel="workspace"
         runtimeSummary={null}
         staticEvents={[]}
-        activeEvents={makeActiveEvents(actionStatus)}
+        activeEvents={makeActiveEvents(actionStatus, secondActionStatus)}
         uiState={uiState}
         composerRows={composerRows}
         panel={null}
@@ -259,6 +274,55 @@ test("action rows update without remounting when a running action completes", as
       .filter((rowKey) => rowKey.includes("-action-"));
 
     assert.deepEqual(unmountedActionRows, []);
+  } finally {
+    instance.unmount();
+    renderDebug.configureRenderDebug({});
+    rmSync(logPath, { force: true });
+  }
+});
+
+test("appending a second action does not remount existing action rows", async () => {
+  const logPath = join(tmpdir(), `codexa-action-append-${process.pid}.jsonl`);
+  rmSync(logPath, { force: true });
+  renderDebug.configureRenderDebug({
+    CODEXA_DEBUG_RENDER_TRACE: "1",
+    CODEXA_RENDER_DEBUG_FILE: logPath,
+  });
+
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  const instance = render(<Harness actionStatus="running" />, {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: true,
+    exitOnCtrlC: false,
+  });
+
+  try {
+    await sleep(100);
+    const beforeUpdates = readRecords(logPath);
+    const firstActionMounts = beforeUpdates
+      .filter((record) => record.kind === "flicker" && record.event === "timelineRowMount")
+      .map((record) => String(record.rowKey ?? ""))
+      .filter((rowKey) => rowKey.includes("-action-2-"));
+
+    assert.ok(firstActionMounts.length > 0, "expected first action rows to mount in the initial frame");
+
+    instance.rerender(<Harness actionStatus="completed" />);
+    await sleep(100);
+    const beforeAppend = readRecords(logPath);
+
+    instance.rerender(<Harness actionStatus="completed" secondActionStatus="running" />);
+    await sleep(100);
+
+    const appendWindow = readRecords(logPath).slice(beforeAppend.length);
+    const firstActionUnmounts = appendWindow
+      .filter((record) => record.kind === "flicker" && record.event === "timelineRowUnmount")
+      .map((record) => String(record.rowKey ?? ""))
+      .filter((rowKey) => rowKey.includes("-action-2-"));
+
+    assert.deepEqual(firstActionUnmounts, []);
   } finally {
     instance.unmount();
     renderDebug.configureRenderDebug({});

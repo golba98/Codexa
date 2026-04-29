@@ -2149,14 +2149,13 @@ function buildStableActiveTurnGroups(
   const dim = item.renderState.opacity !== "active";
   const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
   const events = collectStreamEvents(item, streaming);
-  let frozenRows = getCachedFrozenRows(rowCacheKey([
+  let orderedRows = getCachedFrozenRows(rowCacheKey([
     "stable-active-user",
     item.key,
     innerWidth,
     item.renderState.opacity,
     textCacheToken(item.item.user?.prompt),
   ]), () => buildUserInputRows(item, innerWidth));
-  let liveRows: TimelineRow[] = [];
 
   events.forEach((event, index) => {
     const liveEvent = isLiveStreamEvent(event, run);
@@ -2228,21 +2227,18 @@ function buildStableActiveTurnGroups(
       ]), build)));
     }
 
-    if (liveEvent) {
-      liveRows = [...liveRows, ...targetRows];
-    } else {
-      frozenRows = [...frozenRows, ...targetRows];
-    }
+    orderedRows = [...orderedRows, ...targetRows];
   });
 
   const questionRows = buildActionRequiredRows(item, innerWidth);
   if (questionRows.length > 0) {
-    liveRows = [...liveRows, ...questionRows];
+    orderedRows = [...orderedRows, ...questionRows];
   }
 
-  frozenRows = applyTurnOpacity(frozenRows, item.renderState.opacity);
-  liveRows = applyTurnOpacity(liveRows, item.renderState.opacity);
-  return { frozenRows, liveRows };
+  return {
+    frozenRows: applyTurnOpacity(orderedRows, item.renderState.opacity),
+    liveRows: [],
+  };
 }
 
 export function buildStableTimelineSnapshot(
