@@ -460,7 +460,7 @@ function buildTaskStatusRow(item: Extract<RenderTimelineItem, { type: "turn" }>,
   // live busy animation so transcript rows do not repaint on animation ticks.
   const statusText = item.renderState.runPhase === "streaming"
     ? "Codex is streaming"
-    : "Codex is working";
+    : "Codex is thinking";
 
   return createRow(
     `${item.key}-status`,
@@ -535,10 +535,6 @@ function buildThinkingRows(run: RunEvent, width: number, verbose: boolean): Time
   if (hiddenCount > 0) {
     if (contentRows.length > 0) contentRows.push([createSpan(" ", "dim")]);
     contentRows.push([createSpan(`... ${hiddenCount} earlier update${hiddenCount === 1 ? "" : "s"}`, "dim")]);
-  }
-
-  if (visibleBlocks.length === 0 && run.status === "running" && recentActivity.length === 0 && !latestTool) {
-    contentRows.push([createSpan("Codex is working...", "dim")]);
   }
 
   visibleBlocks.forEach((block, blockIndex) => {
@@ -1854,13 +1850,6 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
 
   const rows: TimelineRow[] = [];
 
-  if (events.length === 0 && run.status === "running") {
-    rows.push(...buildCodexPlainRows(`${item.key}-codex-running`, width, [
-      [createSpan("Codex is working...", "dim")],
-      [createSpan("▌", "accent")],
-    ]));
-  }
-
   events.forEach((event, index) => {
     const isLastEvent = index === events.length - 1;
     const isLive = run.status === "running" && isLastEvent; // The cursor is on the last event
@@ -1957,7 +1946,7 @@ function collectStreamEvents(
   for (const it of sortedItems) {
     if (it.kind === "thinking") {
       const block = blocksById.get(it.refId);
-      if (block && block.text.trim().length > 0) {
+      if (block && block.text.trim().length > 0 && !(run.status === "running" && block.status === "active")) {
         events.push({
           kind: "thinking",
           streamSeq: it.streamSeq,
@@ -1982,6 +1971,7 @@ function collectStreamEvents(
       if (!VISIBLE_THINKING_SOURCES.has(entry.source)) continue;
       for (const block of entry.blocks) {
         if (!block.text.trim()) continue;
+        if (run.status === "running" && block.status === "active") continue;
         legacySeq += 1;
         events.push({
           kind: "thinking",
@@ -2139,7 +2129,7 @@ function isLiveStreamEvent(event: StreamEvent, run: RunEvent): boolean {
   if (run.status !== "running") return false;
   if (event.kind === "response") return event.segment.status === "active";
   if (event.kind === "action") return event.tool.status === "running";
-  return event.block.status === "active";
+  return false;
 }
 
 function buildStableActiveTurnGroups(
@@ -2167,16 +2157,6 @@ function buildStableActiveTurnGroups(
     textCacheToken(item.item.user?.prompt),
   ]), () => buildUserInputRows(item, innerWidth));
   let liveRows: TimelineRow[] = [];
-
-  if (events.length === 0 && run.status === "running") {
-    liveRows = [
-      ...liveRows,
-      ...buildCodexPlainRows(`${item.key}-codex-running`, innerWidth, [
-        [createSpan("Codex is working...", "dim")],
-        [createSpan("▌", "accent")],
-      ]),
-    ];
-  }
 
   events.forEach((event, index) => {
     const liveEvent = isLiveStreamEvent(event, run);

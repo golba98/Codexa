@@ -210,7 +210,7 @@ test("enforces a single render root while active", async () => {
   await flushMicrotasks();
 });
 
-test("hard-repaints once when resize recovers from invalid dimensions", async () => {
+test("resize recovery preserves the viewport after invalid dimensions", async () => {
   const harness = createSupportedHarness();
 
   startApp(harness.deps);
@@ -224,19 +224,18 @@ test("hard-repaints once when resize recovers from invalid dimensions", async ()
   harness.stdout.rows = 40;
   harness.stdout.emit("resize");
 
-  // onResize does NOT erase scrollback — it defers only a visible-viewport
-  // clear (\x1b[2J\x1b[H) to scheduleRepaint (150ms).
+  // onResize does not erase the viewport or scrollback.
   assert.equal(harness.stdout.clearCalls, 0);
   assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
   assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
-  // \x1b[3J must NOT appear in post-startup writes (scrollback preserved).
   const writesAfterStart = harness.stdout.writes.indexOf("\x1b[?2004h") + "\x1b[?2004h".length;
-  assert.doesNotMatch(harness.stdout.writes.slice(writesAfterStart), /\x1b\[3J/);
+  assert.doesNotMatch(harness.stdout.writes.slice(writesAfterStart), /\x1b\[2J|\x1b\[3J/);
 
-  // After the debounce fires, the full repaint + clear happens.
+  // After the debounce fires, recovery still avoids clear() and ANSI clears.
   await new Promise((resolve) => setTimeout(resolve, 200));
-  assert.ok(harness.stdout.clearCalls >= 1);
+  assert.equal(harness.stdout.clearCalls, 0);
+  assert.doesNotMatch(harness.stdout.writes.slice(writesAfterStart), /\x1b\[2J|\x1b\[3J/);
 
   harness.resolveExit();
   await flushMicrotasks();
@@ -358,9 +357,10 @@ test("treats sub-viewport dimensions as invalid and defers repaint", async () =>
   harness.stdout.rows = 40;
   harness.stdout.emit("resize");
 
-  // After debounce, the repaint fires
+  // After debounce, recovery still preserves the old frame and avoids clear().
   await new Promise((resolve) => setTimeout(resolve, 200));
-  assert.ok(harness.stdout.clearCalls >= 1, `expected >=1 clear calls, got ${harness.stdout.clearCalls}`);
+  assert.equal(harness.stdout.clearCalls, 0);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[2J|\x1b\[3J/);
 
   harness.resolveExit();
   await flushMicrotasks();

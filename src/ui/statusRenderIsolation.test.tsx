@@ -58,7 +58,8 @@ function countMatching(records: Array<Record<string, unknown>>, predicate: (reco
   return records.filter(predicate).length;
 }
 
-function makeActiveEvents(): TimelineEvent[] {
+function makeActiveEvents(actionStatus: "running" | "completed" = "completed"): TimelineEvent[] {
+  const actionCompletedAt = actionStatus === "completed" ? 4 : null;
   return [
     {
       id: 1,
@@ -101,10 +102,10 @@ function makeActiveEvents(): TimelineEvent[] {
       toolActivities: [{
         id: "tool-1",
         command: "Get-Content README.md",
-        status: "completed",
+        status: actionStatus,
         startedAt: 3,
-        completedAt: 4,
-        summary: "Read 12 lines",
+        completedAt: actionCompletedAt,
+        summary: actionStatus === "completed" ? "Read 12 lines" : null,
         streamSeq: 2,
       }],
       activity: [],
@@ -122,7 +123,7 @@ function makeActiveEvents(): TimelineEvent[] {
   ];
 }
 
-function Harness() {
+function Harness({ actionStatus = "completed" }: { actionStatus?: "running" | "completed" }) {
   const layout = createLayoutSnapshot(120, 40);
   const uiState: UIState = { kind: "THINKING", turnId: 1 };
   const composerRows = measureBottomComposerRows({
@@ -144,7 +145,7 @@ function Harness() {
         workspaceLabel="workspace"
         runtimeSummary={null}
         staticEvents={[]}
-        activeEvents={makeActiveEvents()}
+        activeEvents={makeActiveEvents(actionStatus)}
         uiState={uiState}
         composerRows={composerRows}
         panel={null}
@@ -213,6 +214,51 @@ test("status dot ticks do not invalidate timeline rendering", async () => {
     assert.equal(countMatching(tickWindow, (record) => record.kind === "timeline" && record.event === "rowGeneration"), 0);
     assert.equal(countMatching(tickWindow, (record) => record.kind === "viewport" && record.event === "slice"), 0);
     assert.equal(countMatching(tickWindow, (record) => record.kind === "render" && record.component === "ActionLog"), 0);
+  } finally {
+    instance.unmount();
+    renderDebug.configureRenderDebug({});
+    rmSync(logPath, { force: true });
+  }
+});
+
+test("action rows update without remounting when a running action completes", async () => {
+  const logPath = join(tmpdir(), `codexa-action-remount-${process.pid}.jsonl`);
+  rmSync(logPath, { force: true });
+  renderDebug.configureRenderDebug({
+    CODEXA_DEBUG_RENDER_TRACE: "1",
+    CODEXA_RENDER_DEBUG_FILE: logPath,
+  });
+
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  const instance = render(<Harness actionStatus="running" />, {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: true,
+    exitOnCtrlC: false,
+  });
+
+  try {
+    await sleep(100);
+    const beforeCompletion = readRecords(logPath);
+    const mountedActionRows = beforeCompletion
+      .filter((record) => record.kind === "flicker" && record.event === "timelineRowMount")
+      .map((record) => String(record.rowKey ?? ""))
+      .filter((rowKey) => rowKey.includes("-action-"));
+
+    assert.ok(mountedActionRows.length > 0, "expected action rows to mount in the initial frame");
+
+    instance.rerender(<Harness actionStatus="completed" />);
+    await sleep(100);
+
+    const afterCompletion = readRecords(logPath).slice(beforeCompletion.length);
+    const unmountedActionRows = afterCompletion
+      .filter((record) => record.kind === "flicker" && record.event === "timelineRowUnmount")
+      .map((record) => String(record.rowKey ?? ""))
+      .filter((rowKey) => rowKey.includes("-action-"));
+
+    assert.deepEqual(unmountedActionRows, []);
   } finally {
     instance.unmount();
     renderDebug.configureRenderDebug({});

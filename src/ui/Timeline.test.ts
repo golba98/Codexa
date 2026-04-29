@@ -328,7 +328,7 @@ test("first active run fallback immediately shows Codex thinking status", () => 
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 56 });
   const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 
-  assert.match(joined, /Codex is working/);
+  assert.doesNotMatch(joined, /Codex is working/);
   assert.doesNotMatch(joined, /Running\.\.\./);
   assert.doesNotMatch(joined, /Waiting for response/i);
 });
@@ -403,7 +403,7 @@ test("manual browse snapshot survives run start and first assistant delta", () =
   ]);
 });
 
-test("default timeline shows compact processing signals while a run is streaming", () => {
+test("default timeline omits active processing text while a run is streaming", () => {
   const items = buildTimelineItems([
     {
       id: 1,
@@ -464,15 +464,16 @@ test("default timeline shows compact processing signals while a run is streaming
     .map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
-  assert.match(joined, /Codex/);
-  assert.match(joined, /Verifying generated file/);
+  assert.doesNotMatch(joined, /Codex/);
+  assert.doesNotMatch(joined, /Verifying generated file/);
+  assert.doesNotMatch(joined, /Todo 1\/2/);
   assert.match(joined, /python -m pytest/);
-  assert.match(joined, /Hello_World\.py/);
+  assert.doesNotMatch(joined, /Hello_World\.py/);
   assert.match(joined, /action/);
   assert.doesNotMatch(joined, /^\s*thinking\b/m);
 });
 
-test("streaming processing output renders separated readable segments with a live marker", () => {
+test("streaming omits active processing text while completed processing stays stable", () => {
   const items = buildTimelineItems([
     {
       id: 1,
@@ -524,9 +525,10 @@ test("streaming processing output renders separated readable segments with a liv
     .map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
-  assert.match(joined, /Next I am separating/);
+  assert.match(joined, /I inspected the renderer/);
+  assert.doesNotMatch(joined, /Next I am separating/);
   assert.match(joined, /Codex/);
-  assert.match(joined, /▌/);
+  assert.doesNotMatch(joined, /▌/);
   assert.ok(snapshot.rows.every((row) => row.spans.map((span) => span.text).join("").length <= 54));
 });
 

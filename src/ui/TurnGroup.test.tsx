@@ -114,7 +114,7 @@ function renderTurnGroup(node: React.ReactElement) {
   };
 }
 
-test("unmounts thinking view before streaming view appears for the same turn", async () => {
+test("does not render duplicate transcript working placeholder before streaming appears", async () => {
   const turnId = 10;
   const user = makeUser(turnId);
   const run = makeRunningRun(turnId);
@@ -139,7 +139,7 @@ test("unmounts thinking view before streaming view appears for the same turn", a
 
   await sleep();
   let frame = harness.readOutput();
-  assert.match(frame, /Codex is working/i);
+  assert.doesNotMatch(frame, /Codex is working/i);
 
   harness.resetOutput();
   harness.instance.rerender(

@@ -51,6 +51,27 @@ test("render debug writes JSONL only when explicitly enabled", () => {
   }
 });
 
+test("CODEXA_DEBUG_RENDER aliases render debug logging", () => {
+  const logPath = join(tmpdir(), `codexa-debug-render-alias-${process.pid}.jsonl`);
+  clean(logPath);
+
+  try {
+    configureRenderDebug({
+      CODEXA_DEBUG_RENDER: "1",
+      CODEXA_RENDER_DEBUG_FILE: logPath,
+    });
+    traceRender("AliasComponent", "unit");
+
+    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(records[0]?.kind, "session");
+    assert.equal(records[1]?.kind, "render");
+    assert.equal(records[1]?.component, "AliasComponent");
+  } finally {
+    configureRenderDebug({});
+    clean(logPath);
+  }
+});
+
 test("render trace flag enables compact render diagnostics", () => {
   const logPath = join(tmpdir(), `codexa-render-trace-${process.pid}.jsonl`);
   clean(logPath);

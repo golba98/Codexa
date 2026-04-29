@@ -44,6 +44,10 @@ export function ThinkingBlock({ cols, run }: ThinkingBlockProps) {
     ? "active"
     : `${updateCount} update${updateCount === 1 ? "" : "s"}`;
 
+  if (blocks.length === 0 && run.status === "running") {
+    return null;
+  }
+
   return (
     <DashCard
       cols={cols}
@@ -52,7 +56,7 @@ export function ThinkingBlock({ cols, run }: ThinkingBlockProps) {
       borderColor={run.status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE}
     >
       {blocks.length === 0 ? (
-        <Text color={theme.DIM}>Codex is working...</Text>
+        <Text color={theme.DIM}>No processing updates</Text>
       ) : (
         <Box flexDirection="column" width="100%">
           {currentText && run.status === "running" && (

@@ -940,10 +940,6 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     },
     [staticSnapshot, stableActiveSnapshot, activeStableSnapshot, activeStreamingSnapshot],
   );
-  const liveRowSet = useMemo(
-    () => new WeakSet(stableActiveSnapshot?.liveRows ?? []),
-    [stableActiveSnapshot],
-  );
   const [viewport, setViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(liveSnapshot.totalRows));
   const liveSnapshotRef = useRef(liveSnapshot);
   // Tracks the previous snapshotWidth so we can detect width changes inside
@@ -1140,47 +1136,13 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     });
     return selection;
   }, [liveSnapshot, viewport, viewportRows]);
-  const frozenRowsRef = useRef<TimelineRow[]>([]);
-  const liveRowsRef = useRef<TimelineRow[]>([]);
-  const { frozenVisibleRows, liveVisibleRows } = useMemo(() => {
-    if (!STABLE_RENDER_ENABLED) {
-      return { frozenVisibleRows: visibleRows, liveVisibleRows: [] };
-    }
-
-    let frozen: TimelineRow[] = [];
-    let live: TimelineRow[] = [];
-    for (const row of visibleRows) {
-      if (liveRowSet.has(row)) {
-        live.push(row);
-      } else {
-        frozen.push(row);
-      }
-    }
-
-    // Preserve array identity when elements haven't changed, so
-    // TimelineRowsView's memo comparator can skip re-render entirely.
-    if (rowArraysEqual(frozen, frozenRowsRef.current)) {
-      frozen = frozenRowsRef.current;
-    } else {
-      frozenRowsRef.current = frozen;
-    }
-    if (rowArraysEqual(live, liveRowsRef.current)) {
-      live = liveRowsRef.current;
-    } else {
-      liveRowsRef.current = live;
-    }
-
-    return { frozenVisibleRows: frozen, liveVisibleRows: live };
-  }, [liveRowSet, visibleRows]);
-
   if (visibleRows.length === 0) {
     return <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} />;
   }
 
   return (
     <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} overflow="hidden">
-      <TimelineRowsView rows={frozenVisibleRows} />
-      <TimelineRowsView rows={liveVisibleRows} />
+      <TimelineRowsView rows={visibleRows} />
     </Box>
   );
 }, (prev, next) => {

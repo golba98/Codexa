@@ -315,6 +315,19 @@ test("completed action wrapped rows stay stable when earlier thinking grows", ()
   }
 });
 
+test("active thinking rows are omitted while action rows remain visible", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const snapshot = buildTimelineSnapshot(
+    [makeRenderItem("Inspecting proof files.")],
+    { totalWidth: 72, debugLabel: "active-thinking-omitted" },
+  );
+  const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+
+  assert.doesNotMatch(joined, /Inspecting proof files/i);
+  assert.match(joined, /Read file/i);
+});
+
 test("stable timeline freezes completed action rows while active text changes", () => {
   __clearTimelineMeasureCachesForTests();
 

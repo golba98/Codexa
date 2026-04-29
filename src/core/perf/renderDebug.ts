@@ -17,7 +17,9 @@ const counters = new Map<string, number>();
 
 function configureFromEnv(env: DebugEnv = process.env): void {
   renderTraceEnabled = env["CODEXA_DEBUG_RENDER_TRACE"] === "1";
-  enabled = env["CODEXA_RENDER_DEBUG"] === "1" || renderTraceEnabled;
+  enabled = env["CODEXA_RENDER_DEBUG"] === "1"
+    || env["CODEXA_DEBUG_RENDER"] === "1"
+    || renderTraceEnabled;
   lifecycleEnabled = env["CODEXA_DEBUG_LIFECYCLE"] === "1";
   flickerEnabled = env["CODEXA_DEBUG_FLICKER"] === "1";
   plainActionsEnabled = env["CODEXA_DEBUG_PLAIN_ACTIONS"] === "1";

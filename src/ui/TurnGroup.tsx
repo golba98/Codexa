@@ -211,7 +211,7 @@ function resolveStreamEvents(
   for (const item of items) {
     if (item.kind === "thinking") {
       const block = blocksById.get(item.refId);
-      if (block && block.text.trim().length > 0) {
+      if (block && block.text.trim().length > 0 && !(run.status === "running" && block.status === "active")) {
         resolved.push({ kind: "thinking", streamSeq: item.streamSeq, block });
       }
     } else if (item.kind === "action") {
@@ -231,6 +231,7 @@ function resolveStreamEvents(
       if (!VISIBLE_THINKING_SOURCES.has(entry.source)) continue;
       for (const block of entry.blocks) {
         if (!block.text.trim()) continue;
+        if (run.status === "running" && block.status === "active") continue;
         legacySeq += 1;
         resolved.push({ kind: "thinking", streamSeq: legacySeq, block });
       }
@@ -407,18 +408,6 @@ function CodexResponseBlock({
   );
 }
 
-function CodexStatusBlock({ text, showCursor }: { text: string; showCursor: boolean }) {
-  const theme = useTheme();
-
-  return (
-    <Box flexDirection="column" width="100%" paddingX={1}>
-      <Text color={theme.MUTED} bold>Codex</Text>
-      <Text color={theme.DIM}>{text}</Text>
-      {showCursor && <Text color={theme.ACCENT}>▌</Text>}
-    </Box>
-  );
-}
-
 const StreamEventList = memo(function StreamEventList({
   cols,
   run,
@@ -442,10 +431,6 @@ const StreamEventList = memo(function StreamEventList({
 
   return (
     <Box flexDirection="column" width="100%">
-      {events.length === 0 && run.status === "running" && (
-        <CodexStatusBlock text="Codex is working..." showCursor />
-      )}
-
       {events.map((event, index) => {
         const isLast = index === events.length - 1;
         const isLiveCursorTarget = run.status === "running" && isLast;

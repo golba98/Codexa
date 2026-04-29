@@ -85,8 +85,6 @@ interface ActiveRootState {
   cleanup: () => void;
 }
 
-type RepaintMode = "soft" | "recovery";
-
 let activeRoot: ActiveRootState | null = null;
 
 function hasInvalidRestoreDimensions(stdout: Pick<AppStdout, "columns" | "rows">): boolean {
@@ -156,49 +154,14 @@ export function startApp({
 
   let cleanupDone = false;
   let repaintArmed = false;
-  let pendingRecoveryRepaint = false;
   let renderHandle: RenderHandle | null = null;
   let inkInstance: InkInstance | null = null;
   let repaintDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let pendingRepaintMode: RepaintMode = "soft";
 
-  const performHardRepaint = () => {
-    traceTerminalClear("src/index.tsx:performHardRepaint", { mode: "hard" });
-    writeStdout(TERMINAL_SEQUENCES.hardRepaint, "src/index.tsx:performHardRepaint");
-    if (inkInstance) {
-      // Reset ALL Ink output state BEFORE calling clear().
-      // Ink.clear() internally calls log.sync(this.lastOutputToRender || …)
-      // which re-fills log-update's previousOutput.  If lastOutputToRender
-      // still holds the most recent frame, the subsequent render produces
-      // identical output and log-update's hasChanges() returns false —
-      // the render silently no-ops and the screen stays blank.
-      inkInstance.lastOutput = "";
-      inkInstance.lastOutputToRender = "";
-      inkInstance.lastOutputHeight = 0;
-    }
-    if (renderHandle) {
-      traceTerminalClear("src/index.tsx:performHardRepaint.renderHandleClear", { mode: "inkClear" });
-      renderHandle.clear();
-    }
-    // Do NOT call onRender() here — let React's own re-render cycle
-    // (triggered by useTerminalViewport state update) handle drawing.
-    // Forcing onRender() while React state still holds stale dimensions
-    // triggers Ink's outputHeight >= rows direct-write path, which
-    // desyncs logUpdate and causes duplicated UI.
-  };
-
-  const scheduleRepaint = (mode: RepaintMode = "soft") => {
-    if (mode === "recovery") {
-      pendingRepaintMode = "recovery";
-    } else if (!repaintDebounceTimer) {
-      pendingRepaintMode = "soft";
-    }
-
+  const scheduleRepaint = () => {
     if (repaintDebounceTimer) clearTimeout(repaintDebounceTimer);
     repaintDebounceTimer = setTimeout(() => {
       repaintDebounceTimer = null;
-      const repaintMode = pendingRepaintMode;
-      pendingRepaintMode = "soft";
 
       // If dimensions are still invalid when the timer fires, skip the
       // destructive repaint — the old content is still on-screen (we never
@@ -214,29 +177,13 @@ export function startApp({
       if (renderHandle && inkInstance) {
         // By now (150ms later) React state has settled — useTerminalViewport's
         // 100ms settle timer has fired, so dimensions are correct.
-        // Normal valid resize is a soft repaint: reset Ink's cached frame and
-        // ask it to render once. Only invalid-dimension recovery uses an ANSI
-        // viewport clear, preserving busy-state stability during ordinary
-        // resize/layout updates.
-        if (repaintMode === "recovery") {
-          traceTerminalClear("src/index.tsx:scheduleRepaint", { mode: "viewportRecovery" });
-          writeStdout(TERMINAL_SEQUENCES.viewportClear, "src/index.tsx:scheduleRepaint");
-        }
-
-        // Reset ALL Ink output state BEFORE calling clear().
-        // Ink.clear() internally calls log.sync(this.lastOutputToRender || …)
-        // which re-fills log-update's previousOutput.  If lastOutputToRender
-        // still holds the most recent frame, the subsequent onRender() produces
-        // identical output and log-update's hasChanges() returns false — the
-        // forced render silently no-ops and the screen stays blank.
+        // Reset Ink output state before forcing a render. Do not call
+        // renderHandle.clear() or emit a viewport clear here: after startup,
+        // resize recovery must keep the previous frame visible until the
+        // replacement frame is ready.
         inkInstance.lastOutput = "";
         inkInstance.lastOutputToRender = "";
         inkInstance.lastOutputHeight = 0;
-
-        if (repaintMode === "recovery") {
-          traceTerminalClear("src/index.tsx:scheduleRepaint.renderHandleClear", { mode: "inkClear" });
-          renderHandle.clear();
-        }
 
         // Cancel ALL pending throttled callbacks — including onRender's own
         // throttle — so the forced render below executes immediately rather
@@ -267,12 +214,6 @@ export function startApp({
             scheduleRepaint();
           }
         }, 350);
-      } else if (renderHandle && repaintMode === "recovery") {
-        // Fallback recovery path: no Ink instance resolved (e.g. test mock).
-        traceTerminalClear("src/index.tsx:scheduleRepaint.fallbackClear", { mode: "inkClear" });
-        renderHandle.clear();
-      } else if (repaintMode === "recovery") {
-        pendingRecoveryRepaint = true;
       }
     }, 150);
   };
@@ -300,7 +241,7 @@ export function startApp({
       // new one that fires 150ms after the LAST event.  By then the
       // terminal has settled and dims are valid.
       repaintArmed = true;
-      scheduleRepaint("recovery");
+      scheduleRepaint();
       return;
     }
 
@@ -317,13 +258,12 @@ export function startApp({
     //  1. Reset Ink's output cache so the React-driven re-render (triggered
     //     by useTerminalViewport's state update) writes fresh output to
     //     stdout instead of short-circuiting due to lastOutput matching.
-    //  2. Schedule one settled repaint after dimensions stop changing. Normal
-    //     valid resizes do not clear the viewport; only recovery from invalid
-    //     dimensions uses a targeted visible-viewport clear.
+    //  2. Schedule one settled repaint after dimensions stop changing. Both
+    //     normal resizes and invalid-dimension recovery avoid viewport clears.
     if (inkInstance) {
       inkInstance.lastOutput = "";
     }
-    scheduleRepaint(recoveringFromInvalidDimensions ? "recovery" : "soft");
+    scheduleRepaint();
   };
 
   const cleanup = () => {
@@ -377,11 +317,6 @@ export function startApp({
   // onResize, causing interleaved renders that desync logUpdate.
   if (inkInstance?.unsubscribeResize) {
     inkInstance.unsubscribeResize();
-  }
-
-  if (pendingRecoveryRepaint) {
-    pendingRecoveryRepaint = false;
-    performHardRepaint();
   }
 
   void renderHandle.waitUntilExit().finally(cleanup);
