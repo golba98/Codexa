@@ -193,7 +193,8 @@ const VISIBLE_THINKING_SOURCES = new Set(["reasoning", "todo"]);
 type ResolvedStreamEvent =
   | { kind: "thinking"; streamSeq: number; block: RunProgressBlock }
   | { kind: "action"; streamSeq: number; tool: RunToolActivity }
-  | { kind: "response"; streamSeq: number; segment: RunResponseSegment };
+  | { kind: "response"; streamSeq: number; segment: RunResponseSegment }
+  | { kind: "plan"; streamSeq: number; planText: string };
 
 function resolveStreamEvents(
   run: RunEvent,
@@ -221,6 +222,10 @@ function resolveStreamEvents(
     } else if (item.kind === "response") {
       const segment = segmentsById.get(item.refId);
       if (segment) resolved.push({ kind: "response", streamSeq: item.streamSeq, segment });
+    } else if (item.kind === "plan") {
+      if (run.approvedPlan) {
+        resolved.push({ kind: "plan", streamSeq: item.streamSeq, planText: run.approvedPlan });
+      }
     }
   }
 
@@ -269,6 +274,34 @@ function resolveStreamEvents(
 
   return resolved;
 }
+
+function ApprovedPlanCard({
+  planText,
+  cols,
+}: {
+  planText: string;
+  cols: number;
+}) {
+  const theme = useTheme();
+  const contentWidth = Math.max(1, getUsableShellWidth(cols, 0));
+
+  const formatted = useMemo(() => {
+    const sanitized = sanitizeOutput(planText);
+    const normalized = normalizeOutput(sanitized);
+    const classified = classifyOutput(normalized);
+    return formatForBox(classified, contentWidth);
+  }, [planText, contentWidth]);
+
+  return (
+    <DashCard cols={cols} title="APPROVED PLAN" borderColor={theme.SUCCESS}>
+      <MemoizedRenderMessage segments={formatted} width={contentWidth} />
+    </DashCard>
+  );
+}
+
+const MemoizedApprovedPlanCard = memo(ApprovedPlanCard, (prev, next) => (
+  prev.planText === next.planText && prev.cols === next.cols
+));
 
 function ActionEventCard({
   cols,
@@ -470,6 +503,9 @@ const StreamEventList = memo(function StreamEventList({
                 isLiveCursorTarget={isLiveCursorTarget}
                 verboseMode={verboseMode}
               />
+            )}
+            {event.kind === "plan" && (
+              <MemoizedApprovedPlanCard planText={event.planText} cols={cols} />
             )}
           </Box>
         );

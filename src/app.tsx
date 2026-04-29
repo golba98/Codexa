@@ -1,7 +1,6 @@
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { spawn } from "child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { existsSync } from "fs";
 import { Box, Text, useApp, useFocusManager, useStdin, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
 import {
@@ -66,6 +65,7 @@ import {
   probeCodexAuthStatus,
 } from "./core/auth/codexAuth.js";
 import { copyToClipboard } from "./core/clipboard.js";
+import { savePlan, readPlan } from "./core/planStorage.js";
 import { getBlockedCleanupFailure } from "./core/cleanupFastFail.js";
 import { runCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
 import {
@@ -170,8 +170,6 @@ let nextTurnId = 0;
 // churn during streaming/action updates.
 const LIVE_UPDATE_FLUSH_MS = 50;
 const PROGRESS_ONLY_FLUSH_MS = 50;
-const PLAN_FILE_NAME = "last-plan.md";
-const PLAN_FILE_DIR = ".codexa";
 
 function formatWritableRootsMessage(roots: readonly string[]): string {
   return roots.length > 0
@@ -196,9 +194,6 @@ function createInitialAuthStatus(): CodexAuthProbeResult {
   };
 }
 
-function getPlanFilePath(workspaceRoot: string): string {
-  return join(workspaceRoot, PLAN_FILE_DIR, PLAN_FILE_NAME);
-}
 
 interface AppProps {
   launchArgs: LaunchArgs;
@@ -208,6 +203,7 @@ interface PromptRunLifecycle {
   parseActionRequired?: boolean;
   disableModeAutoUpgrade?: boolean;
   runtimeOverride?: PartialRuntimeConfig;
+  approvedPlan?: string;
   onCompleted?: (result: { response: string; turnId: number; runId: number }) => void;
   onFailed?: (result: { message: string; turnId: number; runId: number }) => void;
   onCanceled?: (result: { turnId: number; runId: number }) => void;
@@ -1581,18 +1577,14 @@ export function App({ launchArgs }: AppProps) {
   }, [appendSystemEvent, staticEvents]);
 
   const savePlanFile = useCallback((planContent: string): string | null => {
-    try {
-      const planFilePath = getPlanFilePath(workspaceRoot);
-      mkdirSync(join(workspaceRoot, PLAN_FILE_DIR), { recursive: true });
-      writeFileSync(planFilePath, planContent, "utf-8");
-      return planFilePath;
-    } catch {
+    const filePath = savePlan(planContent, workspaceRoot);
+    if (!filePath) {
       appendErrorEvent(
         "Plan file unavailable",
-        `The generated plan could not be saved to ${getPlanFilePath(workspaceRoot)}.`,
+        "The generated plan could not be saved.",
       );
-      return null;
     }
+    return filePath;
   }, [appendErrorEvent, workspaceRoot]);
 
   const handleViewPlanFile = useCallback((planFilePath: string | null) => {
@@ -1601,20 +1593,17 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
-    if (!existsSync(planFilePath)) {
+    const contents = readPlan(planFilePath);
+    if (contents === null) {
       appendErrorEvent("Plan file unavailable", `The saved plan file is no longer available: ${planFilePath}`);
       return;
     }
 
-    try {
-      const contents = sanitizeTerminalOutput(readFileSync(planFilePath, "utf-8"), {
-        preserveTabs: false,
-        tabSize: 2,
-      });
-      appendSystemEvent("Plan file", [`Path: ${planFilePath}`, "", contents].join("\n"));
-    } catch {
-      appendErrorEvent("Plan file unavailable", `The saved plan file could not be read: ${planFilePath}`);
-    }
+    const sanitized = sanitizeTerminalOutput(contents, {
+      preserveTabs: false,
+      tabSize: 2,
+    });
+    appendSystemEvent("Plan file", [`Path: ${planFilePath}`, "", sanitized].join("\n"));
   }, [appendErrorEvent, appendSystemEvent]);
 
 
@@ -1907,6 +1896,7 @@ export function App({ launchArgs }: AppProps) {
           runtime: runtimeForTurn,
           prompt: safeProviderPrompt,
           turnId,
+          approvedPlan: lifecycle.approvedPlan,
         }),
         summary: "Codex is starting...",
       },
@@ -2215,6 +2205,7 @@ export function App({ launchArgs }: AppProps) {
         constraints: state.constraints,
       }),
       {
+        approvedPlan: state.currentPlan,
         runtimeOverride: {
           mode: state.executionMode,
           planMode: false,

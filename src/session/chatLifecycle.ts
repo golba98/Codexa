@@ -163,8 +163,10 @@ export function createRunEvent(params: {
   runtime: ResolvedRuntimeConfig;
   prompt: string;
   turnId: number;
+  approvedPlan?: string;
 }): RunEvent {
   const now = Date.now();
+  const hasPlan = Boolean(params.approvedPlan);
   return {
     id: params.id,
     type: "run",
@@ -184,10 +186,13 @@ export function createRunEvent(params: {
     touchedFileCount: 0,
     errorMessage: null,
     turnId: params.turnId,
-    streamItems: [],
+    streamItems: hasPlan
+      ? [{ streamSeq: 1, kind: "plan" as const, refId: "approved-plan" }]
+      : [],
     responseSegments: [],
-    lastStreamSeq: 0,
+    lastStreamSeq: hasPlan ? 1 : 0,
     activeResponseSegmentId: null,
+    approvedPlan: params.approvedPlan,
   };
 }
 
