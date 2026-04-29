@@ -30,6 +30,24 @@ export function writeTerminalControl(
   sequence: string,
 ): boolean {
   renderDebug.traceTerminalWrite(channel, source, sequence);
+  const containsClearOrReset = sequence.includes("\x1b[2J")
+    || sequence.includes("\x1b[3J")
+    || sequence.includes("\x1bc")
+    || sequence.includes("\x1b[H");
+  const isStartupWrite = source.includes(":startup");
+
+  if (containsClearOrReset && !isStartupWrite) {
+    renderDebug.traceEvent("terminal", "blockedPostStartupClearOrReset", {
+      source,
+      uiStateKind: currentUIStateKind,
+      sequenceLength: sequence.length,
+      containsViewportClear: sequence.includes("\x1b[2J"),
+      containsScrollbackClear: sequence.includes("\x1b[3J"),
+      containsCursorHome: sequence.includes("\x1b[H"),
+      containsTerminalReset: sequence.includes("\x1bc"),
+    });
+    return true;
+  }
 
   // Diagnostic: warn if a viewport-clearing sequence fires during streaming.
   if (
@@ -78,6 +96,10 @@ export function createTerminalModeController(write: TerminalWrite): TerminalMode
       writeStdout(enabled ? TERMINAL_SEQUENCES.bracketedPasteEnable : TERMINAL_SEQUENCES.bracketedPasteDisable, source);
     },
     resetModes() {
+      renderDebug.traceEvent("terminal", "resetModes", {
+        mouseReporting,
+        bracketedPaste,
+      });
       mouseReporting = null;
       bracketedPaste = null;
     },

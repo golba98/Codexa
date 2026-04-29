@@ -10,6 +10,9 @@ import type {
   UIState,
   UserPromptEvent,
 } from "../session/types.js";
+import { APP_VERSION } from "../config/settings.js";
+import type { CodexAuthState } from "../core/auth/codexAuth.js";
+import { getAuthStateLabel } from "../core/auth/codexAuth.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { getShellWidth, type Layout } from "./layout.js";
 import type { TimelineRow, TimelineSnapshot, TimelineTone } from "./timelineMeasure.js";
@@ -24,6 +27,8 @@ interface TimelineProps {
   uiState: UIState;
   viewportRows: number;
   verboseMode?: boolean;
+  authState?: CodexAuthState;
+  workspaceLabel?: string;
 }
 
 type StandaloneTimelineEvent = SystemEvent | ErrorEvent | ShellEvent;
@@ -65,7 +70,19 @@ interface EventRenderTimelineItem {
   event: StandaloneTimelineEvent;
 }
 
-export type RenderTimelineItem = TurnRenderTimelineItem | EventRenderTimelineItem;
+export interface IntroRenderTimelineItem {
+  key: string;
+  type: "intro";
+  padded: boolean;
+  intro: {
+    version: string;
+    layoutMode: Layout["mode"];
+    authLabel: string;
+    workspaceLabel: string;
+  };
+}
+
+export type RenderTimelineItem = IntroRenderTimelineItem | TurnRenderTimelineItem | EventRenderTimelineItem;
 
 const WHEEL_SCROLL_STEP = 3;
 const HOME_KEY_INPUTS = new Set(["\u001b[H", "\u001b[1~", "\u001bOH"]);
@@ -715,6 +732,29 @@ export function buildActiveRenderItems(
   });
 }
 
+function formatAuthLabel(authState: CodexAuthState): string {
+  const raw = getAuthStateLabel(authState);
+  return raw.length > 0 ? raw[0]!.toUpperCase() + raw.slice(1) : raw;
+}
+
+function buildIntroRenderItem(params: {
+  authState: CodexAuthState;
+  workspaceLabel: string;
+  layout: Layout;
+}): IntroRenderTimelineItem {
+  return {
+    key: "codexa-intro",
+    type: "intro",
+    padded: true,
+    intro: {
+      version: APP_VERSION,
+      layoutMode: params.layout.mode,
+      authLabel: formatAuthLabel(params.authState),
+      workspaceLabel: params.workspaceLabel,
+    },
+  };
+}
+
 function getToneColor(theme: ReturnType<typeof useTheme>, tone: TimelineTone | undefined): string | undefined {
   switch (tone) {
     case "text": return theme.TEXT;
@@ -749,8 +789,12 @@ const TimelineRowView = memo(function TimelineRowView({ row }: { row: TimelineRo
   useEffect(() => {
     if (!isActionRow) return;
     renderDebug.traceFlickerEvent("timelineRowMount", { rowKey: row.key });
+    renderDebug.traceLifecycleEvent("ActionRow", "mount", { rowKey: row.key });
+    renderDebug.traceLifecycleEvent("ActionBlock", "mount", { rowKey: row.key });
     return () => {
       renderDebug.traceFlickerEvent("timelineRowUnmount", { rowKey: row.key });
+      renderDebug.traceLifecycleEvent("ActionRow", "unmount", { rowKey: row.key });
+      renderDebug.traceLifecycleEvent("ActionBlock", "unmount", { rowKey: row.key });
     };
   }, [isActionRow, row.key]);
 
@@ -793,7 +837,16 @@ const TimelineRowsView = memo(function TimelineRowsView({ rows }: { rows: Timeli
   );
 }, (prev, next) => rowArraysEqual(prev.rows, next.rows));
 
-export const Timeline = memo(function Timeline({ staticEvents, activeEvents, layout, uiState, viewportRows, verboseMode = false }: TimelineProps) {
+export const Timeline = memo(function Timeline({
+  staticEvents,
+  activeEvents,
+  layout,
+  uiState,
+  viewportRows,
+  verboseMode = false,
+  authState = "checking",
+  workspaceLabel = "",
+}: TimelineProps) {
   renderDebug.useRenderDebug("Timeline", {
     staticEvents,
     activeEvents,
@@ -805,6 +858,19 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     uiStateKind: uiState.kind,
     viewportRows,
     verboseMode,
+    authState,
+    workspaceLabel,
+  });
+  renderDebug.useLifecycleDebug("Timeline", {
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+    viewportRows,
+  });
+  renderDebug.traceLayoutValidity("Timeline", {
+    cols: layout.cols,
+    rows: layout.rows,
+    viewportRows,
   });
   renderDebug.useFlickerDebug("timelineRender", {
     staticEvents,
@@ -817,6 +883,8 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     uiStateKind: uiState.kind,
     viewportRows,
     verboseMode,
+    authState,
+    workspaceLabel,
   });
   renderDebug.useRenderDebug("Transcript", {
     staticEvents,
@@ -868,8 +936,11 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     [activeTurnIds, staticTurnIds],
   );
   const staticRenderItems = useMemo(
-    () => buildStaticRenderItems(staticItems, allTurnIds, activeTurnId, questionTurnId, question),
-    [activeTurnId, allTurnIds, question, questionTurnId, staticItems],
+    () => [
+      buildIntroRenderItem({ authState, workspaceLabel, layout }),
+      ...buildStaticRenderItems(staticItems, allTurnIds, activeTurnId, questionTurnId, question),
+    ],
+    [activeTurnId, allTurnIds, authState, layout.mode, question, questionTurnId, staticItems, workspaceLabel],
   );
   const activeRenderItems = useMemo(
     () => buildActiveRenderItems(activeItems, allTurnIds, uiState),
@@ -940,12 +1011,28 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     },
     [staticSnapshot, stableActiveSnapshot, activeStableSnapshot, activeStreamingSnapshot],
   );
-  const liveRowSet = useMemo(
-    () => new WeakSet(stableActiveSnapshot?.liveRows ?? []),
-    [stableActiveSnapshot],
-  );
-  const [viewport, setViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(liveSnapshot.totalRows));
-  const liveSnapshotRef = useRef(liveSnapshot);
+
+  const lastNonEmptySnapshotRef = useRef<TimelineSnapshot>(liveSnapshot);
+  if (liveSnapshot.totalRows > 0) {
+    lastNonEmptySnapshotRef.current = liveSnapshot;
+  }
+
+  const isBusy = uiState.kind === "THINKING" || uiState.kind === "RESPONDING" || uiState.kind === "SHELL_RUNNING";
+  const effectiveSnapshot = useMemo(() => {
+    if (liveSnapshot.totalRows === 0 && isBusy && lastNonEmptySnapshotRef.current.totalRows > 0) {
+      renderDebug.traceFlickerEvent("snapshotFallback", {
+        reason: "empty-while-busy",
+        uiStateKind: uiState.kind,
+        previousTotalRows: lastNonEmptySnapshotRef.current.totalRows,
+      });
+      return lastNonEmptySnapshotRef.current;
+    }
+    return liveSnapshot;
+  }, [liveSnapshot, isBusy, uiState.kind]);
+  const snapshotForViewport = effectiveSnapshot;
+
+  const [viewport, setViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(snapshotForViewport.totalRows));
+  const liveSnapshotRef = useRef(snapshotForViewport);
   // Tracks the previous snapshotWidth so we can detect width changes inside
   // the liveSnapshot effect and dispatch reflowTimelineViewport instead of
   // syncTimelineViewport when the terminal has been resized.
@@ -953,17 +1040,17 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
   // Tracks previous totalRows so we can skip setViewport when no new rows
   // arrived — avoiding a second React render / Ink stdout write per streaming
   // flush when the viewport already reflects the correct state.
-  const prevTotalRowsRef = useRef(liveSnapshot.totalRows);
+  const prevTotalRowsRef = useRef(effectiveSnapshot.totalRows);
 
   useEffect(() => {
-    liveSnapshotRef.current = liveSnapshot;
-  }, [liveSnapshot]);
+    liveSnapshotRef.current = snapshotForViewport;
+  }, [snapshotForViewport]);
 
   useEffect(() => {
     const widthChanged = snapshotWidthRef.current !== snapshotWidth;
     snapshotWidthRef.current = snapshotWidth;
 
-    const totalRows = liveSnapshot.totalRows;
+    const totalRows = snapshotForViewport.totalRows;
     const previousTotalRows = prevTotalRowsRef.current;
     const rowGrowth = totalRows - previousTotalRows;
     const totalRowsGrew = rowGrowth > 0;
@@ -973,8 +1060,8 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
       // Width change: always reflow or sync to wrap text at the new width.
       if (widthChanged) {
         const next = !current.followTail && current.frozenSnapshot !== null
-          ? reflowTimelineViewport(current, liveSnapshot)
-          : syncTimelineViewport(current, liveSnapshot);
+          ? reflowTimelineViewport(current, snapshotForViewport)
+          : syncTimelineViewport(current, snapshotForViewport);
         renderDebug.traceFlickerEvent("viewportSync", {
           reason: "width-change",
           result: next === current ? "skipped" : "updated",
@@ -993,7 +1080,7 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
       // unseen-item counters stay accurate; skip otherwise — returning the
       // same reference makes React bail out of the re-render entirely.
       if (!current.followTail) {
-        const next = totalRowsGrew ? syncTimelineViewport(current, liveSnapshot) : current;
+        const next = totalRowsGrew ? syncTimelineViewport(current, snapshotForViewport) : current;
         renderDebug.traceFlickerEvent("viewportSync", {
           reason: totalRowsGrew ? "detached-growth" : "detached-no-growth",
           result: next === current ? "skipped" : "updated",
@@ -1027,7 +1114,7 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
       }
 
       const useFinalizeContinuity = finalizeTransition && rowGrowth > Math.max(1, Math.floor(viewportRows / 2));
-      const next = syncTimelineViewport(current, liveSnapshot, {
+      const next = syncTimelineViewport(current, snapshotForViewport, {
         finalizeContinuity: useFinalizeContinuity
           ? { previousTotalRows, viewportRows }
           : undefined,
@@ -1045,7 +1132,7 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
       });
       return next;
     });
-  }, [finalizeTransition, liveSnapshot, snapshotWidth, viewportRows]);
+  }, [finalizeTransition, snapshotForViewport, snapshotWidth, viewportRows]);
 
   useEffect(() => {
     finalizeTransitionRef.current = {
@@ -1097,30 +1184,30 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
   }, [stdin, viewportRows]);
 
   useInput((input, key) => {
-    if (liveSnapshot.totalRows === 0) return;
+    if (snapshotForViewport.totalRows === 0) return;
 
     if (key.pageUp) {
-      setViewport((current) => pageUpTimelineViewport(current, liveSnapshot, viewportRows));
+      setViewport((current) => pageUpTimelineViewport(current, snapshotForViewport, viewportRows));
       return;
     }
 
     if (key.pageDown) {
-      setViewport((current) => pageDownTimelineViewport(current, liveSnapshot, viewportRows));
+      setViewport((current) => pageDownTimelineViewport(current, snapshotForViewport, viewportRows));
       return;
     }
 
     if (isHomeInput(input)) {
-      setViewport((current) => homeTimelineViewport(current, liveSnapshot, viewportRows));
+      setViewport((current) => homeTimelineViewport(current, snapshotForViewport, viewportRows));
       return;
     }
 
     if (isEndInput(input)) {
-      setViewport(endTimelineViewport(liveSnapshot.totalRows));
+      setViewport(endTimelineViewport(snapshotForViewport.totalRows));
     }
   });
 
   const { visibleRows } = useMemo(() => {
-    const selection = selectTimelineRows(liveSnapshot, viewport, viewportRows);
+    const selection = selectTimelineRows(snapshotForViewport, viewport, viewportRows);
     renderDebug.traceEvent("viewport", "slice", {
       visibleRows: selection.visibleRows.length,
       startRow: selection.window.startRow,
@@ -1129,6 +1216,7 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
       followTail: viewport.followTail,
       totalRows: selection.sourceSnapshot.totalRows,
       viewportRows,
+      fallbackSnapshot: snapshotForViewport !== liveSnapshot,
     });
     renderDebug.traceFlickerEvent("viewportSlice", {
       visibleRows: selection.visibleRows.length,
@@ -1137,50 +1225,50 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
       anchorRow: selection.window.anchorRow,
       followTail: viewport.followTail,
       totalRows: selection.sourceSnapshot.totalRows,
+      fallbackSnapshot: snapshotForViewport !== liveSnapshot,
     });
     return selection;
-  }, [liveSnapshot, viewport, viewportRows]);
-  const frozenRowsRef = useRef<TimelineRow[]>([]);
-  const liveRowsRef = useRef<TimelineRow[]>([]);
-  const { frozenVisibleRows, liveVisibleRows } = useMemo(() => {
-    if (!STABLE_RENDER_ENABLED) {
-      return { frozenVisibleRows: visibleRows, liveVisibleRows: [] };
-    }
-
-    let frozen: TimelineRow[] = [];
-    let live: TimelineRow[] = [];
-    for (const row of visibleRows) {
-      if (liveRowSet.has(row)) {
-        live.push(row);
-      } else {
-        frozen.push(row);
-      }
-    }
-
-    // Preserve array identity when elements haven't changed, so
-    // TimelineRowsView's memo comparator can skip re-render entirely.
-    if (rowArraysEqual(frozen, frozenRowsRef.current)) {
-      frozen = frozenRowsRef.current;
-    } else {
-      frozenRowsRef.current = frozen;
-    }
-    if (rowArraysEqual(live, liveRowsRef.current)) {
-      live = liveRowsRef.current;
-    } else {
-      liveRowsRef.current = live;
-    }
-
-    return { frozenVisibleRows: frozen, liveVisibleRows: live };
-  }, [liveRowSet, visibleRows]);
+  }, [liveSnapshot, snapshotForViewport, viewport, viewportRows]);
+  const lastNonEmptyVisibleRowsRef = useRef<TimelineRow[]>([]);
+  const transcriptEventCount = staticEvents.length + activeEvents.length;
+  if (visibleRows.length > 0) {
+    lastNonEmptyVisibleRowsRef.current = visibleRows;
+  }
+  const preservedVisibleRows =
+    visibleRows.length === 0 && transcriptEventCount > 0
+      ? lastNonEmptyVisibleRowsRef.current
+      : visibleRows;
 
   if (visibleRows.length === 0) {
+    renderDebug.traceBlankFrame("Timeline", {
+      reason: transcriptEventCount > 0 ? "visible-rows-zero-with-events" : "visible-rows-zero-no-events",
+      staticEventsLength: staticEvents.length,
+      activeEventsLength: activeEvents.length,
+      transcriptEventCount,
+      totalRows: liveSnapshot.totalRows,
+      viewportRows,
+      preservedRows: preservedVisibleRows.length,
+      uiStateKind: uiState.kind,
+    });
+  }
+
+  if (preservedVisibleRows.length === 0) {
+    renderDebug.traceBlankFrame("Timeline", {
+      reason: "empty-root-layout-return",
+      staticEventsLength: staticEvents.length,
+      activeEventsLength: activeEvents.length,
+      transcriptEventCount,
+      totalRows: liveSnapshot.totalRows,
+      effectiveTotalRows: snapshotForViewport.totalRows,
+      viewportRows,
+      uiStateKind: uiState.kind,
+    });
     return <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} />;
   }
 
   return (
     <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} overflow="hidden">
-      <TimelineRowsView rows={frozenVisibleRows} />
-      <TimelineRowsView rows={liveVisibleRows} />
+      <TimelineRowsView rows={preservedVisibleRows} />
     </Box>
   );
 }, (prev, next) => {
@@ -1192,7 +1280,9 @@ export const Timeline = memo(function Timeline({ staticEvents, activeEvents, lay
     prev.layout.mode === next.layout.mode &&
     prev.uiState === next.uiState &&
     prev.viewportRows === next.viewportRows &&
-    prev.verboseMode === next.verboseMode
+    prev.verboseMode === next.verboseMode &&
+    prev.authState === next.authState &&
+    prev.workspaceLabel === next.workspaceLabel
   );
 });
 

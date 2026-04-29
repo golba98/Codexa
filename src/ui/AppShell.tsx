@@ -6,10 +6,11 @@ import * as renderDebug from "../core/perf/renderDebug.js";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
 import { getShellHeight, getShellWidth, type Layout } from "./layout.js";
 import { Timeline } from "./Timeline.js";
-import { measureTopHeaderRows, MemoizedTopHeader } from "./TopHeader.js";
+
+type AppShellLayout = Layout & { layoutEpoch?: number };
 
 export interface AppShellProps {
-  layout: Layout;
+  layout: AppShellLayout;
   screen: Screen;
   authState: CodexAuthState;
   workspaceLabel: string;
@@ -47,6 +48,7 @@ function AppShellInner({
     cols: layout.cols,
     rows: layout.rows,
     mode: layout.mode,
+    layoutEpoch: layout.layoutEpoch,
     screen,
     authState,
     workspaceLabel,
@@ -58,6 +60,12 @@ function AppShellInner({
     composerRows,
     verboseMode,
   });
+  renderDebug.useLifecycleDebug("AppShell", {
+    screen,
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+  });
 
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
@@ -65,23 +73,77 @@ function AppShellInner({
   const showTimeline = screen === "main";
   const showPanelStage = screen !== "main";
   const previousMeasurements = useRef<{
-    headerRows: number;
     timelineRows: number;
     composerRows: number;
     shellHeight: number;
+    shellWidth: number;
   } | null>(null);
 
-  // Memoize headerRows — only changes when layout mode/cols changes, not on streaming.
-  const headerRows = useMemo(
-    () => (showTimeline ? measureTopHeaderRows(layout) + 1 : 0),
-    [showTimeline, layout.cols, layout.rows, layout.mode],
-  );
+  // Timeline owns all vertical space above the fixed composer.
+  const calculatedTimelineRowsRaw = shellHeight - (showComposer ? composerRows : 0);
+  const calculatedTimelineRows = Math.max(1, calculatedTimelineRowsRaw);
+  
+  const { finalShellHeight, finalShellWidth, finalTimelineRows } = useMemo(() => {
+    const prev = previousMeasurements.current;
+    const isValid = shellHeight > 0
+      && shellWidth > 0
+      && Number.isFinite(shellHeight)
+      && Number.isFinite(shellWidth)
+      && Number.isFinite(calculatedTimelineRowsRaw)
+      && calculatedTimelineRowsRaw > 0;
+    
+    if (!isValid && prev) {
+      renderDebug.traceEvent("layout", "measurementFallback", {
+        reason: "invalid-shell-or-timeline-rows",
+        shellHeight,
+        shellWidth,
+        calculatedTimelineRowsRaw,
+        previousTimelineRows: prev.timelineRows,
+      });
+      return {
+        finalShellHeight: prev.shellHeight,
+        finalShellWidth: prev.shellWidth,
+        finalTimelineRows: prev.timelineRows,
+      };
+    }
 
-  // timelineRows similarly stable — only changes when layout or composerRows change.
-  const timelineRows = useMemo(
-    () => Math.max(1, shellHeight - headerRows - (showComposer ? composerRows : 0)),
-    [shellHeight, headerRows, showComposer, composerRows],
-  );
+    if (!isValid) {
+      renderDebug.traceEvent("layout", "measurementFallback", {
+        reason: "invalid-initial-shell-or-timeline-rows",
+        shellHeight,
+        shellWidth,
+        calculatedTimelineRowsRaw,
+        clampedTimelineRows: calculatedTimelineRows,
+      });
+    }
+
+    return {
+      finalShellHeight: shellHeight,
+      finalShellWidth: shellWidth,
+      finalTimelineRows: calculatedTimelineRows,
+    };
+  }, [shellHeight, shellWidth, calculatedTimelineRows, calculatedTimelineRowsRaw]);
+
+  renderDebug.traceLayoutValidity("AppShell", {
+    cols: layout.cols,
+    rows: layout.rows,
+    shellWidth,
+    shellHeight,
+    timelineRows: finalTimelineRows,
+    calculatedTimelineRowsRaw,
+    composerRows,
+  });
+  if (!Number.isFinite(calculatedTimelineRowsRaw) || calculatedTimelineRowsRaw <= 0) {
+    renderDebug.traceBlankFrame("AppShell", {
+      reason: "invalid-available-timeline-rows",
+      availableTimelineRows: calculatedTimelineRowsRaw,
+      finalTimelineRows,
+      composerRows,
+      shellHeight: finalShellHeight,
+      screen,
+      uiStateKind: uiState.kind,
+    });
+  }
 
   useEffect(() => {
     const previous = previousMeasurements.current;
@@ -89,51 +151,45 @@ function AppShellInner({
     if (!previous) {
       changed.push("mount");
     } else {
-      if (previous.headerRows !== headerRows) changed.push("headerRows");
-      if (previous.timelineRows !== timelineRows) changed.push("availableTimelineRows");
+      if (previous.timelineRows !== finalTimelineRows) changed.push("availableTimelineRows");
       if (previous.composerRows !== composerRows) changed.push("composerRows");
-      if (previous.shellHeight !== shellHeight) changed.push("height");
+      if (previous.shellHeight !== finalShellHeight) changed.push("height");
     }
 
     if (changed.length > 0) {
       renderDebug.traceEvent("layout", "measurementUpdate", {
         reason: changed.join(","),
-        headerRows,
-        availableTimelineRows: timelineRows,
+        availableTimelineRows: finalTimelineRows,
+        rawAvailableTimelineRows: calculatedTimelineRowsRaw,
         composerRows,
-        shellHeight,
+        shellHeight: finalShellHeight,
         showComposer,
         showTimeline,
       });
     }
 
     previousMeasurements.current = {
-      headerRows,
-      timelineRows,
+      timelineRows: finalTimelineRows,
       composerRows,
-      shellHeight,
+      shellHeight: finalShellHeight,
+      shellWidth: finalShellWidth,
     };
-  }, [composerRows, headerRows, shellHeight, showComposer, showTimeline, timelineRows]);
+  }, [calculatedTimelineRowsRaw, composerRows, finalShellHeight, finalShellWidth, showComposer, showTimeline, finalTimelineRows]);
 
   return (
-    <Box flexDirection="column" width="100%" height={shellHeight}>
-      <Box flexDirection="column" width={shellWidth}>
+    <Box flexDirection="column" width="100%" height={finalShellHeight}>
+      <Box flexDirection="column" width={finalShellWidth}>
         {showTimeline && (
-          <Box flexDirection="column" borderBottom={true} flexShrink={0}>
-            {/* MemoizedTopHeader already has its own comparator — stable during streaming. */}
-            <MemoizedTopHeader authState={authState} workspaceLabel={workspaceLabel} layout={layout} runtimeSummary={runtimeSummary} />
-          </Box>
-        )}
-
-        {showTimeline && (
-          <Box flexDirection="column" height={timelineRows} overflow="hidden">
+          <Box flexDirection="column" height={finalTimelineRows} overflow="hidden">
             <Timeline
               staticEvents={staticEvents}
               activeEvents={activeEvents}
               layout={layout}
               uiState={uiState}
-              viewportRows={timelineRows}
+              viewportRows={finalTimelineRows}
               verboseMode={verboseMode}
+              authState={authState}
+              workspaceLabel={workspaceLabel}
             />
           </Box>
         )}
@@ -178,6 +234,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.layout.cols     === next.layout.cols     &&
     prev.layout.rows     === next.layout.rows     &&
     prev.layout.mode     === next.layout.mode     &&
+    prev.layout.layoutEpoch === next.layout.layoutEpoch &&
     prev.screen          === next.screen          &&
     prev.authState       === next.authState       &&
     prev.workspaceLabel  === next.workspaceLabel  &&

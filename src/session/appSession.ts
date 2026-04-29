@@ -237,6 +237,10 @@ function preserveUIStateIdentity(previous: UIState, next: UIState): UIState {
   return previous;
 }
 
+function eventCount(state: SessionState): number {
+  return state.staticEvents.length + state.activeEvents.length;
+}
+
 export function reduceSessionState(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case "APPEND_STATIC_EVENT":
@@ -272,6 +276,11 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       return { ...state, historyIndex: nextIndex, inputValue: nextValue, cursor: nextValue.length };
     }
     case "CLEAR_TRANSCRIPT":
+      renderDebug.traceEvent("transcript", "clear", {
+        previousStaticEventsLength: state.staticEvents.length,
+        previousActiveEventsLength: state.activeEvents.length,
+        uiStateKind: state.uiState.kind,
+      });
       return {
         ...state,
         staticEvents: [],
@@ -279,6 +288,20 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         uiState: reduceTracedUIState(state.uiState, { type: "DISMISS_TRANSIENT" }),
       };
     case "SET_ACTIVE_EVENTS":
+      renderDebug.traceEvent("transcript", "activeEventsReplace", {
+        previousLength: state.activeEvents.length,
+        nextLength: action.events.length,
+        uiStateKind: state.uiState.kind,
+        preventedEmptyIntermediate: action.events.length === 0 && state.activeEvents.length > 0 && isAnimatedLifecycleKind(state.uiState.kind),
+      });
+      if (action.events.length === 0 && state.activeEvents.length > 0 && isAnimatedLifecycleKind(state.uiState.kind)) {
+        renderDebug.traceBlankFrame("Session", {
+          reason: "prevented-empty-active-events-replacement",
+          previousActiveEventsLength: state.activeEvents.length,
+          uiStateKind: state.uiState.kind,
+        });
+        return state;
+      }
       return { ...state, activeEvents: action.events };
     case "RUN_APPEND_ACTIVITY": {
       if (!state.activeEvents.some((event) => event.id === action.runId && event.type === "run")) {
@@ -310,6 +333,11 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       if (!state.activeEvents.some((event) => event.id === action.runId && event.type === "run")) {
         return state;
       }
+      renderDebug.traceEvent("action", "upsert", {
+        runId: action.runId,
+        actionId: action.activity.id,
+        status: action.activity.status,
+      });
       return {
         ...state,
         activeEvents: state.activeEvents.map((event) =>
@@ -417,6 +445,11 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       );
 
       if (!runEvent) {
+        renderDebug.traceEvent("transcript", "finalizeWithoutRunEvent", {
+          runId: action.runId,
+          turnId: action.turnId,
+          remainingEventsLength: remainingEvents.length,
+        });
         return {
           ...state,
           activeEvents: remainingEvents,
@@ -521,6 +554,35 @@ export function useAppSessionState() {
       });
       setState((current) => {
         const next = queued.reduce(reduceSessionState, current);
+        const previousCount = eventCount(current);
+        const nextCount = eventCount(next);
+        if (
+          previousCount !== nextCount
+          || current.staticEvents.length !== next.staticEvents.length
+          || current.activeEvents.length !== next.activeEvents.length
+        ) {
+          renderDebug.traceEvent("transcript", "eventArrayLengthChange", {
+            actionTypes: queued.map((item) => item.type),
+            previousTotalLength: previousCount,
+            nextTotalLength: nextCount,
+            previousStaticEventsLength: current.staticEvents.length,
+            nextStaticEventsLength: next.staticEvents.length,
+            previousActiveEventsLength: current.activeEvents.length,
+            nextActiveEventsLength: next.activeEvents.length,
+            previousUiStateKind: current.uiState.kind,
+            nextUiStateKind: next.uiState.kind,
+          });
+        }
+        if (previousCount > 0 && nextCount === 0) {
+          renderDebug.traceBlankFrame("Session", {
+            reason: "transcript-length-dropped-to-zero",
+            actionTypes: queued.map((item) => item.type),
+            previousTotalLength: previousCount,
+            previousStaticEventsLength: current.staticEvents.length,
+            previousActiveEventsLength: current.activeEvents.length,
+            nextUiStateKind: next.uiState.kind,
+          });
+        }
         // Preserve uiState identity when nothing meaningful changed,
         // so AppShell's memo check (prev.uiState === next.uiState) can bail out.
         if (next !== current && next.uiState !== current.uiState) {

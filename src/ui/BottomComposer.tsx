@@ -190,8 +190,10 @@ export function measureBottomComposerRows({
   const showMetadata = layout.mode !== "micro" && layout.rows > 24;
   const bottomPadding = layout.mode === "micro" || layout.rows <= 24 ? 0 : 1;
 
+  const visiblePromptRows = inputLocked ? 1 : promptViewport.visibleRows.length;
+
   return (
-    promptViewport.visibleRows.length
+    visiblePromptRows
     + 2
     + (suggestions.length > 0 ? 1 : 0)
     + statusLineReservedRows
@@ -202,7 +204,7 @@ export function measureBottomComposerRows({
 
 function getStatusLine(uiState: UIState): string | null {
   if (uiState.kind === "THINKING") return "✧ Codex is thinking";
-  if (uiState.kind === "RESPONDING") return "✧ Codex is streaming";
+  if (uiState.kind === "RESPONDING") return "✧ Codex is thinking";
   if (uiState.kind === "SHELL_RUNNING") return "✧ Codex is running command";
   if (uiState.kind === "AWAITING_USER_ACTION") return "✧ waiting for your answer";
   if (uiState.kind === "ERROR") return uiState.message;
@@ -266,6 +268,16 @@ export function BottomComposer({
     modelSpecStatus: modelSpec.status,
     value,
     cursor,
+  });
+  renderDebug.useLifecycleDebug("Composer", {
+    uiStateKind: uiState.kind,
+    cols: layout.cols,
+    rows: layout.rows,
+    mode: layout.mode,
+  });
+  renderDebug.traceLayoutValidity("Composer", {
+    cols: layout.cols,
+    rows: layout.rows,
   });
 
   const { stdin } = useStdin();
@@ -633,11 +645,13 @@ export function BottomComposer({
   const reasoningSuffix = reasoningLevel ? ` (${reasoningLevel})` : "";
   const isAnswerMode = persona === "answer";
   const showBusyFooter = shouldRenderBusyFooter(layout, uiState);
+  const promptPrefixColor = inputLocked ? theme.DIM : theme.TEXT;
+  const lockedInputText = promptViewport.visibleRows[0]?.text ?? " ";
 
   // The prompt line is shared between bordered and non-bordered layouts.
   const promptLine = (
     <Box flexDirection="row" width="100%">
-      <Text color={theme.TEXT} bold>{promptPrefix}</Text>
+      <Text color={promptPrefixColor} bold={!inputLocked}>{promptPrefix}</Text>
       <Box flexDirection="column" flexGrow={1}>
         {value.length === 0 && !inputLocked ? (
           <Box width="100%" overflow="hidden">
@@ -645,11 +659,9 @@ export function BottomComposer({
             <Text color={theme.DIM}>{placeholderText}</Text>
           </Box>
         ) : inputLocked ? (
-          promptViewport.visibleRows.map((row, index) => (
-            <Box key={`${row.start}-${row.end}-${index}`} width="100%" overflow="hidden">
-              <Text color={theme.DIM}>{row.text || " "}</Text>
-            </Box>
-          ))
+          <Box key="busy-locked-input" width="100%" overflow="hidden">
+            <Text color={theme.DIM}>{lockedInputText || " "}</Text>
+          </Box>
         ) : (
           promptViewport.visibleRows.map((row, index) => {
             const visibleCursorRow = promptViewport.cursorRow - promptViewport.scrollRow;

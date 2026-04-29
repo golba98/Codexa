@@ -255,6 +255,67 @@ test("builds multi-row snapshots from wrapped timeline items", () => {
   assert.equal(snapshot.itemCount, 1);
 });
 
+test("Codexa intro renders as a normal timeline item", () => {
+  const item: RenderTimelineItem = {
+    key: "codexa-intro",
+    type: "intro",
+    padded: true,
+    intro: {
+      version: "1.0.1",
+      layoutMode: "full",
+      authLabel: "Authenticated",
+      workspaceLabel: "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal",
+    },
+  };
+
+  const snapshot = buildTimelineSnapshot([item], { totalWidth: 110 });
+  const lines = snapshot.rows.map((row) => row.spans.map((span) => span.text).join(""));
+  const text = lines.join("\n");
+  const versionLineIndex = lines.findIndex((line) => line.includes("Codexa v1.0.1"));
+
+  assert.equal(snapshot.itemCount, 1);
+  assert.match(text, /██████/);
+  assert.match(text, /Codexa v1\.0\.1/);
+  assert.match(text, /Auth: Authenticated/);
+  assert.match(text, /Workspace: 13-Custom-CLI-Normal/);
+  assert.doesNotMatch(text, /Model:/);
+  assert(versionLineIndex >= 0 && versionLineIndex < 6);
+  assert.match(lines[versionLineIndex]!, /[█╔║╝]/);
+});
+
+test("Codexa intro scrolls out of the visible timeline window", () => {
+  const intro: RenderTimelineItem = {
+    key: "codexa-intro",
+    type: "intro",
+    padded: true,
+    intro: {
+      version: "1.0.1",
+      layoutMode: "full",
+      authLabel: "Authenticated",
+      workspaceLabel: "workspace",
+    },
+  };
+  const rows = Array.from({ length: 30 }, (_, index) => ({
+    key: `event-${index}`,
+    type: "event" as const,
+    padded: false,
+    event: {
+      id: index + 1,
+      type: "system" as const,
+      createdAt: index + 1,
+      title: `Event ${index}`,
+      content: "Transcript row",
+    },
+  }));
+
+  const snapshot = buildTimelineSnapshot([intro, ...rows], { totalWidth: 80 });
+  const selection = selectTimelineRows(snapshot, createFollowTailViewport(snapshot.totalRows), 8);
+  const text = selection.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+
+  assert.doesNotMatch(text, /██████/);
+  assert.match(text, /Event 29/);
+});
+
 test("timeline snapshot keeps the prompt card top border closed", () => {
   const items = buildTimelineItems([
     {
@@ -328,7 +389,7 @@ test("first active run fallback immediately shows Codex thinking status", () => 
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 56 });
   const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 
-  assert.match(joined, /Codex is working/);
+  assert.doesNotMatch(joined, /Codex is working/);
   assert.doesNotMatch(joined, /Running\.\.\./);
   assert.doesNotMatch(joined, /Waiting for response/i);
 });
@@ -403,7 +464,7 @@ test("manual browse snapshot survives run start and first assistant delta", () =
   ]);
 });
 
-test("default timeline shows compact processing signals while a run is streaming", () => {
+test("default timeline omits active processing text while a run is streaming", () => {
   const items = buildTimelineItems([
     {
       id: 1,
@@ -464,15 +525,16 @@ test("default timeline shows compact processing signals while a run is streaming
     .map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
-  assert.match(joined, /Codex/);
-  assert.match(joined, /Verifying generated file/);
+  assert.doesNotMatch(joined, /Codex/);
+  assert.doesNotMatch(joined, /Verifying generated file/);
+  assert.doesNotMatch(joined, /Todo 1\/2/);
   assert.match(joined, /python -m pytest/);
-  assert.match(joined, /Hello_World\.py/);
+  assert.doesNotMatch(joined, /Hello_World\.py/);
   assert.match(joined, /action/);
   assert.doesNotMatch(joined, /^\s*thinking\b/m);
 });
 
-test("streaming processing output renders separated readable segments with a live marker", () => {
+test("streaming omits active processing text while completed processing stays stable", () => {
   const items = buildTimelineItems([
     {
       id: 1,
@@ -524,9 +586,10 @@ test("streaming processing output renders separated readable segments with a liv
     .map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
-  assert.match(joined, /Next I am separating/);
+  assert.match(joined, /I inspected the renderer/);
+  assert.doesNotMatch(joined, /Next I am separating/);
   assert.match(joined, /Codex/);
-  assert.match(joined, /▌/);
+  assert.doesNotMatch(joined, /▌/);
   assert.ok(snapshot.rows.every((row) => row.spans.map((span) => span.text).join("").length <= 54));
 });
 

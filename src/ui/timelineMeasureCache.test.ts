@@ -292,6 +292,80 @@ function makeStreamingResponseRenderItem(text: string): RenderTimelineItem {
   };
 }
 
+function makeActionSequenceRenderItem(tools: RunToolActivity[]): RenderTimelineItem {
+  const user: UserPromptEvent = {
+    id: 20,
+    type: "user",
+    createdAt: 1,
+    prompt: "Inspect files",
+    turnId: 3,
+  };
+  const run: RunEvent = {
+    id: 21,
+    type: "run",
+    createdAt: 1,
+    startedAt: 1,
+    durationMs: null,
+    backendId: "codex-subprocess",
+    backendLabel: "Codexa",
+    runtime: TEST_RUNTIME,
+    prompt: "Inspect files",
+    progressEntries: [],
+    status: "running",
+    summary: "running...",
+    truncatedOutput: false,
+    toolActivities: tools,
+    activity: [],
+    touchedFileCount: 0,
+    errorMessage: null,
+    turnId: 3,
+    streamItems: tools.map((tool) => ({
+      streamSeq: tool.streamSeq ?? 0,
+      kind: "action" as const,
+      refId: tool.id,
+    })),
+    responseSegments: [],
+    lastStreamSeq: tools.reduce((max, tool) => Math.max(max, tool.streamSeq ?? 0), 0),
+    activeResponseSegmentId: null,
+  };
+
+  return {
+    key: "turn-3",
+    type: "turn",
+    padded: true,
+    item: {
+      type: "turn",
+      turnId: 3,
+      turnIndex: 2,
+      user,
+      run,
+      assistant: null,
+    },
+    renderState: {
+      opacity: "active",
+      question: null,
+      runPhase: "streaming",
+    },
+  };
+}
+
+function stableRowsForTools(tools: RunToolActivity[]) {
+  return buildStableTimelineSnapshot(
+    [makeActionSequenceRenderItem(tools)],
+    { totalWidth: 72, debugLabel: "action-sequence" },
+  ).snapshot.rows;
+}
+
+function actionRows(rows: Array<{ key: string }>, streamSeq: number): string[] {
+  return rows
+    .map((row) => row.key)
+    .filter((key) => key.includes(`-action-${streamSeq}-`));
+}
+
+function actionTopIndex(rows: Array<{ key: string }>, streamSeq: number): number {
+  return rows.findIndex((row) => row.key.includes(`-action-${streamSeq}-top`));
+}
+
 test("completed action wrapped rows stay stable when earlier thinking grows", () => {
   __clearTimelineMeasureCachesForTests();
 
@@ -313,6 +387,59 @@ test("completed action wrapped rows stay stable when earlier thinking grows", ()
   for (let index = 0; index < firstActionRows.length; index += 1) {
     assert.strictEqual(secondActionRows[index], firstActionRows[index]);
   }
+});
+
+test("active thinking rows are omitted while action rows remain visible", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const snapshot = buildTimelineSnapshot(
+    [makeRenderItem("Inspecting proof files.")],
+    { totalWidth: 72, debugLabel: "active-thinking-omitted" },
+  );
+  const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+
+  assert.doesNotMatch(joined, /Inspecting proof files/i);
+  assert.match(joined, /Read file/i);
+});
+
+test("stable active action sequence appends without moving existing action keys", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const firstRunningRows = stableRowsForTools([
+    makeTool({ id: "tool-1", status: "running", completedAt: null, summary: null, streamSeq: 1 }),
+  ]);
+  const firstCompletedRows = stableRowsForTools([
+    makeTool({ id: "tool-1", status: "completed", completedAt: 42, summary: "Read 12 lines", streamSeq: 1 }),
+  ]);
+  const secondRunningRows = stableRowsForTools([
+    makeTool({ id: "tool-1", status: "completed", completedAt: 42, summary: "Read 12 lines", streamSeq: 1 }),
+    makeTool({ id: "tool-2", command: "Get-Content package.json", status: "running", completedAt: null, summary: null, streamSeq: 2 }),
+  ]);
+  const bothCompletedRows = stableRowsForTools([
+    makeTool({ id: "tool-1", status: "completed", completedAt: 42, summary: "Read 12 lines", streamSeq: 1 }),
+    makeTool({ id: "tool-2", command: "Get-Content package.json", status: "completed", completedAt: 56, summary: "Read package", streamSeq: 2 }),
+  ]);
+
+  const firstActionKeys = actionRows(firstRunningRows, 1);
+  assert.ok(firstActionKeys.length > 0);
+  assert.deepEqual(actionRows(firstCompletedRows, 1), firstActionKeys);
+  assert.deepEqual(actionRows(secondRunningRows, 1), firstActionKeys);
+  assert.deepEqual(actionRows(bothCompletedRows, 1), firstActionKeys);
+  assert.ok(actionTopIndex(secondRunningRows, 1) < actionTopIndex(secondRunningRows, 2));
+  assert.ok(actionTopIndex(bothCompletedRows, 1) < actionTopIndex(bothCompletedRows, 2));
+});
+
+test("stable active action rows keep stream order when a later action completes first", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const rows = stableRowsForTools([
+    makeTool({ id: "tool-1", status: "running", completedAt: null, summary: null, streamSeq: 1 }),
+    makeTool({ id: "tool-2", command: "Get-Content package.json", status: "completed", completedAt: 56, summary: "Read package", streamSeq: 2 }),
+  ]);
+
+  assert.ok(actionTopIndex(rows, 1) >= 0);
+  assert.ok(actionTopIndex(rows, 2) >= 0);
+  assert.ok(actionTopIndex(rows, 1) < actionTopIndex(rows, 2));
 });
 
 test("stable timeline freezes completed action rows while active text changes", () => {
@@ -357,4 +484,78 @@ test("unchanged active response rows keep references while streaming text grows"
 
   assert.ok(firstStableLine);
   assert.strictEqual(secondStableLine, firstStableLine);
+});
+
+
+test("timeline measurement coverage for THINKING -> RESPONDING -> FINALIZE_RUN", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const tool = makeTool({ id: "tool-1", status: "running", completedAt: null, summary: null, streamSeq: 1 });
+  const runEvent: RunEvent = {
+    id: 2,
+    type: "run",
+    createdAt: 2,
+    startedAt: 2,
+    durationMs: null,
+    backendId: "codex-subprocess",
+    backendLabel: "Test",
+    runtime: TEST_RUNTIME,
+    prompt: "Test",
+    progressEntries: [],
+    status: "running",
+    summary: "Running",
+    truncatedOutput: false,
+    toolActivities: [tool],
+    activity: [],
+    touchedFileCount: 0,
+    errorMessage: null,
+    turnId: 1,
+    streamItems: [{ kind: "action", streamSeq: 1, refId: "tool-1" }],
+    responseSegments: [],
+    lastStreamSeq: 1,
+    activeResponseSegmentId: null,
+  };
+
+  const item1: RenderTimelineItem = {
+    key: "turn-1",
+    type: "turn",
+    padded: true,
+    item: { type: "turn", turnId: 1, turnIndex: 1, user: null, run: runEvent, assistant: null },
+    renderState: { opacity: "active", question: null, runPhase: "thinking" },
+  };
+
+  const snapshot1 = buildTimelineSnapshot([item1], { totalWidth: 120 });
+  const actionKeys1 = snapshot1.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  assert.ok(actionKeys1.length > 0);
+
+  // Complete action
+  tool.status = "completed";
+  const snapshot2 = buildTimelineSnapshot([item1], { totalWidth: 120 });
+  const actionKeys2 = snapshot2.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  assert.deepEqual(actionKeys2, actionKeys1);
+
+  // Add response
+  runEvent.responseSegments = [{
+    id: "resp-1",
+    streamSeq: 2,
+    chunks: ["Answer starts"],
+    status: "active",
+    startedAt: 3,
+  }];
+  runEvent.streamItems = [...(runEvent.streamItems ?? []), { kind: "response", streamSeq: 2, refId: "resp-1" }];
+  item1.renderState.runPhase = "streaming";
+
+  const snapshot3 = buildTimelineSnapshot([item1], { totalWidth: 120 });
+  const actionKeys3 = snapshot3.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  assert.deepEqual(actionKeys3, actionKeys1);
+
+  // Finalize
+  runEvent.status = "completed";
+  runEvent.durationMs = 100;
+  runEvent.responseSegments[0].status = "completed";
+  item1.renderState.runPhase = "none";
+
+  const snapshot4 = buildTimelineSnapshot([item1], { totalWidth: 120 });
+  const actionKeys4 = snapshot4.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  assert.deepEqual(actionKeys4, actionKeys1);
 });

@@ -112,7 +112,7 @@ import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
-import { createTerminalModeController } from "./core/terminalControl.js";
+import { createTerminalModeController, setTerminalControlUIState } from "./core/terminalControl.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
@@ -423,6 +423,52 @@ export function App({ launchArgs }: AppProps) {
     model,
     reasoningLevel,
   });
+  renderDebug.useLifecycleDebug("App", {
+    screen,
+    uiStateKind: uiState.kind,
+  });
+  renderDebug.traceLayoutValidity("Root", {
+    cols: terminalLayout.cols,
+    rows: terminalLayout.rows,
+    rawCols: terminalLayout.rawCols,
+    rawRows: terminalLayout.rawRows,
+    composerRows,
+  });
+  const previousUiStateKindRef = useRef(uiState.kind);
+  useEffect(() => {
+    setTerminalControlUIState(uiState.kind);
+  }, [uiState.kind]);
+
+  useEffect(() => {
+    const previousKind = previousUiStateKindRef.current;
+    if (previousKind !== uiState.kind) {
+      renderDebug.traceStateTransition({
+        component: "App",
+        prevKind: previousKind,
+        nextKind: uiState.kind,
+        activeEventsLength: activeEvents.length,
+        staticEventsLength: staticEvents.length,
+        screen,
+      });
+      previousUiStateKindRef.current = uiState.kind;
+    }
+  }, [activeEvents.length, screen, staticEvents.length, uiState.kind]);
+  const previousEventCountRef = useRef(staticEvents.length + activeEvents.length);
+  useEffect(() => {
+    const previousCount = previousEventCountRef.current;
+    const nextCount = staticEvents.length + activeEvents.length;
+    if (previousCount > 0 && nextCount === 0) {
+      renderDebug.traceBlankFrame("Root", {
+        reason: "event-count-dropped-to-zero",
+        previousCount,
+        staticEventsLength: staticEvents.length,
+        activeEventsLength: activeEvents.length,
+        uiStateKind: uiState.kind,
+        screen,
+      });
+    }
+    previousEventCountRef.current = nextCount;
+  }, [activeEvents.length, screen, staticEvents.length, uiState.kind]);
   const previousRootMeasurements = useRef<{
     composerRows: number;
     cols: number;

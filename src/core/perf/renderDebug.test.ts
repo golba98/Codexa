@@ -6,11 +6,15 @@ import test from "node:test";
 import {
   configureRenderDebug,
   getRenderDebugLogPath,
+  traceBlankFrame,
   traceEvent,
+  traceLayoutValidity,
+  traceLifecycleEvent,
   traceLifecycleTransition,
   traceFlickerEvent,
   traceStatusTick,
   traceRender,
+  traceTerminalWrite,
 } from "./renderDebug.js";
 
 function clean(path: string): void {
@@ -45,6 +49,107 @@ test("render debug writes JSONL only when explicitly enabled", () => {
     assert.equal(records[1]?.kind, "render");
     assert.equal(records[1]?.component, "EnabledComponent");
     assert.equal(records[1]?.reason, "unit");
+  } finally {
+    configureRenderDebug({});
+    clean(logPath);
+  }
+});
+
+test("render debug defaults to the repo-local diagnostic log path", () => {
+  configureRenderDebug({});
+  assert.equal(getRenderDebugLogPath(), join(process.cwd(), ".codexa-debug", "render-debug.log"));
+});
+
+test("render debug creates missing log directories", () => {
+  const logPath = join(tmpdir(), `codexa-render-debug-nested-${process.pid}`, "render-debug.log");
+  rmSync(join(tmpdir(), `codexa-render-debug-nested-${process.pid}`), { force: true, recursive: true });
+
+  try {
+    configureRenderDebug({
+      CODEXA_RENDER_DEBUG: "1",
+      CODEXA_RENDER_DEBUG_FILE: logPath,
+    });
+    assert.equal(existsSync(logPath), true);
+  } finally {
+    configureRenderDebug({});
+    rmSync(join(tmpdir(), `codexa-render-debug-nested-${process.pid}`), { force: true, recursive: true });
+  }
+});
+
+test("render debug records lifecycle, layout, and blank-frame diagnostics", () => {
+  const logPath = join(tmpdir(), `codexa-render-diagnostics-${process.pid}.jsonl`);
+  clean(logPath);
+
+  try {
+    configureRenderDebug({
+      CODEXA_RENDER_DEBUG: "1",
+      CODEXA_RENDER_DEBUG_FILE: logPath,
+    });
+    traceLifecycleEvent("Timeline", "mount", { viewportRows: 12 });
+    traceLayoutValidity("Timeline", { viewportRows: 0, cols: 120 });
+    traceBlankFrame("Timeline", { reason: "visible-rows-zero-with-events" });
+
+    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(records[1]?.kind, "lifecycle");
+    assert.equal(records[1]?.component, "Timeline");
+    assert.equal(records[1]?.event, "mount");
+    assert.equal(records[2]?.kind, "layout");
+    assert.equal(records[2]?.event, "invalidLayout");
+    assert.deepEqual(records[2]?.invalidValues, [{ key: "viewportRows", value: 0 }]);
+    assert.equal(records[3]?.kind, "blankFrame");
+    assert.equal(records[3]?.reason, "visible-rows-zero-with-events");
+  } finally {
+    configureRenderDebug({});
+    clean(logPath);
+  }
+});
+
+test("terminal writes are classified for clear and reset diagnosis", () => {
+  const logPath = join(tmpdir(), `codexa-terminal-classification-${process.pid}.jsonl`);
+  clean(logPath);
+
+  try {
+    configureRenderDebug({
+      CODEXA_RENDER_DEBUG: "1",
+      CODEXA_RENDER_DEBUG_FILE: logPath,
+    });
+    traceTerminalWrite(
+      "stdout",
+      "unit",
+      "\x1b[2J\x1b[3J\x1b[H\x1bc\x1b[?1049h\x1b]0;CODEXA\x07\x1b[?2004h\x1b[?1000h",
+    );
+
+    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(records[1]?.kind, "stdout");
+    assert.equal(records[1]?.containsViewportClear, true);
+    assert.equal(records[1]?.containsScrollbackClear, true);
+    assert.equal(records[1]?.containsCursorHome, true);
+    assert.equal(records[1]?.containsTerminalReset, true);
+    assert.equal(records[1]?.containsAlternateScreen, true);
+    assert.equal(records[1]?.containsTitleSequence, true);
+    assert.equal(records[1]?.containsBracketedPaste, true);
+    assert.equal(records[1]?.containsMouseMode, true);
+  } finally {
+    configureRenderDebug({});
+    clean(logPath);
+  }
+});
+
+test("CODEXA_DEBUG_RENDER aliases render debug logging", () => {
+  const logPath = join(tmpdir(), `codexa-debug-render-alias-${process.pid}.jsonl`);
+  clean(logPath);
+
+  try {
+    configureRenderDebug({
+      CODEXA_DEBUG_RENDER: "1",
+      CODEXA_RENDER_DEBUG_FILE: logPath,
+    });
+    traceRender("AliasComponent", "unit");
+
+    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(records[0]?.kind, "session");
+    assert.equal(records[1]?.kind, "render");
+    assert.equal(records[1]?.component, "AliasComponent");
   } finally {
     configureRenderDebug({});
     clean(logPath);

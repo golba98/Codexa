@@ -1,4 +1,5 @@
 import React, { createContext, useContext, ReactNode } from "react";
+import * as renderDebug from "../core/perf/renderDebug.js";
 
 export interface Theme {
   BG: string;
@@ -366,6 +367,14 @@ interface ThemeProviderProps {
 }
 
 export function ThemeProvider({ theme: themeName = "purple", customTheme, children }: ThemeProviderProps) {
+  renderDebug.useLifecycleDebug("ThemeProvider", {
+    themeName,
+    customTheme: Boolean(customTheme),
+  });
+  renderDebug.useRenderDebug("ThemeProvider", {
+    themeName,
+    customTheme: Boolean(customTheme),
+  });
   const baseTheme = THEMES[themeName] || PURPLE_THEME;
   const activeTheme = themeName === "custom" ? { ...PURPLE_THEME, ...customTheme } : baseTheme;
   return (

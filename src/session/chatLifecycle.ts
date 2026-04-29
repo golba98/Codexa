@@ -3,6 +3,7 @@ import type { AvailableBackend } from "../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
 import { summarizeRunActivity, type RunFileActivity } from "../core/workspaceActivity.js";
+import * as renderDebug from "../core/perf/renderDebug.js";
 import type {
   RunEvent,
   RunProgressBlock,
@@ -199,6 +200,15 @@ export function upsertRunToolActivity(event: RunEvent, activity: RunToolActivity
   if (existingIndex < 0) {
     const streamSeq = (event.lastStreamSeq ?? 0) + 1;
     const enriched: RunToolActivity = { ...activity, streamSeq };
+    renderDebug.traceEvent("action", "normalized", {
+      runId: event.id,
+      turnId: event.turnId,
+      actionId: enriched.id,
+      status: enriched.status,
+      streamSeq,
+      operation: "insert",
+      stableKeyPreserved: true,
+    });
     return {
       ...event,
       toolActivities: [...event.toolActivities, enriched],
@@ -220,6 +230,16 @@ export function upsertRunToolActivity(event: RunEvent, activity: RunToolActivity
     ...activity,
     streamSeq: existing.streamSeq, // preserve original assignment
   };
+  renderDebug.traceEvent("action", "normalized", {
+    runId: event.id,
+    turnId: event.turnId,
+    actionId: merged.id,
+    previousStatus: existing.status,
+    status: merged.status,
+    streamSeq: merged.streamSeq,
+    operation: "merge",
+    stableKeyPreserved: existing.streamSeq === merged.streamSeq,
+  });
   const nextToolActivities = [...event.toolActivities];
   nextToolActivities[existingIndex] = merged;
   return {
@@ -527,6 +547,12 @@ const THINKING_SOURCES = new Set(["reasoning", "todo", "transcript"]);
 
 export function appendRunThinking(event: RunEvent, updates: BackendProgressUpdate[]): RunEvent {
   if (updates.length === 0) return event;
+  renderDebug.traceEvent("transcript", "progressBatchNormalize", {
+    runId: event.id,
+    turnId: event.turnId,
+    updateCount: updates.length,
+    previousProgressEntries: event.progressEntries.length,
+  });
 
   let nextSequence = event.progressEntries[event.progressEntries.length - 1]?.sequence ?? 0;
   let progressEntries = [...event.progressEntries];
@@ -661,6 +687,14 @@ export function appendRunResponseChunk(event: RunEvent, chunk: string): RunEvent
  * backend returns a different response than what was streamed).
  */
 export function finalizeResponseSegments(event: RunEvent, finalResponse?: string): RunEvent {
+  renderDebug.traceEvent("action", "regroupedForFinalize", {
+    runId: event.id,
+    turnId: event.turnId,
+    toolActivities: event.toolActivities.length,
+    streamItems: event.streamItems?.length ?? 0,
+    responseSegments: event.responseSegments?.length ?? 0,
+    hasFinalResponseOverride: Boolean(finalResponse),
+  });
   const segments = event.responseSegments ?? [];
   if (segments.length === 0) {
     if (!finalResponse) return event;

@@ -32,7 +32,24 @@ function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-function createSupportedHarness() {
+function createSupportedHarness(options: {
+  inkInstance?: {
+    lastOutput: string;
+    lastOutputToRender: string;
+    lastOutputHeight: number;
+    calculateLayoutCalls: number;
+    onRenderCalls: number;
+    unsubscribeResizeCalls: number;
+    throttledLogCancelCalls: number;
+    rootOnRenderCancelCalls: number;
+    onRenderCancelCalls: number;
+    calculateLayout: () => void;
+    onRender: (() => void) & { cancel: () => void };
+    unsubscribeResize: () => void;
+    throttledLog: { cancel: () => void };
+    rootNode: { onRender: { cancel: () => void } };
+  } | null;
+} = {}) {
   const stdout = new MockStdout();
   const stderr = new MockStderr();
   const registeredHandlers: Array<() => void> = [];
@@ -80,8 +97,55 @@ function createSupportedHarness() {
       registerExitHandler(handler: () => void) {
         registeredHandlers.push(handler);
       },
+      resolveInkInstanceForStdout() {
+        return options.inkInstance ?? null;
+      },
     },
   };
+}
+
+function createFakeInkInstance() {
+  const fake = {
+    lastOutput: "previous-frame",
+    lastOutputToRender: "previous-frame-to-render",
+    lastOutputHeight: 12,
+    calculateLayoutCalls: 0,
+    onRenderCalls: 0,
+    unsubscribeResizeCalls: 0,
+    throttledLogCancelCalls: 0,
+    rootOnRenderCancelCalls: 0,
+    onRenderCancelCalls: 0,
+    calculateLayout() {
+      fake.calculateLayoutCalls += 1;
+    },
+    onRender: Object.assign(
+      () => {
+        fake.onRenderCalls += 1;
+      },
+      {
+        cancel() {
+          fake.onRenderCancelCalls += 1;
+        },
+      },
+    ),
+    unsubscribeResize() {
+      fake.unsubscribeResizeCalls += 1;
+    },
+    throttledLog: {
+      cancel() {
+        fake.throttledLogCancelCalls += 1;
+      },
+    },
+    rootNode: {
+      onRender: {
+        cancel() {
+          fake.rootOnRenderCancelCalls += 1;
+        },
+      },
+    },
+  };
+
+  return fake;
 }
 
 test("strict VT mode refuses unsupported terminals without writing bracketed paste sequences", () => {
@@ -210,7 +274,7 @@ test("enforces a single render root while active", async () => {
   await flushMicrotasks();
 });
 
-test("hard-repaints once when resize recovers from invalid dimensions", async () => {
+test("resize recovery preserves the viewport after invalid dimensions", async () => {
   const harness = createSupportedHarness();
 
   startApp(harness.deps);
@@ -224,19 +288,18 @@ test("hard-repaints once when resize recovers from invalid dimensions", async ()
   harness.stdout.rows = 40;
   harness.stdout.emit("resize");
 
-  // onResize does NOT erase scrollback — it defers only a visible-viewport
-  // clear (\x1b[2J\x1b[H) to scheduleRepaint (150ms).
+  // onResize does not erase the viewport or scrollback.
   assert.equal(harness.stdout.clearCalls, 0);
   assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
   assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
-  // \x1b[3J must NOT appear in post-startup writes (scrollback preserved).
   const writesAfterStart = harness.stdout.writes.indexOf("\x1b[?2004h") + "\x1b[?2004h".length;
-  assert.doesNotMatch(harness.stdout.writes.slice(writesAfterStart), /\x1b\[3J/);
+  assert.doesNotMatch(harness.stdout.writes.slice(writesAfterStart), /\x1b\[2J|\x1b\[3J/);
 
-  // After the debounce fires, the full repaint + clear happens.
+  // After the debounce fires, recovery still avoids clear() and ANSI clears.
   await new Promise((resolve) => setTimeout(resolve, 200));
-  assert.ok(harness.stdout.clearCalls >= 1);
+  assert.equal(harness.stdout.clearCalls, 0);
+  assert.doesNotMatch(harness.stdout.writes.slice(writesAfterStart), /\x1b\[2J|\x1b\[3J/);
 
   harness.resolveExit();
   await flushMicrotasks();
@@ -308,6 +371,43 @@ test("soft-repaints when resize occurs without invalid dimensions", async () => 
   await flushMicrotasks();
 });
 
+test("post-startup resize does not force Ink internals or blank cached output", async () => {
+  const inkInstance = createFakeInkInstance();
+  const harness = createSupportedHarness({ inkInstance });
+  startApp(harness.deps);
+
+  assert.equal(inkInstance.unsubscribeResizeCalls, 1, "startup still disables Ink's competing resize listener");
+
+  const initialLastOutput = inkInstance.lastOutput;
+  const initialLastOutputToRender = inkInstance.lastOutputToRender;
+  const initialLastOutputHeight = inkInstance.lastOutputHeight;
+  const startupEnd = harness.stdout.writes.length;
+
+  harness.stdout.columns = 15;
+  harness.stdout.rows = 8;
+  harness.stdout.emit("resize");
+
+  harness.stdout.columns = 100;
+  harness.stdout.rows = 32;
+  harness.stdout.emit("resize");
+
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  assert.equal(harness.stdout.clearCalls, 0);
+  assert.doesNotMatch(harness.stdout.writes.slice(startupEnd), /\x1b\[2J|\x1b\[3J/);
+  assert.equal(inkInstance.lastOutput, initialLastOutput);
+  assert.equal(inkInstance.lastOutputToRender, initialLastOutputToRender);
+  assert.equal(inkInstance.lastOutputHeight, initialLastOutputHeight);
+  assert.equal(inkInstance.calculateLayoutCalls, 0);
+  assert.equal(inkInstance.onRenderCalls, 0);
+  assert.equal(inkInstance.throttledLogCancelCalls, 0);
+  assert.equal(inkInstance.rootOnRenderCancelCalls, 0);
+  assert.equal(inkInstance.onRenderCancelCalls, 0);
+
+  harness.resolveExit();
+  await flushMicrotasks();
+});
+
 test("removes resize listener and restores bracketed paste on cleanup", async () => {
   const harness = createSupportedHarness();
 
@@ -358,9 +458,10 @@ test("treats sub-viewport dimensions as invalid and defers repaint", async () =>
   harness.stdout.rows = 40;
   harness.stdout.emit("resize");
 
-  // After debounce, the repaint fires
+  // After debounce, recovery still preserves the old frame and avoids clear().
   await new Promise((resolve) => setTimeout(resolve, 200));
-  assert.ok(harness.stdout.clearCalls >= 1, `expected >=1 clear calls, got ${harness.stdout.clearCalls}`);
+  assert.equal(harness.stdout.clearCalls, 0);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[2J|\x1b\[3J/);
 
   harness.resolveExit();
   await flushMicrotasks();

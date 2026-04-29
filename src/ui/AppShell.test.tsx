@@ -197,13 +197,15 @@ test("cramped busy state uses the run footer in app composition", async () => {
   const output = await renderShell(80, 24, { kind: "THINKING", turnId: 1 });
 
   assert.match(output, /Codex is thinking/i);
+  assert.doesNotMatch(output, /CODEXA\s+\|\s+gpt-5\.4/i);
   assert.doesNotMatch(output, /CODEXA AGENT/);
 });
 
 test("cramped streaming state avoids response-labelled footer text", async () => {
   const output = await renderShell(80, 24, { kind: "RESPONDING", turnId: 1 });
 
-  assert.match(output, /Codex is streaming/i);
+  assert.match(output, /Codex is thinking/i);
+  assert.doesNotMatch(output, /Codex is streaming/i);
   assert.doesNotMatch(output, /Streaming response/i);
 });
 
