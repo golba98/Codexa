@@ -203,6 +203,7 @@ interface PromptRunLifecycle {
   parseActionRequired?: boolean;
   disableModeAutoUpgrade?: boolean;
   runtimeOverride?: PartialRuntimeConfig;
+  approvedPlan?: string;
   onCompleted?: (result: { response: string; turnId: number; runId: number }) => void;
   onFailed?: (result: { message: string; turnId: number; runId: number }) => void;
   onCanceled?: (result: { turnId: number; runId: number }) => void;
@@ -1895,6 +1896,7 @@ export function App({ launchArgs }: AppProps) {
           runtime: runtimeForTurn,
           prompt: safeProviderPrompt,
           turnId,
+          approvedPlan: lifecycle.approvedPlan,
         }),
         summary: "Codex is starting...",
       },
@@ -2203,6 +2205,7 @@ export function App({ launchArgs }: AppProps) {
         constraints: state.constraints,
       }),
       {
+        approvedPlan: state.currentPlan,
         runtimeOverride: {
           mode: state.executionMode,
           planMode: false,

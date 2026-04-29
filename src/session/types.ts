@@ -120,7 +120,7 @@ export interface RunResponseSegment {
 
 export interface RunStreamItem {
   streamSeq: number;
-  kind: "thinking" | "action" | "response";
+  kind: "thinking" | "action" | "response" | "plan";
   /** block.id, tool.id, or response-segment id depending on kind. */
   refId: string;
 }
@@ -181,6 +181,8 @@ export interface RunEvent extends TimelineBaseEvent {
   lastStreamSeq?: number;
   /** When set, the next assistant delta extends this segment; cleared by thinking/action. */
   activeResponseSegmentId?: string | null;
+  /** The approved plan text, injected at the start of execution turns. */
+  approvedPlan?: string;
 }
 
 export interface ShellEvent extends TimelineBaseEvent {

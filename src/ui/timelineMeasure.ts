@@ -1563,7 +1563,8 @@ function applyTurnOpacity(rows: TimelineRow[], opacity: "active" | "recent" | "d
 export type StreamEvent =
   | { kind: "thinking"; streamSeq: number; block: RunProgressBlock; isActive: boolean }
   | { kind: "response"; streamSeq: number; segment: RunResponseSegment }
-  | { kind: "action"; streamSeq: number; tool: RunToolActivity };
+  | { kind: "action"; streamSeq: number; tool: RunToolActivity }
+  | { kind: "plan"; streamSeq: number; planText: string };
 
 function buildCodexPlainRows(
   keyPrefix: string,
@@ -1928,6 +1929,27 @@ function buildCodexResponseRows(params: {
   return buildRows();
 }
 
+function buildApprovedPlanRows(params: {
+  keyPrefix: string;
+  width: number;
+  planText: string;
+}): TimelineRow[] {
+  const contentWidth = Math.max(1, params.width - 4);
+  const sanitized = sanitizeOutput(params.planText);
+  const normalized = normalizeOutput(sanitized);
+  const classified = classifyOutput(normalized);
+  const formatted = formatForBox(classified, contentWidth);
+  const contentRows = buildMarkdownRows(formatted, contentWidth);
+
+  return buildDashCardRows({
+    keyPrefix: params.keyPrefix,
+    width: params.width,
+    title: "APPROVED PLAN",
+    borderTone: "success",
+    contentRows,
+  });
+}
+
 function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, verbose = false): TimelineRow[] {
   const run = item.item.run!;
   const assistant = item.item.assistant;
@@ -1974,6 +1996,12 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
         isLastEvent,
         isLive,
         verbose,
+      }));
+    } else if (event.kind === "plan") {
+      rows.push(...buildApprovedPlanRows({
+        keyPrefix: `${item.key}-plan-${event.streamSeq}`,
+        width,
+        planText: event.planText,
       }));
     }
   });
@@ -2049,6 +2077,10 @@ function collectStreamEvents(
     } else if (it.kind === "response") {
       const segment = segmentsById.get(it.refId);
       if (segment) events.push({ kind: "response", streamSeq: it.streamSeq, segment });
+    } else if (it.kind === "plan") {
+      if (run.approvedPlan) {
+        events.push({ kind: "plan", streamSeq: it.streamSeq, planText: run.approvedPlan });
+      }
     }
   }
 
@@ -2307,7 +2339,7 @@ function buildStableActiveTurnGroups(
         event.tool.completedAt ?? "",
         textCacheToken(event.tool.command),
       ]), build)));
-    } else {
+    } else if (event.kind === "response") {
       const build = () => buildCodexResponseRows({
         keyPrefix: `${item.key}-codex-response-${event.streamSeq}`,
         width: innerWidth,
@@ -2328,6 +2360,18 @@ function buildStableActiveTurnGroups(
         event.segment.status,
         textCacheToken(getResponseSegmentText(event.segment)),
       ]), build)));
+    } else if (event.kind === "plan") {
+      const build = () => buildApprovedPlanRows({
+        keyPrefix: `${item.key}-plan-${event.streamSeq}`,
+        width: innerWidth,
+        planText: event.planText,
+      });
+      targetRows.push(...getCachedFrozenRows(rowCacheKey([
+        "stable-plan",
+        item.key,
+        innerWidth,
+        textCacheToken(event.planText),
+      ]), build));
     }
 
     orderedRows = [...orderedRows, ...targetRows];
