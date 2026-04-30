@@ -8,16 +8,16 @@ export type PlanActionValue = "implement" | "revise" | "constraints" | "view_pla
 
 function getPlanActionItems(hasPlanFile: boolean): Array<{ label: string; value: PlanActionValue }> {
   const items: Array<{ label: string; value: PlanActionValue }> = [
-    { label: "Implement plan", value: "implement" },
-    { label: "Revise plan", value: "revise" },
-    { label: "Add constraints / instructions", value: "constraints" },
+    { label: "Implement plan  I", value: "implement" },
+    { label: "Revise plan  R", value: "revise" },
+    { label: "Add constraints  A", value: "constraints" },
   ];
 
   if (hasPlanFile) {
-    items.push({ label: "View plan file", value: "view_plan_file" });
+    items.push({ label: "View plan file  V", value: "view_plan_file" });
   }
 
-  items.push({ label: "Cancel", value: "cancel" });
+  items.push({ label: "Cancel  Esc", value: "cancel" });
   return items;
 }
 
@@ -28,7 +28,7 @@ interface PlanActionPickerProps {
 }
 
 export function measurePlanActionPickerRows(hasPlanFile = false): number {
-  return getPlanActionItems(hasPlanFile).length + 4;
+  return getPlanActionItems(hasPlanFile).length + 6;
 }
 
 function PlanActionIndicator({ isSelected = false }: { isSelected?: boolean }) {
@@ -44,7 +44,11 @@ function PlanActionIndicator({ isSelected = false }: { isSelected?: boolean }) {
 
 function PlanActionItem({ isSelected = false, label }: { isSelected?: boolean; label: string }) {
   const theme = useTheme();
-  return <Text color={isSelected ? theme.TEXT : theme.MUTED}>{label}</Text>;
+  return (
+    <Text color={isSelected ? theme.TEXT : theme.MUTED} bold={isSelected}>
+      {label}
+    </Text>
+  );
 }
 
 export function PlanActionPicker({
@@ -81,11 +85,24 @@ export function PlanActionPicker({
   }, { isActive: isFocused });
 
   return (
-    <Box flexDirection="column" width="100%" marginTop={1} paddingX={2}>
-      <Text color={theme.MUTED}>
-        Choose how to proceed. Enter confirms, Esc cancels.
-      </Text>
-      <Box marginTop={1}>
+    <Box flexDirection="column" width="100%" marginTop={1} paddingX={1}>
+      <Box
+        flexDirection="column"
+        width="100%"
+        borderStyle="round"
+        borderColor={isFocused ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE}
+        paddingX={1}
+      >
+        <Box justifyContent="space-between" width="100%">
+          <Text color={theme.TEXT} bold>Plan review</Text>
+          <Text color={isFocused ? theme.ACCENT : theme.MUTED}>
+            {isFocused ? "ready" : "waiting"}
+          </Text>
+        </Box>
+        <Text color={theme.MUTED}>
+          Enter confirm  Up/Down move  Esc cancel  I/R/A hotkeys
+        </Text>
+        <Box marginTop={1}>
         <SelectInput
           items={items}
           isFocused={isFocused}
@@ -94,6 +111,7 @@ export function PlanActionPicker({
           itemComponent={PlanActionItem}
           onSelect={(item) => onSelect(item.value as PlanActionValue)}
         />
+        </Box>
       </Box>
     </Box>
   );

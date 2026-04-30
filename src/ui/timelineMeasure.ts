@@ -24,6 +24,7 @@ import {
 import { selectVisibleRunActivity } from "./runActivityView.js";
 import { getTextUnits, getTextWidth, wrapPlainText } from "./textLayout.js";
 import type { RenderTimelineItem } from "./Timeline.js";
+import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
 
 export type TimelineTone =
   | "text"
@@ -1934,10 +1935,10 @@ function buildApprovedPlanRows(params: {
   width: number;
   planText: string;
   approved: boolean;
+  workspaceRoot?: string | null;
 }): TimelineRow[] {
   const contentWidth = Math.max(1, params.width - 4);
-  const sanitized = sanitizeOutput(params.planText);
-  const normalized = normalizeOutput(sanitized);
+  const normalized = normalizePlanReviewMarkdown(params.planText, params.workspaceRoot);
   const classified = classifyOutput(normalized);
   const formatted = formatForBox(classified, contentWidth);
   const contentRows = buildMarkdownRows(formatted, contentWidth);
@@ -1945,7 +1946,7 @@ function buildApprovedPlanRows(params: {
   return buildDashCardRows({
     keyPrefix: params.keyPrefix,
     width: params.width,
-    title: "Implementation Plan",
+    title: params.approved ? "Implementation Plan" : "Review Plan",
     rightBadge: params.approved ? "approved" : undefined,
     borderTone: "accent",
     titleTone: "text",
@@ -1954,7 +1955,7 @@ function buildApprovedPlanRows(params: {
   });
 }
 
-function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, verbose = false): TimelineRow[] {
+function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, options: { verbose?: boolean; workspaceRoot?: string | null }): TimelineRow[] {
   const run = item.item.run!;
   const assistant = item.item.assistant;
   const streaming = item.renderState.runPhase === "streaming";
@@ -1962,6 +1963,7 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
   const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
   const actionBorderTone = item.renderState.opacity === "dim" ? "borderSubtle" : "borderActive";
   const events = collectStreamEvents(item, streaming);
+  const verbose = options.verbose ?? false;
 
   const rows: TimelineRow[] = [];
 
@@ -2007,6 +2009,7 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
         width,
         planText: event.planText,
         approved: event.approved,
+        workspaceRoot: options.workspaceRoot,
       }));
     }
   });
@@ -2143,13 +2146,18 @@ function collectStreamEvents(
   return events;
 }
 
-function buildTurnRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, verbose = false): TimelineRow[] {
+function buildTurnRows(
+  item: Extract<RenderTimelineItem, { type: "turn" }>,
+  width: number,
+  options: { verbose?: boolean; workspaceRoot?: string | null } = {},
+): TimelineRow[] {
+  const verbose = options.verbose ?? false;
   const rows: TimelineRow[] = [];
 
   rows.push(...buildUserInputRows(item, width));
 
   if (item.item.run) {
-    rows.push(...buildUnifiedStreamRows(item, width, verbose));
+    rows.push(...buildUnifiedStreamRows(item, width, options));
   }
 
   rows.push(...buildActionRequiredRows(item, width));
@@ -2246,8 +2254,9 @@ function buildStableIntroRows(item: Extract<RenderTimelineItem, { type: "intro" 
 function buildStableFrozenTurnRows(
   item: Extract<RenderTimelineItem, { type: "turn" }>,
   innerWidth: number,
-  verbose: boolean,
+  options: { verbose?: boolean; workspaceRoot?: string | null },
 ): TimelineRow[] {
+  const verbose = options.verbose ?? false;
   const run = item.item.run;
   const user = item.item.user;
   const cacheKey = rowCacheKey([
@@ -2268,8 +2277,9 @@ function buildStableFrozenTurnRows(
     run?.toolActivities.map((tool) => `${tool.id}:${tool.status}:${tool.startedAt}:${tool.completedAt ?? ""}:${textCacheToken(tool.command)}:${textCacheToken(tool.summary)}`).join("|"),
     run?.responseSegments?.map((segment) => `${segment.id}:${segment.status}:${textCacheToken(getResponseSegmentText(segment))}`).join("|"),
     run?.progressEntries.map((entry) => `${entry.id}:${entry.blocks.map((block) => `${block.id}:${block.status}:${block.updatedAt}:${textCacheToken(block.text)}`).join(",")}`).join("|"),
+    options.workspaceRoot ?? "",
   ]);
-  return getCachedFrozenRows(cacheKey, () => buildTurnRows(item, innerWidth, verbose));
+  return getCachedFrozenRows(cacheKey, () => buildTurnRows(item, innerWidth, options));
 }
 
 function isLiveStreamEvent(event: StreamEvent, run: RunEvent): boolean {
@@ -2282,12 +2292,13 @@ function isLiveStreamEvent(event: StreamEvent, run: RunEvent): boolean {
 function buildStableActiveTurnGroups(
   item: Extract<RenderTimelineItem, { type: "turn" }>,
   innerWidth: number,
-  verbose: boolean,
+  options: { verbose?: boolean; workspaceRoot?: string | null },
 ): { frozenRows: TimelineRow[]; liveRows: TimelineRow[] } {
+  const verbose = options.verbose ?? false;
   const run = item.item.run;
   if (!run || (item.renderState.runPhase !== "streaming" && item.renderState.runPhase !== "thinking")) {
     return {
-      frozenRows: buildStableFrozenTurnRows(item, innerWidth, verbose),
+      frozenRows: buildStableFrozenTurnRows(item, innerWidth, options),
       liveRows: [],
     };
   }
@@ -2379,6 +2390,7 @@ function buildStableActiveTurnGroups(
         width: innerWidth,
         planText: event.planText,
         approved: event.approved,
+        workspaceRoot: options.workspaceRoot,
       });
       targetRows.push(...getCachedFrozenRows(rowCacheKey([
         "stable-plan",
@@ -2386,6 +2398,7 @@ function buildStableActiveTurnGroups(
         innerWidth,
         textCacheToken(event.planText),
         event.approved ? "approved" : "draft",
+        options.workspaceRoot ?? "",
       ]), build));
     }
 
@@ -2409,6 +2422,7 @@ export function buildStableTimelineSnapshot(
     totalWidth: number;
     verboseMode?: boolean;
     debugLabel?: string;
+    workspaceRoot?: string | null;
   },
 ): StableTimelineSnapshot {
   const verbose = options.verboseMode ?? false;
@@ -2436,7 +2450,10 @@ export function buildStableTimelineSnapshot(
       itemFrozenRows = buildStableEventRows(item, innerWidth);
       itemLiveRows = [];
     } else {
-      const groups = buildStableActiveTurnGroups(item, innerWidth, verbose);
+      const groups = buildStableActiveTurnGroups(item, innerWidth, {
+        verbose,
+        workspaceRoot: options.workspaceRoot,
+      });
       itemFrozenRows = groups.frozenRows;
       itemLiveRows = groups.liveRows;
     }
@@ -2469,6 +2486,7 @@ export function buildTimelineSnapshot(
     totalWidth: number;
     verboseMode?: boolean;
     debugLabel?: string;
+    workspaceRoot?: string | null;
   },
 ): TimelineSnapshot {
   const verbose = options.verboseMode ?? false;
@@ -2545,7 +2563,7 @@ export function buildTimelineSnapshot(
       // _streamingRowCache instead.
       const cacheable = runPhase !== "streaming" && runPhase !== "thinking";
       if (cacheable) {
-        const cacheKey = `t:${item.key}:${innerWidth}:${verbose}:${runPhase}:${opacity}`;
+        const cacheKey = `t:${item.key}:${innerWidth}:${verbose}:${runPhase}:${opacity}:${options.workspaceRoot ?? ""}`;
         const cached = _staticRowCache.get(cacheKey);
         if (cached) {
           renderDebug.traceEvent("timeline", "rowGeneration", {
@@ -2568,7 +2586,10 @@ export function buildTimelineSnapshot(
             innerWidth,
           });
           renderDebug.traceEvent("timeline", "staticCacheMiss", { cacheKey, itemType: "turn", runPhase, opacity });
-          const r = buildTurnRows(item, innerWidth, verbose);
+          const r = buildTurnRows(item, innerWidth, {
+            verbose,
+            workspaceRoot: options.workspaceRoot,
+          });
           _staticRowCache.set(cacheKey, r);
           builtRows = r;
         }
@@ -2582,7 +2603,10 @@ export function buildTimelineSnapshot(
           innerWidth,
         });
         renderDebug.traceEvent("timeline", "activeBuild", { itemKey: item.key, runPhase, opacity });
-        builtRows = buildTurnRows(item, innerWidth, verbose);
+        builtRows = buildTurnRows(item, innerWidth, {
+          verbose,
+          workspaceRoot: options.workspaceRoot,
+        });
       }
     }
 

@@ -10,7 +10,6 @@ import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 import { AppShell } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "./layout.js";
 import { PlanActionPicker, measurePlanActionPickerRows } from "./PlanActionPicker.js";
-import { PlanReviewPanel } from "./PlanReviewPanel.js";
 import { ThemeProvider } from "./theme.js";
 
 class TestInput extends PassThrough {
@@ -337,12 +336,13 @@ test("main screen keeps the transcript visible while showing the plan action pic
   instance.cleanup();
   await sleep(20);
 
-  assert.match(frame, /Choose how to proceed/);
+  assert.match(frame, /Plan review/);
+  assert.match(frame, /Enter confirm\s+Up\/Down move\s+Esc cancel/);
   assert.match(frame, /Reproduce the resize flicker and fix it\./);
   assert.match(frame, /Implement plan/);
 });
 
-test("main screen can replace the transcript with a readable plan review panel", async () => {
+test("main screen keeps generated review plans in the timeline with composer actions", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
@@ -352,17 +352,55 @@ test("main screen can replace the transcript with a readable plan review panel",
   });
 
   const layout = createLayoutSnapshot(100, 30);
-  const planText = [
-    "**Files**",
-    ...Array.from({ length: 40 }, (_, index) =>
-      `- C:\\Development\\1-JavaScript\\13-Custom CLI\\src\\file-${index + 1}.tsx Wire file ${index + 1} into the plan review output.`,
-    ),
-    "",
-    "**Steps**",
-    ...Array.from({ length: 40 }, (_, index) =>
-      `${index + 1}. Complete review step ${index + 1}.`,
-    ),
-  ].join("\n");
+  const workspaceRoot = "C:\\Development\\1-JavaScript\\13-Custom CLI";
+  const planEvents: TimelineEvent[] = [
+    { id: 10, type: "user", createdAt: 10, prompt: "Plan the repair.", turnId: 5 },
+    {
+      id: 11,
+      type: "run",
+      createdAt: 11,
+      startedAt: 11,
+      durationMs: 1250,
+      backendId: "codex-subprocess",
+      backendLabel: "Codexa",
+      runtime: TEST_RUNTIME,
+      prompt: "Plan the repair.",
+      progressEntries: [],
+      status: "completed",
+      summary: "Plan ready",
+      truncatedOutput: false,
+      toolActivities: [],
+      activity: [],
+      touchedFileCount: 0,
+      errorMessage: null,
+      turnId: 5,
+      plan: {
+        id: "plan-11",
+        streamSeq: 1,
+        chunks: [[
+          "**Files**",
+          `- ${workspaceRoot}\\src\\file-1.tsx Wire file 1 into the plan review output.`,
+          `- ${workspaceRoot}\\src\\file-2.tsx Wire file 2 into the plan review output.`,
+          "",
+          "**Steps**",
+          "1. Complete review step 1.",
+          "2. Complete review step 2.",
+        ].join("\n")],
+        status: "completed",
+        startedAt: 11,
+      },
+      streamItems: [{ streamSeq: 1, kind: "plan", refId: "plan-11" }],
+      lastStreamSeq: 1,
+    },
+    {
+      id: 12,
+      type: "assistant",
+      createdAt: 12,
+      content: "",
+      contentChunks: [],
+      turnId: 5,
+    },
+  ];
 
   const instance = render(
     <ThemeProvider theme="purple">
@@ -370,20 +408,15 @@ test("main screen can replace the transcript with a readable plan review panel",
         layout={layout}
         screen="main"
         authState="authenticated"
-        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
+        workspaceLabel={workspaceRoot}
+        workspaceRoot={workspaceRoot}
         runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
-        staticEvents={EVENTS}
+        staticEvents={planEvents}
         activeEvents={[]}
         uiState={{ kind: "IDLE" }}
         panel={null}
-        mainPanel={
-          <PlanReviewPanel
-            planText={planText}
-            cols={layout.cols}
-            workspaceRoot="C:\\Development\\1-JavaScript\\13-Custom CLI"
-          />
-        }
-        mainPanelMode="full-output"
+        mainPanel={null}
+        mainPanelMode="viewport"
         composer={<PlanActionPicker hasPlanFile onSelect={() => {}} onCancel={() => {}} />}
         composerRows={measurePlanActionPickerRows(true)}
       />
@@ -407,9 +440,6 @@ test("main screen can replace the transcript with a readable plan review panel",
   assert.match(frame, /Files/);
   assert.match(frame, /Steps/);
   assert.match(frame, /src\/file-1\.tsx/);
-  assert.match(frame, /src\/file-20\.tsx/);
-  assert.match(frame, /src\/file-40\.tsx/);
-  assert.match(frame, /40\. Complete review step 40\./);
   assert.match(frame, /Implement plan/);
   assert.match(frame, /View plan file/);
   assert.match(frame, /Cancel/);
@@ -420,8 +450,6 @@ test("main screen can replace the transcript with a readable plan review panel",
   assert.doesNotMatch(frame, /Plan \d+[-–]\d+ of \d+/);
   assert.doesNotMatch(frame, /PageUp\/PageDown scroll plan/);
   assert.doesNotMatch(frame, /C:\\Development/);
-  assert.doesNotMatch(frame, /scroll to latest/);
-  assert.doesNotMatch(frame, /Reproduce the resize flicker and fix it\./);
 });
 
 test("memoized composer re-renders when only the terminal height changes", async () => {

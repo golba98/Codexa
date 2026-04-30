@@ -1108,10 +1108,15 @@ function makeChronologicalTurnEvents(
   ];
 }
 
-function renderJoinedTurn(events: TimelineEvent[], turnId: number, width = 90): string {
+function renderJoinedTurn(
+  events: TimelineEvent[],
+  turnId: number,
+  width = 90,
+  options: { workspaceRoot?: string | null } = {},
+): string {
   const items = buildTimelineItems(events);
   const renderItems = buildStaticRenderItems(items, [turnId], null, null, null);
-  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: width });
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: width, workspaceRoot: options.workspaceRoot });
   return snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 }
 
@@ -1139,12 +1144,90 @@ test("unified stream renders plan panel before action blocks", () => {
     lastStreamSeq: 2,
   }), 299);
 
-  assert.match(joined, /╭── Implementation Plan/);
+  assert.match(joined, /╭── Review Plan/);
   assert.match(joined, /│ 1\. Inspect the current app structure/);
   assert.match(joined, /╰/);
   assert.match(joined, /╭── action/);
-  assert.ok(joined.indexOf("Implementation Plan") < joined.indexOf("action"));
+  assert.ok(joined.indexOf("Review Plan") < joined.indexOf("action"));
   assert.ok(joined.indexOf("Render the generated plan visibly") < joined.indexOf("Read file"));
+});
+
+test("unified stream renders approved execution plan with implementation title", () => {
+  const approvedPlan = "1. Apply the selected changes\n2. Run tests";
+  const turnId = 9305;
+  const joined = renderJoinedTurn(makeChronologicalTurnEvents(turnId, {
+    plan: {
+      id: "plan-2",
+      streamSeq: 1,
+      chunks: [approvedPlan],
+      status: "completed",
+      startedAt: 2,
+    },
+    approvedPlan,
+    streamItems: [
+      { streamSeq: 1, kind: "plan", refId: "plan-2" },
+    ],
+    lastStreamSeq: 1,
+  }), turnId);
+
+  assert.match(joined, /╭── Implementation Plan/);
+  assert.match(joined, /approved/);
+  assert.doesNotMatch(joined, /Review Plan/);
+});
+
+test("unified stream hides workspace paths in finalized plan snapshots", () => {
+  const turnId = 9306;
+  const joined = renderJoinedTurn(makeChronologicalTurnEvents(turnId, {
+    plan: {
+      id: "plan-2",
+      streamSeq: 1,
+      chunks: ["Files:\n- C:\\Development\\Project\\src\\app.tsx"],
+      status: "completed",
+      startedAt: 2,
+    },
+    streamItems: [
+      { streamSeq: 1, kind: "plan", refId: "plan-2" },
+    ],
+    lastStreamSeq: 1,
+  }), turnId, 90, { workspaceRoot: "C:\\Development\\Project" });
+
+  assert.match(joined, /src\/app\.tsx/);
+  assert.doesNotMatch(joined, /C:\\Development/);
+});
+
+test("long draft plan remains timeline rows that can be scrolled", () => {
+  const longPlan = [
+    "Files:",
+    ...Array.from({ length: 36 }, (_, index) => `- src/file-${index + 1}.ts Wire file ${index + 1}.`),
+    "",
+    "Steps:",
+    ...Array.from({ length: 36 }, (_, index) => `${index + 1}. Complete step ${index + 1}.`),
+  ].join("\n");
+  const turnId = 9307;
+  const events = makeChronologicalTurnEvents(turnId, {
+    plan: {
+      id: "plan-2",
+      streamSeq: 1,
+      chunks: [longPlan],
+      status: "completed",
+      startedAt: 2,
+    },
+    streamItems: [
+      { streamSeq: 1, kind: "plan", refId: "plan-2" },
+    ],
+    lastStreamSeq: 1,
+  });
+  const items = buildTimelineItems(events);
+  const renderItems = buildStaticRenderItems(items, [turnId], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 100 });
+  const firstPage = selectTimelineRows(snapshot, { ...createFollowTailViewport(snapshot.totalRows), followTail: false, anchorRow: 15 }, 12);
+  const tailPage = selectTimelineRows(snapshot, createFollowTailViewport(snapshot.totalRows), 12);
+  const allRows = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+
+  assert.ok(snapshot.totalRows > 72, "long plan should add scrollback rows to the timeline");
+  assert.match(allRows, /Review Plan/);
+  assert.match(firstPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /src\/file-/);
+  assert.match(tailPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /36\. Complete step 36\./);
 });
 
 test("unified stream renders action before response by stream sequence", () => {

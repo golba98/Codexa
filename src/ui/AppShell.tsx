@@ -14,6 +14,7 @@ export interface AppShellProps {
   screen: Screen;
   authState: CodexAuthState;
   workspaceLabel: string;
+  workspaceRoot?: string | null;
   runtimeSummary?: RuntimeSummary | null;
   staticEvents: TimelineEvent[];
   activeEvents: TimelineEvent[];
@@ -36,6 +37,7 @@ function AppShellInner({
   screen,
   authState,
   workspaceLabel,
+  workspaceRoot = null,
   runtimeSummary = null,
   staticEvents,
   activeEvents,
@@ -56,6 +58,7 @@ function AppShellInner({
     screen,
     authState,
     workspaceLabel,
+    workspaceRoot,
     runtimeSummary,
     staticEvents,
     activeEvents,
@@ -213,6 +216,7 @@ function AppShellInner({
               verboseMode={verboseMode}
               authState={authState}
               workspaceLabel={workspaceLabel}
+              workspaceRoot={workspaceRoot}
             />
           </Box>
         )}
@@ -268,6 +272,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.screen          === next.screen          &&
     prev.authState       === next.authState       &&
     prev.workspaceLabel  === next.workspaceLabel  &&
+    prev.workspaceRoot   === next.workspaceRoot   &&
     prev.runtimeSummary  === next.runtimeSummary  &&
     prev.staticEvents    === next.staticEvents    &&
     prev.activeEvents    === next.activeEvents    &&

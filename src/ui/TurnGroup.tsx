@@ -32,6 +32,7 @@ import {
 } from "./outputPipeline.js";
 import { normalizeCommand, getFriendlyActionLabel } from "./commandNormalize.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
+import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
 
 export type TurnOpacity = "active" | "recent" | "dim";
 
@@ -47,6 +48,7 @@ interface TurnGroupProps {
   streamPreviewRows: number;
   streamMode: "assistant-first";
   verboseMode?: boolean;
+  workspaceRoot?: string | null;
 }
 
 function formatDuration(ms: number): string {
@@ -287,20 +289,21 @@ function PlanPanel({
   planText,
   cols,
   approved,
+  workspaceRoot,
 }: {
   planText: string;
   cols: number;
   approved: boolean;
+  workspaceRoot?: string | null;
 }) {
   const theme = useTheme();
   const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
 
   const formatted = useMemo(() => {
-    const sanitized = sanitizeOutput(planText);
-    const normalized = normalizeOutput(sanitized);
+    const normalized = normalizePlanReviewMarkdown(planText, workspaceRoot);
     const classified = classifyOutput(normalized);
     return formatForBox(classified, contentWidth);
-  }, [planText, contentWidth]);
+  }, [planText, contentWidth, workspaceRoot]);
 
   return (
     <DashCard
@@ -317,7 +320,7 @@ function PlanPanel({
 }
 
 const MemoizedPlanPanel = memo(PlanPanel, (prev, next) => (
-  prev.planText === next.planText && prev.cols === next.cols && prev.approved === next.approved
+  prev.planText === next.planText && prev.cols === next.cols && prev.approved === next.approved && prev.workspaceRoot === next.workspaceRoot
 ));
 
 function ActionEventCard({
@@ -472,6 +475,7 @@ const StreamEventList = memo(function StreamEventList({
   runPhase,
   opacity,
   verboseMode,
+  workspaceRoot,
 }: {
   cols: number;
   run: RunEvent;
@@ -479,6 +483,7 @@ const StreamEventList = memo(function StreamEventList({
   runPhase: TurnRunPhase;
   opacity: TurnOpacity;
   verboseMode: boolean;
+  workspaceRoot?: string | null;
 }) {
   const streaming = runPhase === "streaming";
   const events = useMemo(
@@ -522,7 +527,12 @@ const StreamEventList = memo(function StreamEventList({
               />
             )}
             {event.kind === "plan" && (
-              <MemoizedPlanPanel planText={event.planText} cols={cols} approved={event.approved} />
+              <MemoizedPlanPanel
+                planText={event.planText}
+                cols={cols}
+                approved={event.approved}
+                workspaceRoot={workspaceRoot}
+              />
             )}
           </Box>
         );
@@ -542,6 +552,7 @@ const StreamEventList = memo(function StreamEventList({
   && prev.runPhase === next.runPhase
   && prev.opacity === next.opacity
   && prev.verboseMode === next.verboseMode
+  && prev.workspaceRoot === next.workspaceRoot
 ));
 
 // ─── TurnGroup ───────────────────────────────────────────────────────────────
@@ -556,6 +567,7 @@ export function TurnGroup({
   question,
   runPhase,
   verboseMode = false,
+  workspaceRoot,
 }: TurnGroupProps) {
   return (
     <Box flexDirection="column" width="100%">
@@ -573,6 +585,7 @@ export function TurnGroup({
           runPhase={runPhase}
           opacity={opacity}
           verboseMode={verboseMode}
+          workspaceRoot={workspaceRoot}
         />
       )}
 
@@ -601,7 +614,8 @@ export const MemoizedTurnGroup = memo(TurnGroup, (prev, next) => {
     prev.verboseMode === next.verboseMode &&
     prev.user === next.user &&
     prev.run === next.run &&
-    prev.assistant === next.assistant
+    prev.assistant === next.assistant &&
+    prev.workspaceRoot === next.workspaceRoot
   );
 });
 

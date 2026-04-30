@@ -65,7 +65,7 @@ import {
   probeCodexAuthStatus,
 } from "./core/auth/codexAuth.js";
 import { copyToClipboard } from "./core/clipboard.js";
-import { savePlan, readPlan } from "./core/planStorage.js";
+import { normalizePlanReviewMarkdown, savePlan, readPlan } from "./core/planStorage.js";
 import { getBlockedCleanupFailure } from "./core/cleanupFastFail.js";
 import { runCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
 import {
@@ -145,7 +145,6 @@ import { useTerminalViewport } from "./ui/layout.js";
 import { ModelReasoningPicker } from "./ui/ModelReasoningPicker.js";
 import { ModePicker } from "./ui/ModePicker.js";
 import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } from "./ui/PlanActionPicker.js";
-import { PlanReviewPanel } from "./ui/PlanReviewPanel.js";
 import { PermissionsPanel, type PermissionsPanelAction } from "./ui/PermissionsPanel.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
 import { SelectionPanel } from "./ui/SelectionPanel.js";
@@ -1617,12 +1616,9 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
-    const sanitized = sanitizeTerminalOutput(contents, {
-      preserveTabs: false,
-      tabSize: 2,
-    });
+    const sanitized = normalizePlanReviewMarkdown(contents, workspaceRoot);
     appendSystemEvent("Plan file", [`Path: ${planFilePath}`, "", sanitized].join("\n"));
-  }, [appendErrorEvent, appendSystemEvent]);
+  }, [appendErrorEvent, appendSystemEvent, workspaceRoot]);
 
 
   // ── Stable composer-input callbacks ────────────────────────────────────────
@@ -2803,19 +2799,8 @@ export function App({ launchArgs }: AppProps) {
     handleQuit,
   ]);
 
-  const mainPanelElement = useMemo(() => {
-    if (planFlow.kind !== "awaiting_action") {
-      return null;
-    }
-
-    return (
-      <PlanReviewPanel
-        planText={planFlow.currentPlan}
-        cols={terminalLayout.cols}
-        workspaceRoot={workspaceRoot}
-      />
-    );
-  }, [planFlow, terminalLayout.cols, workspaceRoot]);
+  // Plan review is shown inline in the Timeline, not as a separate overlay.
+  const mainPanelElement = null;
 
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
@@ -2824,6 +2809,7 @@ export function App({ launchArgs }: AppProps) {
         screen={screen}
         authState={authStatus.state}
         workspaceLabel={workspaceLabel}
+        workspaceRoot={workspaceRoot}
         runtimeSummary={runtimeSummary}
         staticEvents={staticEvents}
         activeEvents={activeEvents}
@@ -3035,7 +3021,7 @@ export function App({ launchArgs }: AppProps) {
           </>
         }
         mainPanel={mainPanelElement}
-        mainPanelMode={planFlow.kind === "awaiting_action" ? "full-output" : "viewport"}
+        mainPanelMode="viewport"
         composer={composerElement}
         composerRows={composerRows}
         panelHint={screen !== "main" ? (

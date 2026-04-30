@@ -4,10 +4,10 @@ import React from "react";
 import { PassThrough } from "node:stream";
 import { Box, Text, render } from "ink";
 import { PlanActionPicker } from "./PlanActionPicker.js";
+import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
 import {
   buildPlanReviewDisplayRows,
   buildPlanReviewRows,
-  normalizePlanReviewMarkdown,
   PlanReviewPanel,
 } from "./PlanReviewPanel.js";
 import { ThemeProvider } from "./theme.js";
@@ -207,7 +207,8 @@ test("plan action picker keeps simple menu navigation and enter selection", asyn
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /Choose how to proceed\. Enter confirms, Esc cancels\./);
+    assert.match(output, /Plan review/);
+    assert.match(output, /Enter confirm\s+Up\/Down move\s+Esc cancel/);
     assert.match(output, /selection:revise/);
   } finally {
     await harness.cleanup();
