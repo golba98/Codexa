@@ -6,7 +6,7 @@ import type {
   RunToolActivity,
 } from "../session/types.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
-import { getAssistantContent, getResponseSegmentText } from "../session/types.js";
+import { getAssistantContent, getResponseSegmentText, getRunPlanText } from "../session/types.js";
 import { normalizeCommand, getFriendlyActionLabel } from "./commandNormalize.js";
 import { formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
@@ -1564,7 +1564,7 @@ export type StreamEvent =
   | { kind: "thinking"; streamSeq: number; block: RunProgressBlock; isActive: boolean }
   | { kind: "response"; streamSeq: number; segment: RunResponseSegment }
   | { kind: "action"; streamSeq: number; tool: RunToolActivity }
-  | { kind: "plan"; streamSeq: number; planText: string };
+  | { kind: "plan"; streamSeq: number; planText: string; approved: boolean };
 
 function buildCodexPlainRows(
   keyPrefix: string,
@@ -1933,6 +1933,7 @@ function buildApprovedPlanRows(params: {
   keyPrefix: string;
   width: number;
   planText: string;
+  approved: boolean;
 }): TimelineRow[] {
   const contentWidth = Math.max(1, params.width - 4);
   const sanitized = sanitizeOutput(params.planText);
@@ -1944,8 +1945,11 @@ function buildApprovedPlanRows(params: {
   return buildDashCardRows({
     keyPrefix: params.keyPrefix,
     width: params.width,
-    title: "APPROVED PLAN",
-    borderTone: "success",
+    title: "Implementation Plan",
+    rightBadge: params.approved ? "approved" : undefined,
+    borderTone: "accent",
+    titleTone: "text",
+    badgeTone: "success",
     contentRows,
   });
 }
@@ -2002,6 +2006,7 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
         keyPrefix: `${item.key}-plan-${event.streamSeq}`,
         width,
         planText: event.planText,
+        approved: event.approved,
       }));
     }
   });
@@ -2078,8 +2083,16 @@ function collectStreamEvents(
       const segment = segmentsById.get(it.refId);
       if (segment) events.push({ kind: "response", streamSeq: it.streamSeq, segment });
     } else if (it.kind === "plan") {
-      if (run.approvedPlan) {
-        events.push({ kind: "plan", streamSeq: it.streamSeq, planText: run.approvedPlan });
+      const planText = run.plan?.id === it.refId
+        ? getRunPlanText(run.plan)
+        : run.approvedPlan ?? "";
+      if (planText.trim()) {
+        events.push({
+          kind: "plan",
+          streamSeq: it.streamSeq,
+          planText,
+          approved: Boolean(run.approvedPlan),
+        });
       }
     }
   }
@@ -2365,12 +2378,14 @@ function buildStableActiveTurnGroups(
         keyPrefix: `${item.key}-plan-${event.streamSeq}`,
         width: innerWidth,
         planText: event.planText,
+        approved: event.approved,
       });
       targetRows.push(...getCachedFrozenRows(rowCacheKey([
         "stable-plan",
         item.key,
         innerWidth,
         textCacheToken(event.planText),
+        event.approved ? "approved" : "draft",
       ]), build));
     }
 

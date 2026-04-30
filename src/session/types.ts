@@ -118,10 +118,23 @@ export interface RunResponseSegment {
   startedAt: number;
 }
 
+export interface RunPlanBlock {
+  id: string;
+  streamSeq: number;
+  chunks: string[];
+  status: "active" | "completed";
+  startedAt: number;
+}
+
+export function getRunPlanText(plan: RunPlanBlock | null | undefined): string {
+  if (!plan) return "";
+  return plan.chunks.join("");
+}
+
 export interface RunStreamItem {
   streamSeq: number;
   kind: "thinking" | "action" | "response" | "plan";
-  /** block.id, tool.id, or response-segment id depending on kind. */
+  /** block.id, tool.id, response-segment id, or plan.id depending on kind. */
   refId: string;
 }
 
@@ -181,6 +194,8 @@ export interface RunEvent extends TimelineBaseEvent {
   lastStreamSeq?: number;
   /** When set, the next assistant delta extends this segment; cleared by thinking/action. */
   activeResponseSegmentId?: string | null;
+  /** First-class plan content rendered as a stable stream item. */
+  plan?: RunPlanBlock | null;
   /** The approved plan text, injected at the start of execution turns. */
   approvedPlan?: string;
 }

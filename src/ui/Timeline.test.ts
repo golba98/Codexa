@@ -1115,6 +1115,38 @@ function renderJoinedTurn(events: TimelineEvent[], turnId: number, width = 90): 
   return snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 }
 
+test("unified stream renders plan panel before action blocks", () => {
+  const joined = renderJoinedTurn(makeChronologicalTurnEvents(299, {
+    plan: {
+      id: "plan-2",
+      streamSeq: 1,
+      chunks: ["1. Inspect the current app structure\n2. Render the generated plan visibly"],
+      status: "completed",
+      startedAt: 2,
+    },
+    toolActivities: [{
+      id: "tool-1",
+      command: "Get-Content src/app.tsx",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 40,
+      streamSeq: 2,
+    }],
+    streamItems: [
+      { streamSeq: 1, kind: "plan", refId: "plan-2" },
+      { streamSeq: 2, kind: "action", refId: "tool-1" },
+    ],
+    lastStreamSeq: 2,
+  }), 299);
+
+  assert.match(joined, /╭── Implementation Plan/);
+  assert.match(joined, /│ 1\. Inspect the current app structure/);
+  assert.match(joined, /╰/);
+  assert.match(joined, /╭── action/);
+  assert.ok(joined.indexOf("Implementation Plan") < joined.indexOf("action"));
+  assert.ok(joined.indexOf("Render the generated plan visibly") < joined.indexOf("Read file"));
+});
+
 test("unified stream renders action before response by stream sequence", () => {
   const joined = renderJoinedTurn(makeChronologicalTurnEvents(300, {
     toolActivities: [{

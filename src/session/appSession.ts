@@ -1,15 +1,17 @@
 import { useCallback, useRef, useState } from "react";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
 import type { AssistantEvent, RunEvent, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./types.js";
-import { getAssistantContent } from "./types.js";
+import { getAssistantContent, getRunPlanText } from "./types.js";
 import {
   appendRunActivity,
+  appendRunPlanChunk,
   appendRunResponseChunk,
   appendRunThinking,
   appendStaticEvents,
   cancelRunEvent,
   completeRunEvent,
   failRunEvent,
+  finalizePlanBlock,
   finalizeResponseSegments,
   reduceUIState,
   upsertRunToolActivity,
@@ -44,6 +46,12 @@ export type SessionAction =
   | { type: "RUN_APPLY_PROGRESS_UPDATES"; runId: number; updates: BackendProgressUpdate[] }
   | { type: "RUN_UPSERT_TOOL_ACTIVITY"; runId: number; activity: RunToolActivity }
   | {
+    type: "RUN_APPEND_PLAN_DELTA";
+    turnId: number;
+    runId: number;
+    chunk: string;
+  }
+  | {
     type: "RUN_APPEND_ASSISTANT_DELTA";
     turnId: number;
     runId: number;
@@ -64,6 +72,7 @@ export type SessionAction =
     status: "completed" | "failed" | "canceled";
     message?: string;
     response?: string;
+    responsePresentation?: "assistant" | "plan";
     question?: string | null;
     assistantFactory: () => AssistantEvent;
   }
@@ -347,6 +356,29 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ),
       };
     }
+    case "RUN_APPEND_PLAN_DELTA": {
+      const existingRun = state.activeEvents.find(
+        (event): event is RunEvent =>
+          event.type === "run" && event.id === action.runId && event.turnId === action.turnId,
+      );
+      if (!existingRun) {
+        return state;
+      }
+
+      return {
+        ...state,
+        activeEvents: state.activeEvents.map((event) =>
+          event.id === action.runId && event.type === "run"
+            ? appendRunPlanChunk(event as RunEvent, action.chunk)
+            : event
+        ),
+        uiState: reduceTracedUIState(
+          state.uiState,
+          { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId },
+          { runId: action.runId },
+        ),
+      };
+    }
     case "RUN_APPEND_ASSISTANT_DELTA": {
       const existingRun = state.activeEvents.find(
         (event): event is RunEvent =>
@@ -419,6 +451,15 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
           });
         }
 
+        if (update.type === "plan") {
+          return reduceSessionState(currentState, {
+            type: "RUN_APPEND_PLAN_DELTA",
+            turnId: action.turnId,
+            runId: action.runId,
+            chunk: update.chunk,
+          });
+        }
+
         return reduceSessionState(currentState, {
           type: "RUN_APPEND_ASSISTANT_DELTA",
           turnId: action.turnId,
@@ -463,6 +504,27 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
           : action.status === "failed"
             ? failRunEvent(runEvent, action.message ?? "Run failed", action.message ?? "Run failed")
             : cancelRunEvent(runEvent);
+
+      const planPresentation = action.responsePresentation === "plan" || Boolean(runEvent.plan);
+      if (planPresentation) {
+        const planContent = reconcileAssistantContent(
+          getRunPlanText(runEvent.plan),
+          action.response,
+          action.status,
+        );
+        const finalizedRun = finalizePlanBlock(baseFinalizedRun, planContent);
+
+        const additions: TimelineEvent[] = [];
+        if (userEvent) additions.push(userEvent);
+        additions.push(finalizedRun);
+
+        return {
+          ...state,
+          staticEvents: appendStaticEvents(state.staticEvents, additions),
+          activeEvents: remainingEvents,
+          uiState: reduceFinalizeUIState(state.uiState, action),
+        };
+      }
 
       const streamedContent = getAssistantContent(assistantEvent);
       const assistantContent = reconcileAssistantContent(

@@ -203,6 +203,7 @@ interface PromptRunLifecycle {
   parseActionRequired?: boolean;
   disableModeAutoUpgrade?: boolean;
   runtimeOverride?: PartialRuntimeConfig;
+  responsePresentation?: "assistant" | "plan";
   approvedPlan?: string;
   onCompleted?: (result: { response: string; turnId: number; runId: number }) => void;
   onFailed?: (result: { message: string; turnId: number; runId: number }) => void;
@@ -1398,6 +1399,7 @@ export function App({ launchArgs }: AppProps) {
       status,
       message: safeMessage,
       response: parsed.content,
+      responsePresentation: lifecycle?.responsePresentation,
       question: status === "completed" ? parsed.question : null,
       assistantFactory: () => ({
         id: createEventId(),
@@ -1896,6 +1898,7 @@ export function App({ launchArgs }: AppProps) {
           runtime: runtimeForTurn,
           prompt: safeProviderPrompt,
           turnId,
+          responsePresentation: lifecycle.responsePresentation,
           approvedPlan: lifecycle.approvedPlan,
         }),
         summary: "Codex is starting...",
@@ -1981,7 +1984,10 @@ export function App({ launchArgs }: AppProps) {
           perf.accumulate("sanitize_ms", performance.now() - t0);
           perf.inc("chunks");
           if (!safeChunk) return;
-          liveScheduler.enqueue({ type: "assistant", chunk: safeChunk });
+          liveScheduler.enqueue({
+            type: lifecycle.responsePresentation === "plan" ? "plan" : "assistant",
+            chunk: safeChunk,
+          });
           streamedAssistantContent += safeChunk;
         },
         onToolActivity: (activity) => {
@@ -2048,7 +2054,7 @@ export function App({ launchArgs }: AppProps) {
             const streamedNorm = normalizeWs(streamedAssistantContent);
             const responseNorm = normalizeWs(safeResponse);
             const finalResponse =
-              streamedNorm && (
+              lifecycle.responsePresentation !== "plan" && streamedNorm && (
                 streamedNorm === responseNorm ||
                 (responseNorm.startsWith(streamedNorm) && streamedNorm.length / responseNorm.length > 0.8)
               )
@@ -2169,6 +2175,7 @@ export function App({ launchArgs }: AppProps) {
         },
         disableModeAutoUpgrade: true,
         parseActionRequired: false,
+        responsePresentation: "plan",
         onCompleted: ({ response }) => {
           const nextPlan = response.trim();
           if (!nextPlan) {

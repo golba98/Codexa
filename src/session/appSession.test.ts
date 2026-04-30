@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
 import type { AssistantEvent, RunEvent, UserPromptEvent } from "./types.js";
+import { getRunPlanText } from "./types.js";
 import { createInitialSessionState, reduceSessionState, type SessionState } from "./appSession.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { isAnimatedBusyState } from "../ui/busyStatusAnimation.js";
@@ -166,6 +167,79 @@ test("FINALIZE_RUN after assistant delta transitions UI state to IDLE", () => {
 
   assert.equal(state.uiState.kind, "IDLE");
   assert.equal(isAnimatedBusyState(state.uiState.kind), false);
+});
+
+test("plan deltas update one plan block and FINALIZE_RUN does not create assistant response", () => {
+  const turnId = 37;
+  let state = createInitialSessionState();
+  const run: RunEvent = {
+    ...makeRunEvent(turnId),
+    plan: {
+      id: "plan-2",
+      streamSeq: 1,
+      chunks: [],
+      status: "active",
+      startedAt: 2,
+    },
+    streamItems: [{ streamSeq: 1, kind: "plan", refId: "plan-2" }],
+    responseSegments: [],
+    lastStreamSeq: 1,
+    activeResponseSegmentId: null,
+  };
+  state = {
+    ...state,
+    activeEvents: [makeUserEvent(turnId), run],
+  };
+  state = reduceSessionState(state, {
+    type: "UI_ACTION",
+    action: { type: "PROMPT_RUN_STARTED", turnId },
+  });
+
+  state = reduceSessionState(state, {
+    type: "RUN_APPEND_PLAN_DELTA",
+    turnId,
+    runId: 2,
+    chunk: "1. Inspect\n",
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_APPEND_PLAN_DELTA",
+    turnId,
+    runId: 2,
+    chunk: "2. Render panel",
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_UPSERT_TOOL_ACTIVITY",
+    runId: 2,
+    activity: {
+      id: "tool-1",
+      command: "Get-Content src/app.tsx",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 20,
+    },
+  });
+
+  const activeRun = state.activeEvents.find((event): event is RunEvent => event.type === "run");
+  assert.ok(activeRun);
+  assert.deepEqual(activeRun.streamItems?.map((item) => item.kind), ["plan", "action"]);
+  assert.equal(getRunPlanText(activeRun.plan), "1. Inspect\n2. Render panel");
+
+  state = reduceSessionState(state, {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "completed",
+    response: "1. Inspect\n2. Render panel",
+    responsePresentation: "plan",
+    assistantFactory: () => makeAssistantEvent(turnId, "should not render"),
+  });
+
+  const finalizedRun = state.staticEvents.find((event): event is RunEvent => event.type === "run");
+  assert.ok(finalizedRun);
+  assert.equal(finalizedRun.plan?.status, "completed");
+  assert.equal(getRunPlanText(finalizedRun.plan), "1. Inspect\n2. Render panel");
+  assert.deepEqual(finalizedRun.streamItems?.map((item) => item.kind), ["plan", "action"]);
+  assert.equal(state.staticEvents.some((event) => event.type === "assistant"), false);
 });
 
 test("FINALIZE_RUN for canceled thinking-only run transitions UI state to IDLE", () => {

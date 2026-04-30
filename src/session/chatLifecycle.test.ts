@@ -5,6 +5,7 @@ import { MAX_CHAT_LINES, MAX_VISIBLE_EVENTS } from "../config/settings.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import {
   appendRunActivity,
+  appendRunPlanChunk,
   appendRunResponseChunk,
   appendRunThinking,
   appendStaticEvents,
@@ -14,6 +15,7 @@ import {
   createRunEvent,
   detectAgentQuestion,
   extractAssistantActionRequired,
+  finalizePlanBlock,
   reduceUIState,
   guardConfigMutation,
   isCurrentRun,
@@ -90,6 +92,42 @@ test("assigns stream sequence in append order across thinking action and respons
 
   assert.deepEqual(run.streamItems?.map((item) => item.kind), ["thinking", "action", "response"]);
   assert.deepEqual(run.streamItems?.map((item) => item.streamSeq), [1, 2, 3]);
+});
+
+test("plan presentation seeds one stable plan stream item and keeps actions after it", () => {
+  let run = createRunEvent({
+    id: 33,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Plan this",
+    turnId: 33,
+    responsePresentation: "plan",
+  });
+
+  assert.deepEqual(run.streamItems?.map((item) => item.kind), ["plan"]);
+  assert.deepEqual(run.streamItems?.map((item) => item.streamSeq), [1]);
+  assert.equal(run.plan?.id, "plan-33");
+  assert.equal(run.plan?.status, "active");
+
+  run = appendRunPlanChunk(run, "1. Inspect files\n");
+  run = appendRunPlanChunk(run, "2. Render panel");
+  run = upsertRunToolActivity(run, {
+    id: "tool-1",
+    command: "Get-Content src/app.tsx",
+    status: "completed",
+    startedAt: 10,
+    completedAt: 20,
+  });
+
+  assert.deepEqual(run.streamItems?.map((item) => item.kind), ["plan", "action"]);
+  assert.deepEqual(run.streamItems?.map((item) => item.streamSeq), [1, 2]);
+  assert.equal(run.plan?.chunks.join(""), "1. Inspect files\n2. Render panel");
+
+  run = finalizePlanBlock(run, "1. Inspect files\n2. Render panel");
+  assert.equal(run.plan?.status, "completed");
+  assert.equal(run.plan?.streamSeq, 1);
+  assert.deepEqual(run.streamItems?.map((item) => item.kind), ["plan", "action"]);
 });
 
 test("splits response segments when an action interrupts assistant streaming", () => {

@@ -6,6 +6,7 @@ import { summarizeRunActivity, type RunFileActivity } from "../core/workspaceAct
 import * as renderDebug from "../core/perf/renderDebug.js";
 import type {
   RunEvent,
+  RunPlanBlock,
   RunProgressBlock,
   RunProgressEntry,
   RunResponseSegment,
@@ -164,9 +165,19 @@ export function createRunEvent(params: {
   prompt: string;
   turnId: number;
   approvedPlan?: string;
+  responsePresentation?: "assistant" | "plan";
 }): RunEvent {
   const now = Date.now();
-  const hasPlan = Boolean(params.approvedPlan);
+  const hasPlan = Boolean(params.approvedPlan) || params.responsePresentation === "plan";
+  const plan: RunPlanBlock | null = hasPlan
+    ? {
+      id: `plan-${params.id}`,
+      streamSeq: 1,
+      chunks: params.approvedPlan ? [params.approvedPlan] : [],
+      status: params.approvedPlan ? "completed" : "active",
+      startedAt: now,
+    }
+    : null;
   return {
     id: params.id,
     type: "run",
@@ -186,18 +197,94 @@ export function createRunEvent(params: {
     touchedFileCount: 0,
     errorMessage: null,
     turnId: params.turnId,
-    streamItems: hasPlan
-      ? [{ streamSeq: 1, kind: "plan" as const, refId: "approved-plan" }]
+    streamItems: plan
+      ? [{ streamSeq: plan.streamSeq, kind: "plan" as const, refId: plan.id }]
       : [],
     responseSegments: [],
-    lastStreamSeq: hasPlan ? 1 : 0,
+    lastStreamSeq: plan ? plan.streamSeq : 0,
     activeResponseSegmentId: null,
+    plan,
     approvedPlan: params.approvedPlan,
   };
 }
 
 function appendStreamItem(items: RunStreamItem[], item: RunStreamItem): RunStreamItem[] {
   return [...items, item];
+}
+
+function createPlanBlock(event: RunEvent, text = "", status: RunPlanBlock["status"] = "active"): RunPlanBlock {
+  const streamSeq = (event.lastStreamSeq ?? 0) + 1;
+  return {
+    id: `plan-${event.id}`,
+    streamSeq,
+    chunks: text ? [text] : [],
+    status,
+    startedAt: Date.now(),
+  };
+}
+
+export function appendRunPlanChunk(event: RunEvent, chunk: string): RunEvent {
+  if (!chunk) return event;
+
+  if (event.plan) {
+    return {
+      ...event,
+      plan: {
+        ...event.plan,
+        chunks: [...event.plan.chunks, chunk],
+        status: "active",
+      },
+      activeResponseSegmentId: null,
+      summary: "planning...",
+    };
+  }
+
+  const plan = createPlanBlock(event, chunk);
+  return {
+    ...event,
+    plan,
+    streamItems: appendStreamItem(event.streamItems ?? [], {
+      streamSeq: plan.streamSeq,
+      kind: "plan",
+      refId: plan.id,
+    }),
+    lastStreamSeq: plan.streamSeq,
+    activeResponseSegmentId: null,
+    summary: "planning...",
+  };
+}
+
+export function finalizePlanBlock(event: RunEvent, finalPlan?: string): RunEvent {
+  const text = finalPlan ?? event.plan?.chunks.join("") ?? "";
+
+  if (event.plan) {
+    return {
+      ...event,
+      plan: {
+        ...event.plan,
+        chunks: text ? [text] : event.plan.chunks,
+        status: "completed",
+      },
+      activeResponseSegmentId: null,
+    };
+  }
+
+  if (!text.trim()) {
+    return { ...event, activeResponseSegmentId: null };
+  }
+
+  const plan = createPlanBlock(event, text, "completed");
+  return {
+    ...event,
+    plan,
+    streamItems: appendStreamItem(event.streamItems ?? [], {
+      streamSeq: plan.streamSeq,
+      kind: "plan",
+      refId: plan.id,
+    }),
+    lastStreamSeq: plan.streamSeq,
+    activeResponseSegmentId: null,
+  };
 }
 
 export function upsertRunToolActivity(event: RunEvent, activity: RunToolActivity): RunEvent {
