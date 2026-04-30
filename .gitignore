@@ -20,6 +20,7 @@ temp/
 logs/
 .codexa-debug/
 .codexa/*.jsonl
+.codexa/*.md
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

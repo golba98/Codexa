@@ -5,6 +5,7 @@ import * as renderDebug from "../core/perf/renderDebug.js";
 
 export type LiveRenderUpdate =
   | { type: "assistant"; chunk: string }
+  | { type: "plan"; chunk: string }
   | { type: "progress"; update: BackendProgressUpdate }
   | { type: "activity"; activity: RunFileActivity[] }
   | { type: "tool"; activity: RunToolActivity };
@@ -29,8 +30,8 @@ export interface LiveRenderScheduler {
 function mergeLiveRenderUpdate(updates: LiveRenderUpdate[], update: LiveRenderUpdate): boolean {
   const previous = updates[updates.length - 1];
 
-  if (update.type === "assistant") {
-    if (previous?.type === "assistant") {
+  if (update.type === "assistant" || update.type === "plan") {
+    if (previous?.type === update.type) {
       previous.chunk += update.chunk;
     } else {
       updates.push({ ...update });
@@ -110,7 +111,7 @@ export function createLiveRenderScheduler({
           const startedAt = performance.now();
           flush(updates);
           renderDebug.traceSchedulerFlush({
-            reason: updates.some((update) => update.type === "assistant") ? "stream" : "progress",
+            reason: updates.some((update) => update.type === "assistant" || update.type === "plan") ? "stream" : "progress",
             updates: updates.length,
             assistantChunks: updates.filter((update) => update.type === "assistant").length,
             progressUpdates: updates.filter((update) => update.type === "progress").length,

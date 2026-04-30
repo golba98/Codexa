@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test, { afterEach, beforeEach, describe } from "node:test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { resolvePlanDir, savePlan, readPlan } from "./planStorage.js";
@@ -115,11 +115,14 @@ describe("savePlan", () => {
 
   test("does not write to process.cwd()", () => {
     const cwdPlanDir = join(process.cwd(), ".codexa");
-    const hadDir = existsSync(cwdPlanDir);
+    const beforeMarkdown = existsSync(cwdPlanDir)
+      ? readdirSync(cwdPlanDir).filter((name) => name.endsWith(".md")).sort()
+      : [];
     savePlan("# Plan", process.cwd());
-    if (!hadDir) {
-      assert.equal(existsSync(cwdPlanDir), false);
-    }
+    const afterMarkdown = existsSync(cwdPlanDir)
+      ? readdirSync(cwdPlanDir).filter((name) => name.endsWith(".md")).sort()
+      : [];
+    assert.deepEqual(afterMarkdown, beforeMarkdown);
   });
 });
 

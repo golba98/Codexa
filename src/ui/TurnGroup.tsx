@@ -10,7 +10,7 @@ import type {
   UIState,
   UserPromptEvent,
 } from "../session/types.js";
-import { getAssistantContent, getResponseSegmentText } from "../session/types.js";
+import { getAssistantContent, getResponseSegmentText, getRunPlanText } from "../session/types.js";
 import { formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
 import { DashCard } from "./DashCard.js";
@@ -194,7 +194,7 @@ type ResolvedStreamEvent =
   | { kind: "thinking"; streamSeq: number; block: RunProgressBlock }
   | { kind: "action"; streamSeq: number; tool: RunToolActivity }
   | { kind: "response"; streamSeq: number; segment: RunResponseSegment }
-  | { kind: "plan"; streamSeq: number; planText: string };
+  | { kind: "plan"; streamSeq: number; planText: string; approved: boolean };
 
 function resolveStreamEvents(
   run: RunEvent,
@@ -223,8 +223,16 @@ function resolveStreamEvents(
       const segment = segmentsById.get(item.refId);
       if (segment) resolved.push({ kind: "response", streamSeq: item.streamSeq, segment });
     } else if (item.kind === "plan") {
-      if (run.approvedPlan) {
-        resolved.push({ kind: "plan", streamSeq: item.streamSeq, planText: run.approvedPlan });
+      const planText = run.plan?.id === item.refId
+        ? getRunPlanText(run.plan)
+        : run.approvedPlan ?? "";
+      if (planText.trim()) {
+        resolved.push({
+          kind: "plan",
+          streamSeq: item.streamSeq,
+          planText,
+          approved: Boolean(run.approvedPlan),
+        });
       }
     }
   }
@@ -275,15 +283,17 @@ function resolveStreamEvents(
   return resolved;
 }
 
-function ApprovedPlanCard({
+function PlanPanel({
   planText,
   cols,
+  approved,
 }: {
   planText: string;
   cols: number;
+  approved: boolean;
 }) {
   const theme = useTheme();
-  const contentWidth = Math.max(1, getUsableShellWidth(cols, 0));
+  const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
 
   const formatted = useMemo(() => {
     const sanitized = sanitizeOutput(planText);
@@ -293,14 +303,21 @@ function ApprovedPlanCard({
   }, [planText, contentWidth]);
 
   return (
-    <DashCard cols={cols} title="APPROVED PLAN" borderColor={theme.SUCCESS}>
+    <DashCard
+      cols={cols}
+      title="Implementation Plan"
+      rightBadge={approved ? "approved" : undefined}
+      borderColor={theme.ACCENT}
+      titleColor={theme.TEXT}
+      badgeColor={theme.SUCCESS}
+    >
       <MemoizedRenderMessage segments={formatted} width={contentWidth} />
     </DashCard>
   );
 }
 
-const MemoizedApprovedPlanCard = memo(ApprovedPlanCard, (prev, next) => (
-  prev.planText === next.planText && prev.cols === next.cols
+const MemoizedPlanPanel = memo(PlanPanel, (prev, next) => (
+  prev.planText === next.planText && prev.cols === next.cols && prev.approved === next.approved
 ));
 
 function ActionEventCard({
@@ -505,7 +522,7 @@ const StreamEventList = memo(function StreamEventList({
               />
             )}
             {event.kind === "plan" && (
-              <MemoizedApprovedPlanCard planText={event.planText} cols={cols} />
+              <MemoizedPlanPanel planText={event.planText} cols={cols} approved={event.approved} />
             )}
           </Box>
         );
