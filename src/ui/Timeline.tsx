@@ -837,6 +837,19 @@ const TimelineRowsView = memo(function TimelineRowsView({ rows }: { rows: Timeli
   );
 }, (prev, next) => rowArraysEqual(prev.rows, next.rows));
 
+const JumpToBottomBar = memo(function JumpToBottomBar({ unseenItems }: { unseenItems: number }) {
+  const theme = useTheme();
+  const label = unseenItems > 0
+    ? `↓  ${unseenItems} new item${unseenItems === 1 ? "" : "s"} below`
+    : "↓  scroll to latest";
+  return (
+    <Box width="100%" paddingX={1}>
+      <Text color={theme.INFO}>{label}</Text>
+      <Text color={theme.DIM}>{"  ·  End ↓"}</Text>
+    </Box>
+  );
+});
+
 export const Timeline = memo(function Timeline({
   staticEvents,
   activeEvents,
@@ -1076,13 +1089,17 @@ export const Timeline = memo(function Timeline({
         return next;
       }
 
-      // Frozen (user scrolled up): call sync only when rows grew so the
-      // unseen-item counters stay accurate; skip otherwise — returning the
-      // same reference makes React bail out of the re-render entirely.
+      // Frozen (user scrolled up): keep the frozen snapshot fresh when rows
+      // grow or the stream finalizes so the unseen-item counters and
+      // jump-to-bottom affordance stay accurate.
       if (!current.followTail) {
-        const next = totalRowsGrew ? syncTimelineViewport(current, snapshotForViewport) : current;
+        const next = totalRowsGrew || finalizeTransition
+          ? syncTimelineViewport(current, snapshotForViewport)
+          : current;
         renderDebug.traceFlickerEvent("viewportSync", {
-          reason: totalRowsGrew ? "detached-growth" : "detached-no-growth",
+          reason: finalizeTransition
+            ? (totalRowsGrew ? "detached-finalize-growth" : "detached-finalize")
+            : (totalRowsGrew ? "detached-growth" : "detached-no-growth"),
           result: next === current ? "skipped" : "updated",
           previousTotalRows,
           totalRows,
@@ -1239,6 +1256,11 @@ export const Timeline = memo(function Timeline({
       ? lastNonEmptyVisibleRowsRef.current
       : visibleRows;
 
+  const showJumpToBottom = !viewport.followTail;
+  const rowsForDisplay = showJumpToBottom
+    ? preservedVisibleRows.slice(0, Math.max(0, viewportRows - 1))
+    : preservedVisibleRows;
+
   if (visibleRows.length === 0) {
     renderDebug.traceBlankFrame("Timeline", {
       reason: transcriptEventCount > 0 ? "visible-rows-zero-with-events" : "visible-rows-zero-no-events",
@@ -1268,7 +1290,10 @@ export const Timeline = memo(function Timeline({
 
   return (
     <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} overflow="hidden">
-      <TimelineRowsView rows={preservedVisibleRows} />
+      <TimelineRowsView rows={rowsForDisplay} />
+      {showJumpToBottom && (
+        <JumpToBottomBar unseenItems={viewport.unseenItems} />
+      )}
     </Box>
   );
 }, (prev, next) => {
