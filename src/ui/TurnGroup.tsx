@@ -305,13 +305,13 @@ function PlanPanel({
   return (
     <DashCard
       cols={cols}
-      title="Implementation Plan"
+      title={approved ? "Implementation Plan" : "Review Plan"}
       rightBadge={approved ? "approved" : undefined}
       borderColor={theme.ACCENT}
       titleColor={theme.TEXT}
       badgeColor={theme.SUCCESS}
     >
-      <MemoizedRenderMessage segments={formatted} width={contentWidth} />
+      <MemoizedRenderMessage segments={formatted} width={contentWidth} brightHeadings />
     </DashCard>
   );
 }

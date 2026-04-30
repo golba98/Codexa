@@ -329,7 +329,7 @@ test("main screen keeps the transcript visible while showing the plan action pic
   instance.cleanup();
   await sleep(20);
 
-  assert.match(frame, /Review plan/);
+  assert.match(frame, /Choose how to proceed/);
   assert.match(frame, /Reproduce the resize flicker and fix it\./);
   assert.match(frame, /Implement plan/);
 });

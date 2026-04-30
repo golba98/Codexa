@@ -194,7 +194,7 @@ function getDiffColor(kind: DiffRenderLineType, theme: ReturnType<typeof useThem
   }
 }
 
-export function RenderMessage({ segments, width }: { segments: Segment[]; width: number }) {
+export function RenderMessage({ segments, width, brightHeadings = false }: { segments: Segment[]; width: number; brightHeadings?: boolean }) {
   const theme = useTheme();
 
   return (
@@ -251,7 +251,7 @@ export function RenderMessage({ segments, width }: { segments: Segment[]; width:
         }
 
         if (segment.type === "header") {
-          const color = segment.level === 1 ? theme.ACCENT : segment.level === 2 ? theme.TEXT : theme.MUTED;
+          const color = segment.level === 1 ? theme.ACCENT : segment.level === 2 ? theme.TEXT : (brightHeadings ? theme.TEXT : theme.MUTED);
           return (
             <Box key={index} flexDirection="column" marginTop={marginTop}>
               {segment.level <= 2 && <Text color={theme.BORDER_SUBTLE}>{"───"}</Text>}
@@ -299,6 +299,6 @@ export function RenderMessage({ segments, width }: { segments: Segment[]; width:
 }
 
 export const MemoizedRenderMessage = React.memo(RenderMessage, (prev, next) => (
-  prev.segments === next.segments && prev.width === next.width
+  prev.segments === next.segments && prev.width === next.width && prev.brightHeadings === next.brightHeadings
 ));
 

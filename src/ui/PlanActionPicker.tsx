@@ -1,6 +1,8 @@
 import React from "react";
+import { Box, Text, useFocus, useInput } from "ink";
+import SelectInput from "ink-select-input";
 import { FOCUS_IDS } from "./focus.js";
-import { SelectionPanel } from "./SelectionPanel.js";
+import { useTheme } from "./theme.js";
 
 export type PlanActionValue = "implement" | "revise" | "constraints" | "view_plan_file" | "cancel";
 
@@ -26,7 +28,23 @@ interface PlanActionPickerProps {
 }
 
 export function measurePlanActionPickerRows(hasPlanFile = false): number {
-  return getPlanActionItems(hasPlanFile).length + 11;
+  return getPlanActionItems(hasPlanFile).length + 4;
+}
+
+function PlanActionIndicator({ isSelected = false }: { isSelected?: boolean }) {
+  const theme = useTheme();
+  return (
+    <Box marginRight={1}>
+      <Text color={isSelected ? theme.ACCENT : undefined}>
+        {isSelected ? "›" : " "}
+      </Text>
+    </Box>
+  );
+}
+
+function PlanActionItem({ isSelected = false, label }: { isSelected?: boolean; label: string }) {
+  const theme = useTheme();
+  return <Text color={isSelected ? theme.TEXT : theme.MUTED}>{label}</Text>;
 }
 
 export function PlanActionPicker({
@@ -34,17 +52,27 @@ export function PlanActionPicker({
   onSelect,
   onCancel,
 }: PlanActionPickerProps) {
+  const theme = useTheme();
   const items = React.useMemo(() => getPlanActionItems(hasPlanFile), [hasPlanFile]);
+  const { isFocused } = useFocus({ id: FOCUS_IDS.composer, autoFocus: true });
+
+  useInput((_, key) => {
+    if (key.escape) onCancel();
+  }, { isActive: isFocused });
 
   return (
-    <SelectionPanel
-      focusId={FOCUS_IDS.composer}
-      title="Review plan"
-      subtitle="Choose how to proceed. Enter confirms, Esc cancels."
-      items={items}
-      limit={items.length}
-      onSelect={(value) => onSelect(value as PlanActionValue)}
-      onCancel={onCancel}
-    />
+    <Box flexDirection="column" width="100%" marginTop={1} paddingX={2}>
+      <Text color={theme.MUTED}>Choose how to proceed. Enter confirms, Esc cancels.</Text>
+      <Box marginTop={1}>
+        <SelectInput
+          items={items}
+          isFocused={isFocused}
+          limit={items.length}
+          indicatorComponent={PlanActionIndicator}
+          itemComponent={PlanActionItem}
+          onSelect={(item) => onSelect(item.value as PlanActionValue)}
+        />
+      </Box>
+    </Box>
   );
 }
