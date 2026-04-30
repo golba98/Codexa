@@ -10,6 +10,7 @@ import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 import { AppShell } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "./layout.js";
 import { PlanActionPicker, measurePlanActionPickerRows } from "./PlanActionPicker.js";
+import { PlanReviewPanel } from "./PlanReviewPanel.js";
 import { ThemeProvider } from "./theme.js";
 
 class TestInput extends PassThrough {
@@ -93,6 +94,7 @@ function renderShell(
   uiState: UIState,
   screen: "main" | "theme-picker" = "main",
   panel: React.ReactNode = null,
+  mainPanel: React.ReactNode = null,
 ): Promise<string> {
   const stdin = new TestInput();
   const stdout = new TestOutput();
@@ -128,6 +130,7 @@ function renderShell(
         activeEvents={[]}
         uiState={uiState}
         panel={panel}
+        mainPanel={mainPanel}
         composer={
           <BottomComposer
             layout={layout}
@@ -244,6 +247,7 @@ test("non-main panel content updates while the active screen is unchanged", asyn
         activeEvents={[]}
         uiState={{ kind: "IDLE" }}
         panel={<Text>Loading model list</Text>}
+        mainPanel={null}
         composer={null}
         composerRows={0}
       />
@@ -272,6 +276,7 @@ test("non-main panel content updates while the active screen is unchanged", asyn
           activeEvents={[]}
           uiState={{ kind: "IDLE" }}
           panel={<Text>Interactive model list</Text>}
+          mainPanel={null}
           composer={null}
           composerRows={0}
         />
@@ -310,6 +315,7 @@ test("main screen keeps the transcript visible while showing the plan action pic
         activeEvents={[]}
         uiState={{ kind: "IDLE" }}
         panel={null}
+        mainPanel={null}
         composer={<PlanActionPicker onSelect={() => {}} onCancel={() => {}} />}
         composerRows={measurePlanActionPickerRows()}
       />
@@ -332,6 +338,79 @@ test("main screen keeps the transcript visible while showing the plan action pic
   assert.match(frame, /Choose how to proceed/);
   assert.match(frame, /Reproduce the resize flicker and fix it\./);
   assert.match(frame, /Implement plan/);
+});
+
+test("main screen can replace the transcript with a readable plan review panel", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const layout = createLayoutSnapshot(100, 30);
+  const planText = [
+    "**Files**",
+    "- C:\\Development\\1-JavaScript\\13-Custom CLI\\src\\app.tsx",
+    "  Wire the plan review panel into the app shell.",
+    "",
+    "**Steps**",
+    "1. Replace the default transcript view during review.",
+    "2. Keep the plan file path hidden until requested.",
+  ].join("\n");
+
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <AppShell
+        layout={layout}
+        screen="main"
+        authState="authenticated"
+        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+        staticEvents={EVENTS}
+        activeEvents={[]}
+        uiState={{ kind: "IDLE" }}
+        panel={null}
+        mainPanel={
+          <PlanReviewPanel
+            planText={planText}
+            cols={layout.cols}
+            workspaceRoot="C:\\Development\\1-JavaScript\\13-Custom CLI"
+          />
+        }
+        composer={<PlanActionPicker hasPlanFile onSelect={() => {}} onCancel={() => {}} />}
+        composerRows={measurePlanActionPickerRows(true)}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+
+  await sleep(100);
+  const frame = stripAnsi(output);
+  instance.cleanup();
+  await sleep(20);
+
+  assert.match(frame, /Review Plan/);
+  assert.match(frame, /Files/);
+  assert.match(frame, /Steps/);
+  assert.match(frame, /Implement plan/);
+  assert.match(frame, /View plan file/);
+  assert.match(frame, /Cancel/);
+  assert.doesNotMatch(frame, /Plan file/);
+  assert.doesNotMatch(frame, /Path:/);
+  assert.doesNotMatch(frame, /\*\*Files\*\*/);
+  assert.doesNotMatch(frame, /\*\*Steps\*\*/);
+  assert.doesNotMatch(frame, /C:\\Development/);
+  assert.doesNotMatch(frame, /scroll to latest/);
+  assert.doesNotMatch(frame, /Reproduce the resize flicker and fix it\./);
 });
 
 test("memoized composer re-renders when only the terminal height changes", async () => {

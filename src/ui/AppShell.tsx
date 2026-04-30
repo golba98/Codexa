@@ -19,6 +19,7 @@ export interface AppShellProps {
   activeEvents: TimelineEvent[];
   uiState: UIState;
   panel: React.ReactNode;
+  mainPanel?: React.ReactNode;
   composer: React.ReactNode;
   composerRows: number;
   panelHint?: React.ReactNode;
@@ -39,6 +40,7 @@ function AppShellInner({
   activeEvents,
   uiState,
   panel,
+  mainPanel,
   composer,
   composerRows,
   panelHint,
@@ -70,7 +72,8 @@ function AppShellInner({
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
   const showComposer = screen === "main";
-  const showTimeline = screen === "main";
+  const showMainPanel = screen === "main" && mainPanel !== undefined && mainPanel !== null;
+  const showTimeline = screen === "main" && !showMainPanel;
   const showPanelStage = screen !== "main";
   const previousMeasurements = useRef<{
     timelineRows: number;
@@ -194,6 +197,12 @@ function AppShellInner({
           </Box>
         )}
 
+        {showMainPanel && (
+          <Box flexDirection="column" height={finalTimelineRows} overflow="hidden" justifyContent="center">
+            {mainPanel}
+          </Box>
+        )}
+
         {showPanelStage && (
           <Box flexDirection="column" flexGrow={1} justifyContent="center" overflow="hidden" paddingY={1}>
             {panel}
@@ -228,7 +237,8 @@ function AppShellInner({
  */
 export const AppShell = memo(AppShellInner, (prev, next) => {
   const panelPropsEqual = next.screen === "main"
-    || (prev.panel === next.panel && prev.panelHint === next.panelHint);
+    ? prev.mainPanel === next.mainPanel
+    : (prev.panel === next.panel && prev.panelHint === next.panelHint);
 
   return (
     prev.layout.cols     === next.layout.cols     &&
@@ -244,6 +254,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.uiState         === next.uiState         &&
     prev.composerRows    === next.composerRows    &&
     prev.composer        === next.composer        &&
+    prev.mainPanel       === next.mainPanel       &&
     prev.verboseMode     === next.verboseMode     &&
     panelPropsEqual
   );

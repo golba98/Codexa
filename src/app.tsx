@@ -145,6 +145,7 @@ import { useTerminalViewport } from "./ui/layout.js";
 import { ModelReasoningPicker } from "./ui/ModelReasoningPicker.js";
 import { ModePicker } from "./ui/ModePicker.js";
 import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } from "./ui/PlanActionPicker.js";
+import { PlanReviewPanel } from "./ui/PlanReviewPanel.js";
 import { PermissionsPanel, type PermissionsPanelAction } from "./ui/PermissionsPanel.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
 import { SelectionPanel } from "./ui/SelectionPanel.js";
@@ -2787,6 +2788,20 @@ export function App({ launchArgs }: AppProps) {
     handleQuit,
   ]);
 
+  const mainPanelElement = useMemo(() => {
+    if (planFlow.kind !== "awaiting_action") {
+      return null;
+    }
+
+    return (
+      <PlanReviewPanel
+        planText={planFlow.currentPlan}
+        cols={terminalLayout.cols}
+        workspaceRoot={workspaceRoot}
+      />
+    );
+  }, [planFlow, terminalLayout.cols, workspaceRoot]);
+
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
       <AppShell
@@ -3004,6 +3019,7 @@ export function App({ launchArgs }: AppProps) {
               )}
           </>
         }
+        mainPanel={mainPanelElement}
         composer={composerElement}
         composerRows={composerRows}
         panelHint={screen !== "main" ? (
