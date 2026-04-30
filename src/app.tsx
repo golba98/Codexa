@@ -582,8 +582,8 @@ export function App({ launchArgs }: AppProps) {
     if (screen !== "main") return;
 
     if (planFlow.kind === "awaiting_action") {
-      intendedFocusTargetRef.current = FOCUS_IDS.planReviewPanel;
-      focusManager.focus(FOCUS_IDS.planReviewPanel);
+      intendedFocusTargetRef.current = FOCUS_IDS.composer;
+      focusManager.focus(FOCUS_IDS.composer);
       return;
     }
 
@@ -2713,8 +2713,6 @@ export function App({ launchArgs }: AppProps) {
       return (
         <PlanActionPicker
           hasPlanFile={hasPlanFileAvailable}
-          scrollablePlan
-          onFocusPlan={() => focusManager.focus(FOCUS_IDS.planReviewPanel)}
           onSelect={handlePlanAction}
           onCancel={handleCancel}
         />
@@ -2814,14 +2812,10 @@ export function App({ launchArgs }: AppProps) {
       <PlanReviewPanel
         planText={planFlow.currentPlan}
         cols={terminalLayout.cols}
-        height={Math.max(5, terminalLayout.rows - 1 - composerRows)}
-        focusId={FOCUS_IDS.planReviewPanel}
         workspaceRoot={workspaceRoot}
-        onCancel={handleCancel}
-        onFocusActions={() => focusManager.focus(FOCUS_IDS.composer)}
       />
     );
-  }, [composerRows, focusManager, handleCancel, planFlow, terminalLayout.cols, terminalLayout.rows, workspaceRoot]);
+  }, [planFlow, terminalLayout.cols, workspaceRoot]);
 
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
@@ -3041,6 +3035,7 @@ export function App({ launchArgs }: AppProps) {
           </>
         }
         mainPanel={mainPanelElement}
+        mainPanelMode={planFlow.kind === "awaiting_action" ? "full-output" : "viewport"}
         composer={composerElement}
         composerRows={composerRows}
         panelHint={screen !== "main" ? (

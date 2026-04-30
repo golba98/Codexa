@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text, useFocus, useInput, useStdin } from "ink";
+import { Box, Text, useFocus, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import { FOCUS_IDS } from "./focus.js";
 import { useTheme } from "./theme.js";
@@ -23,8 +23,6 @@ function getPlanActionItems(hasPlanFile: boolean): Array<{ label: string; value:
 
 interface PlanActionPickerProps {
   hasPlanFile?: boolean;
-  scrollablePlan?: boolean;
-  onFocusPlan?: () => void;
   onSelect: (value: PlanActionValue) => void;
   onCancel: () => void;
 }
@@ -51,45 +49,41 @@ function PlanActionItem({ isSelected = false, label }: { isSelected?: boolean; l
 
 export function PlanActionPicker({
   hasPlanFile = false,
-  scrollablePlan = false,
-  onFocusPlan,
   onSelect,
   onCancel,
 }: PlanActionPickerProps) {
   const theme = useTheme();
   const items = React.useMemo(() => getPlanActionItems(hasPlanFile), [hasPlanFile]);
   const { isFocused } = useFocus({ id: FOCUS_IDS.composer, autoFocus: true });
-  const { stdin } = useStdin();
-
-  React.useEffect(() => {
-    if (!scrollablePlan || !isFocused) return;
-
-    const handleRawInput = (chunk: Buffer | string) => {
-      if (chunk.toString("utf8") === "\t") {
-        onFocusPlan?.();
-      }
-    };
-
-    stdin.on("data", handleRawInput);
-    return () => {
-      stdin.off("data", handleRawInput);
-    };
-  }, [isFocused, onFocusPlan, scrollablePlan, stdin]);
 
   useInput((input, key) => {
-    if ((key.tab || input === "\t" || (key.ctrl && input === "i")) && scrollablePlan) {
-      onFocusPlan?.();
+    if (key.escape) {
+      onCancel();
       return;
     }
-    if (key.escape) onCancel();
+
+    const lowerInput = input.toLowerCase();
+    if (lowerInput === "i") {
+      onSelect("implement");
+      return;
+    }
+    if (lowerInput === "r") {
+      onSelect("revise");
+      return;
+    }
+    if (lowerInput === "a") {
+      onSelect("constraints");
+      return;
+    }
+    if (lowerInput === "v" && hasPlanFile) {
+      onSelect("view_plan_file");
+    }
   }, { isActive: isFocused });
 
   return (
     <Box flexDirection="column" width="100%" marginTop={1} paddingX={2}>
       <Text color={theme.MUTED}>
-        {scrollablePlan
-          ? "Tab switches focus. PageUp/PageDown scroll plan. Enter confirms."
-          : "Choose how to proceed. Enter confirms, Esc cancels."}
+        Choose how to proceed. Enter confirms, Esc cancels.
       </Text>
       <Box marginTop={1}>
         <SelectInput

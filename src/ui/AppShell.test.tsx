@@ -95,6 +95,7 @@ function renderShell(
   screen: "main" | "theme-picker" = "main",
   panel: React.ReactNode = null,
   mainPanel: React.ReactNode = null,
+  mainPanelMode: "viewport" | "full-output" = "viewport",
 ): Promise<string> {
   const stdin = new TestInput();
   const stdout = new TestOutput();
@@ -131,6 +132,7 @@ function renderShell(
         uiState={uiState}
         panel={panel}
         mainPanel={mainPanel}
+        mainPanelMode={mainPanelMode}
         composer={
           <BottomComposer
             layout={layout}
@@ -352,12 +354,14 @@ test("main screen can replace the transcript with a readable plan review panel",
   const layout = createLayoutSnapshot(100, 30);
   const planText = [
     "**Files**",
-    "- C:\\Development\\1-JavaScript\\13-Custom CLI\\src\\app.tsx",
-    "  Wire the plan review panel into the app shell.",
+    ...Array.from({ length: 40 }, (_, index) =>
+      `- C:\\Development\\1-JavaScript\\13-Custom CLI\\src\\file-${index + 1}.tsx Wire file ${index + 1} into the plan review output.`,
+    ),
     "",
     "**Steps**",
-    "1. Replace the default transcript view during review.",
-    "2. Keep the plan file path hidden until requested.",
+    ...Array.from({ length: 40 }, (_, index) =>
+      `${index + 1}. Complete review step ${index + 1}.`,
+    ),
   ].join("\n");
 
   const instance = render(
@@ -379,6 +383,7 @@ test("main screen can replace the transcript with a readable plan review panel",
             workspaceRoot="C:\\Development\\1-JavaScript\\13-Custom CLI"
           />
         }
+        mainPanelMode="full-output"
         composer={<PlanActionPicker hasPlanFile onSelect={() => {}} onCancel={() => {}} />}
         composerRows={measurePlanActionPickerRows(true)}
       />
@@ -401,6 +406,10 @@ test("main screen can replace the transcript with a readable plan review panel",
   assert.match(frame, /Review Plan/);
   assert.match(frame, /Files/);
   assert.match(frame, /Steps/);
+  assert.match(frame, /src\/file-1\.tsx/);
+  assert.match(frame, /src\/file-20\.tsx/);
+  assert.match(frame, /src\/file-40\.tsx/);
+  assert.match(frame, /40\. Complete review step 40\./);
   assert.match(frame, /Implement plan/);
   assert.match(frame, /View plan file/);
   assert.match(frame, /Cancel/);
@@ -408,6 +417,8 @@ test("main screen can replace the transcript with a readable plan review panel",
   assert.doesNotMatch(frame, /Path:/);
   assert.doesNotMatch(frame, /\*\*Files\*\*/);
   assert.doesNotMatch(frame, /\*\*Steps\*\*/);
+  assert.doesNotMatch(frame, /Plan \d+[-–]\d+ of \d+/);
+  assert.doesNotMatch(frame, /PageUp\/PageDown scroll plan/);
   assert.doesNotMatch(frame, /C:\\Development/);
   assert.doesNotMatch(frame, /scroll to latest/);
   assert.doesNotMatch(frame, /Reproduce the resize flicker and fix it\./);

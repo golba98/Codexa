@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Box, Text, useFocus, useInput, useStdin } from "ink";
+import React, { useMemo } from "react";
+import { Box, Text } from "ink";
 import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
-import { FOCUS_IDS } from "./focus.js";
 import { getUsableShellWidth } from "./layout.js";
 import { parseMarkdown } from "./Markdown.js";
 import { normalizeOutput } from "./outputPipeline.js";
@@ -24,18 +23,6 @@ type PlanReviewDisplayRow = {
   tone: "text" | "muted";
   bold?: boolean;
 };
-
-export interface PlanReviewViewport {
-  totalRows: number;
-  visibleRows: PlanReviewDisplayRow[];
-  startRow: number;
-  endRow: number;
-  maxScrollOffset: number;
-  scrollOffset: number;
-  visibleBodyRows: number;
-  canScrollUp: boolean;
-  canScrollDown: boolean;
-}
 
 const SECTION_LINE_RE = /^\s*(?:#{1,3}\s+)?(?:\*\*)?([A-Za-z][A-Za-z0-9 /&-]{0,48})(?:\*\*)?:?\s*$/;
 const ABSOLUTE_WINDOWS_PATH_RE = /[A-Za-z]:[\\/][^\s`),;\]]+/g;
@@ -226,208 +213,48 @@ export function buildPlanReviewDisplayRows(rows: PlanReviewRow[], width: number)
   return displayRows;
 }
 
-export function clampPlanReviewScrollOffset(scrollOffset: number, totalRows: number, visibleBodyRows: number): number {
-  const maxScrollOffset = Math.max(0, totalRows - Math.max(1, visibleBodyRows));
-  if (!Number.isFinite(scrollOffset)) return 0;
-  return Math.max(0, Math.min(Math.floor(scrollOffset), maxScrollOffset));
-}
-
-export function selectPlanReviewViewport(
-  rows: PlanReviewDisplayRow[],
-  height: number,
-  scrollOffset: number,
-): PlanReviewViewport {
-  const visibleBodyRows = Math.max(1, height - 3);
-  const totalRows = rows.length;
-  const maxScrollOffset = Math.max(0, totalRows - visibleBodyRows);
-  const clampedOffset = clampPlanReviewScrollOffset(scrollOffset, totalRows, visibleBodyRows);
-  const visibleRows = rows.slice(clampedOffset, clampedOffset + visibleBodyRows);
-  const endRow = totalRows === 0 ? 0 : Math.min(totalRows, clampedOffset + visibleRows.length);
-
-  return {
-    totalRows,
-    visibleRows,
-    startRow: totalRows === 0 ? 0 : clampedOffset + 1,
-    endRow,
-    maxScrollOffset,
-    scrollOffset: clampedOffset,
-    visibleBodyRows,
-    canScrollUp: clampedOffset > 0,
-    canScrollDown: clampedOffset < maxScrollOffset,
-  };
-}
-
-function isHomeInput(input: string): boolean {
-  return input === "\u001b[H" || input === "\u001b[1~" || input === "\u001bOH";
-}
-
-function isEndInput(input: string): boolean {
-  return input === "\u001b[F" || input === "\u001b[4~" || input === "\u001bOF";
-}
-
-function buildTopBorder(width: number, title: string, badge: string): { title: string; fill: string; badge: string } {
+function buildTopBorder(width: number, title: string): { title: string; fill: string } {
   const prefixWidth = 3;
   const titleWidth = getTextWidth(title);
-  const badgeWidth = getTextWidth(badge);
   const suffixWidth = 1;
-  const spacingWidth = 2;
-  const fillCount = Math.max(1, width - prefixWidth - titleWidth - spacingWidth - badgeWidth - suffixWidth);
-  return { title, fill: "─".repeat(fillCount), badge };
-}
-
-function getScrollHint(viewport: PlanReviewViewport, isFocused: boolean): string {
-  if (viewport.totalRows <= viewport.visibleBodyRows) {
-    return isFocused ? "Tab menu" : "Tab plan";
-  }
-  if (viewport.canScrollUp && viewport.canScrollDown) return "↑/↓ scroll plan";
-  if (viewport.canScrollUp) return "↑ more";
-  if (viewport.canScrollDown) return "↓ more";
-  return " ";
+  const fillCount = Math.max(1, width - prefixWidth - titleWidth - suffixWidth);
+  return { title, fill: "─".repeat(fillCount) };
 }
 
 export function PlanReviewPanel({
   planText,
   cols,
-  height = 12,
-  focusId = FOCUS_IDS.planReviewPanel,
   workspaceRoot,
-  onCancel,
-  onFocusActions,
 }: {
   planText: string;
   cols: number;
-  height?: number;
-  focusId?: string;
   workspaceRoot?: string | null;
-  onCancel?: () => void;
-  onFocusActions?: () => void;
 }) {
   const theme = useTheme();
-  const { isFocused } = useFocus({ id: focusId, autoFocus: true });
-  const { stdin } = useStdin();
   const panelCols = Math.min(Math.max(20, getUsableShellWidth(cols) - 4), 96);
   const contentWidth = Math.max(1, panelCols - 4);
   const rows = useMemo(() => buildPlanReviewRows(planText, workspaceRoot), [planText, workspaceRoot]);
   const displayRows = useMemo(() => buildPlanReviewDisplayRows(rows, contentWidth), [rows, contentWidth]);
-  const panelHeight = Math.max(5, height);
-  const [scrollOffset, setScrollOffset] = useState(0);
-  const viewport = useMemo(
-    () => selectPlanReviewViewport(displayRows, panelHeight, scrollOffset),
-    [displayRows, panelHeight, scrollOffset],
-  );
-  const badge = viewport.totalRows > 0
-    ? `Plan ${viewport.startRow}–${viewport.endRow} of ${viewport.totalRows}`
-    : "Plan 0 of 0";
-  const topBorder = useMemo(() => buildTopBorder(panelCols, "Review Plan ", badge), [badge, panelCols]);
-  const scrollHint = getScrollHint(viewport, isFocused);
-  const paddedRows = useMemo(() => {
-    const next = [...viewport.visibleRows];
-    while (next.length < viewport.visibleBodyRows) {
-      next.push({ text: " ", tone: "muted" });
-    }
-    return next;
-  }, [viewport.visibleBodyRows, viewport.visibleRows]);
-
-  const scrollBy = (delta: number) => {
-    setScrollOffset((current) =>
-      clampPlanReviewScrollOffset(current + delta, viewport.totalRows, viewport.visibleBodyRows),
-    );
-  };
-
-  const scrollTo = (offset: number) => {
-    setScrollOffset(clampPlanReviewScrollOffset(offset, viewport.totalRows, viewport.visibleBodyRows));
-  };
-
-  useEffect(() => {
-    setScrollOffset((current) =>
-      clampPlanReviewScrollOffset(current, displayRows.length, Math.max(1, panelHeight - 3)),
-    );
-  }, [displayRows.length, panelHeight]);
-
-  useEffect(() => {
-    if (!isFocused) return;
-
-    const handleRawInput = (chunk: Buffer | string) => {
-      if (chunk.toString("utf8") === "\t") {
-        onFocusActions?.();
-      }
-    };
-
-    stdin.on("data", handleRawInput);
-    return () => {
-      stdin.off("data", handleRawInput);
-    };
-  }, [isFocused, onFocusActions, stdin]);
-
-  useInput((input, key) => {
-    if (key.pageUp) {
-      scrollBy(-viewport.visibleBodyRows);
-      return;
-    }
-
-    if (key.pageDown) {
-      scrollBy(viewport.visibleBodyRows);
-      return;
-    }
-
-    if (isHomeInput(input)) {
-      scrollTo(0);
-      return;
-    }
-
-    if (isEndInput(input)) {
-      scrollTo(viewport.maxScrollOffset);
-      return;
-    }
-
-    if (!isFocused) return;
-
-    if (key.upArrow) {
-      scrollBy(-1);
-      return;
-    }
-
-    if (key.downArrow) {
-      scrollBy(1);
-      return;
-    }
-
-    if (key.tab || input === "\t" || (key.ctrl && input === "i")) {
-      onFocusActions?.();
-      return;
-    }
-
-    if (key.escape) {
-      onCancel?.();
-    }
-  });
-
-  const focusTone = isFocused ? theme.ACCENT : theme.BORDER_SUBTLE;
+  const topBorder = useMemo(() => buildTopBorder(panelCols, "Review Plan "), [panelCols]);
 
   return (
     <Box width="100%" flexDirection="column" paddingX={2}>
       <Text wrap="truncate">
-        <Text color={focusTone}>{"╭─ "}</Text>
+        <Text color={theme.BORDER_SUBTLE}>{"╭─ "}</Text>
         <Text color={theme.TEXT} bold>{topBorder.title}</Text>
-        <Text color={focusTone}>{topBorder.fill}</Text>
-        <Text color={theme.MUTED}>{topBorder.badge}</Text>
-        <Text color={focusTone}>{"╮"}</Text>
+        <Text color={theme.BORDER_SUBTLE}>{topBorder.fill}</Text>
+        <Text color={theme.BORDER_SUBTLE}>{"╮"}</Text>
       </Text>
-      {paddedRows.map((row, index) => (
+      {displayRows.map((row, index) => (
         <Text key={index} wrap="truncate">
-          <Text color={focusTone}>{"│ "}</Text>
+          <Text color={theme.BORDER_SUBTLE}>{"│ "}</Text>
           <Text color={row.tone === "muted" ? theme.MUTED : theme.TEXT} bold={row.bold}>
             {padVisual(row.text, contentWidth)}
           </Text>
-          <Text color={focusTone}>{" │"}</Text>
+          <Text color={theme.BORDER_SUBTLE}>{" │"}</Text>
         </Text>
       ))}
-      <Text wrap="truncate">
-        <Text color={focusTone}>{"│ "}</Text>
-        <Text color={theme.MUTED}>{padVisual(scrollHint, contentWidth)}</Text>
-        <Text color={focusTone}>{" │"}</Text>
-      </Text>
-      <Text wrap="truncate" color={focusTone}>{`╰${"─".repeat(Math.max(1, panelCols - 2))}╯`}</Text>
+      <Text wrap="truncate" color={theme.BORDER_SUBTLE}>{`╰${"─".repeat(Math.max(1, panelCols - 2))}╯`}</Text>
     </Box>
   );
 }

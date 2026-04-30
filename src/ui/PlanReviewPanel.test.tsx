@@ -2,16 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
 import { PassThrough } from "node:stream";
-import { Box, Text, render, useFocusManager } from "ink";
-import { FOCUS_IDS } from "./focus.js";
+import { Box, Text, render } from "ink";
 import { PlanActionPicker } from "./PlanActionPicker.js";
 import {
   buildPlanReviewDisplayRows,
   buildPlanReviewRows,
-  clampPlanReviewScrollOffset,
   normalizePlanReviewMarkdown,
   PlanReviewPanel,
-  selectPlanReviewViewport,
 } from "./PlanReviewPanel.js";
 import { ThemeProvider } from "./theme.js";
 
@@ -53,7 +50,7 @@ function sleep(ms = 50): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function renderPlanPanel(planText: string, cols = 60): Promise<string> {
+async function renderPlanPanel(planText: string, cols = 80): Promise<string> {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = cols;
@@ -117,7 +114,7 @@ function createInkHarness(node: React.ReactElement) {
   };
 }
 
-function makeLongPlan(itemCount = 18): string {
+function makeLongPlan(itemCount = 40): string {
   return [
     "Files:",
     ...Array.from({ length: itemCount }, (_, index) =>
@@ -131,34 +128,15 @@ function makeLongPlan(itemCount = 18): string {
   ].join("\n");
 }
 
-function PlanReviewInteractionHarness({ initialFocus = "plan" }: { initialFocus?: "plan" | "actions" }) {
-  const focusManager = useFocusManager();
-  const didFocusInitial = React.useRef(false);
+function PlanActionHarness({ hasPlanFile = true }: { hasPlanFile?: boolean }) {
   const [selection, setSelection] = React.useState("none");
   const [cancelCount, setCancelCount] = React.useState(0);
-
-  React.useEffect(() => {
-    if (didFocusInitial.current) return;
-    didFocusInitial.current = true;
-    focusManager.focus(initialFocus === "plan" ? FOCUS_IDS.planReviewPanel : FOCUS_IDS.composer);
-  }, [focusManager, initialFocus]);
 
   return (
     <ThemeProvider theme="purple">
       <Box flexDirection="column">
-        <PlanReviewPanel
-          planText={makeLongPlan()}
-          cols={80}
-          height={8}
-          focusId={FOCUS_IDS.planReviewPanel}
-          workspaceRoot="C:\\Development\\Project"
-          onCancel={() => setCancelCount((count) => count + 1)}
-          onFocusActions={() => focusManager.focus(FOCUS_IDS.composer)}
-        />
         <PlanActionPicker
-          hasPlanFile
-          scrollablePlan
-          onFocusPlan={() => focusManager.focus(FOCUS_IDS.planReviewPanel)}
+          hasPlanFile={hasPlanFile}
           onSelect={(value) => setSelection(value)}
           onCancel={() => setCancelCount((count) => count + 1)}
         />
@@ -190,63 +168,38 @@ test("plan review rows hide workspace-root filesystem details", () => {
   assert.doesNotMatch(joined, /Path:/);
 });
 
-test("plan review panel wraps long lines inside the bordered panel", async () => {
+test("plan review display rows wrap long lines inside the panel width", () => {
   const longText = "This line should wrap cleanly inside the review panel instead of clipping horizontally past the right border where it would become unreadable.";
-  const output = await renderPlanPanel(`Files:\n- src/core/board.py ${longText}`, 54);
-  const lines = output.split("\n").filter((line) => line.includes("│"));
+  const semanticRows = buildPlanReviewRows(`Files:\n- src/core/board.py ${longText}`);
+  const displayRows = buildPlanReviewDisplayRows(semanticRows, 34);
+  const joined = displayRows.map((row) => row.text).join("\n");
+
+  assert.match(joined, /This line/);
+  assert.match(joined, /should wrap cleanly/);
+  assert.match(joined, /instead of clipping/);
+  assert.ok(
+    displayRows.every((row) => row.text.length <= 34),
+    "wrapped rows should stay within the requested content width",
+  );
+});
+
+test("plan review panel renders the full long plan instead of a clipped row range", async () => {
+  const output = await renderPlanPanel(makeLongPlan(40), 100);
 
   assert.match(output, /Review Plan/);
-  assert.match(output, /This line should wrap/);
-  assert.match(output, /cleanly inside the review panel/);
-  assert.doesNotMatch(output, new RegExp(longText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.ok(lines.every((line) => line.length <= 58), "panel rows should stay close to the requested terminal width");
+  assert.match(output, /src\/file-1\.ts/);
+  assert.match(output, /src\/file-20\.ts/);
+  assert.match(output, /src\/file-40\.ts/);
+  assert.match(output, /40\. Complete implementation step 40\./);
+  assert.doesNotMatch(output, /Plan \d+[-–]\d+ of \d+/);
+  assert.doesNotMatch(output, /PageUp\/PageDown scroll plan/);
+  assert.doesNotMatch(output, /C:\\Development/);
 });
 
-test("plan review viewport slices and clamps long plans", () => {
-  const semanticRows = buildPlanReviewRows(makeLongPlan(10), "C:\\Development\\Project");
-  const displayRows = buildPlanReviewDisplayRows(semanticRows, 60);
-  const first = selectPlanReviewViewport(displayRows, 8, 0);
-  const middle = selectPlanReviewViewport(displayRows, 8, 5);
-  const last = selectPlanReviewViewport(displayRows, 8, 999);
-
-  assert.equal(first.startRow, 1);
-  assert.equal(first.visibleRows.length, 5);
-  assert.equal(middle.startRow, 6);
-  assert.equal(last.endRow, displayRows.length);
-  assert.equal(last.scrollOffset, last.maxScrollOffset);
-  assert.equal(clampPlanReviewScrollOffset(999, displayRows.length, 5), last.maxScrollOffset);
-  assert.equal(clampPlanReviewScrollOffset(-10, displayRows.length, 5), 0);
-});
-
-test("plan review panel focuses reading first and scrolls before menu selection", async () => {
-  const harness = createInkHarness(<PlanReviewInteractionHarness />);
+test("plan action picker keeps simple menu navigation and enter selection", async () => {
+  const harness = createInkHarness(<PlanActionHarness />);
 
   try {
-    await sleep(80);
-    harness.stdin.write("\r");
-    await sleep(80);
-    harness.stdin.write("\u001b[B");
-    await sleep(80);
-    harness.stdin.write("\u001b[6~");
-    await sleep(80);
-
-    const output = harness.getOutput();
-    assert.match(output, /selection:none/);
-    assert.match(output, /Plan 1–5 of/);
-    assert.match(output, /Plan 2–6 of/);
-    assert.match(output, /Plan 7–11 of/);
-    assert.match(output, /↓ more/);
-  } finally {
-    await harness.cleanup();
-  }
-});
-
-test("plan review menu focus keeps page keys on the plan and enter on the menu", async () => {
-  const harness = createInkHarness(<PlanReviewInteractionHarness initialFocus="actions" />);
-
-  try {
-    await sleep(80);
-    harness.stdin.write("\u001b[6~");
     await sleep(80);
     harness.stdin.write("\u001b[B");
     await sleep(80);
@@ -254,38 +207,25 @@ test("plan review menu focus keeps page keys on the plan and enter on the menu",
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /Tab switches focus\. PageUp\/PageDown scroll plan\. Enter confirms\./);
-    assert.match(output, /Plan 6–10 of/);
+    assert.match(output, /Choose how to proceed\. Enter confirms, Esc cancels\./);
     assert.match(output, /selection:revise/);
   } finally {
     await harness.cleanup();
   }
 });
 
-test("plan review escape cancels from panel focus", async () => {
-  const harness = createInkHarness(<PlanReviewInteractionHarness />);
+test("plan action picker supports focused hotkeys and escape cancellation", async () => {
+  const harness = createInkHarness(<PlanActionHarness />);
 
   try {
+    await sleep(80);
+    harness.stdin.write("v");
     await sleep(80);
     harness.stdin.write("\u001b");
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /cancel:1/);
-  } finally {
-    await harness.cleanup();
-  }
-});
-
-test("plan review escape cancels from menu focus", async () => {
-  const harness = createInkHarness(<PlanReviewInteractionHarness initialFocus="actions" />);
-
-  try {
-    await sleep(80);
-    harness.stdin.write("\u001b");
-    await sleep(80);
-
-    const output = harness.getOutput();
+    assert.match(output, /selection:view_plan_file/);
     assert.match(output, /cancel:1/);
   } finally {
     await harness.cleanup();

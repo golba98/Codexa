@@ -20,6 +20,7 @@ export interface AppShellProps {
   uiState: UIState;
   panel: React.ReactNode;
   mainPanel?: React.ReactNode;
+  mainPanelMode?: "viewport" | "full-output";
   composer: React.ReactNode;
   composerRows: number;
   panelHint?: React.ReactNode;
@@ -41,6 +42,7 @@ function AppShellInner({
   uiState,
   panel,
   mainPanel,
+  mainPanelMode = "viewport",
   composer,
   composerRows,
   panelHint,
@@ -73,6 +75,7 @@ function AppShellInner({
   const shellHeight = getShellHeight(layout.rows);
   const showComposer = screen === "main";
   const showMainPanel = screen === "main" && mainPanel !== undefined && mainPanel !== null;
+  const showMainPanelFullOutput = showMainPanel && mainPanelMode === "full-output";
   const showTimeline = screen === "main" && !showMainPanel;
   const showPanelStage = screen !== "main";
   const previousMeasurements = useRef<{
@@ -168,6 +171,7 @@ function AppShellInner({
         shellHeight: finalShellHeight,
         showComposer,
         showTimeline,
+        showMainPanelFullOutput,
       });
     }
 
@@ -177,7 +181,23 @@ function AppShellInner({
       shellHeight: finalShellHeight,
       shellWidth: finalShellWidth,
     };
-  }, [calculatedTimelineRowsRaw, composerRows, finalShellHeight, finalShellWidth, showComposer, showTimeline, finalTimelineRows]);
+  }, [calculatedTimelineRowsRaw, composerRows, finalShellHeight, finalShellWidth, showComposer, showMainPanelFullOutput, showTimeline, finalTimelineRows]);
+
+  if (showMainPanelFullOutput) {
+    return (
+      <Box flexDirection="column" width="100%">
+        <Box flexDirection="column" width={finalShellWidth}>
+          {mainPanel}
+
+          {showComposer && (
+            <Box flexDirection="column" flexShrink={0}>
+              {composer}
+            </Box>
+          )}
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" width="100%" height={finalShellHeight}>
@@ -255,6 +275,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.composerRows    === next.composerRows    &&
     prev.composer        === next.composer        &&
     prev.mainPanel       === next.mainPanel       &&
+    prev.mainPanelMode   === next.mainPanelMode   &&
     prev.verboseMode     === next.verboseMode     &&
     panelPropsEqual
   );
