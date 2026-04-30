@@ -579,6 +579,21 @@ export function App({ launchArgs }: AppProps) {
   }, [composerInstanceKey, focusManager, getInputDebugSnapshot, screen]);
 
   useEffect(() => {
+    if (screen !== "main") return;
+
+    if (planFlow.kind === "awaiting_action") {
+      intendedFocusTargetRef.current = FOCUS_IDS.planReviewPanel;
+      focusManager.focus(FOCUS_IDS.planReviewPanel);
+      return;
+    }
+
+    if (planFlow.kind === "collecting_feedback") {
+      intendedFocusTargetRef.current = FOCUS_IDS.composer;
+      focusManager.focus(FOCUS_IDS.composer);
+    }
+  }, [focusManager, planFlow.kind, screen]);
+
+  useEffect(() => {
     if (screen === "model-picker" || intendedInputModeRef.current !== "model-picker") {
       return;
     }
@@ -2698,6 +2713,8 @@ export function App({ launchArgs }: AppProps) {
       return (
         <PlanActionPicker
           hasPlanFile={hasPlanFileAvailable}
+          scrollablePlan
+          onFocusPlan={() => focusManager.focus(FOCUS_IDS.planReviewPanel)}
           onSelect={handlePlanAction}
           onCancel={handleCancel}
         />
@@ -2797,10 +2814,14 @@ export function App({ launchArgs }: AppProps) {
       <PlanReviewPanel
         planText={planFlow.currentPlan}
         cols={terminalLayout.cols}
+        height={Math.max(5, terminalLayout.rows - 1 - composerRows)}
+        focusId={FOCUS_IDS.planReviewPanel}
         workspaceRoot={workspaceRoot}
+        onCancel={handleCancel}
+        onFocusActions={() => focusManager.focus(FOCUS_IDS.composer)}
       />
     );
-  }, [planFlow, terminalLayout.cols, workspaceRoot]);
+  }, [composerRows, focusManager, handleCancel, planFlow, terminalLayout.cols, terminalLayout.rows, workspaceRoot]);
 
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>

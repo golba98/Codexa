@@ -2,6 +2,7 @@ import type { Screen } from "../session/types.js";
 
 export const FOCUS_IDS = {
   composer: "composer",
+  planReviewPanel: "plan-review-panel",
   backendPicker: "backend-picker",
   modelPicker: "model-picker",
   modePicker: "mode-picker",
