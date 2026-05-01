@@ -271,6 +271,7 @@ export function App({ launchArgs }: AppProps) {
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [verboseMode, setVerboseMode] = useState(false);
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
+  const [initialRevisionText, setInitialRevisionText] = useState("");
   // Mouse reporting is ON by default so wheel-based history scrolling works in
   // the timeline. When mouse reporting is active, most modern terminals (Windows
   // Terminal, iTerm2, etc.) still allow text selection via Shift+drag — the
@@ -372,7 +373,7 @@ export function App({ launchArgs }: AppProps) {
   modelCapabilitiesBusyRef.current = modelCapabilitiesBusy;
   const composerRows = useMemo(() => {
     if (planFlow.kind === "awaiting_action") {
-      return measurePlanActionPickerRows(hasPlanFileAvailable);
+      return measurePlanActionPickerRows();
     }
     if (planFlow.kind === "collecting_feedback") {
       return measureTextEntryPanelRows();
@@ -392,7 +393,6 @@ export function App({ launchArgs }: AppProps) {
     conversationChars,
     currentModelSpec,
     cursor,
-    hasPlanFileAvailable,
     inputValue,
     mode,
     model,
@@ -2261,9 +2261,6 @@ export function App({ launchArgs }: AppProps) {
       case "constraints":
         setPlanFlow(beginPlanFeedback(planFlow, "constraints"));
         return;
-      case "view_plan_file":
-        handleViewPlanFile(planFlow.planFilePath);
-        return;
       case "cancel":
         setPlanFlow(resetPlanFlow());
         appendSystemEvent("Plan review", "Plan review canceled. No changes were made.");
@@ -2271,7 +2268,7 @@ export function App({ launchArgs }: AppProps) {
       default:
         return;
     }
-  }, [appendSystemEvent, handleViewPlanFile, planFlow, startApprovedPlanExecution]);
+  }, [appendSystemEvent, planFlow, startApprovedPlanExecution]);
 
   const handlePlanFeedbackSubmit = useCallback((value: string) => {
     if (planFlow.kind !== "collecting_feedback") {
@@ -2708,8 +2705,12 @@ export function App({ launchArgs }: AppProps) {
     if (planFlow.kind === "awaiting_action") {
       return (
         <PlanActionPicker
-          hasPlanFile={hasPlanFileAvailable}
+          cols={terminalLayout.cols}
           onSelect={handlePlanAction}
+          onSelectWithText={(mode, text) => {
+            setInitialRevisionText(text);
+            setPlanFlow(beginPlanFeedback(planFlow, mode));
+          }}
           onCancel={handleCancel}
         />
       );
@@ -2727,7 +2728,11 @@ export function App({ launchArgs }: AppProps) {
             ? "e.g. keep it to one file and add tests"
             : "e.g. keep it minimal and avoid touching other files"}
           footerHint="Enter regenerate  Esc back  Backspace delete"
-          onSubmit={handlePlanFeedbackSubmit}
+          initialValue={initialRevisionText}
+          onSubmit={(value) => {
+            setInitialRevisionText("");
+            handlePlanFeedbackSubmit(value);
+          }}
           onCancel={() => setPlanFlow((current) => cancelPlanFeedback(current))}
         />
       );
@@ -2766,7 +2771,7 @@ export function App({ launchArgs }: AppProps) {
     );
   }, [
     planFlow,
-    hasPlanFileAvailable,
+    initialRevisionText,
     handlePlanAction,
     handleCancel,
     handlePlanFeedbackSubmit,
@@ -3020,7 +3025,7 @@ export function App({ launchArgs }: AppProps) {
               )}
           </>
         }
-        mainPanel={mainPanelElement}
+        mainPanel={null}
         mainPanelMode="viewport"
         composer={composerElement}
         composerRows={composerRows}

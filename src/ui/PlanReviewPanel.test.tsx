@@ -128,20 +128,22 @@ function makeLongPlan(itemCount = 40): string {
   ].join("\n");
 }
 
-function PlanActionHarness({ hasPlanFile = true }: { hasPlanFile?: boolean }) {
+function PlanActionHarness() {
   const [selection, setSelection] = React.useState("none");
   const [cancelCount, setCancelCount] = React.useState(0);
+  const [revisionText, setRevisionText] = React.useState("");
 
   return (
     <ThemeProvider theme="purple">
       <Box flexDirection="column">
         <PlanActionPicker
-          hasPlanFile={hasPlanFile}
           onSelect={(value) => setSelection(value)}
+          onSelectWithText={(_mode, text) => { setSelection("revise"); setRevisionText(text); }}
           onCancel={() => setCancelCount((count) => count + 1)}
         />
         <Text>{`selection:${selection}`}</Text>
         <Text>{`cancel:${cancelCount}`}</Text>
+        <Text>{`revision:${revisionText}`}</Text>
       </Box>
     </ThemeProvider>
   );
@@ -201,14 +203,12 @@ test("plan action picker keeps simple menu navigation and enter selection", asyn
 
   try {
     await sleep(80);
-    harness.stdin.write("\u001b[B");
-    await sleep(80);
-    harness.stdin.write("\r");
+    harness.stdin.write("r");
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /Plan review/);
-    assert.match(output, /Enter confirm\s+Up\/Down move\s+Esc cancel/);
+    assert.match(output, /Decision/);
+    assert.match(output, /Request changes/);
     assert.match(output, /selection:revise/);
   } finally {
     await harness.cleanup();
@@ -220,14 +220,45 @@ test("plan action picker supports focused hotkeys and escape cancellation", asyn
 
   try {
     await sleep(80);
-    harness.stdin.write("v");
+    harness.stdin.write("a");
     await sleep(80);
     harness.stdin.write("\u001b");
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /selection:view_plan_file/);
+    assert.match(output, /selection:constraints/);
     assert.match(output, /cancel:1/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("plan action picker parses natural text input to implement", async () => {
+  const harness = createInkHarness(<PlanActionHarness />);
+  try {
+    await sleep(80);
+    harness.stdin.write("yes");
+    await sleep(80);
+    harness.stdin.write("\r");
+    await sleep(80);
+    const output = harness.getOutput();
+    assert.match(output, /selection:implement/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("plan action picker routes typed revision text via onSelectWithText", async () => {
+  const harness = createInkHarness(<PlanActionHarness />);
+  try {
+    await sleep(80);
+    harness.stdin.write("change the layout");
+    await sleep(80);
+    harness.stdin.write("\r");
+    await sleep(80);
+    const output = harness.getOutput();
+    assert.match(output, /selection:revise/);
+    assert.match(output, /revision:change the layout/);
   } finally {
     await harness.cleanup();
   }

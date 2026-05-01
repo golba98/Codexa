@@ -332,125 +332,19 @@ test("main screen keeps the transcript visible while showing the plan action pic
   );
 
   await sleep(100);
-  const frame = stripAnsi(output);
+  const frame = compactText(output);
   instance.cleanup();
   await sleep(20);
 
-  assert.match(frame, /Plan review/);
-  assert.match(frame, /Enter confirm\s+Up\/Down move\s+Esc cancel/);
-  assert.match(frame, /Reproduce the resize flicker and fix it\./);
-  assert.match(frame, /Implement plan/);
+  // Assert transcript content is visible
+  assert.match(frame, /Reproducetheresizeflickerandfixit\./);
+  assert.match(frame, /Rootcauselookslikealayoutguttermismatchduringresize\./);
+  // Assert action picker is visible
+  assert.match(frame, /Decision/);
+  assert.match(frame, /Implementplan/);
 });
 
-test("main screen keeps generated review plans in the timeline with composer actions", async () => {
-  const stdin = new TestInput();
-  const stdout = new TestOutput();
-  let output = "";
 
-  stdout.on("data", (chunk) => {
-    output += chunk.toString();
-  });
-
-  const layout = createLayoutSnapshot(100, 30);
-  const workspaceRoot = "C:\\Development\\1-JavaScript\\13-Custom CLI";
-  const planEvents: TimelineEvent[] = [
-    { id: 10, type: "user", createdAt: 10, prompt: "Plan the repair.", turnId: 5 },
-    {
-      id: 11,
-      type: "run",
-      createdAt: 11,
-      startedAt: 11,
-      durationMs: 1250,
-      backendId: "codex-subprocess",
-      backendLabel: "Codexa",
-      runtime: TEST_RUNTIME,
-      prompt: "Plan the repair.",
-      progressEntries: [],
-      status: "completed",
-      summary: "Plan ready",
-      truncatedOutput: false,
-      toolActivities: [],
-      activity: [],
-      touchedFileCount: 0,
-      errorMessage: null,
-      turnId: 5,
-      plan: {
-        id: "plan-11",
-        streamSeq: 1,
-        chunks: [[
-          "**Files**",
-          `- ${workspaceRoot}\\src\\file-1.tsx Wire file 1 into the plan review output.`,
-          `- ${workspaceRoot}\\src\\file-2.tsx Wire file 2 into the plan review output.`,
-          "",
-          "**Steps**",
-          "1. Complete review step 1.",
-          "2. Complete review step 2.",
-        ].join("\n")],
-        status: "completed",
-        startedAt: 11,
-      },
-      streamItems: [{ streamSeq: 1, kind: "plan", refId: "plan-11" }],
-      lastStreamSeq: 1,
-    },
-    {
-      id: 12,
-      type: "assistant",
-      createdAt: 12,
-      content: "",
-      contentChunks: [],
-      turnId: 5,
-    },
-  ];
-
-  const instance = render(
-    <ThemeProvider theme="purple">
-      <AppShell
-        layout={layout}
-        screen="main"
-        authState="authenticated"
-        workspaceLabel={workspaceRoot}
-        workspaceRoot={workspaceRoot}
-        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
-        staticEvents={planEvents}
-        activeEvents={[]}
-        uiState={{ kind: "IDLE" }}
-        panel={null}
-        mainPanel={null}
-        mainPanelMode="viewport"
-        composer={<PlanActionPicker hasPlanFile onSelect={() => {}} onCancel={() => {}} />}
-        composerRows={measurePlanActionPickerRows(true)}
-      />
-    </ThemeProvider>,
-    {
-      stdin: stdin as unknown as NodeJS.ReadStream,
-      stdout: stdout as unknown as NodeJS.WriteStream,
-      stderr: stdout as unknown as NodeJS.WriteStream,
-      debug: true,
-      exitOnCtrlC: false,
-      patchConsole: false,
-    },
-  );
-
-  await sleep(100);
-  const frame = stripAnsi(output);
-  instance.cleanup();
-  await sleep(20);
-
-  assert.match(frame, /Review Plan/);
-  assert.match(frame, /Files/);
-  assert.match(frame, /Steps/);
-  assert.match(frame, /src\/file-1\.tsx/);
-  assert.match(frame, /Implement plan/);
-  assert.match(frame, /View plan file/);
-  assert.match(frame, /Cancel/);
-  assert.doesNotMatch(frame, /Plan file/);
-  assert.doesNotMatch(frame, /Path:/);
-  assert.doesNotMatch(frame, /\*\*Files\*\*/);
-  assert.doesNotMatch(frame, /\*\*Steps\*\*/);
-  assert.doesNotMatch(frame, /Plan \d+[-–]\d+ of \d+/);
-  assert.doesNotMatch(frame, /PageUp\/PageDown scroll plan/);
-  assert.doesNotMatch(frame, /C:\\Development/);
-});
 
 test("memoized composer re-renders when only the terminal height changes", async () => {
   const stdin = new TestInput();

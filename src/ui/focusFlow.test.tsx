@@ -460,7 +460,6 @@ function PlanActionPickerHarness() {
     <ThemeProvider theme="purple">
       <Box flexDirection="column">
         <PlanActionPicker
-          hasPlanFile={true}
           onSelect={(value) => setSelection(value)}
           onCancel={() => setCancelCount((count) => count + 1)}
         />
@@ -809,25 +808,22 @@ test("focus manager routes through the settings panel and back to the composer",
   }
 });
 
-test("plan action picker supports view-plan-file selection and esc cancel", async () => {
+test("plan action picker supports focused hotkeys and esc cancel", async () => {
   const harness = createInkHarness(<PlanActionPickerHarness />);
 
   try {
     await sleep();
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\r");
-    await sleep(80);
-    harness.stdin.write("\u001b");
+    harness.stdin.write("a");
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /selection:view_plan_file/);
-    assert.match(output, /cancel:1/);
+    assert.match(output, /selection:\s*constraints/);
+
+    harness.stdin.write("\u001b");
+    await sleep(80);
+
+    const finalOutput = harness.getOutput();
+    assert.match(finalOutput, /cancel:\s*1/);
   } finally {
     await harness.cleanup();
   }
@@ -838,15 +834,11 @@ test("plan feedback entry returns to the picker on esc and submits on enter", as
 
   try {
     await sleep();
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\r");
+    harness.stdin.write("r");
     await sleep(80);
     harness.stdin.write("\u001b");
     await sleep(80);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\r");
+    harness.stdin.write("r");
     await sleep(80);
     harness.stdin.write("s");
     await sleep(20);
