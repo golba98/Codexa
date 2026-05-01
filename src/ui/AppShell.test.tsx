@@ -93,6 +93,8 @@ function renderShell(
   uiState: UIState,
   screen: "main" | "theme-picker" = "main",
   panel: React.ReactNode = null,
+  mainPanel: React.ReactNode = null,
+  mainPanelMode: "viewport" | "full-output" = "viewport",
 ): Promise<string> {
   const stdin = new TestInput();
   const stdout = new TestOutput();
@@ -128,6 +130,8 @@ function renderShell(
         activeEvents={[]}
         uiState={uiState}
         panel={panel}
+        mainPanel={mainPanel}
+        mainPanelMode={mainPanelMode}
         composer={
           <BottomComposer
             layout={layout}
@@ -244,6 +248,7 @@ test("non-main panel content updates while the active screen is unchanged", asyn
         activeEvents={[]}
         uiState={{ kind: "IDLE" }}
         panel={<Text>Loading model list</Text>}
+        mainPanel={null}
         composer={null}
         composerRows={0}
       />
@@ -272,6 +277,7 @@ test("non-main panel content updates while the active screen is unchanged", asyn
           activeEvents={[]}
           uiState={{ kind: "IDLE" }}
           panel={<Text>Interactive model list</Text>}
+          mainPanel={null}
           composer={null}
           composerRows={0}
         />
@@ -310,6 +316,7 @@ test("main screen keeps the transcript visible while showing the plan action pic
         activeEvents={[]}
         uiState={{ kind: "IDLE" }}
         panel={null}
+        mainPanel={null}
         composer={<PlanActionPicker onSelect={() => {}} onCancel={() => {}} />}
         composerRows={measurePlanActionPickerRows()}
       />
@@ -325,14 +332,19 @@ test("main screen keeps the transcript visible while showing the plan action pic
   );
 
   await sleep(100);
-  const frame = stripAnsi(output);
+  const frame = compactText(output);
   instance.cleanup();
   await sleep(20);
 
-  assert.match(frame, /Review plan/);
-  assert.match(frame, /Reproduce the resize flicker and fix it\./);
-  assert.match(frame, /Implement plan/);
+  // Assert transcript content is visible
+  assert.match(frame, /Reproducetheresizeflickerandfixit\./);
+  assert.match(frame, /Rootcauselookslikealayoutguttermismatchduringresize\./);
+  // Assert action picker is visible
+  assert.match(frame, /Decision/);
+  assert.match(frame, /Implementplan/);
 });
+
+
 
 test("memoized composer re-renders when only the terminal height changes", async () => {
   const stdin = new TestInput();

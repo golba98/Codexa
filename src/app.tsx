@@ -65,7 +65,7 @@ import {
   probeCodexAuthStatus,
 } from "./core/auth/codexAuth.js";
 import { copyToClipboard } from "./core/clipboard.js";
-import { savePlan, readPlan } from "./core/planStorage.js";
+import { normalizePlanReviewMarkdown, savePlan, readPlan } from "./core/planStorage.js";
 import { getBlockedCleanupFailure } from "./core/cleanupFastFail.js";
 import { runCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
 import {
@@ -271,6 +271,7 @@ export function App({ launchArgs }: AppProps) {
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [verboseMode, setVerboseMode] = useState(false);
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
+  const [initialRevisionText, setInitialRevisionText] = useState("");
   // Mouse reporting is ON by default so wheel-based history scrolling works in
   // the timeline. When mouse reporting is active, most modern terminals (Windows
   // Terminal, iTerm2, etc.) still allow text selection via Shift+drag — the
@@ -372,7 +373,7 @@ export function App({ launchArgs }: AppProps) {
   modelCapabilitiesBusyRef.current = modelCapabilitiesBusy;
   const composerRows = useMemo(() => {
     if (planFlow.kind === "awaiting_action") {
-      return measurePlanActionPickerRows(hasPlanFileAvailable);
+      return measurePlanActionPickerRows();
     }
     if (planFlow.kind === "collecting_feedback") {
       return measureTextEntryPanelRows();
@@ -392,7 +393,6 @@ export function App({ launchArgs }: AppProps) {
     conversationChars,
     currentModelSpec,
     cursor,
-    hasPlanFileAvailable,
     inputValue,
     mode,
     model,
@@ -576,6 +576,21 @@ export function App({ launchArgs }: AppProps) {
     traceInputDebug("focus_route", getInputDebugSnapshot({ focusTarget }));
     focusManager.focus(focusTarget);
   }, [composerInstanceKey, focusManager, getInputDebugSnapshot, screen]);
+
+  useEffect(() => {
+    if (screen !== "main") return;
+
+    if (planFlow.kind === "awaiting_action") {
+      intendedFocusTargetRef.current = FOCUS_IDS.composer;
+      focusManager.focus(FOCUS_IDS.composer);
+      return;
+    }
+
+    if (planFlow.kind === "collecting_feedback") {
+      intendedFocusTargetRef.current = FOCUS_IDS.composer;
+      focusManager.focus(FOCUS_IDS.composer);
+    }
+  }, [focusManager, planFlow.kind, screen]);
 
   useEffect(() => {
     if (screen === "model-picker" || intendedInputModeRef.current !== "model-picker") {
@@ -1601,12 +1616,9 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
-    const sanitized = sanitizeTerminalOutput(contents, {
-      preserveTabs: false,
-      tabSize: 2,
-    });
+    const sanitized = normalizePlanReviewMarkdown(contents, workspaceRoot);
     appendSystemEvent("Plan file", [`Path: ${planFilePath}`, "", sanitized].join("\n"));
-  }, [appendErrorEvent, appendSystemEvent]);
+  }, [appendErrorEvent, appendSystemEvent, workspaceRoot]);
 
 
   // ── Stable composer-input callbacks ────────────────────────────────────────
@@ -2249,9 +2261,6 @@ export function App({ launchArgs }: AppProps) {
       case "constraints":
         setPlanFlow(beginPlanFeedback(planFlow, "constraints"));
         return;
-      case "view_plan_file":
-        handleViewPlanFile(planFlow.planFilePath);
-        return;
       case "cancel":
         setPlanFlow(resetPlanFlow());
         appendSystemEvent("Plan review", "Plan review canceled. No changes were made.");
@@ -2259,7 +2268,7 @@ export function App({ launchArgs }: AppProps) {
       default:
         return;
     }
-  }, [appendSystemEvent, handleViewPlanFile, planFlow, startApprovedPlanExecution]);
+  }, [appendSystemEvent, planFlow, startApprovedPlanExecution]);
 
   const handlePlanFeedbackSubmit = useCallback((value: string) => {
     if (planFlow.kind !== "collecting_feedback") {
@@ -2696,8 +2705,12 @@ export function App({ launchArgs }: AppProps) {
     if (planFlow.kind === "awaiting_action") {
       return (
         <PlanActionPicker
-          hasPlanFile={hasPlanFileAvailable}
+          cols={terminalLayout.cols}
           onSelect={handlePlanAction}
+          onSelectWithText={(mode, text) => {
+            setInitialRevisionText(text);
+            setPlanFlow(beginPlanFeedback(planFlow, mode));
+          }}
           onCancel={handleCancel}
         />
       );
@@ -2715,7 +2728,11 @@ export function App({ launchArgs }: AppProps) {
             ? "e.g. keep it to one file and add tests"
             : "e.g. keep it minimal and avoid touching other files"}
           footerHint="Enter regenerate  Esc back  Backspace delete"
-          onSubmit={handlePlanFeedbackSubmit}
+          initialValue={initialRevisionText}
+          onSubmit={(value) => {
+            setInitialRevisionText("");
+            handlePlanFeedbackSubmit(value);
+          }}
           onCancel={() => setPlanFlow((current) => cancelPlanFeedback(current))}
         />
       );
@@ -2754,7 +2771,7 @@ export function App({ launchArgs }: AppProps) {
     );
   }, [
     planFlow,
-    hasPlanFileAvailable,
+    initialRevisionText,
     handlePlanAction,
     handleCancel,
     handlePlanFeedbackSubmit,
@@ -2787,6 +2804,9 @@ export function App({ launchArgs }: AppProps) {
     handleQuit,
   ]);
 
+  // Plan review is shown inline in the Timeline, not as a separate overlay.
+  const mainPanelElement = null;
+
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
       <AppShell
@@ -2794,6 +2814,7 @@ export function App({ launchArgs }: AppProps) {
         screen={screen}
         authState={authStatus.state}
         workspaceLabel={workspaceLabel}
+        workspaceRoot={workspaceRoot}
         runtimeSummary={runtimeSummary}
         staticEvents={staticEvents}
         activeEvents={activeEvents}
@@ -3004,6 +3025,8 @@ export function App({ launchArgs }: AppProps) {
               )}
           </>
         }
+        mainPanel={null}
+        mainPanelMode="viewport"
         composer={composerElement}
         composerRows={composerRows}
         panelHint={screen !== "main" ? (

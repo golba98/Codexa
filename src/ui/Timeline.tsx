@@ -29,6 +29,7 @@ interface TimelineProps {
   verboseMode?: boolean;
   authState?: CodexAuthState;
   workspaceLabel?: string;
+  workspaceRoot?: string | null;
 }
 
 type StandaloneTimelineEvent = SystemEvent | ErrorEvent | ShellEvent;
@@ -859,6 +860,7 @@ export const Timeline = memo(function Timeline({
   verboseMode = false,
   authState = "checking",
   workspaceLabel = "",
+  workspaceRoot = null,
 }: TimelineProps) {
   renderDebug.useRenderDebug("Timeline", {
     staticEvents,
@@ -873,6 +875,7 @@ export const Timeline = memo(function Timeline({
     verboseMode,
     authState,
     workspaceLabel,
+    workspaceRoot,
   });
   renderDebug.useLifecycleDebug("Timeline", {
     cols: layout.cols,
@@ -910,6 +913,7 @@ export const Timeline = memo(function Timeline({
     uiStateKind: uiState.kind,
     viewportRows,
     verboseMode,
+    workspaceRoot,
   });
 
   const { stdin } = useStdin();
@@ -967,8 +971,8 @@ export const Timeline = memo(function Timeline({
   // the streaming assistant item is rebuilt each frame.
   const snapshotWidth = getShellWidth(layout.cols);
   const staticSnapshot = useMemo(
-    () => buildTimelineSnapshot(staticRenderItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "static" }),
-    [snapshotWidth, staticRenderItems, verboseMode],
+    () => buildTimelineSnapshot(staticRenderItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "static", workspaceRoot }),
+    [snapshotWidth, staticRenderItems, verboseMode, workspaceRoot],
   );
   // Partition active items: non-assistant items are stable during streaming
   const isStreaming = uiState.kind === "RESPONDING";
@@ -988,21 +992,21 @@ export const Timeline = memo(function Timeline({
     () => STABLE_RENDER_ENABLED
       ? { items: [], rows: [], totalRows: 0, itemCount: 0 }
       : activeStableItems.length > 0
-      ? buildTimelineSnapshot(activeStableItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-stable" })
+      ? buildTimelineSnapshot(activeStableItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-stable", workspaceRoot })
       : { items: [], rows: [], totalRows: 0, itemCount: 0 },
-    [snapshotWidth, activeStableItems, verboseMode],
+    [snapshotWidth, activeStableItems, verboseMode, workspaceRoot],
   );
   const activeStreamingSnapshot = useMemo(
     () => STABLE_RENDER_ENABLED
       ? { items: [], rows: [], totalRows: 0, itemCount: 0 }
-      : buildTimelineSnapshot(activeStreamingItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-streaming" }),
-    [snapshotWidth, activeStreamingItems, verboseMode],
+      : buildTimelineSnapshot(activeStreamingItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-streaming", workspaceRoot }),
+    [snapshotWidth, activeStreamingItems, verboseMode, workspaceRoot],
   );
   const stableActiveSnapshot = useMemo(
     () => STABLE_RENDER_ENABLED
-      ? buildStableTimelineSnapshot(activeRenderItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-stable-render" })
+      ? buildStableTimelineSnapshot(activeRenderItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "active-stable-render", workspaceRoot })
       : null,
-    [snapshotWidth, activeRenderItems, verboseMode],
+    [snapshotWidth, activeRenderItems, verboseMode, workspaceRoot],
   );
   const liveSnapshot = useMemo(
     () => {
@@ -1307,7 +1311,8 @@ export const Timeline = memo(function Timeline({
     prev.viewportRows === next.viewportRows &&
     prev.verboseMode === next.verboseMode &&
     prev.authState === next.authState &&
-    prev.workspaceLabel === next.workspaceLabel
+    prev.workspaceLabel === next.workspaceLabel &&
+    prev.workspaceRoot === next.workspaceRoot
   );
 });
 

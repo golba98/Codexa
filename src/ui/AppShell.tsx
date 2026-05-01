@@ -14,11 +14,14 @@ export interface AppShellProps {
   screen: Screen;
   authState: CodexAuthState;
   workspaceLabel: string;
+  workspaceRoot?: string | null;
   runtimeSummary?: RuntimeSummary | null;
   staticEvents: TimelineEvent[];
   activeEvents: TimelineEvent[];
   uiState: UIState;
   panel: React.ReactNode;
+  mainPanel?: React.ReactNode;
+  mainPanelMode?: "viewport" | "full-output";
   composer: React.ReactNode;
   composerRows: number;
   panelHint?: React.ReactNode;
@@ -34,11 +37,14 @@ function AppShellInner({
   screen,
   authState,
   workspaceLabel,
+  workspaceRoot = null,
   runtimeSummary = null,
   staticEvents,
   activeEvents,
   uiState,
   panel,
+  mainPanel,
+  mainPanelMode = "viewport",
   composer,
   composerRows,
   panelHint,
@@ -52,6 +58,7 @@ function AppShellInner({
     screen,
     authState,
     workspaceLabel,
+    workspaceRoot,
     runtimeSummary,
     staticEvents,
     activeEvents,
@@ -70,7 +77,9 @@ function AppShellInner({
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
   const showComposer = screen === "main";
-  const showTimeline = screen === "main";
+  const showMainPanel = screen === "main" && mainPanel !== undefined && mainPanel !== null;
+  const showMainPanelFullOutput = showMainPanel && mainPanelMode === "full-output";
+  const showTimeline = screen === "main" && !showMainPanel;
   const showPanelStage = screen !== "main";
   const previousMeasurements = useRef<{
     timelineRows: number;
@@ -165,6 +174,7 @@ function AppShellInner({
         shellHeight: finalShellHeight,
         showComposer,
         showTimeline,
+        showMainPanelFullOutput,
       });
     }
 
@@ -174,7 +184,23 @@ function AppShellInner({
       shellHeight: finalShellHeight,
       shellWidth: finalShellWidth,
     };
-  }, [calculatedTimelineRowsRaw, composerRows, finalShellHeight, finalShellWidth, showComposer, showTimeline, finalTimelineRows]);
+  }, [calculatedTimelineRowsRaw, composerRows, finalShellHeight, finalShellWidth, showComposer, showMainPanelFullOutput, showTimeline, finalTimelineRows]);
+
+  if (showMainPanelFullOutput) {
+    return (
+      <Box flexDirection="column" width="100%">
+        <Box flexDirection="column" width={finalShellWidth}>
+          {mainPanel}
+
+          {showComposer && (
+            <Box flexDirection="column" flexShrink={0}>
+              {composer}
+            </Box>
+          )}
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" width="100%" height={finalShellHeight}>
@@ -190,7 +216,14 @@ function AppShellInner({
               verboseMode={verboseMode}
               authState={authState}
               workspaceLabel={workspaceLabel}
+              workspaceRoot={workspaceRoot}
             />
+          </Box>
+        )}
+
+        {showMainPanel && (
+          <Box flexDirection="column" height={finalTimelineRows} overflow="hidden" justifyContent="center">
+            {mainPanel}
           </Box>
         )}
 
@@ -228,7 +261,8 @@ function AppShellInner({
  */
 export const AppShell = memo(AppShellInner, (prev, next) => {
   const panelPropsEqual = next.screen === "main"
-    || (prev.panel === next.panel && prev.panelHint === next.panelHint);
+    ? prev.mainPanel === next.mainPanel
+    : (prev.panel === next.panel && prev.panelHint === next.panelHint);
 
   return (
     prev.layout.cols     === next.layout.cols     &&
@@ -238,12 +272,15 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.screen          === next.screen          &&
     prev.authState       === next.authState       &&
     prev.workspaceLabel  === next.workspaceLabel  &&
+    prev.workspaceRoot   === next.workspaceRoot   &&
     prev.runtimeSummary  === next.runtimeSummary  &&
     prev.staticEvents    === next.staticEvents    &&
     prev.activeEvents    === next.activeEvents    &&
     prev.uiState         === next.uiState         &&
     prev.composerRows    === next.composerRows    &&
     prev.composer        === next.composer        &&
+    prev.mainPanel       === next.mainPanel       &&
+    prev.mainPanelMode   === next.mainPanelMode   &&
     prev.verboseMode     === next.verboseMode     &&
     panelPropsEqual
   );
