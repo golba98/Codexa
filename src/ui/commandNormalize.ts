@@ -7,8 +7,12 @@ function stripOuterQuotes(s: string): string {
   return s;
 }
 
+function decodeEscapedQuotes(s: string): string {
+  return s.replace(/\\"/g, '"');
+}
+
 function cleanCommand(command: string): string {
-  return formatTerminalAnswerInline(command.trim());
+  return formatTerminalAnswerInline(decodeEscapedQuotes(command.trim()));
 }
 
 /**

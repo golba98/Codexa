@@ -344,32 +344,46 @@ function ActionEventCard({
     streamSeq: tool.streamSeq ?? null,
     changed: actionNormalized !== tool.command,
   });
+  const statusIcon = tool.status === "failed" ? "✕" : tool.status === "completed" ? "✓" : "•";
+  const statusColor = tool.status === "failed" ? theme.ERROR : tool.status === "completed" ? theme.SUCCESS : theme.INFO;
   const borderColor = dim ? theme.BORDER_SUBTLE : tool.status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE;
   const detailText = isLiveCursorTarget && tool.status === "running"
     ? "▌"
-    : tool.summary?.trim()
-      ? tool.summary
-      : " ";
+    : tool.summary?.trim() ? tool.summary : " ";
+  const detailColor = isLiveCursorTarget && tool.status === "running" ? theme.ACCENT : theme.MUTED;
+  const duration = tool.completedAt != null
+    ? formatDuration(tool.completedAt - tool.startedAt)
+    : null;
+
+  const commandBodyWidth = Math.max(1, cols - 9);
+  const commandLines = wrapPlainText(actionNormalized, commandBodyWidth);
 
   return (
     <DashCard cols={cols} title="action" borderColor={borderColor}>
-      <Box>
-        <Text color={tool.status === "failed" ? theme.ERROR : tool.status === "completed" ? theme.SUCCESS : theme.INFO}>
-          {`${tool.status === "failed" ? "✕" : tool.status === "completed" ? "✓" : "•"} `}
-        </Text>
-        <Text color={dim ? theme.DIM : theme.TEXT} wrap="truncate">{actionLabel ?? actionNormalized}</Text>
-        {tool.completedAt && (
-          <Text color={theme.DIM}>  {formatDuration(tool.completedAt - tool.startedAt)}</Text>
-        )}
-      </Box>
-      {actionLabel && (
-        <Text color={theme.MUTED} wrap="truncate">  {actionNormalized}</Text>
+      {actionLabel ? (
+        <>
+          <Box>
+            <Text color={statusColor}>{statusIcon + " "}</Text>
+            <Text color={dim ? theme.DIM : theme.TEXT}>{actionLabel}</Text>
+            {duration && <Text color={theme.DIM}>{"  " + duration}</Text>}
+          </Box>
+          {commandLines.map((line, i) => (
+            <Text key={i} color={theme.MUTED}>{"  "}{line || " "}</Text>
+          ))}
+        </>
+      ) : (
+        <>
+          {commandLines.map((line, i) => (
+            <Box key={i}>
+              <Text color={i === 0 ? statusColor : undefined}>{i === 0 ? statusIcon + " " : "  "}</Text>
+              <Text color={dim ? theme.DIM : theme.TEXT}>{line || " "}</Text>
+              {i === 0 && duration && <Text color={theme.DIM}>{"  " + duration}</Text>}
+            </Box>
+          ))}
+          <Text color={theme.MUTED}>{"  "}{" "}</Text>
+        </>
       )}
-      <Text color={theme.MUTED} wrap="truncate">  {" "}</Text>
-      {!actionLabel && (
-        <Text color={theme.MUTED} wrap="truncate">  {" "}</Text>
-      )}
-      <Text color={isLiveCursorTarget && tool.status === "running" ? theme.ACCENT : theme.MUTED} wrap="truncate">  {detailText}</Text>
+      <Text color={detailColor}>{"  "}{detailText}</Text>
     </DashCard>
   );
 }

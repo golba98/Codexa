@@ -103,3 +103,40 @@ test("getFriendlyActionLabel: returns null for unrecognized commands", () => {
   assert.equal(getFriendlyActionLabel("echo hello"), null);
   assert.equal(getFriendlyActionLabel("node scripts/build.js"), null);
 });
+
+test("normalizeCommand: decodes JSON-escaped quotes in PowerShell commands", () => {
+  const raw = `pwsh.exe -Command 'Get-ChildItem | Where-Object { $_.Name -match \\"requirements\\" }'`;
+  assert.equal(
+    normalizeCommand(raw),
+    'Get-ChildItem | Where-Object { $_.Name -match "requirements" }',
+  );
+});
+
+test("normalizeCommand: decodes escaped quotes in bare commands", () => {
+  assert.equal(normalizeCommand(`grep -r \\"TODO\\" ./src`), 'grep -r "TODO" ./src');
+});
+
+test("normalizeCommand: decodes escaped quotes in cmd.exe wrapper", () => {
+  assert.equal(normalizeCommand(`cmd.exe /c "grep \\"error\\" log.txt"`), 'grep "error" log.txt');
+});
+
+test("normalizeCommand: passes through MCP tool call format unchanged", () => {
+  assert.equal(normalizeCommand("filesystem:read_file"), "filesystem:read_file");
+  assert.equal(normalizeCommand("github:create_issue"), "github:create_issue");
+});
+
+test("normalizeCommand: passes through web search format unchanged", () => {
+  assert.equal(
+    normalizeCommand("web search: TypeScript union types"),
+    "web search: TypeScript union types",
+  );
+});
+
+test("getFriendlyActionLabel: returns null for MCP tool call format", () => {
+  assert.equal(getFriendlyActionLabel("filesystem:read_file"), null);
+  assert.equal(getFriendlyActionLabel("github:list_issues"), null);
+});
+
+test("getFriendlyActionLabel: returns null for web search commands", () => {
+  assert.equal(getFriendlyActionLabel("web search: TypeScript generics tutorial"), null);
+});
