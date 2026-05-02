@@ -1144,15 +1144,15 @@ test("unified stream renders plan panel before action blocks", () => {
     lastStreamSeq: 2,
   }), 299);
 
-  assert.match(joined, /╭── Review Plan/);
+  assert.match(joined, /╭── Plan/);
   assert.match(joined, /│ 1\. Inspect the current app structure/);
   assert.match(joined, /╰/);
   assert.match(joined, /╭── action/);
-  assert.ok(joined.indexOf("Review Plan") < joined.indexOf("action"));
+  assert.ok(joined.indexOf("Plan") < joined.indexOf("action"));
   assert.ok(joined.indexOf("Render the generated plan visibly") < joined.indexOf("Read file"));
 });
 
-test("unified stream renders approved execution plan with implementation title", () => {
+test("unified stream renders approved execution plan with approved badge", () => {
   const approvedPlan = "1. Apply the selected changes\n2. Run tests";
   const turnId = 9305;
   const joined = renderJoinedTurn(makeChronologicalTurnEvents(turnId, {
@@ -1170,9 +1170,10 @@ test("unified stream renders approved execution plan with implementation title",
     lastStreamSeq: 1,
   }), turnId);
 
-  assert.match(joined, /╭── Implementation Plan/);
+  assert.match(joined, /╭── Plan/);
   assert.match(joined, /approved/);
   assert.doesNotMatch(joined, /Review Plan/);
+  assert.doesNotMatch(joined, /Implementation Plan/);
 });
 
 test("unified stream hides workspace paths in finalized plan snapshots", () => {
@@ -1225,7 +1226,7 @@ test("long draft plan remains timeline rows that can be scrolled", () => {
   const allRows = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 
   assert.ok(snapshot.totalRows > 72, "long plan should add scrollback rows to the timeline");
-  assert.match(allRows, /Review Plan/);
+  assert.match(allRows, /Plan/);
   assert.match(firstPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /src\/file-/);
   assert.match(tailPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /36\. Complete step 36\./);
 });

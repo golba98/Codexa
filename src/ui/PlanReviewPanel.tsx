@@ -181,7 +181,7 @@ export function PlanReviewPanel({
   const contentWidth = Math.max(1, panelCols - 4);
   const rows = useMemo(() => buildPlanReviewRows(planText, workspaceRoot), [planText, workspaceRoot]);
   const displayRows = useMemo(() => buildPlanReviewDisplayRows(rows, contentWidth), [rows, contentWidth]);
-  const topBorder = useMemo(() => buildTopBorder(panelCols, "Review Plan "), [panelCols]);
+  const topBorder = useMemo(() => buildTopBorder(panelCols, "Plan "), [panelCols]);
 
   return (
     <Box width="100%" flexDirection="column" paddingX={2}>

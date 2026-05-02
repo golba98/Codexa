@@ -1946,7 +1946,7 @@ function buildApprovedPlanRows(params: {
   return buildDashCardRows({
     keyPrefix: params.keyPrefix,
     width: params.width,
-    title: params.approved ? "Implementation Plan" : "Review Plan",
+    title: "Plan",
     rightBadge: params.approved ? "approved" : undefined,
     borderTone: "accent",
     titleTone: "text",
