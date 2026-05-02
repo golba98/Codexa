@@ -10,6 +10,7 @@ import {
   moveCursorLeft,
   moveCursorRight,
   normalizeInputText,
+  stripMouseEscapes,
   wrapInputRows,
 } from "./inputBuffer.js";
 
@@ -94,6 +95,36 @@ test("strips leaked SGR mouse escape sequence fragments from input", () => {
   const partial = "text[<0;26;24Mmore";
   assert.equal(normalizeInputText(partial), "textmore");
 });
+
+test("stripMouseEscapes: removes complete SGR sequences (ESC-prefixed)", () => {
+  assert.equal(stripMouseEscapes("\x1b[<0;83;19M"), "");
+  assert.equal(stripMouseEscapes("\x1b[<64;83;19M"), "");
+  assert.equal(stripMouseEscapes("\x1b[<64;83;19m"), "");  // lowercase m
+});
+
+test("stripMouseEscapes: removes leaked SGR fragments (ESC already stripped by readline)", () => {
+  assert.equal(stripMouseEscapes("[<0;83;19M"), "");
+});
+
+test("stripMouseEscapes: strips mouse sequences embedded in surrounding text", () => {
+  assert.equal(stripMouseEscapes("hello\x1b[<0;83;19M"), "hello");
+  assert.equal(stripMouseEscapes("\x1b[<0;83;19Mhello"), "hello");
+  assert.equal(stripMouseEscapes("hello[<64;83;19Mworld"), "helloworld");
+});
+
+test("stripMouseEscapes: preserves normal text and returns it unchanged", () => {
+  assert.equal(stripMouseEscapes("hello world"), "hello world");
+  assert.equal(stripMouseEscapes("git status"), "git status");
+  assert.equal(stripMouseEscapes(""), "");
+  assert.equal(stripMouseEscapes("I"), "I");
+  assert.equal(stripMouseEscapes("yes"), "yes");
+});
+
+// NOTE: Partial chunk splitting (e.g. "\x1b[<0;" then "83;19M" as two separate writes)
+// is not filterable at the string level — each chunk alone does not match the pattern.
+// Robust partial-chunk handling requires stateful stdin buffering (not implemented here
+// or in BottomComposer). In practice, terminals send mouse sequences as atomic stdin
+// writes so this case does not arise in normal usage.
 
 test("robustness: rapid sequential typing and deletion", () => {
   let state = { value: "", cursorOffset: 0 };

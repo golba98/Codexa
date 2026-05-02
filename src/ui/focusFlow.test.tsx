@@ -813,11 +813,11 @@ test("plan action picker supports focused hotkeys and esc cancel", async () => {
 
   try {
     await sleep();
-    harness.stdin.write("a");
+    harness.stdin.write("u");
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /selection:\s*constraints/);
+    assert.match(output, /selection:\s*revise/);
 
     harness.stdin.write("\u001b");
     await sleep(80);
@@ -829,16 +829,38 @@ test("plan action picker supports focused hotkeys and esc cancel", async () => {
   }
 });
 
+test("plan action picker ignores SGR mouse escape sequences", async () => {
+  const harness = createInkHarness(<PlanActionPickerHarness />);
+
+  try {
+    await sleep();
+
+    // Simulate terminal mouse event (button press + scroll) sent to raw stdin
+    harness.stdin.write("\x1b[<0;83;19M");
+    harness.stdin.write("\x1b[<64;83;19M");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    // Neither mouse sequence should appear as selection or visible text
+    assert.ok(!output.includes("[<0;83;19M"), "mouse sequence must not appear in output");
+    assert.ok(!output.includes("[<64;83;19M"), "scroll sequence must not appear in output");
+    // selection should still be "none" — no accidental trigger
+    assert.match(output, /selection:\s*none/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test("plan feedback entry returns to the picker on esc and submits on enter", async () => {
   const harness = createInkHarness(<PlanFeedbackHarness />);
 
   try {
     await sleep();
-    harness.stdin.write("r");
+    harness.stdin.write("u");
     await sleep(80);
     harness.stdin.write("\u001b");
     await sleep(80);
-    harness.stdin.write("r");
+    harness.stdin.write("u");
     await sleep(80);
     harness.stdin.write("s");
     await sleep(20);

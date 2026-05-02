@@ -131,19 +131,16 @@ function makeLongPlan(itemCount = 40): string {
 function PlanActionHarness() {
   const [selection, setSelection] = React.useState("none");
   const [cancelCount, setCancelCount] = React.useState(0);
-  const [revisionText, setRevisionText] = React.useState("");
 
   return (
     <ThemeProvider theme="purple">
       <Box flexDirection="column">
         <PlanActionPicker
           onSelect={(value) => setSelection(value)}
-          onSelectWithText={(_mode, text) => { setSelection("revise"); setRevisionText(text); }}
           onCancel={() => setCancelCount((count) => count + 1)}
         />
         <Text>{`selection:${selection}`}</Text>
         <Text>{`cancel:${cancelCount}`}</Text>
-        <Text>{`revision:${revisionText}`}</Text>
       </Box>
     </ThemeProvider>
   );
@@ -188,7 +185,7 @@ test("plan review display rows wrap long lines inside the panel width", () => {
 test("plan review panel renders the full long plan instead of a clipped row range", async () => {
   const output = await renderPlanPanel(makeLongPlan(40), 100);
 
-  assert.match(output, /Review Plan/);
+  assert.match(output, /Plan/);
   assert.match(output, /src\/file-1\.ts/);
   assert.match(output, /src\/file-20\.ts/);
   assert.match(output, /src\/file-40\.ts/);
@@ -203,12 +200,20 @@ test("plan action picker keeps simple menu navigation and enter selection", asyn
 
   try {
     await sleep(80);
-    harness.stdin.write("r");
+    harness.stdin.write("u");
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /Decision/);
-    assert.match(output, /Request changes/);
+    assert.match(output, /Plan ready/);
+    assert.match(output, /\[I\] Implement changes/);
+    assert.match(output, /\[U\] Update plan/);
+    assert.doesNotMatch(output, /╭── Plan ready/);
+    assert.doesNotMatch(output, /I\s\sImplement changes/);
+    assert.doesNotMatch(output, /U\s\sUpdate plan/);
+    assert.doesNotMatch(output, /Cancel/);
+    assert.doesNotMatch(output, /Request changes/);
+    assert.doesNotMatch(output, /Add constraints/);
+    assert.doesNotMatch(output, /type a decision/);
     assert.match(output, /selection:revise/);
   } finally {
     await harness.cleanup();
@@ -220,26 +225,24 @@ test("plan action picker supports focused hotkeys and escape cancellation", asyn
 
   try {
     await sleep(80);
-    harness.stdin.write("a");
+    harness.stdin.write("u");
     await sleep(80);
     harness.stdin.write("\u001b");
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /selection:constraints/);
+    assert.match(output, /selection:revise/);
     assert.match(output, /cancel:1/);
   } finally {
     await harness.cleanup();
   }
 });
 
-test("plan action picker parses natural text input to implement", async () => {
+test("plan action picker implements with hotkey", async () => {
   const harness = createInkHarness(<PlanActionHarness />);
   try {
     await sleep(80);
-    harness.stdin.write("yes");
-    await sleep(80);
-    harness.stdin.write("\r");
+    harness.stdin.write("i");
     await sleep(80);
     const output = harness.getOutput();
     assert.match(output, /selection:implement/);
@@ -248,17 +251,16 @@ test("plan action picker parses natural text input to implement", async () => {
   }
 });
 
-test("plan action picker routes typed revision text via onSelectWithText", async () => {
+test("plan action picker selects focused action with enter", async () => {
   const harness = createInkHarness(<PlanActionHarness />);
   try {
     await sleep(80);
-    harness.stdin.write("change the layout");
+    harness.stdin.write("\u001b[B");
     await sleep(80);
     harness.stdin.write("\r");
     await sleep(80);
     const output = harness.getOutput();
     assert.match(output, /selection:revise/);
-    assert.match(output, /revision:change the layout/);
   } finally {
     await harness.cleanup();
   }

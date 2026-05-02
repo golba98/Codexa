@@ -1,14 +1,15 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useInput, useStdin } from "ink";
-import type {
-  AssistantEvent,
-  ErrorEvent,
-  RunEvent,
-  ShellEvent,
-  SystemEvent,
-  TimelineEvent,
-  UIState,
-  UserPromptEvent,
+import {
+  getRunPlanText,
+  type AssistantEvent,
+  type ErrorEvent,
+  type RunEvent,
+  type ShellEvent,
+  type SystemEvent,
+  type TimelineEvent,
+  type UIState,
+  type UserPromptEvent,
 } from "../session/types.js";
 import { APP_VERSION } from "../config/settings.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
@@ -131,6 +132,25 @@ function getFinalizedTurnIds(events: TimelineEvent[]): number[] {
   return events
     .filter((event): event is RunEvent => event.type === "run" && event.status !== "running")
     .map((event) => event.turnId);
+}
+
+function latestFinalizedRunEndsWithPlan(events: TimelineEvent[]): boolean {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event || event.type !== "run" || event.status === "running") {
+      continue;
+    }
+
+    const lastStreamItem = (event.streamItems ?? [])
+      .slice()
+      .sort((left, right) => left.streamSeq - right.streamSeq)
+      .at(-1);
+    return lastStreamItem?.kind === "plan"
+      && event.plan?.status === "completed"
+      && getRunPlanText(event.plan).trim().length > 0;
+  }
+
+  return false;
 }
 
 function hasFinalizeTransition(params: {
@@ -922,6 +942,7 @@ export const Timeline = memo(function Timeline({
   const activeTurnId = getActiveTurnId(uiState);
   const runningTurnIds = useMemo(() => getRunningTurnIds(activeEvents), [activeEvents]);
   const finalizedTurnIds = useMemo(() => getFinalizedTurnIds(staticEvents), [staticEvents]);
+  const finalizedPlanAtTail = useMemo(() => latestFinalizedRunEndsWithPlan(staticEvents), [staticEvents]);
   const finalizeTransitionRef = useRef<{
     runningTurnIds: number[];
     finalizedTurnIds: number[];
@@ -1134,7 +1155,9 @@ export const Timeline = memo(function Timeline({
         return current;
       }
 
-      const useFinalizeContinuity = finalizeTransition && rowGrowth > Math.max(1, Math.floor(viewportRows / 2));
+      const useFinalizeContinuity = finalizeTransition
+        && !finalizedPlanAtTail
+        && rowGrowth > Math.max(1, Math.floor(viewportRows / 2));
       const next = syncTimelineViewport(current, snapshotForViewport, {
         finalizeContinuity: useFinalizeContinuity
           ? { previousTotalRows, viewportRows }
@@ -1153,7 +1176,7 @@ export const Timeline = memo(function Timeline({
       });
       return next;
     });
-  }, [finalizeTransition, snapshotForViewport, snapshotWidth, viewportRows]);
+  }, [finalizeTransition, finalizedPlanAtTail, snapshotForViewport, snapshotWidth, viewportRows]);
 
   useEffect(() => {
     finalizeTransitionRef.current = {

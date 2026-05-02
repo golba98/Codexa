@@ -349,6 +349,70 @@ function makeActionSequenceRenderItem(tools: RunToolActivity[]): RenderTimelineI
   };
 }
 
+function makeCompletedPlanRenderItem(planText: string): RenderTimelineItem {
+  const user: UserPromptEvent = {
+    id: 30,
+    type: "user",
+    createdAt: 1,
+    prompt: "Plan a better architectural update to the file tree",
+    turnId: 4,
+  };
+  const run: RunEvent = {
+    id: 31,
+    type: "run",
+    createdAt: 1,
+    startedAt: 1,
+    durationMs: 100,
+    backendId: "codex-subprocess",
+    backendLabel: "Codexa",
+    runtime: TEST_RUNTIME,
+    prompt: user.prompt,
+    progressEntries: [],
+    status: "completed",
+    summary: "completed",
+    truncatedOutput: false,
+    toolActivities: [],
+    activity: [],
+    touchedFileCount: 0,
+    errorMessage: null,
+    turnId: 4,
+    streamItems: [{ streamSeq: 1, kind: "plan", refId: "plan-31" }],
+    responseSegments: [],
+    lastStreamSeq: 1,
+    activeResponseSegmentId: null,
+    plan: {
+      id: "plan-31",
+      streamSeq: 1,
+      chunks: planText ? [planText] : [],
+      status: "completed",
+      startedAt: 1,
+    },
+  };
+
+  return {
+    key: "turn-plan-4",
+    type: "turn",
+    padded: true,
+    item: {
+      type: "turn",
+      turnId: 4,
+      turnIndex: 3,
+      user,
+      run,
+      assistant: null,
+    },
+    renderState: {
+      opacity: "active",
+      question: null,
+      runPhase: "none",
+    },
+  };
+}
+
+function snapshotText(rows: Array<{ spans: Array<{ text: string }> }>): string {
+  return rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+}
+
 function stableRowsForTools(tools: RunToolActivity[]) {
   return buildStableTimelineSnapshot(
     [makeActionSequenceRenderItem(tools)],
@@ -462,6 +526,40 @@ test("stable timeline freezes completed action rows while active text changes", 
   for (let index = 0; index < firstActionRows.length; index += 1) {
     assert.strictEqual(secondActionRows[index], firstActionRows[index]);
   }
+});
+
+test("buildTimelineSnapshot re-renders when a completed plan changes from empty to final text", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const empty = buildTimelineSnapshot(
+    [makeCompletedPlanRenderItem("")],
+    { totalWidth: 90, debugLabel: "plan-empty" },
+  );
+  const final = buildTimelineSnapshot(
+    [makeCompletedPlanRenderItem("## Final architecture plan\n1. Update the file tree renderer.")],
+    { totalWidth: 90, debugLabel: "plan-final" },
+  );
+
+  assert.doesNotMatch(snapshotText(empty.rows), /Final architecture plan/);
+  assert.match(snapshotText(final.rows), /Final architecture plan/);
+  assert.match(snapshotText(final.rows), /Update the file tree renderer/);
+});
+
+test("buildStableTimelineSnapshot re-renders final plan text under the same turn key", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const empty = buildStableTimelineSnapshot(
+    [makeCompletedPlanRenderItem("")],
+    { totalWidth: 90, debugLabel: "stable-plan-empty" },
+  );
+  const final = buildStableTimelineSnapshot(
+    [makeCompletedPlanRenderItem("## Final architecture plan\n1. Update the file tree renderer.")],
+    { totalWidth: 90, debugLabel: "stable-plan-final" },
+  );
+
+  assert.doesNotMatch(snapshotText(empty.snapshot.rows), /Final architecture plan/);
+  assert.match(snapshotText(final.snapshot.rows), /Final architecture plan/);
+  assert.match(snapshotText(final.snapshot.rows), /Update the file tree renderer/);
 });
 
 test("unchanged active response rows keep references while streaming text grows", () => {

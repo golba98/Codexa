@@ -238,8 +238,86 @@ test("plan deltas update one plan block and FINALIZE_RUN does not create assista
   assert.ok(finalizedRun);
   assert.equal(finalizedRun.plan?.status, "completed");
   assert.equal(getRunPlanText(finalizedRun.plan), "1. Inspect\n2. Render panel");
-  assert.deepEqual(finalizedRun.streamItems?.map((item) => item.kind), ["plan", "action"]);
+  assert.deepEqual(finalizedRun.streamItems?.map((item) => item.kind), ["action", "plan"]);
+  assert.deepEqual(finalizedRun.streamItems?.map((item) => item.streamSeq), [2, 3]);
   assert.equal(state.staticEvents.some((event) => event.type === "assistant"), false);
+});
+
+test("FINALIZE_RUN with plan presentation creates visible plan from final response without deltas", () => {
+  const turnId = 38;
+  let state = stateWithActiveRun(turnId);
+  state = reduceSessionState(state, {
+    type: "RUN_UPSERT_TOOL_ACTIVITY",
+    runId: 2,
+    activity: {
+      id: "tool-1",
+      command: "rg --files",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 20,
+    },
+  });
+
+  state = reduceSessionState(state, {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "completed",
+    response: "1. Inspect files\n2. Update the timeline cache",
+    responsePresentation: "plan",
+    assistantFactory: () => makeAssistantEvent(turnId, "should not render"),
+  });
+
+  const finalizedRun = state.staticEvents.find((event): event is RunEvent => event.type === "run");
+  assert.ok(finalizedRun);
+  assert.equal(finalizedRun.plan?.status, "completed");
+  assert.equal(getRunPlanText(finalizedRun.plan), "1. Inspect files\n2. Update the timeline cache");
+  assert.deepEqual(finalizedRun.streamItems?.map((item) => item.kind), ["action", "plan"]);
+  assert.equal(state.staticEvents.some((event) => event.type === "assistant"), false);
+});
+
+test("FINALIZE_RUN for approved plan execution keeps approved plan and records assistant response", () => {
+  const turnId = 39;
+  let state = createInitialSessionState();
+  const approvedPlan = "1. Inspect files\n2. Render panel";
+  state = {
+    ...state,
+    activeEvents: [
+      makeUserEvent(turnId),
+      {
+        ...makeRunEvent(turnId),
+        plan: {
+          id: "plan-2",
+          streamSeq: 1,
+          chunks: [approvedPlan],
+          status: "completed",
+          startedAt: 2,
+        },
+        approvedPlan,
+        streamItems: [{ streamSeq: 1, kind: "plan", refId: "plan-2" }],
+        responseSegments: [],
+        lastStreamSeq: 1,
+        activeResponseSegmentId: null,
+      },
+    ],
+  };
+
+  state = reduceSessionState(state, {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "completed",
+    response: "Implemented the approved plan.",
+    assistantFactory: () => makeAssistantEvent(turnId, "Implemented the approved plan."),
+  });
+
+  const finalizedRun = state.staticEvents.find((event): event is RunEvent => event.type === "run");
+  const finalizedAssistant = state.staticEvents.find((event): event is AssistantEvent => event.type === "assistant");
+  assert.ok(finalizedRun);
+  assert.ok(finalizedAssistant);
+  assert.equal(getRunPlanText(finalizedRun.plan), approvedPlan);
+  assert.deepEqual(finalizedRun.streamItems?.map((item) => item.kind), ["plan", "response"]);
+  assert.equal(finalizedAssistant.content, "Implemented the approved plan.");
 });
 
 test("FINALIZE_RUN for canceled thinking-only run transitions UI state to IDLE", () => {

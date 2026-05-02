@@ -308,7 +308,7 @@ function PlanPanel({
   return (
     <DashCard
       cols={cols}
-      title={approved ? "Implementation Plan" : "Review Plan"}
+      title="Plan"
       rightBadge={approved ? "approved" : undefined}
       borderColor={theme.ACCENT}
       titleColor={theme.TEXT}

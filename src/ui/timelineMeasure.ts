@@ -1946,7 +1946,7 @@ function buildApprovedPlanRows(params: {
   return buildDashCardRows({
     keyPrefix: params.keyPrefix,
     width: params.width,
-    title: params.approved ? "Implementation Plan" : "Review Plan",
+    title: "Plan",
     rightBadge: params.approved ? "approved" : undefined,
     borderTone: "accent",
     titleTone: "text",
@@ -2251,6 +2251,20 @@ function buildStableIntroRows(item: Extract<RenderTimelineItem, { type: "intro" 
   return getCachedFrozenRows(cacheKey, () => buildIntroRows(item, innerWidth));
 }
 
+function buildPlanCacheSignature(run: RunEvent | null | undefined): string {
+  if (!run) return "";
+  const plan = run.plan;
+  return rowCacheKey([
+    "plan",
+    plan?.id ?? "",
+    plan?.status ?? "",
+    plan?.streamSeq ?? "",
+    (plan?.chunks ?? []).map((chunk) => textCacheToken(chunk)),
+    textCacheToken(run.approvedPlan),
+    (run.streamItems ?? []).map((item) => `${item.streamSeq}:${item.kind}:${item.refId}`),
+  ]);
+}
+
 function buildStableFrozenTurnRows(
   item: Extract<RenderTimelineItem, { type: "turn" }>,
   innerWidth: number,
@@ -2270,6 +2284,7 @@ function buildStableFrozenTurnRows(
     textCacheToken(user?.prompt),
     run?.id,
     run?.status,
+    buildPlanCacheSignature(run),
     run?.durationMs,
     textCacheToken(run?.summary),
     textCacheToken(item.item.assistant?.content),
@@ -2563,7 +2578,16 @@ export function buildTimelineSnapshot(
       // _streamingRowCache instead.
       const cacheable = runPhase !== "streaming" && runPhase !== "thinking";
       if (cacheable) {
-        const cacheKey = `t:${item.key}:${innerWidth}:${verbose}:${runPhase}:${opacity}:${options.workspaceRoot ?? ""}`;
+        const cacheKey = rowCacheKey([
+          "turn",
+          item.key,
+          innerWidth,
+          verbose,
+          runPhase,
+          opacity,
+          options.workspaceRoot ?? "",
+          buildPlanCacheSignature(item.item.run),
+        ]);
         const cached = _staticRowCache.get(cacheKey);
         if (cached) {
           renderDebug.traceEvent("timeline", "rowGeneration", {

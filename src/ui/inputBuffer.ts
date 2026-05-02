@@ -20,7 +20,7 @@ function isLowSurrogate(code: number): boolean {
   return code >= 0xdc00 && code <= 0xdfff;
 }
 
-const LEAKED_SGR_MOUSE_PATTERN = /\[<\d+;\d+;\d+[Mm]?/g;
+const LEAKED_SGR_MOUSE_PATTERN = /(?:\x1b)?\[<\d+;\d+;\d+[Mm]/g;
 
 export function normalizeInputText(text: string): string {
   if (!text) return "";
@@ -28,6 +28,10 @@ export function normalizeInputText(text: string): string {
   // the terminal without their ESC prefix (swallowed by readline).
   const withoutMouse = text.replace(LEAKED_SGR_MOUSE_PATTERN, "");
   return normalizeLineBreaks(sanitizeTerminalInput(withoutMouse));
+}
+
+export function stripMouseEscapes(input: string): string {
+  return input.replace(LEAKED_SGR_MOUSE_PATTERN, "");
 }
 
 export function normalizeCursorOffset(text: string, cursorOffset: number): number {

@@ -126,6 +126,7 @@ import {
 } from "./session/chatLifecycle.js";
 import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
 import { createLiveRenderScheduler, type LiveRenderUpdate } from "./session/liveRenderScheduler.js";
+import { hasFinalizedTranscriptPlan } from "./session/planTranscript.js";
 import { schedulePromptRunStartAfterVisibleCommit } from "./session/promptRunSchedule.js";
 import {
   approvePlanExecution,
@@ -357,6 +358,11 @@ export function App({ launchArgs }: AppProps) {
     });
   }, [model, modelSpecRefreshes, modelSpecs]);
   const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
+  const hasVisibleTranscriptPlan = useMemo(
+    () => planFlow.kind === "awaiting_action"
+      && hasFinalizedTranscriptPlan(staticEvents, planFlow.currentPlan),
+    [planFlow, staticEvents],
+  );
 
   // Refs for mutable state values — used by stable callbacks below so they
   // always read the latest value without being listed as deps (which would
@@ -373,7 +379,7 @@ export function App({ launchArgs }: AppProps) {
   modelCapabilitiesBusyRef.current = modelCapabilitiesBusy;
   const composerRows = useMemo(() => {
     if (planFlow.kind === "awaiting_action") {
-      return measurePlanActionPickerRows();
+      return hasVisibleTranscriptPlan ? measurePlanActionPickerRows(terminalLayout.cols) : 1;
     }
     if (planFlow.kind === "collecting_feedback") {
       return measureTextEntryPanelRows();
@@ -397,6 +403,7 @@ export function App({ launchArgs }: AppProps) {
     mode,
     model,
     planFlow.kind,
+    hasVisibleTranscriptPlan,
     reasoningLevel,
     terminalLayout,
     uiState,
@@ -2258,9 +2265,6 @@ export function App({ launchArgs }: AppProps) {
       case "revise":
         setPlanFlow(beginPlanFeedback(planFlow, "revise"));
         return;
-      case "constraints":
-        setPlanFlow(beginPlanFeedback(planFlow, "constraints"));
-        return;
       case "cancel":
         setPlanFlow(resetPlanFlow());
         appendSystemEvent("Plan review", "Plan review canceled. No changes were made.");
@@ -2703,14 +2707,17 @@ export function App({ launchArgs }: AppProps) {
   // timeline + footer) to re-render on every 25ms streaming flush.
   const composerElement = useMemo(() => {
     if (planFlow.kind === "awaiting_action") {
+      if (!hasVisibleTranscriptPlan) {
+        return (
+          <Text color={activeTheme.MUTED}>
+            Plan could not be displayed. Please ask Codexa to regenerate the plan.
+          </Text>
+        );
+      }
       return (
         <PlanActionPicker
           cols={terminalLayout.cols}
           onSelect={handlePlanAction}
-          onSelectWithText={(mode, text) => {
-            setInitialRevisionText(text);
-            setPlanFlow(beginPlanFeedback(planFlow, mode));
-          }}
           onCancel={handleCancel}
         />
       );
@@ -2719,11 +2726,9 @@ export function App({ launchArgs }: AppProps) {
       return (
         <TextEntryPanel
           focusId={FOCUS_IDS.composer}
-          title={planFlow.mode === "revise" ? "Revise plan" : "Add constraints"}
-          subtitle={planFlow.mode === "revise"
-            ? "Describe what should change in the plan. Enter regenerates it."
-            : "Add extra instructions for the plan. Enter regenerates it."}
-          inputLabel={planFlow.mode === "revise" ? "Revision" : "Constraint"}
+          title="Update plan"
+          subtitle="Describe what should change. Enter regenerates the plan."
+          inputLabel="Update"
           placeholder={planFlow.mode === "revise"
             ? "e.g. keep it to one file and add tests"
             : "e.g. keep it minimal and avoid touching other files"}
@@ -2775,6 +2780,8 @@ export function App({ launchArgs }: AppProps) {
     handlePlanAction,
     handleCancel,
     handlePlanFeedbackSubmit,
+    hasVisibleTranscriptPlan,
+    activeTheme.MUTED,
     composerInstanceKey,
     terminalLayout,
     uiState,

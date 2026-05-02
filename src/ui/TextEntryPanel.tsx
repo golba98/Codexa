@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
 import type { FocusTargetId } from "./focus.js";
 import { useTheme } from "./theme.js";
+import { stripMouseEscapes } from "./inputBuffer.js";
 
 interface TextEntryPanelProps {
   focusId: FocusTargetId;
@@ -67,8 +68,10 @@ export function TextEntryPanel({
       return;
     }
 
-    setValue((current) => insertAt(current, cursor, input));
-    setCursor((current) => current + input.length);
+    const filtered = stripMouseEscapes(input);
+    if (!filtered) return;
+    setValue((current) => insertAt(current, cursor, filtered));
+    setCursor((current) => current + filtered.length);
   }, { isActive: isFocused });
 
   const display = useMemo(() => {
