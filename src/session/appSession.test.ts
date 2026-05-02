@@ -242,6 +242,28 @@ test("plan deltas update one plan block and FINALIZE_RUN does not create assista
   assert.equal(state.staticEvents.some((event) => event.type === "assistant"), false);
 });
 
+test("FINALIZE_RUN with plan presentation creates visible plan from final response without deltas", () => {
+  const turnId = 38;
+  let state = stateWithActiveRun(turnId);
+
+  state = reduceSessionState(state, {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "completed",
+    response: "1. Inspect files\n2. Update the timeline cache",
+    responsePresentation: "plan",
+    assistantFactory: () => makeAssistantEvent(turnId, "should not render"),
+  });
+
+  const finalizedRun = state.staticEvents.find((event): event is RunEvent => event.type === "run");
+  assert.ok(finalizedRun);
+  assert.equal(finalizedRun.plan?.status, "completed");
+  assert.equal(getRunPlanText(finalizedRun.plan), "1. Inspect files\n2. Update the timeline cache");
+  assert.deepEqual(finalizedRun.streamItems?.map((item) => item.kind), ["plan"]);
+  assert.equal(state.staticEvents.some((event) => event.type === "assistant"), false);
+});
+
 test("FINALIZE_RUN for canceled thinking-only run transitions UI state to IDLE", () => {
   const turnId = 36;
   let state = stateWithActiveRun(turnId);

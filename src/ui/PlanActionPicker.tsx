@@ -84,7 +84,7 @@ export function PlanActionPicker({
   return (
     <DashCard
       cols={cols}
-      title="Decision"
+      title="Plan ready"
       borderColor={isFocused ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE}
     >
       {ACTION_ROWS.map((row, index) => (

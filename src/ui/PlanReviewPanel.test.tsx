@@ -204,9 +204,10 @@ test("plan action picker keeps simple menu navigation and enter selection", asyn
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /Decision/);
+    assert.match(output, /Plan ready/);
     assert.match(output, /Implement changes/);
     assert.match(output, /Update plan/);
+    assert.doesNotMatch(output, /Cancel/);
     assert.doesNotMatch(output, /Request changes/);
     assert.doesNotMatch(output, /Add constraints/);
     assert.doesNotMatch(output, /type a decision/);
