@@ -379,7 +379,7 @@ export function App({ launchArgs }: AppProps) {
   modelCapabilitiesBusyRef.current = modelCapabilitiesBusy;
   const composerRows = useMemo(() => {
     if (planFlow.kind === "awaiting_action") {
-      return hasVisibleTranscriptPlan ? measurePlanActionPickerRows() : 1;
+      return hasVisibleTranscriptPlan ? measurePlanActionPickerRows(terminalLayout.cols) : 1;
     }
     if (planFlow.kind === "collecting_feedback") {
       return measureTextEntryPanelRows();

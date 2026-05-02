@@ -341,8 +341,9 @@ test("main screen keeps the transcript visible while showing the plan action pic
   assert.match(frame, /Rootcauselookslikealayoutguttermismatchduringresize\./);
   // Assert action picker is visible
   assert.match(frame, /Planready/);
-  assert.match(frame, /Implementchanges/);
-  assert.match(frame, /Updateplan/);
+  assert.match(frame, /\[I\]Implementchanges/);
+  assert.match(frame, /\[U\]Updateplan/);
+  assert.doesNotMatch(frame, /╭──Planready/);
   assert.doesNotMatch(frame, /Requestchanges/);
   assert.doesNotMatch(frame, /Addconstraints/);
 });
