@@ -168,13 +168,12 @@ export function createRunEvent(params: {
   responsePresentation?: "assistant" | "plan";
 }): RunEvent {
   const now = Date.now();
-  const hasPlan = Boolean(params.approvedPlan) || params.responsePresentation === "plan";
-  const plan: RunPlanBlock | null = hasPlan
+  const plan: RunPlanBlock | null = params.approvedPlan
     ? {
       id: `plan-${params.id}`,
       streamSeq: 1,
-      chunks: params.approvedPlan ? [params.approvedPlan] : [],
-      status: params.approvedPlan ? "completed" : "active",
+      chunks: [params.approvedPlan],
+      status: "completed",
       startedAt: now,
     }
     : null;
@@ -212,8 +211,12 @@ function appendStreamItem(items: RunStreamItem[], item: RunStreamItem): RunStrea
   return [...items, item];
 }
 
+function maxStreamSeq(event: RunEvent, items: RunStreamItem[] = event.streamItems ?? []): number {
+  return Math.max(event.lastStreamSeq ?? 0, ...items.map((item) => item.streamSeq));
+}
+
 function createPlanBlock(event: RunEvent, text = "", status: RunPlanBlock["status"] = "active"): RunPlanBlock {
-  const streamSeq = (event.lastStreamSeq ?? 0) + 1;
+  const streamSeq = maxStreamSeq(event) + 1;
   return {
     id: `plan-${event.id}`,
     streamSeq,
@@ -258,13 +261,24 @@ export function finalizePlanBlock(event: RunEvent, finalPlan?: string): RunEvent
   const text = finalPlan ?? event.plan?.chunks.join("") ?? "";
 
   if (event.plan) {
+    const streamItemsWithoutPlan = (event.streamItems ?? []).filter((item) =>
+      !(item.kind === "plan" && item.refId === event.plan?.id)
+    );
+    const streamSeq = maxStreamSeq(event, streamItemsWithoutPlan) + 1;
     return {
       ...event,
       plan: {
         ...event.plan,
+        streamSeq,
         chunks: text ? [text] : event.plan.chunks,
         status: "completed",
       },
+      streamItems: appendStreamItem(streamItemsWithoutPlan, {
+        streamSeq,
+        kind: "plan",
+        refId: event.plan.id,
+      }),
+      lastStreamSeq: streamSeq,
       activeResponseSegmentId: null,
     };
   }

@@ -94,7 +94,7 @@ test("assigns stream sequence in append order across thinking action and respons
   assert.deepEqual(run.streamItems?.map((item) => item.streamSeq), [1, 2, 3]);
 });
 
-test("plan presentation seeds one stable plan stream item and keeps actions after it", () => {
+test("plan presentation finalizes the generated plan as the latest stream item", () => {
   let run = createRunEvent({
     id: 33,
     backendId: "codex-subprocess",
@@ -105,10 +105,8 @@ test("plan presentation seeds one stable plan stream item and keeps actions afte
     responsePresentation: "plan",
   });
 
-  assert.deepEqual(run.streamItems?.map((item) => item.kind), ["plan"]);
-  assert.deepEqual(run.streamItems?.map((item) => item.streamSeq), [1]);
-  assert.equal(run.plan?.id, "plan-33");
-  assert.equal(run.plan?.status, "active");
+  assert.deepEqual(run.streamItems, []);
+  assert.equal(run.plan, null);
 
   run = appendRunPlanChunk(run, "1. Inspect files\n");
   run = appendRunPlanChunk(run, "2. Render panel");
@@ -126,8 +124,37 @@ test("plan presentation seeds one stable plan stream item and keeps actions afte
 
   run = finalizePlanBlock(run, "1. Inspect files\n2. Render panel");
   assert.equal(run.plan?.status, "completed");
-  assert.equal(run.plan?.streamSeq, 1);
+  assert.equal(run.plan?.streamSeq, 3);
+  assert.deepEqual(run.streamItems?.map((item) => item.kind), ["action", "plan"]);
+  assert.deepEqual(run.streamItems?.map((item) => item.streamSeq), [2, 3]);
+});
+
+test("approved execution seeds one stable plan stream item and keeps actions after it", () => {
+  let run = createRunEvent({
+    id: 34,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Implement this",
+    turnId: 34,
+    approvedPlan: "1. Inspect files\n2. Render panel",
+  });
+
+  assert.deepEqual(run.streamItems?.map((item) => item.kind), ["plan"]);
+  assert.deepEqual(run.streamItems?.map((item) => item.streamSeq), [1]);
+  assert.equal(run.plan?.id, "plan-34");
+  assert.equal(run.plan?.status, "completed");
+
+  run = upsertRunToolActivity(run, {
+    id: "tool-1",
+    command: "Get-Content src/app.tsx",
+    status: "completed",
+    startedAt: 10,
+    completedAt: 20,
+  });
+
   assert.deepEqual(run.streamItems?.map((item) => item.kind), ["plan", "action"]);
+  assert.deepEqual(run.streamItems?.map((item) => item.streamSeq), [1, 2]);
 });
 
 test("splits response segments when an action interrupts assistant streaming", () => {

@@ -505,7 +505,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
             ? failRunEvent(runEvent, action.message ?? "Run failed", action.message ?? "Run failed")
             : cancelRunEvent(runEvent);
 
-      const planPresentation = action.responsePresentation === "plan" || Boolean(runEvent.plan);
+      const planPresentation = action.responsePresentation === "plan";
       if (planPresentation) {
         const planContent = reconcileAssistantContent(
           getRunPlanText(runEvent.plan),

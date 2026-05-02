@@ -1120,11 +1120,11 @@ function renderJoinedTurn(
   return snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 }
 
-test("unified stream renders plan panel before action blocks", () => {
+test("unified stream renders generated final plan after action blocks", () => {
   const joined = renderJoinedTurn(makeChronologicalTurnEvents(299, {
     plan: {
       id: "plan-2",
-      streamSeq: 1,
+      streamSeq: 3,
       chunks: ["1. Inspect the current app structure\n2. Render the generated plan visibly"],
       status: "completed",
       startedAt: 2,
@@ -1138,18 +1138,18 @@ test("unified stream renders plan panel before action blocks", () => {
       streamSeq: 2,
     }],
     streamItems: [
-      { streamSeq: 1, kind: "plan", refId: "plan-2" },
       { streamSeq: 2, kind: "action", refId: "tool-1" },
+      { streamSeq: 3, kind: "plan", refId: "plan-2" },
     ],
-    lastStreamSeq: 2,
+    lastStreamSeq: 3,
   }), 299);
 
   assert.match(joined, /╭── Plan/);
   assert.match(joined, /│ 1\. Inspect the current app structure/);
   assert.match(joined, /╰/);
   assert.match(joined, /╭── action/);
-  assert.ok(joined.indexOf("Plan") < joined.indexOf("action"));
-  assert.ok(joined.indexOf("Render the generated plan visibly") < joined.indexOf("Read file"));
+  assert.ok(joined.indexOf("action") < joined.indexOf("Plan"));
+  assert.ok(joined.indexOf("Read file") < joined.indexOf("Render the generated plan visibly"));
 });
 
 test("unified stream renders approved execution plan with approved badge", () => {
@@ -1229,6 +1229,49 @@ test("long draft plan remains timeline rows that can be scrolled", () => {
   assert.match(allRows, /Plan/);
   assert.match(firstPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /src\/file-/);
   assert.match(tailPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /36\. Complete step 36\./);
+});
+
+test("follow-tail viewport shows generated final plan at bottom after prior action rows", () => {
+  const longPlan = [
+    "Files:",
+    ...Array.from({ length: 12 }, (_, index) => `- src/file-${index + 1}.ts Update file ${index + 1}.`),
+    "",
+    "Steps:",
+    ...Array.from({ length: 20 }, (_, index) => `${index + 1}. Final plan step ${index + 1}.`),
+  ].join("\n");
+  const turnId = 9308;
+  const events = makeChronologicalTurnEvents(turnId, {
+    plan: {
+      id: "plan-2",
+      streamSeq: 3,
+      chunks: [longPlan],
+      status: "completed",
+      startedAt: 2,
+    },
+    toolActivities: [{
+      id: "tool-1",
+      command: "Get-Content src/app.tsx",
+      status: "completed",
+      startedAt: 10,
+      completedAt: 40,
+      streamSeq: 2,
+    }],
+    streamItems: [
+      { streamSeq: 2, kind: "action", refId: "tool-1" },
+      { streamSeq: 3, kind: "plan", refId: "plan-2" },
+    ],
+    lastStreamSeq: 3,
+  });
+  const items = buildTimelineItems(events);
+  const renderItems = buildStaticRenderItems(items, [turnId], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 100 });
+  const tailPage = selectTimelineRows(snapshot, createFollowTailViewport(snapshot.totalRows), 10);
+  const tailText = tailPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+  const allText = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+
+  assert.ok(allText.indexOf("Read file") < allText.indexOf("Plan"));
+  assert.match(tailText, /20\. Final plan step 20\./);
+  assert.doesNotMatch(tailText, /Read file/);
 });
 
 test("unified stream renders action before response by stream sequence", () => {
