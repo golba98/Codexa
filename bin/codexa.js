@@ -64,6 +64,7 @@ function printHelp() {
 Usage:
   codexa
   codexa "explain this repo"
+  codexa exec "print the current directory"
   codexa [options] [prompt]
 
 Options:
@@ -80,28 +81,32 @@ Inside Codexa:
 `);
 }
 
-if (hasFlag(forwardArgs, "--help", "-h")) {
+const isHeadlessExec = forwardArgs[0] === "exec";
+
+if (!isHeadlessExec && hasFlag(forwardArgs, "--help", "-h")) {
   printHelp();
   process.exit(0);
 }
 
-if (hasFlag(forwardArgs, "--version", "-v")) {
+if (!isHeadlessExec && hasFlag(forwardArgs, "--version", "-v")) {
   console.log(readPackageVersion() ?? "unknown");
   process.exit(0);
 }
 
 const titleSequence = "\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07";
-writeRenderDebugRecord("stdout", {
-  event: "directWrite",
-  source: "bin/codexa.js:title",
-  bytes: Buffer.byteLength(titleSequence),
-  containsViewportClear: false,
-  containsScrollbackClear: false,
-  containsCursorHome: false,
-  containsTerminalReset: false,
-  containsTitleSequence: true,
-});
-process.stdout.write(titleSequence);
+if (!isHeadlessExec) {
+  writeRenderDebugRecord("stdout", {
+    event: "directWrite",
+    source: "bin/codexa.js:title",
+    bytes: Buffer.byteLength(titleSequence),
+    containsViewportClear: false,
+    containsScrollbackClear: false,
+    containsCursorHome: false,
+    containsTerminalReset: false,
+    containsTitleSequence: true,
+  });
+  process.stdout.write(titleSequence);
+}
 
 /**
  * Filters out terminal mouse reporting escape sequences from stdin data.
@@ -166,13 +171,16 @@ if (!bunExecutable) {
 }
 
 const appEntry = join(packageRoot, "src", "index.tsx");
+const execEntry = join(packageRoot, "src", "exec.ts");
+const bunEntry = isHeadlessExec ? execEntry : appEntry;
+const bunForwardArgs = isHeadlessExec ? forwardArgs.slice(1) : forwardArgs;
 
 // Detect if parent process has a real TTY
 const parentHasTTY = process.stdin.isTTY && process.stdout.isTTY;
 
 const child = spawn(
   bunExecutable,
-  ["run", "--silent", appEntry, ...(forwardArgs.length > 0 ? ["--", ...forwardArgs] : [])],
+  ["run", "--silent", bunEntry, ...(bunForwardArgs.length > 0 ? ["--", ...bunForwardArgs] : [])],
   {
     cwd: workspaceRoot,
     stdio: [parentHasTTY ? "inherit" : "pipe", "inherit", "inherit"],

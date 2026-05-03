@@ -11,7 +11,8 @@
     "dev": "bun --watch --silent src/index.tsx",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "audit:codexa-gap": "node scripts/audit-codexa-capabilities.mjs"
+    "audit:codexa-gap": "node scripts/audit-codexa-capabilities.mjs",
+    "smoke:terminal-bench": "node scripts/smoke-terminal-bench.mjs"
   },
   "dependencies": {
     "ink": "^7.0.0",
