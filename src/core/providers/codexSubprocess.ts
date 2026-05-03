@@ -82,7 +82,7 @@ export const codexSubprocessProvider: BackendProvider = {
             activeTranscriptThinkingText = "";
           };
 
-          const emitLegacyProgress = (source: "stderr" | "transcript", text: string) => {
+          const emitLegacyProgress = (source: "stdout" | "stderr" | "transcript", text: string) => {
             handlers.onProgress?.({
               id: `${source}-${++legacyProgressSequence}`,
               source,
@@ -160,6 +160,10 @@ export const codexSubprocessProvider: BackendProvider = {
 
               const parsed = jsonParser.feedLine(normalizedLine);
               if (!parsed) {
+                if (mode === "json") {
+                  emitLegacyProgress("stdout", normalizedLine.length > 80 ? `${normalizedLine.slice(0, 77)}...` : normalizedLine);
+                  continue;
+                }
                 switchToTranscriptFallback();
                 return;
               }
