@@ -17,6 +17,7 @@ import {
   type AvailableMode,
   type AvailableModel,
   type ReasoningLevel,
+  type TerminalMouseMode,
   USER_SETTING_DEFINITIONS,
   type UserSettingValues,
   estimateTokens,
@@ -170,7 +171,7 @@ let nextTurnId = 0;
 // 50ms keeps assistant text live while avoiding frame-wide terminal repaint
 // churn during streaming/action updates.
 const LIVE_UPDATE_FLUSH_MS = 50;
-const PROGRESS_ONLY_FLUSH_MS = 50;
+const PROGRESS_ONLY_FLUSH_MS = 175;
 
 function formatWritableRootsMessage(roots: readonly string[]): string {
   return roots.length > 0
@@ -200,15 +201,28 @@ interface AppProps {
   launchArgs: LaunchArgs;
 }
 
+interface PromptRunTiming {
+  submitEpochMs: number;
+  submitMonotonicMs: number;
+}
+
 interface PromptRunLifecycle {
   parseActionRequired?: boolean;
   disableModeAutoUpgrade?: boolean;
   runtimeOverride?: PartialRuntimeConfig;
   responsePresentation?: "assistant" | "plan";
   approvedPlan?: string;
+  submitTiming?: PromptRunTiming;
   onCompleted?: (result: { response: string; turnId: number; runId: number }) => void;
   onFailed?: (result: { message: string; turnId: number; runId: number }) => void;
   onCanceled?: (result: { turnId: number; runId: number }) => void;
+}
+
+function createPromptRunTiming(): PromptRunTiming {
+  return {
+    submitEpochMs: Date.now(),
+    submitMonotonicMs: performance.now(),
+  };
 }
 
 export function App({ launchArgs }: AppProps) {
@@ -239,6 +253,9 @@ export function App({ launchArgs }: AppProps) {
   const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.auth.preference);
   const [directoryDisplayMode, setDirectoryDisplayMode] = useState<DirectoryDisplayMode>(
     initialSettings.current.ui.directoryDisplayMode,
+  );
+  const [terminalMouseMode, setTerminalMouseMode] = useState<TerminalMouseMode>(
+    initialSettings.current.ui.terminalMouseMode,
   );
   const [themeSelection, setThemeSelection] = useState<ThemeSelectionState>({
     committedTheme: initialSettings.current.ui.theme,
@@ -273,21 +290,20 @@ export function App({ launchArgs }: AppProps) {
   const [verboseMode, setVerboseMode] = useState(false);
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
   const [initialRevisionText, setInitialRevisionText] = useState("");
-  // Mouse reporting is ON by default so wheel-based history scrolling works in
-  // the timeline. When mouse reporting is active, most modern terminals (Windows
-  // Terminal, iTerm2, etc.) still allow text selection via Shift+drag — the
-  // terminal intercepts Shift-modified clicks itself before forwarding to the app.
-  // Use /mouse to toggle to native-only mode if you prefer plain drag-select
-  // at the cost of losing wheel scroll (keyboard PageUp/PageDown still works).
-  const mouseCapture = mouseOverride ?? true;
+  // Mouse reporting defaults to the persisted terminalMouseMode setting.
+  // "wheel" (default) enables SGR mouse reporting so the timeline can receive
+  // wheel events; native drag-select then requires Shift in Windows Terminal.
+  // "selection" keeps the terminal in control of mouse events.
+  // /mouse toggles the in-session override without changing the saved setting.
+  const mouseCapture = mouseOverride ?? (terminalMouseMode === "wheel");
 
   useEffect(() => {
     try { process.title = "CODEXA"; } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
-    // \x1b[?1000h: Enable basic mouse reporting (click/scroll)
-    // \x1b[?1006h: Enable SGR extended mouse reporting (high-res coords)
+    // Default path writes the disable sequences defensively, preserving native
+    // terminal selection unless the user explicitly opts into /mouse capture.
     terminalControl.setMouseReporting(mouseCapture, mouseCapture ? "src/app.tsx:mouseCapture.enable" : "src/app.tsx:mouseCapture.disable");
     return () => {
       terminalControl.setMouseReporting(false, "src/app.tsx:mouseCapture.cleanup");
@@ -296,6 +312,7 @@ export function App({ launchArgs }: AppProps) {
 
   const cleanupRef = useRef<(() => void) | null>(null);
   const activeRunLifecycleRef = useRef<PromptRunLifecycle | null>(null);
+  const activeRunTimingRef = useRef<(PromptRunTiming & { runId: number; turnId: number }) | null>(null);
   const isMountedRef = useRef(true);
   const activeRunIdRef = useRef<number | null>(null);
   const activeTurnIdRef = useRef<number | null>(null);
@@ -336,7 +353,8 @@ export function App({ launchArgs }: AppProps) {
   );
   const currentUserSettings = useMemo<UserSettingValues>(() => ({
     directory: directoryDisplayMode,
-  }), [directoryDisplayMode]);
+    terminalMouseMode,
+  }), [directoryDisplayMode, terminalMouseMode]);
   const allowedWritableRoots = useMemo(
     () => resolvedRuntimeConfig.policy.writableRoots,
     [resolvedRuntimeConfig],
@@ -539,13 +557,14 @@ export function App({ launchArgs }: AppProps) {
         layoutStyle: initialSettings.current.ui.layoutStyle,
         theme: themeSelection.committedTheme,
         directoryDisplayMode,
+        terminalMouseMode,
         customTheme,
       },
       auth: {
         preference: authPreference,
       },
     });
-  }, [authPreference, customTheme, directoryDisplayMode, themeSelection.committedTheme]);
+  }, [authPreference, customTheme, directoryDisplayMode, terminalMouseMode, themeSelection.committedTheme]);
 
   useEffect(() => {
     return () => {
@@ -1076,8 +1095,12 @@ export function App({ launchArgs }: AppProps) {
     if (nextSettings.directory !== directoryDisplayMode) {
       setDirectoryDisplayModeWithNotice(nextSettings.directory);
     }
+    if (nextSettings.terminalMouseMode !== terminalMouseMode) {
+      setTerminalMouseMode(nextSettings.terminalMouseMode);
+      setMouseOverride(null); // let the newly persisted mode drive mouseCapture
+    }
     setScreen("main");
-  }, [directoryDisplayMode, setDirectoryDisplayModeWithNotice]);
+  }, [directoryDisplayMode, setDirectoryDisplayModeWithNotice, terminalMouseMode]);
 
   const setApprovalPolicyWithNotice = useCallback((nextValue: RuntimeApprovalPolicy) => {
     const gate = guardConfigMutation("mode", busy);
@@ -1396,9 +1419,26 @@ export function App({ launchArgs }: AppProps) {
     perf.mark("finalize_start");
 
     const lifecycle = activeRunLifecycleRef.current;
+    const timing = activeRunTimingRef.current?.runId === runId
+      ? activeRunTimingRef.current
+      : null;
+    const finalMonotonicMs = performance.now();
+    const durationMs = timing
+      ? Math.max(0, Math.round(finalMonotonicMs - timing.submitMonotonicMs))
+      : 0;
+    renderDebug.traceEvent("run", "finalizeTiming", {
+      runId,
+      turnId,
+      status,
+      promptSubmitEpochMs: timing?.submitEpochMs,
+      promptSubmitMonotonicMs: timing?.submitMonotonicMs,
+      finalRenderMonotonicMs: finalMonotonicMs,
+      elapsedWallMs: durationMs,
+    });
     const cleanup = cleanupRef.current;
     cleanupRef.current = null;
     activeRunLifecycleRef.current = null;
+    activeRunTimingRef.current = null;
     activeRunIdRef.current = null;
     activeTurnIdRef.current = null;
     focusManager.focus(FOCUS_IDS.composer);
@@ -1421,6 +1461,7 @@ export function App({ launchArgs }: AppProps) {
       status,
       message: safeMessage,
       response: parsed.content,
+      durationMs,
       responsePresentation: lifecycle?.responsePresentation,
       question: status === "completed" ? parsed.question : null,
       assistantFactory: () => ({
@@ -1435,6 +1476,7 @@ export function App({ launchArgs }: AppProps) {
     perf.mark("finalize_done");
     perf.setMeta("content_length", parsed.content?.length ?? 0);
     perf.setMeta("status", status);
+    perf.setMeta("elapsed_wall_ms", durationMs);
     const perfSession = perf.getSession();
     if (perfSession) perf.persistSession(perfSession);
 
@@ -1480,6 +1522,7 @@ export function App({ launchArgs }: AppProps) {
     const lifecycle = activeRunLifecycleRef.current;
     cleanupRef.current = null;
     activeRunLifecycleRef.current = null;
+    activeRunTimingRef.current = null;
     activeRunIdRef.current = null;
     activeTurnIdRef.current = null;
     focusManager.focus(FOCUS_IDS.composer);
@@ -1488,6 +1531,7 @@ export function App({ launchArgs }: AppProps) {
     if (retainHistory) {
       if (shellEvent) {
         activeRunLifecycleRef.current = null;
+        activeRunTimingRef.current = null;
         dispatchSession({
           type: "FINALIZE_SHELL",
           shellId: runId,
@@ -1651,6 +1695,7 @@ export function App({ launchArgs }: AppProps) {
     cancelActiveRun(false);
     activeTurnIdRef.current = null;
     activeRunLifecycleRef.current = null;
+    activeRunTimingRef.current = null;
     setPlanFlow(resetPlanFlow());
     dispatchSession({ type: "CLEAR_TRANSCRIPT" });
     setConversationChars(0);
@@ -1684,6 +1729,7 @@ export function App({ launchArgs }: AppProps) {
 
     dispatchSession({ type: "SET_ACTIVE_EVENTS", events: [initialEvent] });
     activeRunLifecycleRef.current = null;
+    activeRunTimingRef.current = null;
     activeRunIdRef.current = shellId;
     activeTurnIdRef.current = null;
     dispatchSession({ type: "UI_ACTION", action: { type: "SHELL_STARTED", shellId } });
@@ -1826,6 +1872,7 @@ export function App({ launchArgs }: AppProps) {
     providerPrompt: string,
     lifecycle: PromptRunLifecycle = {},
   ) => {
+    const submitTiming = lifecycle.submitTiming ?? createPromptRunTiming();
     const safeDisplayPrompt = sanitizeTerminalInput(displayPrompt).trim();
     const safeProviderPrompt = sanitizeTerminalInput(providerPrompt).trim();
     if (!safeDisplayPrompt || !safeProviderPrompt) {
@@ -1892,7 +1939,7 @@ export function App({ launchArgs }: AppProps) {
     const userEvent: UserPromptEvent = {
       id: createEventId(),
       type: "user",
-      createdAt: Date.now(),
+      createdAt: submitTiming.submitEpochMs,
       prompt: safeDisplayPrompt,
       turnId,
     };
@@ -1906,6 +1953,7 @@ export function App({ launchArgs }: AppProps) {
     activeRunIdRef.current = runId;
     activeTurnIdRef.current = turnId;
     activeRunLifecycleRef.current = lifecycle;
+    activeRunTimingRef.current = { ...submitTiming, runId, turnId };
     dispatchSession({ type: "UI_ACTION", action: { type: "PROMPT_RUN_STARTED", turnId } });
     dispatchSession({ type: "SET_ACTIVE_EVENTS", events: [
       userEvent,
@@ -1917,16 +1965,18 @@ export function App({ launchArgs }: AppProps) {
           runtime: runtimeForTurn,
           prompt: safeProviderPrompt,
           turnId,
+          startedAtMs: submitTiming.submitEpochMs,
           responsePresentation: lifecycle.responsePresentation,
           approvedPlan: lifecycle.approvedPlan,
         }),
-        summary: "Codex is starting...",
+        summary: "Codexa is starting...",
       },
     ] });
 
     let streamedAssistantContent = "";
     let legacyProgressSequence = 0;
     let firstRenderFired = false;
+    let finalAnswerVisibleFired = false;
     let blockedCleanupFailureSurfaced = false;
 
     let preRunSnapshot: ReturnType<typeof captureWorkspaceSnapshot> | null = null;
@@ -1966,6 +2016,24 @@ export function App({ launchArgs }: AppProps) {
     const flushLiveUpdates = (): boolean => {
       perf.inc("flushes");
       return liveScheduler.flushNow();
+    };
+
+    const traceLiveRunDiagnostics = (status: "completed" | "failed" | "canceled") => {
+      const stats = liveScheduler.getStats();
+      const now = performance.now();
+      renderDebug.traceEvent("run", "liveBatchSummary", {
+        runId,
+        turnId,
+        status,
+        promptSubmitEpochMs: submitTiming.submitEpochMs,
+        promptSubmitMonotonicMs: submitTiming.submitMonotonicMs,
+        finalRenderMonotonicMs: now,
+        elapsedWallMs: Math.max(0, Math.round(now - submitTiming.submitMonotonicMs)),
+        providerEventsReceived: stats.providerEvents,
+        uiFlushes: stats.flushes,
+        averageFlushIntervalMs: stats.averageFlushIntervalMs,
+        maxFlushIntervalMs: stats.maxFlushIntervalMs,
+      });
     };
 
     let stopProviderRun: (() => void) | undefined;
@@ -2009,6 +2077,28 @@ export function App({ launchArgs }: AppProps) {
           });
           streamedAssistantContent += safeChunk;
         },
+        onFinalAnswerObserved: (response) => {
+          if (!isCurrentRun(activeRunIdRef.current, runId) || finalAnswerVisibleFired) return;
+          const flushedLiveUpdates = flushLiveUpdates();
+          const markFinalAnswerVisible = () => {
+            if (!isCurrentRun(activeRunIdRef.current, runId) || finalAnswerVisibleFired) return;
+            finalAnswerVisibleFired = true;
+            const safeResponse = sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 });
+            dispatchSession({
+              type: "RUN_MARK_FINAL_ANSWER_OBSERVED",
+              runId,
+              turnId,
+              response: safeResponse.trim() ? safeResponse : undefined,
+            });
+            perf.mark("final_answer_visible");
+          };
+
+          if (flushedLiveUpdates) {
+            setTimeout(markFinalAnswerVisible, 0);
+          } else {
+            markFinalAnswerVisible();
+          }
+        },
         onToolActivity: (activity) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
           liveScheduler.enqueue({ type: "tool", activity });
@@ -2020,6 +2110,7 @@ export function App({ launchArgs }: AppProps) {
             if (blockedCleanupFailure) {
               blockedCleanupFailureSurfaced = true;
               flushLiveUpdates();
+              traceLiveRunDiagnostics("failed");
               void finalizePromptRun(runId, turnId, "failed", blockedCleanupFailure);
               return;
             }
@@ -2061,6 +2152,7 @@ export function App({ launchArgs }: AppProps) {
               const hollow = detectHollowResponse(safeProviderPrompt, safeResponse);
               if (hollow.isHollow) {
                 const formatted = formatHollowResponse(hollow, safeResponse);
+                traceLiveRunDiagnostics("completed");
                 void finalizePromptRun(runId, turnId, "completed", undefined, formatted);
                 return;
               }
@@ -2079,6 +2171,7 @@ export function App({ launchArgs }: AppProps) {
               )
                 ? undefined
                 : safeResponse;
+            traceLiveRunDiagnostics("completed");
             void finalizePromptRun(runId, turnId, "completed", undefined, finalResponse);
           };
 
@@ -2110,6 +2203,7 @@ export function App({ launchArgs }: AppProps) {
               setRuntimeUnauthenticated("Auth/session failure detected in neural link.");
             }
 
+            traceLiveRunDiagnostics("failed");
             void finalizePromptRun(runId, turnId, "failed", errorMessage);
           };
 
@@ -2178,6 +2272,7 @@ export function App({ launchArgs }: AppProps) {
   const runPlanGeneration = useCallback((
     state: Extract<PlanFlowState, { kind: "generating" }>,
     displayPrompt: string,
+    submitTiming?: PromptRunTiming,
   ) => {
     const started = startPromptRun(
       displayPrompt,
@@ -2195,6 +2290,7 @@ export function App({ launchArgs }: AppProps) {
         disableModeAutoUpgrade: true,
         parseActionRequired: false,
         responsePresentation: "plan",
+        submitTiming,
         onCompleted: ({ response }) => {
           const nextPlan = response.trim();
           if (!nextPlan) {
@@ -2222,6 +2318,7 @@ export function App({ launchArgs }: AppProps) {
   }, [appendErrorEvent, savePlanFile, startPromptRun]);
 
   const startApprovedPlanExecution = useCallback((state: Extract<PlanFlowState, { kind: "awaiting_action" }>) => {
+    const submitTiming = createPromptRunTiming();
     setPlanFlow(approvePlanExecution(state));
     const started = startPromptRun(
       state.originalPrompt,
@@ -2232,6 +2329,7 @@ export function App({ launchArgs }: AppProps) {
       }),
       {
         approvedPlan: state.currentPlan,
+        submitTiming,
         runtimeOverride: {
           mode: state.executionMode,
           planMode: false,
@@ -2291,7 +2389,7 @@ export function App({ launchArgs }: AppProps) {
     }
 
     setPlanFlow(nextState);
-    runPlanGeneration(nextState, feedback);
+    runPlanGeneration(nextState, feedback, createPromptRunTiming());
   }, [appendSystemEvent, planFlow, runPlanGeneration]);
 
   useEffect(() => {
@@ -2317,11 +2415,11 @@ export function App({ launchArgs }: AppProps) {
     if (planMode) {
       const nextPlanState = startPlanGeneration(initialPrompt, mode);
       setPlanFlow(nextPlanState);
-      runPlanGeneration(nextPlanState, initialPrompt);
+      runPlanGeneration(nextPlanState, initialPrompt, createPromptRunTiming());
       return;
     }
 
-    startPromptRun(initialPrompt, initialPrompt);
+    startPromptRun(initialPrompt, initialPrompt, { submitTiming: createPromptRunTiming() });
   }, [
     allowedWritableRoots,
     appendErrorEvent,
@@ -2336,6 +2434,7 @@ export function App({ launchArgs }: AppProps) {
   ]);
 
   const handleSubmit = useCallback(() => {
+    const submitTiming = createPromptRunTiming();
     perf.mark("submit");
     const value = sanitizeTerminalInput(inputValue).trim();
     if (!value) return;
@@ -2364,7 +2463,7 @@ export function App({ launchArgs }: AppProps) {
         originalPrompt: originalUserEvent.prompt,
         assistantQuestion: uiState.question,
         userAnswer: value,
-      }));
+      }), { submitTiming });
       return;
     }
 
@@ -2572,12 +2671,12 @@ export function App({ launchArgs }: AppProps) {
           openAuthPanel();
           return;
         case "mouse_toggle": {
-          const nextMouse = !(mouseOverride ?? (screen === "main"));
+          const nextMouse = !(mouseOverride ?? (terminalMouseMode === "wheel"));
           setMouseOverride(nextMouse);
           appendSystemEvent(
             "Mouse mode updated",
             nextMouse
-              ? "Mouse capture enabled — wheel scrolling active. Use Shift+drag for text selection (supported by most terminals)."
+              ? "Mouse capture enabled — wheel scrolling active. Disable /mouse to restore plain drag-select."
               : "Mouse capture disabled — native drag-select active. Use PageUp/PageDown/Home/End to scroll.",
           );
           return;
@@ -2636,10 +2735,10 @@ export function App({ launchArgs }: AppProps) {
     if (planMode) {
       const nextPlanState = startPlanGeneration(value, mode);
       setPlanFlow(nextPlanState);
-      runPlanGeneration(nextPlanState, value);
+      runPlanGeneration(nextPlanState, value, submitTiming);
       return;
     }
-    startPromptRun(value, value);
+    startPromptRun(value, value, { submitTiming });
   }, [
     allowedWritableRoots,
     appendErrorEvent,
@@ -2827,6 +2926,7 @@ export function App({ launchArgs }: AppProps) {
         activeEvents={activeEvents}
         uiState={uiState}
         verboseMode={verboseMode}
+        mouseCapture={mouseCapture}
         panel={
           <>
             {screen === "backend-picker" && (

@@ -415,7 +415,7 @@ function CodexThinkingBlock({
 
   return (
     <Box flexDirection="column" width="100%" paddingX={1}>
-      <Text color={theme.MUTED} bold>Codex</Text>
+      <Text color={theme.MUTED} bold>Codexa</Text>
       {formatProgressBlockBodyLines(block.text, contentWidth)
         .slice(0, verboseMode ? undefined : COMPACT_PROCESSING_BODY_LINE_CAP)
         .map((line, i) => (
@@ -463,7 +463,7 @@ function CodexResponseBlock({
 
   return (
     <Box flexDirection="column" width="100%" paddingX={1}>
-      <Text color={theme.MUTED} bold>Codex</Text>
+      <Text color={theme.MUTED} bold>Codexa</Text>
       {run.status === "failed" && !streaming && isLast && (
         <Box flexDirection="column">
           {wrapPlainText(sanitizeTerminalOutput(run.errorMessage ?? run.summary), contentWidth).map((row, i) => (
@@ -646,6 +646,10 @@ export function resolveTurnRunPhase(
 
   if (uiState.kind === "RESPONDING" && uiState.turnId === turnId) {
     return "streaming";
+  }
+
+  if (uiState.kind === "ANSWER_VISIBLE" && uiState.turnId === turnId) {
+    return "final";
   }
 
   if (uiState.kind === "THINKING" && uiState.turnId === turnId) {

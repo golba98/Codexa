@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   HEADLESS_EXEC_PROVIDER_UNAVAILABLE,
   HEADLESS_EXEC_RUN_FAILED,
+  createHeadlessExecTiming,
   runHeadlessExec,
   type HeadlessExecIo,
 } from "./execRunner.js";
@@ -131,6 +132,165 @@ test("streams assistant deltas to stdout and progress/tool/error diagnostics to 
   assert.match(io.stderrText(), /tool: running: pwd/);
 });
 
+test("emits final_answer_observed timing before provider response settles", async () => {
+  const io = createIo();
+  const provider = createProvider((_prompt, _options, handlers) => {
+    handlers.onAssistantDelta?.("READY");
+    handlers.onFinalAnswerObserved?.("READY");
+    handlers.onResponse("READY");
+    return () => {};
+  });
+
+  const result = await runHeadlessExec(
+    {
+      prompt: "Prompt",
+      launchArgs: createLaunchArgs(),
+      workspaceRoot: "C:\\Repo",
+      benchmarkDiagnostics: createHeadlessExecTiming({
+        enabled: true,
+        stderr: io.stderr,
+        startTimeMs: Date.now(),
+      }),
+    },
+    io,
+    {
+      resolveLayeredConfig: () => createLayeredConfig(),
+      getBackendProvider: () => provider,
+      loadProjectInstructions: () => ({ status: "missing" }),
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.match(io.stderrText(), /final_answer_observed/);
+  assert.match(io.stderrText(), /\[codexa exec timing\]/);
+  assert.match(io.stderrText(), /final_answer_character_count=5/);
+});
+
+test("timing is silent when disabled", async () => {
+  const io = createIo();
+  const provider = createProvider((_prompt, _options, handlers) => {
+    handlers.onResponse("ok");
+    return () => {};
+  });
+
+  const result = await runHeadlessExec(
+    { prompt: "Prompt", launchArgs: createLaunchArgs(), workspaceRoot: "C:\\Repo" },
+    io,
+    {
+      resolveLayeredConfig: () => createLayeredConfig(),
+      getBackendProvider: () => provider,
+      loadProjectInstructions: () => ({ status: "missing" }),
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.doesNotMatch(io.stderrText(), /\[codexa exec timing\]/);
+});
+
+test("raw prompt policy sends the exact prompt and skips project instructions", async () => {
+  const io = createIo();
+  const captured: Array<{ prompt: string; promptPolicy: string | undefined; projectInstructions: unknown }> = [];
+  let projectInstructionLoadCount = 0;
+  const provider = createProvider((prompt, options, handlers) => {
+    captured.push({
+      prompt,
+      promptPolicy: options.promptPolicy,
+      projectInstructions: options.projectInstructions,
+    });
+    handlers.onResponse("ok");
+    return () => {};
+  });
+
+  const result = await runHeadlessExec(
+    {
+      prompt: "Reply with exactly: CODEXA_READY",
+      launchArgs: createLaunchArgs(),
+      workspaceRoot: "C:\\Repo",
+    },
+    io,
+    {
+      resolveLayeredConfig: () => createLayeredConfig(),
+      getBackendProvider: () => provider,
+      loadProjectInstructions: () => {
+        projectInstructionLoadCount += 1;
+        return {
+          status: "loaded",
+          instructions: { path: "C:\\Repo\\AGENTS.md", content: "extra instructions" },
+        };
+      },
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(projectInstructionLoadCount, 0);
+  assert.equal(captured[0]?.prompt, "Reply with exactly: CODEXA_READY");
+  assert.equal(captured[0]?.promptPolicy, "raw");
+  assert.equal(captured[0]?.projectInstructions, null);
+});
+
+test("wrapped prompt policy loads project instructions for compatibility", async () => {
+  const io = createIo();
+  let capturedProjectInstructions: unknown = null;
+  const provider = createProvider((_prompt, options, handlers) => {
+    capturedProjectInstructions = options.projectInstructions;
+    handlers.onResponse("ok");
+    return () => {};
+  });
+
+  const result = await runHeadlessExec(
+    {
+      prompt: "Prompt",
+      launchArgs: createLaunchArgs(),
+      workspaceRoot: "C:\\Repo",
+      promptPolicy: "wrapped",
+    },
+    io,
+    {
+      resolveLayeredConfig: () => createLayeredConfig(),
+      getBackendProvider: () => provider,
+      loadProjectInstructions: () => ({
+        status: "loaded",
+        instructions: { path: "C:\\Repo\\AGENTS.md", content: "extra instructions" },
+      }),
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(capturedProjectInstructions, {
+    path: "C:\\Repo\\AGENTS.md",
+    content: "extra instructions",
+  });
+});
+
+test("does not duplicate equivalent tool activity as progress", async () => {
+  const io = createIo();
+  const provider = createProvider((_prompt, _options, handlers) => {
+    handlers.onToolActivity?.({
+      id: "tool-1",
+      command: "Get-ChildItem",
+      status: "running",
+      startedAt: Date.now(),
+    });
+    handlers.onProgress?.({ id: "tool-1", source: "tool", text: "Running Get-ChildItem" });
+    handlers.onResponse("ok");
+    return () => {};
+  });
+
+  const result = await runHeadlessExec(
+    { prompt: "Prompt", launchArgs: createLaunchArgs(), workspaceRoot: "C:\\Repo" },
+    io,
+    {
+      resolveLayeredConfig: () => createLayeredConfig(),
+      getBackendProvider: () => provider,
+      loadProjectInstructions: () => ({ status: "missing" }),
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.match(io.stderrText(), /tool: running: Get-ChildItem/);
+  assert.doesNotMatch(io.stderrText(), /tool: Running Get-ChildItem/);
+});
+
 test("returns exit code 0 on provider success without deltas", async () => {
   const io = createIo();
   const provider = createProvider((_prompt, _options, handlers) => {
@@ -212,6 +372,28 @@ test("returns non-zero on provider error", async () => {
 
   assert.equal(result.exitCode, HEADLESS_EXEC_RUN_FAILED);
   assert.match(io.stderrText(), /Provider exploded/);
+});
+
+test("missing-file failure remains non-zero and visible", async () => {
+  const io = createIo();
+  const provider = createProvider((_prompt, _options, handlers) => {
+    handlers.onError("Process exited with code 1", "Get-Content: Cannot find path 'missing.txt' because it does not exist.");
+    return () => {};
+  });
+
+  const result = await runHeadlessExec(
+    { prompt: "Read missing.txt", launchArgs: createLaunchArgs(), workspaceRoot: "C:\\Repo" },
+    io,
+    {
+      resolveLayeredConfig: () => createLayeredConfig(),
+      getBackendProvider: () => provider,
+      loadProjectInstructions: () => ({ status: "missing" }),
+    },
+  );
+
+  assert.equal(result.exitCode, HEADLESS_EXEC_RUN_FAILED);
+  assert.match(io.stderrText(), /missing\.txt/);
+  assert.match(io.stderrText(), /does not exist/);
 });
 
 test("forces planMode off while preserving other runtime settings", async () => {

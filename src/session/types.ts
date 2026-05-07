@@ -24,7 +24,7 @@ export type Screen =
 // ─── UI State Machine ─────────────────────────────────────────────────────────
 // Drives all visual decisions: border colors, input persona, turn opacity.
 //
-//  IDLE ──submit──▶ THINKING ──first token──▶ RESPONDING ──complete──▶ IDLE
+//  IDLE ──submit──▶ THINKING ──first token──▶ RESPONDING ──answer visible──▶ ANSWER_VISIBLE ──complete──▶ IDLE
 //   ▲                  │                           │                     │
 //   │                  └──error──▶ ERROR           └──question──▶ AWAITING
 //   └──────────────────────────────────────── dismiss / answer ──────────┘
@@ -33,13 +33,17 @@ export type UIState =
   | { kind: "IDLE" }
   | { kind: "THINKING"; turnId: number }
   | { kind: "RESPONDING"; turnId: number }
+  | { kind: "ANSWER_VISIBLE"; turnId: number }
   | { kind: "AWAITING_USER_ACTION"; turnId: number; question: string }
   | { kind: "ERROR"; turnId: number; message: string }
   | { kind: "SHELL_RUNNING"; shellId: number };
 
 /** Derive the legacy busy flag from UIState for guard functions. */
 export function isBusy(state: UIState): boolean {
-  return state.kind === "THINKING" || state.kind === "RESPONDING" || state.kind === "SHELL_RUNNING";
+  return state.kind === "THINKING"
+    || state.kind === "RESPONDING"
+    || state.kind === "ANSWER_VISIBLE"
+    || state.kind === "SHELL_RUNNING";
 }
 
 export interface TimelineBaseEvent {

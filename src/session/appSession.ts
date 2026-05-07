@@ -13,6 +13,7 @@ import {
   failRunEvent,
   finalizePlanBlock,
   finalizeResponseSegments,
+  markResponseSegmentsCompleted,
   reduceUIState,
   upsertRunToolActivity,
   type UIStateAction,
@@ -59,6 +60,12 @@ export type SessionAction =
     eventFactory: () => AssistantEvent;
   }
   | {
+    type: "RUN_MARK_FINAL_ANSWER_OBSERVED";
+    runId: number;
+    turnId: number;
+    response?: string;
+  }
+  | {
     type: "RUN_APPLY_LIVE_UPDATES";
     turnId: number;
     runId: number;
@@ -72,6 +79,7 @@ export type SessionAction =
     status: "completed" | "failed" | "canceled";
     message?: string;
     response?: string;
+    durationMs?: number;
     responsePresentation?: "assistant" | "plan";
     question?: string | null;
     assistantFactory: () => AssistantEvent;
@@ -425,49 +433,102 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ),
       };
     }
-    case "RUN_APPLY_LIVE_UPDATES":
-      return action.updates.reduce((currentState, update) => {
+    case "RUN_APPLY_LIVE_UPDATES": {
+      const existingRun = state.activeEvents.find(
+        (event): event is RunEvent =>
+          event.type === "run" && event.id === action.runId && event.turnId === action.turnId,
+      );
+      if (!existingRun) {
+        return state;
+      }
+
+      const existingAssistant = state.activeEvents.find(
+        (event): event is AssistantEvent => event.type === "assistant" && event.turnId === action.turnId,
+      );
+      let nextRun = existingRun;
+      let nextAssistant: AssistantEvent | null = existingAssistant ?? null;
+      let assistantCreated = false;
+      let sawAssistantOrPlanDelta = false;
+
+      for (const update of action.updates) {
         if (update.type === "activity") {
-          return reduceSessionState(currentState, {
-            type: "RUN_APPEND_ACTIVITY",
+          nextRun = appendRunActivity(nextRun, update.activity);
+        } else if (update.type === "progress") {
+          nextRun = appendRunThinking(nextRun, [update.update]);
+        } else if (update.type === "tool") {
+          renderDebug.traceEvent("action", "upsert", {
             runId: action.runId,
-            activity: update.activity,
+            actionId: update.activity.id,
+            status: update.activity.status,
           });
+          nextRun = upsertRunToolActivity(nextRun, update.activity);
+        } else if (update.type === "plan") {
+          sawAssistantOrPlanDelta = true;
+          nextRun = appendRunPlanChunk(nextRun, update.chunk);
+        } else {
+          sawAssistantOrPlanDelta = true;
+          nextRun = appendRunResponseChunk(nextRun, update.chunk);
+          if (nextAssistant) {
+            nextAssistant = {
+              ...nextAssistant,
+              contentChunks: [...nextAssistant.contentChunks, update.chunk],
+            };
+          } else {
+            nextAssistant = action.assistantEventFactory(update.chunk);
+            assistantCreated = true;
+          }
         }
+      }
 
-        if (update.type === "progress") {
-          return reduceSessionState(currentState, {
-            type: "RUN_APPLY_PROGRESS_UPDATES",
-            runId: action.runId,
-            updates: [update.update],
-          });
+      const activeEvents = state.activeEvents.map((event) => {
+        if (event.type === "run" && event.id === action.runId) {
+          return nextRun;
         }
-
-        if (update.type === "tool") {
-          return reduceSessionState(currentState, {
-            type: "RUN_UPSERT_TOOL_ACTIVITY",
-            runId: action.runId,
-            activity: update.activity,
-          });
+        if (nextAssistant && event.type === "assistant" && event.turnId === action.turnId) {
+          return nextAssistant;
         }
+        return event;
+      });
 
-        if (update.type === "plan") {
-          return reduceSessionState(currentState, {
-            type: "RUN_APPEND_PLAN_DELTA",
-            turnId: action.turnId,
-            runId: action.runId,
-            chunk: update.chunk,
-          });
-        }
+      const withAssistant = assistantCreated && nextAssistant
+        ? [...activeEvents, nextAssistant]
+        : activeEvents;
 
-        return reduceSessionState(currentState, {
-          type: "RUN_APPEND_ASSISTANT_DELTA",
-          turnId: action.turnId,
-          runId: action.runId,
-          chunk: update.chunk,
-          eventFactory: () => action.assistantEventFactory(update.chunk),
-        });
-      }, state);
+      return {
+        ...state,
+        activeEvents: withAssistant,
+        uiState: sawAssistantOrPlanDelta
+          ? reduceTracedUIState(
+            state.uiState,
+            { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId },
+            { runId: action.runId },
+          )
+          : state.uiState,
+      };
+    }
+    case "RUN_MARK_FINAL_ANSWER_OBSERVED": {
+      const existingRun = state.activeEvents.find(
+        (event): event is RunEvent =>
+          event.type === "run" && event.id === action.runId && event.turnId === action.turnId,
+      );
+      if (!existingRun) {
+        return state;
+      }
+
+      return {
+        ...state,
+        activeEvents: state.activeEvents.map((event) =>
+          event.id === action.runId && event.type === "run"
+            ? markResponseSegmentsCompleted(event as RunEvent, action.response)
+            : event
+        ),
+        uiState: reduceTracedUIState(
+          state.uiState,
+          { type: "FINAL_ANSWER_VISIBLE", turnId: action.turnId },
+          { runId: action.runId },
+        ),
+      };
+    }
     case "FINALIZE_RUN": {
       const userEvent = state.activeEvents.find(
         (event): event is UserPromptEvent => event.type === "user" && event.turnId === action.turnId,
@@ -500,10 +561,10 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
 
       const baseFinalizedRun =
         action.status === "completed"
-          ? completeRunEvent(runEvent)
+          ? completeRunEvent(runEvent, action.durationMs)
           : action.status === "failed"
-            ? failRunEvent(runEvent, action.message ?? "Run failed", action.message ?? "Run failed")
-            : cancelRunEvent(runEvent);
+            ? failRunEvent(runEvent, action.message ?? "Run failed", action.message ?? "Run failed", action.durationMs)
+            : cancelRunEvent(runEvent, action.durationMs);
 
       const planPresentation = action.responsePresentation === "plan";
       if (planPresentation) {

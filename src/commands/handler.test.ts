@@ -402,6 +402,7 @@ test("documents runtime commands in help", () => {
   assert.match(result?.message ?? "", /\/plan \[on\|off\]\s+Show or toggle session plan mode/i);
   assert.match(result?.message ?? "", /\/setting\s+Open the settings picker/i);
   assert.match(result?.message ?? "", /\/setting directory \[normal\|simple\]/i);
+  assert.match(result?.message ?? "", /\/mouse\s+Toggle mouse capture for wheel scrolling \(on by default; Shift\+drag to select text\)/i);
   assert.match(result?.message ?? "", /Current plan mode: Disabled/i);
   assert.match(result?.message ?? "", /Shift\+Tab\s+Toggle plan mode/i);
   assert.match(result?.message ?? "", /Ctrl\+Y\s+Cycle execution mode/i);

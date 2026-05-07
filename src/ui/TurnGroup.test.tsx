@@ -161,7 +161,7 @@ test("does not render duplicate transcript working placeholder before streaming 
 
   await sleep();
   frame = harness.readOutput();
-  assert.match(frame, /Codex/);
+  assert.match(frame, /Codexa/);
   assert.match(frame, /Streaming line/i);
 
   harness.instance.unmount();
@@ -270,7 +270,7 @@ test("finalization with same content does not cause visual flash", async () => {
   let finalFrame = harness.readOutput();
   // Content should still be present — no flash/disappearance
   assert.match(finalFrame, /response content stays/i);
-  assert.match(finalFrame, /Codex/);
+  assert.match(finalFrame, /Codexa/);
 
   harness.instance.unmount();
 });

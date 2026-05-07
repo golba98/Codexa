@@ -4,6 +4,13 @@ import { getCodexCliCapabilities, type CodexCliCapabilities } from "./codexCapab
 import { resolveCodexExecutable } from "./codexExecutable.js";
 import * as perf from "./perf/profiler.js";
 
+const MODERN_CODEX_CLI_CAPABILITIES: CodexCliCapabilities = {
+  askForApproval: false,
+  sandbox: false,
+  config: true,
+  fullAuto: false,
+};
+
 export interface PreparedCodexExecLaunch {
   executable: string;
   capabilities: CodexCliCapabilities;
@@ -22,6 +29,10 @@ interface PrepareCodexExecLaunchDependencies {
   resolveExecutable?: typeof resolveCodexExecutable;
   getCapabilities?: typeof getCodexCliCapabilities;
   diagnosticsLogger?: (message: string) => void;
+}
+
+export interface PrepareCodexExecLaunchOptions extends BuildCodexExecArgsOptions {
+  probeCapabilities?: boolean;
 }
 
 function resolveResponsibleModulePath(moduleUrl: string): string {
@@ -81,7 +92,7 @@ function logCodexLaunchDiagnostics(
 }
 
 export async function prepareCodexExecLaunch(
-  options: BuildCodexExecArgsOptions,
+  options: PrepareCodexExecLaunchOptions,
   responsibleModuleUrl: string,
   dependencies: PrepareCodexExecLaunchDependencies = {},
 ): Promise<BuildCodexExecArgsResult & {
@@ -98,7 +109,9 @@ export async function prepareCodexExecLaunch(
   const executable = await executableResolver();
   perf.mark("exec_resolve_end");
   perf.mark("caps_probe_start");
-  const capabilities = await capabilityResolver(executable);
+  const capabilities = options.probeCapabilities
+    ? await capabilityResolver(executable)
+    : MODERN_CODEX_CLI_CAPABILITIES;
   perf.mark("caps_probe_end");
   const argsResult = buildCodexExecArgs(options, capabilities);
   const responsibleModulePath = resolveResponsibleModulePath(responsibleModuleUrl);

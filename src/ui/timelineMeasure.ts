@@ -468,8 +468,10 @@ function buildTaskStatusRow(item: Extract<RenderTimelineItem, { type: "turn" }>,
   // Active state — static concise status. The bottom status slot owns the
   // live busy animation so transcript rows do not repaint on animation ticks.
   const statusText = item.renderState.runPhase === "streaming"
-    ? "Codex is streaming"
-    : "Codex is thinking";
+    ? "Codexa is streaming"
+    : item.renderState.runPhase === "final"
+      ? "Codexa response complete"
+      : "Codexa is thinking";
 
   return createRow(
     `${item.key}-status`,
@@ -1565,7 +1567,59 @@ export type StreamEvent =
   | { kind: "thinking"; streamSeq: number; block: RunProgressBlock; isActive: boolean }
   | { kind: "response"; streamSeq: number; segment: RunResponseSegment }
   | { kind: "action"; streamSeq: number; tool: RunToolActivity }
+  | { kind: "actionSummary"; streamSeq: number; id: string; label: string; count: number }
   | { kind: "plan"; streamSeq: number; planText: string; approved: boolean };
+
+const ACTION_COMPACT_KEEP_HEAD = 2;
+const ACTION_COMPACT_KEEP_TAIL = 2;
+const ACTION_COMPACT_MIN_COUNT = ACTION_COMPACT_KEEP_HEAD + ACTION_COMPACT_KEEP_TAIL + 2;
+
+function getCompactableActionLabel(event: StreamEvent): string | null {
+  if (event.kind !== "action") return null;
+  if (event.tool.status !== "completed") return null;
+  const label = getFriendlyActionLabel(normalizeCommand(event.tool.command));
+  return label === "Read file" || label === "List files" ? label : null;
+}
+
+function compactActionBursts(events: StreamEvent[], verbose: boolean): StreamEvent[] {
+  if (verbose) return events;
+
+  const compacted: StreamEvent[] = [];
+  for (let index = 0; index < events.length;) {
+    const label = getCompactableActionLabel(events[index]!);
+    if (!label) {
+      compacted.push(events[index]!);
+      index += 1;
+      continue;
+    }
+
+    let end = index + 1;
+    while (end < events.length && getCompactableActionLabel(events[end]!) === label) {
+      end += 1;
+    }
+
+    const group = events.slice(index, end);
+    if (group.length < ACTION_COMPACT_MIN_COUNT) {
+      compacted.push(...group);
+      index = end;
+      continue;
+    }
+
+    const hidden = group.slice(ACTION_COMPACT_KEEP_HEAD, group.length - ACTION_COMPACT_KEEP_TAIL);
+    compacted.push(...group.slice(0, ACTION_COMPACT_KEEP_HEAD));
+    compacted.push({
+      kind: "actionSummary",
+      streamSeq: hidden[0]?.streamSeq ?? group[ACTION_COMPACT_KEEP_HEAD]?.streamSeq ?? group[0]!.streamSeq,
+      id: `${label.toLowerCase().replace(/\s+/g, "-")}-${group[0]!.streamSeq}-${group[group.length - 1]!.streamSeq}`,
+      label,
+      count: hidden.length,
+    });
+    compacted.push(...group.slice(group.length - ACTION_COMPACT_KEEP_TAIL));
+    index = end;
+  }
+
+  return compacted;
+}
 
 function buildCodexPlainRows(
   keyPrefix: string,
@@ -1573,7 +1627,7 @@ function buildCodexPlainRows(
   contentRows: TimelineRowSpan[][],
 ): TimelineRow[] {
   const rows: TimelineRow[] = [
-    createRow(`${keyPrefix}-label`, [createSpan("Codex", "muted", { bold: true })], width),
+    createRow(`${keyPrefix}-label`, [createSpan("Codexa", "muted", { bold: true })], width),
   ];
 
   contentRows.forEach((row, index) => {
@@ -1852,6 +1906,36 @@ export function buildActionEventRows(params: {
   return getCachedStreamingBlockRows(cacheKey, buildActionRows);
 }
 
+function buildActionSummaryRows(params: {
+  keyPrefix: string;
+  width: number;
+  event: Extract<StreamEvent, { kind: "actionSummary" }>;
+  borderTone: TimelineTone;
+}): TimelineRow[] {
+  const label = params.event.label === "Read file" ? "read activity" : "list activity";
+  const cacheKey = rowCacheKey([
+    "action-summary",
+    params.keyPrefix,
+    params.width,
+    params.event.id,
+    params.event.label,
+    params.event.count,
+    params.borderTone,
+  ]);
+
+  return getCachedFrozenRows(cacheKey, () => buildDashCardRows({
+    keyPrefix: params.keyPrefix,
+    width: params.width,
+    title: "action",
+    borderTone: params.borderTone,
+    contentRows: [[
+      createSpan("✓ ", "success"),
+      createSpan(`${params.event.count} repeated ${label}`, "text"),
+      createSpan(" summarized", "dim"),
+    ]],
+  }));
+}
+
 function buildCodexResponseRows(params: {
   keyPrefix: string;
   width: number;
@@ -1962,8 +2046,8 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
   const dim = item.renderState.opacity !== "active";
   const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
   const actionBorderTone = item.renderState.opacity === "dim" ? "borderSubtle" : "borderActive";
-  const events = collectStreamEvents(item, streaming);
   const verbose = options.verbose ?? false;
+  const events = compactActionBursts(collectStreamEvents(item, streaming), verbose);
 
   const rows: TimelineRow[] = [];
 
@@ -1991,6 +2075,13 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
         borderTone: actionBorderTone,
         verbose,
         isLive,
+      }));
+    } else if (event.kind === "actionSummary") {
+      rows.push(...buildActionSummaryRows({
+        keyPrefix: `${item.key}-action-summary-${event.streamSeq}`,
+        width,
+        event,
+        borderTone: actionBorderTone,
       }));
     } else if (event.kind === "response") {
       rows.push(...buildCodexResponseRows({
@@ -2301,6 +2392,7 @@ function isLiveStreamEvent(event: StreamEvent, run: RunEvent): boolean {
   if (run.status !== "running") return false;
   if (event.kind === "response") return event.segment.status === "active";
   if (event.kind === "action") return event.tool.status === "running";
+  if (event.kind === "actionSummary") return false;
   return false;
 }
 
@@ -2322,7 +2414,7 @@ function buildStableActiveTurnGroups(
   const dim = item.renderState.opacity !== "active";
   const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
   const actionBorderTone = item.renderState.opacity === "dim" ? "borderSubtle" : "borderActive";
-  const events = collectStreamEvents(item, streaming);
+  const events = compactActionBursts(collectStreamEvents(item, streaming), verbose);
   let orderedRows = getCachedFrozenRows(rowCacheKey([
     "stable-active-user",
     item.key,
@@ -2378,6 +2470,13 @@ function buildStableActiveTurnGroups(
         event.tool.completedAt ?? "",
         textCacheToken(event.tool.command),
       ]), build)));
+    } else if (event.kind === "actionSummary") {
+      targetRows.push(...buildActionSummaryRows({
+        keyPrefix: `${item.key}-action-summary-${event.streamSeq}`,
+        width: innerWidth,
+        event,
+        borderTone: actionBorderTone,
+      }));
     } else if (event.kind === "response") {
       const build = () => buildCodexResponseRows({
         keyPrefix: `${item.key}-codex-response-${event.streamSeq}`,

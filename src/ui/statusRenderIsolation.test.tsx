@@ -226,7 +226,7 @@ test("status dot ticks do not invalidate timeline rendering", async () => {
     await sleep(100);
     const beforeTick = readRecords(logPath);
 
-    await sleep(420);
+    await sleep(950);
     const afterTick = readRecords(logPath);
     const tickWindow = afterTick.slice(beforeTick.length);
 
@@ -318,7 +318,7 @@ test("first action activity keeps the shell frame mounted and visible", async ()
     const frame = stripAnsi(output);
     assert.match(frame, /workspace/);
     assert.match(frame, /What is the point of 5-Date Verification/);
-    assert.match(frame, /Codex is thinking/i);
+    assert.match(frame, /Codexa is thinking/i);
     assert.match(frame, /Get-Content README\.md/);
 
     const records = readRecords(logPath);

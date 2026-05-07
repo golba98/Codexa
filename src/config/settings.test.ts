@@ -56,6 +56,17 @@ test("defines user settings through reusable schemas", () => {
         { value: "simple", label: "Simple" },
       ],
     },
+    {
+      key: "terminalMouseMode",
+      label: "Mouse mode",
+      description:
+        "Wheel: mouse wheel scrolls the Codexa timeline (native drag-select requires Shift in Windows Terminal). "
+        + "Selection: native drag-select is preserved; use keyboard (PageUp/PageDown/End) to scroll.",
+      options: [
+        { value: "wheel", label: "Wheel scroll" },
+        { value: "selection", label: "Native selection" },
+      ],
+    },
   ]);
 });
 

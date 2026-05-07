@@ -343,7 +343,10 @@ export function traceTerminalWrite(
     containsTitleSequence: text.includes("\x1b]0;") || text.includes("\x1b]2;"),
     containsBracketedPaste: text.includes("\x1b[?2004h") || text.includes("\x1b[?2004l"),
     containsMouseMode: text.includes("\x1b[?1000h") || text.includes("\x1b[?1000l")
-      || text.includes("\x1b[?1006h") || text.includes("\x1b[?1006l"),
+      || text.includes("\x1b[?1002h") || text.includes("\x1b[?1002l")
+      || text.includes("\x1b[?1003h") || text.includes("\x1b[?1003l")
+      || text.includes("\x1b[?1006h") || text.includes("\x1b[?1006l")
+      || text.includes("\x1b[?1015h") || text.includes("\x1b[?1015l"),
   });
 }
 

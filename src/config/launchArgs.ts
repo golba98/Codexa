@@ -30,6 +30,15 @@ function parseConfigFlagValue(raw: string | undefined): string | null {
   return trimmed;
 }
 
+function parseModelFlagValue(raw: string | undefined): string | null {
+  const trimmed = raw?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function quoteTomlString(value: string): string {
+  return JSON.stringify(value);
+}
+
 export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult {
   const passthroughArgs: string[] = [];
   const configOverrides: string[] = [];
@@ -108,6 +117,27 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       }
       configOverrides.push(value);
       passthroughArgs.push(`-c=${value}`);
+      continue;
+    }
+
+    if (arg === "--model" || arg === "-m") {
+      const value = parseModelFlagValue(argv[index + 1]);
+      if (!value) {
+        return { ok: false, error: `Missing value for ${arg}.` };
+      }
+      configOverrides.push(`model=${quoteTomlString(value)}`);
+      passthroughArgs.push(arg, value);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--model=")) {
+      const value = parseModelFlagValue(arg.slice("--model=".length));
+      if (!value) {
+        return { ok: false, error: "Missing value for --model." };
+      }
+      configOverrides.push(`model=${quoteTomlString(value)}`);
+      passthroughArgs.push(`--model=${value}`);
       continue;
     }
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  BUSY_STATUS_FRAME_MS,
   BUSY_STATUS_FRAMES,
   getBusyStatusFrame,
   isAnimatedBusyState,
@@ -14,11 +15,16 @@ test("busy status frames advance in a fixed-width dot slot", () => {
   assert.ok(BUSY_STATUS_FRAMES.every((frame) => frame.length === BUSY_STATUS_FRAMES[0]!.length));
 });
 
+test("busy status animation uses a low redraw cadence", () => {
+  assert.equal(BUSY_STATUS_FRAME_MS, 900);
+});
+
 test("busy animation runs only for active work states", () => {
   assert.equal(isAnimatedBusyState("THINKING"), true);
   assert.equal(isAnimatedBusyState("RESPONDING"), true);
   assert.equal(isAnimatedBusyState("SHELL_RUNNING"), true);
   assert.equal(isAnimatedBusyState("IDLE"), false);
+  assert.equal(isAnimatedBusyState("ANSWER_VISIBLE"), false);
   assert.equal(isAnimatedBusyState("ERROR"), false);
   assert.equal(isAnimatedBusyState("AWAITING_USER_ACTION"), false);
 });

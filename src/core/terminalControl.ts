@@ -9,7 +9,7 @@ export const TERMINAL_SEQUENCES = {
   bracketedPasteEnable: "\x1b[?2004h",
   bracketedPasteDisable: "\x1b[?2004l",
   mouseEnable: "\x1b[?1000h\x1b[?1006h",
-  mouseDisable: "\x1b[?1000l\x1b[?1006l",
+  mouseDisable: "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l",
   title: "\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07",
 } as const;
 
@@ -86,7 +86,7 @@ export function createTerminalModeController(write: TerminalWrite): TerminalMode
   return {
     write: writeStdout,
     setMouseReporting(enabled, source) {
-      if (mouseReporting === enabled) return;
+      if (enabled && mouseReporting === enabled) return;
       mouseReporting = enabled;
       writeStdout(enabled ? TERMINAL_SEQUENCES.mouseEnable : TERMINAL_SEQUENCES.mouseDisable, source);
     },

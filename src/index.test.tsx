@@ -81,7 +81,6 @@ function createSupportedHarness(options: {
       renderApp(_node: React.ReactElement, options?: RenderOptions) {
         renderCalls += 1;
         renderOptions = options;
-        stdout.write("\x1b[?1000h\x1b[?1006h");
         return {
           clear() {
             stdout.clearCalls += 1;
@@ -290,8 +289,8 @@ test("resize recovery preserves the viewport after invalid dimensions", async ()
 
   // onResize does not erase the viewport or scrollback.
   assert.equal(harness.stdout.clearCalls, 0);
-  assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
-  assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1000h/);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1006h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
   const writesAfterStart = harness.stdout.writes.indexOf("\x1b[?2004h") + "\x1b[?2004h".length;
   assert.doesNotMatch(harness.stdout.writes.slice(writesAfterStart), /\x1b\[2J|\x1b\[3J/);
@@ -336,12 +335,12 @@ test("normal app render writes do not clear the terminal after startup", async (
   const harness = createSupportedHarness();
   startApp(harness.deps);
 
-  const appWriteStart = harness.stdout.writes.indexOf("\x1b[?1000h");
-  assert.ok(appWriteStart >= 0, "mock app render should write mouse mode");
-  const appWrites = harness.stdout.writes.slice(appWriteStart);
-
+  const writesAfterStartup = harness.stdout.writes.slice(
+    harness.stdout.writes.indexOf("\x1b[?2004h") + "\x1b[?2004h".length,
+  );
   assert.equal(harness.stdout.clearCalls, 0);
-  assert.doesNotMatch(appWrites, /\x1b\[2J|\x1b\[3J/);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1000h|\x1b\[\?1006h/);
+  assert.doesNotMatch(writesAfterStartup, /\x1b\[2J|\x1b\[3J/);
 
   harness.resolveExit();
   await flushMicrotasks();
@@ -419,13 +418,19 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
   harness.registeredHandlers[0]!();
   assert.equal(harness.stdout.listenerCount("resize"), 0);
   assert.equal(harness.getCleanupCalls(), 1);
-  // Verify enable sequences were written during startup
-  assert.match(harness.stdout.writes, /\x1b\[\?1000h/);
-  assert.match(harness.stdout.writes, /\x1b\[\?1006h/);
+  // Verify mouse reporting is not enabled during default startup.
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1000h/);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1002h/);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1003h/);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1006h/);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1015h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
-  // Verify disable sequences were written during cleanup
+  // Verify defensive disable sequences were written during cleanup.
   assert.match(harness.stdout.writes, /\x1b\[\?1000l/);
+  assert.match(harness.stdout.writes, /\x1b\[\?1002l/);
+  assert.match(harness.stdout.writes, /\x1b\[\?1003l/);
   assert.match(harness.stdout.writes, /\x1b\[\?1006l/);
+  assert.match(harness.stdout.writes, /\x1b\[\?1015l/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004l/);
 
   // Resolving after explicit cleanup should be idempotent.

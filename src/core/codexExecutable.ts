@@ -1,16 +1,9 @@
-import { spawn, spawnSync } from "child_process";
+import { spawn } from "child_process";
 import { join } from "path";
 import { CODEX_EXECUTABLE } from "../config/settings.js";
 
-const DISCOVERY_TIMEOUT_MS = 2500;
-
 let cachedExecutable: string | null = null;
 let resolveInFlight: Promise<string> | null = null;
-
-interface ProbeResult {
-  ok: boolean;
-  errorCode?: string;
-}
 
 interface SpawnOptions {
   stdio: ["ignore" | "pipe", "pipe", "pipe"];
@@ -28,19 +21,12 @@ export async function resolveCodexExecutable(): Promise<string> {
 
   resolveInFlight = (async () => {
     const candidates = collectExecutableCandidates();
-    let lastErrorCode: string | undefined;
-
-    for (const candidate of candidates) {
-      const probe = await probeExecutable(candidate);
-      if (probe.ok) {
-        cachedExecutable = candidate;
-        return candidate;
-      }
-      lastErrorCode = probe.errorCode ?? lastErrorCode;
+    const executable = candidates[0];
+    if (!executable) {
+      throw createExecutableResolutionError("ENOENT", candidates);
     }
-
-    const fallbackCode = lastErrorCode ?? "ENOENT";
-    throw createExecutableResolutionError(fallbackCode, candidates);
+    cachedExecutable = executable;
+    return executable;
   })();
 
   try {
@@ -94,81 +80,23 @@ function collectExecutableCandidates(): string[] {
     if (value) set.add(value);
   };
 
-  push(CODEX_EXECUTABLE);
-  push("codex");
-
+  if (process.env.CODEX_EXECUTABLE?.trim()) {
+    push(CODEX_EXECUTABLE);
+  }
   if (process.platform === "win32") {
-    push("codex.exe");
     push("codex.cmd");
+    push("codex.exe");
+    push("codex");
     const localAppAlias = process.env.LOCALAPPDATA
       ? join(process.env.LOCALAPPDATA, "Microsoft", "WindowsApps", "codex.exe")
       : undefined;
     push(localAppAlias);
-
-    for (const discovered of discoverWithWhere()) {
-      push(discovered);
-    }
+  } else {
+    push(CODEX_EXECUTABLE);
+    push("codex");
   }
 
   return [...set];
-}
-
-function discoverWithWhere(): string[] {
-  const whereCandidates: string[] = [];
-  const executable = process.env.SystemRoot
-    ? join(process.env.SystemRoot, "System32", "where.exe")
-    : "where.exe";
-  const result = spawnSync(executable, ["codex"], { encoding: "utf8" });
-
-  if (result.status !== 0 || !result.stdout) return whereCandidates;
-
-  const lines = result.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  whereCandidates.push(...lines);
-  return whereCandidates;
-}
-
-function probeExecutable(executable: string): Promise<ProbeResult> {
-  return new Promise<ProbeResult>((resolve) => {
-    let proc: ReturnType<typeof spawn>;
-    try {
-      proc = spawnCodexProcess(executable, ["--version"], { stdio: ["ignore", "pipe", "pipe"] });
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
-      resolve({ ok: false, errorCode: code });
-      return;
-    }
-    let done = false;
-
-    const finish = (result: ProbeResult) => {
-      if (done) return;
-      done = true;
-      resolve(result);
-    };
-
-    const timer = setTimeout(() => {
-      proc.kill();
-      finish({ ok: false, errorCode: "ETIME" });
-    }, DISCOVERY_TIMEOUT_MS);
-
-    proc.on("error", (error) => {
-      clearTimeout(timer);
-      const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
-      finish({ ok: false, errorCode: code });
-    });
-
-    proc.on("close", (exitCode) => {
-      clearTimeout(timer);
-      if (exitCode === 0) {
-        finish({ ok: true });
-      } else {
-        finish({ ok: false, errorCode: `EXIT_${exitCode}` });
-      }
-    });
-  });
 }
 
 export function spawnCodexProcess(

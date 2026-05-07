@@ -24,6 +24,7 @@ test("prepares a shared launch plan with resolved executable strategy and source
       })),
       cwd: "C:/repo",
       structuredOutput: false,
+      probeCapabilities: true,
     },
     "file:///C:/Development/1-JavaScript/13-Custom%20CLI/src/core/providers/codexSubprocess.ts",
     {
@@ -52,7 +53,7 @@ test("prepares a shared launch plan with resolved executable strategy and source
       "--model",
       "gpt-5.4",
       "--config",
-      "reasoning.effort=medium",
+      "model_reasoning_effort=medium",
       "-c",
       "approval_policy=on-request",
       "--sandbox",
@@ -124,5 +125,81 @@ test("launch diagnostics are injectable and silent by default", async () => {
     } else {
       process.env.CODEXA_DEBUG_CODEX_LAUNCH = previousDebug;
     }
+  }
+});
+
+test("uses modern Codex capabilities by default without probing help output", async () => {
+  let capabilityProbeCount = 0;
+
+  const result = await prepareCodexExecLaunch(
+    {
+      runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
+        model: "gpt-5.4-mini",
+        reasoningLevel: "medium",
+        policy: {
+          approvalPolicy: "never",
+          sandboxMode: "danger-full-access",
+        },
+      })),
+      cwd: "C:/repo",
+      structuredOutput: true,
+    },
+    "file:///C:/repo/src/core/providers/codexSubprocess.ts",
+    {
+      resolveExecutable: async () => "codex.cmd",
+      getCapabilities: async () => {
+        capabilityProbeCount += 1;
+        throw new Error("capability probe should not run");
+      },
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(capabilityProbeCount, 0);
+});
+
+test("can explicitly probe capabilities for compatibility fallback", async () => {
+  let capabilityProbeCount = 0;
+  const capabilities: CodexCliCapabilities = {
+    askForApproval: false,
+    sandbox: false,
+    config: true,
+    fullAuto: false,
+  };
+
+  const result = await prepareCodexExecLaunch(
+    {
+      runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
+        model: "gpt-5.4-mini",
+        reasoningLevel: "medium",
+        policy: {
+          approvalPolicy: "on-request",
+          sandboxMode: "workspace-write",
+        },
+      })),
+      cwd: "C:/repo",
+      structuredOutput: false,
+      probeCapabilities: true,
+    },
+    "file:///C:/repo/src/core/providers/codexSubprocess.ts",
+    {
+      resolveExecutable: async () => "codex.cmd",
+      getCapabilities: async () => {
+        capabilityProbeCount += 1;
+        return capabilities;
+      },
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(capabilityProbeCount, 1);
+  if (result.ok) {
+    assert.deepEqual(result.args.slice(-5), [
+      "-c",
+      "approval_policy=on-request",
+      "-c",
+      "sandbox_mode=workspace-write",
+      "-",
+    ]);
   }
 });

@@ -124,7 +124,7 @@ test("builds deterministic codex config overrides", () => {
   const writableRoot = resolved.policy.writableRoots[0];
 
   assert.deepEqual(buildCodexConfigOverrides(resolved), [
-    "reasoning.effort=medium",
+    "model_reasoning_effort=medium",
     "approval_policy=never",
     "sandbox_workspace_write.network_access=true",
     `sandbox_workspace_write.writable_roots=${JSON.stringify([writableRoot])}`,

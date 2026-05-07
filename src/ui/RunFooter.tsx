@@ -12,12 +12,13 @@ export function measureRunFooterRows(): number {
 
 export function getRunFooterStatus(uiState: UIState): string {
   if (uiState.kind === "IDLE") return "";
-  if (uiState.kind === "THINKING") return "Codex is thinking";
-  if (uiState.kind === "RESPONDING") return "Codex is thinking";
-  if (uiState.kind === "SHELL_RUNNING") return "Codex is running command";
+  if (uiState.kind === "THINKING") return "Codexa is thinking";
+  if (uiState.kind === "RESPONDING") return "Codexa is thinking";
+  if (uiState.kind === "ANSWER_VISIBLE") return "Codexa response complete";
+  if (uiState.kind === "SHELL_RUNNING") return "Codexa is running command";
   if (uiState.kind === "ERROR") return uiState.message;
-  if (uiState.kind === "AWAITING_USER_ACTION") return "Codex needs your answer";
-  return "Codex is working";
+  if (uiState.kind === "AWAITING_USER_ACTION") return "Codexa needs your answer";
+  return "Codexa is working";
 }
 
 interface RunFooterProps {

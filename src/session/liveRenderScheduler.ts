@@ -25,6 +25,24 @@ export interface LiveRenderScheduler {
   flushNow: () => boolean;
   cancel: () => void;
   hasPendingUpdates: () => boolean;
+  getStats: () => LiveRenderSchedulerStats;
+}
+
+export interface LiveRenderSchedulerStats {
+  providerEvents: number;
+  flushes: number;
+  averageFlushIntervalMs: number;
+  maxFlushIntervalMs: number;
+}
+
+function findPendingUpdateIndex(
+  updates: LiveRenderUpdate[],
+  predicate: (update: LiveRenderUpdate) => boolean,
+): number {
+  for (let index = updates.length - 1; index >= 0; index -= 1) {
+    if (predicate(updates[index]!)) return index;
+  }
+  return -1;
 }
 
 function mergeLiveRenderUpdate(updates: LiveRenderUpdate[], update: LiveRenderUpdate): boolean {
@@ -40,8 +58,12 @@ function mergeLiveRenderUpdate(updates: LiveRenderUpdate[], update: LiveRenderUp
   }
 
   if (update.type === "progress") {
-    if (previous?.type === "progress" && previous.update.id === update.update.id) {
-      previous.update = update.update;
+    const index = findPendingUpdateIndex(
+      updates,
+      (pending) => pending.type === "progress" && pending.update.id === update.update.id,
+    );
+    if (index >= 0 && updates[index]?.type === "progress") {
+      updates[index] = update;
     } else {
       updates.push(update);
     }
@@ -49,16 +71,25 @@ function mergeLiveRenderUpdate(updates: LiveRenderUpdate[], update: LiveRenderUp
   }
 
   if (update.type === "tool") {
-    if (previous?.type === "tool" && previous.activity.id === update.activity.id) {
-      previous.activity = { ...previous.activity, ...update.activity };
+    const index = findPendingUpdateIndex(
+      updates,
+      (pending) => pending.type === "tool" && pending.activity.id === update.activity.id,
+    );
+    if (index >= 0 && updates[index]?.type === "tool") {
+      const previousTool = updates[index];
+      updates[index] = {
+        type: "tool",
+        activity: { ...previousTool.activity, ...update.activity },
+      };
     } else {
       updates.push(update);
     }
     return false;
   }
 
-  if (previous?.type === "activity") {
-    previous.activity.push(...update.activity);
+  const activityIndex = findPendingUpdateIndex(updates, (pending) => pending.type === "activity");
+  if (activityIndex >= 0 && updates[activityIndex]?.type === "activity") {
+    updates[activityIndex].activity.push(...update.activity);
   } else {
     updates.push({ type: "activity", activity: [...update.activity] });
   }
@@ -77,6 +108,11 @@ export function createLiveRenderScheduler({
   let timer: TimerHandle | null = null;
   let isFlushing = false;
   let flushAgain = false;
+  let providerEvents = 0;
+  let flushes = 0;
+  let totalFlushIntervalMs = 0;
+  let maxFlushIntervalMs = 0;
+  let lastFlushMonotonicMs: number | null = null;
 
   const cancelScheduledFlush = () => {
     if (timer) {
@@ -110,6 +146,13 @@ export function createLiveRenderScheduler({
           flushed = true;
           const startedAt = performance.now();
           flush(updates);
+          flushes += 1;
+          if (lastFlushMonotonicMs !== null) {
+            const intervalMs = Math.max(0, Math.round(startedAt - lastFlushMonotonicMs));
+            totalFlushIntervalMs += intervalMs;
+            maxFlushIntervalMs = Math.max(maxFlushIntervalMs, intervalMs);
+          }
+          lastFlushMonotonicMs = startedAt;
           renderDebug.traceSchedulerFlush({
             reason: updates.some((update) => update.type === "assistant" || update.type === "plan") ? "stream" : "progress",
             updates: updates.length,
@@ -140,6 +183,7 @@ export function createLiveRenderScheduler({
 
   return {
     enqueue(update) {
+      providerEvents += 1;
       const addedAssistant = mergeLiveRenderUpdate(pendingUpdates, update);
       hasPendingAssistantDelta ||= addedAssistant;
       schedule();
@@ -152,6 +196,15 @@ export function createLiveRenderScheduler({
     },
     hasPendingUpdates() {
       return pendingUpdates.length > 0;
+    },
+    getStats() {
+      const intervalCount = Math.max(0, flushes - 1);
+      return {
+        providerEvents,
+        flushes,
+        averageFlushIntervalMs: intervalCount > 0 ? Math.round(totalFlushIntervalMs / intervalCount) : 0,
+        maxFlushIntervalMs,
+      };
     },
   };
 }

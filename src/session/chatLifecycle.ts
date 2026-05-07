@@ -23,6 +23,7 @@ export type ConfigMutationKind = "backend" | "model" | "mode" | "reasoning" | "p
 export type UIStateAction =
   | { type: "PROMPT_RUN_STARTED"; turnId: number }
   | { type: "FIRST_ASSISTANT_DELTA"; turnId: number }
+  | { type: "FINAL_ANSWER_VISIBLE"; turnId: number }
   | { type: "RUN_COMPLETED"; turnId: number }
   | { type: "RUN_FAILED"; turnId: number; message: string }
   | { type: "RUN_CANCELED"; turnId: number }
@@ -123,6 +124,11 @@ export function reduceUIState(state: UIState, action: UIStateAction): UIState {
         return { kind: "RESPONDING", turnId: action.turnId };
       }
       return state;
+    case "FINAL_ANSWER_VISIBLE":
+      if (stateMatchesTurn(state, action.turnId)) {
+        return { kind: "ANSWER_VISIBLE", turnId: action.turnId };
+      }
+      return state;
     case "RUN_COMPLETED":
       if (stateMatchesTurn(state, action.turnId)) {
         return { kind: "IDLE" };
@@ -164,10 +170,11 @@ export function createRunEvent(params: {
   runtime: ResolvedRuntimeConfig;
   prompt: string;
   turnId: number;
+  startedAtMs?: number;
   approvedPlan?: string;
   responsePresentation?: "assistant" | "plan";
 }): RunEvent {
-  const now = Date.now();
+  const now = params.startedAtMs ?? Date.now();
   const plan: RunPlanBlock | null = params.approvedPlan
     ? {
       id: `plan-${params.id}`,
@@ -834,9 +841,13 @@ export function finalizeResponseSegments(event: RunEvent, finalResponse?: string
   return { ...event, responseSegments: nextSegments, activeResponseSegmentId: null };
 }
 
+export function markResponseSegmentsCompleted(event: RunEvent, finalResponse?: string): RunEvent {
+  return finalizeResponseSegments(event, finalResponse);
+}
+
 export const appendRunOutput = appendRunThinking;
 
-export function completeRunEvent(event: RunEvent): RunEvent {
+export function completeRunEvent(event: RunEvent, durationMs = Date.now() - event.startedAt): RunEvent {
   const touchedSuffix = event.touchedFileCount > 0
     ? ` · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
     : "";
@@ -844,7 +855,7 @@ export function completeRunEvent(event: RunEvent): RunEvent {
   return {
     ...event,
     status: "completed",
-    durationMs: Date.now() - event.startedAt,
+    durationMs,
     activitySummary: summarizeRunActivity(event.activity),
     toolActivities: finalizePendingToolActivities(event.toolActivities, "completed"),
     errorMessage: null,
@@ -854,11 +865,16 @@ export function completeRunEvent(event: RunEvent): RunEvent {
   };
 }
 
-export function failRunEvent(event: RunEvent, summary = "Run failed", errorMessage?: string): RunEvent {
+export function failRunEvent(
+  event: RunEvent,
+  summary = "Run failed",
+  errorMessage?: string,
+  durationMs = Date.now() - event.startedAt,
+): RunEvent {
   return {
     ...event,
     status: "failed",
-    durationMs: Date.now() - event.startedAt,
+    durationMs,
     activitySummary: summarizeRunActivity(event.activity),
     toolActivities: finalizePendingToolActivities(event.toolActivities, "failed"),
     errorMessage: errorMessage ?? summary,
@@ -868,11 +884,11 @@ export function failRunEvent(event: RunEvent, summary = "Run failed", errorMessa
   };
 }
 
-export function cancelRunEvent(event: RunEvent): RunEvent {
+export function cancelRunEvent(event: RunEvent, durationMs = Date.now() - event.startedAt): RunEvent {
   return {
     ...event,
     status: "canceled",
-    durationMs: Date.now() - event.startedAt,
+    durationMs,
     activitySummary: summarizeRunActivity(event.activity),
     toolActivities: finalizePendingToolActivities(event.toolActivities, "canceled"),
     errorMessage: null,
