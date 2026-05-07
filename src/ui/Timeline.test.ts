@@ -15,6 +15,7 @@ import {
   homeTimelineViewport,
   pageDownTimelineViewport,
   pageUpTimelineViewport,
+  parseTimelineNavigationInput,
   parseWheelScrollDirections,
   reflowTimelineViewport,
   resolveTurnOpacity,
@@ -776,6 +777,14 @@ test("completed assistant turn renders local links as compact terminal paths", (
 test("parses sgr mouse wheel directions without treating other mouse events as scroll", () => {
   const raw = "\u001b[<64;12;9M\u001b[<65;12;10M\u001b[<0;12;10M";
   assert.deepEqual(parseWheelScrollDirections(raw), ["up", "down"]);
+});
+
+test("parses timeline navigation keys from raw terminal input", () => {
+  assert.deepEqual(parseTimelineNavigationInput("\u001b[5~"), ["pageUp"]);
+  assert.deepEqual(parseTimelineNavigationInput("\u001b[6~"), ["pageDown"]);
+  assert.deepEqual(parseTimelineNavigationInput("\u001b[1;5H"), ["home"]);
+  assert.deepEqual(parseTimelineNavigationInput("\u001b[1;5F"), ["end"]);
+  assert.deepEqual(parseTimelineNavigationInput("\u001b[<64;12;9M\u001b[<65;12;10M"), ["wheelUp", "wheelDown"]);
 });
 
 test("home anchors the browse window to the first page and end restores tail follow", () => {

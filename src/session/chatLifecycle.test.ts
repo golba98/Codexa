@@ -15,6 +15,7 @@ import {
   createRunEvent,
   detectAgentQuestion,
   extractAssistantActionRequired,
+  failRunEvent,
   finalizePlanBlock,
   reduceUIState,
   guardConfigMutation,
@@ -22,6 +23,7 @@ import {
   upsertRunToolActivity,
 } from "./chatLifecycle.js";
 import type { TimelineEvent, UIState } from "./types.js";
+import { isBusy } from "./types.js";
 
 function makeSystemEvent(id: number): TimelineEvent {
   return {
@@ -68,6 +70,37 @@ test("creates a running run event", () => {
   assert.deepEqual(run.responseSegments, []);
   assert.equal(run.lastStreamSeq, 0);
   assert.equal(run.activeResponseSegmentId, null);
+});
+
+test("createRunEvent can use prompt submit time as the run start time", () => {
+  const run = createRunEvent({
+    id: 2,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Hello",
+    turnId: 2,
+    startedAtMs: 12345,
+  });
+
+  assert.equal(run.createdAt, 12345);
+  assert.equal(run.startedAt, 12345);
+});
+
+test("final run duration uses the fixed finalized wall-clock duration", () => {
+  const run = createRunEvent({
+    id: 3,
+    backendId: "codex-subprocess",
+    backendLabel: "Codex CLI",
+    runtime: TEST_RUNTIME,
+    prompt: "Hello",
+    turnId: 3,
+    startedAtMs: 100,
+  });
+
+  assert.equal(completeRunEvent(run, 2345).durationMs, 2345);
+  assert.equal(failRunEvent(run, "Run failed", "error", 3456).durationMs, 3456);
+  assert.equal(cancelRunEvent(run, 4567).durationMs, 4567);
 });
 
 test("assigns stream sequence in append order across thinking action and response", () => {
@@ -558,6 +591,10 @@ test("reduces ui state across thinking responding awaiting and shell states", ()
 
   state = reduceUIState(state, { type: "FIRST_ASSISTANT_DELTA", turnId: 9 });
   assert.deepEqual(state, { kind: "RESPONDING", turnId: 9 });
+
+  state = reduceUIState(state, { type: "FINAL_ANSWER_VISIBLE", turnId: 9 });
+  assert.deepEqual(state, { kind: "ANSWER_VISIBLE", turnId: 9 });
+  assert.equal(isBusy(state), true);
 
   state = reduceUIState(state, { type: "AWAITING_USER_ACTION", turnId: 9, question: "Use Redis?" });
   assert.deepEqual(state, { kind: "AWAITING_USER_ACTION", turnId: 9, question: "Use Redis?" });

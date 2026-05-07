@@ -121,7 +121,7 @@ export function buildCodexExecArgs(
     };
   }
 
-  args.push("--config", `reasoning.effort=${runtime.reasoningLevel}`);
+  args.push("--config", `model_reasoning_effort=${runtime.reasoningLevel}`);
 
   const policyArgs = buildRuntimePolicyArgs(runtime, capabilities);
   if (!policyArgs.ok) {

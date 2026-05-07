@@ -23,3 +23,27 @@ test("codex subprocess attaches output handlers before writing stdin", () => {
   assert.ok(closeIndex < stdinWriteIndex);
   assert.ok(errorIndex < stdinWriteIndex);
 });
+
+test("codex subprocess supports raw prompt passthrough before wrapped prompt fallback", () => {
+  const source = readFileSync(fileURLToPath(new URL("./codexSubprocess.ts", import.meta.url)), "utf8");
+
+  assert.match(source, /const promptPolicy = options\.promptPolicy \?\? "wrapped"/);
+  assert.match(source, /promptPolicy === "raw"\s+\?\s+prompt\s+:\s+buildCodexPrompt/s);
+});
+
+test("codex subprocess cleanup skips kill after process close", () => {
+  const source = readFileSync(fileURLToPath(new URL("./codexSubprocess.ts", import.meta.url)), "utf8");
+  const closeIndex = source.indexOf('proc.on("close"', source.indexOf("proc = spawnCodexProcess"));
+  const exitedIndex = source.indexOf("procExited = true", closeIndex);
+  const cleanupIndex = source.indexOf("return () =>", exitedIndex);
+  const skipIndex = source.indexOf("!proc || procExited || proc.killed", cleanupIndex);
+  const killIndex = source.indexOf("proc.kill()", cleanupIndex);
+
+  assert.notEqual(closeIndex, -1);
+  assert.notEqual(exitedIndex, -1);
+  assert.notEqual(cleanupIndex, -1);
+  assert.notEqual(skipIndex, -1);
+  assert.notEqual(killIndex, -1);
+  assert.ok(exitedIndex < cleanupIndex);
+  assert.ok(skipIndex < killIndex);
+});

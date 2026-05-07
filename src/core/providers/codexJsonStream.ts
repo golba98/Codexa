@@ -60,6 +60,7 @@ type CodexThreadItem =
 
 export interface CodexJsonStreamHandlers {
   onAssistantDelta?: (chunk: string) => void;
+  onFinalAnswerObserved?: (response: string) => void;
   onProgress?: (update: BackendProgressUpdate) => void;
   onToolActivity?: (activity: RunToolActivity) => void;
 }
@@ -169,6 +170,7 @@ export function createCodexJsonStreamParser(handlers: CodexJsonStreamHandlers) {
   const toolActivityById = new Map<string, RunToolActivity>();
   let sawEvent = false;
   let finalResponse = "";
+  let finalAnswerObserved = false;
   let failureMessage: string | null = null;
 
   const emitProgress = (
@@ -269,6 +271,12 @@ export function createCodexJsonStreamParser(handlers: CodexJsonStreamHandlers) {
         case "item.updated":
         case "item.completed":
           handleItem(event.type, event.item);
+          break;
+        case "turn.completed":
+          if (!finalAnswerObserved && finalResponse) {
+            finalAnswerObserved = true;
+            handlers.onFinalAnswerObserved?.(finalResponse);
+          }
           break;
         case "turn.failed":
           failureMessage = event.error?.message ?? "Turn failed";

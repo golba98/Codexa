@@ -506,6 +506,52 @@ test("stable active action rows keep stream order when a later action completes 
   assert.ok(actionTopIndex(rows, 1) < actionTopIndex(rows, 2));
 });
 
+test("default stable timeline summarizes long repeated read action bursts", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const tools = Array.from({ length: 7 }, (_, index) => makeTool({
+    id: `tool-${index + 1}`,
+    command: `Get-Content file-${index + 1}.txt`,
+    status: "completed",
+    completedAt: 50 + index,
+    summary: `Read file ${index + 1}`,
+    streamSeq: index + 1,
+  }));
+
+  const rows = stableRowsForTools(tools);
+  const text = snapshotText(rows);
+
+  assert.match(text, /3 repeated read activity summarized/);
+  assert.ok(actionTopIndex(rows, 1) >= 0);
+  assert.ok(actionTopIndex(rows, 2) >= 0);
+  assert.ok(actionTopIndex(rows, 6) >= 0);
+  assert.ok(actionTopIndex(rows, 7) >= 0);
+  assert.equal(actionTopIndex(rows, 3), -1);
+  assert.equal(actionTopIndex(rows, 5), -1);
+});
+
+test("verbose stable timeline keeps every repeated read action visible", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const tools = Array.from({ length: 7 }, (_, index) => makeTool({
+    id: `tool-${index + 1}`,
+    command: `Get-Content file-${index + 1}.txt`,
+    status: "completed",
+    completedAt: 50 + index,
+    summary: `Read file ${index + 1}`,
+    streamSeq: index + 1,
+  }));
+  const rows = buildStableTimelineSnapshot(
+    [makeActionSequenceRenderItem(tools)],
+    { totalWidth: 72, debugLabel: "verbose-action-sequence", verboseMode: true },
+  ).snapshot.rows;
+
+  assert.doesNotMatch(snapshotText(rows), /repeated read activity summarized/);
+  for (let index = 1; index <= 7; index += 1) {
+    assert.ok(actionTopIndex(rows, index) >= 0, `tool ${index} should stay visible`);
+  }
+});
+
 test("stable timeline freezes completed action rows while active text changes", () => {
   __clearTimelineMeasureCachesForTests();
 

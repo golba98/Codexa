@@ -8,6 +8,7 @@ test("parses codexa exec positional prompt", () => {
   assert.equal(parsed.ok, true);
   if (!parsed.ok) return;
   assert.equal(parsed.value.prompt, "Print the directory");
+  assert.equal(parsed.value.promptPolicy, "raw");
   assert.equal(parsed.value.launchArgs.initialPrompt, "Print the directory");
 });
 
@@ -41,12 +42,77 @@ test("rejects missing and empty prompts", () => {
   }
 });
 
+test("parses codexa exec --reasoning value", () => {
+  const parsed = parseHeadlessExecArgs(["--reasoning", "medium", "Print files"]);
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.value.prompt, "Print files");
+  assert.deepEqual(parsed.value.launchArgs.configOverrides, ["model_reasoning_effort=medium"]);
+  assert.deepEqual(parsed.value.launchArgs.passthroughArgs, ["--reasoning", "medium"]);
+});
+
+test("parses codexa exec --reasoning=value", () => {
+  const parsed = parseHeadlessExecArgs(["--reasoning=high", "Print files"]);
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.value.prompt, "Print files");
+  assert.deepEqual(parsed.value.launchArgs.configOverrides, ["model_reasoning_effort=high"]);
+  assert.deepEqual(parsed.value.launchArgs.passthroughArgs, ["--reasoning=high"]);
+});
+
+test("parses timing and prompt policy flags without forwarding them to Codex", () => {
+  const parsed = parseHeadlessExecArgs([
+    "--timing",
+    "--codexa-prompt-policy",
+    "wrapped",
+    "Print files",
+  ]);
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.value.timing, true);
+  assert.equal(parsed.value.promptPolicy, "wrapped");
+  assert.equal(parsed.value.prompt, "Print files");
+  assert.deepEqual(parsed.value.launchArgs.passthroughArgs, []);
+});
+
+test("rejects invalid prompt policy values", () => {
+  const parsed = parseHeadlessExecArgs(["--codexa-prompt-policy", "verbose", "Prompt"]);
+
+  assert.equal(parsed.ok, false);
+  if (!parsed.ok) {
+    assert.match(parsed.error, /codexa-prompt-policy/i);
+  }
+});
+
+test("parses codexa exec --model and --reasoning together", () => {
+  const parsed = parseHeadlessExecArgs([
+    "--model", "gpt-5.4-mini",
+    "--reasoning", "medium",
+    "Reply with exactly: CODEXA_READY",
+  ]);
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.value.prompt, "Reply with exactly: CODEXA_READY");
+  assert.deepEqual(parsed.value.launchArgs.configOverrides, [
+    "model=\"gpt-5.4-mini\"",
+    "model_reasoning_effort=medium",
+  ]);
+});
+
 test("preserves profile and repeated config overrides", () => {
   const parsed = parseHeadlessExecArgs([
+    "--benchmark-diagnostics",
+    "--skip-git-repo-check",
     "--profile",
     "bench",
+    "--model",
+    "gpt-5.4-mini",
     "-c",
-    "model=\"gpt-5.4-mini\"",
+    "model_reasoning_effort=medium",
     "--config",
     "sandbox_mode=\"workspace-write\"",
     "--config=approval_policy=\"never\"",
@@ -56,18 +122,24 @@ test("preserves profile and repeated config overrides", () => {
 
   assert.equal(parsed.ok, true);
   if (!parsed.ok) return;
+  assert.equal(parsed.value.benchmarkDiagnostics, true);
+  assert.equal(parsed.value.timing, true);
   assert.equal(parsed.value.prompt, "Print files");
   assert.equal(parsed.value.launchArgs.profile, "bench");
   assert.deepEqual(parsed.value.launchArgs.configOverrides, [
     "model=\"gpt-5.4-mini\"",
+    "model_reasoning_effort=medium",
     "sandbox_mode=\"workspace-write\"",
     "approval_policy=\"never\"",
   ]);
   assert.deepEqual(parsed.value.launchArgs.passthroughArgs, [
+    "--skip-git-repo-check",
     "--profile",
     "bench",
+    "--model",
+    "gpt-5.4-mini",
     "-c",
-    "model=\"gpt-5.4-mini\"",
+    "model_reasoning_effort=medium",
     "--config",
     "sandbox_mode=\"workspace-write\"",
     "--config=approval_policy=\"never\"",

@@ -6,12 +6,15 @@ import {
   DEFAULT_AUTH_PREFERENCE,
   DEFAULT_DIRECTORY_DISPLAY_MODE,
   DEFAULT_LAYOUT_STYLE,
+  DEFAULT_TERMINAL_MOUSE_MODE,
   DEFAULT_THEME,
   DIRECTORY_DISPLAY_MODES,
+  TERMINAL_MOUSE_MODES,
   getCodexConfigFile,
   SETTINGS_FILE,
   type AuthPreference,
   type DirectoryDisplayMode,
+  type TerminalMouseMode,
 } from "./settings.js";
 import {
   mergeRuntimeIntoTomlConfig,
@@ -27,6 +30,7 @@ export interface UiSettings {
   layoutStyle: string;
   theme: string;
   directoryDisplayMode: DirectoryDisplayMode;
+  terminalMouseMode: TerminalMouseMode;
   customTheme?: Partial<Theme>;
 }
 
@@ -50,6 +54,9 @@ function normalizeUiSettings(input: Partial<UiSettings> | null | undefined): UiS
     layoutStyle: input?.layoutStyle ?? DEFAULT_LAYOUT_STYLE,
     theme: input?.theme ?? DEFAULT_THEME,
     directoryDisplayMode: input?.directoryDisplayMode ?? DEFAULT_DIRECTORY_DISPLAY_MODE,
+    terminalMouseMode: TERMINAL_MOUSE_MODES.includes(input?.terminalMouseMode as TerminalMouseMode)
+      ? (input!.terminalMouseMode as TerminalMouseMode)
+      : DEFAULT_TERMINAL_MOUSE_MODE,
     customTheme: input?.customTheme,
   };
 }

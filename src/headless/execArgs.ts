@@ -2,6 +2,9 @@ import type { LaunchArgs } from "../config/launchArgs.js";
 
 export interface HeadlessExecArgs {
   help: boolean;
+  benchmarkDiagnostics: boolean;
+  timing: boolean;
+  promptPolicy: "raw" | "wrapped";
   prompt: string;
   launchArgs: LaunchArgs;
 }
@@ -29,6 +32,15 @@ function parseConfigFlagValue(raw: string | undefined): string | null {
   return trimmed;
 }
 
+function parseModelFlagValue(raw: string | undefined): string | null {
+  const trimmed = raw?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function quoteTomlString(value: string): string {
+  return JSON.stringify(value);
+}
+
 function buildLaunchArgs(params: {
   prompt: string | null;
   profile: string | null;
@@ -52,6 +64,9 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
   let explicitPrompt: string | null = null;
   let profile: string | null = null;
   let help = false;
+  let benchmarkDiagnostics = false;
+  let timing = false;
+  let promptPolicy: "raw" | "wrapped" = "raw";
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -61,6 +76,41 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
 
     if (arg === "--help" || arg === "-h") {
       help = true;
+      continue;
+    }
+
+    if (arg === "--benchmark-diagnostics") {
+      benchmarkDiagnostics = true;
+      timing = true;
+      continue;
+    }
+
+    if (arg === "--timing") {
+      timing = true;
+      continue;
+    }
+
+    if (arg === "--skip-git-repo-check") {
+      passthroughArgs.push(arg);
+      continue;
+    }
+
+    if (arg === "--codexa-prompt-policy") {
+      const value = normalizeNonEmpty(argv[index + 1]);
+      if (value !== "raw" && value !== "wrapped") {
+        return { ok: false, error: "Missing or invalid value for --codexa-prompt-policy. Use raw or wrapped." };
+      }
+      promptPolicy = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--codexa-prompt-policy=")) {
+      const value = normalizeNonEmpty(arg.slice("--codexa-prompt-policy=".length));
+      if (value !== "raw" && value !== "wrapped") {
+        return { ok: false, error: "Invalid value for --codexa-prompt-policy. Use raw or wrapped." };
+      }
+      promptPolicy = value;
       continue;
     }
 
@@ -140,6 +190,48 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
       continue;
     }
 
+    if (arg === "--model" || arg === "-m") {
+      const value = parseModelFlagValue(argv[index + 1]);
+      if (!value) {
+        return { ok: false, error: `Missing value for ${arg}.` };
+      }
+      configOverrides.push(`model=${quoteTomlString(value)}`);
+      passthroughArgs.push(arg, value);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--model=")) {
+      const value = parseModelFlagValue(arg.slice("--model=".length));
+      if (!value) {
+        return { ok: false, error: "Missing value for --model." };
+      }
+      configOverrides.push(`model=${quoteTomlString(value)}`);
+      passthroughArgs.push(`--model=${value}`);
+      continue;
+    }
+
+    if (arg === "--reasoning") {
+      const value = parseModelFlagValue(argv[index + 1]);
+      if (!value) {
+        return { ok: false, error: `Missing value for ${arg}.` };
+      }
+      configOverrides.push(`model_reasoning_effort=${value}`);
+      passthroughArgs.push(arg, value);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--reasoning=")) {
+      const value = parseModelFlagValue(arg.slice("--reasoning=".length));
+      if (!value) {
+        return { ok: false, error: "Missing value for --reasoning." };
+      }
+      configOverrides.push(`model_reasoning_effort=${value}`);
+      passthroughArgs.push(`--reasoning=${value}`);
+      continue;
+    }
+
     if (arg.startsWith("-")) {
       return { ok: false, error: `Unknown option for codexa exec: ${arg}` };
     }
@@ -164,6 +256,9 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
       ok: true,
       value: {
         help,
+        benchmarkDiagnostics,
+        timing,
+        promptPolicy,
         prompt: prompt ?? "",
         launchArgs: buildLaunchArgs({ prompt, profile, configOverrides, passthroughArgs }),
       },
@@ -178,6 +273,9 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
     ok: true,
     value: {
       help,
+      benchmarkDiagnostics,
+      timing,
+      promptPolicy,
       prompt,
       launchArgs: buildLaunchArgs({ prompt, profile, configOverrides, passthroughArgs }),
     },

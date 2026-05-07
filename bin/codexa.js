@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn, spawnSync } from "child_process";
+import { spawn } from "child_process";
 import { appendFileSync, mkdirSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -11,6 +11,8 @@ const currentFile = fileURLToPath(import.meta.url);
 const packageRoot = dirname(dirname(currentFile));
 const forwardArgs = process.argv.slice(2);
 const workspaceRoot = process.cwd();
+const launcherStartTimeMs = Number(process.env.CODEXA_EXEC_TIMING_EPOCH_MS) || Date.now();
+let launcherPreviousElapsedMs = 0;
 
 function writeRenderDebugRecord(kind, fields) {
   if (process.env.CODEXA_RENDER_DEBUG !== "1" && process.env.CODEXA_DEBUG_RENDER !== "1") {
@@ -65,12 +67,18 @@ Usage:
   codexa
   codexa "explain this repo"
   codexa exec "print the current directory"
+  codexa --headless-benchmark "print the current directory"
   codexa [options] [prompt]
 
 Options:
   -h, --help              Show this help text and exit.
   -v, --version           Show the installed Codexa version and exit.
+      --headless-benchmark
+                           Run Codexa through the headless benchmark path.
       --profile <name>    Load a Codex profile from config.
+  -m, --model <name>      Select the Codex model for this launch.
+      --reasoning <effort>
+                           Reasoning effort for codexa exec: none, minimal, low, medium, high, xhigh.
   -c, --config <key=val>  Override a runtime config value.
 
 Inside Codexa:
@@ -82,19 +90,45 @@ Inside Codexa:
 }
 
 const isHeadlessExec = forwardArgs[0] === "exec";
+const isHeadlessBenchmark = forwardArgs[0] === "--headless-benchmark";
+const isHeadlessMode = isHeadlessExec || isHeadlessBenchmark;
+const execTimingEnabled = isHeadlessMode
+  && (
+    process.env.CODEXA_EXEC_TIMING === "1"
+    || forwardArgs.includes("--timing")
+    || forwardArgs.includes("--benchmark-diagnostics")
+  );
 
-if (!isHeadlessExec && hasFlag(forwardArgs, "--help", "-h")) {
+function markExecTiming(phase, fields = {}) {
+  if (!execTimingEnabled) return;
+  const elapsedMs = Date.now() - launcherStartTimeMs;
+  const deltaMs = elapsedMs - launcherPreviousElapsedMs;
+  launcherPreviousElapsedMs = elapsedMs;
+  const formattedFields = Object.entries(fields)
+    .map(([key, value]) => {
+      const serialized = Array.isArray(value) || typeof value === "string"
+        ? JSON.stringify(value)
+        : String(value);
+      return `${key}=${serialized}`;
+    })
+    .join(" ");
+  process.stderr.write(`[codexa exec timing] phase=${phase} elapsed_ms=${elapsedMs} delta_ms=${deltaMs}${formattedFields ? ` ${formattedFields}` : ""}\n`);
+}
+
+markExecTiming("launcher_start", { pid: process.pid });
+
+if (!isHeadlessMode && hasFlag(forwardArgs, "--help", "-h")) {
   printHelp();
   process.exit(0);
 }
 
-if (!isHeadlessExec && hasFlag(forwardArgs, "--version", "-v")) {
+if (!isHeadlessMode && hasFlag(forwardArgs, "--version", "-v")) {
   console.log(readPackageVersion() ?? "unknown");
   process.exit(0);
 }
 
 const titleSequence = "\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07";
-if (!isHeadlessExec) {
+if (!isHeadlessMode) {
   writeRenderDebugRecord("stdout", {
     event: "directWrite",
     source: "bin/codexa.js:title",
@@ -147,43 +181,28 @@ function createMouseFilter() {
   };
 }
 
-function resolveBunExecutable() {
-  const candidates = process.platform === "win32"
-    ? ["bun.exe", "bun.cmd", "bun"]
-    : ["bun"];
-
-  for (const candidate of candidates) {
-    const result = spawnSync(candidate, ["--version"], { stdio: "ignore" });
-    if (!result.error && result.status === 0) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
-const bunExecutable = resolveBunExecutable();
-
-if (!bunExecutable) {
-  console.error("Bun is required to launch codexa.");
-  console.error("Install Bun, then run this command again.");
-  process.exit(1);
-}
+const bunExecutable = process.env.CODEXA_BUN_EXECUTABLE?.trim()
+  || (process.platform === "win32" ? "bun.exe" : "bun");
 
 const appEntry = join(packageRoot, "src", "index.tsx");
 const execEntry = join(packageRoot, "src", "exec.ts");
-const bunEntry = isHeadlessExec ? execEntry : appEntry;
-const bunForwardArgs = isHeadlessExec ? forwardArgs.slice(1) : forwardArgs;
+const bunEntry = isHeadlessMode ? execEntry : appEntry;
+const bunForwardArgs = isHeadlessMode ? forwardArgs.slice(1) : forwardArgs;
 
 // Detect if parent process has a real TTY
 const parentHasTTY = process.stdin.isTTY && process.stdout.isTTY;
+const childStdio = isHeadlessMode
+  ? ["ignore", "inherit", "inherit"]
+  : [parentHasTTY ? "inherit" : "pipe", "inherit", "inherit"];
+
+markExecTiming("bun_spawn_start", { executable: bunExecutable });
 
 const child = spawn(
   bunExecutable,
   ["run", "--silent", bunEntry, ...(bunForwardArgs.length > 0 ? ["--", ...bunForwardArgs] : [])],
   {
     cwd: workspaceRoot,
-    stdio: [parentHasTTY ? "inherit" : "pipe", "inherit", "inherit"],
+    stdio: childStdio,
     env: {
       ...process.env,
       CODEX_WORKSPACE_ROOT: workspaceRoot,
@@ -193,11 +212,13 @@ const child = spawn(
       CODEXA_RELAUNCH_EXECUTABLE: process.execPath,
       CODEXA_RELAUNCH_ARGS: JSON.stringify([currentFile, ...forwardArgs]),
       CODEXA_PARENT_HAS_TTY: parentHasTTY ? "1" : "0",
+      CODEXA_HEADLESS_BENCHMARK: isHeadlessBenchmark ? "1" : "0",
+      CODEXA_EXEC_TIMING_EPOCH_MS: String(launcherStartTimeMs),
     },
   },
 );
 
-if (!parentHasTTY) {
+if (!isHeadlessMode && !parentHasTTY) {
   const mouseFilter = createMouseFilter();
 
   process.stdin.on("data", (data) => {
@@ -224,11 +245,14 @@ if (!parentHasTTY) {
 }
 
 child.on("error", (error) => {
+  markExecTiming("bun_spawn_error", { message: error.message });
   console.error(`Failed to launch Bun: ${error.message}`);
+  console.error("Bun is required to launch codexa. Install Bun, then run this command again.");
   process.exit(1);
 });
 
 child.on("close", (code, signal) => {
+  markExecTiming("launcher_exit", { exit_code: code ?? 0, signal: signal ?? null });
   if (signal) {
     process.kill(process.pid, signal);
     return;

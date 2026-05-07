@@ -476,7 +476,7 @@ export function formatRuntimeStatus(runtime: ResolvedRuntimeConfig, context: Run
 
 export function buildCodexConfigOverrides(runtime: ResolvedRuntimeConfig): string[] {
   const overrides = [
-    `reasoning.effort=${runtime.reasoningLevel}`,
+    `model_reasoning_effort=${runtime.reasoningLevel}`,
     `approval_policy=${runtime.policy.approvalPolicy}`,
   ];
 

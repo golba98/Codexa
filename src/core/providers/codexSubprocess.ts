@@ -18,6 +18,10 @@ function looksLikeUnsupportedStructuredOutput(raw: string): boolean {
   return /experimental-json|unknown option|unrecognized option|unexpected argument|unexpected option/i.test(raw);
 }
 
+function isProcessTerminationNoise(line: string): boolean {
+  return /^SUCCESS: The process with PID \d+ .* has been terminated\.$/.test(line.trim());
+}
+
 export const codexSubprocessProvider: BackendProvider = {
   id: "codex-subprocess",
   label: "Codexa",
@@ -30,7 +34,9 @@ export const codexSubprocessProvider: BackendProvider = {
     let done = false;
     let cancelled = false;
     let proc: ReturnType<typeof spawn> | null = null;
+    let procExited = false;
     let currentRawOutput = "";
+    let finalAnswerObserved = false;
 
     const finishError = (message: string) => {
       if (done) return;
@@ -44,14 +50,23 @@ export const codexSubprocessProvider: BackendProvider = {
       handlers.onResponse(response);
     };
 
-    const startAttempt = (structuredOutput: boolean) => {
+    const emitFinalAnswerObserved = (response: string) => {
+      if (finalAnswerObserved) return;
+      finalAnswerObserved = true;
+      handlers.onFinalAnswerObserved?.(response);
+    };
+
+    const startAttempt = (structuredOutput: boolean, probeCapabilities = false) => {
       if (cancelled || done) return;
       let firstChunkSeen = false;
+      let firstStderrSeen = false;
+      handlers.benchmarkHooks?.onProviderPrepStart?.();
       void prepareCodexExecLaunch(
         {
           runtime: options.runtime,
           cwd: options.workspaceRoot,
           structuredOutput,
+          probeCapabilities,
         },
         import.meta.url,
       )
@@ -65,6 +80,7 @@ export const codexSubprocessProvider: BackendProvider = {
             finishError("Codex launch preparation did not return an executable.");
             return;
           }
+          handlers.benchmarkHooks?.onProviderPrepComplete?.();
 
           let rawStdout = "";
           let rawStderr = "";
@@ -83,10 +99,12 @@ export const codexSubprocessProvider: BackendProvider = {
           };
 
           const emitLegacyProgress = (source: "stdout" | "stderr" | "transcript", text: string) => {
+            if (isProcessTerminationNoise(text)) return;
+            const displayText = text.length > 80 ? `${text.slice(0, 77)}...` : text;
             handlers.onProgress?.({
               id: `${source}-${++legacyProgressSequence}`,
               source,
-              text,
+              text: displayText,
             });
           };
 
@@ -118,6 +136,7 @@ export const codexSubprocessProvider: BackendProvider = {
           const jsonParser = createCodexJsonStreamParser({
             onProgress: (update) => handlers.onProgress?.(update),
             onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
+            onFinalAnswerObserved: emitFinalAnswerObserved,
             onToolActivity: (activity) => handlers.onToolActivity?.(activity),
           });
 
@@ -161,7 +180,7 @@ export const codexSubprocessProvider: BackendProvider = {
               const parsed = jsonParser.feedLine(normalizedLine);
               if (!parsed) {
                 if (mode === "json") {
-                  emitLegacyProgress("stdout", normalizedLine.length > 80 ? `${normalizedLine.slice(0, 77)}...` : normalizedLine);
+                  emitLegacyProgress("stdout", normalizedLine);
                   continue;
                 }
                 switchToTranscriptFallback();
@@ -172,11 +191,20 @@ export const codexSubprocessProvider: BackendProvider = {
           };
 
           proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
+          procExited = false;
+          handlers.benchmarkHooks?.onCodexProcessSpawned?.({
+            executable: launchPlan.executable,
+            argv: launchPlan.args,
+          });
           perf.mark("spawn_done");
 
           proc.stdout?.on("data", (chunk: Buffer) => {
             if (cancelled || done) return;
-            if (!firstChunkSeen) { firstChunkSeen = true; perf.mark("first_chunk"); }
+            if (!firstChunkSeen) {
+              firstChunkSeen = true;
+              perf.mark("first_chunk");
+              handlers.benchmarkHooks?.onFirstStdout?.();
+            }
             perf.mark("last_chunk");
             const text = chunk.toString();
             currentRawOutput += text;
@@ -193,6 +221,10 @@ export const codexSubprocessProvider: BackendProvider = {
 
           proc.stderr?.on("data", (chunk: Buffer) => {
             if (cancelled || done) return;
+            if (!firstStderrSeen) {
+              firstStderrSeen = true;
+              handlers.benchmarkHooks?.onFirstStderr?.();
+            }
             const text = chunk.toString();
             currentRawOutput += text;
             rawStderr += text;
@@ -208,13 +240,20 @@ export const codexSubprocessProvider: BackendProvider = {
               .split("\n");
             for (const line of lines) {
               const trimmed = line.trim();
-              if (!trimmed || isStderrNoise(trimmed)) continue;
-              emitLegacyProgress("stderr", trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed);
+              if (!trimmed || isStderrNoise(trimmed) || isProcessTerminationNoise(trimmed)) continue;
+              emitLegacyProgress("stderr", trimmed);
             }
           });
 
           proc.on("close", (code) => {
+            procExited = true;
             if (cancelled || done) return;
+            if (!firstChunkSeen) {
+              handlers.benchmarkHooks?.onFirstStdout?.(false);
+            }
+            if (!firstStderrSeen) {
+              handlers.benchmarkHooks?.onFirstStderr?.(false);
+            }
 
             if (mode !== "legacy") {
               processStructuredLines(true);
@@ -228,6 +267,8 @@ export const codexSubprocessProvider: BackendProvider = {
               transcriptParser.flush();
             }
 
+            handlers.benchmarkHooks?.onCodexProcessExit?.(code);
+
             if (
               structuredOutput
               && code !== 0
@@ -235,7 +276,7 @@ export const codexSubprocessProvider: BackendProvider = {
               && looksLikeUnsupportedStructuredOutput(`${rawStdout}\n${rawStderr}`)
             ) {
               currentRawOutput = "";
-              startAttempt(false);
+              startAttempt(false, true);
               return;
             }
 
@@ -249,6 +290,7 @@ export const codexSubprocessProvider: BackendProvider = {
               const finalResponse = mode === "json"
                 ? jsonParser.getFinalResponse().trim() || sanitizeCodexTranscript(currentRawOutput)
                 : sanitizeCodexTranscript(currentRawOutput);
+              emitFinalAnswerObserved(finalResponse);
               finishSuccess(finalResponse);
               return;
             }
@@ -262,9 +304,17 @@ export const codexSubprocessProvider: BackendProvider = {
             finishError(formatCodexLaunchError(errno));
           });
 
-          proc.stdin?.write(buildCodexPrompt(prompt, options.runtime, undefined, {
-            projectInstructions: options.projectInstructions,
-          }));
+          const promptPolicy = options.promptPolicy ?? "wrapped";
+          const providerPrompt = promptPolicy === "raw"
+            ? prompt
+            : buildCodexPrompt(prompt, options.runtime, undefined, {
+                projectInstructions: options.projectInstructions,
+              });
+          handlers.benchmarkHooks?.onProviderPromptPrepared?.({
+            policy: promptPolicy,
+            characterCount: providerPrompt.length,
+          });
+          proc.stdin?.write(providerPrompt);
           proc.stdin?.end();
         })
         .catch((error) => {
@@ -279,7 +329,13 @@ export const codexSubprocessProvider: BackendProvider = {
     return () => {
       cancelled = true;
       done = true;
-      proc?.kill();
+      handlers.benchmarkHooks?.onCleanupStart?.();
+      if (!proc || procExited || proc.killed) {
+        handlers.benchmarkHooks?.onCleanupComplete?.({ skipped: true });
+        return;
+      }
+      proc.kill();
+      handlers.benchmarkHooks?.onCleanupComplete?.({ skipped: false });
     };
   },
 };

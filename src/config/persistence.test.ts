@@ -28,6 +28,7 @@ test("keeps UI and auth settings separate from runtime persistence", () => {
       layoutStyle: "gemini-shell",
       theme: "purple",
       directoryDisplayMode: "simple" as const,
+      terminalMouseMode: "wheel" as const,
       customTheme: { TEXT: "#fff" },
     },
     auth: {

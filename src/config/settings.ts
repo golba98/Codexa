@@ -75,6 +75,12 @@ export const DIRECTORY_DISPLAY_MODES = ["normal", "simple"] as const;
 
 export type DirectoryDisplayMode = (typeof DIRECTORY_DISPLAY_MODES)[number];
 
+export const TERMINAL_MOUSE_MODES = ["wheel", "selection"] as const;
+
+export type TerminalMouseMode = (typeof TERMINAL_MOUSE_MODES)[number];
+
+export const DEFAULT_TERMINAL_MOUSE_MODE: TerminalMouseMode = "wheel";
+
 export interface SettingOption<TValue extends string> {
   value: TValue;
   label: string;
@@ -89,6 +95,7 @@ export interface SettingDefinition<TKey extends string, TValue extends string> {
 
 export interface UserSettingValues {
   directory: DirectoryDisplayMode;
+  terminalMouseMode: TerminalMouseMode;
 }
 
 export type UserSettingKey = keyof UserSettingValues;
@@ -105,6 +112,17 @@ export const USER_SETTING_DEFINITIONS: readonly UserSettingDefinition[] = [
     options: [
       { value: "normal", label: "Normal" },
       { value: "simple", label: "Simple" },
+    ],
+  },
+  {
+    key: "terminalMouseMode",
+    label: "Mouse mode",
+    description:
+      "Wheel: mouse wheel scrolls the Codexa timeline (native drag-select requires Shift in Windows Terminal). "
+      + "Selection: native drag-select is preserved; use keyboard (PageUp/PageDown/End) to scroll.",
+    options: [
+      { value: "wheel", label: "Wheel scroll" },
+      { value: "selection", label: "Native selection" },
     ],
   },
 ] as const;

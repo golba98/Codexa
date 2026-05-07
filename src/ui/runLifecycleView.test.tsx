@@ -123,7 +123,7 @@ test("collapses composer during thinking so input buffer artifacts are removed",
   await sleep();
   frame = stripAnsi(output);
   assert.doesNotMatch(frame, /draft prompt/i);
-  assert.match(frame, /Codex is thinking/i);
+  assert.match(frame, /Codexa is thinking/i);
 
   instance.unmount();
 });
@@ -150,12 +150,12 @@ test("busy footer advances from local status state without a parent rerender", a
 
   await sleep();
   let frame = stripAnsi(output);
-  assert.match(frame, /Codex is thinking \./);
+  assert.match(frame, /Codexa is thinking \./);
 
   output = "";
-  await sleep(420);
+  await sleep(950);
   frame = stripAnsi(output);
-  assert.match(frame, /Codex is thinking \.\./);
+  assert.match(frame, /Codexa is thinking \.\./);
 
   instance.unmount();
 });
@@ -185,10 +185,10 @@ test("static status debug flag reserves status text without dot ticks", async ()
   try {
     await sleep();
     let frame = stripAnsi(output);
-    assert.match(frame, /Codex is thinking \.\.\./);
+    assert.match(frame, /Codexa is thinking \.\.\./);
 
     output = "";
-    await sleep(420);
+    await sleep(950);
     frame = stripAnsi(output);
     assert.equal(frame, "");
   } finally {

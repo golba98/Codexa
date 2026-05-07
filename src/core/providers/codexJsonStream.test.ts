@@ -6,8 +6,10 @@ import { createCodexJsonStreamParser } from "./codexJsonStream.js";
 
 test("streams incremental agent_message growth as assistant deltas", () => {
   const assistant: string[] = [];
+  const observedFinalAnswers: string[] = [];
   const parser = createCodexJsonStreamParser({
     onAssistantDelta: (chunk) => assistant.push(chunk),
+    onFinalAnswerObserved: (response) => observedFinalAnswers.push(response),
   });
 
   assert.equal(parser.feedLine(JSON.stringify({
@@ -22,8 +24,12 @@ test("streams incremental agent_message growth as assistant deltas", () => {
     type: "item.completed",
     item: { id: "msg-1", type: "agent_message", text: "Hello world!" },
   })), true);
+  assert.equal(parser.feedLine(JSON.stringify({
+    type: "turn.completed",
+  })), true);
 
   assert.deepEqual(assistant, ["Hello", " world", "!"]);
+  assert.deepEqual(observedFinalAnswers, ["Hello world!"]);
   assert.equal(parser.getFinalResponse(), "Hello world!");
 });
 

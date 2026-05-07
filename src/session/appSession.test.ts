@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
 import type { AssistantEvent, RunEvent, UserPromptEvent } from "./types.js";
-import { getRunPlanText } from "./types.js";
+import { getRunPlanText, isBusy } from "./types.js";
 import { createInitialSessionState, reduceSessionState, type SessionState } from "./appSession.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { isAnimatedBusyState } from "../ui/busyStatusAnimation.js";
@@ -91,6 +91,23 @@ test("FINALIZE_RUN preserves streamed content when response is undefined", () =>
   assert.equal(assistantEvent.content, "Streamed response text");
 });
 
+test("FINALIZE_RUN stores the fixed elapsed duration supplied by the app", () => {
+  const turnId = 11;
+  const state = reduceSessionState(stateWithActiveRun(turnId), {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "completed",
+    durationMs: 9876,
+    response: "Done",
+    assistantFactory: () => makeAssistantEvent(turnId, "Done"),
+  });
+
+  const runEvent = state.staticEvents.find((event): event is RunEvent => event.type === "run");
+  assert.ok(runEvent);
+  assert.equal(runEvent.durationMs, 9876);
+});
+
 test("FINALIZE_RUN replaces streamed content when response differs", () => {
   const turnId = 2;
   let state = stateWithActiveRun(turnId);
@@ -167,6 +184,36 @@ test("FINALIZE_RUN after assistant delta transitions UI state to IDLE", () => {
 
   assert.equal(state.uiState.kind, "IDLE");
   assert.equal(isAnimatedBusyState(state.uiState.kind), false);
+});
+
+test("RUN_MARK_FINAL_ANSWER_OBSERVED completes visible answer without thinking animation", () => {
+  const turnId = 36;
+  let state = stateWithActiveRun(turnId);
+  state = reduceSessionState(state, {
+    type: "UI_ACTION",
+    action: { type: "PROMPT_RUN_STARTED", turnId },
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_APPEND_ASSISTANT_DELTA",
+    turnId,
+    runId: 2,
+    chunk: "READY",
+    eventFactory: () => makeAssistantEvent(turnId, "READY"),
+  });
+
+  state = reduceSessionState(state, {
+    type: "RUN_MARK_FINAL_ANSWER_OBSERVED",
+    runId: 2,
+    turnId,
+    response: "READY",
+  });
+
+  assert.equal(state.uiState.kind, "ANSWER_VISIBLE");
+  assert.equal(isAnimatedBusyState(state.uiState.kind), false);
+  assert.equal(isBusy(state.uiState), true);
+  const run = state.activeEvents.find((event): event is RunEvent => event.type === "run");
+  assert.ok(run);
+  assert.equal(run.responseSegments?.[0]?.status, "completed");
 });
 
 test("plan deltas update one plan block and FINALIZE_RUN does not create assistant response", () => {

@@ -69,6 +69,51 @@ test("parses inline profile and config assignments", () => {
   ]);
 });
 
+test("parses model flags as runtime config overrides", () => {
+  const parsed = parseLaunchArgs([
+    "--model",
+    "gpt-5.3-codex",
+    "-m",
+    "gpt-5.4-mini",
+    "Say",
+    "READY",
+    "only.",
+  ]);
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  assert.equal(parsed.value.initialPrompt, "Say READY only.");
+  assert.deepEqual(parsed.value.configOverrides, [
+    "model=\"gpt-5.3-codex\"",
+    "model=\"gpt-5.4-mini\"",
+  ]);
+  assert.deepEqual(parsed.value.passthroughArgs, [
+    "--model",
+    "gpt-5.3-codex",
+    "-m",
+    "gpt-5.4-mini",
+  ]);
+});
+
+test("parses inline model flag assignment", () => {
+  const parsed = parseLaunchArgs(["--model=gpt-5.5", "compare", "this"]);
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  assert.equal(parsed.value.initialPrompt, "compare this");
+  assert.deepEqual(parsed.value.configOverrides, ["model=\"gpt-5.5\""]);
+  assert.deepEqual(parsed.value.passthroughArgs, ["--model=gpt-5.5"]);
+});
+
+test("rejects missing model flag values", () => {
+  const parsed = parseLaunchArgs(["--model"]);
+  assert.equal(parsed.ok, false);
+  if (parsed.ok) return;
+  assert.match(parsed.error, /--model/i);
+});
+
 test("parses help and version flags without passthrough", () => {
   const parsed = parseLaunchArgs(["--help", "-v"]);
   assert.equal(parsed.ok, true);

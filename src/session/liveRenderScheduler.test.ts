@@ -84,7 +84,7 @@ test("first progress-only update waits for the progress cadence", () => {
   assert.deepEqual(flushed[0]?.map((update) => update.type), ["tool"]);
 });
 
-test("preserves progress, action, and assistant order while coalescing only adjacent compatible updates", () => {
+test("preserves event order while keeping only the latest same-id progress update", () => {
   const flushed: LiveRenderUpdate[][] = [];
   const scheduler = createLiveRenderScheduler({
     assistantFlushMs: 50,
@@ -99,9 +99,56 @@ test("preserves progress, action, and assistant order while coalescing only adja
   scheduler.enqueue(progress("p1", "Thinking harder"));
   scheduler.flushNow();
 
-  assert.deepEqual(flushed[0]?.map((update) => update.type), ["progress", "tool", "assistant", "progress"]);
+  assert.deepEqual(flushed[0]?.map((update) => update.type), ["progress", "tool", "assistant"]);
   assert.equal((flushed[0]?.[2] as Extract<LiveRenderUpdate, { type: "assistant" }>).chunk, "First segment");
-  assert.equal((flushed[0]?.[3] as Extract<LiveRenderUpdate, { type: "progress" }>).update.text, "Thinking harder");
+  assert.equal((flushed[0]?.[0] as Extract<LiveRenderUpdate, { type: "progress" }>).update.text, "Thinking harder");
+});
+
+test("coalesces repeated keyed progress and tool updates across a noisy flush window", () => {
+  const flushed: LiveRenderUpdate[][] = [];
+  const scheduler = createLiveRenderScheduler({
+    assistantFlushMs: 50,
+    progressOnlyFlushMs: 175,
+    flush: (updates) => flushed.push(updates),
+  });
+
+  scheduler.enqueue(progress("p1", "Reading file 1"));
+  scheduler.enqueue(tool("t1", "running"));
+  scheduler.enqueue(progress("p1", "Reading file 2"));
+  scheduler.enqueue(tool("t1", "completed"));
+  scheduler.enqueue(progress("p2", "Listing files"));
+  scheduler.flushNow();
+
+  assert.deepEqual(flushed[0]?.map((update) => update.type), ["progress", "tool", "progress"]);
+  assert.equal((flushed[0]?.[0] as Extract<LiveRenderUpdate, { type: "progress" }>).update.text, "Reading file 2");
+  assert.equal((flushed[0]?.[1] as Extract<LiveRenderUpdate, { type: "tool" }>).activity.status, "completed");
+});
+
+test("records scheduler flush diagnostics", () => {
+  const flushed: LiveRenderUpdate[][] = [];
+  const fakeTimers = createFakeTimers();
+  const scheduler = createLiveRenderScheduler({
+    assistantFlushMs: 50,
+    progressOnlyFlushMs: 175,
+    flush: (updates) => flushed.push(updates),
+    setTimer: fakeTimers.setTimer,
+    clearTimer: fakeTimers.clearTimer,
+  });
+
+  scheduler.enqueue(progress("p1", "Listing files"));
+  assert.equal(scheduler.getStats().providerEvents, 1);
+  assert.equal(fakeTimers.timers[0]?.delayMs, 175);
+  fakeTimers.timers[0]!.callback();
+
+  scheduler.enqueue({ type: "assistant", chunk: "hello" });
+  assert.equal(fakeTimers.timers[1]?.delayMs, 50);
+  fakeTimers.timers[1]!.callback();
+
+  const stats = scheduler.getStats();
+  assert.equal(stats.providerEvents, 2);
+  assert.equal(stats.flushes, 2);
+  assert.ok(stats.maxFlushIntervalMs >= 0);
+  assert.ok(stats.averageFlushIntervalMs >= 0);
 });
 
 test("prevents reentrant flushes when a producer enqueues during a flush", () => {

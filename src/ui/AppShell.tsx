@@ -26,6 +26,7 @@ export interface AppShellProps {
   composerRows: number;
   panelHint?: React.ReactNode;
   verboseMode?: boolean;
+  mouseCapture?: boolean;
 }
 
 export function isCrampedViewport(rows: number | undefined): boolean {
@@ -49,6 +50,7 @@ function AppShellInner({
   composerRows,
   panelHint,
   verboseMode = false,
+  mouseCapture = false,
 }: AppShellProps) {
   renderDebug.useRenderDebug("AppShell", {
     cols: layout.cols,
@@ -217,6 +219,7 @@ function AppShellInner({
               authState={authState}
               workspaceLabel={workspaceLabel}
               workspaceRoot={workspaceRoot}
+              mouseCapture={mouseCapture}
             />
           </Box>
         )}

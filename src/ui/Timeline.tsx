@@ -31,6 +31,7 @@ interface TimelineProps {
   authState?: CodexAuthState;
   workspaceLabel?: string;
   workspaceRoot?: string | null;
+  mouseCapture?: boolean;
 }
 
 type StandaloneTimelineEvent = SystemEvent | ErrorEvent | ShellEvent;
@@ -87,10 +88,16 @@ export interface IntroRenderTimelineItem {
 export type RenderTimelineItem = IntroRenderTimelineItem | TurnRenderTimelineItem | EventRenderTimelineItem;
 
 const WHEEL_SCROLL_STEP = 3;
+const PAGE_UP_KEY_INPUTS = new Set(["\u001b[5~", "\u001b[[5~"]);
+const PAGE_DOWN_KEY_INPUTS = new Set(["\u001b[6~", "\u001b[[6~"]);
 const HOME_KEY_INPUTS = new Set(["\u001b[H", "\u001b[1~", "\u001bOH"]);
 const END_KEY_INPUTS = new Set(["\u001b[F", "\u001b[4~", "\u001bOF"]);
+const CTRL_HOME_KEY_INPUTS = new Set(["\u001b[1;5H", "\u001b[H"]);
+const CTRL_END_KEY_INPUTS = new Set(["\u001b[1;5F", "\u001b[F"]);
 const SGR_WHEEL_EVENT_PATTERN = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
 const STABLE_RENDER_ENABLED = process.env.CODEXA_STABLE_RENDER !== "0";
+
+type TimelineNavigationAction = "pageUp" | "pageDown" | "home" | "end" | "wheelUp" | "wheelDown";
 
 export interface TimelineViewportState {
   anchorRow: number;
@@ -112,6 +119,7 @@ function isStandaloneEvent(event: TimelineEvent): event is StandaloneTimelineEve
 function getActiveTurnId(uiState: UIState): number | null {
   return uiState.kind === "THINKING"
     || uiState.kind === "RESPONDING"
+    || uiState.kind === "ANSWER_VISIBLE"
     || uiState.kind === "AWAITING_USER_ACTION"
     || uiState.kind === "ERROR"
     ? uiState.turnId
@@ -119,7 +127,10 @@ function getActiveTurnId(uiState: UIState): number | null {
 }
 
 function isBusyUiState(uiState: UIState): boolean {
-  return uiState.kind === "THINKING" || uiState.kind === "RESPONDING" || uiState.kind === "SHELL_RUNNING";
+  return uiState.kind === "THINKING"
+    || uiState.kind === "RESPONDING"
+    || uiState.kind === "ANSWER_VISIBLE"
+    || uiState.kind === "SHELL_RUNNING";
 }
 
 function getRunningTurnIds(events: TimelineEvent[]): number[] {
@@ -173,6 +184,15 @@ function isHomeInput(input: string): boolean {
 
 function isEndInput(input: string): boolean {
   return END_KEY_INPUTS.has(input);
+}
+
+function rawIncludesAny(raw: string, inputs: ReadonlySet<string>): boolean {
+  for (const input of inputs) {
+    if (raw.includes(input)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function clampAnchorRow(anchorRow: number, totalRows: number): number {
@@ -646,6 +666,32 @@ export function parseWheelScrollDirections(raw: string): Array<"up" | "down"> {
   return directions;
 }
 
+export function parseTimelineNavigationInput(raw: string): TimelineNavigationAction[] {
+  const actions: TimelineNavigationAction[] = [];
+
+  if (rawIncludesAny(raw, PAGE_UP_KEY_INPUTS)) {
+    actions.push("pageUp");
+  }
+
+  if (rawIncludesAny(raw, PAGE_DOWN_KEY_INPUTS)) {
+    actions.push("pageDown");
+  }
+
+  if (isHomeInput(raw) || rawIncludesAny(raw, CTRL_HOME_KEY_INPUTS)) {
+    actions.push("home");
+  }
+
+  if (isEndInput(raw) || rawIncludesAny(raw, CTRL_END_KEY_INPUTS)) {
+    actions.push("end");
+  }
+
+  for (const direction of parseWheelScrollDirections(raw)) {
+    actions.push(direction === "up" ? "wheelUp" : "wheelDown");
+  }
+
+  return actions;
+}
+
 export function selectTimelineRows(
   liveSnapshot: TimelineSnapshot,
   viewport: TimelineViewportState,
@@ -858,15 +904,19 @@ const TimelineRowsView = memo(function TimelineRowsView({ rows }: { rows: Timeli
   );
 }, (prev, next) => rowArraysEqual(prev.rows, next.rows));
 
-const JumpToBottomBar = memo(function JumpToBottomBar({ unseenItems }: { unseenItems: number }) {
+const JumpToBottomBar = memo(function JumpToBottomBar({
+  unseenItems,
+  mouseCapture,
+}: { unseenItems: number; mouseCapture: boolean }) {
   const theme = useTheme();
   const label = unseenItems > 0
-    ? `↓  ${unseenItems} new item${unseenItems === 1 ? "" : "s"} below`
-    : "↓  scroll to latest";
+    ? `↑  Scrolled up · ${unseenItems} new item${unseenItems === 1 ? "" : "s"} below`
+    : "↑  Scrolled up";
+  const hint = mouseCapture ? "wheel↓/End to bottom" : "PgDn/End to bottom";
   return (
     <Box width="100%" paddingX={1}>
       <Text color={theme.INFO}>{label}</Text>
-      <Text color={theme.DIM}>{"  ·  End ↓"}</Text>
+      <Text color={theme.DIM}>{`  ·  ${hint}`}</Text>
     </Box>
   );
 });
@@ -881,6 +931,7 @@ export const Timeline = memo(function Timeline({
   authState = "checking",
   workspaceLabel = "",
   workspaceRoot = null,
+  mouseCapture = false,
 }: TimelineProps) {
   renderDebug.useRenderDebug("Timeline", {
     staticEvents,
@@ -936,7 +987,6 @@ export const Timeline = memo(function Timeline({
     workspaceRoot,
   });
 
-  const { stdin } = useStdin();
   const staticItems = useMemo(() => buildTimelineItems(staticEvents), [staticEvents]);
   const activeItems = useMemo(() => buildTimelineItems(activeEvents), [activeEvents]);
   const activeTurnId = getActiveTurnId(uiState);
@@ -1055,7 +1105,10 @@ export const Timeline = memo(function Timeline({
     lastNonEmptySnapshotRef.current = liveSnapshot;
   }
 
-  const isBusy = uiState.kind === "THINKING" || uiState.kind === "RESPONDING" || uiState.kind === "SHELL_RUNNING";
+  const isBusy = uiState.kind === "THINKING"
+    || uiState.kind === "RESPONDING"
+    || uiState.kind === "ANSWER_VISIBLE"
+    || uiState.kind === "SHELL_RUNNING";
   const effectiveSnapshot = useMemo(() => {
     if (liveSnapshot.totalRows === 0 && isBusy && lastNonEmptySnapshotRef.current.totalRows > 0) {
       renderDebug.traceFlickerEvent("snapshotFallback", {
@@ -1079,10 +1132,44 @@ export const Timeline = memo(function Timeline({
   // arrived — avoiding a second React render / Ink stdout write per streaming
   // flush when the viewport already reflects the correct state.
   const prevTotalRowsRef = useRef(effectiveSnapshot.totalRows);
+  // Stable ref so the raw stdin wheel listener always reads the latest
+  // viewportRows without needing to re-register the listener on resize.
+  const viewportRowsRef = useRef(viewportRows);
+
+  const { stdin } = useStdin();
 
   useEffect(() => {
     liveSnapshotRef.current = snapshotForViewport;
   }, [snapshotForViewport]);
+
+  useEffect(() => {
+    viewportRowsRef.current = viewportRows;
+  }, [viewportRows]);
+
+  // Raw stdin listener for SGR mouse wheel events. Ink's readline layer can
+  // fragment escape sequences before they reach useInput, so we parse the raw
+  // bytes directly — the same approach BottomComposer uses to detect mouse
+  // events. Only wheel button codes (64/65) are acted upon; clicks are ignored.
+  useEffect(() => {
+    if (!mouseCapture || !stdin) return;
+
+    function handleRawWheel(chunk: Buffer | string) {
+      const raw = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      const directions = parseWheelScrollDirections(raw);
+      if (directions.length === 0) return;
+      const delta = directions.reduce(
+        (acc, dir) => acc + (dir === "up" ? -WHEEL_SCROLL_STEP : WHEEL_SCROLL_STEP),
+        0,
+      );
+      if (delta === 0) return;
+      setViewport((current) =>
+        scrollTimelineViewport(current, liveSnapshotRef.current, viewportRowsRef.current, delta),
+      );
+    }
+
+    stdin.on("data", handleRawWheel);
+    return () => { stdin.off("data", handleRawWheel); };
+  }, [mouseCapture, stdin]);
 
   useEffect(() => {
     const widthChanged = snapshotWidthRef.current !== snapshotWidth;
@@ -1186,67 +1273,39 @@ export const Timeline = memo(function Timeline({
     };
   }, [finalizedTurnIds, runningTurnIds, uiState]);
 
-  useEffect(() => {
-    let scrollDelta = 0;
-    let scrollTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const handleRawInput = (chunk: Buffer | string) => {
-      const raw = typeof chunk === "string" ? chunk : chunk.toString();
-      const directions = parseWheelScrollDirections(raw);
-      if (directions.length === 0) {
-        return;
-      }
-
-      for (const direction of directions) {
-        if (direction === "up") scrollDelta -= WHEEL_SCROLL_STEP;
-        else scrollDelta += WHEEL_SCROLL_STEP;
-      }
-
-      if (scrollTimer !== null) {
-        return;
-      }
-
-      scrollTimer = setTimeout(() => {
-        const currentSnapshot = liveSnapshotRef.current;
-        const deltaRows = scrollDelta;
-        scrollDelta = 0;
-        scrollTimer = null;
-
-        if (deltaRows === 0 || currentSnapshot.totalRows === 0) {
-          return;
-        }
-
-        setViewport((current) => scrollTimelineViewport(current, currentSnapshot, viewportRows, deltaRows));
-      }, 16);
-    };
-
-    stdin.on("data", handleRawInput);
-    return () => {
-      stdin.off("data", handleRawInput);
-      if (scrollTimer !== null) clearTimeout(scrollTimer);
-    };
-  }, [stdin, viewportRows]);
-
   useInput((input, key) => {
-    if (snapshotForViewport.totalRows === 0) return;
+    const currentSnapshot = liveSnapshotRef.current;
+    if (currentSnapshot.totalRows === 0) return;
+
+    const rawInput = input.includes("\u001b") ? input : `\u001b${input}`;
+    const wheelDelta = parseTimelineNavigationInput(rawInput).reduce((deltaRows, action) => {
+      if (action === "wheelUp") return deltaRows - WHEEL_SCROLL_STEP;
+      if (action === "wheelDown") return deltaRows + WHEEL_SCROLL_STEP;
+      return deltaRows;
+    }, 0);
+
+    if (wheelDelta !== 0) {
+      setViewport((current) => scrollTimelineViewport(current, currentSnapshot, viewportRows, wheelDelta));
+      return;
+    }
 
     if (key.pageUp) {
-      setViewport((current) => pageUpTimelineViewport(current, snapshotForViewport, viewportRows));
+      setViewport((current) => pageUpTimelineViewport(current, currentSnapshot, viewportRows));
       return;
     }
 
     if (key.pageDown) {
-      setViewport((current) => pageDownTimelineViewport(current, snapshotForViewport, viewportRows));
+      setViewport((current) => pageDownTimelineViewport(current, currentSnapshot, viewportRows));
       return;
     }
 
-    if (isHomeInput(input)) {
-      setViewport((current) => homeTimelineViewport(current, snapshotForViewport, viewportRows));
+    if (key.home || isHomeInput(input)) {
+      setViewport((current) => homeTimelineViewport(current, currentSnapshot, viewportRows));
       return;
     }
 
-    if (isEndInput(input)) {
-      setViewport(endTimelineViewport(snapshotForViewport.totalRows));
+    if (key.end || isEndInput(input)) {
+      setViewport(endTimelineViewport(currentSnapshot.totalRows));
     }
   });
 
@@ -1272,7 +1331,7 @@ export const Timeline = memo(function Timeline({
       fallbackSnapshot: snapshotForViewport !== liveSnapshot,
     });
     return selection;
-  }, [liveSnapshot, snapshotForViewport, viewport, viewportRows]);
+  }, [snapshotForViewport, viewport, viewportRows]);
   const lastNonEmptyVisibleRowsRef = useRef<TimelineRow[]>([]);
   const transcriptEventCount = staticEvents.length + activeEvents.length;
   if (visibleRows.length > 0) {
@@ -1319,7 +1378,7 @@ export const Timeline = memo(function Timeline({
     <Box flexDirection="column" width="100%" height={Math.max(1, viewportRows)} overflow="hidden">
       <TimelineRowsView rows={rowsForDisplay} />
       {showJumpToBottom && (
-        <JumpToBottomBar unseenItems={viewport.unseenItems} />
+        <JumpToBottomBar unseenItems={viewport.unseenItems} mouseCapture={mouseCapture} />
       )}
     </Box>
   );
@@ -1335,7 +1394,8 @@ export const Timeline = memo(function Timeline({
     prev.verboseMode === next.verboseMode &&
     prev.authState === next.authState &&
     prev.workspaceLabel === next.workspaceLabel &&
-    prev.workspaceRoot === next.workspaceRoot
+    prev.workspaceRoot === next.workspaceRoot &&
+    prev.mouseCapture === next.mouseCapture
   );
 });
 

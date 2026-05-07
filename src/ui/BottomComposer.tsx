@@ -123,7 +123,7 @@ const COMMANDS = [
   { cmd: "/auth", desc: "Manage authentication" },
   { cmd: "/workspace", desc: "Show the locked workspace" },
   { cmd: "/copy", desc: "Copy the full conversation transcript to clipboard" },
-  { cmd: "/mouse", desc: "Toggle wheel-scroll mode (on by default; off enables plain drag-select)" },
+  { cmd: "/mouse", desc: "Toggle mouse capture for wheel scrolling (off by default)" },
   { cmd: "/exit", desc: "Quit the application" },
 ] as const;
 
@@ -203,9 +203,10 @@ export function measureBottomComposerRows({
 }
 
 function getStatusLine(uiState: UIState): string | null {
-  if (uiState.kind === "THINKING") return "✧ Codex is thinking";
-  if (uiState.kind === "RESPONDING") return "✧ Codex is thinking";
-  if (uiState.kind === "SHELL_RUNNING") return "✧ Codex is running command";
+  if (uiState.kind === "THINKING") return "✧ Codexa is thinking";
+  if (uiState.kind === "RESPONDING") return "✧ Codexa is thinking";
+  if (uiState.kind === "ANSWER_VISIBLE") return "✧ Codexa response complete";
+  if (uiState.kind === "SHELL_RUNNING") return "✧ Codexa is running command";
   if (uiState.kind === "AWAITING_USER_ACTION") return "✧ waiting for your answer";
   if (uiState.kind === "ERROR") return uiState.message;
   return null;
