@@ -7,7 +7,7 @@ import type { TimelineEvent, UIState } from "../session/types.js";
 import { buildRuntimeSummary } from "../config/runtimeConfig.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
-import { AppShell } from "./AppShell.js";
+import { AppShell, calculateNativeSpacerRows } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "./layout.js";
 import { PlanActionPicker, measurePlanActionPickerRows } from "./PlanActionPicker.js";
 import { ThemeProvider } from "./theme.js";
@@ -91,7 +91,7 @@ function renderShell(
   layoutCols: number,
   layoutRows: number,
   uiState: UIState,
-  screen: "main" | "theme-picker" = "main",
+  screen: "main" | "theme-picker" | "model-picker" = "main",
   panel: React.ReactNode = null,
   mainPanel: React.ReactNode = null,
   mainPanelMode: "viewport" | "full-output" = "viewport",
@@ -403,6 +403,47 @@ test("non-main panel content updates while the active screen is unchanged", asyn
     instance.cleanup();
     await sleep(20);
   }
+});
+
+test("model picker renders as a bounded transient panel instead of transcript content", async () => {
+  const output = await renderShell(
+    120,
+    30,
+    { kind: "IDLE" },
+    "model-picker",
+    <Text>Select model panel</Text>,
+  );
+
+  assert.match(output, /Select model panel/);
+  assert.match(output, /Codexa v/);
+  assert.doesNotMatch(output, /Launch mode/);
+  assert.doesNotMatch(output, /Reproduce the resize flicker and fix it/);
+  assert.doesNotMatch(output, /◎ Auto  gpt-5\.4 \(medium\)  Ctrl\+O/);
+});
+
+test("native spacer subtracts persistent transcript rows before anchoring the composer", () => {
+  const spacerRows = calculateNativeSpacerRows({
+    shellRows: 30,
+    introRows: 10,
+    composerRows: 5,
+    staticRows: 4,
+    liveRows: 2,
+  });
+
+  assert.equal(spacerRows, 9);
+  assert.equal(10 + 4 + 2 + spacerRows + 5, 30);
+});
+
+test("native spacer clamps when model update events fill the body", () => {
+  const spacerRows = calculateNativeSpacerRows({
+    shellRows: 24,
+    introRows: 9,
+    composerRows: 5,
+    staticRows: 12,
+    liveRows: 0,
+  });
+
+  assert.equal(spacerRows, 0);
 });
 
 test("main screen keeps the transcript visible while showing the plan action picker", async () => {

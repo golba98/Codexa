@@ -174,6 +174,66 @@ test("model picker renders dynamic models and the highlighted model's reasoning 
   }
 });
 
+test("model picker groups instructions and model rows into one compact panel", async () => {
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ModelReasoningPicker
+        models={testModels()}
+        currentModel="model-four"
+        currentReasoning="medium"
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    const lastFrame = output.slice(output.lastIndexOf("Select model"));
+    const lines = lastFrame.split(/\r?\n/);
+    const selectLine = lines.findIndex((line) => line.includes("Select model"));
+    const firstModelLine = lines.findIndex((line) => line.includes("Model Four"));
+
+    assert(selectLine >= 0);
+    assert(firstModelLine > selectLine);
+    assert(firstModelLine - selectLine <= 3);
+    assert.doesNotMatch(lastFrame, /\n\s*\n\s*\n/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("model picker loading state stays compact", async () => {
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ModelReasoningPicker
+        models={[]}
+        currentModel="model-four"
+        currentReasoning="medium"
+        isLoading
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    const lastFrame = output.slice(output.lastIndexOf("Select model"));
+    const lines = lastFrame.split(/\r?\n/);
+    const selectLine = lines.findIndex((line) => line.includes("Select model"));
+    const loadingLine = lines.findIndex((line) => line.includes("Discovering models"));
+
+    assert(selectLine >= 0);
+    assert(loadingLine > selectLine);
+    assert(loadingLine - selectLine <= 2);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test("model picker uses each selected model's own reasoning level count", async () => {
   const harness = createInkHarness(
     <ThemeProvider theme="purple">

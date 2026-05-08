@@ -53,6 +53,24 @@ export function isCrampedViewport(rows: number | undefined): boolean {
   return (rows ?? 24) <= 24;
 }
 
+export function calculateNativeSpacerRows({
+  shellRows,
+  introRows,
+  composerRows,
+  staticRows,
+  liveRows,
+}: {
+  shellRows: number;
+  introRows: number;
+  composerRows: number;
+  staticRows: number;
+  liveRows: number;
+}): number {
+  const availableBodyRows = Math.max(0, shellRows - introRows - composerRows);
+  const visibleBodyContentRows = Math.max(0, staticRows) + Math.max(0, liveRows);
+  return Math.max(0, availableBodyRows - visibleBodyContentRows);
+}
+
 function NativeRowsItem({ rows }: { rows: TimelineRow[] }) {
   return (
     <Box flexDirection="column">
@@ -175,6 +193,7 @@ function AppShellInner({
   const isTinyStartup = isStartupFrame && startupHeaderMode === "tiny";
   const effectiveShowComposer = showComposer && !isTinyStartup;
   const effectiveComposerRows = effectiveShowComposer ? composerRows : 0;
+  const panelHintRows = showPanelStage && panelHint ? 2 : 0;
   const introRowCount = isStartupFrame
     ? startupHeaderMode === "tiny"
       ? STARTUP_TINY_MESSAGE_ROWS
@@ -267,11 +286,24 @@ function AppShellInner({
   // explicit spacer the composer appears immediately after the intro instead of being
   // anchored near the terminal bottom.  The spacer fills the gap between whatever
   // live content exists and where the composer should sit.
+  const nativeStaticTranscriptRows = useMemo(
+    () => nativeTranscriptParts.staticItems.reduce((total, item) => total + item.rows.length, 0),
+    [nativeTranscriptParts.staticItems],
+  );
   const nativeSpacerRows = useMemo(() => {
     if (mouseCapture || !effectiveShowComposer || showMainPanel) return 0;
-    const liveHeight = nativeTranscriptParts.liveRows.length;
-    return Math.max(0, finalShellHeight - introRowCount - effectiveComposerRows - liveHeight);
-  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, introRowCount, effectiveComposerRows, nativeTranscriptParts.liveRows.length]);
+    return calculateNativeSpacerRows({
+      shellRows: finalShellHeight,
+      introRows: introRowCount,
+      composerRows: effectiveComposerRows,
+      staticRows: nativeStaticTranscriptRows,
+      liveRows: nativeTranscriptParts.liveRows.length,
+    });
+  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, introRowCount, effectiveComposerRows, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length]);
+  const nativePanelBodyRows = Math.max(
+    1,
+    finalShellHeight - introRowCount - panelHintRows,
+  );
 
   // In native mode (no SGR capture), stable rows go into Ink's <Static> as soon as they
   // are no longer changing. Only the current live action/response remains dynamic.
@@ -372,6 +404,33 @@ function AppShellInner({
   // Native mode: no fixed shell height — content-sized so Ink's lastOutputHeight stays small.
   // Static history is printed once, while live rows only cover the currently changing event.
   if (!mouseCapture) {
+    if (showPanelStage) {
+      const intro = initialIntroRef.current!;
+      return (
+        <Box flexDirection="column" width={finalShellWidth}>
+          <StaticIntroItem
+            authState={intro.authState}
+            workspaceLabel={intro.workspaceLabel}
+            layout={intro.layout}
+            startupHeaderMode={intro.startupHeaderMode}
+            verboseMode={intro.verboseMode}
+            workspaceRoot={intro.workspaceRoot}
+          />
+
+          <Box
+            flexDirection="column"
+            height={nativePanelBodyRows}
+            overflow="hidden"
+            paddingY={1}
+          >
+            {panel}
+          </Box>
+
+          {panelHint}
+        </Box>
+      );
+    }
+
     if (isStartupFrame) {
       return (
         <Box flexDirection="column" width={finalShellWidth}>
@@ -480,7 +539,7 @@ function AppShellInner({
         )}
 
         {showPanelStage && (
-          <Box flexDirection="column" flexGrow={1} justifyContent="center" overflow="hidden" paddingY={1}>
+          <Box flexDirection="column" flexGrow={1} overflow="hidden" paddingY={1}>
             {panel}
           </Box>
         )}

@@ -281,12 +281,12 @@ function LoadingPickerView({
   isLoading: boolean;
 }) {
   return (
-    <Box flexDirection="column" width="100%" marginTop={1}>
+    <Box flexDirection="column" width="100%">
       <Box
         borderStyle="round"
         borderColor={theme.BORDER_SUBTLE}
         paddingX={2}
-        paddingY={1}
+        paddingY={0}
         width="100%"
       >
         <Box flexDirection="column" width="100%">
@@ -345,31 +345,24 @@ function InteractivePickerView({
     : "Reasoning metadata unavailable";
 
   return (
-    <Box flexDirection="column" width="100%" marginTop={1}>
-      <Box
-        borderStyle="round"
-        borderColor={theme.BORDER_SUBTLE}
-        paddingX={2}
-        paddingY={1}
-        width="100%"
-      >
-        <Box flexDirection="column" width="100%">
-          <Box>
-            <Text color={theme.ACCENT} bold>Select model  </Text>
-            <Text color={theme.MUTED}>{subtitle}</Text>
-          </Box>
-          <Box marginTop={0}>
-            <Text color={theme.DIM}>{reasoningHint}</Text>
-          </Box>
-        </Box>
+    <Box
+      borderStyle="round"
+      borderColor={theme.BORDER_ACTIVE}
+      paddingX={2}
+      paddingY={0}
+      width="100%"
+      flexDirection="column"
+    >
+      <Box>
+        <Text color={theme.ACCENT} bold>Select model  </Text>
+        <Text color={theme.MUTED}>{subtitle}</Text>
+      </Box>
+      <Box marginTop={0}>
+        <Text color={theme.DIM}>{reasoningHint}</Text>
       </Box>
 
       <Box
-        borderStyle="round"
-        borderColor={theme.BORDER_ACTIVE}
-        paddingX={2}
-        paddingY={1}
-        marginTop={1}
+        marginTop={0}
         width="100%"
         flexDirection="column"
       >
