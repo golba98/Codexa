@@ -308,8 +308,8 @@ test("resize repaint does not erase terminal scrollback buffer", async () => {
   const harness = createSupportedHarness();
   startApp(harness.deps);
 
-  // Startup legitimately contains \x1b[3J (prevents Windows Terminal stacked-UI artifact).
-  assert.match(harness.stdout.writes, /\x1b\[3J/, "startup should erase scrollback once");
+  // Startup clears only the visible viewport; native terminal scrollback must survive.
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[3J/, "startup must not erase scrollback");
 
   // Capture offset so we can inspect only post-startup writes.
   const startupEnd = harness.stdout.writes.length;

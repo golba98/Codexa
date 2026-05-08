@@ -4,7 +4,7 @@ export const TERMINAL_TITLE = "CODEXA";
 
 export const TERMINAL_SEQUENCES = {
   // \x1b[2J clears the visible viewport; \x1b[3J clears scrollback.
-  hardRepaint: "\x1b[2J\x1b[3J\x1b[H",
+  hardRepaint: "\x1b[2J\x1b[H",
   viewportClear: "\x1b[2J\x1b[H",
   bracketedPasteEnable: "\x1b[?2004h",
   bracketedPasteDisable: "\x1b[?2004l",
@@ -20,7 +20,13 @@ export type TerminalChannel = "stdout" | "stderr";
 let currentUIStateKind: string = "IDLE";
 
 export function setTerminalControlUIState(kind: string): void {
-  currentUIStateKind = kind;
+  if (currentUIStateKind !== kind) {
+    renderDebug.traceEvent("terminal", "uiStateTransition", {
+      from: currentUIStateKind,
+      to: kind,
+    });
+    currentUIStateKind = kind;
+  }
 }
 
 export function writeTerminalControl(
@@ -36,6 +42,8 @@ export function writeTerminalControl(
     || sequence.includes("\x1b[H");
   const isStartupWrite = source.includes(":startup");
 
+  // Aggressively block any clearing or reset sequences after startup,
+  // especially during active states, to prevent the UI from disappearing.
   if (containsClearOrReset && !isStartupWrite) {
     renderDebug.traceEvent("terminal", "blockedPostStartupClearOrReset", {
       source,
@@ -49,17 +57,22 @@ export function writeTerminalControl(
     return true;
   }
 
-  // Diagnostic: warn if a viewport-clearing sequence fires during streaming.
+  // Diagnostic: warn if a viewport-clearing sequence fires during streaming
+  // even if it claims to be from startup (which shouldn't happen).
   if (
-    renderDebug.isRenderDebugEnabled()
-    && (currentUIStateKind === "RESPONDING" || currentUIStateKind === "THINKING")
+    (currentUIStateKind === "RESPONDING" || currentUIStateKind === "THINKING")
     && (sequence.includes("\x1b[2J") || sequence.includes("\x1b[3J"))
   ) {
     renderDebug.traceEvent("terminal", "unexpectedClearDuringStreaming", {
       source,
       uiStateKind: currentUIStateKind,
       sequenceLength: sequence.length,
+      isStartupWrite,
     });
+    
+    if (!isStartupWrite) {
+      return true;
+    }
   }
 
   return write(sequence) !== false;

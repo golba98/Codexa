@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { RunProgressEntry, TimelineEvent } from "../session/types.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
+import { getShellWidth } from "./layout.js";
+import { buildStaticIntroRows } from "./StaticIntroItem.js";
 import type { TimelineRow, TimelineSnapshot } from "./timelineMeasure.js";
 import { buildTimelineSnapshot } from "./timelineMeasure.js";
 import {
@@ -282,6 +284,34 @@ test("Codexa intro renders as a normal timeline item", () => {
   assert.doesNotMatch(text, /Model:/);
   assert(versionLineIndex >= 0 && versionLineIndex < 6);
   assert.match(lines[versionLineIndex]!, /[█╔║╝]/);
+});
+
+test("static intro uses the padded timeline snapshot path", () => {
+  const layout = {
+    cols: 120,
+    rows: 40,
+    mode: "full" as const,
+  };
+  const rows = buildStaticIntroRows({
+    authState: "authenticated",
+    workspaceLabel: "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal",
+    layout,
+    verboseMode: false,
+    workspaceRoot: null,
+  });
+  const shellWidth = getShellWidth(layout.cols);
+  const lines = rows.map((row) => row.spans.map((span) => span.text).join(""));
+  const text = lines.join("\n");
+
+  assert(rows.length >= 7);
+  assert(rows[0]!.key.startsWith("codexa-intro-wrapped-"));
+  assert(lines.every((line) => line.length === shellWidth));
+  assert(lines[0]!.startsWith(" "));
+  assert.match(text, /██████/);
+  assert.match(text, /╚██████╗/);
+  assert.match(text, /Codexa v/);
+  assert.match(text, /Auth: Authenticated/);
+  assert.match(text, /Workspace: 13-Custom-CLI-Normal/);
 });
 
 test("Codexa intro scrolls out of the visible timeline window", () => {

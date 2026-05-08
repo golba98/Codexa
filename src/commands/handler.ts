@@ -728,7 +728,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "  /theme [name]      Switch theme directly (no arg opens picker)",
           "  /themes            Open visual theme picker (Up/Down + Enter)",
           "  /verbose           Toggle verbose mode (shows detailed processing info)",
-          "  /mouse             Toggle mouse capture for wheel scrolling (on by default; Shift+drag to select text)",
+          "  /mouse             Toggle SGR mouse capture for in-app wheel scroll (off by default). On: wheel scrolls the Codexa timeline; drag-select requires Shift. Off: native drag-select and native wheel scroll work without modifiers.",
           "  /auth [option]     Open auth panel or set auth preference",
           "  /auth status       Probe Codexa auth status",
           "  /login             Show guided ChatGPT subscription login steps",

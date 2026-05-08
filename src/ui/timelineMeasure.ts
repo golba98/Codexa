@@ -71,6 +71,16 @@ export interface StableTimelineSnapshot {
   liveRows: TimelineRow[];
 }
 
+export interface NativeTranscriptRowItem {
+  key: string;
+  rows: TimelineRow[];
+}
+
+export interface NativeTranscriptParts {
+  staticItems: NativeTranscriptRowItem[];
+  liveRows: TimelineRow[];
+}
+
 interface MarkdownInlinePart {
   kind: "text" | "code" | "bold";
   text: string;
@@ -1330,7 +1340,7 @@ function buildActionRequiredRows(item: Extract<RenderTimelineItem, { type: "turn
   return rows;
 }
 
-function buildStandaloneEventRows(item: Extract<RenderTimelineItem, { type: "event" }>, width: number): TimelineRow[] {
+export function buildStandaloneEventRows(item: Extract<RenderTimelineItem, { type: "event" }>, width: number): TimelineRow[] {
   const rows: TimelineRow[] = [];
   const event = item.event;
 
@@ -1439,11 +1449,29 @@ function buildStandaloneEventRows(item: Extract<RenderTimelineItem, { type: "eve
   return rows;
 }
 
-function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro" }>, width: number): TimelineRow[] {
+export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro" }>, width: number): TimelineRow[] {
   const rows: TimelineRow[] = [];
   const { intro } = item;
   const safeWidth = Math.max(10, width);
-  const logoRows = intro.layoutMode === "full"
+  const startupHeaderMode = intro.startupHeaderMode
+    ?? (intro.layoutMode === "full" ? "large" : "compact");
+  if (startupHeaderMode === "tiny") {
+    const messageRows = [
+      "Codexa",
+      "Terminal is too small for the startup view.",
+      "Resize the terminal to continue.",
+    ];
+    messageRows.forEach((line, index) => {
+      rows.push(createRow(
+        `${item.key}-resize-${index}`,
+        [createSpan(clampVisualText(line, safeWidth), index === 0 ? "text" : "muted", { bold: index === 0 })],
+        safeWidth,
+      ));
+    });
+    return rows;
+  }
+
+  const logoRows = startupHeaderMode === "large"
     ? INTRO_WORDMARK
     : ["CODEXA"];
   const logoWidth = logoRows.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
@@ -2530,6 +2558,197 @@ function buildStableActiveTurnGroups(
   };
 }
 
+function isNativeLiveStreamEvent(event: StreamEvent, run: RunEvent): boolean {
+  if (run.status !== "running") return false;
+  if (event.kind === "action") return event.tool.status === "running";
+  if (event.kind === "response") return event.segment.id === (run.activeResponseSegmentId ?? null);
+  if (event.kind === "plan") return run.plan?.status === "active";
+  return false;
+}
+
+function buildNativeStreamEventRows(params: {
+  item: Extract<RenderTimelineItem, { type: "turn" }>;
+  event: StreamEvent;
+  eventIndex: number;
+  innerWidth: number;
+  verbose: boolean;
+  workspaceRoot?: string | null;
+  forceStable?: boolean;
+}): TimelineRow[] {
+  const { item, event, eventIndex, innerWidth, verbose } = params;
+  const run = item.item.run!;
+  const streaming = item.renderState.runPhase === "streaming";
+  const actionBorderTone = item.renderState.opacity === "dim" ? "borderSubtle" : "borderActive";
+  const rows: TimelineRow[] = [];
+
+  if (eventIndex > 0) {
+    rows.push(createBlankRow(`${item.key}-stream-gap-${event.streamSeq}`, innerWidth));
+  }
+
+  if (event.kind === "thinking") {
+    rows.push(...buildCodexThinkingRows({
+      keyPrefix: `${item.key}-codex-thinking-${event.streamSeq}`,
+      width: innerWidth,
+      event,
+      isLive: !params.forceStable && isNativeLiveStreamEvent(event, run),
+      verbose,
+    }));
+  } else if (event.kind === "action") {
+    rows.push(...buildActionEventRows({
+      keyPrefix: `${item.key}-action-${event.streamSeq}`,
+      width: innerWidth,
+      event,
+      borderTone: actionBorderTone,
+      verbose,
+      isLive: !params.forceStable && isNativeLiveStreamEvent(event, run),
+    }));
+  } else if (event.kind === "actionSummary") {
+    rows.push(...buildActionSummaryRows({
+      keyPrefix: `${item.key}-action-summary-${event.streamSeq}`,
+      width: innerWidth,
+      event,
+      borderTone: actionBorderTone,
+    }));
+  } else if (event.kind === "response") {
+    const stableEvent = params.forceStable
+      ? { ...event, segment: { ...event.segment, status: "completed" as const } }
+      : event;
+    rows.push(...buildCodexResponseRows({
+      keyPrefix: `${item.key}-codex-response-${event.streamSeq}`,
+      width: innerWidth,
+      run,
+      event: stableEvent,
+      streaming,
+      isLastEvent: false,
+      isLive: !params.forceStable && isNativeLiveStreamEvent(event, run),
+      verbose,
+    }));
+  } else if (event.kind === "plan") {
+    rows.push(...buildApprovedPlanRows({
+      keyPrefix: `${item.key}-plan-${event.streamSeq}`,
+      width: innerWidth,
+      planText: event.planText,
+      approved: event.approved,
+      workspaceRoot: params.workspaceRoot,
+    }));
+  }
+
+  return rows;
+}
+
+function wrapNativeRows(
+  rows: TimelineRow[],
+  totalWidth: number,
+  padded: boolean,
+  keyPrefix: string,
+): TimelineRow[] {
+  return wrapRows(rows, totalWidth, padded, keyPrefix, false);
+}
+
+function appendNativeTurnParts(
+  output: NativeTranscriptParts,
+  item: Extract<RenderTimelineItem, { type: "turn" }>,
+  options: {
+    totalWidth: number;
+    verboseMode?: boolean;
+    workspaceRoot?: string | null;
+  },
+): void {
+  const run = item.item.run;
+  const innerWidth = Math.max(10, options.totalWidth - (item.padded ? 2 : 0));
+  const verbose = options.verboseMode ?? false;
+
+  if (item.item.user) {
+    output.staticItems.push({
+      key: `${item.key}-user`,
+      rows: wrapNativeRows(
+        buildUserInputRows(item, innerWidth),
+        options.totalWidth,
+        item.padded,
+        item.key,
+      ),
+    });
+  }
+
+  if (!run) return;
+
+  const events = compactActionBursts(
+    collectStreamEvents(item, item.renderState.runPhase === "streaming"),
+    verbose,
+  );
+
+  events.forEach((event, eventIndex) => {
+    // Placement: keep ALL events in liveRows while the run is active so Ink's
+    // <Static> does not grow mid-generation (which shifts the viewport).
+    // Only after run.status flips away from "running" do events go to staticItems.
+    const placeAsLive = run.status === "running";
+    // Rendering: only the event that is currently active gets a live indicator
+    // (spinner / streaming cursor). Completed events render in stable form even
+    // while their parent run is still running.
+    const isLiveRender = placeAsLive && isNativeLiveStreamEvent(event, run);
+    const rows = buildNativeStreamEventRows({
+      item,
+      event,
+      eventIndex,
+      innerWidth,
+      verbose,
+      workspaceRoot: options.workspaceRoot,
+      forceStable: !isLiveRender,
+    });
+
+    const wrappedRows = wrapNativeRows(rows, options.totalWidth, item.padded, item.key);
+    if (placeAsLive) {
+      output.liveRows.push(...wrappedRows);
+    } else {
+      output.staticItems.push({
+        key: `${item.key}-stream-${event.streamSeq}`,
+        rows: wrappedRows,
+      });
+    }
+  });
+
+  const questionRows = buildActionRequiredRows(item, innerWidth);
+  if (questionRows.length > 0) {
+    output.liveRows.push(...wrapNativeRows(questionRows, options.totalWidth, item.padded, item.key));
+  }
+}
+
+export function buildNativeTranscriptParts(
+  items: RenderTimelineItem[],
+  options: {
+    totalWidth: number;
+    verboseMode?: boolean;
+    debugLabel?: string;
+    workspaceRoot?: string | null;
+  },
+): NativeTranscriptParts {
+  renderDebug.traceEvent("timeline", "buildNativeTranscriptParts", {
+    debugLabel: options.debugLabel ?? "native",
+    items: items.length,
+    totalWidth: options.totalWidth,
+    verbose: options.verboseMode ?? false,
+  });
+
+  const output: NativeTranscriptParts = {
+    staticItems: [],
+    liveRows: [],
+  };
+
+  for (const item of items) {
+    if (item.type === "turn") {
+      appendNativeTurnParts(output, item, options);
+      continue;
+    }
+
+    output.staticItems.push({
+      key: item.key,
+      rows: buildTimelineSnapshot([item], options).rows,
+    });
+  }
+
+  return output;
+}
+
 export function buildStableTimelineSnapshot(
   items: RenderTimelineItem[],
   options: {
@@ -2622,7 +2841,7 @@ export function buildTimelineSnapshot(
     let builtRows: TimelineRow[];
 
     if (item.type === "intro") {
-      const cacheKey = `i:${item.key}:${innerWidth}:${item.intro.version}:${item.intro.layoutMode}:${item.intro.authLabel}:${item.intro.workspaceLabel}`;
+      const cacheKey = `i:${item.key}:${innerWidth}:${item.intro.version}:${item.intro.layoutMode}:${item.intro.startupHeaderMode ?? ""}:${item.intro.authLabel}:${item.intro.workspaceLabel}`;
       const cached = _staticRowCache.get(cacheKey);
       if (cached) {
         renderDebug.traceEvent("timeline", "rowGeneration", {

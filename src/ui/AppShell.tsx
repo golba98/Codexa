@@ -1,13 +1,33 @@
 import React, { memo, useEffect, useMemo, useRef } from "react";
-import { Box } from "ink";
+import { Box, Static } from "ink";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
-import { getShellHeight, getShellWidth, type Layout } from "./layout.js";
-import { Timeline } from "./Timeline.js";
+import {
+  getShellHeight,
+  getShellWidth,
+  resolveStartupHeaderMode,
+  STARTUP_COMPACT_INTRO_ROWS,
+  STARTUP_TINY_MESSAGE_ROWS,
+  type Layout,
+  type StartupHeaderMode,
+} from "./layout.js";
+import {
+  buildActiveRenderItems,
+  buildStaticRenderItems,
+  buildTimelineItems,
+  Timeline,
+  TimelineRowView,
+  type TimelineItem,
+} from "./Timeline.js";
+import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow } from "./timelineMeasure.js";
+import { buildStaticIntroRows, StaticIntroItem } from "./StaticIntroItem.js";
 
 type AppShellLayout = Layout & { layoutEpoch?: number };
+type NativeStaticItem =
+  | { key: string; type: "session-intro" }
+  | ({ type: "rows" } & NativeTranscriptRowItem);
 
 export interface AppShellProps {
   layout: AppShellLayout;
@@ -31,6 +51,34 @@ export interface AppShellProps {
 
 export function isCrampedViewport(rows: number | undefined): boolean {
   return (rows ?? 24) <= 24;
+}
+
+export function calculateNativeSpacerRows({
+  shellRows,
+  introRows,
+  composerRows,
+  staticRows,
+  liveRows,
+}: {
+  shellRows: number;
+  introRows: number;
+  composerRows: number;
+  staticRows: number;
+  liveRows: number;
+}): number {
+  const availableBodyRows = Math.max(0, shellRows - introRows - composerRows);
+  const visibleBodyContentRows = Math.max(0, staticRows) + Math.max(0, liveRows);
+  return Math.max(0, availableBodyRows - visibleBodyContentRows);
+}
+
+function NativeRowsItem({ rows }: { rows: TimelineRow[] }) {
+  return (
+    <Box flexDirection="column">
+      {rows.map((row) => (
+        <TimelineRowView key={row.key} row={row} />
+      ))}
+    </Box>
+  );
 }
 
 function AppShellInner({
@@ -83,6 +131,10 @@ function AppShellInner({
   const showMainPanelFullOutput = showMainPanel && mainPanelMode === "full-output";
   const showTimeline = screen === "main" && !showMainPanel;
   const showPanelStage = screen !== "main";
+  const isStartupFrame = screen === "main"
+    && !showMainPanel
+    && staticEvents.length === 0
+    && activeEvents.length === 0;
   const previousMeasurements = useRef<{
     timelineRows: number;
     composerRows: number;
@@ -90,10 +142,70 @@ function AppShellInner({
     shellWidth: number;
   } | null>(null);
 
+  // Capture the very first render's props for the static intro.
+  // Ink's <Static> will re-flush the item if the rendered output changes.
+  // By freezing these props, we ensure the intro is truly session-static
+  // and doesn't replay when authState or layout changes later.
+  const initialIntroRef = useRef<{
+    authState: CodexAuthState;
+    workspaceLabel: string;
+    layout: Layout;
+    startupHeaderMode: StartupHeaderMode;
+    verboseMode: boolean;
+    workspaceRoot: string | null;
+  } | null>(null);
+  const provisionalFullIntroRows = useMemo(
+    () => buildStaticIntroRows({
+      authState,
+      workspaceLabel,
+      layout,
+      startupHeaderMode: "large",
+      verboseMode,
+      workspaceRoot: workspaceRoot ?? null,
+    }).length,
+    [authState, layout, verboseMode, workspaceLabel, workspaceRoot],
+  );
+  const liveStartupHeaderMode = resolveStartupHeaderMode({
+    cols: layout.cols,
+    rows: layout.rows,
+    introRows: provisionalFullIntroRows,
+    composerRows,
+  });
+  if (!initialIntroRef.current) {
+    initialIntroRef.current = {
+      authState,
+      workspaceLabel,
+      layout,
+      startupHeaderMode: liveStartupHeaderMode,
+      verboseMode,
+      workspaceRoot: workspaceRoot ?? null,
+    };
+  }
+
+  // Compute the intro block's row count once, using the frozen startup layout.
+  // This is used below to anchor the composer at the terminal bottom in native mode.
+  const introRowCountRef = useRef<number | null>(null);
+  if (introRowCountRef.current === null && !mouseCapture && initialIntroRef.current) {
+    introRowCountRef.current = buildStaticIntroRows(initialIntroRef.current).length;
+  }
+  const frozenStartupHeaderMode = initialIntroRef.current?.startupHeaderMode ?? liveStartupHeaderMode;
+  const startupHeaderMode = isStartupFrame ? liveStartupHeaderMode : frozenStartupHeaderMode;
+  const isTinyStartup = isStartupFrame && startupHeaderMode === "tiny";
+  const effectiveShowComposer = showComposer && !isTinyStartup;
+  const effectiveComposerRows = effectiveShowComposer ? composerRows : 0;
+  const panelHintRows = showPanelStage && panelHint ? 2 : 0;
+  const introRowCount = isStartupFrame
+    ? startupHeaderMode === "tiny"
+      ? STARTUP_TINY_MESSAGE_ROWS
+      : startupHeaderMode === "compact"
+        ? STARTUP_COMPACT_INTRO_ROWS
+        : provisionalFullIntroRows
+    : introRowCountRef.current ?? provisionalFullIntroRows;
+
   // Timeline owns all vertical space above the fixed composer.
-  const calculatedTimelineRowsRaw = shellHeight - (showComposer ? composerRows : 0);
-  const calculatedTimelineRows = Math.max(1, calculatedTimelineRowsRaw);
-  
+  const calculatedTimelineRowsRaw = shellHeight - effectiveComposerRows;
+  const calculatedTimelineRows = Math.max(2, calculatedTimelineRowsRaw);
+
   const { finalShellHeight, finalShellWidth, finalTimelineRows } = useMemo(() => {
     const prev = previousMeasurements.current;
     const isValid = shellHeight > 0
@@ -101,8 +213,8 @@ function AppShellInner({
       && Number.isFinite(shellHeight)
       && Number.isFinite(shellWidth)
       && Number.isFinite(calculatedTimelineRowsRaw)
-      && calculatedTimelineRowsRaw > 0;
-    
+      && calculatedTimelineRowsRaw >= 2;
+
     if (!isValid && prev) {
       renderDebug.traceEvent("layout", "measurementFallback", {
         reason: "invalid-shell-or-timeline-rows",
@@ -131,9 +243,94 @@ function AppShellInner({
     return {
       finalShellHeight: shellHeight,
       finalShellWidth: shellWidth,
-      finalTimelineRows: calculatedTimelineRows,
+      finalTimelineRows: Math.max(2, calculatedTimelineRows),
     };
   }, [shellHeight, shellWidth, calculatedTimelineRows, calculatedTimelineRowsRaw]);
+
+  const nativeTranscriptParts = useMemo(() => {
+    if (mouseCapture) {
+      return { staticItems: [], liveRows: [] };
+    }
+
+    const staticItems = buildTimelineItems(staticEvents);
+    const activeItems = buildTimelineItems(activeEvents);
+    const turnIds = [...staticItems, ...activeItems]
+      .filter((item): item is Extract<TimelineItem, { type: "turn" }> => item.type === "turn")
+      .map((item) => item.turnId);
+
+    const parts = buildNativeTranscriptParts(
+      [
+        ...buildStaticRenderItems(staticItems, turnIds, null, null, null),
+        ...buildActiveRenderItems(activeItems, turnIds, uiState),
+      ],
+      {
+        totalWidth: finalShellWidth,
+        verboseMode,
+        debugLabel: "app-shell-native",
+        workspaceRoot,
+      },
+    );
+
+    // If we're not supposed to show the timeline yet (e.g. during early mount
+    // or when in a full-panel mode), we still calculate the static parts
+    // but hide the live rows. This ensures the static array length remains
+    // stable in Ink's <Static> component, preventing re-renders.
+    if (!showTimeline) {
+      return { ...parts, liveRows: [] };
+    }
+
+    return parts;
+  }, [activeEvents, finalShellWidth, mouseCapture, showTimeline, staticEvents, uiState, verboseMode, workspaceRoot]);
+
+  // In native mode the root box is content-sized (no fixed height), so without an
+  // explicit spacer the composer appears immediately after the intro instead of being
+  // anchored near the terminal bottom.  The spacer fills the gap between whatever
+  // live content exists and where the composer should sit.
+  const nativeStaticTranscriptRows = useMemo(
+    () => nativeTranscriptParts.staticItems.reduce((total, item) => total + item.rows.length, 0),
+    [nativeTranscriptParts.staticItems],
+  );
+  const nativeSpacerRows = useMemo(() => {
+    if (mouseCapture || !effectiveShowComposer || showMainPanel) return 0;
+    return calculateNativeSpacerRows({
+      shellRows: finalShellHeight,
+      introRows: introRowCount,
+      composerRows: effectiveComposerRows,
+      staticRows: nativeStaticTranscriptRows,
+      liveRows: nativeTranscriptParts.liveRows.length,
+    });
+  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, introRowCount, effectiveComposerRows, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length]);
+  const nativePanelBodyRows = Math.max(
+    1,
+    finalShellHeight - introRowCount - panelHintRows,
+  );
+
+  // In native mode (no SGR capture), stable rows go into Ink's <Static> as soon as they
+  // are no longer changing. Only the current live action/response remains dynamic.
+  const nativeStaticAllItems = useMemo<NativeStaticItem[]>(
+    () =>
+      mouseCapture
+        ? []
+        : [
+          { key: "session-intro", type: "session-intro" as const },
+          ...nativeTranscriptParts.staticItems.map((item) => ({ ...item, type: "rows" as const })),
+        ],
+    [mouseCapture, nativeTranscriptParts.staticItems],
+  );
+
+  renderDebug.traceEvent("layout", "nativeTranscript", {
+    nativeMode: !mouseCapture,
+    mouseCapture,
+    showTimeline,
+    activeEvents: activeEvents.length,
+    staticEvents: staticEvents.length,
+    staticItems: nativeStaticAllItems.length,
+    liveRows: nativeTranscriptParts.liveRows.length,
+    contentSized: true,
+    finalTimelineRows,
+    composerRows: effectiveComposerRows,
+    startupHeaderMode,
+  });
 
   renderDebug.traceLayoutValidity("AppShell", {
     cols: layout.cols,
@@ -142,14 +339,14 @@ function AppShellInner({
     shellHeight,
     timelineRows: finalTimelineRows,
     calculatedTimelineRowsRaw,
-    composerRows,
+    composerRows: effectiveComposerRows,
   });
   if (!Number.isFinite(calculatedTimelineRowsRaw) || calculatedTimelineRowsRaw <= 0) {
     renderDebug.traceBlankFrame("AppShell", {
       reason: "invalid-available-timeline-rows",
       availableTimelineRows: calculatedTimelineRowsRaw,
       finalTimelineRows,
-      composerRows,
+      composerRows: effectiveComposerRows,
       shellHeight: finalShellHeight,
       screen,
       uiStateKind: uiState.kind,
@@ -163,7 +360,7 @@ function AppShellInner({
       changed.push("mount");
     } else {
       if (previous.timelineRows !== finalTimelineRows) changed.push("availableTimelineRows");
-      if (previous.composerRows !== composerRows) changed.push("composerRows");
+      if (previous.composerRows !== effectiveComposerRows) changed.push("composerRows");
       if (previous.shellHeight !== finalShellHeight) changed.push("height");
     }
 
@@ -172,7 +369,7 @@ function AppShellInner({
         reason: changed.join(","),
         availableTimelineRows: finalTimelineRows,
         rawAvailableTimelineRows: calculatedTimelineRowsRaw,
-        composerRows,
+        composerRows: effectiveComposerRows,
         shellHeight: finalShellHeight,
         showComposer,
         showTimeline,
@@ -182,11 +379,11 @@ function AppShellInner({
 
     previousMeasurements.current = {
       timelineRows: finalTimelineRows,
-      composerRows,
+      composerRows: effectiveComposerRows,
       shellHeight: finalShellHeight,
       shellWidth: finalShellWidth,
     };
-  }, [calculatedTimelineRowsRaw, composerRows, finalShellHeight, finalShellWidth, showComposer, showMainPanelFullOutput, showTimeline, finalTimelineRows]);
+  }, [calculatedTimelineRowsRaw, effectiveComposerRows, finalShellHeight, finalShellWidth, showComposer, showMainPanelFullOutput, showTimeline, finalTimelineRows]);
 
   if (showMainPanelFullOutput) {
     return (
@@ -200,6 +397,117 @@ function AppShellInner({
             </Box>
           )}
         </Box>
+      </Box>
+    );
+  }
+
+  // Native mode: no fixed shell height — content-sized so Ink's lastOutputHeight stays small.
+  // Static history is printed once, while live rows only cover the currently changing event.
+  if (!mouseCapture) {
+    if (showPanelStage) {
+      const intro = initialIntroRef.current!;
+      return (
+        <Box flexDirection="column" width={finalShellWidth}>
+          <StaticIntroItem
+            authState={intro.authState}
+            workspaceLabel={intro.workspaceLabel}
+            layout={intro.layout}
+            startupHeaderMode={intro.startupHeaderMode}
+            verboseMode={intro.verboseMode}
+            workspaceRoot={intro.workspaceRoot}
+          />
+
+          <Box
+            flexDirection="column"
+            height={nativePanelBodyRows}
+            overflow="hidden"
+            paddingY={1}
+          >
+            {panel}
+          </Box>
+
+          {panelHint}
+        </Box>
+      );
+    }
+
+    if (isStartupFrame) {
+      return (
+        <Box flexDirection="column" width={finalShellWidth}>
+          <StaticIntroItem
+            authState={authState}
+            workspaceLabel={workspaceLabel}
+            layout={layout}
+            startupHeaderMode={startupHeaderMode}
+            verboseMode={verboseMode}
+            workspaceRoot={workspaceRoot}
+          />
+
+          {nativeSpacerRows > 0 && (
+            <Box height={nativeSpacerRows} />
+          )}
+
+          {effectiveShowComposer && (
+            <Box flexDirection="column" flexShrink={0}>
+              {composer}
+            </Box>
+          )}
+        </Box>
+      );
+    }
+
+    return (
+      <Box flexDirection="column" width={finalShellWidth}>
+        <Static items={nativeStaticAllItems}>
+          {(item) => {
+            if (item.type === "session-intro") {
+              const intro = initialIntroRef.current!;
+              return (
+                <StaticIntroItem
+                  key="session-intro"
+                  authState={intro.authState}
+                  workspaceLabel={intro.workspaceLabel}
+                  layout={intro.layout}
+                  startupHeaderMode={intro.startupHeaderMode}
+                  verboseMode={intro.verboseMode}
+                  workspaceRoot={intro.workspaceRoot}
+                />
+              );
+            }
+
+            return (
+              <NativeRowsItem key={item.key} rows={item.rows} />
+            );
+          }}
+        </Static>
+
+        {showTimeline && nativeTranscriptParts.liveRows.length > 0 && (
+          <NativeRowsItem rows={nativeTranscriptParts.liveRows} />
+        )}
+
+        {showMainPanel && (
+          <Box flexDirection="column" paddingY={1} justifyContent="center">
+            {mainPanel}
+          </Box>
+        )}
+
+        {showPanelStage && (
+          <Box flexDirection="column" paddingY={1} justifyContent="center">
+            {panel}
+          </Box>
+        )}
+
+        {nativeSpacerRows > 0 && (
+          <Box height={nativeSpacerRows} />
+        )}
+
+        {effectiveShowComposer && (
+          <Box flexDirection="column" flexShrink={0}>
+            {composer}
+          </Box>
+        )}
+
+        {showPanelStage && panelHint}
       </Box>
     );
   }
@@ -231,12 +539,12 @@ function AppShellInner({
         )}
 
         {showPanelStage && (
-          <Box flexDirection="column" flexGrow={1} justifyContent="center" overflow="hidden" paddingY={1}>
+          <Box flexDirection="column" flexGrow={1} overflow="hidden" paddingY={1}>
             {panel}
           </Box>
         )}
 
-        {showComposer && (
+        {effectiveShowComposer && (
           <Box flexDirection="column" flexShrink={0}>
             {composer}
           </Box>
@@ -285,6 +593,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.mainPanel       === next.mainPanel       &&
     prev.mainPanelMode   === next.mainPanelMode   &&
     prev.verboseMode     === next.verboseMode     &&
+    prev.mouseCapture    === next.mouseCapture    &&
     panelPropsEqual
   );
 });

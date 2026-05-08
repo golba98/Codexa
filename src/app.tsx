@@ -992,6 +992,7 @@ export function App({ launchArgs }: AppProps) {
     }));
 
     try {
+      const normalizedReasoning = normalizeReasoningForModelCapabilities(nextModel, reasoningLevel, modelCapabilities);
       updateRuntimeConfig((current) => ({
         ...current,
         model: nextModel,
@@ -1001,7 +1002,10 @@ export function App({ launchArgs }: AppProps) {
         handler: "setModelWithNotice",
         model: nextModel,
       }));
-      appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
+      appendSystemEvent(
+        "Model updated",
+        `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(normalizedReasoning)}.`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       traceInputDebug("model_selection_app_failure", getInputDebugSnapshot({
@@ -1014,7 +1018,7 @@ export function App({ launchArgs }: AppProps) {
       modelSelectionInFlightRef.current = false;
       returnToChatMode("selection");
     }
-  }, [appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, modelCapabilities, returnToChatMode, updateRuntimeConfig]);
+  }, [appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, modelCapabilities, reasoningLevel, returnToChatMode, updateRuntimeConfig]);
 
   const setModelAndReasoningWithNotice = useCallback((nextModel: AvailableModel, nextReasoning: ReasoningLevel) => {
     const gate = guardConfigMutation("model", busy);
@@ -1054,10 +1058,8 @@ export function App({ launchArgs }: AppProps) {
         reasoning: normalizedReasoning,
       }));
 
-      if (modelChanged && reasoningChanged) {
+      if (modelChanged) {
         appendSystemEvent("Model updated", `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(normalizedReasoning)}.`);
-      } else if (modelChanged) {
-        appendSystemEvent("Model updated", `Active model is now ${nextModel}.`);
       } else if (reasoningChanged) {
         appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(normalizedReasoning)}.`);
       } else {
@@ -1254,7 +1256,7 @@ export function App({ launchArgs }: AppProps) {
       traceInputDebug("model_picker_loading_trigger", getInputDebugSnapshot({
         handler: "openModelPicker",
       }));
-      void refreshModelCapabilities(false, true);
+      void refreshModelCapabilities(false, false);
     }
 
     intendedInputModeRef.current = "model-picker";
@@ -2676,8 +2678,8 @@ export function App({ launchArgs }: AppProps) {
           appendSystemEvent(
             "Mouse mode updated",
             nextMouse
-              ? "Mouse capture enabled — wheel scrolling active. Disable /mouse to restore plain drag-select."
-              : "Mouse capture disabled — native drag-select active. Use PageUp/PageDown/Home/End to scroll.",
+              ? "SGR mouse capture on — in-app wheel scroll active. Native drag-select requires Shift (Windows Terminal). Run /mouse to disable."
+              : "SGR mouse capture off — native drag-select and native wheel scroll restored. Run /mouse to re-enable.",
           );
           return;
         }

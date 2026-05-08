@@ -7,7 +7,7 @@ import type { TimelineEvent, UIState } from "../session/types.js";
 import { buildRuntimeSummary } from "../config/runtimeConfig.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
-import { AppShell } from "./AppShell.js";
+import { AppShell, calculateNativeSpacerRows } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "./layout.js";
 import { PlanActionPicker, measurePlanActionPickerRows } from "./PlanActionPicker.js";
 import { ThemeProvider } from "./theme.js";
@@ -91,7 +91,7 @@ function renderShell(
   layoutCols: number,
   layoutRows: number,
   uiState: UIState,
-  screen: "main" | "theme-picker" = "main",
+  screen: "main" | "theme-picker" | "model-picker" = "main",
   panel: React.ReactNode = null,
   mainPanel: React.ReactNode = null,
   mainPanelMode: "viewport" | "full-output" = "viewport",
@@ -180,6 +180,117 @@ function renderShell(
     return stripAnsi(output);
   });
 }
+
+function renderStartupShell(layoutCols: number, layoutRows: number): Promise<string> {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = layoutCols;
+  stdout.rows = layoutRows;
+  let output = "";
+
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const layout = createLayoutSnapshot(layoutCols, layoutRows);
+  const uiState: UIState = { kind: "IDLE" };
+  const composerRows = measureBottomComposerRows({
+    layout,
+    uiState,
+    mode: "auto-edit",
+    model: "gpt-5.4",
+    reasoningLevel: "medium",
+    tokensUsed: 0,
+    value: "",
+    cursor: 0,
+  });
+
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <AppShell
+        layout={layout}
+        screen="main"
+        authState="authenticated"
+        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+        staticEvents={[]}
+        activeEvents={[]}
+        uiState={uiState}
+        panel={null}
+        mainPanel={null}
+        composer={
+          <BottomComposer
+            layout={layout}
+            uiState={uiState}
+            mode="auto-edit"
+            model="gpt-5.4"
+            themeName="purple"
+            reasoningLevel="medium"
+            tokensUsed={0}
+            value=""
+            cursor={0}
+            onChangeInput={() => {}}
+            onSubmit={() => {}}
+            onCancel={() => {}}
+            onChangeValue={() => {}}
+            onChangeCursor={() => {}}
+            onHistoryUp={() => {}}
+            onHistoryDown={() => {}}
+            onOpenBackendPicker={() => {}}
+            onOpenModelPicker={() => {}}
+            onOpenModePicker={() => {}}
+            onOpenThemePicker={() => {}}
+            onOpenAuthPanel={() => {}}
+            onTogglePlanMode={() => {}}
+            onClear={() => {}}
+            onCycleMode={() => {}}
+            onQuit={() => {}}
+          />
+        }
+        composerRows={composerRows}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+
+  return sleep(100).then(async () => {
+    instance.cleanup();
+    await sleep(20);
+    return stripAnsi(output);
+  });
+}
+
+test("startup uses the large logo only when the viewport height can contain it", async () => {
+  const output = await renderStartupShell(120, 30);
+
+  assert.match(output, /██████/);
+  assert.match(output, /Codexa v/);
+  assert.match(output, /\n╭[─]+╮\n│ ❯/);
+});
+
+test("startup uses compact header at normal shorter terminal height", async () => {
+  const output = await renderStartupShell(100, 24);
+
+  assert.match(output, /CODEXA/);
+  assert.match(output, /Codexa v/);
+  assert.match(output, /\n╭[─]+╮\n│ ❯/);
+  assert.doesNotMatch(output, /██████/);
+});
+
+test("startup tiny mode shows a resize message without the composer", async () => {
+  const output = await renderStartupShell(39, 13);
+
+  assert.match(output, /Terminal is too small/);
+  assert.doesNotMatch(output, /\n╭[─]+╮\n│ ❯/);
+  assert.doesNotMatch(output, /██████/);
+});
 
 test("80x24 keeps the last timeline content visible above the composer", async () => {
   const output = await renderShell(80, 24, { kind: "IDLE" });
@@ -292,6 +403,47 @@ test("non-main panel content updates while the active screen is unchanged", asyn
     instance.cleanup();
     await sleep(20);
   }
+});
+
+test("model picker renders as a bounded transient panel instead of transcript content", async () => {
+  const output = await renderShell(
+    120,
+    30,
+    { kind: "IDLE" },
+    "model-picker",
+    <Text>Select model panel</Text>,
+  );
+
+  assert.match(output, /Select model panel/);
+  assert.match(output, /Codexa v/);
+  assert.doesNotMatch(output, /Launch mode/);
+  assert.doesNotMatch(output, /Reproduce the resize flicker and fix it/);
+  assert.doesNotMatch(output, /◎ Auto  gpt-5\.4 \(medium\)  Ctrl\+O/);
+});
+
+test("native spacer subtracts persistent transcript rows before anchoring the composer", () => {
+  const spacerRows = calculateNativeSpacerRows({
+    shellRows: 30,
+    introRows: 10,
+    composerRows: 5,
+    staticRows: 4,
+    liveRows: 2,
+  });
+
+  assert.equal(spacerRows, 9);
+  assert.equal(10 + 4 + 2 + spacerRows + 5, 30);
+});
+
+test("native spacer clamps when model update events fill the body", () => {
+  const spacerRows = calculateNativeSpacerRows({
+    shellRows: 24,
+    introRows: 9,
+    composerRows: 5,
+    staticRows: 12,
+    liveRows: 0,
+  });
+
+  assert.equal(spacerRows, 0);
 });
 
 test("main screen keeps the transcript visible while showing the plan action picker", async () => {

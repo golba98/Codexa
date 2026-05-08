@@ -144,7 +144,10 @@ export function startApp({
   // It is managed exclusively by the React app (app.tsx) and defaults to OFF
   // so native terminal drag-selection and copy work without any special steps.
   traceTerminalClear("src/index.tsx:startup", { mode: "hard" });
-  writeStdout(`${SET_TERMINAL_TITLE}${TERMINAL_SEQUENCES.hardRepaint}`, "src/index.tsx:startup");
+  // Clear the screen before setting the title so the viewport is blank before
+  // any terminal title-change OSC sequences are processed.
+  writeStdout(TERMINAL_SEQUENCES.hardRepaint, "src/index.tsx:startup");
+  writeStdout(SET_TERMINAL_TITLE, "src/index.tsx:startup.title");
   terminal.setBracketedPaste(true, "src/index.tsx:startup.bracketedPaste");
 
   let cleanupDone = false;
