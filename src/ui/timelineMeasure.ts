@@ -1453,7 +1453,25 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
   const rows: TimelineRow[] = [];
   const { intro } = item;
   const safeWidth = Math.max(10, width);
-  const logoRows = intro.layoutMode === "full"
+  const startupHeaderMode = intro.startupHeaderMode
+    ?? (intro.layoutMode === "full" ? "large" : "compact");
+  if (startupHeaderMode === "tiny") {
+    const messageRows = [
+      "Codexa",
+      "Terminal is too small for the startup view.",
+      "Resize the terminal to continue.",
+    ];
+    messageRows.forEach((line, index) => {
+      rows.push(createRow(
+        `${item.key}-resize-${index}`,
+        [createSpan(clampVisualText(line, safeWidth), index === 0 ? "text" : "muted", { bold: index === 0 })],
+        safeWidth,
+      ));
+    });
+    return rows;
+  }
+
+  const logoRows = startupHeaderMode === "large"
     ? INTRO_WORDMARK
     : ["CODEXA"];
   const logoWidth = logoRows.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
@@ -2823,7 +2841,7 @@ export function buildTimelineSnapshot(
     let builtRows: TimelineRow[];
 
     if (item.type === "intro") {
-      const cacheKey = `i:${item.key}:${innerWidth}:${item.intro.version}:${item.intro.layoutMode}:${item.intro.authLabel}:${item.intro.workspaceLabel}`;
+      const cacheKey = `i:${item.key}:${innerWidth}:${item.intro.version}:${item.intro.layoutMode}:${item.intro.startupHeaderMode ?? ""}:${item.intro.authLabel}:${item.intro.workspaceLabel}`;
       const cached = _staticRowCache.get(cacheKey);
       if (cached) {
         renderDebug.traceEvent("timeline", "rowGeneration", {

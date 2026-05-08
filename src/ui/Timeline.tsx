@@ -15,7 +15,7 @@ import { APP_VERSION } from "../config/settings.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../core/auth/codexAuth.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
-import { getShellWidth, type Layout } from "./layout.js";
+import { getShellWidth, type Layout, type StartupHeaderMode } from "./layout.js";
 import type { TimelineRow, TimelineSnapshot, TimelineTone } from "./timelineMeasure.js";
 import { buildStableTimelineSnapshot, buildTimelineSnapshot } from "./timelineMeasure.js";
 import { resolveTurnRunPhase, type TurnOpacity, type TurnRunPhase } from "./TurnGroup.js";
@@ -81,6 +81,7 @@ export interface IntroRenderTimelineItem {
   intro: {
     version: string;
     layoutMode: Layout["mode"];
+    startupHeaderMode?: StartupHeaderMode;
     authLabel: string;
     workspaceLabel: string;
   };
@@ -826,6 +827,7 @@ export function buildIntroRenderItem(params: {
   authState: CodexAuthState;
   workspaceLabel: string;
   layout: Layout;
+  startupHeaderMode?: StartupHeaderMode;
 }): IntroRenderTimelineItem {
   return {
     key: "codexa-intro",
@@ -834,6 +836,7 @@ export function buildIntroRenderItem(params: {
     intro: {
       version: APP_VERSION,
       layoutMode: params.layout.mode,
+      startupHeaderMode: params.startupHeaderMode,
       authLabel: formatAuthLabel(params.authState),
       workspaceLabel: params.workspaceLabel,
     },

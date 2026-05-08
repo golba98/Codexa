@@ -4,7 +4,15 @@ import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
-import { getShellHeight, getShellWidth, type Layout } from "./layout.js";
+import {
+  getShellHeight,
+  getShellWidth,
+  resolveStartupHeaderMode,
+  STARTUP_COMPACT_INTRO_ROWS,
+  STARTUP_TINY_MESSAGE_ROWS,
+  type Layout,
+  type StartupHeaderMode,
+} from "./layout.js";
 import {
   buildActiveRenderItems,
   buildStaticRenderItems,
@@ -105,6 +113,10 @@ function AppShellInner({
   const showMainPanelFullOutput = showMainPanel && mainPanelMode === "full-output";
   const showTimeline = screen === "main" && !showMainPanel;
   const showPanelStage = screen !== "main";
+  const isStartupFrame = screen === "main"
+    && !showMainPanel
+    && staticEvents.length === 0
+    && activeEvents.length === 0;
   const previousMeasurements = useRef<{
     timelineRows: number;
     composerRows: number;
@@ -120,14 +132,33 @@ function AppShellInner({
     authState: CodexAuthState;
     workspaceLabel: string;
     layout: Layout;
+    startupHeaderMode: StartupHeaderMode;
     verboseMode: boolean;
     workspaceRoot: string | null;
   } | null>(null);
+  const provisionalFullIntroRows = useMemo(
+    () => buildStaticIntroRows({
+      authState,
+      workspaceLabel,
+      layout,
+      startupHeaderMode: "large",
+      verboseMode,
+      workspaceRoot: workspaceRoot ?? null,
+    }).length,
+    [authState, layout, verboseMode, workspaceLabel, workspaceRoot],
+  );
+  const liveStartupHeaderMode = resolveStartupHeaderMode({
+    cols: layout.cols,
+    rows: layout.rows,
+    introRows: provisionalFullIntroRows,
+    composerRows,
+  });
   if (!initialIntroRef.current) {
     initialIntroRef.current = {
       authState,
       workspaceLabel,
       layout,
+      startupHeaderMode: liveStartupHeaderMode,
       verboseMode,
       workspaceRoot: workspaceRoot ?? null,
     };
@@ -139,10 +170,21 @@ function AppShellInner({
   if (introRowCountRef.current === null && !mouseCapture && initialIntroRef.current) {
     introRowCountRef.current = buildStaticIntroRows(initialIntroRef.current).length;
   }
-  const introRowCount = introRowCountRef.current ?? 8;
+  const frozenStartupHeaderMode = initialIntroRef.current?.startupHeaderMode ?? liveStartupHeaderMode;
+  const startupHeaderMode = isStartupFrame ? liveStartupHeaderMode : frozenStartupHeaderMode;
+  const isTinyStartup = isStartupFrame && startupHeaderMode === "tiny";
+  const effectiveShowComposer = showComposer && !isTinyStartup;
+  const effectiveComposerRows = effectiveShowComposer ? composerRows : 0;
+  const introRowCount = isStartupFrame
+    ? startupHeaderMode === "tiny"
+      ? STARTUP_TINY_MESSAGE_ROWS
+      : startupHeaderMode === "compact"
+        ? STARTUP_COMPACT_INTRO_ROWS
+        : provisionalFullIntroRows
+    : introRowCountRef.current ?? provisionalFullIntroRows;
 
   // Timeline owns all vertical space above the fixed composer.
-  const calculatedTimelineRowsRaw = shellHeight - (showComposer ? composerRows : 0);
+  const calculatedTimelineRowsRaw = shellHeight - effectiveComposerRows;
   const calculatedTimelineRows = Math.max(2, calculatedTimelineRowsRaw);
 
   const { finalShellHeight, finalShellWidth, finalTimelineRows } = useMemo(() => {
@@ -226,10 +268,10 @@ function AppShellInner({
   // anchored near the terminal bottom.  The spacer fills the gap between whatever
   // live content exists and where the composer should sit.
   const nativeSpacerRows = useMemo(() => {
-    if (mouseCapture || !showComposer || showMainPanel) return 0;
+    if (mouseCapture || !effectiveShowComposer || showMainPanel) return 0;
     const liveHeight = nativeTranscriptParts.liveRows.length;
-    return Math.max(0, finalShellHeight - introRowCount - composerRows - liveHeight);
-  }, [mouseCapture, showComposer, showMainPanel, finalShellHeight, introRowCount, composerRows, nativeTranscriptParts.liveRows.length]);
+    return Math.max(0, finalShellHeight - introRowCount - effectiveComposerRows - liveHeight);
+  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, introRowCount, effectiveComposerRows, nativeTranscriptParts.liveRows.length]);
 
   // In native mode (no SGR capture), stable rows go into Ink's <Static> as soon as they
   // are no longer changing. Only the current live action/response remains dynamic.
@@ -254,7 +296,8 @@ function AppShellInner({
     liveRows: nativeTranscriptParts.liveRows.length,
     contentSized: true,
     finalTimelineRows,
-    composerRows,
+    composerRows: effectiveComposerRows,
+    startupHeaderMode,
   });
 
   renderDebug.traceLayoutValidity("AppShell", {
@@ -264,14 +307,14 @@ function AppShellInner({
     shellHeight,
     timelineRows: finalTimelineRows,
     calculatedTimelineRowsRaw,
-    composerRows,
+    composerRows: effectiveComposerRows,
   });
   if (!Number.isFinite(calculatedTimelineRowsRaw) || calculatedTimelineRowsRaw <= 0) {
     renderDebug.traceBlankFrame("AppShell", {
       reason: "invalid-available-timeline-rows",
       availableTimelineRows: calculatedTimelineRowsRaw,
       finalTimelineRows,
-      composerRows,
+      composerRows: effectiveComposerRows,
       shellHeight: finalShellHeight,
       screen,
       uiStateKind: uiState.kind,
@@ -285,7 +328,7 @@ function AppShellInner({
       changed.push("mount");
     } else {
       if (previous.timelineRows !== finalTimelineRows) changed.push("availableTimelineRows");
-      if (previous.composerRows !== composerRows) changed.push("composerRows");
+      if (previous.composerRows !== effectiveComposerRows) changed.push("composerRows");
       if (previous.shellHeight !== finalShellHeight) changed.push("height");
     }
 
@@ -294,7 +337,7 @@ function AppShellInner({
         reason: changed.join(","),
         availableTimelineRows: finalTimelineRows,
         rawAvailableTimelineRows: calculatedTimelineRowsRaw,
-        composerRows,
+        composerRows: effectiveComposerRows,
         shellHeight: finalShellHeight,
         showComposer,
         showTimeline,
@@ -304,11 +347,11 @@ function AppShellInner({
 
     previousMeasurements.current = {
       timelineRows: finalTimelineRows,
-      composerRows,
+      composerRows: effectiveComposerRows,
       shellHeight: finalShellHeight,
       shellWidth: finalShellWidth,
     };
-  }, [calculatedTimelineRowsRaw, composerRows, finalShellHeight, finalShellWidth, showComposer, showMainPanelFullOutput, showTimeline, finalTimelineRows]);
+  }, [calculatedTimelineRowsRaw, effectiveComposerRows, finalShellHeight, finalShellWidth, showComposer, showMainPanelFullOutput, showTimeline, finalTimelineRows]);
 
   if (showMainPanelFullOutput) {
     return (
@@ -329,6 +372,31 @@ function AppShellInner({
   // Native mode: no fixed shell height — content-sized so Ink's lastOutputHeight stays small.
   // Static history is printed once, while live rows only cover the currently changing event.
   if (!mouseCapture) {
+    if (isStartupFrame) {
+      return (
+        <Box flexDirection="column" width={finalShellWidth}>
+          <StaticIntroItem
+            authState={authState}
+            workspaceLabel={workspaceLabel}
+            layout={layout}
+            startupHeaderMode={startupHeaderMode}
+            verboseMode={verboseMode}
+            workspaceRoot={workspaceRoot}
+          />
+
+          {nativeSpacerRows > 0 && (
+            <Box height={nativeSpacerRows} />
+          )}
+
+          {effectiveShowComposer && (
+            <Box flexDirection="column" flexShrink={0}>
+              {composer}
+            </Box>
+          )}
+        </Box>
+      );
+    }
+
     return (
       <Box flexDirection="column" width={finalShellWidth}>
         <Static items={nativeStaticAllItems}>
@@ -341,6 +409,7 @@ function AppShellInner({
                   authState={intro.authState}
                   workspaceLabel={intro.workspaceLabel}
                   layout={intro.layout}
+                  startupHeaderMode={intro.startupHeaderMode}
                   verboseMode={intro.verboseMode}
                   workspaceRoot={intro.workspaceRoot}
                 />
@@ -373,7 +442,7 @@ function AppShellInner({
           <Box height={nativeSpacerRows} />
         )}
 
-        {showComposer && (
+        {effectiveShowComposer && (
           <Box flexDirection="column" flexShrink={0}>
             {composer}
           </Box>
@@ -416,7 +485,7 @@ function AppShellInner({
           </Box>
         )}
 
-        {showComposer && (
+        {effectiveShowComposer && (
           <Box flexDirection="column" flexShrink={0}>
             {composer}
           </Box>

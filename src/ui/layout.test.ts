@@ -9,6 +9,7 @@ import {
   getShellWidth,
   getUsableShellWidth,
   getVisualWidth,
+  resolveStartupHeaderMode,
 } from "./layout.js";
 import { measureTopHeaderRows } from "./TopHeader.js";
 
@@ -44,6 +45,43 @@ test("keeps breakpoint modes stable at the edges", () => {
   assert.equal(createLayoutSnapshot(109, 24).mode, "compact");
   assert.equal(createLayoutSnapshot(60, 24).mode, "compact");
   assert.equal(createLayoutSnapshot(59, 24).mode, "micro");
+});
+
+test("chooses startup header mode from measured row budget", () => {
+  assert.equal(resolveStartupHeaderMode({
+    cols: 120,
+    rows: 30,
+    introRows: 7,
+    composerRows: 6,
+  }), "large");
+
+  assert.equal(resolveStartupHeaderMode({
+    cols: 120,
+    rows: 16,
+    introRows: 7,
+    composerRows: 6,
+  }), "compact");
+
+  assert.equal(resolveStartupHeaderMode({
+    cols: 100,
+    rows: 24,
+    introRows: 7,
+    composerRows: 5,
+  }), "compact");
+
+  assert.equal(resolveStartupHeaderMode({
+    cols: 39,
+    rows: 24,
+    introRows: 7,
+    composerRows: 5,
+  }), "tiny");
+
+  assert.equal(resolveStartupHeaderMode({
+    cols: 100,
+    rows: 13,
+    introRows: 7,
+    composerRows: 5,
+  }), "tiny");
 });
 
 test("measures the header rows for full and compact layouts", () => {

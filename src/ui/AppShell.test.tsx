@@ -181,6 +181,117 @@ function renderShell(
   });
 }
 
+function renderStartupShell(layoutCols: number, layoutRows: number): Promise<string> {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = layoutCols;
+  stdout.rows = layoutRows;
+  let output = "";
+
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const layout = createLayoutSnapshot(layoutCols, layoutRows);
+  const uiState: UIState = { kind: "IDLE" };
+  const composerRows = measureBottomComposerRows({
+    layout,
+    uiState,
+    mode: "auto-edit",
+    model: "gpt-5.4",
+    reasoningLevel: "medium",
+    tokensUsed: 0,
+    value: "",
+    cursor: 0,
+  });
+
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <AppShell
+        layout={layout}
+        screen="main"
+        authState="authenticated"
+        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+        staticEvents={[]}
+        activeEvents={[]}
+        uiState={uiState}
+        panel={null}
+        mainPanel={null}
+        composer={
+          <BottomComposer
+            layout={layout}
+            uiState={uiState}
+            mode="auto-edit"
+            model="gpt-5.4"
+            themeName="purple"
+            reasoningLevel="medium"
+            tokensUsed={0}
+            value=""
+            cursor={0}
+            onChangeInput={() => {}}
+            onSubmit={() => {}}
+            onCancel={() => {}}
+            onChangeValue={() => {}}
+            onChangeCursor={() => {}}
+            onHistoryUp={() => {}}
+            onHistoryDown={() => {}}
+            onOpenBackendPicker={() => {}}
+            onOpenModelPicker={() => {}}
+            onOpenModePicker={() => {}}
+            onOpenThemePicker={() => {}}
+            onOpenAuthPanel={() => {}}
+            onTogglePlanMode={() => {}}
+            onClear={() => {}}
+            onCycleMode={() => {}}
+            onQuit={() => {}}
+          />
+        }
+        composerRows={composerRows}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+
+  return sleep(100).then(async () => {
+    instance.cleanup();
+    await sleep(20);
+    return stripAnsi(output);
+  });
+}
+
+test("startup uses the large logo only when the viewport height can contain it", async () => {
+  const output = await renderStartupShell(120, 30);
+
+  assert.match(output, /██████/);
+  assert.match(output, /Codexa v/);
+  assert.match(output, /\n╭[─]+╮\n│ ❯/);
+});
+
+test("startup uses compact header at normal shorter terminal height", async () => {
+  const output = await renderStartupShell(100, 24);
+
+  assert.match(output, /CODEXA/);
+  assert.match(output, /Codexa v/);
+  assert.match(output, /\n╭[─]+╮\n│ ❯/);
+  assert.doesNotMatch(output, /██████/);
+});
+
+test("startup tiny mode shows a resize message without the composer", async () => {
+  const output = await renderStartupShell(39, 13);
+
+  assert.match(output, /Terminal is too small/);
+  assert.doesNotMatch(output, /\n╭[─]+╮\n│ ❯/);
+  assert.doesNotMatch(output, /██████/);
+});
+
 test("80x24 keeps the last timeline content visible above the composer", async () => {
   const output = await renderShell(80, 24, { kind: "IDLE" });
 
