@@ -3,17 +3,13 @@
 Terminal UI wrapper around the Codexa neural network, built with TypeScript, Bun, and Ink.
 
 
-## Install on Windows
+## Prerequisites
 
-From the repo root:
+Codexa requires **Bun** to run locally. Ensure Bun is installed on your system.
 
-```powershell
-cd "<path-to-your-clone>"
-npm link
-where codexa
-```
+## Installation
 
-`where codexa` should resolve to your global npm bin directory before you rely on the command.
+Run npm install -g @golba98/codexa and then run codexa.
 
 ## Layered Config
 

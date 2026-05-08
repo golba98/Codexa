@@ -2650,8 +2650,7 @@ export function App({ launchArgs }: AppProps) {
           appendSystemEvent("GitHub Diagnostics", summary);
           return;
         }
-        case "auth":
-
+        case "runtime_personality":
           if (commandResult.value) {
             setPersonalityWithNotice(commandResult.value as RuntimePersonality);
           } else if (commandResult.message) {
@@ -3196,3 +3195,4 @@ export function App({ launchArgs }: AppProps) {
     </ThemeProvider>
   );
 }
+
