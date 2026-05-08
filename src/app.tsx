@@ -2676,8 +2676,8 @@ export function App({ launchArgs }: AppProps) {
           appendSystemEvent(
             "Mouse mode updated",
             nextMouse
-              ? "Mouse capture enabled — wheel scrolling active. Disable /mouse to restore plain drag-select."
-              : "Mouse capture disabled — native drag-select active. Use PageUp/PageDown/Home/End to scroll.",
+              ? "SGR mouse capture on — in-app wheel scroll active. Native drag-select requires Shift (Windows Terminal). Run /mouse to disable."
+              : "SGR mouse capture off — native drag-select and native wheel scroll restored. Run /mouse to re-enable.",
           );
           return;
         }

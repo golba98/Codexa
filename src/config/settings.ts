@@ -79,7 +79,7 @@ export const TERMINAL_MOUSE_MODES = ["wheel", "selection"] as const;
 
 export type TerminalMouseMode = (typeof TERMINAL_MOUSE_MODES)[number];
 
-export const DEFAULT_TERMINAL_MOUSE_MODE: TerminalMouseMode = "wheel";
+export const DEFAULT_TERMINAL_MOUSE_MODE: TerminalMouseMode = "selection";
 
 export interface SettingOption<TValue extends string> {
   value: TValue;
@@ -118,11 +118,14 @@ export const USER_SETTING_DEFINITIONS: readonly UserSettingDefinition[] = [
     key: "terminalMouseMode",
     label: "Mouse mode",
     description:
-      "Wheel: mouse wheel scrolls the Codexa timeline (native drag-select requires Shift in Windows Terminal). "
-      + "Selection: native drag-select is preserved; use keyboard (PageUp/PageDown/End) to scroll.",
+      "Selection (default): no mouse tracking — native drag-select and native wheel scroll work unmodified. "
+      + "Scroll history via native terminal scrollback. "
+      + "Wheel: enables SGR mouse tracking so the Codexa timeline captures wheel events for in-app scroll. "
+      + "Native drag-select then requires Shift (Windows Terminal) or equivalent modifier. "
+      + "Run /mouse to toggle for the current session.",
     options: [
-      { value: "wheel", label: "Wheel scroll" },
       { value: "selection", label: "Native selection" },
+      { value: "wheel", label: "Wheel scroll" },
     ],
   },
 ] as const;

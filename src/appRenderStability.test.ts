@@ -23,9 +23,9 @@ test("App root does not own the busy status animation frame", () => {
   assert.doesNotMatch(composerSource, /busyStatusFrame/);
 });
 
-test("App mouse capture defaults to wheel mode from persisted setting", () => {
-  // mouseCapture is driven by the terminalMouseMode setting (default "wheel"),
-  // not hardcoded to false. The old unconditional false guard is gone.
+test("App mouse capture follows terminalMouseMode setting, defaults to off (selection mode)", () => {
+  // mouseCapture is driven by the persisted terminalMouseMode. Default is "selection" so
+  // mouseCapture=false by default — no SGR tracking. "wheel" mode enables SGR capture.
   assert.match(appSource, /const mouseCapture = mouseOverride \?\? \(terminalMouseMode === "wheel"\)/);
   assert.doesNotMatch(appSource, /mouseOverride \?\? false/);
 });

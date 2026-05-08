@@ -138,9 +138,11 @@ function makeActiveEvents(actionStatus: ActionStatus | null = "completed", secon
 function Harness({
   actionStatus = "completed",
   secondActionStatus,
+  mouseCapture = false,
 }: {
   actionStatus?: ActionStatus | null;
   secondActionStatus?: ActionStatus;
+  mouseCapture?: boolean;
 }) {
   const layout = createLayoutSnapshot(120, 40);
   const uiState: UIState = { kind: "THINKING", turnId: 1 };
@@ -167,6 +169,7 @@ function Harness({
         uiState={uiState}
         composerRows={composerRows}
         panel={null}
+        mouseCapture={mouseCapture}
         composer={(
           <BottomComposer
             layout={layout}
@@ -243,7 +246,7 @@ test("status dot ticks do not invalidate timeline rendering", async () => {
   }
 });
 
-test("action rows update without remounting when a running action completes", async () => {
+test("app-scroll action rows update without remounting when a running action completes", async () => {
   const logPath = join(tmpdir(), `codexa-action-remount-${process.pid}.jsonl`);
   rmSync(logPath, { force: true });
   renderDebug.configureRenderDebug({
@@ -253,7 +256,7 @@ test("action rows update without remounting when a running action completes", as
 
   const stdin = new TestInput();
   const stdout = new TestOutput();
-  const instance = render(<Harness actionStatus="running" />, {
+  const instance = render(<Harness actionStatus="running" mouseCapture={true} />, {
     stdin: stdin as unknown as NodeJS.ReadStream,
     stdout: stdout as unknown as NodeJS.WriteStream,
     stderr: stdout as unknown as NodeJS.WriteStream,
@@ -271,7 +274,7 @@ test("action rows update without remounting when a running action completes", as
 
     assert.ok(mountedActionRows.length > 0, "expected action rows to mount in the initial frame");
 
-    instance.rerender(<Harness actionStatus="completed" />);
+    instance.rerender(<Harness actionStatus="completed" mouseCapture={true} />);
     await sleep(100);
 
     const afterCompletion = readRecords(logPath).slice(beforeCompletion.length);

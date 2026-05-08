@@ -7,6 +7,7 @@ import {
   __clearTimelineMeasureCachesForTests,
   __getStreamingBlockRowCacheSizeForTests,
   buildActionEventRows,
+  buildNativeTranscriptParts,
   buildStableTimelineSnapshot,
   buildTimelineSnapshot,
   type StreamEvent,
@@ -630,6 +631,222 @@ test("unchanged active response rows keep references while streaming text grows"
   assert.strictEqual(secondStableLine, firstStableLine);
 });
 
+test("native transcript parts keep all actions in liveRows during active run", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const parts = buildNativeTranscriptParts(
+    [makeActionSequenceRenderItem([
+      makeTool({ id: "tool-1", status: "completed", completedAt: 42, summary: "Read README", streamSeq: 1 }),
+      makeTool({
+        id: "tool-2",
+        command: "Get-Content package.json",
+        status: "running",
+        completedAt: null,
+        summary: null,
+        streamSeq: 2,
+      }),
+    ])],
+    { totalWidth: 72, debugLabel: "native-action-split" },
+  );
+
+  const staticKeys = parts.staticItems.flatMap((item) => item.rows.map((row) => row.key));
+  const liveKeys = parts.liveRows.map((row) => row.key);
+
+  // User prompt is always committed to staticItems immediately.
+  assert.ok(staticKeys.some((key) => key.includes("-user-")));
+  // During an active run both completed and running actions stay in liveRows —
+  // no stream events go to staticItems, which prevents <Static> growth and viewport jumps.
+  assert.equal(staticKeys.some((key) => key.includes("-action-1-")), false);
+  assert.equal(staticKeys.some((key) => key.includes("-action-2-")), false);
+  assert.ok(liveKeys.some((key) => key.includes("-action-1-")));
+  assert.ok(liveKeys.some((key) => key.includes("-action-2-")));
+});
+
+test("native transcript parts keep streaming response out of static rows", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const parts = buildNativeTranscriptParts(
+    [makeStreamingResponseRenderItem("Line one.\nLine two.\nLine three is arriving.")],
+    { totalWidth: 72, debugLabel: "native-response-split" },
+  );
+
+  const staticText = snapshotText(parts.staticItems.flatMap((item) => item.rows));
+  const liveText = snapshotText(parts.liveRows);
+
+  assert.doesNotMatch(staticText, /Line three is arriving/);
+  assert.match(liveText, /Line three is arriving/);
+});
+
+
+// ── Placement fix: running runs keep all events in liveRows ──────────────────
+
+test("running run keeps all stream events in liveRows — no <Static> growth mid-generation", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const completedTool = makeTool({
+    id: "tool-1", command: "Get-Content README.md", status: "completed",
+    completedAt: 20, summary: "Read 5 lines", streamSeq: 1,
+  });
+  const runningTool = makeTool({
+    id: "tool-2", command: "Get-Content package.json", status: "running",
+    completedAt: null, summary: null, streamSeq: 2,
+  });
+
+  const thinkingBlock: RunProgressEntry["blocks"][number] = {
+    id: "block-1", text: "Let me inspect the files first.", status: "completed",
+    sequence: 1, createdAt: 1, updatedAt: 2,
+  };
+  const progressEntry: RunProgressEntry = {
+    id: "entry-1", source: "reasoning", text: thinkingBlock.text,
+    sequence: 1, createdAt: 1, updatedAt: 2, blocks: [thinkingBlock], pendingNewlineCount: 0,
+  };
+
+  const run: RunEvent = {
+    id: 50, type: "run", createdAt: 1, startedAt: 1, durationMs: null,
+    backendId: "codex-subprocess", backendLabel: "Codexa", runtime: TEST_RUNTIME,
+    prompt: "Inspect project",
+    progressEntries: [progressEntry],
+    status: "running", summary: "running...", truncatedOutput: false,
+    toolActivities: [completedTool, runningTool],
+    activity: [], touchedFileCount: 0, errorMessage: null, turnId: 5,
+    streamItems: [
+      { kind: "thinking", streamSeq: 0, refId: "block-1" },
+      { kind: "action", streamSeq: 1, refId: "tool-1" },
+      { kind: "action", streamSeq: 2, refId: "tool-2" },
+    ],
+    responseSegments: [], lastStreamSeq: 2, activeResponseSegmentId: null,
+  };
+
+  const user: UserPromptEvent = { id: 51, type: "user", createdAt: 1, prompt: "Inspect project", turnId: 5 };
+  const item: RenderTimelineItem = {
+    key: "turn-5",
+    type: "turn",
+    padded: true,
+    item: { type: "turn", turnId: 5, turnIndex: 0, user, run, assistant: null },
+    renderState: { opacity: "active", question: null, runPhase: "streaming" },
+  };
+
+  const parts = buildNativeTranscriptParts([item], { totalWidth: 80, debugLabel: "running-placement" });
+
+  // User prompt is always committed to staticItems immediately (correct behavior).
+  const staticKeys = parts.staticItems.flatMap((si) => si.rows.map((r) => r.key));
+  assert.ok(staticKeys.some((k) => k.includes("-user-")), "user row should be in staticItems");
+
+  // All stream events (thinking + completed action + running action) must be in liveRows —
+  // not in staticItems — while the run is active. This prevents <Static> from growing
+  // and causing viewport jumps during generation.
+  assert.equal(
+    parts.staticItems.filter((si) => si.key.includes("-stream-")).length,
+    0,
+    "no stream events should be in staticItems during an active run",
+  );
+
+  const liveKeys = parts.liveRows.map((r) => r.key);
+  assert.ok(liveKeys.some((k) => k.includes("-action-1-")), "completed action should be in liveRows");
+  assert.ok(liveKeys.some((k) => k.includes("-action-2-")), "running action should be in liveRows");
+  assert.ok(liveKeys.some((k) => k.includes("-codex-thinking-")), "thinking block should be in liveRows");
+});
+
+test("completed run moves all stream events to staticItems — one atomic commit after generation", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  const tool1 = makeTool({
+    id: "tool-1", command: "Get-Content README.md", status: "completed",
+    completedAt: 20, summary: "Read 5 lines", streamSeq: 1,
+  });
+  const tool2 = makeTool({
+    id: "tool-2", command: "Get-Content package.json", status: "completed",
+    completedAt: 25, summary: "Read 10 lines", streamSeq: 2,
+  });
+
+  const thinkingBlock2: RunProgressEntry["blocks"][number] = {
+    id: "block-1", text: "Thinking done.", status: "completed",
+    sequence: 1, createdAt: 1, updatedAt: 2,
+  };
+  const progressEntry2: RunProgressEntry = {
+    id: "entry-1", source: "reasoning", text: thinkingBlock2.text,
+    sequence: 1, createdAt: 1, updatedAt: 2, blocks: [thinkingBlock2], pendingNewlineCount: 0,
+  };
+
+  const run: RunEvent = {
+    id: 52, type: "run", createdAt: 1, startedAt: 1, durationMs: 300,
+    backendId: "codex-subprocess", backendLabel: "Codexa", runtime: TEST_RUNTIME,
+    prompt: "Done project",
+    progressEntries: [progressEntry2],
+    status: "completed", summary: "completed", truncatedOutput: false,
+    toolActivities: [tool1, tool2],
+    activity: [], touchedFileCount: 0, errorMessage: null, turnId: 6,
+    streamItems: [
+      { kind: "thinking", streamSeq: 0, refId: "block-1" },
+      { kind: "action", streamSeq: 1, refId: "tool-1" },
+      { kind: "action", streamSeq: 2, refId: "tool-2" },
+    ],
+    responseSegments: [], lastStreamSeq: 2, activeResponseSegmentId: null,
+  };
+
+  const user: UserPromptEvent = { id: 53, type: "user", createdAt: 1, prompt: "Done project", turnId: 6 };
+  const item: RenderTimelineItem = {
+    key: "turn-6",
+    type: "turn",
+    padded: true,
+    item: { type: "turn", turnId: 6, turnIndex: 0, user, run, assistant: null },
+    renderState: { opacity: "active", question: null, runPhase: "none" },
+  };
+
+  const parts = buildNativeTranscriptParts([item], { totalWidth: 80, debugLabel: "completed-placement" });
+
+  // After run completes, all stream events must be in staticItems.
+  const staticItemKeys = parts.staticItems.map((si) => si.key);
+  assert.ok(staticItemKeys.some((k) => k.includes("-stream-1")), "action 1 should be in staticItems");
+  assert.ok(staticItemKeys.some((k) => k.includes("-stream-2")), "action 2 should be in staticItems");
+
+  // liveRows must be empty after run completes (user waits at prompt).
+  assert.equal(parts.liveRows.length, 0, "liveRows must be empty after run completes");
+});
+
+test("gap row keys use event.streamSeq — stable across compaction changes", () => {
+  __clearTimelineMeasureCachesForTests();
+
+  // Use non-sequential streamSeq values to distinguish from eventIndex (0,1,2).
+  const tools = [
+    makeTool({ id: "tool-1", command: "Get-Content a.txt", status: "completed", completedAt: 10, summary: "Read a", streamSeq: 3 }),
+    makeTool({ id: "tool-2", command: "Get-Content b.txt", status: "completed", completedAt: 11, summary: "Read b", streamSeq: 7 }),
+    makeTool({ id: "tool-3", command: "Get-Content c.txt", status: "completed", completedAt: 12, summary: "Read c", streamSeq: 12 }),
+  ];
+
+  const run: RunEvent = {
+    id: 54, type: "run", createdAt: 1, startedAt: 1, durationMs: 200,
+    backendId: "codex-subprocess", backendLabel: "Codexa", runtime: TEST_RUNTIME,
+    prompt: "Read files",
+    progressEntries: [],
+    status: "completed", summary: "done", truncatedOutput: false,
+    toolActivities: tools,
+    activity: [], touchedFileCount: 0, errorMessage: null, turnId: 7,
+    streamItems: tools.map((t) => ({ kind: "action" as const, streamSeq: t.streamSeq!, refId: t.id })),
+    responseSegments: [], lastStreamSeq: 12, activeResponseSegmentId: null,
+  };
+
+  const user: UserPromptEvent = { id: 55, type: "user", createdAt: 1, prompt: "Read files", turnId: 7 };
+  const item: RenderTimelineItem = {
+    key: "turn-7",
+    type: "turn",
+    padded: true,
+    item: { type: "turn", turnId: 7, turnIndex: 0, user, run, assistant: null },
+    renderState: { opacity: "active", question: null, runPhase: "none" },
+  };
+
+  const parts = buildNativeTranscriptParts([item], { totalWidth: 80, debugLabel: "gap-key-test" });
+  const allRowKeys = parts.staticItems.flatMap((si) => si.rows.map((r) => r.key));
+  const gapKeys = allRowKeys.filter((k) => k.includes("-stream-gap-"));
+
+  // There should be gaps before tool-2 (streamSeq=7) and tool-3 (streamSeq=12).
+  // With the fix the gap key encodes the event's streamSeq, not the eventIndex.
+  assert.ok(gapKeys.some((k) => k.includes("-stream-gap-7")),  "gap before tool-2 should use streamSeq=7");
+  assert.ok(gapKeys.some((k) => k.includes("-stream-gap-12")), "gap before tool-3 should use streamSeq=12");
+  // Old index-based keys (1, 2) must not be present.
+  assert.equal(gapKeys.some((k) => k.endsWith("-stream-gap-1")), false, "old eventIndex-based gap key must not exist");
+  assert.equal(gapKeys.some((k) => k.endsWith("-stream-gap-2")), false, "old eventIndex-based gap key must not exist");
+});
 
 test("timeline measurement coverage for THINKING -> RESPONDING -> FINALIZE_RUN", () => {
   __clearTimelineMeasureCachesForTests();
