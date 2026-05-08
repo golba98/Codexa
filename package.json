@@ -1,5 +1,5 @@
 {
-  "name": "codexa",
+  "name": "@golba98/codexa",
   "version": "1.0.1",
   "description": "Terminal UI for Codexa — TypeScript + Bun + Ink",
   "type": "module",
@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "audit:codexa-gap": "node scripts/audit-codexa-capabilities.mjs",
-    "smoke:terminal-bench": "node scripts/smoke-terminal-bench.mjs"
+    "smoke:terminal-bench": "node scripts/smoke-terminal-bench.mjs",
+    "build": "bun run typecheck",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "dependencies": {
     "ink": "^7.0.0",
@@ -24,5 +26,20 @@
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
     "typescript": "^6.0.2"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/golba98/Codexa.git"
+  },
+  "bugs": {
+    "url": "https://github.com/golba98/Codexa/issues"
+  },
+  "homepage": "https://github.com/golba98/Codexa#readme",
+  "license": "MIT",
+  "files": [
+    "bin/",
+    "src/",
+    "scripts/",
+    "config.toml"
+  ]
 }
