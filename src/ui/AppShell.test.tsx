@@ -181,7 +181,13 @@ function renderShell(
   });
 }
 
-function renderStartupShell(layoutCols: number, layoutRows: number): Promise<string> {
+function renderStartupShell(
+  layoutCols: number,
+  layoutRows: number,
+  screen: "main" | "model-picker" = "main",
+  staticEvents: TimelineEvent[] = [],
+  panel: React.ReactNode = null,
+): Promise<string> {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = layoutCols;
@@ -209,14 +215,14 @@ function renderStartupShell(layoutCols: number, layoutRows: number): Promise<str
     <ThemeProvider theme="purple">
       <AppShell
         layout={layout}
-        screen="main"
+        screen={screen}
         authState="authenticated"
         workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
         runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
-        staticEvents={[]}
+        staticEvents={staticEvents}
         activeEvents={[]}
         uiState={uiState}
-        panel={null}
+        panel={panel}
         mainPanel={null}
         composer={
           <BottomComposer
@@ -862,4 +868,133 @@ test("intro logo is not duplicated when auth state updates during startup", asyn
     1,
     "intro logo must appear exactly once after auth state transitions during startup",
   );
+});
+
+test("cold-start stability: opening and closing model picker does not expand UI", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  // Use a tall terminal so the large ASCII logo is chosen.
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+
+  // 1. Startup frame
+  const instance = render(buildShellNode(layout, []), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+  await sleep(100);
+
+  // 2. Open model picker
+  instance.rerender(buildShellNode(layout, [], { screen: "model-picker" }));
+  await sleep(100);
+
+  // 3. Close model picker
+  instance.rerender(buildShellNode(layout, []));
+  await sleep(100);
+
+  instance.cleanup();
+  await sleep(20);
+
+  assert.equal(countLogoInOutput(raw), 1, "Logo should appear exactly once");
+
+  // Verify the layout didn't expand to fill the full 40 rows.
+  // In real mode, cumulative lines should be low.
+  const lines = stripAnsi(raw).split("\n").filter(l => l.trim().length > 0);
+  assert.ok(lines.length < 25, "Output should remain bounded on cold start");
+});
+
+test("cold-start stability: system events do not break the startup frame", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+  const systemEvent: TimelineEvent = { 
+    id: 100, 
+    type: "system", 
+    title: "Model updated", 
+    content: "Switching to gpt-4",
+    createdAt: Date.now() 
+  };
+
+  const instance = render(buildShellNode(layout, [systemEvent]), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  const output = stripAnsi(raw);
+  // Large logo should still render because there is no user prompt yet.
+  assert.match(output, /██████/);
+  assert.match(output, /Model updated/);
+
+  const lines = output.split("\n").filter(l => l.trim().length > 0);
+  assert.ok(lines.length < 25, "Output should remain capped even with system events");
+});
+
+test("cold-start stability: panel height is bounded on cold start", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <AppShell
+        layout={layout}
+        screen="model-picker"
+        authState="authenticated"
+        workspaceLabel="C:\Test"
+        staticEvents={[]}
+        activeEvents={[]}
+        uiState={{ kind: "IDLE" }}
+        panel={<Text>Transient Picker</Text>}
+        mainPanel={null}
+        composer={null}
+        composerRows={0}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: false,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  const output = stripAnsi(raw);
+  assert.match(output, /Transient Picker/);
+
+  // Count actual lines in output.
+  // If height was nativePanelBodyRows (around 25+), we'd have many trailing newlines or spaces.
+  const lines = output.split("\n");
+  assert.ok(lines.length < 25, "Panel height should be bounded on cold start");
 });

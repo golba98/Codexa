@@ -135,10 +135,13 @@ function AppShellInner({
   const showMainPanelFullOutput = showMainPanel && mainPanelMode === "full-output";
   const showTimeline = screen === "main" && !showMainPanel;
   const showPanelStage = screen !== "main";
+  const hasUserPrompt = useMemo(
+    () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
+    [staticEvents, activeEvents],
+  );
   const isStartupFrame = screen === "main"
     && !showMainPanel
-    && staticEvents.length === 0
-    && activeEvents.length === 0;
+    && !hasUserPrompt;
   const previousMeasurements = useRef<{
     timelineRows: number;
     composerRows: number;
@@ -293,12 +296,6 @@ function AppShellInner({
   const nativeStaticTranscriptRows = useMemo(
     () => nativeTranscriptParts.staticItems.reduce((total, item) => total + item.rows.length, 0),
     [nativeTranscriptParts.staticItems],
-  );
-  // True once the user has sent at least one prompt — system events (model/auth
-  // changes) do NOT count so the cold-start cap persists across config tweaks.
-  const hasUserPrompt = useMemo(
-    () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
-    [staticEvents, activeEvents],
   );
   const nativeSpacerRows = useMemo(() => {
     if (mouseCapture || !effectiveShowComposer || showMainPanel) return 0;
@@ -469,7 +466,7 @@ function AppShellInner({
         {showPanelStage && (
           <Box
             flexDirection="column"
-            height={nativePanelBodyRows}
+            height={!hasUserPrompt ? undefined : nativePanelBodyRows}
             overflow="hidden"
             paddingY={1}
           >
