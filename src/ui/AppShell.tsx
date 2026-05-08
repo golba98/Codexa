@@ -24,6 +24,10 @@ import {
 import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow } from "./timelineMeasure.js";
 import { buildStaticIntroRows, StaticIntroItem } from "./StaticIntroItem.js";
 
+// Small fixed spacer used before the first user prompt so the composer sits
+// close to the logo without a disproportionate blank gap on cold start.
+const COLD_START_SPACER_ROWS = 3;
+
 type AppShellLayout = Layout & { layoutEpoch?: number };
 type NativeStaticItem =
   | { key: string; type: "session-intro" }
@@ -290,19 +294,35 @@ function AppShellInner({
     () => nativeTranscriptParts.staticItems.reduce((total, item) => total + item.rows.length, 0),
     [nativeTranscriptParts.staticItems],
   );
+  // True once the user has sent at least one prompt — system events (model/auth
+  // changes) do NOT count so the cold-start cap persists across config tweaks.
+  const hasUserPrompt = useMemo(
+    () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
+    [staticEvents, activeEvents],
+  );
   const nativeSpacerRows = useMemo(() => {
     if (mouseCapture || !effectiveShowComposer || showMainPanel) return 0;
-    return calculateNativeSpacerRows({
+    const rows = calculateNativeSpacerRows({
       shellRows: finalShellHeight,
       introRows: introRowCount,
       composerRows: effectiveComposerRows,
       staticRows: nativeStaticTranscriptRows,
       liveRows: nativeTranscriptParts.liveRows.length,
     });
-  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, introRowCount, effectiveComposerRows, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length]);
+    // Before the user sends their first prompt, keep a small fixed gap so the
+    // composer sits near the logo without a large blank area in between.
+    // This cap persists across model/auth system events so the layout stays
+    // stable after config changes on cold start.
+    if (!hasUserPrompt) {
+      return Math.min(rows, COLD_START_SPACER_ROWS);
+    }
+    return rows;
+  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, introRowCount, effectiveComposerRows, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
+  // Reserve space for the panel relative to committed static content so the
+  // panel body never overflows the available dynamic area.
   const nativePanelBodyRows = Math.max(
     1,
-    finalShellHeight - introRowCount - panelHintRows,
+    finalShellHeight - introRowCount - panelHintRows - nativeStaticTranscriptRows,
   );
 
   // In native mode (no SGR capture), stable rows go into Ink's <Static> as soon as they
@@ -403,59 +423,14 @@ function AppShellInner({
 
   // Native mode: no fixed shell height — content-sized so Ink's lastOutputHeight stays small.
   // Static history is printed once, while live rows only cover the currently changing event.
+  //
+  // All native-mode layouts share one unified return so that Ink's <Static> is always the
+  // first child at the same JSX position, regardless of whether the app is on the startup
+  // frame, a panel screen, or the main transcript view.  Keeping <Static> at a stable tree
+  // position means React never unmounts it across state transitions; the component therefore
+  // preserves its internal renderedCount and never re-emits session-intro or previously-
+  // committed transcript rows — which was the root cause of the scrollback logo duplication.
   if (!mouseCapture) {
-    if (showPanelStage) {
-      const intro = initialIntroRef.current!;
-      return (
-        <Box flexDirection="column" width={finalShellWidth}>
-          <StaticIntroItem
-            authState={intro.authState}
-            workspaceLabel={intro.workspaceLabel}
-            layout={intro.layout}
-            startupHeaderMode={intro.startupHeaderMode}
-            verboseMode={intro.verboseMode}
-            workspaceRoot={intro.workspaceRoot}
-          />
-
-          <Box
-            flexDirection="column"
-            height={nativePanelBodyRows}
-            overflow="hidden"
-            paddingY={1}
-          >
-            {panel}
-          </Box>
-
-          {panelHint}
-        </Box>
-      );
-    }
-
-    if (isStartupFrame) {
-      return (
-        <Box flexDirection="column" width={finalShellWidth}>
-          <StaticIntroItem
-            authState={authState}
-            workspaceLabel={workspaceLabel}
-            layout={layout}
-            startupHeaderMode={startupHeaderMode}
-            verboseMode={verboseMode}
-            workspaceRoot={workspaceRoot}
-          />
-
-          {nativeSpacerRows > 0 && (
-            <Box height={nativeSpacerRows} />
-          )}
-
-          {effectiveShowComposer && (
-            <Box flexDirection="column" flexShrink={0}>
-              {composer}
-            </Box>
-          )}
-        </Box>
-      );
-    }
-
     return (
       <Box flexDirection="column" width={finalShellWidth}>
         <Static items={nativeStaticAllItems}>
@@ -492,7 +467,12 @@ function AppShellInner({
         )}
 
         {showPanelStage && (
-          <Box flexDirection="column" paddingY={1} justifyContent="center">
+          <Box
+            flexDirection="column"
+            height={nativePanelBodyRows}
+            overflow="hidden"
+            paddingY={1}
+          >
             {panel}
           </Box>
         )}
