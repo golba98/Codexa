@@ -14,7 +14,7 @@ import {
   type TimelineItem,
 } from "./Timeline.js";
 import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow } from "./timelineMeasure.js";
-import { StaticIntroItem } from "./StaticIntroItem.js";
+import { buildStaticIntroRows, StaticIntroItem } from "./StaticIntroItem.js";
 
 type AppShellLayout = Layout & { layoutEpoch?: number };
 type NativeStaticItem =
@@ -133,6 +133,14 @@ function AppShellInner({
     };
   }
 
+  // Compute the intro block's row count once, using the frozen startup layout.
+  // This is used below to anchor the composer at the terminal bottom in native mode.
+  const introRowCountRef = useRef<number | null>(null);
+  if (introRowCountRef.current === null && !mouseCapture && initialIntroRef.current) {
+    introRowCountRef.current = buildStaticIntroRows(initialIntroRef.current).length;
+  }
+  const introRowCount = introRowCountRef.current ?? 8;
+
   // Timeline owns all vertical space above the fixed composer.
   const calculatedTimelineRowsRaw = shellHeight - (showComposer ? composerRows : 0);
   const calculatedTimelineRows = Math.max(2, calculatedTimelineRowsRaw);
@@ -212,6 +220,16 @@ function AppShellInner({
 
     return parts;
   }, [activeEvents, finalShellWidth, mouseCapture, showTimeline, staticEvents, uiState, verboseMode, workspaceRoot]);
+
+  // In native mode the root box is content-sized (no fixed height), so without an
+  // explicit spacer the composer appears immediately after the intro instead of being
+  // anchored near the terminal bottom.  The spacer fills the gap between whatever
+  // live content exists and where the composer should sit.
+  const nativeSpacerRows = useMemo(() => {
+    if (mouseCapture || !showComposer || showMainPanel) return 0;
+    const liveHeight = nativeTranscriptParts.liveRows.length;
+    return Math.max(0, finalShellHeight - introRowCount - composerRows - liveHeight);
+  }, [mouseCapture, showComposer, showMainPanel, finalShellHeight, introRowCount, composerRows, nativeTranscriptParts.liveRows.length]);
 
   // In native mode (no SGR capture), stable rows go into Ink's <Static> as soon as they
   // are no longer changing. Only the current live action/response remains dynamic.
@@ -349,6 +367,10 @@ function AppShellInner({
           <Box flexDirection="column" paddingY={1} justifyContent="center">
             {panel}
           </Box>
+        )}
+
+        {nativeSpacerRows > 0 && (
+          <Box height={nativeSpacerRows} />
         )}
 
         {showComposer && (
