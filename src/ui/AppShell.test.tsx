@@ -405,7 +405,7 @@ test("non-main panel content updates while the active screen is unchanged", asyn
   }
 });
 
-test("model picker renders as a bounded transient panel instead of transcript content", async () => {
+test("model picker renders as a bounded transient panel without the composer", async () => {
   const output = await renderShell(
     120,
     30,
@@ -414,11 +414,13 @@ test("model picker renders as a bounded transient panel instead of transcript co
     <Text>Select model panel</Text>,
   );
 
+  // Panel content and intro are visible.
   assert.match(output, /Select model panel/);
   assert.match(output, /Codexa v/);
-  assert.doesNotMatch(output, /Launch mode/);
-  assert.doesNotMatch(output, /Reproduce the resize flicker and fix it/);
+  // Composer must not be shown in panel-stage mode.
   assert.doesNotMatch(output, /◎ Auto  gpt-5\.4 \(medium\)  Ctrl\+O/);
+  // Note: transcript is committed to native scrollback and will be in the output —
+  // the panel overlays the live viewport, not the full scrollback history.
 });
 
 test("native spacer subtracts persistent transcript rows before anchoring the composer", () => {
@@ -620,4 +622,244 @@ test("terminal viewport ignores invalid restore sizes and bumps layout epoch on 
 
   instance.cleanup();
   await sleep(20);
+});
+
+// ---------------------------------------------------------------------------
+// Logo / intro duplication tests
+//
+// These tests use debug:false (real Ink cursor-control mode) so that Ink's
+// <Static> commitment semantics are exercised correctly.  In debug:true each
+// full frame is flushed to stdout, making logo-count comparisons meaningless.
+// In real mode, <Static> items are written once; subsequent renders only
+// update the live portion below the static area.  After stripping ANSI the
+// cumulative stdout therefore contains the logo exactly once if — and only if
+// — the logo was never re-emitted as a fresh <Static> commit.
+// ---------------------------------------------------------------------------
+
+function buildComposerNode(layout: ReturnType<typeof createLayoutSnapshot>, uiState: UIState) {
+  return (
+    <BottomComposer
+      layout={layout}
+      uiState={uiState}
+      mode="auto-edit"
+      model="gpt-5.4"
+      themeName="purple"
+      reasoningLevel="medium"
+      tokensUsed={0}
+      value=""
+      cursor={0}
+      onChangeInput={() => {}}
+      onSubmit={() => {}}
+      onCancel={() => {}}
+      onChangeValue={() => {}}
+      onChangeCursor={() => {}}
+      onHistoryUp={() => {}}
+      onHistoryDown={() => {}}
+      onOpenBackendPicker={() => {}}
+      onOpenModelPicker={() => {}}
+      onOpenModePicker={() => {}}
+      onOpenThemePicker={() => {}}
+      onOpenAuthPanel={() => {}}
+      onTogglePlanMode={() => {}}
+      onClear={() => {}}
+      onCycleMode={() => {}}
+      onQuit={() => {}}
+    />
+  );
+}
+
+function buildShellNode(
+  layout: ReturnType<typeof createLayoutSnapshot>,
+  staticEvents: TimelineEvent[],
+  options: {
+    screen?: "main" | "model-picker" | "theme-picker";
+    authState?: "authenticated" | "checking" | "unauthenticated";
+    workspaceLabel?: string;
+  } = {},
+) {
+  const { screen = "main", authState = "authenticated", workspaceLabel = "C:\\Test" } = options;
+  const uiState: UIState = { kind: "IDLE" };
+  const composerRows = measureBottomComposerRows({
+    layout,
+    uiState,
+    mode: "auto-edit",
+    model: "gpt-5.4",
+    reasoningLevel: "medium",
+    tokensUsed: 0,
+    value: "",
+    cursor: 0,
+  });
+  return (
+    <ThemeProvider theme="purple">
+      <AppShell
+        layout={layout}
+        screen={screen}
+        authState={authState}
+        workspaceLabel={workspaceLabel}
+        staticEvents={staticEvents}
+        activeEvents={[]}
+        uiState={uiState}
+        panel={null}
+        mainPanel={null}
+        composer={buildComposerNode(layout, uiState)}
+        composerRows={composerRows}
+      />
+    </ThemeProvider>
+  );
+}
+
+function countLogoInOutput(raw: string): number {
+  // Count occurrences of a distinctive second line of the ASCII logo.
+  // This line appears exactly once per physical logo render in real-mode output.
+  return (stripAnsi(raw).match(/██╔════╝██╔═══██╗/g) ?? []).length;
+}
+
+test("intro logo is not duplicated when transitioning from startup frame to first prompt", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  // Use a tall terminal so the large ASCII logo is chosen.
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+
+  const instance = render(buildShellNode(layout, []), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+
+  // Simulate first prompt completing — transitions from startup frame to transcript.
+  instance.rerender(buildShellNode(layout, EVENTS));
+  await sleep(100);
+
+  instance.cleanup();
+  await sleep(20);
+
+  assert.equal(
+    countLogoInOutput(raw),
+    1,
+    "intro logo must appear exactly once after startup→prompt transition",
+  );
+});
+
+test("intro logo is not duplicated when panel opens and then closes", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+
+  // Start on main screen with events already committed.
+  const instance = render(buildShellNode(layout, EVENTS), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+
+  // Open model picker panel.
+  instance.rerender(buildShellNode(layout, EVENTS, { screen: "model-picker" }));
+  await sleep(80);
+
+  // Close panel — return to main screen.
+  instance.rerender(buildShellNode(layout, EVENTS));
+  await sleep(80);
+
+  instance.cleanup();
+  await sleep(20);
+
+  assert.equal(
+    countLogoInOutput(raw),
+    1,
+    "intro logo must appear exactly once after panel open→close transition",
+  );
+});
+
+test("intro logo is not duplicated after a terminal resize on the startup frame", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+
+  const instance = render(buildShellNode(layout, []), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+
+  // Simulate a resize (terminal width change).
+  stdout.columns = 140;
+  stdout.rows = 45;
+  stdout.emit("resize");
+  instance.rerender(buildShellNode(createLayoutSnapshot(140, 45), []));
+  await sleep(100);
+
+  instance.cleanup();
+  await sleep(20);
+
+  assert.equal(
+    countLogoInOutput(raw),
+    1,
+    "intro logo must appear exactly once after a resize on the startup frame",
+  );
+});
+
+test("intro logo is not duplicated when auth state updates during startup", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+
+  // Start with auth in "checking" state (before auth resolves).
+  const instance = render(buildShellNode(layout, [], { authState: "checking" }), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+
+  // Auth resolves — update to "authenticated".
+  instance.rerender(buildShellNode(layout, [], { authState: "authenticated" }));
+  await sleep(100);
+
+  instance.cleanup();
+  await sleep(20);
+
+  assert.equal(
+    countLogoInOutput(raw),
+    1,
+    "intro logo must appear exactly once after auth state transitions during startup",
+  );
 });

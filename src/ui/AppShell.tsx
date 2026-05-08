@@ -403,59 +403,14 @@ function AppShellInner({
 
   // Native mode: no fixed shell height — content-sized so Ink's lastOutputHeight stays small.
   // Static history is printed once, while live rows only cover the currently changing event.
+  //
+  // All native-mode layouts share one unified return so that Ink's <Static> is always the
+  // first child at the same JSX position, regardless of whether the app is on the startup
+  // frame, a panel screen, or the main transcript view.  Keeping <Static> at a stable tree
+  // position means React never unmounts it across state transitions; the component therefore
+  // preserves its internal renderedCount and never re-emits session-intro or previously-
+  // committed transcript rows — which was the root cause of the scrollback logo duplication.
   if (!mouseCapture) {
-    if (showPanelStage) {
-      const intro = initialIntroRef.current!;
-      return (
-        <Box flexDirection="column" width={finalShellWidth}>
-          <StaticIntroItem
-            authState={intro.authState}
-            workspaceLabel={intro.workspaceLabel}
-            layout={intro.layout}
-            startupHeaderMode={intro.startupHeaderMode}
-            verboseMode={intro.verboseMode}
-            workspaceRoot={intro.workspaceRoot}
-          />
-
-          <Box
-            flexDirection="column"
-            height={nativePanelBodyRows}
-            overflow="hidden"
-            paddingY={1}
-          >
-            {panel}
-          </Box>
-
-          {panelHint}
-        </Box>
-      );
-    }
-
-    if (isStartupFrame) {
-      return (
-        <Box flexDirection="column" width={finalShellWidth}>
-          <StaticIntroItem
-            authState={authState}
-            workspaceLabel={workspaceLabel}
-            layout={layout}
-            startupHeaderMode={startupHeaderMode}
-            verboseMode={verboseMode}
-            workspaceRoot={workspaceRoot}
-          />
-
-          {nativeSpacerRows > 0 && (
-            <Box height={nativeSpacerRows} />
-          )}
-
-          {effectiveShowComposer && (
-            <Box flexDirection="column" flexShrink={0}>
-              {composer}
-            </Box>
-          )}
-        </Box>
-      );
-    }
-
     return (
       <Box flexDirection="column" width={finalShellWidth}>
         <Static items={nativeStaticAllItems}>
@@ -492,7 +447,12 @@ function AppShellInner({
         )}
 
         {showPanelStage && (
-          <Box flexDirection="column" paddingY={1} justifyContent="center">
+          <Box
+            flexDirection="column"
+            height={nativePanelBodyRows}
+            overflow="hidden"
+            paddingY={1}
+          >
             {panel}
           </Box>
         )}
