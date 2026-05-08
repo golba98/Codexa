@@ -117,6 +117,15 @@ import { createTerminalModeController, setTerminalControlUIState } from "./core/
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
+import {
+  checkGhCli,
+  checkLocalGitRemote,
+  checkLocalGitWrite,
+  classifyDiagnostics,
+  getLocalGitRemoteUrl,
+  parseRepoIdentity,
+  type DiagnosticResult,
+} from "./core/githubDiagnostics.js";
 import type { RunEvent, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
 import {
   buildFollowUpPrompt,
@@ -2602,7 +2611,47 @@ export function App({ launchArgs }: AppProps) {
             appendSystemEvent("Runtime policy", commandResult.message);
           }
           return;
-        case "runtime_personality":
+        case "diagnose_github": {
+          const remoteUrl = getLocalGitRemoteUrl();
+          const repo = parseRepoIdentity(remoteUrl);
+          const ghCli = checkGhCli();
+          const localGit = checkLocalGitRemote();
+          const localGitWrite = checkLocalGitWrite();
+
+          // MCP connector check: since TUI can't call MCP, we mark it as unknown
+          // or rely on the agent to fill this in if it's the one running the command.
+          const connector: DiagnosticResult = {
+            path: "GitHub connector/MCP",
+            status: "FAIL",
+            evidence: "TUI cannot directly probe MCP",
+            blocker: "Run /diagnose through the agent for a full probe",
+            recommendedUse: false,
+          };
+
+          const recommendedFlow = classifyDiagnostics(repo, ghCli, localGit, localGitWrite, connector);
+
+          // Instead of console.log, we'll format a message for appendSystemEvent
+          const tableLines = [
+            "Path                | Status  | Evidence                      | Blocker",
+            "--------------------|---------|-------------------------------|---------------------------",
+            `${ghCli.path.padEnd(20)}| ${ghCli.status.padEnd(8)}| ${(ghCli.evidence || "").substring(0, 30).padEnd(30)}| ${ghCli.blocker || ""}`,
+            `${localGit.path.padEnd(20)}| ${localGit.status.padEnd(8)}| ${(localGit.evidence || "").substring(0, 30).padEnd(30)}| ${localGit.blocker || ""}`,
+            `${localGitWrite.path.padEnd(20)}| ${localGitWrite.status.padEnd(8)}| ${(localGitWrite.evidence || "").substring(0, 30).padEnd(30)}| ${localGitWrite.blocker || ""}`,
+            `${connector.path.padEnd(20)}| ${connector.status.padEnd(8)}| ${(connector.evidence || "").substring(0, 30).padEnd(30)}| ${connector.blocker || ""}`,
+          ];
+
+          const summary = [
+            ...tableLines,
+            "",
+            `Resolved repo: ${repo ? `${repo.owner}/${repo.repo}` : "Unknown"}`,
+            `Recommended PR flow: ${recommendedFlow}`,
+          ].join("\n");
+
+          appendSystemEvent("GitHub Diagnostics", summary);
+          return;
+        }
+        case "auth":
+
           if (commandResult.value) {
             setPersonalityWithNotice(commandResult.value as RuntimePersonality);
           } else if (commandResult.message) {

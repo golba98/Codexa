@@ -90,6 +90,7 @@ export type CommandAction =
   | "runtime_writable_roots_list"
   | "runtime_service_tier"
   | "runtime_personality"
+  | "diagnose_github"
   | "unknown";
 
 export interface CommandResult {
@@ -688,6 +689,19 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       return { action: "verbose_toggle" };
     }
 
+    case "diagnose": {
+      if (normalizedArg === "github") {
+        return {
+          action: "diagnose_github",
+          message: "Running GitHub connectivity diagnostics...",
+        };
+      }
+      return {
+        action: "unknown",
+        message: "Usage: /diagnose github",
+      };
+    }
+
     case "help":
       return {
         action: "help",
@@ -700,6 +714,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "Commands:",
           "  /exit, /quit       Quit the application and cancel active run",
           "  /clear             Clear the chat window and cancel the active run",
+          "  /diagnose github   Run GitHub connectivity diagnostics",
           "  /backend [name]    Switch backend (no arg opens picker)",
           "  /model [name]      Switch model (no arg opens picker)",
           `  /mode [name]       Switch execution mode (${formatModeCommandHelp()})`,
