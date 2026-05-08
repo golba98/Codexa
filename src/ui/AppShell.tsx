@@ -24,6 +24,10 @@ import {
 import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow } from "./timelineMeasure.js";
 import { buildStaticIntroRows, StaticIntroItem } from "./StaticIntroItem.js";
 
+// Small fixed spacer used before the first user prompt so the composer sits
+// close to the logo without a disproportionate blank gap on cold start.
+const COLD_START_SPACER_ROWS = 3;
+
 type AppShellLayout = Layout & { layoutEpoch?: number };
 type NativeStaticItem =
   | { key: string; type: "session-intro" }
@@ -290,19 +294,35 @@ function AppShellInner({
     () => nativeTranscriptParts.staticItems.reduce((total, item) => total + item.rows.length, 0),
     [nativeTranscriptParts.staticItems],
   );
+  // True once the user has sent at least one prompt — system events (model/auth
+  // changes) do NOT count so the cold-start cap persists across config tweaks.
+  const hasUserPrompt = useMemo(
+    () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
+    [staticEvents, activeEvents],
+  );
   const nativeSpacerRows = useMemo(() => {
     if (mouseCapture || !effectiveShowComposer || showMainPanel) return 0;
-    return calculateNativeSpacerRows({
+    const rows = calculateNativeSpacerRows({
       shellRows: finalShellHeight,
       introRows: introRowCount,
       composerRows: effectiveComposerRows,
       staticRows: nativeStaticTranscriptRows,
       liveRows: nativeTranscriptParts.liveRows.length,
     });
-  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, introRowCount, effectiveComposerRows, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length]);
+    // Before the user sends their first prompt, keep a small fixed gap so the
+    // composer sits near the logo without a large blank area in between.
+    // This cap persists across model/auth system events so the layout stays
+    // stable after config changes on cold start.
+    if (!hasUserPrompt) {
+      return Math.min(rows, COLD_START_SPACER_ROWS);
+    }
+    return rows;
+  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, introRowCount, effectiveComposerRows, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
+  // Reserve space for the panel relative to committed static content so the
+  // panel body never overflows the available dynamic area.
   const nativePanelBodyRows = Math.max(
     1,
-    finalShellHeight - introRowCount - panelHintRows,
+    finalShellHeight - introRowCount - panelHintRows - nativeStaticTranscriptRows,
   );
 
   // In native mode (no SGR capture), stable rows go into Ink's <Static> as soon as they
