@@ -16,12 +16,12 @@ import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
 import { DashCard } from "./DashCard.js";
 import { useTheme } from "./theme.js";
 import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
-import { wrapPlainText } from "./textLayout.js";
+import { wrapPlainText, wrapCommandText } from "./textLayout.js";
 import { selectVisibleRunActivity } from "./runActivityView.js";
 import type { RunFileActivity } from "../core/workspaceActivity.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
 import { formatProgressBlockBodyLines } from "./progressEntries.js";
-import { getUsableShellWidth } from "./layout.js";
+import { getUsableShellWidth, transcriptContentIndent } from "./layout.js";
 import { MemoizedRenderMessage } from "./Markdown.js";
 import {
   sanitizeOutput,
@@ -338,34 +338,28 @@ function ActionEventCard({
   const dim = opacity !== "active";
   const actionNormalized = normalizeCommand(tool.command);
   const actionLabel = getFriendlyActionLabel(actionNormalized);
-  renderDebug.traceEvent("action", "commandNormalized", {
-    actionId: tool.id,
-    status: tool.status,
-    streamSeq: tool.streamSeq ?? null,
-    changed: actionNormalized !== tool.command,
-  });
-  const statusIcon = tool.status === "failed" ? "✕" : tool.status === "completed" ? "✓" : "•";
+  
+  const statusIcon = tool.status === "failed" ? "?" : tool.status === "completed" ? "?" : "�";
   const statusColor = tool.status === "failed" ? theme.ERROR : tool.status === "completed" ? theme.SUCCESS : theme.INFO;
   const borderColor = dim ? theme.BORDER_SUBTLE : tool.status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE;
   const detailText = isLiveCursorTarget && tool.status === "running"
-    ? "▌"
+    ? "�"
     : tool.summary?.trim() ? tool.summary : " ";
   const detailColor = isLiveCursorTarget && tool.status === "running" ? theme.ACCENT : theme.MUTED;
   const duration = tool.completedAt != null
     ? formatDuration(tool.completedAt - tool.startedAt)
     : null;
 
-  const commandBodyWidth = Math.max(1, cols - 9);
-  const commandLines = wrapPlainText(actionNormalized, commandBodyWidth);
+  const commandBodyWidth = Math.max(1, cols - 6);
+  const commandLines = wrapCommandText(actionNormalized, commandBodyWidth);
 
   return (
-    <DashCard cols={cols} title="action" borderColor={borderColor}>
+    <DashCard cols={cols} title="action" rightBadge={duration || undefined} borderColor={borderColor}>
       {actionLabel ? (
         <>
           <Box>
             <Text color={statusColor}>{statusIcon + " "}</Text>
             <Text color={dim ? theme.DIM : theme.TEXT}>{actionLabel}</Text>
-            {duration && <Text color={theme.DIM}>{"  " + duration}</Text>}
           </Box>
           {commandLines.map((line, i) => (
             <Text key={i} color={theme.MUTED}>{"  "}{line || " "}</Text>
@@ -377,7 +371,6 @@ function ActionEventCard({
             <Box key={i}>
               <Text color={i === 0 ? statusColor : undefined}>{i === 0 ? statusIcon + " " : "  "}</Text>
               <Text color={dim ? theme.DIM : theme.TEXT}>{line || " "}</Text>
-              {i === 0 && duration && <Text color={theme.DIM}>{"  " + duration}</Text>}
             </Box>
           ))}
           <Text color={theme.MUTED}>{"  "}{" "}</Text>
@@ -411,10 +404,10 @@ function CodexThinkingBlock({
   verboseMode: boolean;
 }) {
   const theme = useTheme();
-  const contentWidth = Math.max(1, getUsableShellWidth(cols, 0));
+  const contentWidth = Math.max(1, getUsableShellWidth(cols, transcriptContentIndent + 1));
 
   return (
-    <Box flexDirection="column" width="100%" paddingX={1}>
+    <Box flexDirection="column" width="100%" paddingLeft={transcriptContentIndent} paddingRight={1}>
       <Text color={theme.MUTED} bold>Codexa</Text>
       {formatProgressBlockBodyLines(block.text, contentWidth)
         .slice(0, verboseMode ? undefined : COMPACT_PROCESSING_BODY_LINE_CAP)
@@ -446,7 +439,7 @@ function CodexResponseBlock({
   verboseMode: boolean;
 }) {
   const theme = useTheme();
-  const contentWidth = Math.max(1, getUsableShellWidth(cols, 0));
+  const contentWidth = Math.max(1, getUsableShellWidth(cols, transcriptContentIndent + 1));
 
   const formatted = useMemo(() => {
     const raw = formatTerminalAnswerInline(getResponseSegmentText(segment));
@@ -462,7 +455,7 @@ function CodexResponseBlock({
   const showTail = !segmentStreaming && !verboseMode && formatted.length > COMPACT_STREAMING_TAIL_CAP;
 
   return (
-    <Box flexDirection="column" width="100%" paddingX={1}>
+    <Box flexDirection="column" width="100%" paddingLeft={transcriptContentIndent} paddingRight={1}>
       <Text color={theme.MUTED} bold>Codexa</Text>
       {run.status === "failed" && !streaming && isLast && (
         <Box flexDirection="column">
