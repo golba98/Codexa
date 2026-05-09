@@ -25,6 +25,7 @@ import { getStdinDebugState, traceInputDebug } from "../core/inputDebug.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
 import { isAnimatedBusyState } from "./busyStatusAnimation.js";
+import type { TerminalSelectionProfile } from "../core/terminalSelection.js";
 
 type ComposerPersona = "idle" | "busy" | "answer" | "error";
 type DeleteIntent = "backspace" | "delete";
@@ -92,6 +93,7 @@ interface BottomComposerProps {
   onClear: () => void;
   onCycleMode: () => void;
   onQuit: () => void;
+  selectionProfile?: TerminalSelectionProfile;
 }
 
 export interface BottomComposerMeasureParams {
@@ -254,6 +256,7 @@ export function BottomComposer({
   onClear,
   onCycleMode,
   onQuit,
+  selectionProfile,
 }: BottomComposerProps) {
   renderDebug.useRenderDebug("Composer", {
     cols: layout.cols,
@@ -746,6 +749,11 @@ export function BottomComposer({
                 <Text color={theme.DIM}>Esc cancel  Ctrl+C quit</Text>
               </Box>
             )}
+            {!inputLocked && selectionProfile && (
+              <Box flexShrink={0}>
+                <Text color={theme.DIM}>{selectionProfile.shortHint}</Text>
+              </Box>
+            )}
           </>
         )}
       </Box>
@@ -816,9 +824,11 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   if (prev.layout.mode !== next.layout.mode) return false;
   if (prev.themeName !== next.themeName) return false;
   
-  // Re-render if model spec status changes
   if (prev.modelSpec?.status !== next.modelSpec?.status) return false;
   if (prev.modelSpec?.contextWindow !== next.modelSpec?.contextWindow) return false;
+  
+  // Re-render if selection profile changes
+  if (prev.selectionProfile?.id !== next.selectionProfile?.id) return false;
   
   // Skip re-render - streaming updates within RESPONDING don't affect composer
   return true;

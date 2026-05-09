@@ -1,7 +1,7 @@
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { spawn } from "child_process";
 import { existsSync } from "fs";
-import { Box, Text, useApp, useFocusManager, useStdin, useStdout } from "ink";
+import { Box, Text, useApp, useFocusManager, useInput, useStdin, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
 import {
   applyLayeredRuntimeOverride,
@@ -65,6 +65,7 @@ import {
   isLikelyAuthFailure,
   probeCodexAuthStatus,
 } from "./core/auth/codexAuth.js";
+import { getTerminalSelectionProfile } from "./core/terminalSelection.js";
 import { copyToClipboard } from "./core/clipboard.js";
 import { normalizePlanReviewMarkdown, savePlan, readPlan } from "./core/planStorage.js";
 import { getBlockedCleanupFailure } from "./core/cleanupFastFail.js";
@@ -296,6 +297,24 @@ export function App({ launchArgs }: AppProps) {
   const { stdin } = useStdin();
   const terminalControl = useMemo(() => createTerminalModeController((chunk) => stdout.write(chunk)), [stdout]);
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
+  const [isMouseIdle, setIsMouseIdle] = useState(false);
+  const mouseIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetMouseIdle = useCallback(() => {
+    setIsMouseIdle(false);
+    if (mouseIdleTimerRef.current) {
+      clearTimeout(mouseIdleTimerRef.current);
+    }
+    mouseIdleTimerRef.current = setTimeout(() => {
+      setIsMouseIdle(true);
+    }, 1500);
+  }, []);
+
+  useInput(() => {
+    // Any keyboard activity re-enables mouse tracking if it was idle.
+    resetMouseIdle();
+  });
+
   const [verboseMode, setVerboseMode] = useState(false);
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
   const [initialRevisionText, setInitialRevisionText] = useState("");
@@ -304,7 +323,10 @@ export function App({ launchArgs }: AppProps) {
   // wheel events; native drag-select then requires Shift in Windows Terminal.
   // "selection" keeps the terminal in control of mouse events.
   // /mouse toggles the in-session override without changing the saved setting.
-  const mouseCapture = mouseOverride ?? (terminalMouseMode === "wheel");
+  //
+  // We apply an idle-timeout: if no wheel events or keypresses occur for 1.5s,
+  // we disable mouse reporting so native drag-selection works unmodified.
+  const mouseCapture = (mouseOverride ?? (terminalMouseMode === "wheel")) && !isMouseIdle;
 
   useEffect(() => {
     try { process.title = "CODEXA"; } catch { /* ignore */ }
@@ -347,6 +369,10 @@ export function App({ launchArgs }: AppProps) {
   const { provider: backend, model, mode, reasoningLevel, planMode } = runtimeConfig;
   const resolvedRuntimeConfig = useMemo(() => resolveRuntimeConfig(runtimeConfig), [runtimeConfig]);
   const runtimeSummary = useMemo(() => buildRuntimeSummary(resolvedRuntimeConfig), [resolvedRuntimeConfig]);
+  const selectionProfile = useMemo(
+    () => getTerminalSelectionProfile(process.env),
+    [],
+  );
   const selectableModelCapabilities = useMemo(
     () => modelCapabilities ? getSelectableModelCapabilities(modelCapabilities) : [],
     [modelCapabilities],
@@ -2988,6 +3014,8 @@ export function App({ launchArgs }: AppProps) {
         uiState={uiState}
         verboseMode={verboseMode}
         mouseCapture={mouseCapture}
+        onMouseActivity={resetMouseIdle}
+        selectionProfile={selectionProfile}
         clearCount={sessionState.clearCount}
         panel={
           <>
