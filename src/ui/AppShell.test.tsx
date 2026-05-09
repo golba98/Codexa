@@ -411,22 +411,55 @@ test("non-main panel content updates while the active screen is unchanged", asyn
   }
 });
 
-test("model picker renders as a bounded transient panel without the composer", async () => {
-  const output = await renderShell(
-    120,
-    30,
-    { kind: "IDLE" },
-    "model-picker",
-    <Text>Select model panel</Text>,
+test("model picker renders as a compact command panel without composer", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 30;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  const layout = createLayoutSnapshot(120, 30);
+
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <AppShell
+        layout={layout}
+        screen="model-picker"
+        authState="authenticated"
+        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom CLI"}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+        staticEvents={EVENTS}
+        activeEvents={[]}
+        uiState={{ kind: "IDLE" }}
+        panel={<Text>Select model command panel</Text>}
+        mainPanel={null}
+        composer={buildComposerNode(layout, { kind: "IDLE" })}
+        composerRows={measureBottomComposerRows({
+          layout,
+          uiState: { kind: "IDLE" },
+          value: "",
+          cursor: 0,
+        })}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
   );
 
-  // Panel content and intro are visible.
-  assert.match(output, /Select model panel/);
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  const output = stripAnsi(raw);
+  assert.match(output, /Select model command panel/);
   assert.match(output, /Codexa v/);
-  // Composer must not be shown in panel-stage mode.
   assert.doesNotMatch(output, /◎ Auto  gpt-5\.4 \(medium\)  Ctrl\+O/);
-  // Note: transcript is committed to native scrollback and will be in the output —
-  // the panel overlays the live viewport, not the full scrollback history.
 });
 
 test("native spacer subtracts persistent transcript rows before anchoring the composer", () => {

@@ -5,8 +5,9 @@ import { PassThrough } from "node:stream";
 import { Box, Text, render } from "ink";
 import { normalizeCodexModelListResponses, type CodexModelCapability } from "../core/codexModelCapabilities.js";
 import { ThemeProvider } from "./theme.js";
-import { ModelReasoningPicker } from "./ModelReasoningPicker.js";
+import { ModelPickerScreen } from "./ModelPickerScreen.js";
 import { ReasoningPicker } from "./ReasoningPicker.js";
+import { createLayoutSnapshot } from "./layout.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -46,9 +47,16 @@ function sleep(ms = 50): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function createInkHarness(node: React.ReactElement) {
+function getLastModelPickerFrame(output: string): string {
+  const lastTitle = output.lastIndexOf("Select model");
+  return lastTitle >= 0 ? output.slice(lastTitle) : output;
+}
+
+function createInkHarness(node: React.ReactElement, columns = 120, rows = 40) {
   const stdin = new TestInput();
   const stdout = new TestOutput();
+  stdout.columns = columns;
+  stdout.rows = rows;
   let output = "";
 
   stdout.on("data", (chunk) => {
@@ -111,7 +119,7 @@ function testModels(): readonly CodexModelCapability[] {
   ]).models;
 }
 
-function DelayedModelReasoningPickerHarness() {
+function DelayedModelPickerHarness() {
   const [models, setModels] = React.useState<readonly CodexModelCapability[]>([]);
   const [closed, setClosed] = React.useState(false);
   const [cancelCount, setCancelCount] = React.useState(0);
@@ -126,7 +134,8 @@ function DelayedModelReasoningPickerHarness() {
     <ThemeProvider theme="purple">
       <Box flexDirection="column">
         {closed ? null : (
-          <ModelReasoningPicker
+          <ModelPickerScreen
+            layout={createLayoutSnapshot(120, 40)}
             models={models}
             currentModel="model-four"
             currentReasoning="medium"
@@ -149,124 +158,14 @@ function DelayedModelReasoningPickerHarness() {
   );
 }
 
-test("model picker renders dynamic models and the highlighted model's reasoning bar count", async () => {
+test("model picker renders a compact command panel", async () => {
   const harness = createInkHarness(
     <ThemeProvider theme="purple">
-      <ModelReasoningPicker
+      <ModelPickerScreen
+        layout={createLayoutSnapshot(120, 40)}
         models={testModels()}
         currentModel="model-four"
         currentReasoning="medium"
-        onSelect={() => {}}
-        onCancel={() => {}}
-      />
-    </ThemeProvider>,
-  );
-
-  try {
-    await sleep(80);
-    const output = harness.getOutput();
-    assert.match(output, /Model Four \(model-four\)/);
-    assert.match(output, /Model Two \(model-two\)/);
-    const lastFrame = output.slice(output.lastIndexOf("Select model"));
-    assert.equal((lastFrame.match(/■/g) ?? []).length, 4);
-  } finally {
-    await harness.cleanup();
-  }
-});
-
-test("model picker groups instructions and model rows into one compact panel", async () => {
-  const harness = createInkHarness(
-    <ThemeProvider theme="purple">
-      <ModelReasoningPicker
-        models={testModels()}
-        currentModel="model-four"
-        currentReasoning="medium"
-        onSelect={() => {}}
-        onCancel={() => {}}
-      />
-    </ThemeProvider>,
-  );
-
-  try {
-    await sleep(80);
-    const output = harness.getOutput();
-    const lastFrame = output.slice(output.lastIndexOf("Select model"));
-    const lines = lastFrame.split(/\r?\n/);
-    const selectLine = lines.findIndex((line) => line.includes("Select model"));
-    const firstModelLine = lines.findIndex((line) => line.includes("Model Four"));
-
-    assert(selectLine >= 0);
-    assert(firstModelLine > selectLine);
-    assert(firstModelLine - selectLine <= 3);
-    assert.doesNotMatch(lastFrame, /\n\s*\n\s*\n/);
-  } finally {
-    await harness.cleanup();
-  }
-});
-
-test("model picker loading state stays compact", async () => {
-  const harness = createInkHarness(
-    <ThemeProvider theme="purple">
-      <ModelReasoningPicker
-        models={[]}
-        currentModel="model-four"
-        currentReasoning="medium"
-        isLoading
-        onSelect={() => {}}
-        onCancel={() => {}}
-      />
-    </ThemeProvider>,
-  );
-
-  try {
-    await sleep(80);
-    const output = harness.getOutput();
-    const lastFrame = output.slice(output.lastIndexOf("Select model"));
-    const lines = lastFrame.split(/\r?\n/);
-    const selectLine = lines.findIndex((line) => line.includes("Select model"));
-    const loadingLine = lines.findIndex((line) => line.includes("Discovering models"));
-
-    assert(selectLine >= 0);
-    assert(loadingLine > selectLine);
-    assert(loadingLine - selectLine <= 2);
-  } finally {
-    await harness.cleanup();
-  }
-});
-
-test("model picker uses each selected model's own reasoning level count", async () => {
-  const harness = createInkHarness(
-    <ThemeProvider theme="purple">
-      <ModelReasoningPicker
-        models={testModels()}
-        currentModel="model-four"
-        currentReasoning="medium"
-        onSelect={() => {}}
-        onCancel={() => {}}
-      />
-    </ThemeProvider>,
-  );
-
-  try {
-    await sleep(80);
-    harness.stdin.write("\u001b[B");
-    await sleep(80);
-    const output = harness.getOutput();
-    const lastFrame = output.slice(output.lastIndexOf("Select model"));
-    assert.equal((lastFrame.match(/■/g) ?? []).length, 2);
-  } finally {
-    await harness.cleanup();
-  }
-});
-
-test("model picker shows a discovery-in-progress hint when no models have been loaded yet", async () => {
-  const harness = createInkHarness(
-    <ThemeProvider theme="purple">
-      <ModelReasoningPicker
-        models={[]}
-        currentModel="model-four"
-        currentReasoning="medium"
-        isLoading
         onSelect={() => {}}
         onCancel={() => {}}
       />
@@ -277,18 +176,66 @@ test("model picker shows a discovery-in-progress hint when no models have been l
     await sleep(80);
     const output = harness.getOutput();
     assert.match(output, /Select model/);
-    assert.match(output, /Discovering models from the Codex runtime/);
-    assert.doesNotMatch(output, /Try the model picker again in a moment/);
+    assert.match(output, /↑↓ model · ←→ reasoning · Enter select · Esc cancel/);
+    assert.match(output, /Reasoning: Medium/);
+    assert.match(output, /Model Four \(model-four\)/);
+    assert.match(output, /Model Two \(model-two\)/);
+    const frame = getLastModelPickerFrame(output);
+    assert.match(frame, />\s+Model Four \(model-four\).*\[Medium\]/);
+    assert.match(frame, /\s+Model Two \(model-two\)/);
+    assert.doesNotMatch(frame, /Model Two \(model-two\).*\[/);
+    assert.doesNotMatch(frame, /■/);
+    assert.match(output, /✓/);
   } finally {
     await harness.cleanup();
   }
 });
 
-test("model picker escape still cancels while loading", async () => {
+test("model picker supports model movement and reasoning adjustment", async () => {
+  let selected = "";
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ModelPickerScreen
+        layout={createLayoutSnapshot(120, 40)}
+        models={testModels()}
+        currentModel="model-four"
+        currentReasoning="medium"
+        onSelect={(model, reasoning) => {
+          selected = `${model}:${reasoning}`;
+        }}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+  );
+
+  try {
+    await sleep(80);
+    harness.stdin.write("j");
+    await sleep(40);
+    harness.stdin.write("k");
+    await sleep(40);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("l");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+    assert.equal(selected, "model-two:high");
+    const frame = getLastModelPickerFrame(harness.getOutput());
+    assert.match(frame, /Reasoning: High/);
+    assert.match(frame, />\s+Model Two \(model-two\).*\[High\]/);
+    assert.doesNotMatch(frame, /Model Four \(model-four\).*\[/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("model picker loading state stays in the command panel and escape cancels", async () => {
   let cancelled = false;
   const harness = createInkHarness(
     <ThemeProvider theme="purple">
-      <ModelReasoningPicker
+      <ModelPickerScreen
+        layout={createLayoutSnapshot(120, 40)}
         models={[]}
         currentModel="model-four"
         currentReasoning="medium"
@@ -303,6 +250,9 @@ test("model picker escape still cancels while loading", async () => {
 
   try {
     await sleep(80);
+    const output = harness.getOutput();
+    assert.match(output, /Select model/);
+    assert.match(output, /Discovering models from the Codex runtime/);
     harness.stdin.write("\u001b");
     await sleep(80);
     assert.equal(cancelled, true);
@@ -312,7 +262,7 @@ test("model picker escape still cancels while loading", async () => {
 });
 
 test("model picker keeps escape active after loading swaps to interactive models", async () => {
-  const harness = createInkHarness(<DelayedModelReasoningPickerHarness />);
+  const harness = createInkHarness(<DelayedModelPickerHarness />);
 
   try {
     await sleep(180);
@@ -330,7 +280,7 @@ test("model picker keeps escape active after loading swaps to interactive models
 });
 
 test("model picker keeps enter selection active after loading swaps to interactive models", async () => {
-  const harness = createInkHarness(<DelayedModelReasoningPickerHarness />);
+  const harness = createInkHarness(<DelayedModelPickerHarness />);
 
   try {
     await sleep(180);
@@ -342,6 +292,96 @@ test("model picker keeps enter selection active after loading swaps to interacti
     assert.match(output, /Model Four \(model-four\)/);
     assert.match(output, /closed:yes/);
     assert.match(output, /selected:model-four:medium/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("model picker truncates long model labels on narrow terminals", async () => {
+  const longModel = normalizeCodexModelListResponses([
+    {
+      data: [
+        {
+          id: "extremely-long-model-name-with-extra-segments",
+          model: "extremely-long-model-name-with-extra-segments",
+          displayName: "Extremely Long Display Name That Must Not Merge Into Metadata",
+          hidden: false,
+          isDefault: true,
+          defaultReasoningEffort: "medium",
+          supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Medium" }],
+        },
+      ],
+    },
+  ]).models;
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ModelPickerScreen
+        layout={createLayoutSnapshot(44, 18)}
+        models={longModel}
+        currentModel={longModel[0]!.model}
+        currentReasoning="medium"
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+    44,
+    18,
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    assert.match(output, /Select model/);
+    assert.match(output, /…/);
+    assert.match(output, /Reasoning: Medium/);
+    assert.doesNotMatch(output, /\[Medium\]/);
+    assert.doesNotMatch(output, /Metadata/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("model picker disables reasoning for models without advertised levels", async () => {
+  const noReasoningModel = normalizeCodexModelListResponses([
+    {
+      data: [
+        {
+          id: "plain-model",
+          model: "plain-model",
+          displayName: "Plain Model",
+          hidden: false,
+          isDefault: true,
+          supportedReasoningEfforts: [],
+        },
+      ],
+    },
+  ]).models;
+  let selected = "";
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ModelPickerScreen
+        layout={createLayoutSnapshot(80, 24)}
+        models={noReasoningModel}
+        currentModel="plain-model"
+        currentReasoning="medium"
+        onSelect={(model, reasoning) => {
+          selected = `${model}:${reasoning}`;
+        }}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+  );
+
+  try {
+    await sleep(80);
+    harness.stdin.write("l");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+
+    const output = harness.getOutput();
+    assert.match(output, /Reasoning: unavailable/);
+    assert.equal(selected, "plain-model:medium");
   } finally {
     await harness.cleanup();
   }

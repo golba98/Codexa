@@ -431,16 +431,20 @@ function ModelRow({
 
   return (
     <Box flexDirection="row" width="100%">
-      <Box width={3}>
+      <Box width={3} flexShrink={0}>
         <Text color={isHighlighted ? theme.ACCENT : theme.DIM}>{cursorGlyph}</Text>
       </Box>
-      <Box flexGrow={1}>
-        <Text color={nameColor} bold={isHighlighted}>
-          {name}
-        </Text>
-        <Text color={theme.DIM}>{commitMark}</Text>
+      <Box flexGrow={1} flexDirection="row" paddingRight={1}>
+        <Box flexShrink={1}>
+          <Text color={nameColor} bold={isHighlighted} wrap="truncate-end">
+            {name}
+          </Text>
+        </Box>
+        <Box flexShrink={0} paddingLeft={1}>
+          <Text color={theme.DIM}>{commitMark}</Text>
+        </Box>
       </Box>
-      <Box flexDirection="row" gap={1}>
+      <Box flexDirection="row" gap={1} flexShrink={0}>
         {isHighlighted && bars}
       </Box>
     </Box>

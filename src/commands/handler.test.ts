@@ -434,3 +434,62 @@ test("parses /theme and /themes commands", () => {
   const themesResult = runCommand("/themes");
   assert.equal(themesResult?.action, "open_theme_picker");
 });
+
+test("parses /clear command", () => {
+  const result = runCommand("/clear");
+  assert.equal(result?.action, "clear");
+});
+
+test("parses /model without args as open_model_picker", () => {
+  const result = runCommand("/model");
+  assert.equal(result?.action, "open_model_picker");
+});
+
+test("parses /reasoning without args as open_reasoning_picker", () => {
+  const result = runCommand("/reasoning");
+  assert.equal(result?.action, "open_reasoning_picker");
+});
+
+test("parses /diagnose github command", () => {
+  const result = runCommand("/diagnose github");
+  assert.equal(result?.action, "diagnose_github");
+});
+
+test("unknown commands show /help suggestion", () => {
+  const result = runCommand("/unknown-cmd-123");
+  assert.equal(result?.action, "unknown");
+  assert.match(result?.message ?? "", /Type \/help for available commands/i);
+});
+
+test("every command documented in help is recognized by the parser", () => {
+  const helpResult = runCommand("/help");
+  assert.equal(helpResult?.action, "help");
+  const helpText = helpResult?.message ?? "";
+
+  // Extract primary commands documented with leading whitespace /command
+  const documentedCommands = [...helpText.matchAll(/^\s{2}\/([a-z0-9-]+)/gm)].map((m) => m[1]!);
+
+  for (const cmd of documentedCommands) {
+    // Some commands like /exit, /quit are listed on the same line.
+    // The regex above might only catch the first one if not careful, 
+    // but the help text usually has one per line or comma separated.
+    const aliases = cmd.split(/,\s*\//);
+    for (const alias of aliases) {
+      if (alias === "diagnose") continue; // Requires an argument (github)
+      const result = runCommand(`/${alias}`);
+      assert.notEqual(result?.action, "unknown", `Command /${alias} documented in /help but returned action 'unknown'`);
+    }
+  }
+
+  // Verify specific multi-word commands mentioned in help
+  const multiWord = [
+    ["diagnose github", "diagnose_github"],
+    ["config trust", "config_trust_status"],
+    ["auth status", "auth_status"],
+    ["workspace relaunch .", "workspace_relaunch"],
+  ] as const;
+  for (const [cmd, expectedAction] of multiWord) {
+    const result = runCommand(`/${cmd}`);
+    assert.equal(result?.action, expectedAction, `Multi-word command /${cmd} mentioned in help but returned action ${result?.action} instead of ${expectedAction}`);
+  }
+});
