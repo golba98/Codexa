@@ -3,12 +3,11 @@ import test from "node:test";
 import React from "react";
 import { PassThrough } from "node:stream";
 import { Box, Text, render, useFocus, useFocusManager } from "ink";
-import { normalizeReasoningForModel, type AvailableModel, type ReasoningLevel } from "../config/settings.js";
+import type { AvailableModel, ReasoningLevel } from "../config/settings.js";
 import { createFallbackModelCapabilities, getSelectableModelCapabilities } from "../core/codexModelCapabilities.js";
 import { BottomComposer } from "./BottomComposer.js";
 import { getFocusTargetForScreen } from "./focus.js";
-import { ModelPicker } from "./ModelPicker.js";
-import { ModelReasoningPicker } from "./ModelReasoningPicker.js";
+import { ModelPickerScreen } from "./ModelPickerScreen.js";
 import { PlanActionPicker } from "./PlanActionPicker.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { TextEntryPanel } from "./TextEntryPanel.js";
@@ -147,15 +146,15 @@ function ModelPickerComposerHarness() {
   return (
     <ThemeProvider theme="purple">
       {screen === "model-picker" ? (
-        <ModelPicker
+        <ModelPickerScreen
+          layout={TEST_LAYOUT}
           models={TEST_MODEL_CAPABILITIES}
           currentModel={model}
-          onSelect={(nextModel) => {
+          currentReasoning={reasoningLevel}
+          onSelect={(nextModel, nextReasoning) => {
             const resolvedModel = nextModel as AvailableModel;
             setModel(resolvedModel);
-            setReasoningLevel((currentReasoning) =>
-              normalizeReasoningForModel(resolvedModel, currentReasoning),
-            );
+            setReasoningLevel(nextReasoning as ReasoningLevel);
             setScreen("main");
           }}
           onCancel={() => setScreen("main")}
@@ -310,15 +309,15 @@ function ShortcutModelPickerHarness() {
         <Text>{`submit:${submitCount}`}</Text>
         <Text>{`value:${JSON.stringify(value)}`}</Text>
         {screen === "model-picker" ? (
-          <ModelPicker
+          <ModelPickerScreen
+            layout={TEST_LAYOUT}
             models={TEST_MODEL_CAPABILITIES}
             currentModel={model}
-            onSelect={(nextModel) => {
+            currentReasoning={reasoningLevel}
+            onSelect={(nextModel, nextReasoning) => {
               const resolvedModel = nextModel as AvailableModel;
               setModel(resolvedModel);
-              setReasoningLevel((currentReasoning) =>
-                normalizeReasoningForModel(resolvedModel, currentReasoning),
-              );
+              setReasoningLevel(nextReasoning as ReasoningLevel);
               setScreen("main");
             }}
             onCancel={() => setScreen("main")}
@@ -403,7 +402,8 @@ function ShortcutModelReasoningPickerHarness({ delayedModels = false }: { delaye
         <Text>{`submit:${submitCount}`}</Text>
         <Text>{`value:${JSON.stringify(value)}`}</Text>
         {screen === "model-picker" ? (
-          <ModelReasoningPicker
+          <ModelPickerScreen
+            layout={TEST_LAYOUT}
             models={models}
             currentModel={model}
             currentReasoning={reasoningLevel}

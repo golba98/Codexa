@@ -51,6 +51,7 @@ export interface AppShellProps {
   panelHint?: React.ReactNode;
   verboseMode?: boolean;
   mouseCapture?: boolean;
+  clearCount?: number;
 }
 
 export function isCrampedViewport(rows: number | undefined): boolean {
@@ -103,6 +104,7 @@ function AppShellInner({
   panelHint,
   verboseMode = false,
   mouseCapture = false,
+  clearCount = 0,
 }: AppShellProps) {
   renderDebug.useRenderDebug("AppShell", {
     cols: layout.cols,
@@ -315,24 +317,20 @@ function AppShellInner({
     }
     return rows;
   }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, introRowCount, effectiveComposerRows, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
-  // Reserve space for the panel relative to committed static content so the
-  // panel body never overflows the available dynamic area.
-  const nativePanelBodyRows = Math.max(
-    1,
-    finalShellHeight - introRowCount - panelHintRows - nativeStaticTranscriptRows,
-  );
 
   // In native mode (no SGR capture), stable rows go into Ink's <Static> as soon as they
   // are no longer changing. Only the current live action/response remains dynamic.
   const nativeStaticAllItems = useMemo<NativeStaticItem[]>(
-    () =>
-      mouseCapture
-        ? []
-        : [
-          { key: "session-intro", type: "session-intro" as const },
-          ...nativeTranscriptParts.staticItems.map((item) => ({ ...item, type: "rows" as const })),
-        ],
-    [mouseCapture, nativeTranscriptParts.staticItems],
+    () => {
+      if (mouseCapture) return [];
+      const items: NativeStaticItem[] = [];
+      if (clearCount === 0) {
+        items.push({ key: "session-intro", type: "session-intro" as const });
+      }
+      items.push(...nativeTranscriptParts.staticItems.map((item) => ({ ...item, type: "rows" as const })));
+      return items;
+    },
+    [mouseCapture, clearCount, nativeTranscriptParts.staticItems],
   );
 
   renderDebug.traceEvent("layout", "nativeTranscript", {
@@ -430,7 +428,7 @@ function AppShellInner({
   if (!mouseCapture) {
     return (
       <Box flexDirection="column" width={finalShellWidth}>
-        <Static items={nativeStaticAllItems}>
+        <Static key={`static-transcript-${clearCount}`} items={nativeStaticAllItems}>
           {(item) => {
             if (item.type === "session-intro") {
               const intro = initialIntroRef.current!;
@@ -466,7 +464,6 @@ function AppShellInner({
         {showPanelStage && (
           <Box
             flexDirection="column"
-            height={!hasUserPrompt ? undefined : nativePanelBodyRows}
             overflow="hidden"
             paddingY={1}
           >
@@ -571,6 +568,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.mainPanelMode   === next.mainPanelMode   &&
     prev.verboseMode     === next.verboseMode     &&
     prev.mouseCapture    === next.mouseCapture    &&
+    prev.clearCount      === next.clearCount      &&
     panelPropsEqual
   );
 });

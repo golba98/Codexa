@@ -31,6 +31,7 @@ export interface SessionState {
   cursor: number;
   history: string[];
   historyIndex: number;
+  clearCount: number;
 }
 
 export type SessionAction =
@@ -98,6 +99,7 @@ export function createInitialSessionState(): SessionState {
     cursor: 0,
     history: [],
     historyIndex: -1,
+    clearCount: 0,
   };
 }
 
@@ -302,7 +304,8 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ...state,
         staticEvents: [],
         activeEvents: [],
-        uiState: reduceTracedUIState(state.uiState, { type: "DISMISS_TRANSIENT" }),
+        uiState: { kind: "IDLE" },
+        clearCount: state.clearCount + 1,
       };
     case "SET_ACTIVE_EVENTS":
       renderDebug.traceEvent("transcript", "activeEventsReplace", {

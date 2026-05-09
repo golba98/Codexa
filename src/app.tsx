@@ -153,7 +153,7 @@ import { AuthPanel } from "./ui/AuthPanel.js";
 import { BackendPicker } from "./ui/BackendPicker.js";
 import { measureBottomComposerRows, MemoizedBottomComposer } from "./ui/BottomComposer.js";
 import { useTerminalViewport } from "./ui/layout.js";
-import { ModelReasoningPicker } from "./ui/ModelReasoningPicker.js";
+import { ModelPickerScreen } from "./ui/ModelPickerScreen.js";
 import { ModePicker } from "./ui/ModePicker.js";
 import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } from "./ui/PlanActionPicker.js";
 import { PermissionsPanel, type PermissionsPanelAction } from "./ui/PermissionsPanel.js";
@@ -1043,6 +1043,17 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
+    const selectedCapability = findModelCapability(modelCapabilities, nextModel);
+    const supported = selectedCapability?.supportedReasoningLevels;
+    if (supported && supported.length > 0 && !supported.some((item) => item.id === nextReasoning)) {
+      appendErrorEvent(
+        "Reasoning unavailable",
+        `${nextModel} does not advertise ${formatReasoningLabel(nextReasoning)} reasoning in the detected Codex runtime.`,
+      );
+      returnToChatMode("selection-invalid");
+      return;
+    }
+
     modelSelectionInFlightRef.current = true;
     traceInputDebug("model_selection_app_start", getInputDebugSnapshot({
       handler: "setModelAndReasoningWithNotice",
@@ -1051,29 +1062,25 @@ export function App({ launchArgs }: AppProps) {
     }));
 
     try {
-      const modelChanged = nextModel !== model;
       const normalizedReasoning = normalizeReasoningForModelCapabilities(nextModel, nextReasoning, modelCapabilities);
-      const reasoningChanged = normalizedReasoning !== reasoningLevel;
-
       updateRuntimeConfig((current) => ({
         ...current,
         model: nextModel,
         reasoningLevel: normalizedReasoning,
       }));
-
       traceInputDebug("model_selection_app_success", getInputDebugSnapshot({
         handler: "setModelAndReasoningWithNotice",
         model: nextModel,
         reasoning: normalizedReasoning,
       }));
 
-      if (modelChanged) {
-        appendSystemEvent("Model updated", `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(normalizedReasoning)}.`);
-      } else if (reasoningChanged) {
-        appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(normalizedReasoning)}.`);
-      } else {
-        // Nothing changed — still close the picker silently.
-      }
+      const modelLabel = selectedCapability?.label && selectedCapability.label !== nextModel
+        ? selectedCapability.label
+        : nextModel;
+      appendSystemEvent(
+        "Model settings updated",
+        `${modelLabel} · reasoning: ${formatReasoningLabel(normalizedReasoning)}`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       traceInputDebug("model_selection_app_failure", getInputDebugSnapshot({
@@ -1087,7 +1094,7 @@ export function App({ launchArgs }: AppProps) {
       modelSelectionInFlightRef.current = false;
       returnToChatMode("selection");
     }
-  }, [appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, model, modelCapabilities, reasoningLevel, returnToChatMode, updateRuntimeConfig]);
+  }, [appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, modelCapabilities, returnToChatMode, updateRuntimeConfig]);
 
   const setAuthPreferenceWithNotice = useCallback((nextPreference: AuthPreference) => {
     setAuthPreference(nextPreference);
@@ -2732,6 +2739,10 @@ export function App({ launchArgs }: AppProps) {
           return;
         }
         case "verbose_toggle": {
+          if (commandResult.message) {
+            appendSystemEvent("Debug", commandResult.message);
+            return;
+          }
           setVerboseMode((current) => !current);
           appendSystemEvent(
             "Verbose mode",
@@ -2977,6 +2988,7 @@ export function App({ launchArgs }: AppProps) {
         uiState={uiState}
         verboseMode={verboseMode}
         mouseCapture={mouseCapture}
+        clearCount={sessionState.clearCount}
         panel={
           <>
             {screen === "backend-picker" && (
@@ -2988,7 +3000,8 @@ export function App({ launchArgs }: AppProps) {
             )}
 
               {screen === "model-picker" && (
-                <ModelReasoningPicker
+                <ModelPickerScreen
+                  layout={terminalLayout}
                   models={selectableModelCapabilities}
                   currentModel={model}
                   currentReasoning={reasoningLevel}
@@ -3186,7 +3199,7 @@ export function App({ launchArgs }: AppProps) {
         mainPanelMode="viewport"
         composer={composerElement}
         composerRows={composerRows}
-        panelHint={screen !== "main" ? (
+        panelHint={screen !== "main" && screen !== "model-picker" ? (
           <Box marginTop={1} paddingX={1}>
             <Text color={activeTheme.DIM}>Close the active panel with Esc to return to the composer.</Text>
           </Box>
