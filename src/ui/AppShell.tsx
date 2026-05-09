@@ -23,6 +23,7 @@ import {
 } from "./Timeline.js";
 import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow } from "./timelineMeasure.js";
 import { buildStaticIntroRows, StaticIntroItem } from "./StaticIntroItem.js";
+import type { TerminalSelectionProfile } from "../core/terminalSelection.js";
 
 // Small fixed spacer used before the first user prompt so the composer sits
 // close to the logo without a disproportionate blank gap on cold start.
@@ -51,6 +52,8 @@ export interface AppShellProps {
   panelHint?: React.ReactNode;
   verboseMode?: boolean;
   mouseCapture?: boolean;
+  onMouseActivity?: () => void;
+  selectionProfile?: TerminalSelectionProfile;
   clearCount?: number;
 }
 
@@ -104,6 +107,8 @@ function AppShellInner({
   panelHint,
   verboseMode = false,
   mouseCapture = false,
+  onMouseActivity,
+  selectionProfile,
   clearCount = 0,
 }: AppShellProps) {
   renderDebug.useRenderDebug("AppShell", {
@@ -400,6 +405,10 @@ function AppShellInner({
     };
   }, [calculatedTimelineRowsRaw, effectiveComposerRows, finalShellHeight, finalShellWidth, showComposer, showMainPanelFullOutput, showTimeline, finalTimelineRows]);
 
+  const clonedComposer = React.isValidElement(composer)
+    ? React.cloneElement(composer as React.ReactElement, { selectionProfile })
+    : composer;
+
   if (showMainPanelFullOutput) {
     return (
       <Box flexDirection="column" width="100%">
@@ -502,6 +511,7 @@ function AppShellInner({
               workspaceLabel={workspaceLabel}
               workspaceRoot={workspaceRoot}
               mouseCapture={mouseCapture}
+              onMouseActivity={onMouseActivity}
             />
           </Box>
         )}
@@ -520,7 +530,7 @@ function AppShellInner({
 
         {effectiveShowComposer && (
           <Box flexDirection="column" flexShrink={0}>
-            {composer}
+            {clonedComposer}
           </Box>
         )}
 
@@ -568,6 +578,7 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.mainPanelMode   === next.mainPanelMode   &&
     prev.verboseMode     === next.verboseMode     &&
     prev.mouseCapture    === next.mouseCapture    &&
+    prev.onMouseActivity === next.onMouseActivity &&
     prev.clearCount      === next.clearCount      &&
     panelPropsEqual
   );

@@ -99,7 +99,7 @@ export function createTerminalModeController(write: TerminalWrite): TerminalMode
   return {
     write: writeStdout,
     setMouseReporting(enabled, source) {
-      if (enabled && mouseReporting === enabled) return;
+      if (mouseReporting === enabled) return;
       mouseReporting = enabled;
       writeStdout(enabled ? TERMINAL_SEQUENCES.mouseEnable : TERMINAL_SEQUENCES.mouseDisable, source);
     },

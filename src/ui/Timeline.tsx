@@ -32,6 +32,7 @@ interface TimelineProps {
   workspaceLabel?: string;
   workspaceRoot?: string | null;
   mouseCapture?: boolean;
+  onMouseActivity?: () => void;
   contentSized?: boolean;
 }
 
@@ -953,6 +954,7 @@ export const Timeline = memo(function Timeline({
   workspaceLabel = "",
   workspaceRoot = null,
   mouseCapture = false,
+  onMouseActivity,
   contentSized = false,
 }: TimelineProps) {
   renderDebug.useRenderDebug("Timeline", {
@@ -1193,6 +1195,7 @@ export const Timeline = memo(function Timeline({
       setViewport((current) =>
         scrollTimelineViewport(current, liveSnapshotRef.current, viewportRowsRef.current, delta),
       );
+      onMouseActivity?.();
     }
 
     stdin.on("data", handleRawWheel);
@@ -1440,6 +1443,7 @@ export const Timeline = memo(function Timeline({
     prev.workspaceLabel === next.workspaceLabel &&
     prev.workspaceRoot === next.workspaceRoot &&
     prev.mouseCapture === next.mouseCapture &&
+    prev.onMouseActivity === next.onMouseActivity &&
     prev.contentSized === next.contentSized
   );
 });
