@@ -493,3 +493,21 @@ test("every command documented in help is recognized by the parser", () => {
     assert.equal(result?.action, expectedAction, `Multi-word command /${cmd} mentioned in help but returned action ${result?.action} instead of ${expectedAction}`);
   }
 });
+
+test("?-prefixed command-like input is treated as invalid command error", () => {
+  const result = runCommand("?clear");
+  assert.equal(result?.action, "unknown");
+  assert.match(result?.message ?? "", /Invalid command syntax.*\?clear/i);
+  assert.match(result?.message ?? "", /Did you mean \/clear/i);
+});
+
+test("?model shows command error not model picker", () => {
+  const result = runCommand("?model");
+  assert.equal(result?.action, "unknown");
+  assert.match(result?.message ?? "", /Invalid command syntax/i);
+});
+
+test("non-command text without / or ? prefix returns null", () => {
+  const result = runCommand("hello world");
+  assert.equal(result, null);
+});
