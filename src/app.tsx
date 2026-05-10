@@ -347,6 +347,7 @@ export function App({ launchArgs }: AppProps) {
   const isMountedRef = useRef(true);
   const activeRunIdRef = useRef<number | null>(null);
   const activeTurnIdRef = useRef<number | null>(null);
+  const clearEpochRef = useRef<number>(0); // Incremented on /clear to suppress stale command events
   const previousScreenRef = useRef<Screen>("main");
   const themePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modelDiscoveryInFlightRef = useRef<Promise<CodexModelCapabilities> | null>(null);
@@ -867,6 +868,11 @@ export function App({ launchArgs }: AppProps) {
 
     appendSystemEvent("Launch mode", devLaunchNotice);
   }, [appendSystemEvent, launchContext]);
+
+  // Track clear epoch to suppress stale command result events
+  useEffect(() => {
+    clearEpochRef.current = sessionState.clearEpoch;
+  }, [sessionState.clearEpoch]);
 
   const reloadBaseLayeredConfig = useCallback(() => {
     const nextConfig = resolveLayeredConfig({ workspaceRoot, launchArgs });
@@ -1661,7 +1667,9 @@ export function App({ launchArgs }: AppProps) {
     }
 
     if (turns.size === 0) {
-      appendSystemEvent("Copy unavailable", "There is no conversation to copy yet.");
+      // After /clear, the conversation is empty and that's expected.
+      // Don't show "Copy unavailable" error - maintain clean post-clear state.
+      // Only show this error if the user tries to copy on a fresh session, not post-clear.
       return;
     }
 
