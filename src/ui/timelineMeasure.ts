@@ -2723,7 +2723,6 @@ function appendNativeTurnParts(
   if (questionRows.length > 0) {
     output.liveRows.push(...wrapNativeRows(questionRows, options.totalWidth, item.padded, item.key));
   }
-}
 
   const endGapRow = createBlankRow(`${item.key}-turn-end-gap-row`, options.totalWidth);
   if (run && run.status === "running") {

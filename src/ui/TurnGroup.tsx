@@ -539,9 +539,8 @@ const StreamEventList = memo(function StreamEventList({
                 cols={cols}
                 approved={event.approved}
                 workspaceRoot={workspaceRoot}
-          />
-        </Box>
-      )}
+              />
+            )}
           </Box>
         );
       })}
@@ -595,7 +594,8 @@ export function TurnGroup({
           opacity={opacity}
           verboseMode={verboseMode}
           workspaceRoot={workspaceRoot}
-        />
+          />
+        </Box>
       )}
 
       {run && run.status !== "running" && verboseMode && (
