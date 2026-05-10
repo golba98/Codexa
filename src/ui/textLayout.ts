@@ -249,3 +249,85 @@ export function wrapTextRows(text: string, maxWidth: number): WrappedTextRow[] {
 export function wrapPlainText(text: string, maxWidth: number): string[] {
   return wrapTextRows(text, maxWidth).map((row) => row.text);
 }
+
+
+export function wrapCommandText(text: string, maxWidth: number): string[] {
+  if (maxWidth <= 2) return [];
+  const normalized = normalizeLineBreaks(text);
+  const rows: string[] = [];
+  let currentLine = "";
+  let currentWidth = 0;
+  
+  // Split on whitespace, but keep the whitespace tokens
+  const tokens = normalized.split(/([ \t]+)/);
+  
+  for (let i = 0; i < tokens.length; i++) {
+    let token = tokens[i];
+    if (!token) continue;
+    
+    if (token === "\n") {
+      rows.push(currentLine);
+      currentLine = "  ";
+      currentWidth = 2;
+      continue;
+    }
+    
+    let tokenWidth = getTextWidth(token);
+    
+    // Skip leading whitespace on continuation lines
+    if (/^[ \t]+$/.test(token) && currentLine === "  ") {
+      continue;
+    }
+
+    if (currentWidth + tokenWidth > maxWidth) {
+      if (/^[ \t]+$/.test(token)) {
+        // Space that pushes us over the edge, ignore it and break
+        rows.push(currentLine);
+        currentLine = "  ";
+        currentWidth = 2;
+        continue;
+      }
+      
+      if (currentWidth > 2) {
+        // We have some content on this line, push it and start a new line
+        rows.push(currentLine);
+        currentLine = "  ";
+        currentWidth = 2;
+      }
+      
+      // Now check if the token alone exceeds the available width (maxWidth - 2)
+      while (tokenWidth > maxWidth - currentWidth) {
+        const available = maxWidth - currentWidth;
+        const split = splitTextAtColumn(token, available);
+        
+        currentLine += split.before;
+        rows.push(currentLine);
+        
+        token = split.current + split.after;
+        tokenWidth = getTextWidth(token);
+        currentLine = "  ";
+        currentWidth = 2;
+      }
+      
+      currentLine += token;
+      currentWidth += tokenWidth;
+      
+    } else {
+      currentLine += token;
+      currentWidth += tokenWidth;
+    }
+  }
+  
+  if (currentLine.trim().length > 0 || currentLine === "  ") {
+    // only push if there is actual content, or if it is an intentionally empty line (rare)
+    if (currentLine !== "  ") {
+       rows.push(currentLine);
+    }
+  }
+  
+  if (rows.length > 0 && rows[0].startsWith("  ") && !text.startsWith("  ")) {
+    rows[0] = rows[0].substring(2);
+  }
+  
+  return rows;
+}

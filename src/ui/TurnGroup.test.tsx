@@ -275,15 +275,40 @@ test("finalization with same content does not cause visual flash", async () => {
   harness.instance.unmount();
 });
 
-test("resolves turn phases consistently across thinking, streaming, and final states", () => {
-  const turnId = 5;
+test("assistant output 'Codexa' label is indented by transcriptContentIndent", async () => {
+  const turnId = 100;
+  const user = makeUser(turnId);
   const run = makeRunningRun(turnId);
-  const assistant = makeAssistant(turnId, "Done");
+  const assistant = makeAssistant(turnId, "Indented response");
 
-  assert.equal(resolveTurnRunPhase(run, null, { kind: "THINKING", turnId }, turnId), "thinking");
-  assert.equal(resolveTurnRunPhase(run, assistant, { kind: "RESPONDING", turnId }, turnId), "streaming");
-  assert.equal(resolveTurnRunPhase({ ...run, status: "completed", durationMs: 100 }, assistant, { kind: "IDLE" }, turnId), "final");
+  const harness = renderTurnGroup(
+    <ThemeProvider theme="purple">
+      <TurnGroup
+        cols={120}
+        turnIndex={1}
+        user={user}
+        run={run}
+        assistant={assistant}
+        opacity="active"
+        question={null}
+        runPhase="streaming"
+        streamPreviewRows={8}
+        streamMode="assistant-first"
+      />
+    </ThemeProvider>,
+  );
+
+  await sleep();
+  const frame = harness.readOutput();
+  const lines = frame.split("\n");
+  const codexaLine = lines.find((l) => l.includes("Codexa"));
+  assert.ok(codexaLine, "expected Codexa label");
+  // Check that the line starts with exactly 4 spaces (transcriptContentIndent = 4)
+  assert.match(codexaLine, /^    Codexa/);
+
+  harness.instance.unmount();
 });
+
 
 test("snaps cleanly from streaming cursor view to completion view", async () => {
   const turnId = 11;

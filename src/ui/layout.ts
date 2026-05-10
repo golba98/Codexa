@@ -25,6 +25,7 @@ export const STARTUP_FULL_MIN_BODY_ROWS = 4;
 export const STARTUP_FULL_SAFE_PADDING_ROWS = 1;
 export const STARTUP_COMPACT_INTRO_ROWS = 4;
 export const STARTUP_TINY_MESSAGE_ROWS = 3;
+export const transcriptContentIndent = 4; // 2 for DashCard border + 2 for prompt prefix
 const DEFAULT_COLUMNS = 120;
 const DEFAULT_ROWS = 24;
 

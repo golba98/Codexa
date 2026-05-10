@@ -11,7 +11,7 @@ import { normalizeCommand, getFriendlyActionLabel } from "./commandNormalize.js"
 import { formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
 import { sanitizeTerminalLines, sanitizeTerminalOutput } from "../core/terminalSanitize.js";
-import { clampVisualText } from "./layout.js";
+import { clampVisualText, transcriptContentIndent } from "./layout.js";
 import type { Segment } from "./Markdown.js";
 import { classifyOutput, formatForBox, normalizeOutput, sanitizeOutput, sanitizeStreamChunk } from "./outputPipeline.js";
 import { maybeRenderDiff, type DiffRenderLineType } from "./diffRenderer.js";
@@ -22,7 +22,7 @@ import {
   type VisibleProgressBlock,
 } from "./progressEntries.js";
 import { selectVisibleRunActivity } from "./runActivityView.js";
-import { getTextUnits, getTextWidth, wrapPlainText } from "./textLayout.js";
+import { getTextUnits, getTextWidth, wrapPlainText, wrapCommandText } from "./textLayout.js";
 import type { RenderTimelineItem } from "./Timeline.js";
 import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
 
@@ -1654,12 +1654,13 @@ function buildCodexPlainRows(
   width: number,
   contentRows: TimelineRowSpan[][],
 ): TimelineRow[] {
+  const indent = " ".repeat(transcriptContentIndent);
   const rows: TimelineRow[] = [
-    createRow(`${keyPrefix}-label`, [createSpan("Codexa", "muted", { bold: true })], width),
+    createRow(`${keyPrefix}-label`, [createSpan(indent), createSpan("Codexa", "muted", { bold: true })], width),
   ];
 
   contentRows.forEach((row, index) => {
-    rows.push(createRow(`${keyPrefix}-content-${index}`, row.length > 0 ? row : [createSpan(" ")], width));
+    rows.push(createRow(`${keyPrefix}-content-${index}`, [createSpan(indent), ...(row.length > 0 ? row : [createSpan(" ")])], width));
   });
 
   return rows;
@@ -1695,7 +1696,8 @@ function buildCodexThinkingRows(params: {
 
   return getCachedStreamingBlockRows(cacheKey, () => {
     const contentRows: TimelineRowSpan[][] = [];
-    const bodyLines = formatProgressBlockBodyLines(params.event.block.text, params.width);
+    const contentWidth = Math.max(1, params.width - transcriptContentIndent);
+    const bodyLines = formatProgressBlockBodyLines(params.event.block.text, contentWidth);
     const lineCap = params.verbose ? bodyLines.length : COMPACT_PROCESSING_BODY_LINE_CAP;
     const visibleBodyLines = bodyLines.slice(0, lineCap);
     const overflowCount = bodyLines.length - visibleBodyLines.length;
@@ -1988,18 +1990,19 @@ function buildCodexResponseRows(params: {
 
   const buildRows = (): TimelineRow[] => {
     let responseRows: TimelineRowSpan[][] = [];
+    const contentWidth = Math.max(1, params.width - transcriptContentIndent);
     const rawContent = splitSentenceWall(formatTerminalAnswerInline(segmentText));
 
     if (!params.streaming) _streamingRowCache = null;
     const sanitized = segmentStreaming ? sanitizeStreamChunk(rawContent) : sanitizeOutput(rawContent);
     const normalized = normalizeOutput(sanitized);
-    const segments = formatForBox(classifyOutput(normalized), params.width);
-    responseRows = buildMarkdownRows(segments, params.width);
+    const segments = formatForBox(classifyOutput(normalized), contentWidth);
+    responseRows = buildMarkdownRows(segments, contentWidth);
 
     if (!params.streaming && params.run.status === "failed" && params.isLastEvent) {
       const failureMessage = sanitizeTerminalOutput(params.run.errorMessage ?? params.run.summary);
       const failureRows: TimelineRowSpan[][] = [];
-      wrapPlainText(failureMessage, Math.max(1, params.width - 2)).forEach((row, index) => {
+      wrapPlainText(failureMessage, Math.max(1, contentWidth - 2)).forEach((row, index) => {
         failureRows.push([
           createSpan(index === 0 ? "✕ " : "  ", "error"),
           createSpan(row || " ", "error"),
@@ -2274,12 +2277,14 @@ function buildTurnRows(
   const rows: TimelineRow[] = [];
 
   rows.push(...buildUserInputRows(item, width));
+  rows.push(createBlankRow(`${item.key}-prompt-gap`, width));
 
   if (item.item.run) {
     rows.push(...buildUnifiedStreamRows(item, width, options));
   }
 
   rows.push(...buildActionRequiredRows(item, width));
+  rows.push(createBlankRow(`${item.key}-turn-end-gap`, width));
   return applyTurnOpacity(rows, item.renderState.opacity);
 }
 
@@ -2450,6 +2455,7 @@ function buildStableActiveTurnGroups(
     item.renderState.opacity,
     textCacheToken(item.item.user?.prompt),
   ]), () => buildUserInputRows(item, innerWidth));
+  orderedRows.push(createBlankRow(`${item.key}-active-prompt-gap`, innerWidth));
 
   events.forEach((event, index) => {
     const liveEvent = isLiveStreamEvent(event, run);
@@ -2551,6 +2557,8 @@ function buildStableActiveTurnGroups(
   if (questionRows.length > 0) {
     orderedRows = [...orderedRows, ...questionRows];
   }
+
+  orderedRows.push(createBlankRow(`${item.key}-active-turn-end-gap`, innerWidth));
 
   return {
     frozenRows: applyTurnOpacity(orderedRows, item.renderState.opacity),
@@ -2668,6 +2676,10 @@ function appendNativeTurnParts(
         item.key,
       ),
     });
+    output.staticItems.push({
+      key: `${item.key}-prompt-gap`,
+      rows: [createBlankRow(`${item.key}-prompt-gap-row`, options.totalWidth)],
+    });
   }
 
   if (!run) return;
@@ -2710,6 +2722,16 @@ function appendNativeTurnParts(
   const questionRows = buildActionRequiredRows(item, innerWidth);
   if (questionRows.length > 0) {
     output.liveRows.push(...wrapNativeRows(questionRows, options.totalWidth, item.padded, item.key));
+  }
+
+  const endGapRow = createBlankRow(`${item.key}-turn-end-gap-row`, options.totalWidth);
+  if (run && run.status === "running") {
+    output.liveRows.push(endGapRow);
+  } else {
+    output.staticItems.push({
+      key: `${item.key}-turn-end-gap`,
+      rows: [endGapRow],
+    });
   }
 }
 
