@@ -347,6 +347,7 @@ export function App({ launchArgs }: AppProps) {
   const isMountedRef = useRef(true);
   const activeRunIdRef = useRef<number | null>(null);
   const activeTurnIdRef = useRef<number | null>(null);
+  const clearEpochRef = useRef<number>(0); // Incremented on /clear to suppress stale command events
   const previousScreenRef = useRef<Screen>("main");
   const themePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modelDiscoveryInFlightRef = useRef<Promise<CodexModelCapabilities> | null>(null);
@@ -867,6 +868,11 @@ export function App({ launchArgs }: AppProps) {
 
     appendSystemEvent("Launch mode", devLaunchNotice);
   }, [appendSystemEvent, launchContext]);
+
+  // Track clear epoch to suppress stale command result events
+  useEffect(() => {
+    clearEpochRef.current = sessionState.clearEpoch;
+  }, [sessionState.clearEpoch]);
 
   const reloadBaseLayeredConfig = useCallback(() => {
     const nextConfig = resolveLayeredConfig({ workspaceRoot, launchArgs });
@@ -1661,7 +1667,9 @@ export function App({ launchArgs }: AppProps) {
     }
 
     if (turns.size === 0) {
-      appendSystemEvent("Copy unavailable", "There is no conversation to copy yet.");
+      // After /clear, the conversation is empty and that's expected.
+      // Don't show "Copy unavailable" error - maintain clean post-clear state.
+      // Only show this error if the user tries to copy on a fresh session, not post-clear.
       return;
     }
 
@@ -2483,6 +2491,7 @@ export function App({ launchArgs }: AppProps) {
     const value = sanitizeTerminalInput(inputValue).trim();
     if (!value) return;
 
+    // Special perf debug command (not routed through handleCommand)
     if (value === "/perf") {
       const session = perf.getSession();
       const summary = session
@@ -2494,23 +2503,7 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
-    if (uiState.kind === "AWAITING_USER_ACTION") {
-      const originalUserEvent = findUserPromptForTurn(uiState.turnId);
-      if (!originalUserEvent) {
-        appendErrorEvent("Follow-up unavailable", "The original turn could not be found, so the answer could not be resumed.");
-        dispatchSession({ type: "UI_ACTION", action: { type: "DISMISS_TRANSIENT" } });
-        return;
-      }
-
-      resetComposer();
-      startPromptRun(value, buildFollowUpPrompt({
-        originalPrompt: originalUserEvent.prompt,
-        assistantQuestion: uiState.question,
-        userAnswer: value,
-      }), { submitTiming });
-      return;
-    }
-
+    // ========== COMMAND ROUTING (before AWAITING_USER_ACTION) ==========
     // Shell execution: ! prefix routes directly to the terminal
     if (value.startsWith("!")) {
       if (busy) return;
@@ -2522,6 +2515,7 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
+    // Parse slash commands (/ prefix) and question-prefix invalid commands (? prefix)
     const commandResult = handleCommand(value, {
       config: layeredRuntimeConfig,
       runtime: runtimeConfig,
@@ -2535,14 +2529,10 @@ export function App({ launchArgs }: AppProps) {
     });
     const isCommand = commandResult !== null;
 
-    if (!isCommand && busy) {
-      return;
-    }
+    if (isCommand) {
+      // Internal commands should NOT be added to PUSH_HISTORY or sent to provider
+      resetComposer();
 
-    dispatchSession({ type: "PUSH_HISTORY", value });
-    resetComposer();
-
-    if (commandResult) {
       switch (commandResult.action) {
         case "exit":
           handleQuit();
@@ -2814,11 +2804,44 @@ export function App({ launchArgs }: AppProps) {
       }
     }
 
+    // ========== NORMAL PROMPT SUBMISSION (after command routing) ==========
+    // Check for follow-up answer submission
+    if (uiState.kind === "AWAITING_USER_ACTION") {
+      const originalUserEvent = findUserPromptForTurn(uiState.turnId);
+      if (!originalUserEvent) {
+        appendErrorEvent("Follow-up unavailable", "The original turn could not be found, so the answer could not be resumed.");
+        dispatchSession({ type: "UI_ACTION", action: { type: "DISMISS_TRANSIENT" } });
+        return;
+      }
+
+      if (busy) return;
+      dispatchSession({ type: "PUSH_HISTORY", value });
+      resetComposer();
+      startPromptRun(value, buildFollowUpPrompt({
+        originalPrompt: originalUserEvent.prompt,
+        assistantQuestion: uiState.question,
+        userAnswer: value,
+      }), { submitTiming });
+      return;
+    }
+
+    // Check if app is busy for normal prompts
+    if (!isCommand && busy) {
+      return;
+    }
+
+    // Validate workspace access for normal prompts
     const workspaceGuardMessage = getPromptWorkspaceGuardMessage(value, workspaceRoot, allowedWritableRoots);
     if (workspaceGuardMessage) {
       appendErrorEvent("Workspace boundary", workspaceGuardMessage);
       return;
     }
+
+    // Add to history and reset composer for normal prompts
+    dispatchSession({ type: "PUSH_HISTORY", value });
+    resetComposer();
+
+    // Submit to provider or plan mode
     if (planMode) {
       const nextPlanState = startPlanGeneration(value, mode);
       setPlanFlow(nextPlanState);

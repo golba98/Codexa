@@ -32,6 +32,7 @@ export interface SessionState {
   history: string[];
   historyIndex: number;
   clearCount: number;
+  clearEpoch: number; // Incremented on each /clear to suppress stale async events
 }
 
 export type SessionAction =
@@ -100,6 +101,7 @@ export function createInitialSessionState(): SessionState {
     history: [],
     historyIndex: -1,
     clearCount: 0,
+    clearEpoch: 0,
   };
 }
 
@@ -306,6 +308,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         activeEvents: [],
         uiState: { kind: "IDLE" },
         clearCount: state.clearCount + 1,
+        clearEpoch: state.clearEpoch + 1,
       };
     case "SET_ACTIVE_EVENTS":
       renderDebug.traceEvent("transcript", "activeEventsReplace", {
