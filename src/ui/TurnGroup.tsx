@@ -539,8 +539,9 @@ const StreamEventList = memo(function StreamEventList({
                 cols={cols}
                 approved={event.approved}
                 workspaceRoot={workspaceRoot}
-              />
-            )}
+          />
+        </Box>
+      )}
           </Box>
         );
       })}
@@ -577,7 +578,7 @@ export function TurnGroup({
   workspaceRoot,
 }: TurnGroupProps) {
   return (
-    <Box flexDirection="column" width="100%">
+    <Box flexDirection="column" width="100%" marginBottom={1}>
       <MemoizedUserInputCard
         prompt={user.prompt}
         cols={cols}
@@ -585,7 +586,8 @@ export function TurnGroup({
       />
 
       {run && (
-        <StreamEventList
+        <Box marginTop={1}>
+          <StreamEventList
           cols={cols}
           run={run}
           assistant={assistant}

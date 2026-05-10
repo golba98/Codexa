@@ -2277,12 +2277,14 @@ function buildTurnRows(
   const rows: TimelineRow[] = [];
 
   rows.push(...buildUserInputRows(item, width));
+  rows.push(createBlankRow(`${item.key}-prompt-gap`, width));
 
   if (item.item.run) {
     rows.push(...buildUnifiedStreamRows(item, width, options));
   }
 
   rows.push(...buildActionRequiredRows(item, width));
+  rows.push(createBlankRow(`${item.key}-turn-end-gap`, width));
   return applyTurnOpacity(rows, item.renderState.opacity);
 }
 
@@ -2453,6 +2455,7 @@ function buildStableActiveTurnGroups(
     item.renderState.opacity,
     textCacheToken(item.item.user?.prompt),
   ]), () => buildUserInputRows(item, innerWidth));
+  orderedRows.push(createBlankRow(`${item.key}-active-prompt-gap`, innerWidth));
 
   events.forEach((event, index) => {
     const liveEvent = isLiveStreamEvent(event, run);
@@ -2554,6 +2557,8 @@ function buildStableActiveTurnGroups(
   if (questionRows.length > 0) {
     orderedRows = [...orderedRows, ...questionRows];
   }
+
+  orderedRows.push(createBlankRow(`${item.key}-active-turn-end-gap`, innerWidth));
 
   return {
     frozenRows: applyTurnOpacity(orderedRows, item.renderState.opacity),
@@ -2671,6 +2676,10 @@ function appendNativeTurnParts(
         item.key,
       ),
     });
+    output.staticItems.push({
+      key: `${item.key}-prompt-gap`,
+      rows: [createBlankRow(`${item.key}-prompt-gap-row`, options.totalWidth)],
+    });
   }
 
   if (!run) return;
@@ -2713,6 +2722,17 @@ function appendNativeTurnParts(
   const questionRows = buildActionRequiredRows(item, innerWidth);
   if (questionRows.length > 0) {
     output.liveRows.push(...wrapNativeRows(questionRows, options.totalWidth, item.padded, item.key));
+  }
+}
+
+  const endGapRow = createBlankRow(`${item.key}-turn-end-gap-row`, options.totalWidth);
+  if (run && run.status === "running") {
+    output.liveRows.push(endGapRow);
+  } else {
+    output.staticItems.push({
+      key: `${item.key}-turn-end-gap`,
+      rows: [endGapRow],
+    });
   }
 }
 
