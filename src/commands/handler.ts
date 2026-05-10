@@ -345,20 +345,20 @@ function formatRenderCounts(): string {
 }
 
 export function handleCommand(text: string, context: CommandContext): CommandResult | null {
-  if (!text.startsWith("/")) return null;
+  // Slash commands: / prefix
+  if (text.startsWith("/")) {
+    const [rawCmd, ...argParts] = text.slice(1).trim().split(/\s+/);
+    const cmd = rawCmd!.toLowerCase();
+    const arg = argParts.join(" ").trim();
+    const normalizedArg = arg.toLowerCase();
 
-  const [rawCmd, ...argParts] = text.slice(1).trim().split(/\s+/);
-  const cmd = rawCmd!.toLowerCase();
-  const arg = argParts.join(" ").trim();
-  const normalizedArg = arg.toLowerCase();
+    switch (cmd) {
+      case "exit":
+      case "quit":
+        return { action: "exit" };
 
-  switch (cmd) {
-    case "exit":
-    case "quit":
-      return { action: "exit" };
-
-    case "clear":
-      return { action: "clear" };
+      case "clear":
+        return { action: "clear" };
 
     case "backend": {
       if (!arg) return { action: "open_backend_picker" };
@@ -780,5 +780,17 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
         action: "unknown",
         message: `Unknown command: /${cmd}. Type /help for available commands.`,
       };
+    }
   }
+
+  // Question-prefix "commands" (like ?clear): treat as invalid command error
+  if (text.startsWith("?")) {
+    const potentialCmd = text.slice(1).trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+    return {
+      action: "unknown",
+      message: `Invalid command syntax: ${text}. Use /help for available commands. Did you mean /${potentialCmd}?`,
+    };
+  }
+
+  return null;
 }
