@@ -329,13 +329,13 @@ function AppShellInner({
     () => {
       if (mouseCapture) return [];
       const items: NativeStaticItem[] = [];
-      if (clearCount === 0) {
+      if (clearCount === 0 || isStartupFrame) {
         items.push({ key: "session-intro", type: "session-intro" as const });
       }
       items.push(...nativeTranscriptParts.staticItems.map((item) => ({ ...item, type: "rows" as const })));
       return items;
     },
-    [mouseCapture, clearCount, nativeTranscriptParts.staticItems],
+    [mouseCapture, clearCount, isStartupFrame, nativeTranscriptParts.staticItems],
   );
 
   renderDebug.traceEvent("layout", "nativeTranscript", {
@@ -406,7 +406,7 @@ function AppShellInner({
   }, [calculatedTimelineRowsRaw, effectiveComposerRows, finalShellHeight, finalShellWidth, showComposer, showMainPanelFullOutput, showTimeline, finalTimelineRows]);
 
   const clonedComposer = React.isValidElement(composer)
-    ? React.cloneElement(composer as React.ReactElement, { selectionProfile })
+    ? React.cloneElement(composer as React.ReactElement<{ selectionProfile?: TerminalSelectionProfile }>, { selectionProfile })
     : composer;
 
   if (showMainPanelFullOutput) {
@@ -501,6 +501,7 @@ function AppShellInner({
         {showTimeline && (
           <Box flexDirection="column" height={finalTimelineRows} overflow="hidden">
             <Timeline
+              key={`timeline-${clearCount}`}
               staticEvents={staticEvents}
               activeEvents={activeEvents}
               layout={layout}

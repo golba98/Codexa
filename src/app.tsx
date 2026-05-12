@@ -1753,7 +1753,8 @@ export function App({ launchArgs }: AppProps) {
     setConversationChars(0);
     setScreen("main");
     resetComposer();
-  }, [cancelActiveRun, dispatchSession, resetComposer]);
+    terminalControl.clearTranscript("src/app.tsx:handleClear");
+  }, [cancelActiveRun, dispatchSession, resetComposer, terminalControl]);
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();
@@ -3026,6 +3027,7 @@ export function App({ launchArgs }: AppProps) {
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
       <AppShell
+        key={`app-shell-${sessionState.clearCount}`}
         layout={terminalLayout}
         screen={screen}
         authState={authStatus.state}

@@ -714,9 +714,10 @@ function buildShellNode(
     screen?: "main" | "model-picker" | "theme-picker";
     authState?: "authenticated" | "checking" | "unauthenticated";
     workspaceLabel?: string;
+    clearCount?: number;
   } = {},
 ) {
-  const { screen = "main", authState = "authenticated", workspaceLabel = "C:\\Test" } = options;
+  const { screen = "main", authState = "authenticated", workspaceLabel = "C:\\Test", clearCount = 0 } = options;
   const uiState: UIState = { kind: "IDLE" };
   const composerRows = measureBottomComposerRows({
     layout,
@@ -731,6 +732,7 @@ function buildShellNode(
   return (
     <ThemeProvider theme="purple">
       <AppShell
+        key={`app-shell-${clearCount}`}
         layout={layout}
         screen={screen}
         authState={authState}
@@ -742,6 +744,7 @@ function buildShellNode(
         mainPanel={null}
         composer={buildComposerNode(layout, uiState)}
         composerRows={composerRows}
+        clearCount={clearCount}
       />
     </ThemeProvider>
   );
@@ -787,6 +790,70 @@ test("intro logo is not duplicated when transitioning from startup frame to firs
     1,
     "intro logo must appear exactly once after startup→prompt transition",
   );
+});
+
+test("post-clear empty native frame re-emits the intro and empty composer", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+
+  const instance = render(buildShellNode(layout, [], { clearCount: 1 }), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  const output = stripAnsi(raw);
+  assert.equal(countLogoInOutput(raw), 1, "post-clear frame should repaint the intro once");
+  assert.match(output, /Codexa v/);
+  assert.match(output, /\n╭[─]+╮\n│ ❯/);
+  assert.doesNotMatch(output, /Reproduce the resize flicker and fix it\./);
+});
+
+test("clear transition physically reprints the intro after previous transcript output", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+
+  const instance = render(buildShellNode(layout, EVENTS, { clearCount: 0 }), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+  const clearOutputOffset = raw.length;
+
+  instance.rerender(buildShellNode(layout, [], { clearCount: 1 }));
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  const postClearOutput = stripAnsi(raw.slice(clearOutputOffset));
+  assert.match(postClearOutput, /Codexa v/);
+  assert.match(postClearOutput, /\n╭[─]+╮\n│ ❯/);
+  assert.doesNotMatch(postClearOutput, /Reproduce the resize flicker and fix it\./);
+  assert.doesNotMatch(postClearOutput, /Root cause looks like a layout gutter mismatch/);
 });
 
 test("intro logo is not duplicated when panel opens and then closes", async () => {
