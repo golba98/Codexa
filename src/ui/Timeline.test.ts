@@ -147,6 +147,17 @@ test("groups user, run, and assistant events into a single turn item", () => {
   assert.equal(items[0].assistant?.content, "I found the auth router.");
 });
 
+test("empty transcript event state builds no timeline render rows", () => {
+  const items = buildTimelineItems([]);
+  const renderItems = buildStaticRenderItems(items, [], null, null, null);
+  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 80 });
+
+  assert.deepEqual(items, []);
+  assert.deepEqual(renderItems, []);
+  assert.equal(snapshot.totalRows, 0);
+  assert.equal(snapshot.itemCount, 0);
+});
+
 test("derives active, recent, and dim turn opacity from ordered turn ids", () => {
   const turnIds = [1, 2, 3];
 

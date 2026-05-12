@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTerminalModeController, TERMINAL_SEQUENCES } from "./terminalControl.js";
+import { createTerminalModeController, setTerminalControlUIState, TERMINAL_SEQUENCES, writeTerminalControl } from "./terminalControl.js";
 
 test("mouse reporting enables only normal mouse tracking with SGR coordinates", () => {
   let writes = "";
@@ -29,4 +29,47 @@ test("mouse reporting cleanup disables broad modes defensively", () => {
   assert.match(writes, /\x1b\[\?1003l/);
   assert.match(writes, /\x1b\[\?1006l/);
   assert.match(writes, /\x1b\[\?1015l/);
+});
+
+test("post-startup viewport clears are blocked except for transcript clear", () => {
+  let writes = "";
+  const write = (chunk: string) => {
+    writes += chunk;
+  };
+
+  writeTerminalControl(write, "stdout", "test:resize", TERMINAL_SEQUENCES.viewportClear);
+  assert.equal(writes, "");
+
+  writeTerminalControl(write, "stdout", "test:transcriptClear", TERMINAL_SEQUENCES.transcriptClear);
+  assert.equal(writes, TERMINAL_SEQUENCES.transcriptClear);
+  assert.match(writes, /\x1b\[3J/);
+});
+
+test("terminal controller exposes an intentional transcript clear with scrollback erase", () => {
+  let writes = "";
+  const controller = createTerminalModeController((chunk) => {
+    writes += chunk;
+  });
+
+  controller.clearTranscript("test");
+
+  assert.equal(writes, TERMINAL_SEQUENCES.transcriptClear);
+  assert.match(writes, /\x1b\[2J/);
+  assert.match(writes, /\x1b\[3J/);
+  assert.match(writes, /\x1b\[H/);
+});
+
+test("transcript clear is allowed while streaming state is active", () => {
+  let writes = "";
+  setTerminalControlUIState("RESPONDING");
+
+  try {
+    writeTerminalControl((chunk) => {
+      writes += chunk;
+    }, "stdout", "test:transcriptClear", TERMINAL_SEQUENCES.transcriptClear);
+  } finally {
+    setTerminalControlUIState("IDLE");
+  }
+
+  assert.equal(writes, TERMINAL_SEQUENCES.transcriptClear);
 });

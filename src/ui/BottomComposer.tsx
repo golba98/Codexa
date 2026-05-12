@@ -129,6 +129,14 @@ const COMMANDS = [
   { cmd: "/exit", desc: "Quit the application" },
 ] as const;
 
+export type CommandSuggestion = (typeof COMMANDS)[number];
+
+export interface CommandSuggestionState {
+  showSuggestions: boolean;
+  reserveSuggestionRow: boolean;
+  suggestions: readonly CommandSuggestion[];
+}
+
 const FALLBACK_MODEL_SPEC: ModelSpec = {
   status: "unknown",
   contextWindow: null,
@@ -153,6 +161,30 @@ export function getComposerPersona(uiState: UIState): ComposerPersona {
 
 export function shouldRenderBusyFooter(layout: Layout, uiState: UIState): boolean {
   return false;
+}
+
+export function getCommandSuggestionState({
+  value,
+  allowCommands,
+  inputLocked,
+}: {
+  value: string;
+  allowCommands: boolean;
+  inputLocked: boolean;
+}): CommandSuggestionState {
+  const isCmdPrefix = allowCommands && value.startsWith("/");
+  const cmdPrefix = value.split(" ")[0]?.toLowerCase() ?? "";
+  const canSuggest = !inputLocked && isCmdPrefix && !value.includes(" ");
+  const matchingSuggestions = canSuggest
+    ? COMMANDS.filter((command) => command.cmd.startsWith(cmdPrefix)).slice(0, 5)
+    : [];
+  const suggestions = matchingSuggestions.filter((command) => command.cmd !== cmdPrefix);
+
+  return {
+    showSuggestions: canSuggest,
+    reserveSuggestionRow: matchingSuggestions.length > 0,
+    suggestions,
+  };
 }
 
 export function measureBottomComposerRows({
@@ -180,13 +212,12 @@ export function measureBottomComposerRows({
     maxVisibleRows: MAX_VISIBLE_INPUT_ROWS,
     scrollRow: 0,
   });
-  const isCmdPrefix = allowCommands && normalizedValue.startsWith("/");
-  const cmdPrefix = normalizedValue.split(" ")[0]?.toLowerCase() ?? "";
-  const showSuggestions = !inputLocked && isCmdPrefix && !normalizedValue.includes(" ");
-  const suggestions = showSuggestions
-    ? COMMANDS.filter((command) => command.cmd.startsWith(cmdPrefix)).slice(0, 5)
-    : [];
-  
+  const commandSuggestionState = getCommandSuggestionState({
+    value: normalizedValue,
+    allowCommands,
+    inputLocked,
+  });
+
   // ALWAYS reserve 1 row for the status line to prevent height shifting between idle and busy states.
   const statusLineReservedRows = 1;
   const showMetadata = layout.mode !== "micro" && layout.rows > 24;
@@ -197,7 +228,7 @@ export function measureBottomComposerRows({
   return (
     visiblePromptRows
     + 2
-    + (suggestions.length > 0 ? 1 : 0)
+    + (commandSuggestionState.reserveSuggestionRow ? 1 : 0)
     + statusLineReservedRows
     + (showMetadata ? 1 : 0)
     + bottomPadding
@@ -212,6 +243,26 @@ function getStatusLine(uiState: UIState): string | null {
   if (uiState.kind === "AWAITING_USER_ACTION") return "✧ waiting for your answer";
   if (uiState.kind === "ERROR") return uiState.message;
   return null;
+}
+
+export function getVisibleComposerStatusLine({
+  uiState,
+  value,
+  allowCommands,
+}: {
+  uiState: UIState;
+  value: string;
+  allowCommands: boolean;
+}): string {
+  const persona = getComposerPersona(uiState);
+  const rawStatusLine = getStatusLine(uiState) ?? "";
+  const isCommandDraft = allowCommands && value.startsWith("/");
+
+  if (rawStatusLine.length === 0 || persona === "answer" || isCommandDraft) {
+    return "";
+  }
+
+  return rawStatusLine;
 }
 
 function getPlaceholder(persona: ComposerPersona): string {
@@ -373,19 +424,19 @@ export function BottomComposer({
     }
   }, [cursor, value]);
 
-  const isCmdPrefix = allowCommands && value.startsWith("/");
-  const cmdPrefix = value.split(" ")[0]?.toLowerCase() ?? "";
-  const showSuggestions = !inputLocked && isCmdPrefix && !value.includes(" ");
-  const suggestions = showSuggestions
-    ? COMMANDS.filter((command) => command.cmd.startsWith(cmdPrefix)).slice(0, 5)
-    : [];
+  const commandSuggestionState = getCommandSuggestionState({
+    value,
+    allowCommands,
+    inputLocked,
+  });
+  const { showSuggestions, suggestions } = commandSuggestionState;
   const suggestionText = suggestions
     .map((suggestion, index) => `${index === selectedIndex ? "›" : "·"} ${suggestion.cmd}`)
     .join("   ");
-  
-  const rawStatusLine = getStatusLine(uiState) ?? "";
-  const showStatusLine = rawStatusLine.length > 0 && persona !== "answer";
-  
+
+  const rawStatusLine = getVisibleComposerStatusLine({ uiState, value, allowCommands });
+  const showStatusLine = rawStatusLine.length > 0;
+
   const promptViewport = useMemo(
     () => createInputViewport({
       text: value,
@@ -727,9 +778,9 @@ export function BottomComposer({
         </Box>
       )}
 
-      {showSuggestions && suggestionText && (
+      {commandSuggestionState.reserveSuggestionRow && (
         <Box paddingLeft={1} marginTop={0} width="100%" overflow="hidden">
-          <Text color={theme.DIM} wrap="truncate">{suggestionText}</Text>
+          <Text color={theme.DIM} wrap="truncate">{suggestionText || " "}</Text>
         </Box>
       )}
 

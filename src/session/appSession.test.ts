@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
-import type { AssistantEvent, RunEvent, UserPromptEvent } from "./types.js";
+import type { AssistantEvent, RunEvent, TimelineEvent, UserPromptEvent } from "./types.js";
 import { getRunPlanText, isBusy } from "./types.js";
 import { createInitialSessionState, reduceSessionState, type SessionState } from "./appSession.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
@@ -60,6 +60,50 @@ function stateWithActiveRun(turnId: number): SessionState {
     ],
   };
 }
+
+test("CLEAR_TRANSCRIPT removes all rendered transcript event state and preserves prompt history", () => {
+  const turnId = 7;
+  const shellEvent: TimelineEvent = {
+    id: 10,
+    type: "shell",
+    createdAt: 10,
+    command: "echo stale",
+    lines: ["stale shell output"],
+    stderrLines: [],
+    summary: "Executed shell",
+    status: "completed",
+    exitCode: 0,
+    durationMs: 20,
+  };
+  const state: SessionState = {
+    ...createInitialSessionState(),
+    staticEvents: [
+      makeUserEvent(turnId),
+      { ...makeRunEvent(turnId), status: "completed", durationMs: 100 },
+      makeAssistantEvent(turnId, "stale assistant"),
+      shellEvent,
+      { id: 11, type: "system", createdAt: 11, title: "Mode", content: "Updated" },
+    ],
+    activeEvents: [
+      makeUserEvent(turnId + 1),
+      makeRunEvent(turnId + 1),
+      makeAssistantEvent(turnId + 1, "streaming"),
+    ],
+    uiState: { kind: "RESPONDING", turnId: turnId + 1 },
+    inputValue: "/clear",
+    cursor: 6,
+    history: ["Hello"],
+  };
+
+  const cleared = reduceSessionState(state, { type: "CLEAR_TRANSCRIPT" });
+
+  assert.deepEqual(cleared.staticEvents, []);
+  assert.deepEqual(cleared.activeEvents, []);
+  assert.deepEqual(cleared.uiState, { kind: "IDLE" });
+  assert.equal(cleared.clearCount, state.clearCount + 1);
+  assert.equal(cleared.clearEpoch, state.clearEpoch + 1);
+  assert.deepEqual(cleared.history, ["Hello"]);
+});
 
 test("FINALIZE_RUN preserves streamed content when response is undefined", () => {
   const turnId = 1;

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getComposerPersona, measureBottomComposerRows } from "./BottomComposer.js";
+import {
+  getCommandSuggestionState,
+  getComposerPersona,
+  getVisibleComposerStatusLine,
+  measureBottomComposerRows,
+} from "./BottomComposer.js";
 import { createLayoutSnapshot } from "./layout.js";
 
 test("maps the idle state to the idle composer persona", () => {
@@ -39,4 +44,71 @@ test("uses the run footer row budget in cramped busy viewports", () => {
   });
 
   assert.equal(rows, 4);
+});
+
+test("does not render an exact slash command draft as a suggestion row", () => {
+  const exact = getCommandSuggestionState({
+    value: "/clear",
+    allowCommands: true,
+    inputLocked: false,
+  });
+
+  assert.equal(exact.showSuggestions, true);
+  assert.equal(exact.reserveSuggestionRow, true);
+  assert.deepEqual(exact.suggestions.map((suggestion) => suggestion.cmd), []);
+});
+
+test("keeps partial slash command suggestions visible", () => {
+  const partial = getCommandSuggestionState({
+    value: "/clea",
+    allowCommands: true,
+    inputLocked: false,
+  });
+
+  assert.equal(partial.showSuggestions, true);
+  assert.equal(partial.reserveSuggestionRow, true);
+  assert.deepEqual(partial.suggestions.map((suggestion) => suggestion.cmd), ["/clear"]);
+});
+
+test("keeps exact and partial slash command row budgets stable", () => {
+  const layout = createLayoutSnapshot(100, 30);
+  const base = {
+    layout,
+    uiState: { kind: "IDLE" } as const,
+    value: "",
+    cursor: 0,
+  };
+
+  const partialRows = measureBottomComposerRows({
+    ...base,
+    value: "/clea",
+    cursor: "/clea".length,
+  });
+  const exactRows = measureBottomComposerRows({
+    ...base,
+    value: "/clear",
+    cursor: "/clear".length,
+  });
+
+  assert.equal(exactRows, partialRows);
+});
+
+test("suppresses completed response status while a slash command draft is active", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "ANSWER_VISIBLE", turnId: 1 },
+      value: "/clear",
+      allowCommands: true,
+    }),
+    "",
+  );
+
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "ANSWER_VISIBLE", turnId: 1 },
+      value: "next prompt",
+      allowCommands: true,
+    }),
+    "✧ Codexa response complete",
+  );
 });
