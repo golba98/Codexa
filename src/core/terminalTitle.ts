@@ -60,6 +60,8 @@ export function createTerminalTitleController(
 
       scheduleRetry(50);
       scheduleRetry(250);
+      scheduleRetry(500);
+      scheduleRetry(1000);
 
       return () => {
         cancelled = true;
