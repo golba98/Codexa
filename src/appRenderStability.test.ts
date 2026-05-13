@@ -53,19 +53,26 @@ test("Settings panel workspace display save path does not append Settings transc
 
 test("Settings panel terminal title save path still updates terminal title state", () => {
   assert.match(appSource, /if \(nextSettings\.terminalTitleMode !== terminalTitleMode\) \{\s*setTerminalTitleMode\(nextSettings\.terminalTitleMode\);/);
-  assert.match(appSource, /reassertTerminalTitle\(terminalTitleLabel, write\)/);
+  assert.match(appSource, /terminalTitleController\.write\(terminalTitleLabel\)/);
 });
 
 test("Terminal title effect is keyed by terminal title, not workspace display", () => {
-  const match = appSource.match(/useEffect\(\(\) => \{\s*const write = \(chunk: string\) => \{ stdout\.write\(chunk\); \};[\s\S]*?reassertTerminalTitle\(terminalTitleLabel, write\);[\s\S]*?\n  \}, \[([^\]]+)\]\);/);
-  assert.ok(match, "terminal title effect should exist");
+  const match = appSource.match(/useEffect\(\(\) => \{\s*terminalTitleController\.write\(terminalTitleLabel\);\s*\}, \[([^\]]+)\]\);/);
+  assert.ok(match, "terminal title update effect should exist");
   const deps = match[1] ?? "";
   assert.match(deps, /terminalTitleLabel/);
   assert.doesNotMatch(deps, /workspaceDisplayMode|workspaceLabel|sessionState\.clearCount/);
+  assert.doesNotMatch(deps, /model|reasoningLevel|runtimeConfig/);
 });
 
-test("Terminal title effect has one idempotent post-mount refresh", () => {
-  assert.match(appSource, /postMountTerminalTitleRefreshRef/);
-  assert.match(appSource, /setTimeout\(\(\) => \{\s*reassertTerminalTitle\(terminalTitleLabel, write\);/);
+test("Terminal title cold-start sequence fires immediately on mount and retries at 50ms and 250ms", () => {
+  assert.match(appSource, /terminalTitleController\.beginColdStartSequence/);
+  assert.doesNotMatch(appSource, /postMountTerminalTitleRefreshRef/);
   assert.doesNotMatch(appSource, /retryDelaysMs/);
+});
+
+test("Terminal title writes are centralized through the title controller", () => {
+  assert.doesNotMatch(appSource, /reassertTerminalTitle/);
+  assert.match(appSource, /createTerminalTitleController/);
+  assert.match(appSource, /deriveTerminalTitle\(workspaceRoot, terminalTitleMode\)/);
 });
