@@ -341,7 +341,7 @@ export function formatTerminalTitlePath(
   workspaceRoot: string,
   terminalTitleMode: TerminalTitleMode,
 ): string {
-  if (terminalTitleMode === "name") {
+  if (terminalTitleMode === "name" || terminalTitleMode === "simple") {
     return APP_NAME;
   }
 

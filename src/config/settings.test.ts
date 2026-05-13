@@ -133,7 +133,7 @@ test("formats terminal title labels with the same workspace semantics", () => {
   );
   assert.equal(
     formatTerminalTitlePath("C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal", "simple"),
-    "13-Custom-CLI-Normal",
+    "Codexa",
   );
 });
 

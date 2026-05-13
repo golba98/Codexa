@@ -31,7 +31,7 @@ test("formatTerminalTitleLabel follows the workspace leaf and app-name rules", (
   );
   assert.equal(
     formatTerminalTitleLabel("C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal", "simple"),
-    "13-Custom-CLI-Normal",
+    "Codexa",
   );
 });
 
@@ -40,7 +40,7 @@ test("deriveTerminalTitle follows terminal title mode on startup", () => {
 
   assert.equal(deriveTerminalTitle(workspaceRoot, "dir"), "13-Custom-CLI-Normal");
   assert.equal(deriveTerminalTitle(workspaceRoot, "name"), "Codexa");
-  assert.equal(deriveTerminalTitle(workspaceRoot, "simple"), "13-Custom-CLI-Normal");
+  assert.equal(deriveTerminalTitle(workspaceRoot, "simple"), "Codexa");
 });
 
 test("reassertTerminalTitle writes both title sequences without mutating process title", () => {
@@ -124,7 +124,7 @@ test("createTerminalTitleController returns Codexa for name mode", () => {
   assert.equal(deriveTerminalTitle(workspaceRoot, "name"), "Codexa");
 });
 
-test("beginColdStartSequence writes immediately then retries at 50ms and 250ms", async () => {
+test("beginColdStartSequence writes immediately then retries at 50ms, 250ms, 500ms, and 1000ms", async () => {
   const timestamps: number[] = [];
   const start = Date.now();
   const controller = createTerminalTitleController(() => {
@@ -133,13 +133,15 @@ test("beginColdStartSequence writes immediately then retries at 50ms and 250ms",
 
   const cancel = controller.beginColdStartSequence("Codexa");
 
-  await sleep(300);
+  await sleep(1100);
   cancel();
 
-  assert.equal(timestamps.length, 3, `expected 3 writes, got ${timestamps.length}`);
+  assert.equal(timestamps.length, 5, `expected 5 writes, got ${timestamps.length}`);
   assert.ok(timestamps[0]! < 20, `first write should be immediate, was ${timestamps[0]}ms`);
   assert.ok(timestamps[1]! >= 40 && timestamps[1]! < 120, `second write should be ~50ms, was ${timestamps[1]}ms`);
-  assert.ok(timestamps[2]! >= 200, `third write should be ~250ms, was ${timestamps[2]}ms`);
+  assert.ok(timestamps[2]! >= 200 && timestamps[2]! < 450, `third write should be ~250ms, was ${timestamps[2]}ms`);
+  assert.ok(timestamps[3]! >= 450 && timestamps[3]! < 800, `fourth write should be ~500ms, was ${timestamps[3]}ms`);
+  assert.ok(timestamps[4]! >= 900, `fifth write should be ~1000ms, was ${timestamps[4]}ms`);
 });
 
 test("beginColdStartSequence cancel stops pending retries", async () => {
