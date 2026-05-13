@@ -471,7 +471,8 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       };
     }
 
-    case "setting": {
+    case "setting":
+    case "settings": {
       if (!arg) {
         return { action: "open_settings_panel" };
       }
@@ -789,7 +790,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "                     suggest = read-only-style prompting, auto-edit = file edits, full-auto = strongest autonomy",
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
           "  /plan [on|off]     Show or toggle session plan mode",
-          "  /setting           Open the settings picker",
+          "  /setting, /settings Open the settings picker",
           "  /setting workspace [dir|name|simple] Control the header workspace label",
           "  /setting terminal-title [dir|name|simple] Control the terminal tab title",
           "  /setting busy-loader [true|false] Control the busy footer animation",

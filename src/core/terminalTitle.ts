@@ -32,12 +32,6 @@ export function reassertTerminalTitle(
   // OSC in-band FIRST — committed synchronously to the stdout buffer before
   // any async Win32 ConPTY path can interfere.
   writeTerminalControl(write, "stdout", "src/core/terminalTitle.ts:reassertTerminalTitle", buildTerminalTitleSequence(title));
-  // process.title as Win32 fallback for terminals that don't support OSC.
-  try {
-    process.title = title;
-  } catch {
-    // Ignore hosts where process.title cannot be updated.
-  }
 }
 
 /**

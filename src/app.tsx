@@ -272,7 +272,6 @@ export function App({ launchArgs }: AppProps) {
   const [terminalTitleMode, setTerminalTitleMode] = useState<TerminalTitleMode>(
     initialSettings.current.ui.terminalTitleMode,
   );
-  const [workspaceLabelEpoch, setWorkspaceLabelEpoch] = useState(0);
   const [showBusyLoader, setShowBusyLoader] = useState(
     initialSettings.current.ui.showBusyLoader,
   );
@@ -401,14 +400,30 @@ export function App({ launchArgs }: AppProps) {
     () => formatTerminalTitlePath(workspaceRoot, terminalTitleMode) || DEFAULT_TERMINAL_TITLE,
     [terminalTitleMode, workspaceRoot],
   );
+  const lastWrittenTerminalTitleRef = useRef<string | null>(null);
+  const postMountTerminalTitleRefreshRef = useRef(false);
   useEffect(() => {
     const write = (chunk: string) => { stdout.write(chunk); };
-    reassertTerminalTitle(terminalTitleLabel, write);
-    // Delayed retry: re-send OSC after Ink's initial render burst settles, so
-    // a late Win32 process.title reset from Bun startup cannot override it.
-    const retryId = setTimeout(() => { reassertTerminalTitle(terminalTitleLabel, write); }, 150);
-    return () => clearTimeout(retryId);
-  }, [stdout, terminalTitleLabel, workspaceLabelEpoch, sessionState.clearCount]);
+    if (lastWrittenTerminalTitleRef.current !== terminalTitleLabel) {
+      reassertTerminalTitle(terminalTitleLabel, write);
+      lastWrittenTerminalTitleRef.current = terminalTitleLabel;
+    }
+
+    if (postMountTerminalTitleRefreshRef.current) {
+      return;
+    }
+
+    // Windows Terminal/PowerShell can overwrite the tab title during startup.
+    // One post-mount refresh is enough and stays independent of workspace display.
+    const postMountRefreshId = setTimeout(() => {
+      reassertTerminalTitle(terminalTitleLabel, write);
+      lastWrittenTerminalTitleRef.current = terminalTitleLabel;
+      postMountTerminalTitleRefreshRef.current = true;
+    }, 150);
+    return () => {
+      clearTimeout(postMountRefreshId);
+    };
+  }, [stdout, terminalTitleLabel]);
   const currentUserSettings = useMemo<UserSettingValues>(() => ({
     workspaceDisplayMode,
     terminalTitleMode,
@@ -440,10 +455,6 @@ export function App({ launchArgs }: AppProps) {
     () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
     [staticEvents, activeEvents],
   );
-  const hasUserPromptRef = useRef(false);
-  hasUserPromptRef.current = hasUserPrompt;
-  const terminalTitleLabelRef = useRef<string>(terminalTitleLabel);
-  terminalTitleLabelRef.current = terminalTitleLabel;
   const hasVisibleTranscriptPlan = useMemo(
     () => planFlow.kind === "awaiting_action"
       && hasFinalizedTranscriptPlan(staticEvents, planFlow.currentPlan),
@@ -1167,18 +1178,13 @@ export function App({ launchArgs }: AppProps) {
     appendSystemEvent("Auth preference updated", `Preference set to ${formatAuthPreferenceLabel(nextPreference)}.`);
   }, [appendSystemEvent]);
 
-  const setWorkspaceDisplayModeWithNotice = useCallback((nextMode: WorkspaceDisplayMode) => {
+  const applyWorkspaceDisplayMode = useCallback((nextMode: WorkspaceDisplayMode) => {
     setWorkspaceDisplayMode(nextMode);
-    appendSystemEvent(
-      "Settings",
-      `Workspace display set to ${formatWorkspaceDisplayModeLabel(nextMode)} (${nextMode}).`,
-    );
-    if (!hasUserPromptRef.current) {
-      terminalControlRef.current.clearViewport("src/app.tsx:workspaceDisplayChange");
-      reassertTerminalTitle(terminalTitleLabelRef.current, (chunk) => { stdout.write(chunk); });
-      setWorkspaceLabelEpoch((e) => e + 1);
-    }
-  }, [appendSystemEvent, stdout]);
+  }, []);
+
+  const setWorkspaceDisplayModeWithNotice = useCallback((nextMode: WorkspaceDisplayMode) => {
+    applyWorkspaceDisplayMode(nextMode);
+  }, [applyWorkspaceDisplayMode]);
 
   const setTerminalTitleModeWithNotice = useCallback((nextMode: TerminalTitleMode) => {
     setTerminalTitleMode(nextMode);
@@ -1190,22 +1196,21 @@ export function App({ launchArgs }: AppProps) {
 
   const saveSettingsFromPanel = useCallback((nextSettings: UserSettingValues) => {
     if (nextSettings.workspaceDisplayMode !== workspaceDisplayMode) {
-      setWorkspaceDisplayModeWithNotice(nextSettings.workspaceDisplayMode);
+      applyWorkspaceDisplayMode(nextSettings.workspaceDisplayMode);
     }
     if (nextSettings.terminalTitleMode !== terminalTitleMode) {
-      setTerminalTitleModeWithNotice(nextSettings.terminalTitleMode);
+      setTerminalTitleMode(nextSettings.terminalTitleMode);
     }
     const nextShowBusyLoader = parseBusyLoaderSettingValue(nextSettings.showBusyLoader);
     if (nextShowBusyLoader !== showBusyLoader) {
       setShowBusyLoader(nextShowBusyLoader);
-      appendSystemEvent("Settings", `Busy loader ${nextShowBusyLoader ? "enabled" : "disabled"}.`);
     }
     if (nextSettings.terminalMouseMode !== terminalMouseMode) {
       setTerminalMouseMode(nextSettings.terminalMouseMode);
       setMouseOverride(null); // let the newly persisted mode drive mouseCapture
     }
     setScreen("main");
-  }, [appendSystemEvent, showBusyLoader, setTerminalTitleModeWithNotice, setWorkspaceDisplayModeWithNotice, terminalMouseMode, terminalTitleMode, workspaceDisplayMode]);
+  }, [applyWorkspaceDisplayMode, showBusyLoader, terminalMouseMode, terminalTitleMode, workspaceDisplayMode]);
 
   const setApprovalPolicyWithNotice = useCallback((nextValue: RuntimeApprovalPolicy) => {
     const gate = guardConfigMutation("mode", busy);
@@ -3102,7 +3107,6 @@ export function App({ launchArgs }: AppProps) {
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
       <AppShell
-        key={`app-shell-${sessionState.clearCount}-${workspaceLabelEpoch}`}
         layout={terminalLayout}
         screen={screen}
         authState={authStatus.state}
