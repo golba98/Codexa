@@ -30,7 +30,6 @@ import {
   formatReasoningLabel,
   formatThemeLabel,
   formatWorkspaceDisplayPath,
-  formatTerminalTitlePath,
   getNextMode,
   type TerminalTitleMode,
 } from "./config/settings.js";
@@ -119,7 +118,7 @@ import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
 import { createTerminalModeController, setTerminalControlUIState } from "./core/terminalControl.js";
-import { reassertTerminalTitle, DEFAULT_TERMINAL_TITLE } from "./core/terminalTitle.js";
+import { createTerminalTitleController, deriveTerminalTitle } from "./core/terminalTitle.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
@@ -307,8 +306,10 @@ export function App({ launchArgs }: AppProps) {
   const { stdout } = useStdout();
   const { stdin } = useStdin();
   const terminalControl = useMemo(() => createTerminalModeController((chunk) => stdout.write(chunk)), [stdout]);
-  const terminalControlRef = useRef(terminalControl);
-  terminalControlRef.current = terminalControl;
+  const terminalTitleController = useMemo(
+    () => createTerminalTitleController((chunk) => stdout.write(chunk)),
+    [stdout],
+  );
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [isMouseIdle, setIsMouseIdle] = useState(false);
   const mouseIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -397,33 +398,23 @@ export function App({ launchArgs }: AppProps) {
     [workspaceDisplayMode, workspaceRoot],
   );
   const terminalTitleLabel = useMemo(
-    () => formatTerminalTitlePath(workspaceRoot, terminalTitleMode) || DEFAULT_TERMINAL_TITLE,
+    () => deriveTerminalTitle(workspaceRoot, terminalTitleMode),
     [terminalTitleMode, workspaceRoot],
   );
-  const lastWrittenTerminalTitleRef = useRef<string | null>(null);
-  const postMountTerminalTitleRefreshRef = useRef(false);
+  const latestTerminalTitleRef = useRef(terminalTitleLabel);
+  latestTerminalTitleRef.current = terminalTitleLabel;
+
+  // Cold-start: write title immediately on mount, then retry at 50ms and 250ms to
+  // outlast Windows Terminal shell integration that overwrites the tab title on startup.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => terminalTitleController.beginColdStartSequence(latestTerminalTitleRef.current, {
+    titleMode: terminalTitleMode,
+    workspaceRoot,
+  }), [terminalTitleController]);
+
   useEffect(() => {
-    const write = (chunk: string) => { stdout.write(chunk); };
-    if (lastWrittenTerminalTitleRef.current !== terminalTitleLabel) {
-      reassertTerminalTitle(terminalTitleLabel, write);
-      lastWrittenTerminalTitleRef.current = terminalTitleLabel;
-    }
-
-    if (postMountTerminalTitleRefreshRef.current) {
-      return;
-    }
-
-    // Windows Terminal/PowerShell can overwrite the tab title during startup.
-    // One post-mount refresh is enough and stays independent of workspace display.
-    const postMountRefreshId = setTimeout(() => {
-      reassertTerminalTitle(terminalTitleLabel, write);
-      lastWrittenTerminalTitleRef.current = terminalTitleLabel;
-      postMountTerminalTitleRefreshRef.current = true;
-    }, 150);
-    return () => {
-      clearTimeout(postMountRefreshId);
-    };
-  }, [stdout, terminalTitleLabel]);
+    terminalTitleController.write(terminalTitleLabel);
+  }, [terminalTitleController, terminalTitleLabel]);
   const currentUserSettings = useMemo<UserSettingValues>(() => ({
     workspaceDisplayMode,
     terminalTitleMode,

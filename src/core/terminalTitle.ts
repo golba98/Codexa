@@ -1,7 +1,74 @@
 import { APP_NAME, type TerminalTitleMode, formatTerminalTitlePath } from "../config/settings.js";
-import { writeTerminalControl } from "./terminalControl.js";
 
 export const DEFAULT_TERMINAL_TITLE = APP_NAME;
+
+const DEBUG_TERMINAL_TITLE = Boolean(process.env["CODEXA_DEBUG_TERMINAL_TITLE"]);
+
+function debugLog(msg: string): void {
+  if (DEBUG_TERMINAL_TITLE) {
+    process.stderr.write(`[codexa:terminal-title] ${msg}\n`);
+  }
+}
+
+export interface TerminalTitleController {
+  write(title: string, opts?: { force?: boolean }): void;
+  beginColdStartSequence(
+    title: string,
+    meta?: { titleMode?: string; workspaceRoot?: string },
+  ): () => void;
+}
+
+export function createTerminalTitleController(
+  writeChunk: (chunk: string) => void,
+): TerminalTitleController {
+  let lastTitle: string | null = null;
+
+  function doWrite(rawTitle: string, force: boolean): void {
+    const safeTitle = sanitizeTerminalTitle(rawTitle);
+    if (!force && lastTitle === safeTitle) return;
+    lastTitle = safeTitle;
+    writeChunk(buildTerminalTitleSequence(safeTitle));
+    debugLog(`write title="${safeTitle}" force=${force}`);
+  }
+
+  return {
+    write(title, opts) {
+      doWrite(title, Boolean(opts?.force));
+    },
+    beginColdStartSequence(title, meta) {
+      if (DEBUG_TERMINAL_TITLE) {
+        const safeTitle = sanitizeTerminalTitle(title);
+        debugLog(
+          `cold-start begin title="${safeTitle}" titleMode="${meta?.titleMode ?? "unknown"}" workspaceRoot="${meta?.workspaceRoot ?? "unknown"}"`,
+        );
+      }
+
+      doWrite(title, true);
+
+      const timers: ReturnType<typeof setTimeout>[] = [];
+      let cancelled = false;
+
+      const scheduleRetry = (delayMs: number) => {
+        const id = setTimeout(() => {
+          if (!cancelled) {
+            debugLog(`cold-start retry t=${delayMs}ms fired`);
+            doWrite(title, true);
+          }
+        }, delayMs);
+        timers.push(id);
+      };
+
+      scheduleRetry(50);
+      scheduleRetry(250);
+
+      return () => {
+        cancelled = true;
+        timers.forEach(clearTimeout);
+        debugLog("cold-start sequence cancelled");
+      };
+    },
+  };
+}
 
 export function sanitizeTerminalTitle(title: string): string {
   return title
@@ -22,6 +89,13 @@ export function formatTerminalTitleLabel(
   return formatTerminalTitlePath(workspaceRoot, terminalTitleMode);
 }
 
+export function deriveTerminalTitle(
+  workspaceRoot: string,
+  terminalTitleMode: TerminalTitleMode,
+): string {
+  return formatTerminalTitlePath(workspaceRoot, terminalTitleMode) || DEFAULT_TERMINAL_TITLE;
+}
+
 /** Write the title sequence to stdout to (re-)assert the window title. */
 export function reassertTerminalTitle(
   title: string = DEFAULT_TERMINAL_TITLE,
@@ -29,9 +103,7 @@ export function reassertTerminalTitle(
     process.stdout.write(chunk);
   },
 ): void {
-  // OSC in-band FIRST — committed synchronously to the stdout buffer before
-  // any async Win32 ConPTY path can interfere.
-  writeTerminalControl(write, "stdout", "src/core/terminalTitle.ts:reassertTerminalTitle", buildTerminalTitleSequence(title));
+  write(buildTerminalTitleSequence(title));
 }
 
 /**
