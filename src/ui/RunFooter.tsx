@@ -23,13 +23,15 @@ export function getRunFooterStatus(uiState: UIState): string {
 
 interface RunFooterProps {
   uiState: UIState;
+  showBusyLoader?: boolean;
   onCancel: () => void;
   onQuit: () => void;
 }
 
-function RunFooter({ uiState }: RunFooterProps) {
+function RunFooter({ uiState, showBusyLoader = true }: RunFooterProps) {
   renderDebug.useRenderDebug("Footer", {
     uiStateKind: uiState.kind,
+    showBusyLoader,
   });
   renderDebug.useLifecycleDebug("Footer", {
     uiStateKind: uiState.kind,
@@ -37,7 +39,7 @@ function RunFooter({ uiState }: RunFooterProps) {
 
   const theme = useTheme();
   // THINKING/RESPONDING/SHELL_RUNNING indicate active processing
-  const isActive = isAnimatedBusyState(uiState.kind);
+  const isActive = showBusyLoader && isAnimatedBusyState(uiState.kind);
 
   return (
     <Box flexDirection="column" paddingBottom={1} width="100%">
@@ -56,7 +58,8 @@ function RunFooter({ uiState }: RunFooterProps) {
 }
 
 export const MemoizedRunFooter = memo(RunFooter, (prev, next) => {
-  return prev.uiState.kind === next.uiState.kind;
+  return prev.uiState.kind === next.uiState.kind
+    && prev.showBusyLoader === next.showBusyLoader;
 });
 
 export { RunFooter };

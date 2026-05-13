@@ -2,18 +2,22 @@ import { dumpRenderCounts } from "../core/perf/renderDebug.js";
 import {
   AUTH_PREFERENCES,
   AVAILABLE_BACKENDS,
-  DIRECTORY_DISPLAY_MODES,
   AVAILABLE_MODELS,
   AVAILABLE_REASONING_LEVELS,
-  formatDirectoryDisplayModeLabel,
+  BUSY_LOADER_SETTING_VALUES,
+  WORKSPACE_DISPLAY_MODES,
   formatAuthPreferenceLabel,
   formatBackendLabel,
   formatModeCommandHelp,
   formatModeLabel,
   formatReasoningLabel,
   formatThemeLabel,
+  formatWorkspaceDisplayModeLabel,
+  normalizeLegacyDirectoryDisplayMode,
   resolveModeCommand,
-  type DirectoryDisplayMode,
+  type BusyLoaderSettingValue,
+  type TerminalTitleMode,
+  type WorkspaceDisplayMode,
 } from "../config/settings.js";
 import { AVAILABLE_THEMES } from "../config/settings.js";
 import {
@@ -62,7 +66,9 @@ export type CommandAction =
   | "plan_mode"
   | "open_settings_panel"
   | "setting_status"
-  | "setting_directory"
+  | "setting_workspace_display"
+  | "setting_terminal_title"
+  | "setting_busy_loader"
   | "theme"
   | "help"
   | "copy"
@@ -104,7 +110,9 @@ export interface CommandContext {
   runtime: RuntimeConfig;
   resolvedRuntime: ResolvedRuntimeConfig;
   settings: {
-    directoryDisplayMode: DirectoryDisplayMode;
+    workspaceDisplayMode: WorkspaceDisplayMode;
+    terminalTitleMode: TerminalTitleMode;
+    showBusyLoader: boolean;
   };
   workspace: WorkspaceCommandContext;
   tokensUsed?: number;
@@ -468,38 +476,98 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
         return { action: "open_settings_panel" };
       }
 
-      if (normalizedArg === "directory") {
+      if (normalizedArg === "workspace" || normalizedArg === "workspace-display" || normalizedArg === "directory") {
         return {
-          action: "setting_directory",
+          action: "setting_workspace_display",
           message: [
-            `Directory display: ${formatDirectoryDisplayModeLabel(context.settings.directoryDisplayMode)} (${context.settings.directoryDisplayMode})`,
-            "Allowed values: normal, simple",
-            "normal = show the full workspace path",
+            `Workspace display: ${formatWorkspaceDisplayModeLabel(context.settings.workspaceDisplayMode)} (${context.settings.workspaceDisplayMode})`,
+            "Allowed values: dir, name, simple",
+            "dir = show the current workspace folder name",
+            "name = show Codexa",
             "simple = show only the final folder name",
           ].join("\n"),
         };
       }
 
-      if (normalizedArg.startsWith("directory ")) {
-        const nextValue = normalizedArg.slice("directory ".length).trim();
-        if (DIRECTORY_DISPLAY_MODES.includes(nextValue as DirectoryDisplayMode)) {
-          const value = nextValue as DirectoryDisplayMode;
+      const workspaceSettingPrefix = ["workspace ", "workspace-display ", "directory "].find((prefix) => normalizedArg.startsWith(prefix));
+      if (workspaceSettingPrefix) {
+        const nextValue = normalizedArg.slice(workspaceSettingPrefix.length).trim();
+        const legacyMap: Record<string, WorkspaceDisplayMode> = {
+          normal: normalizeLegacyDirectoryDisplayMode("normal"),
+        };
+        const mappedValue = legacyMap[nextValue] ?? nextValue;
+        if (WORKSPACE_DISPLAY_MODES.includes(mappedValue as WorkspaceDisplayMode)) {
+          const value = mappedValue as WorkspaceDisplayMode;
           return {
-            action: "setting_directory",
+            action: "setting_workspace_display",
             value,
-            message: `Directory display set to ${formatDirectoryDisplayModeLabel(value)} (${value}).`,
+            message: `Workspace display set to ${formatWorkspaceDisplayModeLabel(value)} (${value}).`,
           };
         }
 
         return {
           action: "unknown",
-          message: "Usage: /setting directory [normal|simple]",
+          message: "Usage: /setting workspace [dir|name|simple]",
+        };
+      }
+
+      if (normalizedArg === "terminal-title" || normalizedArg === "terminal") {
+        return {
+          action: "setting_terminal_title",
+          message: [
+            `Terminal title: ${formatWorkspaceDisplayModeLabel(context.settings.terminalTitleMode)} (${context.settings.terminalTitleMode})`,
+            "Allowed values: dir, name, simple",
+            "dir = show the current workspace folder name",
+            "name = show Codexa",
+            "simple = show only the final folder name",
+          ].join("\n"),
+        };
+      }
+
+      const terminalTitleSettingPrefix = ["terminal-title ", "terminal "].find((prefix) => normalizedArg.startsWith(prefix));
+      if (terminalTitleSettingPrefix) {
+        const nextValue = normalizedArg.slice(terminalTitleSettingPrefix.length).trim();
+        if (WORKSPACE_DISPLAY_MODES.includes(nextValue as WorkspaceDisplayMode)) {
+          const value = nextValue as TerminalTitleMode;
+          return {
+            action: "setting_terminal_title",
+            value,
+            message: `Terminal title set to ${formatWorkspaceDisplayModeLabel(value)} (${value}).`,
+          };
+        }
+
+        return {
+          action: "unknown",
+          message: "Usage: /setting terminal-title [dir|name|simple]",
+        };
+      }
+
+      if (normalizedArg === "busy-loader") {
+        return {
+          action: "setting_busy_loader",
+          message: `Busy loader: ${context.settings.showBusyLoader ? "true" : "false"}`,
+        };
+      }
+
+      if (normalizedArg.startsWith("busy-loader ")) {
+        const nextValue = normalizedArg.slice("busy-loader ".length).trim();
+        if (BUSY_LOADER_SETTING_VALUES.includes(nextValue as BusyLoaderSettingValue)) {
+          return {
+            action: "setting_busy_loader",
+            value: nextValue,
+            message: `Busy loader ${nextValue === "true" ? "enabled" : "disabled"}.`,
+          };
+        }
+
+        return {
+          action: "unknown",
+          message: "Usage: /setting busy-loader [true|false]",
         };
       }
 
       return {
         action: "unknown",
-        message: "Usage: /setting or /setting directory [normal|simple]",
+        message: "Usage: /setting, /setting workspace [dir|name|simple], /setting terminal-title [dir|name|simple], or /setting busy-loader [true|false]",
       };
     }
 
@@ -722,7 +790,9 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "  /reasoning [level] Set reasoning level (no arg opens picker)",
           "  /plan [on|off]     Show or toggle session plan mode",
           "  /setting           Open the settings picker",
-          "  /setting directory [normal|simple] Control how the workspace path is displayed",
+          "  /setting workspace [dir|name|simple] Control the header workspace label",
+          "  /setting terminal-title [dir|name|simple] Control the terminal tab title",
+          "  /setting busy-loader [true|false] Control the busy footer animation",
           "  /status            Show the effective runtime configuration",
           "  /config            Show layered config sources and winning values",
           "  /config trust [status|on|off] Manage whether project config is allowed to load",

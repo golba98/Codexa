@@ -195,6 +195,16 @@ function AppShellInner({
       workspaceRoot: workspaceRoot ?? null,
     };
   }
+  if (!hasUserPrompt && initialIntroRef.current) {
+    initialIntroRef.current = {
+      authState,
+      workspaceLabel,
+      layout,
+      startupHeaderMode: liveStartupHeaderMode,
+      verboseMode,
+      workspaceRoot: workspaceRoot ?? null,
+    };
+  }
 
   // Compute the intro block's row count once, using the frozen startup layout.
   // This is used below to anchor the composer at the terminal bottom in native mode.
@@ -214,7 +224,9 @@ function AppShellInner({
       : startupHeaderMode === "compact"
         ? STARTUP_COMPACT_INTRO_ROWS
         : provisionalFullIntroRows
-    : introRowCountRef.current ?? provisionalFullIntroRows;
+    : !hasUserPrompt
+      ? provisionalFullIntroRows
+      : introRowCountRef.current ?? provisionalFullIntroRows;
 
   // Timeline owns all vertical space above the fixed composer.
   const calculatedTimelineRowsRaw = shellHeight - effectiveComposerRows;

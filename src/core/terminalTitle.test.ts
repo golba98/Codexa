@@ -2,26 +2,48 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   acquireTerminalTitleGuard,
+  buildTerminalTitleSequence,
+  formatTerminalTitleLabel,
   reassertTerminalTitle,
-  SET_TERMINAL_TITLE,
-  TERMINAL_TITLE,
+  sanitizeTerminalTitle,
 } from "./terminalTitle.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+test("buildTerminalTitleSequence emits OSC 0 and OSC 2 with sanitized title text", () => {
+  const sequence = buildTerminalTitleSequence("Codexa\u0007!");
+  assert.equal(sequence, "\x1b]0;Codexa !\x07\x1b]2;Codexa !\x07");
+  assert.equal(sanitizeTerminalTitle("  Codexa  "), "Codexa");
+});
+
+test("formatTerminalTitleLabel follows the workspace leaf and app-name rules", () => {
+  assert.equal(
+    formatTerminalTitleLabel("C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal", "dir"),
+    "13-Custom-CLI-Normal",
+  );
+  assert.equal(
+    formatTerminalTitleLabel("C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal", "name"),
+    "Codexa",
+  );
+  assert.equal(
+    formatTerminalTitleLabel("C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal", "simple"),
+    "13-Custom-CLI-Normal",
+  );
+});
+
 test("reassertTerminalTitle sets the process title and writes both title sequences", () => {
   const originalTitle = process.title;
   const writes: string[] = [];
 
   try {
-    reassertTerminalTitle((chunk) => {
+    reassertTerminalTitle("Codexa", (chunk) => {
       writes.push(chunk);
     });
 
-    assert.equal(process.title, TERMINAL_TITLE);
-    assert.deepEqual(writes, [SET_TERMINAL_TITLE]);
+    assert.equal(process.title, "Codexa");
+    assert.deepEqual(writes, [buildTerminalTitleSequence("Codexa")]);
   } finally {
     process.title = originalTitle;
   }

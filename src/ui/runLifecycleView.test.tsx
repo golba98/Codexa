@@ -54,7 +54,7 @@ test("idle footer status is empty by contract", () => {
   assert.equal(getRunFooterStatus({ kind: "IDLE" }), "");
 });
 
-function LifecycleHarness({ uiState, value }: { uiState: UIState; value: string }) {
+function LifecycleHarness({ uiState, value, showBusyLoader = true }: { uiState: UIState; value: string; showBusyLoader?: boolean }) {
   const showComposer = !isBusy(uiState);
 
   return (
@@ -88,7 +88,7 @@ function LifecycleHarness({ uiState, value }: { uiState: UIState; value: string 
             onQuit={() => {}}
           />
         ) : (
-          <RunFooter uiState={uiState} onCancel={() => {}} onQuit={() => {}} />
+          <RunFooter uiState={uiState} showBusyLoader={showBusyLoader} onCancel={() => {}} onQuit={() => {}} />
         )}
       </Box>
     </ThemeProvider>
@@ -158,6 +158,41 @@ test("busy footer advances from local status state without a parent rerender", a
   assert.match(frame, /Codexa is thinking \.\./);
 
   instance.unmount();
+});
+
+test("busy footer omits loader frames when disabled", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const instance = render(
+    <LifecycleHarness uiState={{ kind: "THINKING", turnId: 1 }} value="" showBusyLoader={false} />,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+    },
+  );
+
+  try {
+    await sleep();
+    let frame = stripAnsi(output);
+    assert.match(frame, /Codexa is thinking/);
+    assert.doesNotMatch(frame, /Codexa is thinking \./);
+
+    output = "";
+    await sleep(950);
+    frame = stripAnsi(output);
+    assert.equal(frame, "");
+  } finally {
+    instance.unmount();
+  }
 });
 
 test("static status debug flag reserves status text without dot ticks", async () => {

@@ -1,6 +1,7 @@
 import * as renderDebug from "./perf/renderDebug.js";
+import { APP_NAME } from "../config/settings.js";
 
-export const TERMINAL_TITLE = "CODEXA";
+export const TERMINAL_TITLE = APP_NAME;
 
 export const TERMINAL_SEQUENCES = {
   // \x1b[2J clears the visible viewport; \x1b[3J clears scrollback.
@@ -11,7 +12,7 @@ export const TERMINAL_SEQUENCES = {
   bracketedPasteDisable: "\x1b[?2004l",
   mouseEnable: "\x1b[?1000h\x1b[?1006h",
   mouseDisable: "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l",
-  title: "\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07",
+  title: `\x1b]0;${TERMINAL_TITLE}\x07\x1b]2;${TERMINAL_TITLE}\x07`,
 } as const;
 
 export type TerminalWrite = (chunk: string) => boolean | void;
@@ -43,10 +44,11 @@ export function writeTerminalControl(
     || sequence.includes("\x1b[H");
   const isStartupWrite = source.includes(":startup");
   const isTranscriptClear = source.includes(":transcriptClear");
+  const isViewportClear = source.includes(":viewportClear");
 
   // Aggressively block any clearing or reset sequences after startup,
   // especially during active states, to prevent the UI from disappearing.
-  if (containsClearOrReset && !isStartupWrite && !isTranscriptClear) {
+  if (containsClearOrReset && !isStartupWrite && !isTranscriptClear && !isViewportClear) {
     renderDebug.traceEvent("terminal", "blockedPostStartupClearOrReset", {
       source,
       uiStateKind: currentUIStateKind,
@@ -87,6 +89,7 @@ export function traceTerminalClear(source: string, fields: Record<string, unknow
 export interface TerminalModeController {
   write(sequence: string, source: string): boolean;
   clearTranscript(source: string): void;
+  clearViewport(source: string): void;
   setMouseReporting(enabled: boolean, source: string): void;
   setBracketedPaste(enabled: boolean, source: string): void;
   resetModes(): void;
@@ -103,6 +106,9 @@ export function createTerminalModeController(write: TerminalWrite): TerminalMode
     write: writeStdout,
     clearTranscript(source) {
       writeStdout(TERMINAL_SEQUENCES.transcriptClear, source.includes(":transcriptClear") ? source : `${source}:transcriptClear`);
+    },
+    clearViewport(source) {
+      writeStdout(TERMINAL_SEQUENCES.viewportClear, source.includes(":viewportClear") ? source : `${source}:viewportClear`);
     },
     setMouseReporting(enabled, source) {
       if (mouseReporting === enabled) return;
