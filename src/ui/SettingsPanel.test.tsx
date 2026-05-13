@@ -105,6 +105,7 @@ function SettingsPanelHarness() {
     directory: "normal",
     density: "cozy",
   });
+  const [saveCount, setSaveCount] = React.useState(0);
   const [cancelCount, setCancelCount] = React.useState(0);
 
   return (
@@ -114,10 +115,14 @@ function SettingsPanelHarness() {
           focusId="settings-panel"
           settings={TEST_SETTINGS}
           values={saved}
-          onSave={(nextValues) => setSaved(nextValues)}
+          onSave={(nextValues) => {
+            setSaved(nextValues);
+            setSaveCount((count) => count + 1);
+          }}
           onCancel={() => setCancelCount((count) => count + 1)}
         />
         <Text>{`saved:${JSON.stringify(saved)}`}</Text>
+        <Text>{`saveCount:${saveCount}`}</Text>
         <Text>{`cancel:${cancelCount}`}</Text>
       </Box>
     </ThemeProvider>
@@ -138,6 +143,35 @@ test("up and down move between settings rows before changing values", async () =
 
     const output = harness.getOutput();
     assert.match(output, /saved:\{"directory":"normal","density":"compact"\}/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("changing settings in the panel does not save repeatedly before Enter", async () => {
+  const harness = createInkHarness(<SettingsPanelHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[C");
+    await sleep(40);
+    harness.stdin.write("\u001b[C");
+    await sleep(40);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\u001b[C");
+    await sleep(80);
+
+    let output = harness.getOutput();
+    assert.match(output, /saved:\{"directory":"normal","density":"cozy"\}/);
+    assert.match(output, /saveCount:0/);
+
+    harness.stdin.write("\r");
+    await sleep(80);
+
+    output = harness.getOutput();
+    assert.match(output, /saved:\{"directory":"normal","density":"compact"\}/);
+    assert.match(output, /saveCount:1/);
   } finally {
     await harness.cleanup();
   }

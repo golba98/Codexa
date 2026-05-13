@@ -221,6 +221,10 @@ test("opens the settings panel and updates workspace and busy loader settings", 
   assert.equal(statusResult?.action, "open_settings_panel");
   assert.equal(statusResult?.message, undefined);
 
+  const pluralStatusResult = runCommand("/settings");
+  assert.equal(pluralStatusResult?.action, "open_settings_panel");
+  assert.equal(pluralStatusResult?.message, undefined);
+
   const workspaceResult = runCommand("/setting workspace", {
     settings: {
       workspaceDisplayMode: "simple",
@@ -257,6 +261,14 @@ test("opens the settings panel and updates workspace and busy loader settings", 
   const busyResult = runCommand("/setting busy-loader false");
   assert.equal(busyResult?.action, "setting_busy_loader");
   assert.equal(busyResult?.value, "false");
+});
+
+test("recognizes /settings without falling through to unknown command handling", () => {
+  const result = runCommand("/settings");
+
+  assert.equal(result?.action, "open_settings_panel");
+  assert.notEqual(result?.action, "unknown");
+  assert.doesNotMatch(result?.message ?? "", /Unknown command/i);
 });
 
 test("shows busy loader setting status", () => {
@@ -446,7 +458,7 @@ test("documents runtime commands in help", () => {
   assert.match(result?.message ?? "", /\/runtime approval-policy/i);
   assert.match(result?.message ?? "", /\/runtime writable-roots/i);
   assert.match(result?.message ?? "", /\/plan \[on\|off\]\s+Show or toggle session plan mode/i);
-  assert.match(result?.message ?? "", /\/setting\s+Open the settings picker/i);
+  assert.match(result?.message ?? "", /\/setting, \/settings Open the settings picker/i);
   assert.match(result?.message ?? "", /\/setting workspace \[dir\|name\|simple\]/i);
   assert.match(result?.message ?? "", /\/setting busy-loader \[true\|false\]/i);
   assert.match(result?.message ?? "", /\/mouse\s+Toggle SGR mouse capture for in-app wheel scroll/i);

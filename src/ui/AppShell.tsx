@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useRef } from "react";
-import { Box, Static } from "ink";
+import { Box } from "ink";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
@@ -7,11 +7,7 @@ import type { Screen, TimelineEvent, UIState } from "../session/types.js";
 import {
   getShellHeight,
   getShellWidth,
-  resolveStartupHeaderMode,
-  STARTUP_COMPACT_INTRO_ROWS,
-  STARTUP_TINY_MESSAGE_ROWS,
   type Layout,
-  type StartupHeaderMode,
 } from "./layout.js";
 import {
   buildActiveRenderItems,
@@ -22,8 +18,8 @@ import {
   type TimelineItem,
 } from "./Timeline.js";
 import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow } from "./timelineMeasure.js";
-import { buildStaticIntroRows, StaticIntroItem } from "./StaticIntroItem.js";
 import type { TerminalSelectionProfile } from "../core/terminalSelection.js";
+import { MemoizedTopHeader, measureTopHeaderRows } from "./TopHeader.js";
 
 // Small fixed spacer used before the first user prompt so the composer sits
 // close to the logo without a disproportionate blank gap on cold start.
@@ -31,8 +27,7 @@ const COLD_START_SPACER_ROWS = 3;
 
 type AppShellLayout = Layout & { layoutEpoch?: number };
 type NativeStaticItem =
-  | { key: string; type: "session-intro" }
-  | ({ type: "rows" } & NativeTranscriptRowItem);
+  { type: "rows" } & NativeTranscriptRowItem;
 
 export interface AppShellProps {
   layout: AppShellLayout;
@@ -137,6 +132,7 @@ function AppShellInner({
 
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
+  const headerRows = measureTopHeaderRows(layout);
   const showComposer = screen === "main";
   const showMainPanel = screen === "main" && mainPanel !== undefined && mainPanel !== null;
   const showMainPanelFullOutput = showMainPanel && mainPanelMode === "full-output";
@@ -146,9 +142,6 @@ function AppShellInner({
     () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
     [staticEvents, activeEvents],
   );
-  const isStartupFrame = screen === "main"
-    && !showMainPanel
-    && !hasUserPrompt;
   const previousMeasurements = useRef<{
     timelineRows: number;
     composerRows: number;
@@ -156,80 +149,12 @@ function AppShellInner({
     shellWidth: number;
   } | null>(null);
 
-  // Capture the very first render's props for the static intro.
-  // Ink's <Static> will re-flush the item if the rendered output changes.
-  // By freezing these props, we ensure the intro is truly session-static
-  // and doesn't replay when authState or layout changes later.
-  const initialIntroRef = useRef<{
-    authState: CodexAuthState;
-    workspaceLabel: string;
-    layout: Layout;
-    startupHeaderMode: StartupHeaderMode;
-    verboseMode: boolean;
-    workspaceRoot: string | null;
-  } | null>(null);
-  const provisionalFullIntroRows = useMemo(
-    () => buildStaticIntroRows({
-      authState,
-      workspaceLabel,
-      layout,
-      startupHeaderMode: "large",
-      verboseMode,
-      workspaceRoot: workspaceRoot ?? null,
-    }).length,
-    [authState, layout, verboseMode, workspaceLabel, workspaceRoot],
-  );
-  const liveStartupHeaderMode = resolveStartupHeaderMode({
-    cols: layout.cols,
-    rows: layout.rows,
-    introRows: provisionalFullIntroRows,
-    composerRows,
-  });
-  if (!initialIntroRef.current) {
-    initialIntroRef.current = {
-      authState,
-      workspaceLabel,
-      layout,
-      startupHeaderMode: liveStartupHeaderMode,
-      verboseMode,
-      workspaceRoot: workspaceRoot ?? null,
-    };
-  }
-  if (!hasUserPrompt && initialIntroRef.current) {
-    initialIntroRef.current = {
-      authState,
-      workspaceLabel,
-      layout,
-      startupHeaderMode: liveStartupHeaderMode,
-      verboseMode,
-      workspaceRoot: workspaceRoot ?? null,
-    };
-  }
-
-  // Compute the intro block's row count once, using the frozen startup layout.
-  // This is used below to anchor the composer at the terminal bottom in native mode.
-  const introRowCountRef = useRef<number | null>(null);
-  if (introRowCountRef.current === null && !mouseCapture && initialIntroRef.current) {
-    introRowCountRef.current = buildStaticIntroRows(initialIntroRef.current).length;
-  }
-  const frozenStartupHeaderMode = initialIntroRef.current?.startupHeaderMode ?? liveStartupHeaderMode;
-  const startupHeaderMode = isStartupFrame ? liveStartupHeaderMode : frozenStartupHeaderMode;
-  const isTinyStartup = isStartupFrame && startupHeaderMode === "tiny";
-  const effectiveShowComposer = showComposer && !isTinyStartup;
+  const effectiveShowComposer = showComposer;
   const effectiveComposerRows = effectiveShowComposer ? composerRows : 0;
   const panelHintRows = showPanelStage && panelHint ? 2 : 0;
-  const introRowCount = isStartupFrame
-    ? startupHeaderMode === "tiny"
-      ? STARTUP_TINY_MESSAGE_ROWS
-      : startupHeaderMode === "compact"
-        ? STARTUP_COMPACT_INTRO_ROWS
-        : provisionalFullIntroRows
-    : !hasUserPrompt
-      ? provisionalFullIntroRows
-      : introRowCountRef.current ?? provisionalFullIntroRows;
 
-  // Timeline owns all vertical space above the fixed composer.
-  const calculatedTimelineRowsRaw = shellHeight - effectiveComposerRows;
+  // Timeline/panel owns all vertical space between the live header and fixed composer.
+  const calculatedTimelineRowsRaw = shellHeight - headerRows - effectiveComposerRows - panelHintRows;
   const calculatedTimelineRows = Math.max(2, calculatedTimelineRowsRaw);
 
   const { finalShellHeight, finalShellWidth, finalTimelineRows } = useMemo(() => {
@@ -299,8 +224,8 @@ function AppShellInner({
 
     // If we're not supposed to show the timeline yet (e.g. during early mount
     // or when in a full-panel mode), we still calculate the static parts
-    // but hide the live rows. This ensures the static array length remains
-    // stable in Ink's <Static> component, preventing re-renders.
+    // but hide the live rows. This keeps the committed row array stable,
+    // preventing unnecessary re-renders.
     if (!showTimeline) {
       return { ...parts, liveRows: [] };
     }
@@ -320,7 +245,7 @@ function AppShellInner({
     if (mouseCapture || !effectiveShowComposer || showMainPanel) return 0;
     const rows = calculateNativeSpacerRows({
       shellRows: finalShellHeight,
-      introRows: introRowCount,
+      introRows: headerRows,
       composerRows: effectiveComposerRows,
       staticRows: nativeStaticTranscriptRows,
       liveRows: nativeTranscriptParts.liveRows.length,
@@ -333,21 +258,18 @@ function AppShellInner({
       return Math.min(rows, COLD_START_SPACER_ROWS);
     }
     return rows;
-  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, introRowCount, effectiveComposerRows, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
+  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, headerRows, effectiveComposerRows, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
 
-  // In native mode (no SGR capture), stable rows go into Ink's <Static> as soon as they
-  // are no longer changing. Only the current live action/response remains dynamic.
+  // In native mode (no SGR capture), committed rows still render inside the
+  // body below the live header. Do not use Ink's static output component here
+  // because it permanently prepends static output above live output, which
+  // would place transcript content before the header regardless of JSX order.
   const nativeStaticAllItems = useMemo<NativeStaticItem[]>(
     () => {
       if (mouseCapture) return [];
-      const items: NativeStaticItem[] = [];
-      if (clearCount === 0 || isStartupFrame) {
-        items.push({ key: "session-intro", type: "session-intro" as const });
-      }
-      items.push(...nativeTranscriptParts.staticItems.map((item) => ({ ...item, type: "rows" as const })));
-      return items;
+      return nativeTranscriptParts.staticItems.map((item) => ({ ...item, type: "rows" as const }));
     },
-    [mouseCapture, clearCount, isStartupFrame, nativeTranscriptParts.staticItems],
+    [mouseCapture, clearCount, nativeTranscriptParts.staticItems],
   );
 
   renderDebug.traceEvent("layout", "nativeTranscript", {
@@ -361,7 +283,7 @@ function AppShellInner({
     contentSized: true,
     finalTimelineRows,
     composerRows: effectiveComposerRows,
-    startupHeaderMode,
+    headerRows,
   });
 
   renderDebug.traceLayoutValidity("AppShell", {
@@ -425,6 +347,13 @@ function AppShellInner({
     return (
       <Box flexDirection="column" width="100%">
         <Box flexDirection="column" width={finalShellWidth}>
+          <MemoizedTopHeader
+            authState={authState}
+            workspaceLabel={workspaceLabel}
+            layout={layout}
+            runtimeSummary={runtimeSummary}
+          />
+
           {mainPanel}
 
           {showComposer && (
@@ -438,39 +367,21 @@ function AppShellInner({
   }
 
   // Native mode: no fixed shell height — content-sized so Ink's lastOutputHeight stays small.
-  // Static history is printed once, while live rows only cover the currently changing event.
-  //
-  // All native-mode layouts share one unified return so that Ink's <Static> is always the
-  // first child at the same JSX position, regardless of whether the app is on the startup
-  // frame, a panel screen, or the main transcript view.  Keeping <Static> at a stable tree
-  // position means React never unmounts it across state transitions; the component therefore
-  // preserves its internal renderedCount and never re-emits session-intro or previously-
-  // committed transcript rows — which was the root cause of the scrollback logo duplication.
+  // All visible content remains in one live tree so the header is always the
+  // first physical output region.
   if (!mouseCapture) {
     return (
       <Box flexDirection="column" width={finalShellWidth}>
-        <Static key={`static-transcript-${clearCount}`} items={nativeStaticAllItems}>
-          {(item) => {
-            if (item.type === "session-intro") {
-              const intro = initialIntroRef.current!;
-              return (
-                <StaticIntroItem
-                  key="session-intro"
-                  authState={intro.authState}
-                  workspaceLabel={intro.workspaceLabel}
-                  layout={intro.layout}
-                  startupHeaderMode={intro.startupHeaderMode}
-                  verboseMode={intro.verboseMode}
-                  workspaceRoot={intro.workspaceRoot}
-                />
-              );
-            }
+        <MemoizedTopHeader
+          authState={authState}
+          workspaceLabel={workspaceLabel}
+          layout={layout}
+          runtimeSummary={runtimeSummary}
+        />
 
-            return (
-              <NativeRowsItem key={item.key} rows={item.rows} />
-            );
-          }}
-        </Static>
+        {nativeStaticAllItems.map((item) => (
+          <NativeRowsItem key={item.key} rows={item.rows} />
+        ))}
 
         {showTimeline && nativeTranscriptParts.liveRows.length > 0 && (
           <NativeRowsItem rows={nativeTranscriptParts.liveRows} />
@@ -510,6 +421,13 @@ function AppShellInner({
   return (
     <Box flexDirection="column" width="100%" height={finalShellHeight}>
       <Box flexDirection="column" width={finalShellWidth}>
+        <MemoizedTopHeader
+          authState={authState}
+          workspaceLabel={workspaceLabel}
+          layout={layout}
+          runtimeSummary={runtimeSummary}
+        />
+
         {showTimeline && (
           <Box flexDirection="column" height={finalTimelineRows} overflow="hidden">
             <Timeline
@@ -525,6 +443,7 @@ function AppShellInner({
               workspaceRoot={workspaceRoot}
               mouseCapture={mouseCapture}
               onMouseActivity={onMouseActivity}
+              contentSized
             />
           </Box>
         )}

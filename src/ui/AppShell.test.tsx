@@ -3,14 +3,14 @@ import test from "node:test";
 import React from "react";
 import { PassThrough } from "node:stream";
 import { render, Text } from "ink";
-import type { TimelineEvent, UIState } from "../session/types.js";
+import type { Screen, TimelineEvent, UIState } from "../session/types.js";
 import { buildRuntimeSummary } from "../config/runtimeConfig.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 import { AppShell, calculateNativeSpacerRows } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "./layout.js";
 import { PlanActionPicker, measurePlanActionPickerRows } from "./PlanActionPicker.js";
-import { StaticIntroItem } from "./StaticIntroItem.js";
+import { buildStaticIntroRows, StaticIntroItem } from "./StaticIntroItem.js";
 import { ThemeProvider } from "./theme.js";
 
 class TestInput extends PassThrough {
@@ -282,20 +282,21 @@ test("startup uses the large logo only when the viewport height can contain it",
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
 });
 
-test("startup uses compact header at normal shorter terminal height", async () => {
+test("startup uses live compact header at normal shorter terminal height", async () => {
   const output = await renderStartupShell(100, 24);
 
-  assert.match(output, /CODEXA/);
   assert.match(output, /Codexa v/);
+  assert.match(output, /Authenticated/);
+  assert.match(output, /C:\\Development\\1-JavaScript\\13-Custom CLI/);
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
   assert.doesNotMatch(output, /██████/);
 });
 
-test("startup tiny mode shows a resize message without the composer", async () => {
+test("startup micro mode keeps the live header and composer visible", async () => {
   const output = await renderStartupShell(39, 13);
 
-  assert.match(output, /Terminal is too small/);
-  assert.doesNotMatch(output, /\n╭[─]+╮\n│ ❯/);
+  assert.match(output, /Codexa/);
+  assert.match(output, /\n╭[─]+╮\n│ ❯/);
   assert.doesNotMatch(output, /██████/);
 });
 
@@ -765,14 +766,24 @@ function buildShellNode(
   layout: ReturnType<typeof createLayoutSnapshot>,
   staticEvents: TimelineEvent[],
   options: {
-    screen?: "main" | "model-picker" | "theme-picker";
+    screen?: Screen;
     authState?: "authenticated" | "checking" | "unauthenticated";
     workspaceLabel?: string;
     clearCount?: number;
+    panel?: React.ReactNode;
+    activeEvents?: TimelineEvent[];
+    uiState?: UIState;
   } = {},
 ) {
-  const { screen = "main", authState = "authenticated", workspaceLabel = "C:\\Test", clearCount = 0 } = options;
-  const uiState: UIState = { kind: "IDLE" };
+  const {
+    screen = "main",
+    authState = "authenticated",
+    workspaceLabel = "C:\\Test",
+    clearCount = 0,
+    panel = null,
+    activeEvents = [],
+    uiState = { kind: "IDLE" } as UIState,
+  } = options;
   const composerRows = measureBottomComposerRows({
     layout,
     uiState,
@@ -792,9 +803,9 @@ function buildShellNode(
         authState={authState}
         workspaceLabel={workspaceLabel}
         staticEvents={staticEvents}
-        activeEvents={[]}
+        activeEvents={activeEvents}
         uiState={uiState}
-        panel={null}
+        panel={panel}
         mainPanel={null}
         composer={buildComposerNode(layout, uiState)}
         composerRows={composerRows}
@@ -810,7 +821,210 @@ function countLogoInOutput(raw: string): number {
   return (stripAnsi(raw).match(/██╔════╝██╔═══██╗/g) ?? []).length;
 }
 
-test("intro logo is not duplicated when transitioning from startup frame to first prompt", async () => {
+function assertHeaderBefore(output: string, marker: string) {
+  const text = stripAnsi(output);
+  const headerIndex = text.indexOf("Codexa v");
+  const markerIndex = text.indexOf(marker);
+  assert.ok(headerIndex >= 0, "header should render");
+  assert.ok(markerIndex >= 0, `marker should render: ${marker}`);
+  assert.ok(
+    headerIndex < markerIndex,
+    `header should render before ${marker}; header index ${headerIndex}, marker index ${markerIndex}`,
+  );
+}
+
+function rowText(row: ReturnType<typeof buildStaticIntroRows>[number]): string {
+  return row.spans.map((span) => span.text).join("");
+}
+
+test("startup metadata stacks workspace directly below auth in the right block", () => {
+  const rows = buildStaticIntroRows({
+    authState: "checking",
+    workspaceLabel: "Codexa",
+    layout: createLayoutSnapshot(120, 40),
+    verboseMode: false,
+    workspaceRoot: "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal",
+  }).map(rowText);
+
+  const authIndex = rows.findIndex((row) => row.includes("Auth: Checking"));
+  const workspaceIndex = rows.findIndex((row) => row.includes("Workspace: Codexa"));
+
+  assert.ok(authIndex >= 0, "auth metadata row should render");
+  assert.equal(workspaceIndex, authIndex + 1, "workspace metadata should be directly below auth");
+  assert.doesNotMatch(rows.slice(workspaceIndex + 1).join("\n"), /Workspace:/);
+});
+
+test("header renders before committed prompt and assistant transcript content", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+  const instance = render(buildShellNode(layout, EVENTS), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  assertHeaderBefore(raw, "Reproduce the resize flicker and fix it.");
+  assertHeaderBefore(raw, "Root cause looks like a layout gutter mismatch");
+});
+
+test("header renders before command output and system notices", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+  const commandAndNoticeEvents: TimelineEvent[] = [
+    {
+      id: 20,
+      type: "shell",
+      createdAt: 20,
+      command: "echo command output marker",
+      lines: ["command output marker"],
+      stderrLines: [],
+      summary: "command output marker",
+      status: "completed",
+      exitCode: 0,
+      durationMs: 10,
+    },
+    {
+      id: 21,
+      type: "system",
+      createdAt: 21,
+      title: "Model settings updated",
+      content: "model notice marker",
+    },
+    {
+      id: 22,
+      type: "system",
+      createdAt: 22,
+      title: "Settings",
+      content: "Workspace display set to Name (name).",
+    },
+  ];
+
+  const instance = render(buildShellNode(layout, commandAndNoticeEvents), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  assertHeaderBefore(raw, "command output marker");
+  assertHeaderBefore(raw, "Model settings updated");
+  assertHeaderBefore(raw, "Workspace display set to Name");
+});
+
+test("settings panel renders below the header", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+  const instance = render(buildShellNode(layout, EVENTS, {
+    screen: "settings-panel",
+    panel: <Text>Settings panel marker</Text>,
+  }), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  assertHeaderBefore(raw, "Settings panel marker");
+});
+
+test("header remains topmost after multiple prompt and response cycles", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+  const multiTurnEvents: TimelineEvent[] = [
+    ...EVENTS,
+    { id: 30, type: "user", createdAt: 30, prompt: "Second prompt marker", turnId: 2 },
+    {
+      id: 31,
+      type: "run",
+      createdAt: 31,
+      startedAt: 31,
+      durationMs: 200,
+      backendId: "codex-subprocess",
+      backendLabel: "Codexa",
+      runtime: TEST_RUNTIME,
+      prompt: "Second prompt marker",
+      progressEntries: [],
+      status: "completed",
+      summary: "Completed",
+      truncatedOutput: false,
+      toolActivities: [],
+      activity: [],
+      touchedFileCount: 0,
+      errorMessage: null,
+      turnId: 2,
+    },
+    {
+      id: 32,
+      type: "assistant",
+      createdAt: 32,
+      content: "Second assistant response marker",
+      contentChunks: [],
+      turnId: 2,
+    },
+  ];
+
+  const instance = render(buildShellNode(layout, multiTurnEvents), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  assertHeaderBefore(raw, "Second prompt marker");
+  assertHeaderBefore(raw, "Second assistant response marker");
+  assert.equal(countLogoInOutput(raw), 1, "header should render once in the initial frame");
+});
+
+test("live header remains visible when transitioning from startup frame to first prompt", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   // Use a tall terminal so the large ASCII logo is chosen.
@@ -831,6 +1045,7 @@ test("intro logo is not duplicated when transitioning from startup frame to firs
   });
 
   await sleep(100);
+  const transitionOffset = raw.length;
 
   // Simulate first prompt completing — transitions from startup frame to transcript.
   instance.rerender(buildShellNode(layout, EVENTS));
@@ -839,14 +1054,52 @@ test("intro logo is not duplicated when transitioning from startup frame to firs
   instance.cleanup();
   await sleep(20);
 
-  assert.equal(
-    countLogoInOutput(raw),
-    1,
-    "intro logo must appear exactly once after startup→prompt transition",
-  );
+  const postPromptOutput = stripAnsi(raw.slice(transitionOffset));
+  assert.match(postPromptOutput, /██████/);
+  assert.match(postPromptOutput, /Codexa v/);
+  assert.match(postPromptOutput, /Auth: Authenticated/);
+  assert.match(postPromptOutput, /Workspace: C:\\Test/);
+  assert.match(postPromptOutput, /Reproduce the resize flicker and fix it\./);
+  assert.match(postPromptOutput, /Root cause looks like a layout gutter mismatch/);
+  assertHeaderBefore(postPromptOutput, "Reproduce the resize flicker and fix it.");
+  assertHeaderBefore(postPromptOutput, "Root cause looks like a layout gutter mismatch");
 });
 
-test("post-clear empty native frame re-emits the intro and empty composer", async () => {
+test("workspace label updates on cold start without remounting the app shell", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+
+  const instance = render(buildShellNode(layout, [], {
+    workspaceLabel: "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal",
+  }), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+  instance.rerender(buildShellNode(layout, [], { workspaceLabel: "Codexa" }));
+  await sleep(100);
+
+  instance.cleanup();
+  await sleep(20);
+
+  const output = stripAnsi(raw);
+  assert.match(output, /Workspace:\s*Codexa/);
+  assert.doesNotMatch(output, /Settings/);
+  assert.ok(countLogoInOutput(raw) <= 2, "workspace label changes should stay bounded to the live startup header");
+});
+
+test("post-clear empty native frame renders the live header and empty composer", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 120;
@@ -870,7 +1123,7 @@ test("post-clear empty native frame re-emits the intro and empty composer", asyn
   await sleep(20);
 
   const output = stripAnsi(raw);
-  assert.equal(countLogoInOutput(raw), 1, "post-clear frame should repaint the intro once");
+  assert.match(output, /██████/);
   assert.match(output, /Codexa v/);
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
   assert.doesNotMatch(output, /Reproduce the resize flicker and fix it\./);
@@ -910,7 +1163,7 @@ test("clear transition physically reprints the intro after previous transcript o
   assert.doesNotMatch(postClearOutput, /Root cause looks like a layout gutter mismatch/);
 });
 
-test("intro logo is not duplicated when panel opens and then closes", async () => {
+test("live header remains visible when panel opens and then closes", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 120;
@@ -937,20 +1190,20 @@ test("intro logo is not duplicated when panel opens and then closes", async () =
   await sleep(80);
 
   // Close panel — return to main screen.
+  const closeOutputOffset = raw.length;
   instance.rerender(buildShellNode(layout, EVENTS));
   await sleep(80);
 
   instance.cleanup();
   await sleep(20);
 
-  assert.equal(
-    countLogoInOutput(raw),
-    1,
-    "intro logo must appear exactly once after panel open→close transition",
-  );
+  const postCloseOutput = stripAnsi(raw.slice(closeOutputOffset));
+  assert.match(postCloseOutput, /██████/);
+  assert.match(postCloseOutput, /Codexa v/);
+  assert.match(stripAnsi(raw), /Reproduce the resize flicker and fix it\./);
 });
 
-test("intro logo is not duplicated after a terminal resize on the startup frame", async () => {
+test("startup header remains bounded after a terminal resize on the startup frame", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 120;
@@ -981,14 +1234,10 @@ test("intro logo is not duplicated after a terminal resize on the startup frame"
   instance.cleanup();
   await sleep(20);
 
-  assert.equal(
-    countLogoInOutput(raw),
-    1,
-    "intro logo must appear exactly once after a resize on the startup frame",
-  );
+  assert.ok(countLogoInOutput(raw) <= 2, "resize should not replay an unbounded number of startup logos");
 });
 
-test("intro logo is not duplicated when auth state updates during startup", async () => {
+test("live header updates auth state during startup without transcript output", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 120;
@@ -1011,17 +1260,17 @@ test("intro logo is not duplicated when auth state updates during startup", asyn
   await sleep(100);
 
   // Auth resolves — update to "authenticated".
+  const authUpdateOffset = raw.length;
   instance.rerender(buildShellNode(layout, [], { authState: "authenticated" }));
   await sleep(100);
 
   instance.cleanup();
   await sleep(20);
 
-  assert.equal(
-    countLogoInOutput(raw),
-    1,
-    "intro logo must appear exactly once after auth state transitions during startup",
-  );
+  const postAuthOutput = stripAnsi(raw.slice(authUpdateOffset));
+  assert.match(postAuthOutput, /██████/);
+  assert.match(postAuthOutput, /Auth: Authenticated/);
+  assert.doesNotMatch(postAuthOutput, /Settings/);
 });
 
 test("cold-start stability: opening and closing model picker does not expand UI", async () => {
@@ -1057,12 +1306,12 @@ test("cold-start stability: opening and closing model picker does not expand UI"
   instance.cleanup();
   await sleep(20);
 
-  assert.equal(countLogoInOutput(raw), 1, "Logo should appear exactly once");
+  assert.match(stripAnsi(raw), /Codexa v/);
 
   // Verify the layout didn't expand to fill the full 40 rows.
   // In real mode, cumulative lines should be low.
   const lines = stripAnsi(raw).split("\n").filter(l => l.trim().length > 0);
-  assert.ok(lines.length < 25, "Output should remain bounded on cold start");
+  assert.ok(lines.length < 40, "Output should remain bounded on cold start");
 });
 
 test("cold-start stability: system events do not break the startup frame", async () => {

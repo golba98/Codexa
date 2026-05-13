@@ -118,6 +118,7 @@ const COMMANDS = [
   { cmd: "/reasoning", desc: "Change reasoning level" },
   { cmd: "/plan", desc: "Show or toggle session plan mode" },
   { cmd: "/setting", desc: "Open the settings picker" },
+  { cmd: "/settings", desc: "Open the settings picker" },
   { cmd: "/status", desc: "Show effective runtime configuration" },
   { cmd: "/permissions", desc: "Inspect or update permissions and sandbox controls" },
   { cmd: "/runtime", desc: "Compatibility runtime policy controls" },

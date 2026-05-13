@@ -33,16 +33,16 @@ test("formatTerminalTitleLabel follows the workspace leaf and app-name rules", (
   );
 });
 
-test("reassertTerminalTitle sets the process title and writes both title sequences", () => {
-  const originalTitle = process.title;
+test("reassertTerminalTitle writes both title sequences without mutating process title", () => {
   const writes: string[] = [];
+  const originalTitle = process.title;
 
   try {
     reassertTerminalTitle("Codexa", (chunk) => {
       writes.push(chunk);
     });
 
-    assert.equal(process.title, "Codexa");
+    assert.equal(process.title, originalTitle);
     assert.deepEqual(writes, [buildTerminalTitleSequence("Codexa")]);
   } finally {
     process.title = originalTitle;

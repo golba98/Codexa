@@ -346,6 +346,23 @@ test("normal app render writes do not clear the terminal after startup", async (
   await flushMicrotasks();
 });
 
+test("startup writes OSC terminal title after repaint and before Ink render setup", async () => {
+  const harness = createSupportedHarness();
+  startApp(harness.deps);
+
+  const repaintIndex = harness.stdout.writes.indexOf("\x1b[2J\x1b[H");
+  const titleIndex = harness.stdout.writes.indexOf("\x1b]0;");
+  const bracketedPasteIndex = harness.stdout.writes.indexOf("\x1b[?2004h");
+
+  assert.ok(repaintIndex >= 0, "startup repaint should be written");
+  assert.ok(titleIndex > repaintIndex, "title should be written after startup repaint");
+  assert.ok(bracketedPasteIndex > titleIndex, "title should be written before bracketed paste/render setup");
+  assert.match(harness.stdout.writes, /\x1b\]0;[^\x07]+\x07\x1b\]2;[^\x07]+\x07/);
+
+  harness.resolveExit();
+  await flushMicrotasks();
+});
+
 test("soft-repaints when resize occurs without invalid dimensions", async () => {
   const harness = createSupportedHarness();
   startApp(harness.deps);
