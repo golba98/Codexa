@@ -9,7 +9,9 @@ export const DEFAULT_MODE = "full-auto";
 export const DEFAULT_REASONING_LEVEL = "high";
 export const DEFAULT_LAYOUT_STYLE = "gemini-shell";
 export const DEFAULT_THEME = "mono";
-export const DEFAULT_DIRECTORY_DISPLAY_MODE = "normal";
+export const DEFAULT_WORKSPACE_DISPLAY_MODE = "dir";
+export const DEFAULT_TERMINAL_TITLE_MODE = "dir";
+export const DEFAULT_SHOW_BUSY_LOADER = true;
 export const DEFAULT_AUTH_PREFERENCE = "chatgpt-login-goal";
 export const CODEX_EXECUTABLE = process.env.CODEX_EXECUTABLE || "codex";
 export const MAX_CHAT_LINES = 2000;
@@ -71,9 +73,16 @@ export const AVAILABLE_REASONING_LEVELS = [
 
 export type ReasoningLevel = string;
 
-export const DIRECTORY_DISPLAY_MODES = ["normal", "simple"] as const;
+export const WORKSPACE_DISPLAY_MODES = ["dir", "name", "simple"] as const;
+export const LEGACY_DIRECTORY_DISPLAY_MODES = ["normal", "simple"] as const;
 
-export type DirectoryDisplayMode = (typeof DIRECTORY_DISPLAY_MODES)[number];
+export type WorkspaceDisplayMode = (typeof WORKSPACE_DISPLAY_MODES)[number];
+export type LegacyDirectoryDisplayMode = (typeof LEGACY_DIRECTORY_DISPLAY_MODES)[number];
+export type TerminalTitleMode = WorkspaceDisplayMode;
+
+export const BUSY_LOADER_SETTING_VALUES = ["true", "false"] as const;
+
+export type BusyLoaderSettingValue = (typeof BUSY_LOADER_SETTING_VALUES)[number];
 
 export const TERMINAL_MOUSE_MODES = ["wheel", "selection"] as const;
 
@@ -94,7 +103,9 @@ export interface SettingDefinition<TKey extends string, TValue extends string> {
 }
 
 export interface UserSettingValues {
-  directory: DirectoryDisplayMode;
+  workspaceDisplayMode: WorkspaceDisplayMode;
+  terminalTitleMode: TerminalTitleMode;
+  showBusyLoader: BusyLoaderSettingValue;
   terminalMouseMode: TerminalMouseMode;
 }
 
@@ -106,12 +117,32 @@ export type UserSettingDefinition = {
 
 export const USER_SETTING_DEFINITIONS: readonly UserSettingDefinition[] = [
   {
-    key: "directory",
-    label: "Directory",
-    description: "Controls how the workspace path is displayed in the Codexa UI.",
+    key: "workspaceDisplayMode",
+    label: "Workspace display",
+    description: "Controls how the workspace label is displayed in the Codexa header.",
     options: [
-      { value: "normal", label: "Normal" },
+      { value: "dir", label: "Dir" },
+      { value: "name", label: "Name" },
       { value: "simple", label: "Simple" },
+    ],
+  },
+  {
+    key: "terminalTitleMode",
+    label: "Terminal title",
+    description: "Controls how the terminal tab/window title is displayed.",
+    options: [
+      { value: "dir", label: "Dir" },
+      { value: "name", label: "Name" },
+      { value: "simple", label: "Simple" },
+    ],
+  },
+  {
+    key: "showBusyLoader",
+    label: "Busy loader",
+    description: "Controls whether the footer shows a subtle loading animation while Codexa is busy.",
+    options: [
+      { value: "true", label: "True" },
+      { value: "false", label: "False" },
     ],
   },
   {
@@ -245,16 +276,36 @@ export function formatThemeLabel(themeId: string): string {
   return found?.label ?? themeId;
 }
 
-export function formatDirectoryDisplayModeLabel(mode: DirectoryDisplayMode): string {
-  return mode === "simple" ? "Simple" : "Normal";
+export function formatWorkspaceDisplayModeLabel(mode: WorkspaceDisplayMode): string {
+  if (mode === "name") return "Name";
+  if (mode === "simple") return "Simple";
+  return "Dir";
 }
 
-export function formatWorkspaceDisplayPath(
-  workspaceRoot: string,
-  directoryDisplayMode: DirectoryDisplayMode,
-): string {
+export function formatTerminalTitleModeLabel(mode: TerminalTitleMode): string {
+  return formatWorkspaceDisplayModeLabel(mode);
+}
+
+export function normalizeLegacyDirectoryDisplayMode(mode: LegacyDirectoryDisplayMode): WorkspaceDisplayMode {
+  return mode === "simple" ? "simple" : "dir";
+}
+
+export function formatDirectoryDisplayModeLabel(mode: WorkspaceDisplayMode | LegacyDirectoryDisplayMode): string {
+  if (mode === "normal") return "Dir";
+  return formatWorkspaceDisplayModeLabel(mode);
+}
+
+export function formatBusyLoaderSettingValue(enabled: boolean): BusyLoaderSettingValue {
+  return enabled ? "true" : "false";
+}
+
+export function parseBusyLoaderSettingValue(value: string): boolean {
+  return value === "true";
+}
+
+function formatWorkspaceLeaf(workspaceRoot: string): string {
   const trimmed = workspaceRoot.trim();
-  if (!trimmed || directoryDisplayMode === "normal") {
+  if (!trimmed) {
     return trimmed;
   }
 
@@ -273,6 +324,28 @@ export function formatWorkspaceDisplayPath(
   }
 
   return basename(normalized) || normalized;
+}
+
+export function formatWorkspaceDisplayPath(
+  workspaceRoot: string,
+  workspaceDisplayMode: WorkspaceDisplayMode,
+): string {
+  if (workspaceDisplayMode === "name") {
+    return APP_NAME;
+  }
+
+  return formatWorkspaceLeaf(workspaceRoot);
+}
+
+export function formatTerminalTitlePath(
+  workspaceRoot: string,
+  terminalTitleMode: TerminalTitleMode,
+): string {
+  if (terminalTitleMode === "name") {
+    return APP_NAME;
+  }
+
+  return formatWorkspaceLeaf(workspaceRoot);
 }
 
 export function getRecommendedReasoningForModel(model: AvailableModel): ReasoningLevel {

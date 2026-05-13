@@ -10,6 +10,7 @@ import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 import { AppShell, calculateNativeSpacerRows } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "./layout.js";
 import { PlanActionPicker, measurePlanActionPickerRows } from "./PlanActionPicker.js";
+import { StaticIntroItem } from "./StaticIntroItem.js";
 import { ThemeProvider } from "./theme.js";
 
 class TestInput extends PassThrough {
@@ -405,6 +406,59 @@ test("non-main panel content updates while the active screen is unchanged", asyn
     const frame = stripAnsi(output);
     assert.match(frame, /Loading model list/);
     assert.match(frame, /Interactive model list/);
+  } finally {
+    instance.cleanup();
+    await sleep(20);
+  }
+});
+
+test("startup intro workspace label updates when the intro component rerenders", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const layout = createLayoutSnapshot(120, 34);
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <StaticIntroItem
+        authState="authenticated"
+        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
+        layout={layout}
+        verboseMode={false}
+        workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+
+  try {
+    await sleep(80);
+    instance.rerender(
+      <ThemeProvider theme="purple">
+        <StaticIntroItem
+          authState="authenticated"
+          workspaceLabel="Codexa"
+          layout={layout}
+          verboseMode={false}
+          workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
+        />
+      </ThemeProvider>,
+    );
+    await sleep(80);
+
+    const frame = stripAnsi(output);
+    assert.match(frame, /Workspace:\s*Codexa/);
   } finally {
     instance.cleanup();
     await sleep(20);

@@ -4,17 +4,22 @@ import { Theme } from "../ui/theme.js";
 import {
   AUTH_PREFERENCES,
   DEFAULT_AUTH_PREFERENCE,
-  DEFAULT_DIRECTORY_DISPLAY_MODE,
   DEFAULT_LAYOUT_STYLE,
+  DEFAULT_SHOW_BUSY_LOADER,
   DEFAULT_TERMINAL_MOUSE_MODE,
+  DEFAULT_TERMINAL_TITLE_MODE,
   DEFAULT_THEME,
-  DIRECTORY_DISPLAY_MODES,
+  DEFAULT_WORKSPACE_DISPLAY_MODE,
+  LEGACY_DIRECTORY_DISPLAY_MODES,
   TERMINAL_MOUSE_MODES,
+  WORKSPACE_DISPLAY_MODES,
   getCodexConfigFile,
+  normalizeLegacyDirectoryDisplayMode,
   SETTINGS_FILE,
   type AuthPreference,
-  type DirectoryDisplayMode,
   type TerminalMouseMode,
+  type TerminalTitleMode,
+  type WorkspaceDisplayMode,
 } from "./settings.js";
 import {
   mergeRuntimeIntoTomlConfig,
@@ -29,7 +34,9 @@ import {
 export interface UiSettings {
   layoutStyle: string;
   theme: string;
-  directoryDisplayMode: DirectoryDisplayMode;
+  workspaceDisplayMode: WorkspaceDisplayMode;
+  terminalTitleMode: TerminalTitleMode;
+  showBusyLoader: boolean;
   terminalMouseMode: TerminalMouseMode;
   customTheme?: Partial<Theme>;
 }
@@ -53,7 +60,11 @@ function normalizeUiSettings(input: Partial<UiSettings> | null | undefined): UiS
   return {
     layoutStyle: input?.layoutStyle ?? DEFAULT_LAYOUT_STYLE,
     theme: input?.theme ?? DEFAULT_THEME,
-    directoryDisplayMode: input?.directoryDisplayMode ?? DEFAULT_DIRECTORY_DISPLAY_MODE,
+    workspaceDisplayMode: input?.workspaceDisplayMode ?? DEFAULT_WORKSPACE_DISPLAY_MODE,
+    terminalTitleMode: input?.terminalTitleMode ?? DEFAULT_TERMINAL_TITLE_MODE,
+    showBusyLoader: typeof input?.showBusyLoader === "boolean"
+      ? input.showBusyLoader
+      : DEFAULT_SHOW_BUSY_LOADER,
     terminalMouseMode: TERMINAL_MOUSE_MODES.includes(input?.terminalMouseMode as TerminalMouseMode)
       ? (input!.terminalMouseMode as TerminalMouseMode)
       : DEFAULT_TERMINAL_MOUSE_MODE,
@@ -107,6 +118,34 @@ function stripLegacyRuntime(data: unknown): Record<string, unknown> {
   return record;
 }
 
+function parseTerminalTitleMode(uiSource: Record<string, unknown>, fallback: TerminalTitleMode): TerminalTitleMode {
+  const direct = uiSource.terminalTitleMode ?? uiSource.terminal_title_mode;
+  if (typeof direct === "string" && WORKSPACE_DISPLAY_MODES.includes(direct as WorkspaceDisplayMode)) {
+    return direct as TerminalTitleMode;
+  }
+
+  return fallback;
+}
+
+function parseWorkspaceDisplayMode(uiSource: Record<string, unknown>, fallback: WorkspaceDisplayMode): WorkspaceDisplayMode {
+  const direct = uiSource.workspaceDisplayMode ?? uiSource.workspace_display_mode;
+  if (typeof direct === "string" && WORKSPACE_DISPLAY_MODES.includes(direct as WorkspaceDisplayMode)) {
+    return direct as WorkspaceDisplayMode;
+  }
+
+  const legacy = uiSource.directoryDisplayMode ?? uiSource.directory_display_mode;
+  if (typeof legacy === "string") {
+    if (WORKSPACE_DISPLAY_MODES.includes(legacy as WorkspaceDisplayMode)) {
+      return legacy as WorkspaceDisplayMode;
+    }
+    if (LEGACY_DIRECTORY_DISPLAY_MODES.includes(legacy as typeof LEGACY_DIRECTORY_DISPLAY_MODES[number])) {
+      return normalizeLegacyDirectoryDisplayMode(legacy as typeof LEGACY_DIRECTORY_DISPLAY_MODES[number]);
+    }
+  }
+
+  return fallback;
+}
+
 export function parseSettingsData(data: unknown): AppSettings {
   const defaults = getDefaultSettings();
   if (!data || typeof data !== "object") {
@@ -129,12 +168,18 @@ export function parseSettingsData(data: unknown): AppSettings {
           ? uiSource.layout_style
           : defaults.ui.layoutStyle,
       theme: typeof uiSource.theme === "string" ? uiSource.theme : defaults.ui.theme,
-      directoryDisplayMode:
-        typeof uiSource.directoryDisplayMode === "string" && DIRECTORY_DISPLAY_MODES.includes(uiSource.directoryDisplayMode as DirectoryDisplayMode)
-          ? uiSource.directoryDisplayMode as DirectoryDisplayMode
-          : typeof uiSource.directory_display_mode === "string" && DIRECTORY_DISPLAY_MODES.includes(uiSource.directory_display_mode as DirectoryDisplayMode)
-            ? uiSource.directory_display_mode as DirectoryDisplayMode
-            : defaults.ui.directoryDisplayMode,
+      workspaceDisplayMode: parseWorkspaceDisplayMode(uiSource, defaults.ui.workspaceDisplayMode),
+      terminalTitleMode: parseTerminalTitleMode(uiSource, defaults.ui.terminalTitleMode),
+      showBusyLoader: typeof uiSource.showBusyLoader === "boolean"
+        ? uiSource.showBusyLoader
+        : typeof uiSource.show_busy_loader === "boolean"
+          ? uiSource.show_busy_loader
+          : defaults.ui.showBusyLoader,
+      terminalMouseMode: typeof uiSource.terminalMouseMode === "string" && TERMINAL_MOUSE_MODES.includes(uiSource.terminalMouseMode as TerminalMouseMode)
+        ? uiSource.terminalMouseMode as TerminalMouseMode
+        : typeof uiSource.terminal_mouse_mode === "string" && TERMINAL_MOUSE_MODES.includes(uiSource.terminal_mouse_mode as TerminalMouseMode)
+          ? uiSource.terminal_mouse_mode as TerminalMouseMode
+          : defaults.ui.terminalMouseMode,
       customTheme: (uiSource.customTheme ?? uiSource.custom_theme) as Partial<Theme> | undefined,
     }),
     auth: {
@@ -148,7 +193,10 @@ export function serializeSettings(settings: AppSettings): Record<string, unknown
     ui: {
       layout_style: settings.ui.layoutStyle,
       theme: settings.ui.theme,
-      directory_display_mode: settings.ui.directoryDisplayMode,
+      workspace_display_mode: settings.ui.workspaceDisplayMode,
+      terminal_title_mode: settings.ui.terminalTitleMode,
+      show_busy_loader: settings.ui.showBusyLoader,
+      terminal_mouse_mode: settings.ui.terminalMouseMode,
       custom_theme: settings.ui.customTheme,
     },
     auth: {

@@ -46,7 +46,9 @@ const baseContext: CommandContext = {
   runtime: baseRuntime,
   resolvedRuntime: resolveRuntimeConfig(baseRuntime),
   settings: {
-    directoryDisplayMode: "normal",
+    workspaceDisplayMode: "dir",
+    terminalTitleMode: "dir",
+    showBusyLoader: true,
   },
   workspace: {
     root: "C:\\Workspace",
@@ -214,33 +216,77 @@ test("rejects invalid /plan usage with a short hint", () => {
   assert.equal(result?.message, "Usage: /plan [on|off]");
 });
 
-test("opens the settings panel and keeps typed directory compatibility", () => {
+test("opens the settings panel and updates workspace and busy loader settings", () => {
   const statusResult = runCommand("/setting");
   assert.equal(statusResult?.action, "open_settings_panel");
   assert.equal(statusResult?.message, undefined);
 
-  const directoryResult = runCommand("/setting directory", {
+  const workspaceResult = runCommand("/setting workspace", {
     settings: {
-      directoryDisplayMode: "simple",
+      workspaceDisplayMode: "simple",
+      terminalTitleMode: "name",
+      showBusyLoader: true,
     },
   });
-  assert.equal(directoryResult?.action, "setting_directory");
-  assert.match(directoryResult?.message ?? "", /Simple \(simple\)/i);
-  assert.match(directoryResult?.message ?? "", /Allowed values: normal, simple/i);
+  assert.equal(workspaceResult?.action, "setting_workspace_display");
+  assert.match(workspaceResult?.message ?? "", /Simple \(simple\)/i);
+  assert.match(workspaceResult?.message ?? "", /Allowed values: dir, name, simple/i);
 
-  const setResult = runCommand("/setting directory simple");
-  assert.equal(setResult?.action, "setting_directory");
-  assert.equal(setResult?.value, "simple");
+  const setResult = runCommand("/setting workspace name");
+  assert.equal(setResult?.action, "setting_workspace_display");
+  assert.equal(setResult?.value, "name");
+
+  const terminalResult = runCommand("/setting terminal-title", {
+    settings: {
+      workspaceDisplayMode: "dir",
+      terminalTitleMode: "simple",
+      showBusyLoader: true,
+    },
+  });
+  assert.equal(terminalResult?.action, "setting_terminal_title");
+  assert.match(terminalResult?.message ?? "", /Simple \(simple\)/i);
+
+  const setTerminalResult = runCommand("/setting terminal-title name");
+  assert.equal(setTerminalResult?.action, "setting_terminal_title");
+  assert.equal(setTerminalResult?.value, "name");
+
+  const legacyResult = runCommand("/setting directory normal");
+  assert.equal(legacyResult?.action, "setting_workspace_display");
+  assert.equal(legacyResult?.value, "dir");
+
+  const busyResult = runCommand("/setting busy-loader false");
+  assert.equal(busyResult?.action, "setting_busy_loader");
+  assert.equal(busyResult?.value, "false");
+});
+
+test("shows busy loader setting status", () => {
+  const result = runCommand("/setting busy-loader", {
+    settings: {
+      workspaceDisplayMode: "dir",
+      terminalTitleMode: "dir",
+      showBusyLoader: false,
+    },
+  });
+  assert.equal(result?.action, "setting_busy_loader");
+  assert.equal(result?.message, "Busy loader: false");
 });
 
 test("rejects invalid /setting usage with a short hint", () => {
   const invalidValue = runCommand("/setting directory compact");
   assert.equal(invalidValue?.action, "unknown");
-  assert.equal(invalidValue?.message, "Usage: /setting directory [normal|simple]");
+  assert.equal(invalidValue?.message, "Usage: /setting workspace [dir|name|simple]");
+
+  const invalidTerminalValue = runCommand("/setting terminal-title compact");
+  assert.equal(invalidTerminalValue?.action, "unknown");
+  assert.equal(invalidTerminalValue?.message, "Usage: /setting terminal-title [dir|name|simple]");
+
+  const invalidBusyLoader = runCommand("/setting busy-loader maybe");
+  assert.equal(invalidBusyLoader?.action, "unknown");
+  assert.equal(invalidBusyLoader?.message, "Usage: /setting busy-loader [true|false]");
 
   const invalidSetting = runCommand("/setting theme");
   assert.equal(invalidSetting?.action, "unknown");
-  assert.equal(invalidSetting?.message, "Usage: /setting or /setting directory [normal|simple]");
+  assert.equal(invalidSetting?.message, "Usage: /setting, /setting workspace [dir|name|simple], /setting terminal-title [dir|name|simple], or /setting busy-loader [true|false]");
 });
 
 test("shows effective runtime status", () => {
@@ -401,7 +447,8 @@ test("documents runtime commands in help", () => {
   assert.match(result?.message ?? "", /\/runtime writable-roots/i);
   assert.match(result?.message ?? "", /\/plan \[on\|off\]\s+Show or toggle session plan mode/i);
   assert.match(result?.message ?? "", /\/setting\s+Open the settings picker/i);
-  assert.match(result?.message ?? "", /\/setting directory \[normal\|simple\]/i);
+  assert.match(result?.message ?? "", /\/setting workspace \[dir\|name\|simple\]/i);
+  assert.match(result?.message ?? "", /\/setting busy-loader \[true\|false\]/i);
   assert.match(result?.message ?? "", /\/mouse\s+Toggle SGR mouse capture for in-app wheel scroll/i);
   assert.match(result?.message ?? "", /Current plan mode: Disabled/i);
   assert.match(result?.message ?? "", /Shift\+Tab\s+Toggle plan mode/i);

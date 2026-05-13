@@ -73,6 +73,7 @@ interface BottomComposerProps {
   model?: string;
   reasoningLevel?: string;
   planMode?: boolean;
+  showBusyLoader?: boolean;
   tokensUsed?: number;
   modelSpec?: ModelSpec;
   value: string;
@@ -287,6 +288,7 @@ export function BottomComposer({
   model = "",
   reasoningLevel = "",
   planMode = false,
+  showBusyLoader = true,
   tokensUsed = 0,
   modelSpec = FALLBACK_MODEL_SPEC,
   value,
@@ -747,7 +749,7 @@ export function BottomComposer({
   );
 
   if (showBusyFooter) {
-    return <MemoizedRunFooter uiState={uiState} onCancel={onCancel} onQuit={onQuit} />;
+    return <MemoizedRunFooter uiState={uiState} showBusyLoader={showBusyLoader} onCancel={onCancel} onQuit={onQuit} />;
   }
 
   return (
@@ -791,7 +793,7 @@ export function BottomComposer({
             <Box flexShrink={1} flexGrow={1} overflow="hidden">
               <AnimatedStatusText 
                 baseText={rawStatusLine} 
-                isActive={inputLocked} 
+                isActive={inputLocked && showBusyLoader} 
                 isError={persona === "error"} 
               />
             </Box>
@@ -867,6 +869,7 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   if (prev.model !== next.model) return false;
   if (prev.reasoningLevel !== next.reasoningLevel) return false;
   if (prev.planMode !== next.planMode) return false;
+  if (prev.showBusyLoader !== next.showBusyLoader) return false;
   if (prev.tokensUsed !== next.tokensUsed) return false;
   
   // Re-render if layout changes

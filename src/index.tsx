@@ -2,10 +2,13 @@ import React from "react";
 import { render, type Instance, type RenderOptions } from "ink";
 import { App } from "./app.js";
 import { parseLaunchArgs, type LaunchArgs } from "./config/launchArgs.js";
+import { loadSettings } from "./config/persistence.js";
+import { APP_NAME, formatTerminalTitlePath } from "./config/settings.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
-import { SET_TERMINAL_TITLE } from "./core/terminalTitle.js";
+import { reassertTerminalTitle } from "./core/terminalTitle.js";
+import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import {
   createTerminalModeController,
   TERMINAL_SEQUENCES,
@@ -147,7 +150,11 @@ export function startApp({
   // Clear the screen before setting the title so the viewport is blank before
   // any terminal title-change OSC sequences are processed.
   writeStdout(TERMINAL_SEQUENCES.hardRepaint, "src/index.tsx:startup");
-  writeStdout(SET_TERMINAL_TITLE, "src/index.tsx:startup.title");
+  const startupWorkspaceRoot = resolveWorkspaceRoot();
+  const startupSettings = loadSettings();
+  const startupTitle =
+    formatTerminalTitlePath(startupWorkspaceRoot, startupSettings.ui.terminalTitleMode) || APP_NAME;
+  reassertTerminalTitle(startupTitle, (chunk) => writeStdout(chunk, "src/index.tsx:startup.title"));
   terminal.setBracketedPaste(true, "src/index.tsx:startup.bracketedPaste");
 
   let cleanupDone = false;

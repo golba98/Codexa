@@ -9,7 +9,7 @@ import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { ThemeProvider } from "./theme.js";
 import { TopHeader } from "./TopHeader.js";
-import { APP_VERSION } from "../config/settings.js";
+import { APP_VERSION, formatWorkspaceDisplayPath } from "../config/settings.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -159,4 +159,29 @@ test("compact mode preserves workspace truncation without runtime text", async (
   assert.match(output, /nested\\workspace/);
   assert.doesNotMatch(output, /packages\\really-long-subfolder/);
   assert.doesNotMatch(output, /gpt-5\.4/i);
+});
+
+test("renders configured workspace display labels", async () => {
+  const workspaceRoot = "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal";
+
+  const dirOutput = await renderHeaderWithWorkspace(
+    130,
+    "authenticated",
+    formatWorkspaceDisplayPath(workspaceRoot, "dir"),
+  );
+  assert.match(dirOutput, /Workspace:\s*13-Custom-CLI-Normal/);
+
+  const nameOutput = await renderHeaderWithWorkspace(
+    130,
+    "authenticated",
+    formatWorkspaceDisplayPath(workspaceRoot, "name"),
+  );
+  assert.match(nameOutput, /Workspace:\s*Codexa/);
+
+  const simpleOutput = await renderHeaderWithWorkspace(
+    130,
+    "authenticated",
+    formatWorkspaceDisplayPath(workspaceRoot, "simple"),
+  );
+  assert.match(simpleOutput, /Workspace:\s*13-Custom-CLI-Normal/);
 });

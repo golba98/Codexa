@@ -27,7 +27,9 @@ test("keeps UI and auth settings separate from runtime persistence", () => {
     ui: {
       layoutStyle: "gemini-shell",
       theme: "purple",
-      directoryDisplayMode: "simple" as const,
+      workspaceDisplayMode: "simple" as const,
+      terminalTitleMode: "name" as const,
+      showBusyLoader: false,
       terminalMouseMode: "selection" as const,
       customTheme: { TEXT: "#fff" },
     },
@@ -41,7 +43,10 @@ test("keeps UI and auth settings separate from runtime persistence", () => {
 
   assert.equal("runtime" in serialized, false);
   assert.equal(parsed.ui.theme, "purple");
-  assert.equal(parsed.ui.directoryDisplayMode, "simple");
+  assert.equal(parsed.ui.workspaceDisplayMode, "simple");
+  assert.equal(parsed.ui.terminalTitleMode, "name");
+  assert.equal(parsed.ui.showBusyLoader, false);
+  assert.equal(parsed.ui.terminalMouseMode, "selection");
   assert.equal(parsed.auth.preference, "runner-managed");
 });
 
@@ -51,8 +56,21 @@ test("falls back to defaults for missing UI or auth preferences", () => {
 
   assert.equal(parsed.ui.layoutStyle, defaults.ui.layoutStyle);
   assert.equal(parsed.ui.theme, defaults.ui.theme);
-  assert.equal(parsed.ui.directoryDisplayMode, defaults.ui.directoryDisplayMode);
+  assert.equal(parsed.ui.workspaceDisplayMode, defaults.ui.workspaceDisplayMode);
+  assert.equal(parsed.ui.terminalTitleMode, defaults.ui.terminalTitleMode);
+  assert.equal(parsed.ui.showBusyLoader, defaults.ui.showBusyLoader);
   assert.equal(parsed.auth.preference, defaults.auth.preference);
+});
+
+test("maps legacy directory display settings into workspace display mode", () => {
+  assert.equal(parseSettingsData({ directory_display_mode: "normal" }).ui.workspaceDisplayMode, "dir");
+  assert.equal(parseSettingsData({ directoryDisplayMode: "simple" }).ui.workspaceDisplayMode, "simple");
+});
+
+test("parses workspace display and busy loader from camel and snake case", () => {
+  assert.equal(parseSettingsData({ workspace_display_mode: "name", terminal_title_mode: "simple", show_busy_loader: false }).ui.workspaceDisplayMode, "name");
+  assert.equal(parseSettingsData({ workspaceDisplayMode: "dir", terminalTitleMode: "name", showBusyLoader: true }).ui.showBusyLoader, true);
+  assert.equal(parseSettingsData({ terminalTitleMode: "name" }).ui.terminalTitleMode, "name");
 });
 
 test("merges legacy runtime fields into TOML without overwriting existing values", () => {

@@ -13,22 +13,26 @@ import { loadSettings, saveSettings } from "./config/persistence.js";
 import {
   type AuthPreference,
   type AvailableBackend,
-  type DirectoryDisplayMode,
   type AvailableMode,
   type AvailableModel,
+  parseBusyLoaderSettingValue,
   type ReasoningLevel,
   type TerminalMouseMode,
   USER_SETTING_DEFINITIONS,
+  type WorkspaceDisplayMode,
   type UserSettingValues,
   estimateTokens,
+  formatBusyLoaderSettingValue,
   formatAuthPreferenceLabel,
   formatBackendLabel,
-  formatDirectoryDisplayModeLabel,
+  formatWorkspaceDisplayModeLabel,
   formatModeLabel,
   formatReasoningLabel,
   formatThemeLabel,
   formatWorkspaceDisplayPath,
+  formatTerminalTitlePath,
   getNextMode,
+  type TerminalTitleMode,
 } from "./config/settings.js";
 import {
   AVAILABLE_APPROVAL_POLICIES,
@@ -115,6 +119,7 @@ import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
 import { createTerminalModeController, setTerminalControlUIState } from "./core/terminalControl.js";
+import { reassertTerminalTitle, DEFAULT_TERMINAL_TITLE } from "./core/terminalTitle.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
@@ -261,8 +266,15 @@ export function App({ launchArgs }: AppProps) {
   const [baseLayeredConfig, setBaseLayeredConfig] = useState<LayeredConfigResult>(initialLayeredConfig.current);
   const [sessionRuntimeOverride, setSessionRuntimeOverride] = useState<PartialRuntimeConfig>({});
   const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.auth.preference);
-  const [directoryDisplayMode, setDirectoryDisplayMode] = useState<DirectoryDisplayMode>(
-    initialSettings.current.ui.directoryDisplayMode,
+  const [workspaceDisplayMode, setWorkspaceDisplayMode] = useState<WorkspaceDisplayMode>(
+    initialSettings.current.ui.workspaceDisplayMode,
+  );
+  const [terminalTitleMode, setTerminalTitleMode] = useState<TerminalTitleMode>(
+    initialSettings.current.ui.terminalTitleMode,
+  );
+  const [workspaceLabelEpoch, setWorkspaceLabelEpoch] = useState(0);
+  const [showBusyLoader, setShowBusyLoader] = useState(
+    initialSettings.current.ui.showBusyLoader,
   );
   const [terminalMouseMode, setTerminalMouseMode] = useState<TerminalMouseMode>(
     initialSettings.current.ui.terminalMouseMode,
@@ -296,6 +308,8 @@ export function App({ launchArgs }: AppProps) {
   const { stdout } = useStdout();
   const { stdin } = useStdin();
   const terminalControl = useMemo(() => createTerminalModeController((chunk) => stdout.write(chunk)), [stdout]);
+  const terminalControlRef = useRef(terminalControl);
+  terminalControlRef.current = terminalControl;
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [isMouseIdle, setIsMouseIdle] = useState(false);
   const mouseIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -327,10 +341,6 @@ export function App({ launchArgs }: AppProps) {
   // We apply an idle-timeout: if no wheel events or keypresses occur for 1.5s,
   // we disable mouse reporting so native drag-selection works unmodified.
   const mouseCapture = (mouseOverride ?? (terminalMouseMode === "wheel")) && !isMouseIdle;
-
-  useEffect(() => {
-    try { process.title = "CODEXA"; } catch { /* ignore */ }
-  }, []);
 
   useEffect(() => {
     // Default path writes the disable sequences defensively, preserving native
@@ -384,13 +394,27 @@ export function App({ launchArgs }: AppProps) {
   );
   const currentReasoningCapabilities = currentModelCapability?.supportedReasoningLevels ?? [];
   const workspaceLabel = useMemo(
-    () => formatWorkspaceDisplayPath(workspaceRoot, directoryDisplayMode),
-    [directoryDisplayMode, workspaceRoot],
+    () => formatWorkspaceDisplayPath(workspaceRoot, workspaceDisplayMode),
+    [workspaceDisplayMode, workspaceRoot],
   );
+  const terminalTitleLabel = useMemo(
+    () => formatTerminalTitlePath(workspaceRoot, terminalTitleMode) || DEFAULT_TERMINAL_TITLE,
+    [terminalTitleMode, workspaceRoot],
+  );
+  useEffect(() => {
+    const write = (chunk: string) => { stdout.write(chunk); };
+    reassertTerminalTitle(terminalTitleLabel, write);
+    // Delayed retry: re-send OSC after Ink's initial render burst settles, so
+    // a late Win32 process.title reset from Bun startup cannot override it.
+    const retryId = setTimeout(() => { reassertTerminalTitle(terminalTitleLabel, write); }, 150);
+    return () => clearTimeout(retryId);
+  }, [stdout, terminalTitleLabel, workspaceLabelEpoch, sessionState.clearCount]);
   const currentUserSettings = useMemo<UserSettingValues>(() => ({
-    directory: directoryDisplayMode,
+    workspaceDisplayMode,
+    terminalTitleMode,
+    showBusyLoader: formatBusyLoaderSettingValue(showBusyLoader),
     terminalMouseMode,
-  }), [directoryDisplayMode, terminalMouseMode]);
+  }), [showBusyLoader, terminalMouseMode, terminalTitleMode, workspaceDisplayMode]);
   const allowedWritableRoots = useMemo(
     () => resolvedRuntimeConfig.policy.writableRoots,
     [resolvedRuntimeConfig],
@@ -412,6 +436,14 @@ export function App({ launchArgs }: AppProps) {
     });
   }, [model, modelSpecRefreshes, modelSpecs]);
   const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
+  const hasUserPrompt = useMemo(
+    () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
+    [staticEvents, activeEvents],
+  );
+  const hasUserPromptRef = useRef(false);
+  hasUserPromptRef.current = hasUserPrompt;
+  const terminalTitleLabelRef = useRef<string>(terminalTitleLabel);
+  terminalTitleLabelRef.current = terminalTitleLabel;
   const hasVisibleTranscriptPlan = useMemo(
     () => planFlow.kind === "awaiting_action"
       && hasFinalizedTranscriptPlan(staticEvents, planFlow.currentPlan),
@@ -592,7 +624,9 @@ export function App({ launchArgs }: AppProps) {
       ui: {
         layoutStyle: initialSettings.current.ui.layoutStyle,
         theme: themeSelection.committedTheme,
-        directoryDisplayMode,
+        workspaceDisplayMode,
+        terminalTitleMode,
+        showBusyLoader,
         terminalMouseMode,
         customTheme,
       },
@@ -600,7 +634,7 @@ export function App({ launchArgs }: AppProps) {
         preference: authPreference,
       },
     });
-  }, [authPreference, customTheme, directoryDisplayMode, terminalMouseMode, themeSelection.committedTheme]);
+  }, [authPreference, customTheme, showBusyLoader, terminalMouseMode, terminalTitleMode, themeSelection.committedTheme, workspaceDisplayMode]);
 
   useEffect(() => {
     return () => {
@@ -1133,24 +1167,45 @@ export function App({ launchArgs }: AppProps) {
     appendSystemEvent("Auth preference updated", `Preference set to ${formatAuthPreferenceLabel(nextPreference)}.`);
   }, [appendSystemEvent]);
 
-  const setDirectoryDisplayModeWithNotice = useCallback((nextMode: DirectoryDisplayMode) => {
-    setDirectoryDisplayMode(nextMode);
+  const setWorkspaceDisplayModeWithNotice = useCallback((nextMode: WorkspaceDisplayMode) => {
+    setWorkspaceDisplayMode(nextMode);
     appendSystemEvent(
       "Settings",
-      `Directory display set to ${formatDirectoryDisplayModeLabel(nextMode)} (${nextMode}).`,
+      `Workspace display set to ${formatWorkspaceDisplayModeLabel(nextMode)} (${nextMode}).`,
+    );
+    if (!hasUserPromptRef.current) {
+      terminalControlRef.current.clearViewport("src/app.tsx:workspaceDisplayChange");
+      reassertTerminalTitle(terminalTitleLabelRef.current, (chunk) => { stdout.write(chunk); });
+      setWorkspaceLabelEpoch((e) => e + 1);
+    }
+  }, [appendSystemEvent, stdout]);
+
+  const setTerminalTitleModeWithNotice = useCallback((nextMode: TerminalTitleMode) => {
+    setTerminalTitleMode(nextMode);
+    appendSystemEvent(
+      "Settings",
+      `Terminal title set to ${formatWorkspaceDisplayModeLabel(nextMode)} (${nextMode}).`,
     );
   }, [appendSystemEvent]);
 
   const saveSettingsFromPanel = useCallback((nextSettings: UserSettingValues) => {
-    if (nextSettings.directory !== directoryDisplayMode) {
-      setDirectoryDisplayModeWithNotice(nextSettings.directory);
+    if (nextSettings.workspaceDisplayMode !== workspaceDisplayMode) {
+      setWorkspaceDisplayModeWithNotice(nextSettings.workspaceDisplayMode);
+    }
+    if (nextSettings.terminalTitleMode !== terminalTitleMode) {
+      setTerminalTitleModeWithNotice(nextSettings.terminalTitleMode);
+    }
+    const nextShowBusyLoader = parseBusyLoaderSettingValue(nextSettings.showBusyLoader);
+    if (nextShowBusyLoader !== showBusyLoader) {
+      setShowBusyLoader(nextShowBusyLoader);
+      appendSystemEvent("Settings", `Busy loader ${nextShowBusyLoader ? "enabled" : "disabled"}.`);
     }
     if (nextSettings.terminalMouseMode !== terminalMouseMode) {
       setTerminalMouseMode(nextSettings.terminalMouseMode);
       setMouseOverride(null); // let the newly persisted mode drive mouseCapture
     }
     setScreen("main");
-  }, [directoryDisplayMode, setDirectoryDisplayModeWithNotice, terminalMouseMode]);
+  }, [appendSystemEvent, showBusyLoader, setTerminalTitleModeWithNotice, setWorkspaceDisplayModeWithNotice, terminalMouseMode, terminalTitleMode, workspaceDisplayMode]);
 
   const setApprovalPolicyWithNotice = useCallback((nextValue: RuntimeApprovalPolicy) => {
     const gate = guardConfigMutation("mode", busy);
@@ -2522,7 +2577,9 @@ export function App({ launchArgs }: AppProps) {
       runtime: runtimeConfig,
       resolvedRuntime: resolvedRuntimeConfig,
       settings: {
-        directoryDisplayMode,
+        workspaceDisplayMode,
+        terminalTitleMode,
+        showBusyLoader,
       },
       workspace: workspaceCommandContext,
       tokensUsed: estimateTokens(conversationChars),
@@ -2691,9 +2748,25 @@ export function App({ launchArgs }: AppProps) {
             appendSystemEvent("Settings", commandResult.message);
           }
           return;
-        case "setting_directory":
+        case "setting_workspace_display":
           if (commandResult.value) {
-            setDirectoryDisplayModeWithNotice(commandResult.value as DirectoryDisplayMode);
+            setWorkspaceDisplayModeWithNotice(commandResult.value as WorkspaceDisplayMode);
+          } else if (commandResult.message) {
+            appendSystemEvent("Settings", commandResult.message);
+          }
+          return;
+        case "setting_terminal_title":
+          if (commandResult.value) {
+            setTerminalTitleModeWithNotice(commandResult.value as TerminalTitleMode);
+          } else if (commandResult.message) {
+            appendSystemEvent("Settings", commandResult.message);
+          }
+          return;
+        case "setting_busy_loader":
+          if (commandResult.value) {
+            const nextShowBusyLoader = commandResult.value === "true";
+            setShowBusyLoader(nextShowBusyLoader);
+            appendSystemEvent("Settings", `Busy loader ${nextShowBusyLoader ? "enabled" : "disabled"}.`);
           } else if (commandResult.message) {
             appendSystemEvent("Settings", commandResult.message);
           }
@@ -2857,7 +2930,6 @@ export function App({ launchArgs }: AppProps) {
     busy,
     buildFollowUpPrompt,
     conversationChars,
-    directoryDisplayMode,
     dispatchSession,
     findUserPromptForTurn,
     focusManager,
@@ -2893,7 +2965,6 @@ export function App({ launchArgs }: AppProps) {
     setApprovalPolicyWithNotice,
     setAuthPreferenceWithNotice,
     setBackendWithNotice,
-    setDirectoryDisplayModeWithNotice,
     setNetworkAccessWithNotice,
     setModeWithNotice,
     setModelWithNotice,
@@ -2904,10 +2975,12 @@ export function App({ launchArgs }: AppProps) {
     setReasoningWithNotice,
     setSandboxModeWithNotice,
     setServiceTierWithNotice,
+    showBusyLoader,
     startPromptRun,
     themeSelection.committedTheme,
     uiState,
     workspaceCommandContext,
+    workspaceDisplayMode,
     workspaceRoot,
   ]);
 
@@ -2962,6 +3035,7 @@ export function App({ launchArgs }: AppProps) {
         themeName={activeThemeName}
         reasoningLevel={reasoningLevel}
         planMode={planMode}
+        showBusyLoader={showBusyLoader}
         tokensUsed={estimateTokens(conversationChars)}
         modelSpec={currentModelSpec}
         value={inputValue}
@@ -3000,6 +3074,7 @@ export function App({ launchArgs }: AppProps) {
     activeThemeName,
     reasoningLevel,
     planMode,
+    showBusyLoader,
     conversationChars,
     currentModelSpec,
     inputValue,
@@ -3027,7 +3102,7 @@ export function App({ launchArgs }: AppProps) {
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
       <AppShell
-        key={`app-shell-${sessionState.clearCount}`}
+        key={`app-shell-${sessionState.clearCount}-${workspaceLabelEpoch}`}
         layout={terminalLayout}
         screen={screen}
         authState={authStatus.state}

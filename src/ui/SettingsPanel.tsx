@@ -126,7 +126,7 @@ export function SettingsPanel<TKey extends string>({
               <Box width={3}>
                 <Text color={isSelectedRow ? theme.ACCENT : theme.DIM}>{isSelectedRow ? "▸ " : "  "}</Text>
               </Box>
-              <Box width={16}>
+              <Box width={20}>
                 <Text color={isSelectedRow ? theme.TEXT : theme.MUTED} bold={isSelectedRow}>
                   {setting.label}
                 </Text>

@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  DEFAULT_DIRECTORY_DISPLAY_MODE,
+  DEFAULT_SHOW_BUSY_LOADER,
+  DEFAULT_TERMINAL_TITLE_MODE,
+  DEFAULT_WORKSPACE_DISPLAY_MODE,
   DEFAULT_MODE,
   USER_SETTING_DEFINITIONS,
-  formatDirectoryDisplayModeLabel,
+  formatBusyLoaderSettingValue,
   formatModeLabel,
+  formatTerminalTitleModeLabel,
+  formatTerminalTitlePath,
+  formatWorkspaceDisplayModeLabel,
   formatWorkspaceDisplayPath,
   getCodexConfigFile,
   getCodexHome,
@@ -39,21 +44,47 @@ test("defaults to full-auto mode", () => {
   assert.equal(DEFAULT_MODE, "full-auto");
 });
 
-test("defaults directory display mode to normal", () => {
-  assert.equal(DEFAULT_DIRECTORY_DISPLAY_MODE, "normal");
-  assert.equal(formatDirectoryDisplayModeLabel("normal"), "Normal");
-  assert.equal(formatDirectoryDisplayModeLabel("simple"), "Simple");
+test("defaults workspace display mode and busy loader", () => {
+  assert.equal(DEFAULT_WORKSPACE_DISPLAY_MODE, "dir");
+  assert.equal(DEFAULT_TERMINAL_TITLE_MODE, "dir");
+  assert.equal(DEFAULT_SHOW_BUSY_LOADER, true);
+  assert.equal(formatWorkspaceDisplayModeLabel("dir"), "Dir");
+  assert.equal(formatWorkspaceDisplayModeLabel("name"), "Name");
+  assert.equal(formatWorkspaceDisplayModeLabel("simple"), "Simple");
+  assert.equal(formatTerminalTitleModeLabel("dir"), "Dir");
+  assert.equal(formatBusyLoaderSettingValue(true), "true");
+  assert.equal(formatBusyLoaderSettingValue(false), "false");
 });
 
 test("defines user settings through reusable schemas", () => {
   assert.deepEqual(USER_SETTING_DEFINITIONS, [
     {
-      key: "directory",
-      label: "Directory",
-      description: "Controls how the workspace path is displayed in the Codexa UI.",
+      key: "workspaceDisplayMode",
+      label: "Workspace display",
+      description: "Controls how the workspace label is displayed in the Codexa header.",
       options: [
-        { value: "normal", label: "Normal" },
+        { value: "dir", label: "Dir" },
+        { value: "name", label: "Name" },
         { value: "simple", label: "Simple" },
+      ],
+    },
+    {
+      key: "terminalTitleMode",
+      label: "Terminal title",
+      description: "Controls how the terminal tab/window title is displayed.",
+      options: [
+        { value: "dir", label: "Dir" },
+        { value: "name", label: "Name" },
+        { value: "simple", label: "Simple" },
+      ],
+    },
+    {
+      key: "showBusyLoader",
+      label: "Busy loader",
+      description: "Controls whether the footer shows a subtle loading animation while Codexa is busy.",
+      options: [
+        { value: "true", label: "True" },
+        { value: "false", label: "False" },
       ],
     },
     {
@@ -76,8 +107,12 @@ test("defines user settings through reusable schemas", () => {
 test("formats workspace display paths without changing root semantics", () => {
   assert.equal(formatWorkspaceDisplayPath("", "simple"), "");
   assert.equal(
-    formatWorkspaceDisplayPath("C:\\Development\\1-JavaScript\\13-Custom CLI", "normal"),
-    "C:\\Development\\1-JavaScript\\13-Custom CLI",
+    formatWorkspaceDisplayPath("C:\\Development\\1-JavaScript\\13-Custom CLI", "dir"),
+    "13-Custom CLI",
+  );
+  assert.equal(
+    formatWorkspaceDisplayPath("C:\\Development\\1-JavaScript\\13-Custom CLI", "name"),
+    "Codexa",
   );
   assert.equal(
     formatWorkspaceDisplayPath("C:\\Development\\1-JavaScript\\13-Custom CLI", "simple"),
@@ -85,6 +120,21 @@ test("formats workspace display paths without changing root semantics", () => {
   );
   assert.equal(formatWorkspaceDisplayPath("C:\\", "simple"), "C:\\");
   assert.equal(formatWorkspaceDisplayPath("C:\\Workspace\\", "simple"), "Workspace");
+});
+
+test("formats terminal title labels with the same workspace semantics", () => {
+  assert.equal(
+    formatTerminalTitlePath("C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal", "dir"),
+    "13-Custom-CLI-Normal",
+  );
+  assert.equal(
+    formatTerminalTitlePath("C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal", "name"),
+    "Codexa",
+  );
+  assert.equal(
+    formatTerminalTitlePath("C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal", "simple"),
+    "13-Custom-CLI-Normal",
+  );
 });
 
 test("resolves CODEX_HOME-derived paths from the live environment", () => {
