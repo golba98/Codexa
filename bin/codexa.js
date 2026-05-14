@@ -127,7 +127,7 @@ if (!isHeadlessMode && hasFlag(forwardArgs, "--version", "-v")) {
   process.exit(0);
 }
 
-const titleSequence = "\x1b]0;CODEXA\x07\x1b]2;CODEXA\x07";
+const titleSequence = "\x1b]0;Codexa\x07\x1b]2;Codexa\x07";
 if (!isHeadlessMode) {
   writeRenderDebugRecord("stdout", {
     event: "directWrite",

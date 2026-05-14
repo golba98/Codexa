@@ -7,7 +7,7 @@ import { APP_NAME, formatTerminalTitlePath } from "./config/settings.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
-import { reassertTerminalTitle } from "./core/terminalTitle.js";
+import { setTerminalTitle } from "./core/terminalTitle.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import {
   createTerminalModeController,
@@ -154,7 +154,7 @@ export function startApp({
   const startupSettings = loadSettings();
   const startupTitle =
     formatTerminalTitlePath(startupWorkspaceRoot, startupSettings.ui.terminalTitleMode) || APP_NAME;
-  reassertTerminalTitle(startupTitle, (chunk) => writeStdout(chunk, "src/index.tsx:startup.title"));
+  setTerminalTitle(startupTitle, { force: true, write: (chunk) => writeStdout(chunk, "src/index.tsx:startup.title") });
   terminal.setBracketedPaste(true, "src/index.tsx:startup.bracketedPaste");
 
   let cleanupDone = false;

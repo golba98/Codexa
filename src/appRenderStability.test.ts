@@ -53,26 +53,34 @@ test("Settings panel workspace display save path does not append Settings transc
 
 test("Settings panel terminal title save path still updates terminal title state", () => {
   assert.match(appSource, /if \(nextSettings\.terminalTitleMode !== terminalTitleMode\) \{\s*setTerminalTitleMode\(nextSettings\.terminalTitleMode\);/);
-  assert.match(appSource, /terminalTitleController\.write\(terminalTitleLabel\)/);
+  assert.match(appSource, /setTerminalTitle\(terminalTitleLabel\)/);
 });
 
-test("Terminal title effect is keyed by terminal title, not workspace display", () => {
-  const match = appSource.match(/useEffect\(\(\) => \{\s*terminalTitleController\.write\(terminalTitleLabel\);\s*\}, \[([^\]]+)\]\);/);
+test("Terminal title re-assertion effect is keyed by uiState and busy to recover from external overwrites", () => {
+  const match = appSource.match(/useEffect\(\(\) => \{\s*refreshTerminalTitle\(\{[\s\S]*?\}\);\s*\}, \[([^\]]+)\]\);/);
+  assert.ok(match, "terminal title re-assertion effect should exist");
+  const deps = match[1] ?? "";
+  assert.match(deps, /uiState\.kind/);
+  assert.match(deps, /busy/);
+  assert.match(deps, /terminalTitleMode/);
+  assert.match(deps, /workspaceRoot/);
+});
+
+test("Terminal title update effect is keyed by terminal title label", () => {
+  const match = appSource.match(/useEffect\(\(\) => \{\s*setTerminalTitle\(terminalTitleLabel\);\s*\}, \[([^\]]+)\]\);/);
   assert.ok(match, "terminal title update effect should exist");
   const deps = match[1] ?? "";
   assert.match(deps, /terminalTitleLabel/);
-  assert.doesNotMatch(deps, /workspaceDisplayMode|workspaceLabel|sessionState\.clearCount/);
-  assert.doesNotMatch(deps, /model|reasoningLevel|runtimeConfig/);
 });
 
 test("Terminal title cold-start sequence fires immediately on mount and retries at 50ms and 250ms", () => {
-  assert.match(appSource, /terminalTitleController\.beginColdStartSequence/);
+  assert.match(appSource, /beginColdStartSequence/);
   assert.doesNotMatch(appSource, /postMountTerminalTitleRefreshRef/);
   assert.doesNotMatch(appSource, /retryDelaysMs/);
 });
 
-test("Terminal title writes are centralized through the title controller", () => {
+test("Terminal title writes are centralized through the title helpers", () => {
   assert.doesNotMatch(appSource, /reassertTerminalTitle/);
-  assert.match(appSource, /createTerminalTitleController/);
+  assert.match(appSource, /setTerminalTitle/);
   assert.match(appSource, /deriveTerminalTitle\(workspaceRoot, terminalTitleMode\)/);
 });

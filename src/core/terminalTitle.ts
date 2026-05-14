@@ -10,65 +10,126 @@ function debugLog(msg: string): void {
   }
 }
 
-export interface TerminalTitleController {
-  write(title: string, opts?: { force?: boolean }): void;
-  beginColdStartSequence(
-    title: string,
-    meta?: { titleMode?: string; workspaceRoot?: string },
-  ): () => void;
+let lastWrittenTerminalTitle = "";
+
+/** FOR TESTING ONLY: Reset the cached title. */
+export function __resetTerminalTitleCache() {
+  lastWrittenTerminalTitle = "";
 }
 
-export function createTerminalTitleController(
-  writeChunk: (chunk: string) => void,
-): TerminalTitleController {
-  let lastTitle: string | null = null;
+export interface TerminalTitleOptions {
+  force?: boolean;
+  /** Optional custom write function, e.g. for testing or using a specific stdout/stderr instance. */
+  write?: (chunk: string) => void;
+}
 
-  function doWrite(rawTitle: string, force: boolean): void {
-    const safeTitle = sanitizeTerminalTitle(rawTitle);
-    if (!force && lastTitle === safeTitle) return;
-    lastTitle = safeTitle;
-    writeChunk(buildTerminalTitleSequence(safeTitle));
-    debugLog(`write title="${safeTitle}" force=${force}`);
+/**
+ * Directly writes the terminal title escape sequence to process.stdout or process.stderr,
+ * bypassing any Ink/React state management to ensure it reaches the terminal.
+ */
+export function setTerminalTitle(title: string, options?: TerminalTitleOptions) {
+  const cleanTitle = sanitizeTerminalTitle(title) || "Codexa";
+
+  if (!options?.force && cleanTitle === lastWrittenTerminalTitle) {
+    debugLog(`skipped title="${cleanTitle}" (unchanged)`);
+    return;
   }
 
-  return {
-    write(title, opts) {
-      doWrite(title, Boolean(opts?.force));
-    },
-    beginColdStartSequence(title, meta) {
-      if (DEBUG_TERMINAL_TITLE) {
-        const safeTitle = sanitizeTerminalTitle(title);
-        debugLog(
-          `cold-start begin title="${safeTitle}" titleMode="${meta?.titleMode ?? "unknown"}" workspaceRoot="${meta?.workspaceRoot ?? "unknown"}"`,
-        );
+  lastWrittenTerminalTitle = cleanTitle;
+
+  const sequence = buildTerminalTitleSequence(cleanTitle);
+
+  if (options?.write) {
+    options.write(sequence);
+    debugLog(`write(custom) title="${cleanTitle}" force=${!!options?.force}`);
+    return;
+  }
+
+  const stdoutIsTTY = Boolean(process.stdout?.isTTY);
+  const stderrIsTTY = Boolean(process.stderr?.isTTY);
+
+  debugLog(`setTerminalTitle("${cleanTitle}") force=${!!options?.force} stdoutIsTTY=${stdoutIsTTY} stderrIsTTY=${stderrIsTTY}`);
+
+  if (stderrIsTTY) {
+    process.stderr.write(sequence);
+    debugLog(`write(stderr) sequence length=${sequence.length}`);
+  } else if (stdoutIsTTY) {
+    process.stdout.write(sequence);
+    debugLog(`write(stdout) sequence length=${sequence.length}`);
+  } else {
+    // Fallback if neither is explicitly a TTY but we might still be in a terminal (e.g. Bun quirk)
+    process.stdout.write(sequence);
+    debugLog(`write(stdout-fallback) sequence length=${sequence.length} (no TTY detected)`);
+  }
+}
+
+/**
+ * Pure mapper that converts terminal title mode and workspace into a displayable string.
+ */
+export function computeTerminalTitle(options: {
+  terminalTitleMode: "dir" | "name" | "simple";
+  workspaceName?: string;
+  appName?: string;
+}) {
+  const appName = options.appName || "Codexa";
+
+  if (options.terminalTitleMode === "dir") {
+    return options.workspaceName || appName;
+  }
+
+  return appName;
+}
+
+/**
+ * Force a refresh of the terminal title using current settings and workspace.
+ */
+export function refreshTerminalTitle(options: {
+  terminalTitleMode: "dir" | "name" | "simple";
+  workspaceName?: string;
+  appName?: string;
+  force?: boolean;
+  write?: (chunk: string) => void;
+  debugEventName?: string;
+  busyState?: boolean;
+}) {
+  const title = computeTerminalTitle(options);
+  if (DEBUG_TERMINAL_TITLE) {
+    debugLog(
+      `refreshTerminalTitle(event=${options.debugEventName || "unknown"}, mode=${options.terminalTitleMode}, workspace=${options.workspaceName}, busy=${!!options.busyState}) -> "${title}"`,
+    );
+  }
+  setTerminalTitle(title, { force: options.force, write: options.write });
+}
+
+/**
+ * Schedules a sequence of title assertions to outlast Windows Terminal's
+ * shell integration which often overwrites the title shortly after startup.
+ */
+export function beginColdStartSequence(title: string, options?: { write?: (chunk: string) => void }) {
+  setTerminalTitle(title, { force: true, write: options?.write });
+
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  let cancelled = false;
+
+  const scheduleRetry = (delayMs: number) => {
+    const id = setTimeout(() => {
+      if (!cancelled) {
+        debugLog(`cold-start retry t=${delayMs}ms fired`);
+        setTerminalTitle(title, { force: true, write: options?.write });
       }
+    }, delayMs);
+    timers.push(id);
+  };
 
-      doWrite(title, true);
+  scheduleRetry(50);
+  scheduleRetry(250);
+  scheduleRetry(500);
+  scheduleRetry(1000);
 
-      const timers: ReturnType<typeof setTimeout>[] = [];
-      let cancelled = false;
-
-      const scheduleRetry = (delayMs: number) => {
-        const id = setTimeout(() => {
-          if (!cancelled) {
-            debugLog(`cold-start retry t=${delayMs}ms fired`);
-            doWrite(title, true);
-          }
-        }, delayMs);
-        timers.push(id);
-      };
-
-      scheduleRetry(50);
-      scheduleRetry(250);
-      scheduleRetry(500);
-      scheduleRetry(1000);
-
-      return () => {
-        cancelled = true;
-        timers.forEach(clearTimeout);
-        debugLog("cold-start sequence cancelled");
-      };
-    },
+  return () => {
+    cancelled = true;
+    timers.forEach(clearTimeout);
+    debugLog("cold-start sequence cancelled");
   };
 }
 
@@ -81,6 +142,9 @@ export function sanitizeTerminalTitle(title: string): string {
 
 export function buildTerminalTitleSequence(title: string): string {
   const safeTitle = sanitizeTerminalTitle(title);
+  // \x1b]0; sets both icon name and window title.
+  // \x1b]2; sets window title.
+  // We use both for compatibility.
   return `\x1b]0;${safeTitle}\x07\x1b]2;${safeTitle}\x07`;
 }
 

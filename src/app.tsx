@@ -118,7 +118,7 @@ import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
 import { createTerminalModeController, setTerminalControlUIState } from "./core/terminalControl.js";
-import { createTerminalTitleController, deriveTerminalTitle } from "./core/terminalTitle.js";
+import { setTerminalTitle, beginColdStartSequence, deriveTerminalTitle, refreshTerminalTitle } from "./core/terminalTitle.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
@@ -306,10 +306,6 @@ export function App({ launchArgs }: AppProps) {
   const { stdout } = useStdout();
   const { stdin } = useStdin();
   const terminalControl = useMemo(() => createTerminalModeController((chunk) => stdout.write(chunk)), [stdout]);
-  const terminalTitleController = useMemo(
-    () => createTerminalTitleController((chunk) => stdout.write(chunk)),
-    [stdout],
-  );
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [isMouseIdle, setIsMouseIdle] = useState(false);
   const mouseIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -404,33 +400,31 @@ export function App({ launchArgs }: AppProps) {
   const latestTerminalTitleRef = useRef(terminalTitleLabel);
   latestTerminalTitleRef.current = terminalTitleLabel;
 
-  // Cold-start: write title immediately on mount, then retry at 50ms and 250ms to
-  // outlast Windows Terminal shell integration that overwrites the tab title on startup.
+  // Cold-start: write title immediately on mount, then retry to outlast Windows Terminal shell integration.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => terminalTitleController.beginColdStartSequence(latestTerminalTitleRef.current, {
-    titleMode: terminalTitleMode,
-    workspaceRoot,
-  }), [terminalTitleController]);
+  useEffect(() => beginColdStartSequence(latestTerminalTitleRef.current), []);
 
-  useEffect(() => {
-    terminalTitleController.write(terminalTitleLabel);
-  }, [terminalTitleController, terminalTitleLabel]);
+  const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
+
   const currentUserSettings = useMemo<UserSettingValues>(() => ({
     workspaceDisplayMode,
     terminalTitleMode,
     showBusyLoader: formatBusyLoaderSettingValue(showBusyLoader),
     terminalMouseMode,
   }), [showBusyLoader, terminalMouseMode, terminalTitleMode, workspaceDisplayMode]);
+
   const allowedWritableRoots = useMemo(
     () => resolvedRuntimeConfig.policy.writableRoots,
     [resolvedRuntimeConfig],
   );
+
   const hasPlanFileAvailable = useMemo(
     () => planFlow.kind !== "idle"
       && planFlow.planFilePath !== null
       && existsSync(planFlow.planFilePath),
     [planFlow],
   );
+
   const currentModelSpec = useMemo<ModelSpec>(() => {
     const cachedSpec = modelSpecs[model];
     if (cachedSpec && cachedSpec.status === "verified") {
@@ -441,11 +435,12 @@ export function App({ launchArgs }: AppProps) {
       refreshInFlight: Boolean(modelSpecRefreshes[model]),
     });
   }, [model, modelSpecRefreshes, modelSpecs]);
-  const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
+
   const hasUserPrompt = useMemo(
     () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
     [staticEvents, activeEvents],
   );
+
   const hasVisibleTranscriptPlan = useMemo(
     () => planFlow.kind === "awaiting_action"
       && hasFinalizedTranscriptPlan(staticEvents, planFlow.currentPlan),
@@ -463,6 +458,22 @@ export function App({ launchArgs }: AppProps) {
   const busy = isUiBusy(uiState);
   const busyRef = useRef(busy);
   busyRef.current = busy;
+
+  // Re-assert terminal title whenever the app transitions between busy states,
+  // starts/stops streaming, or executes tools to recover from external overwrites.
+  useEffect(() => {
+    refreshTerminalTitle({
+      terminalTitleMode,
+      workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
+      force: true,
+      debugEventName: "uiState_or_busy_change",
+      busyState: busy,
+    });
+  }, [uiState.kind, busy, terminalTitleMode, workspaceRoot]);
+
+  useEffect(() => {
+    setTerminalTitle(terminalTitleLabel);
+  }, [terminalTitleLabel]);
   const modelCapabilitiesBusyRef = useRef(modelCapabilitiesBusy);
   modelCapabilitiesBusyRef.current = modelCapabilitiesBusy;
   const composerRows = useMemo(() => {
@@ -1027,7 +1038,12 @@ export function App({ launchArgs }: AppProps) {
     }));
     setScreen("main");
     appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(nextReasoningLevel)}.`);
-  }, [appendErrorEvent, appendSystemEvent, busy, currentModelCapability, model, updateRuntimeConfig]);
+    refreshTerminalTitle({
+      terminalTitleMode,
+      workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
+      force: true,
+    });
+  }, [appendErrorEvent, appendSystemEvent, busy, currentModelCapability, model, terminalTitleMode, updateRuntimeConfig, workspaceRoot]);
 
   const setPlanModeWithNotice = useCallback((nextEnabled: boolean) => {
     const gate = guardConfigMutation("mode", busy);
@@ -1083,6 +1099,11 @@ export function App({ launchArgs }: AppProps) {
         "Model updated",
         `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(normalizedReasoning)}.`,
       );
+      refreshTerminalTitle({
+        terminalTitleMode,
+        workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
+        force: true,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       traceInputDebug("model_selection_app_failure", getInputDebugSnapshot({
@@ -1149,6 +1170,11 @@ export function App({ launchArgs }: AppProps) {
         "Model settings updated",
         `${modelLabel} · reasoning: ${formatReasoningLabel(normalizedReasoning)}`,
       );
+      refreshTerminalTitle({
+        terminalTitleMode,
+        workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
+        force: true,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       traceInputDebug("model_selection_app_failure", getInputDebugSnapshot({
@@ -1191,6 +1217,11 @@ export function App({ launchArgs }: AppProps) {
     }
     if (nextSettings.terminalTitleMode !== terminalTitleMode) {
       setTerminalTitleMode(nextSettings.terminalTitleMode);
+      refreshTerminalTitle({
+        terminalTitleMode: nextSettings.terminalTitleMode,
+        workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
+        force: true,
+      });
     }
     const nextShowBusyLoader = parseBusyLoaderSettingValue(nextSettings.showBusyLoader);
     if (nextShowBusyLoader !== showBusyLoader) {
@@ -1805,7 +1836,12 @@ export function App({ launchArgs }: AppProps) {
     setScreen("main");
     resetComposer();
     terminalControl.clearTranscript("src/app.tsx:handleClear");
-  }, [cancelActiveRun, dispatchSession, resetComposer, terminalControl]);
+    refreshTerminalTitle({
+      terminalTitleMode,
+      workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
+      force: true,
+    });
+  }, [cancelActiveRun, dispatchSession, resetComposer, terminalControl, terminalTitleMode, workspaceRoot]);
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();

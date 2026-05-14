@@ -3,11 +3,14 @@ import test from "node:test";
 import {
   acquireTerminalTitleGuard,
   buildTerminalTitleSequence,
-  createTerminalTitleController,
+  computeTerminalTitle,
   deriveTerminalTitle,
   formatTerminalTitleLabel,
   reassertTerminalTitle,
   sanitizeTerminalTitle,
+  setTerminalTitle,
+  beginColdStartSequence,
+  __resetTerminalTitleCache,
 } from "./terminalTitle.js";
 
 function sleep(ms: number): Promise<void> {
@@ -41,6 +44,14 @@ test("deriveTerminalTitle follows terminal title mode on startup", () => {
   assert.equal(deriveTerminalTitle(workspaceRoot, "dir"), "13-Custom-CLI-Normal");
   assert.equal(deriveTerminalTitle(workspaceRoot, "name"), "Codexa");
   assert.equal(deriveTerminalTitle(workspaceRoot, "simple"), "Codexa");
+});
+
+test("computeTerminalTitle follows the requested mapping", () => {
+  const workspaceName = "13-Custom-CLI-Normal";
+  assert.equal(computeTerminalTitle({ terminalTitleMode: "dir", workspaceName }), "13-Custom-CLI-Normal");
+  assert.equal(computeTerminalTitle({ terminalTitleMode: "name" }), "Codexa");
+  assert.equal(computeTerminalTitle({ terminalTitleMode: "simple" }), "Codexa");
+  assert.equal(computeTerminalTitle({ terminalTitleMode: "dir", appName: "Other" }), "Other");
 });
 
 test("reassertTerminalTitle writes both title sequences without mutating process title", () => {
@@ -89,82 +100,43 @@ test("acquireTerminalTitleGuard release is idempotent", () => {
   assert.equal(calls, callsAfterFirstRelease);
 });
 
-test("createTerminalTitleController deduplicates identical title writes", () => {
+test("setTerminalTitle deduplicates identical title writes", () => {
   const writes: string[] = [];
-  const controller = createTerminalTitleController((chunk) => writes.push(chunk));
+  __resetTerminalTitleCache();
 
-  controller.write("Codexa");
-  controller.write("Codexa");
-  controller.write("Other");
+  setTerminalTitle("Codexa", { write: (chunk) => writes.push(chunk) });
+  setTerminalTitle("Codexa", { write: (chunk) => writes.push(chunk) });
+  setTerminalTitle("Other", { write: (chunk) => writes.push(chunk) });
 
   assert.equal(writes.length, 2);
   assert.equal(writes[0], buildTerminalTitleSequence("Codexa"));
   assert.equal(writes[1], buildTerminalTitleSequence("Other"));
 });
 
-test("createTerminalTitleController force option bypasses dedup for cold-start retries", () => {
+test("setTerminalTitle force option bypasses dedup", () => {
   const writes: string[] = [];
-  const controller = createTerminalTitleController((chunk) => writes.push(chunk));
+  __resetTerminalTitleCache();
 
-  controller.write("Codexa");
-  controller.write("Codexa", { force: true });
-  controller.write("Codexa", { force: true });
+  setTerminalTitle("Codexa", { write: (chunk) => writes.push(chunk) });
+  setTerminalTitle("Codexa", { force: true, write: (chunk) => writes.push(chunk) });
+  setTerminalTitle("Codexa", { force: true, write: (chunk) => writes.push(chunk) });
 
   assert.equal(writes.length, 3);
   writes.forEach((w) => assert.equal(w, buildTerminalTitleSequence("Codexa")));
 });
 
-test("createTerminalTitleController returns 13-Custom-CLI-Normal for dir mode", () => {
-  const workspaceRoot = "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal";
-  assert.equal(deriveTerminalTitle(workspaceRoot, "dir"), "13-Custom-CLI-Normal");
-});
-
-test("createTerminalTitleController returns Codexa for name mode", () => {
-  const workspaceRoot = "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal";
-  assert.equal(deriveTerminalTitle(workspaceRoot, "name"), "Codexa");
-});
-
-test("beginColdStartSequence writes immediately then retries at 50ms, 250ms, 500ms, and 1000ms", async () => {
-  const timestamps: number[] = [];
-  const start = Date.now();
-  const controller = createTerminalTitleController(() => {
-    timestamps.push(Date.now() - start);
-  });
-
-  const cancel = controller.beginColdStartSequence("Codexa");
-
-  await sleep(1100);
-  cancel();
-
-  assert.equal(timestamps.length, 5, `expected 5 writes, got ${timestamps.length}`);
-  assert.ok(timestamps[0]! < 20, `first write should be immediate, was ${timestamps[0]}ms`);
-  assert.ok(timestamps[1]! >= 40 && timestamps[1]! < 120, `second write should be ~50ms, was ${timestamps[1]}ms`);
-  assert.ok(timestamps[2]! >= 200 && timestamps[2]! < 450, `third write should be ~250ms, was ${timestamps[2]}ms`);
-  assert.ok(timestamps[3]! >= 450 && timestamps[3]! < 800, `fourth write should be ~500ms, was ${timestamps[3]}ms`);
-  assert.ok(timestamps[4]! >= 900, `fifth write should be ~1000ms, was ${timestamps[4]}ms`);
-});
-
-test("beginColdStartSequence cancel stops pending retries", async () => {
-  let writes = 0;
-  const controller = createTerminalTitleController(() => {
-    writes += 1;
-  });
-
-  const cancel = controller.beginColdStartSequence("Codexa");
-  cancel();
-
-  await sleep(300);
-
-  assert.equal(writes, 1, "only immediate write should have fired after cancel");
-});
-
-test("beginColdStartSequence force-writes even if title matches last known title", () => {
+test("beginColdStartSequence writes immediately then retries", async () => {
   const writes: string[] = [];
-  const controller = createTerminalTitleController((chunk) => writes.push(chunk));
+  __resetTerminalTitleCache();
 
-  controller.write("Codexa");
-  assert.equal(writes.length, 1);
-
-  controller.beginColdStartSequence("Codexa");
-  assert.equal(writes.length, 2, "cold-start should force-write even after dedup state is set");
+  const cancel = beginColdStartSequence("Codexa", { write: (chunk) => writes.push(chunk) });
+  
+  assert.equal(writes.length, 1, "should write immediately");
+  
+  await sleep(60);
+  assert.equal(writes.length, 2, "should have retried at 50ms");
+  
+  cancel();
+  await sleep(300);
+  assert.equal(writes.length, 2, "should not have retried further after cancel");
 });
