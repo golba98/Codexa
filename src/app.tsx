@@ -118,7 +118,13 @@ import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
 import { createTerminalModeController, setTerminalControlUIState } from "./core/terminalControl.js";
-import { setTerminalTitle, beginColdStartSequence, deriveTerminalTitle, refreshTerminalTitle } from "./core/terminalTitle.js";
+import {
+  beginColdStartSequence,
+  deriveTerminalTitle,
+  refreshTerminalTitle,
+  setTerminalTitleLifecycleState,
+  writeCodexaTerminalTitle,
+} from "./core/terminalTitle.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
@@ -459,20 +465,62 @@ export function App({ launchArgs }: AppProps) {
   const busyRef = useRef(busy);
   busyRef.current = busy;
 
-  // Re-assert terminal title whenever the app transitions between busy states,
-  // starts/stops streaming, or executes tools to recover from external overwrites.
-  useEffect(() => {
+  const forceRefreshCurrentTerminalTitle = useCallback((debugEventName: string, busyState = busyRef.current) => {
     refreshTerminalTitle({
       terminalTitleMode,
       workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
       force: true,
-      debugEventName: "uiState_or_busy_change",
-      busyState: busy,
+      debugEventName,
+      busyState,
     });
+  }, [terminalTitleMode, workspaceRoot]);
+
+  const writeCurrentTerminalTitleBeforeStateChange = useCallback((reason: string) => {
+    writeCodexaTerminalTitle(deriveTerminalTitle(workspaceRoot, terminalTitleMode), {
+      force: true,
+      reason,
+    });
+  }, [terminalTitleMode, workspaceRoot]);
+
+  // Re-assert terminal title whenever the app transitions between busy states,
+  // starts/stops streaming, or executes tools to recover from external overwrites.
+  useEffect(() => {
+    if (!busy) {
+      refreshTerminalTitle({
+        terminalTitleMode,
+        workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
+        force: true,
+        debugEventName: "busy-end",
+        busyState: false,
+      });
+      return;
+    }
+
+    refreshTerminalTitle({
+      terminalTitleMode,
+      workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
+      force: true,
+      debugEventName: "busy-start",
+      busyState: true,
+    });
+
+    const timer = setInterval(() => {
+      refreshTerminalTitle({
+        terminalTitleMode,
+        workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
+        force: true,
+        debugEventName: "busy-guard",
+        busyState: true,
+      });
+    }, 250);
+
+    return () => {
+      clearInterval(timer);
+    };
   }, [uiState.kind, busy, terminalTitleMode, workspaceRoot]);
 
   useEffect(() => {
-    setTerminalTitle(terminalTitleLabel);
+    writeCodexaTerminalTitle(terminalTitleLabel, { reason: "terminal-title-label-change" });
   }, [terminalTitleLabel]);
   const modelCapabilitiesBusyRef = useRef(modelCapabilitiesBusy);
   modelCapabilitiesBusyRef.current = modelCapabilitiesBusy;
@@ -540,7 +588,8 @@ export function App({ launchArgs }: AppProps) {
   const previousUiStateKindRef = useRef(uiState.kind);
   useEffect(() => {
     setTerminalControlUIState(uiState.kind);
-  }, [uiState.kind]);
+    setTerminalTitleLifecycleState(`${uiState.kind}${busy ? ":busy" : ":idle"}`);
+  }, [busy, uiState.kind]);
 
   useEffect(() => {
     const previousKind = previousUiStateKindRef.current;
@@ -1826,6 +1875,7 @@ export function App({ launchArgs }: AppProps) {
   }, [dispatchSession]);
 
   const handleClear = useCallback(() => {
+    writeCurrentTerminalTitleBeforeStateChange("before-clear");
     cancelActiveRun(false);
     activeTurnIdRef.current = null;
     activeRunLifecycleRef.current = null;
@@ -1841,7 +1891,7 @@ export function App({ launchArgs }: AppProps) {
       workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
       force: true,
     });
-  }, [cancelActiveRun, dispatchSession, resetComposer, terminalControl, terminalTitleMode, workspaceRoot]);
+  }, [cancelActiveRun, dispatchSession, resetComposer, terminalControl, terminalTitleMode, workspaceRoot, writeCurrentTerminalTitleBeforeStateChange]);
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();
@@ -1853,6 +1903,7 @@ export function App({ launchArgs }: AppProps) {
 
     const shellId = createEventId();
     const startTime = Date.now();
+    writeCurrentTerminalTitleBeforeStateChange("before-shell-start");
 
     const initialEvent: ShellEvent = {
       id: shellId,
@@ -1957,8 +2008,9 @@ export function App({ launchArgs }: AppProps) {
       };
 
       dispatchSession({ type: "FINALIZE_SHELL", shellId, finalEvent });
+      forceRefreshCurrentTerminalTitle("shell_output_complete", false);
     });
-  }, [allowedWritableRoots, appendErrorEvent, dispatchSession, focusManager, workspaceRoot]);
+  }, [allowedWritableRoots, appendErrorEvent, dispatchSession, focusManager, forceRefreshCurrentTerminalTitle, workspaceRoot, writeCurrentTerminalTitleBeforeStateChange]);
 
   const handleWorkspaceRelaunch = useCallback((targetPath: string) => {
     const gate = guardWorkspaceRelaunch(busy);
@@ -2086,6 +2138,7 @@ export function App({ launchArgs }: AppProps) {
     setConversationChars((count) => count + safeProviderPrompt.length);
 
     const runId = createEventId();
+    writeCurrentTerminalTitleBeforeStateChange("before-prompt-run-start");
     perf.startSession(String(runId));
     perf.mark("dispatch_start");
     perf.setMeta("fast_cleanup", fastCleanupRun);
@@ -2245,6 +2298,7 @@ export function App({ launchArgs }: AppProps) {
           if (activity.status === "running") {
             return;
           }
+          forceRefreshCurrentTerminalTitle("tool_activity_complete", true);
           if (fastCleanupRun && !blockedCleanupFailureSurfaced) {
             const blockedCleanupFailure = getBlockedCleanupFailure(activity);
             if (blockedCleanupFailure) {
@@ -2294,6 +2348,7 @@ export function App({ launchArgs }: AppProps) {
                 const formatted = formatHollowResponse(hollow, safeResponse);
                 traceLiveRunDiagnostics("completed");
                 void finalizePromptRun(runId, turnId, "completed", undefined, formatted);
+                forceRefreshCurrentTerminalTitle("prompt_run_completed", false);
                 return;
               }
             }
@@ -2313,6 +2368,7 @@ export function App({ launchArgs }: AppProps) {
                 : safeResponse;
             traceLiveRunDiagnostics("completed");
             void finalizePromptRun(runId, turnId, "completed", undefined, finalResponse);
+            forceRefreshCurrentTerminalTitle("prompt_run_completed", false);
           };
 
           if (flushedLiveUpdates) {
@@ -2345,6 +2401,7 @@ export function App({ launchArgs }: AppProps) {
 
             traceLiveRunDiagnostics("failed");
             void finalizePromptRun(runId, turnId, "failed", errorMessage);
+            forceRefreshCurrentTerminalTitle("prompt_run_failed", false);
           };
 
           if (flushedLiveUpdates) {
@@ -2400,6 +2457,8 @@ export function App({ launchArgs }: AppProps) {
     appendSystemEvent,
     authStatus.state,
     finalizePromptRun,
+    forceRefreshCurrentTerminalTitle,
+    writeCurrentTerminalTitleBeforeStateChange,
     mode,
     provider,
     projectInstructions,

@@ -7,9 +7,10 @@ import { fileURLToPath } from "node:url";
 const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "app.tsx"), "utf8");
 const appShellSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "AppShell.tsx"), "utf8");
 const composerSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "BottomComposer.tsx"), "utf8");
+const launcherSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "codexa.js"), "utf8");
 
-test("App does not start a terminal title guard during busy rendering", () => {
-  assert.doesNotMatch(appSource, /acquireTerminalTitleGuard/);
+test("App starts a terminal title guard during busy rendering", () => {
+  assert.match(appSource, /refreshTerminalTitle\(\{[\s\S]*?debugEventName: "busy-guard"/);
 });
 
 test("App does not write terminal title OSC sequences while Ink is active", () => {
@@ -53,11 +54,11 @@ test("Settings panel workspace display save path does not append Settings transc
 
 test("Settings panel terminal title save path still updates terminal title state", () => {
   assert.match(appSource, /if \(nextSettings\.terminalTitleMode !== terminalTitleMode\) \{\s*setTerminalTitleMode\(nextSettings\.terminalTitleMode\);/);
-  assert.match(appSource, /setTerminalTitle\(terminalTitleLabel\)/);
+  assert.match(appSource, /writeCodexaTerminalTitle\(terminalTitleLabel/);
 });
 
 test("Terminal title re-assertion effect is keyed by uiState and busy to recover from external overwrites", () => {
-  const match = appSource.match(/useEffect\(\(\) => \{\s*refreshTerminalTitle\(\{[\s\S]*?\}\);\s*\}, \[([^\]]+)\]\);/);
+  const match = appSource.match(/useEffect\(\(\) => \{[\s\S]*?debugEventName: "busy-start"[\s\S]*?\}, \[([^\]]+)\]\);/);
   assert.ok(match, "terminal title re-assertion effect should exist");
   const deps = match[1] ?? "";
   assert.match(deps, /uiState\.kind/);
@@ -67,10 +68,22 @@ test("Terminal title re-assertion effect is keyed by uiState and busy to recover
 });
 
 test("Terminal title update effect is keyed by terminal title label", () => {
-  const match = appSource.match(/useEffect\(\(\) => \{\s*setTerminalTitle\(terminalTitleLabel\);\s*\}, \[([^\]]+)\]\);/);
+  const match = appSource.match(/useEffect\(\(\) => \{\s*writeCodexaTerminalTitle\(terminalTitleLabel[\s\S]*?\);\s*\}, \[([^\]]+)\]\);/);
   assert.ok(match, "terminal title update effect should exist");
   const deps = match[1] ?? "";
   assert.match(deps, /terminalTitleLabel/);
+});
+
+test("Prompt and shell busy paths force title before busy state dispatch", () => {
+  const promptStart = appSource.indexOf('writeCurrentTerminalTitleBeforeStateChange("before-prompt-run-start")');
+  const promptBusy = appSource.indexOf('dispatchSession({ type: "UI_ACTION", action: { type: "PROMPT_RUN_STARTED"');
+  const shellStart = appSource.indexOf('writeCurrentTerminalTitleBeforeStateChange("before-shell-start")');
+  const shellBusy = appSource.indexOf('dispatchSession({ type: "UI_ACTION", action: { type: "SHELL_STARTED"');
+
+  assert.ok(promptStart >= 0, "prompt path should force title before busy");
+  assert.ok(shellStart >= 0, "shell path should force title before busy");
+  assert.ok(promptStart < promptBusy, "prompt title write must happen before busy dispatch");
+  assert.ok(shellStart < shellBusy, "shell title write must happen before busy dispatch");
 });
 
 test("Terminal title cold-start sequence fires immediately on mount and retries at 50ms and 250ms", () => {
@@ -81,6 +94,13 @@ test("Terminal title cold-start sequence fires immediately on mount and retries 
 
 test("Terminal title writes are centralized through the title helpers", () => {
   assert.doesNotMatch(appSource, /reassertTerminalTitle/);
-  assert.match(appSource, /setTerminalTitle/);
+  assert.match(appSource, /writeCodexaTerminalTitle/);
   assert.match(appSource, /deriveTerminalTitle\(workspaceRoot, terminalTitleMode\)/);
+});
+
+test("Installed launcher preserves inherited stdio for interactive TTY launches", () => {
+  assert.match(launcherSource, /const parentHasTTY = parentStdinIsTTY && parentStdoutIsTTY/);
+  assert.match(launcherSource, /if \(!isHeadlessMode && parentHasTTY\)/);
+  assert.match(launcherSource, /parentHasTTY\s*\?\s*\["inherit", "inherit", "inherit"\]/);
+  assert.match(launcherSource, /CODEXA_DEBUG_LAUNCH/);
 });

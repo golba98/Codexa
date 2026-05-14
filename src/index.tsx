@@ -7,7 +7,7 @@ import { APP_NAME, formatTerminalTitlePath } from "./config/settings.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
-import { setTerminalTitle } from "./core/terminalTitle.js";
+import { writeCodexaTerminalTitle } from "./core/terminalTitle.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import {
   createTerminalModeController,
@@ -64,7 +64,7 @@ export interface AppStdout {
 export interface StartAppDependencies {
   stdin: Pick<NodeJS.ReadStream, "isTTY">;
   stdout: AppStdout;
-  stderr: Pick<NodeJS.WriteStream, "write">;
+  stderr: Pick<NodeJS.WriteStream, "write"> & Partial<Pick<NodeJS.WriteStream, "isTTY">>;
   env: Record<string, string | undefined>;
   platform: NodeJS.Platform;
   argv: string[];
@@ -83,6 +83,14 @@ interface ActiveRootState {
 }
 
 let activeRoot: ActiveRootState | null = null;
+
+function debugLaunch(env: Record<string, string | undefined>, write: (chunk: string, source: string) => boolean, fields: Record<string, unknown>): void {
+  if (env.CODEXA_DEBUG_LAUNCH !== "1") {
+    return;
+  }
+
+  write(`[codexa:launch] ${JSON.stringify(fields)}\n`, "src/index.tsx:launchDebug");
+}
 
 function hasInvalidRestoreDimensions(stdout: Pick<AppStdout, "columns" | "rows">): boolean {
   const cols = stdout.columns;
@@ -116,6 +124,18 @@ export function startApp({
   const writeStderr = (chunk: string, source: string): boolean => {
     return writeTerminalControl((value) => stderr.write(value), "stderr", source, chunk);
   };
+
+  debugLaunch(env, writeStderr, {
+    phase: "startApp",
+    resolvedLaunchMode: "interactive-ui",
+    stdinIsTTY: Boolean(stdin.isTTY),
+    stdoutIsTTY: Boolean(stdout.isTTY),
+    stderrIsTTY: Boolean(stderr.isTTY),
+    TERM: env.TERM,
+    WT_SESSION: env.WT_SESSION,
+    TERM_PROGRAM: env.TERM_PROGRAM,
+    argv,
+  });
 
   const capability = getTerminalCapability({
     stdinIsTTY: Boolean(stdin.isTTY),
@@ -154,7 +174,11 @@ export function startApp({
   const startupSettings = loadSettings();
   const startupTitle =
     formatTerminalTitlePath(startupWorkspaceRoot, startupSettings.ui.terminalTitleMode) || APP_NAME;
-  setTerminalTitle(startupTitle, { force: true, write: (chunk) => writeStdout(chunk, "src/index.tsx:startup.title") });
+  writeCodexaTerminalTitle(startupTitle, {
+    force: true,
+    reason: "startup-title",
+    write: (chunk) => writeStdout(chunk, "src/index.tsx:startup.title"),
+  });
   terminal.setBracketedPaste(true, "src/index.tsx:startup.bracketedPaste");
 
   let cleanupDone = false;

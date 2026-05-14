@@ -10,6 +10,11 @@ import {
   sanitizeTerminalTitle,
   setTerminalTitle,
   beginColdStartSequence,
+  createTerminalTitleSequenceStripper,
+  stripTerminalTitleSequences,
+  stripTerminalTitleSequencesFromChunk,
+  writeCodexaTerminalTitle,
+  writeGuardedTerminalOutput,
   __resetTerminalTitleCache,
 } from "./terminalTitle.js";
 
@@ -21,6 +26,58 @@ test("buildTerminalTitleSequence emits OSC 0 and OSC 2 with sanitized title text
   const sequence = buildTerminalTitleSequence("Codexa\u0007!");
   assert.equal(sequence, "\x1b]0;Codexa !\x07\x1b]2;Codexa !\x07");
   assert.equal(sanitizeTerminalTitle("  Codexa  "), "Codexa");
+});
+
+test("stripTerminalTitleSequences removes OSC 0 title sequences with BEL terminator", () => {
+  assert.equal(
+    stripTerminalTitleSequences("hello\x1b]0;C:\\WINDOWS\\system\x07world"),
+    "helloworld",
+  );
+});
+
+test("stripTerminalTitleSequences removes OSC 2 title sequences with BEL terminator", () => {
+  assert.equal(
+    stripTerminalTitleSequences("hello\x1b]2;Codex\x07world"),
+    "helloworld",
+  );
+});
+
+test("stripTerminalTitleSequences preserves normal ANSI SGR colour sequences", () => {
+  const input = "\x1b[31mred\x1b[0m";
+  assert.equal(stripTerminalTitleSequences(input), input);
+});
+
+test("stripTerminalTitleSequences removes title OSC from mixed output while preserving SGR", () => {
+  assert.equal(
+    stripTerminalTitleSequences("start\x1b]0;C:\\WINDOWS\\system\x07middle\x1b[32mok\x1b[0mend"),
+    "startmiddle\x1b[32mok\x1b[0mend",
+  );
+});
+
+test("stripTerminalTitleSequences removes OSC title sequences with ST terminator", () => {
+  assert.equal(
+    stripTerminalTitleSequences("hello\x1b]0;C:\\WINDOWS\\system\x1b\\world"),
+    "helloworld",
+  );
+});
+
+test("stripTerminalTitleSequencesFromChunk handles Buffer input", () => {
+  assert.equal(
+    stripTerminalTitleSequencesFromChunk(Buffer.from("hello\x1b]0;C:\\WINDOWS\\system\x07world", "utf8")),
+    "helloworld",
+  );
+});
+
+test("createTerminalTitleSequenceStripper removes title sequences split across chunks", () => {
+  const stripper = createTerminalTitleSequenceStripper({
+    source: "test",
+    stream: "stdout",
+    origin: "child",
+  });
+
+  assert.equal(stripper.process("hello\x1b]0;C:\\WINDOWS"), "hello");
+  assert.equal(stripper.process("\\system\x07world"), "world");
+  assert.equal(stripper.flush(), "");
 });
 
 test("formatTerminalTitleLabel follows the workspace leaf and app-name rules", () => {
@@ -111,6 +168,30 @@ test("setTerminalTitle deduplicates identical title writes", () => {
   assert.equal(writes.length, 2);
   assert.equal(writes[0], buildTerminalTitleSequence("Codexa"));
   assert.equal(writes[1], buildTerminalTitleSequence("Other"));
+});
+
+test("writeCodexaTerminalTitle delegates to central title writer with force support", () => {
+  const writes: string[] = [];
+  __resetTerminalTitleCache();
+
+  writeCodexaTerminalTitle("Codexa", { force: true, reason: "test", write: (chunk) => writes.push(chunk) });
+
+  assert.deepEqual(writes, [buildTerminalTitleSequence("Codexa")]);
+});
+
+test("writeGuardedTerminalOutput strips external title OSC and preserves SGR", () => {
+  const writes: string[] = [];
+  const result = writeGuardedTerminalOutput(
+    (chunk) => {
+      writes.push(chunk);
+      return true;
+    },
+    "start\x1b]0;C:\\WINDOWS\\system\x07middle\x1b[32mok\x1b[0mend",
+    { source: "test", stream: "stdout", origin: "child" },
+  );
+
+  assert.equal(result, true);
+  assert.deepEqual(writes, ["startmiddle\x1b[32mok\x1b[0mend"]);
 });
 
 test("setTerminalTitle force option bypasses dedup", () => {

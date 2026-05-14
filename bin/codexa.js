@@ -13,6 +13,9 @@ const forwardArgs = process.argv.slice(2);
 const workspaceRoot = process.cwd();
 const launcherStartTimeMs = Number(process.env.CODEXA_EXEC_TIMING_EPOCH_MS) || Date.now();
 let launcherPreviousElapsedMs = 0;
+const titleSequencePattern = /\x1b\](?:0|2);[^\x07]*(?:\x07|\x1b\\)/g;
+const titleSequenceDetectPattern = /\x1b\]([02]);([\s\S]*?)(?:\x07|\x1b\\)/g;
+const incompleteTitleSequencePattern = /\x1b\](?:0|2);[^\x07]*$/;
 
 function writeRenderDebugRecord(kind, fields) {
   if (process.env.CODEXA_RENDER_DEBUG !== "1" && process.env.CODEXA_DEBUG_RENDER !== "1") {
@@ -36,6 +39,75 @@ function writeRenderDebugRecord(kind, fields) {
   } catch {
     // Debug logging must never disturb launcher startup.
   }
+}
+
+function debugLaunch(message, fields = {}) {
+  if (process.env.CODEXA_DEBUG_LAUNCH !== "1") {
+    return;
+  }
+
+  const serializedFields = Object.entries(fields)
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join(" ");
+  process.stderr.write(`[codexa:launch] ${message}${serializedFields ? ` ${serializedFields}` : ""}\n`);
+}
+
+function writeTerminalTitleDebugRecord(fields) {
+  if (process.env.CODEXA_DEBUG_TERMINAL_TITLE !== "1") {
+    return;
+  }
+
+  try {
+    const debugDir = join(workspaceRoot, ".codexa-debug");
+    mkdirSync(debugDir, { recursive: true });
+    appendFileSync(
+      process.env.CODEXA_TERMINAL_TITLE_DEBUG_FILE?.trim() || join(debugDir, "terminal-title-debug.log"),
+      JSON.stringify({
+        ts: Date.now(),
+        pid: process.pid,
+        lifecycleState: "launcher",
+        ...fields,
+      }) + "\n",
+      "utf8",
+    );
+  } catch {
+    // Debug logging must never disturb launcher startup.
+  }
+}
+
+function traceTitleSequences(text, fields) {
+  if (!text) return false;
+  let found = false;
+  titleSequenceDetectPattern.lastIndex = 0;
+  for (let match = titleSequenceDetectPattern.exec(text); match; match = titleSequenceDetectPattern.exec(text)) {
+    found = true;
+    const title = match[2] || "";
+    writeTerminalTitleDebugRecord({
+      event: "terminalTitleSequence",
+      osc: match[1] === "2" ? "OSC 2" : "OSC 0",
+      title,
+      containsWindowsSystem: title.toLowerCase().includes("c:\\windows\\system"),
+      bytes: Buffer.byteLength(match[0] || ""),
+      ...fields,
+    });
+  }
+  return found;
+}
+
+function createTitleStripper(fields) {
+  let carryover = "";
+  return (chunk) => {
+    const input = carryover + Buffer.from(chunk).toString("utf8");
+    carryover = "";
+    const incomplete = incompleteTitleSequencePattern.exec(input);
+    const processable = incomplete?.index != null ? input.slice(0, incomplete.index) : input;
+    if (incomplete?.index != null) {
+      carryover = input.slice(incomplete.index);
+    }
+    return traceTitleSequences(processable, fields)
+      ? processable.replace(titleSequencePattern, "")
+      : processable;
+  };
 }
 
 function hasFlag(args, longFlag, shortFlag) {
@@ -98,6 +170,10 @@ const execTimingEnabled = isHeadlessMode
     || forwardArgs.includes("--timing")
     || forwardArgs.includes("--benchmark-diagnostics")
   );
+const parentStdinIsTTY = Boolean(process.stdin.isTTY);
+const parentStdoutIsTTY = Boolean(process.stdout.isTTY);
+const parentStderrIsTTY = Boolean(process.stderr.isTTY);
+const parentHasTTY = parentStdinIsTTY && parentStdoutIsTTY;
 
 function markExecTiming(phase, fields = {}) {
   if (!execTimingEnabled) return;
@@ -128,7 +204,7 @@ if (!isHeadlessMode && hasFlag(forwardArgs, "--version", "-v")) {
 }
 
 const titleSequence = "\x1b]0;Codexa\x07\x1b]2;Codexa\x07";
-if (!isHeadlessMode) {
+if (!isHeadlessMode && parentHasTTY) {
   writeRenderDebugRecord("stdout", {
     event: "directWrite",
     source: "bin/codexa.js:title",
@@ -140,6 +216,14 @@ if (!isHeadlessMode) {
     containsTitleSequence: true,
   });
   process.stdout.write(titleSequence);
+  writeTerminalTitleDebugRecord({
+    event: "codexaTitleWrite",
+    source: "bin/codexa.js:title",
+    title: "Codexa",
+    reason: "launcher-startup-title",
+    force: true,
+    bytes: Buffer.byteLength(titleSequence),
+  });
 }
 
 /**
@@ -190,10 +274,23 @@ const bunEntry = isHeadlessMode ? execEntry : appEntry;
 const bunForwardArgs = isHeadlessMode ? forwardArgs.slice(1) : forwardArgs;
 
 // Detect if parent process has a real TTY
-const parentHasTTY = process.stdin.isTTY && process.stdout.isTTY;
 const childStdio = isHeadlessMode
   ? ["ignore", "inherit", "inherit"]
-  : [parentHasTTY ? "inherit" : "pipe", "inherit", "inherit"];
+  : parentHasTTY
+    ? ["inherit", "inherit", "inherit"]
+    : ["pipe", "pipe", "pipe"];
+
+debugLaunch("resolved launch mode", {
+  mode: isHeadlessMode ? "headless" : "interactive-ui",
+  stdinIsTTY: parentStdinIsTTY,
+  stdoutIsTTY: parentStdoutIsTTY,
+  stderrIsTTY: parentStderrIsTTY,
+  TERM: process.env.TERM,
+  WT_SESSION: process.env.WT_SESSION,
+  TERM_PROGRAM: process.env.TERM_PROGRAM,
+  argv: process.argv,
+  childStdio,
+});
 
 markExecTiming("bun_spawn_start", { executable: bunExecutable });
 
@@ -241,6 +338,30 @@ if (!isHeadlessMode && !parentHasTTY) {
     if (error.code !== "EPIPE") {
       console.error(`child stdin error: ${error.message}`);
     }
+  });
+}
+
+if (!isHeadlessMode) {
+  const stripStdoutTitle = createTitleStripper({
+    source: "bin/codexa.js:bun.stdout",
+    stream: "stdout",
+    origin: "child",
+    action: "stripped",
+  });
+  const stripStderrTitle = createTitleStripper({
+    source: "bin/codexa.js:bun.stderr",
+    stream: "stderr",
+    origin: "child",
+    action: "stripped",
+  });
+
+  child.stdout?.on("data", (chunk) => {
+    const safeChunk = stripStdoutTitle(chunk);
+    if (safeChunk) process.stdout.write(safeChunk);
+  });
+  child.stderr?.on("data", (chunk) => {
+    const safeChunk = stripStderrTitle(chunk);
+    if (safeChunk) process.stderr.write(safeChunk);
   });
 }
 

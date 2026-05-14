@@ -255,6 +255,61 @@ test("uncertain Windows VT support warns but continues without stdout probing", 
   registeredHandlers[0]?.();
 });
 
+test("launch diagnostics report TTY state only behind debug flag", () => {
+  let stderrWrites = "";
+  let renderCalled = false;
+  const registeredHandlers: Array<() => void> = [];
+
+  const result = startApp({
+    stdin: { isTTY: true },
+    stdout: {
+      isTTY: true,
+      columns: 120,
+      rows: 40,
+      on() {
+        return this;
+      },
+      off() {
+        return this;
+      },
+      write() {
+        return true;
+      },
+    },
+    stderr: {
+      isTTY: true,
+      write(chunk: string) {
+        stderrWrites += chunk;
+        return true;
+      },
+    },
+    env: { CODEXA_DEBUG_LAUNCH: "1", WT_SESSION: "test-session" },
+    platform: "win32",
+    argv: ["--model", "gpt-test"],
+    renderApp(_node: React.ReactElement) {
+      renderCalled = true;
+      return {
+        clear() {},
+        cleanup() {},
+        waitUntilExit() {
+          return Promise.resolve();
+        },
+      };
+    },
+    registerExitHandler(handler) {
+      registeredHandlers.push(handler);
+    },
+  });
+
+  assert.deepEqual(result, { started: true, exitCode: 0 });
+  assert.equal(renderCalled, true);
+  assert.match(stderrWrites, /\[codexa:launch\]/);
+  assert.match(stderrWrites, /"stdinIsTTY":true/);
+  assert.match(stderrWrites, /"stdoutIsTTY":true/);
+  assert.match(stderrWrites, /"stderrIsTTY":true/);
+  registeredHandlers[0]?.();
+});
+
 test("enforces a single render root while active", async () => {
   const harness = createSupportedHarness();
 

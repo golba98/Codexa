@@ -1,5 +1,6 @@
 import * as renderDebug from "./perf/renderDebug.js";
 import { APP_NAME } from "../config/settings.js";
+import { setTerminalTitleLifecycleState, traceTerminalTitleSequences, writeGuardedTerminalOutput } from "./terminalTitle.js";
 
 export const TERMINAL_TITLE = APP_NAME;
 
@@ -28,6 +29,7 @@ export function setTerminalControlUIState(kind: string): void {
       to: kind,
     });
     currentUIStateKind = kind;
+    setTerminalTitleLifecycleState(kind);
   }
 }
 
@@ -37,6 +39,13 @@ export function writeTerminalControl(
   source: string,
   sequence: string,
 ): boolean {
+  traceTerminalTitleSequences(sequence, {
+    source,
+    stream: channel,
+    origin: "codexa",
+    action: "allowed",
+    lifecycleState: currentUIStateKind,
+  });
   renderDebug.traceTerminalWrite(channel, source, sequence);
   const containsClearOrReset = sequence.includes("\x1b[2J")
     || sequence.includes("\x1b[3J")
@@ -79,7 +88,13 @@ export function writeTerminalControl(
     }
   }
 
-  return write(sequence) !== false;
+  return writeGuardedTerminalOutput(write, sequence, {
+    source,
+    stream: channel,
+    origin: "codexa",
+    action: "allowed",
+    lifecycleState: currentUIStateKind,
+  });
 }
 
 export function traceTerminalClear(source: string, fields: Record<string, unknown>): void {
