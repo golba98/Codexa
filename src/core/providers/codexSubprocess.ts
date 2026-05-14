@@ -3,6 +3,7 @@ import { formatCodexLaunchError, spawnCodexProcess } from "../codexExecutable.js
 import { prepareCodexExecLaunch } from "../codexLaunch.js";
 import * as perf from "../perf/profiler.js";
 import { buildCodexPrompt } from "../codexPrompt.js";
+import { createTerminalTitleSequenceStripper } from "../terminalTitle.js";
 import { createCodexJsonStreamParser } from "./codexJsonStream.js";
 import {
   createCodexTranscriptStreamParser,
@@ -133,6 +134,16 @@ export const codexSubprocessProvider: BackendProvider = {
           });
           const transcriptStdoutSanitizer = createStdoutSanitizer();
           const transcriptStderrSanitizer = createStdoutSanitizer();
+          const stdoutTitleStripper = createTerminalTitleSequenceStripper({
+            source: "src/core/providers/codexSubprocess.ts:codex.stdout",
+            stream: "stdout",
+            origin: "codex-cli",
+          });
+          const stderrTitleStripper = createTerminalTitleSequenceStripper({
+            source: "src/core/providers/codexSubprocess.ts:codex.stderr",
+            stream: "stderr",
+            origin: "codex-cli",
+          });
           const jsonParser = createCodexJsonStreamParser({
             onProgress: (update) => handlers.onProgress?.(update),
             onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
@@ -190,23 +201,8 @@ export const codexSubprocessProvider: BackendProvider = {
             }
           };
 
-          proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
-          procExited = false;
-          handlers.benchmarkHooks?.onCodexProcessSpawned?.({
-            executable: launchPlan.executable,
-            argv: launchPlan.args,
-          });
-          perf.mark("spawn_done");
-
-          proc.stdout?.on("data", (chunk: Buffer) => {
-            if (cancelled || done) return;
-            if (!firstChunkSeen) {
-              firstChunkSeen = true;
-              perf.mark("first_chunk");
-              handlers.benchmarkHooks?.onFirstStdout?.();
-            }
-            perf.mark("last_chunk");
-            const text = chunk.toString();
+          const ingestStdoutText = (text: string) => {
+            if (!text) return;
             currentRawOutput += text;
             rawStdout += text;
 
@@ -217,15 +213,10 @@ export const codexSubprocessProvider: BackendProvider = {
 
             stdoutLineBuffer += text;
             processStructuredLines(false);
-          });
+          };
 
-          proc.stderr?.on("data", (chunk: Buffer) => {
-            if (cancelled || done) return;
-            if (!firstStderrSeen) {
-              firstStderrSeen = true;
-              handlers.benchmarkHooks?.onFirstStderr?.();
-            }
-            const text = chunk.toString();
+          const ingestStderrText = (text: string) => {
+            if (!text) return;
             currentRawOutput += text;
             rawStderr += text;
 
@@ -243,11 +234,41 @@ export const codexSubprocessProvider: BackendProvider = {
               if (!trimmed || isStderrNoise(trimmed) || isProcessTerminationNoise(trimmed)) continue;
               emitLegacyProgress("stderr", trimmed);
             }
+          };
+
+          proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
+          procExited = false;
+          handlers.benchmarkHooks?.onCodexProcessSpawned?.({
+            executable: launchPlan.executable,
+            argv: launchPlan.args,
+          });
+          perf.mark("spawn_done");
+
+          proc.stdout?.on("data", (chunk: Buffer) => {
+            if (cancelled || done) return;
+            if (!firstChunkSeen) {
+              firstChunkSeen = true;
+              perf.mark("first_chunk");
+              handlers.benchmarkHooks?.onFirstStdout?.();
+            }
+            perf.mark("last_chunk");
+            ingestStdoutText(stdoutTitleStripper.process(chunk));
+          });
+
+          proc.stderr?.on("data", (chunk: Buffer) => {
+            if (cancelled || done) return;
+            if (!firstStderrSeen) {
+              firstStderrSeen = true;
+              handlers.benchmarkHooks?.onFirstStderr?.();
+            }
+            ingestStderrText(stderrTitleStripper.process(chunk));
           });
 
           proc.on("close", (code) => {
             procExited = true;
             if (cancelled || done) return;
+            ingestStdoutText(stdoutTitleStripper.flush());
+            ingestStderrText(stderrTitleStripper.flush());
             if (!firstChunkSeen) {
               handlers.benchmarkHooks?.onFirstStdout?.(false);
             }

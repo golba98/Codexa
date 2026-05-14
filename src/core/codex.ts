@@ -2,6 +2,7 @@ import { spawn } from "child_process";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import { formatCodexLaunchError, spawnCodexProcess } from "./codexExecutable.js";
 import { prepareCodexExecLaunch } from "./codexLaunch.js";
+import { createTerminalTitleSequenceStripper } from "./terminalTitle.js";
 
 export interface CodexHandlers {
   onLine: (line: string) => void;
@@ -58,25 +59,38 @@ export function streamCodex(
       proc.stdin?.end();
 
       let buffer = "";
+      const stdoutTitleStripper = createTerminalTitleSequenceStripper({
+        source: "src/core/codex.ts:codex.stdout",
+        stream: "stdout",
+        origin: "codex-cli",
+      });
+      const stderrTitleStripper = createTerminalTitleSequenceStripper({
+        source: "src/core/codex.ts:codex.stderr",
+        stream: "stderr",
+        origin: "codex-cli",
+      });
 
       const flushLine = (line: string) => {
         if (cancelled || done) return;
         if (line.trim()) handlers.onLine(line);
       };
 
-      const handleChunk = (chunk: Buffer) => {
+      const handleText = (text: string) => {
+        if (!text) return;
         if (cancelled || done) return;
-        buffer += chunk.toString();
+        buffer += text;
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         lines.forEach(flushLine);
       };
 
-      proc.stdout?.on("data", handleChunk);
-      proc.stderr?.on("data", handleChunk);
+      proc.stdout?.on("data", (chunk: Buffer) => handleText(stdoutTitleStripper.process(chunk)));
+      proc.stderr?.on("data", (chunk: Buffer) => handleText(stderrTitleStripper.process(chunk)));
 
       proc.on("close", (code) => {
         if (cancelled || done) return;
+        handleText(stdoutTitleStripper.flush());
+        handleText(stderrTitleStripper.flush());
         if (buffer.trim()) flushLine(buffer);
         buffer = "";
         if (done) return;

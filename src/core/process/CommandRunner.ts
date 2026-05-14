@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
 import { sanitizeTerminalOutput } from "../terminalSanitize.js";
+import { createTerminalTitleSequenceStripper } from "../terminalTitle.js";
 
 export interface CommandSpec {
   executable: string;
@@ -125,6 +126,16 @@ export function runCommand(
   let stderr = "";
   let canceled = false;
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const stdoutTitleStripper = createTerminalTitleSequenceStripper({
+    source: "src/core/process/CommandRunner.ts:shell.stdout",
+    stream: "stdout",
+    origin: "shell",
+  });
+  const stderrTitleStripper = createTerminalTitleSequenceStripper({
+    source: "src/core/process/CommandRunner.ts:shell.stderr",
+    stream: "stderr",
+    origin: "shell",
+  });
 
   const child = spawn(spec.executable, spec.args, {
     cwd: spec.cwd,
@@ -136,6 +147,8 @@ export function runCommand(
   const result = new Promise<CommandResult>((resolve) => {
     const finish = (partial: Omit<CommandResult, "stdout" | "stderr" | "startedAt" | "endedAt" | "durationMs" | "userMessage"> & { endedAt?: number }) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
+      stdout += stdoutTitleStripper.flush();
+      stderr += stderrTitleStripper.flush();
       const endedAt = partial.endedAt ?? Date.now();
       resolve({
         ...partial,
@@ -156,13 +169,13 @@ export function runCommand(
     };
 
     child.stdout?.on("data", (buffer: Buffer) => {
-      const text = buffer.toString("utf8");
+      const text = stdoutTitleStripper.process(buffer);
       stdout += text;
       handlers.onStdout?.(sanitizeTerminalOutput(text));
     });
 
     child.stderr?.on("data", (buffer: Buffer) => {
-      const text = buffer.toString("utf8");
+      const text = stderrTitleStripper.process(buffer);
       stderr += text;
       handlers.onStderr?.(sanitizeTerminalOutput(text));
     });
