@@ -121,9 +121,10 @@ import { createTerminalModeController, setTerminalControlUIState } from "./core/
 import {
   beginColdStartSequence,
   deriveTerminalTitle,
+  reassertIntendedTerminalTitle,
   refreshTerminalTitle,
   setTerminalTitleLifecycleState,
-  writeCodexaTerminalTitle,
+  setIntendedTerminalTitle,
 } from "./core/terminalTitle.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
@@ -233,6 +234,7 @@ interface PromptRunLifecycle {
   responsePresentation?: "assistant" | "plan";
   approvedPlan?: string;
   submitTiming?: PromptRunTiming;
+  commitPrompt?: boolean;
   onCompleted?: (result: { response: string; turnId: number; runId: number }) => void;
   onFailed?: (result: { message: string; turnId: number; runId: number }) => void;
   onCanceled?: (result: { turnId: number; runId: number }) => void;
@@ -476,7 +478,7 @@ export function App({ launchArgs }: AppProps) {
   }, [terminalTitleMode, workspaceRoot]);
 
   const writeCurrentTerminalTitleBeforeStateChange = useCallback((reason: string) => {
-    writeCodexaTerminalTitle(deriveTerminalTitle(workspaceRoot, terminalTitleMode), {
+    setIntendedTerminalTitle(deriveTerminalTitle(workspaceRoot, terminalTitleMode), {
       force: true,
       reason,
     });
@@ -520,7 +522,7 @@ export function App({ launchArgs }: AppProps) {
   }, [uiState.kind, busy, terminalTitleMode, workspaceRoot]);
 
   useEffect(() => {
-    writeCodexaTerminalTitle(terminalTitleLabel, { reason: "terminal-title-label-change" });
+    setIntendedTerminalTitle(terminalTitleLabel, { force: true, reason: "terminal-title-label-change" });
   }, [terminalTitleLabel]);
   const modelCapabilitiesBusyRef = useRef(modelCapabilitiesBusy);
   modelCapabilitiesBusyRef.current = modelCapabilitiesBusy;
@@ -1965,6 +1967,9 @@ export function App({ launchArgs }: AppProps) {
     const runner = runCommand(
       { executable: safeCommand, args: [], shell: true, cwd: workspaceRoot },
       {
+        onProcessLifecycle: (event) => {
+          reassertIntendedTerminalTitle({ reason: `shell-process-${event}` });
+        },
         onStdout: (text) => {
           const lines = sanitizeTerminalLines(text.split(/\r?\n/));
           if (lines.length > 0) {
@@ -2147,24 +2152,29 @@ export function App({ launchArgs }: AppProps) {
     activeTurnIdRef.current = turnId;
     activeRunLifecycleRef.current = lifecycle;
     activeRunTimingRef.current = { ...submitTiming, runId, turnId };
-    dispatchSession({ type: "UI_ACTION", action: { type: "PROMPT_RUN_STARTED", turnId } });
-    dispatchSession({ type: "SET_ACTIVE_EVENTS", events: [
-      userEvent,
-      {
-        ...createRunEvent({
-          id: runId,
-          backendId: backend,
-          backendLabel: provider.label,
-          runtime: runtimeForTurn,
-          prompt: safeProviderPrompt,
-          turnId,
-          startedAtMs: submitTiming.submitEpochMs,
-          responsePresentation: lifecycle.responsePresentation,
-          approvedPlan: lifecycle.approvedPlan,
-        }),
-        summary: "Codexa is starting...",
-      },
-    ] });
+    dispatchSession({
+      type: "SUBMIT_PROMPT_RUN",
+      historyValue: lifecycle.commitPrompt ? safeDisplayPrompt : undefined,
+      turnId,
+      runId,
+      events: [
+        userEvent,
+        {
+          ...createRunEvent({
+            id: runId,
+            backendId: backend,
+            backendLabel: provider.label,
+            runtime: runtimeForTurn,
+            prompt: safeProviderPrompt,
+            turnId,
+            startedAtMs: submitTiming.submitEpochMs,
+            responsePresentation: lifecycle.responsePresentation,
+            approvedPlan: lifecycle.approvedPlan,
+          }),
+          summary: "Codexa is starting...",
+        },
+      ],
+    });
 
     let streamedAssistantContent = "";
     let legacyProgressSequence = 0;
@@ -2257,6 +2267,9 @@ export function App({ launchArgs }: AppProps) {
           safeProviderPrompt,
           { runtime: runtimeForTurn, workspaceRoot, projectInstructions },
           {
+        onProcessLifecycle: (event) => {
+          reassertIntendedTerminalTitle({ reason: `codex-process-${event}` });
+        },
         onAssistantDelta: (chunk) => {
           if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) return;
           const t0 = performance.now();
@@ -2472,6 +2485,7 @@ export function App({ launchArgs }: AppProps) {
     state: Extract<PlanFlowState, { kind: "generating" }>,
     displayPrompt: string,
     submitTiming?: PromptRunTiming,
+    commitPrompt = false,
   ) => {
     const started = startPromptRun(
       displayPrompt,
@@ -2490,6 +2504,7 @@ export function App({ launchArgs }: AppProps) {
         parseActionRequired: false,
         responsePresentation: "plan",
         submitTiming,
+        commitPrompt,
         onCompleted: ({ response }) => {
           const nextPlan = response.trim();
           if (!nextPlan) {
@@ -2609,16 +2624,14 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
-    dispatchSession({ type: "PUSH_HISTORY", value: initialPrompt });
-
     if (planMode) {
       const nextPlanState = startPlanGeneration(initialPrompt, mode);
       setPlanFlow(nextPlanState);
-      runPlanGeneration(nextPlanState, initialPrompt, createPromptRunTiming());
+      runPlanGeneration(nextPlanState, initialPrompt, createPromptRunTiming(), true);
       return;
     }
 
-    startPromptRun(initialPrompt, initialPrompt, { submitTiming: createPromptRunTiming() });
+    startPromptRun(initialPrompt, initialPrompt, { submitTiming: createPromptRunTiming(), commitPrompt: true });
   }, [
     allowedWritableRoots,
     appendErrorEvent,
@@ -2980,13 +2993,11 @@ export function App({ launchArgs }: AppProps) {
       }
 
       if (busy) return;
-      dispatchSession({ type: "PUSH_HISTORY", value });
-      resetComposer();
       startPromptRun(value, buildFollowUpPrompt({
         originalPrompt: originalUserEvent.prompt,
         assistantQuestion: uiState.question,
         userAnswer: value,
-      }), { submitTiming });
+      }), { submitTiming, commitPrompt: true });
       return;
     }
 
@@ -3002,18 +3013,14 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
-    // Add to history and reset composer for normal prompts
-    dispatchSession({ type: "PUSH_HISTORY", value });
-    resetComposer();
-
     // Submit to provider or plan mode
     if (planMode) {
       const nextPlanState = startPlanGeneration(value, mode);
       setPlanFlow(nextPlanState);
-      runPlanGeneration(nextPlanState, value, submitTiming);
+      runPlanGeneration(nextPlanState, value, submitTiming, true);
       return;
     }
-    startPromptRun(value, value, { submitTiming });
+    startPromptRun(value, value, { submitTiming, commitPrompt: true });
   }, [
     allowedWritableRoots,
     appendErrorEvent,

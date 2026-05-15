@@ -2448,13 +2448,13 @@ function buildStableActiveTurnGroups(
   const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
   const actionBorderTone = item.renderState.opacity === "dim" ? "borderSubtle" : "borderActive";
   const events = compactActionBursts(collectStreamEvents(item, streaming), verbose);
-  let orderedRows = getCachedFrozenRows(rowCacheKey([
+  let orderedRows = [...getCachedFrozenRows(rowCacheKey([
     "stable-active-user",
     item.key,
     innerWidth,
     item.renderState.opacity,
     textCacheToken(item.item.user?.prompt),
-  ]), () => buildUserInputRows(item, innerWidth));
+  ]), () => buildUserInputRows(item, innerWidth))];
   orderedRows.push(createBlankRow(`${item.key}-active-prompt-gap`, innerWidth));
 
   events.forEach((event, index) => {

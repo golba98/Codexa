@@ -54,7 +54,7 @@ test("Settings panel workspace display save path does not append Settings transc
 
 test("Settings panel terminal title save path still updates terminal title state", () => {
   assert.match(appSource, /if \(nextSettings\.terminalTitleMode !== terminalTitleMode\) \{\s*setTerminalTitleMode\(nextSettings\.terminalTitleMode\);/);
-  assert.match(appSource, /writeCodexaTerminalTitle\(terminalTitleLabel/);
+  assert.match(appSource, /setIntendedTerminalTitle\(terminalTitleLabel/);
 });
 
 test("Terminal title re-assertion effect is keyed by uiState and busy to recover from external overwrites", () => {
@@ -68,7 +68,7 @@ test("Terminal title re-assertion effect is keyed by uiState and busy to recover
 });
 
 test("Terminal title update effect is keyed by terminal title label", () => {
-  const match = appSource.match(/useEffect\(\(\) => \{\s*writeCodexaTerminalTitle\(terminalTitleLabel[\s\S]*?\);\s*\}, \[([^\]]+)\]\);/);
+  const match = appSource.match(/useEffect\(\(\) => \{\s*setIntendedTerminalTitle\(terminalTitleLabel[\s\S]*?\);\s*\}, \[([^\]]+)\]\);/);
   assert.ok(match, "terminal title update effect should exist");
   const deps = match[1] ?? "";
   assert.match(deps, /terminalTitleLabel/);
@@ -76,7 +76,7 @@ test("Terminal title update effect is keyed by terminal title label", () => {
 
 test("Prompt and shell busy paths force title before busy state dispatch", () => {
   const promptStart = appSource.indexOf('writeCurrentTerminalTitleBeforeStateChange("before-prompt-run-start")');
-  const promptBusy = appSource.indexOf('dispatchSession({ type: "UI_ACTION", action: { type: "PROMPT_RUN_STARTED"');
+  const promptBusy = appSource.indexOf('type: "SUBMIT_PROMPT_RUN"');
   const shellStart = appSource.indexOf('writeCurrentTerminalTitleBeforeStateChange("before-shell-start")');
   const shellBusy = appSource.indexOf('dispatchSession({ type: "UI_ACTION", action: { type: "SHELL_STARTED"');
 
@@ -94,8 +94,14 @@ test("Terminal title cold-start sequence fires immediately on mount and retries 
 
 test("Terminal title writes are centralized through the title helpers", () => {
   assert.doesNotMatch(appSource, /reassertTerminalTitle/);
-  assert.match(appSource, /writeCodexaTerminalTitle/);
+  assert.match(appSource, /setIntendedTerminalTitle/);
+  assert.match(appSource, /reassertIntendedTerminalTitle/);
   assert.match(appSource, /deriveTerminalTitle\(workspaceRoot, terminalTitleMode\)/);
+});
+
+test("App reasserts intended terminal title around child process lifecycle events", () => {
+  assert.match(appSource, /onProcessLifecycle: \(event\) => \{\s*reassertIntendedTerminalTitle\(\{\s*reason: `codex-process-\$\{event\}`/);
+  assert.match(appSource, /onProcessLifecycle: \(event\) => \{\s*reassertIntendedTerminalTitle\(\{\s*reason: `shell-process-\$\{event\}`/);
 });
 
 test("Installed launcher preserves inherited stdio for interactive TTY launches", () => {
@@ -103,4 +109,23 @@ test("Installed launcher preserves inherited stdio for interactive TTY launches"
   assert.match(launcherSource, /if \(!isHeadlessMode && parentHasTTY\)/);
   assert.match(launcherSource, /parentHasTTY\s*\?\s*\["inherit", "inherit", "inherit"\]/);
   assert.match(launcherSource, /CODEXA_DEBUG_LAUNCH/);
+});
+
+test("Installed launcher asserts a safe title before Bun lifecycle boundaries", () => {
+  const launchStartIndex = launcherSource.indexOf('markExecTiming("launcher_start"');
+  const startupTitleIndex = launcherSource.indexOf('writeIntendedTitle("launcher-startup-title")');
+  const helpIndex = launcherSource.indexOf('hasFlag(forwardArgs, "--help", "-h")');
+  const beforeSpawnIndex = launcherSource.indexOf('writeIntendedTitle("before-bun-spawn")');
+  const spawnIndex = launcherSource.indexOf("const child = spawn(");
+
+  assert.ok(launchStartIndex >= 0);
+  assert.ok(startupTitleIndex > launchStartIndex);
+  assert.ok(startupTitleIndex < helpIndex, "launcher title should be asserted before help/version parsing can exit");
+  assert.ok(beforeSpawnIndex >= 0 && spawnIndex > beforeSpawnIndex, "launcher title should be asserted before Bun spawn");
+  assert.match(launcherSource, /CODEXA_INITIAL_TERMINAL_TITLE: intendedTerminalTitle/);
+  assert.match(launcherSource, /child\.once\("spawn"[\s\S]*writeIntendedTitle\("after-bun-spawn"\)/);
+  assert.match(launcherSource, /child\.on\("error"[\s\S]*writeIntendedTitle\("bun-spawn-error"\)/);
+  assert.match(launcherSource, /child\.on\("close"[\s\S]*writeIntendedTitle\("bun-close"\)/);
+  assert.match(launcherSource, /\/\^\[a-zA-Z\]:\[\\\\\/\]\//);
+  assert.doesNotMatch(launcherSource, /intendedTerminalTitle\s*=\s*workspaceRoot/);
 });

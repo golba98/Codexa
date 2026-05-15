@@ -271,6 +271,16 @@ function AppShellInner({
     },
     [mouseCapture, clearCount, nativeTranscriptParts.staticItems],
   );
+  const nativeAllRows = useMemo<TimelineRow[]>(
+    () => {
+      if (mouseCapture) return [];
+      return [
+        ...nativeStaticAllItems.flatMap((item) => item.rows),
+        ...(showTimeline ? nativeTranscriptParts.liveRows : []),
+      ];
+    },
+    [mouseCapture, nativeStaticAllItems, nativeTranscriptParts.liveRows, showTimeline],
+  );
 
   renderDebug.traceEvent("layout", "nativeTranscript", {
     nativeMode: !mouseCapture,
@@ -379,12 +389,8 @@ function AppShellInner({
           runtimeSummary={runtimeSummary}
         />
 
-        {nativeStaticAllItems.map((item) => (
-          <NativeRowsItem key={item.key} rows={item.rows} />
-        ))}
-
-        {showTimeline && nativeTranscriptParts.liveRows.length > 0 && (
-          <NativeRowsItem rows={nativeTranscriptParts.liveRows} />
+        {nativeAllRows.length > 0 && (
+          <NativeRowsItem rows={nativeAllRows} />
         )}
 
         {showMainPanel && (

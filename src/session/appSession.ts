@@ -41,6 +41,7 @@ export type SessionAction =
   | { type: "SET_INPUT"; value: string; cursor?: number }
   | { type: "RESET_INPUT" }
   | { type: "PUSH_HISTORY"; value: string }
+  | { type: "SUBMIT_PROMPT_RUN"; historyValue?: string; events: TimelineEvent[]; turnId: number; runId: number }
   | { type: "HISTORY_UP" }
   | { type: "HISTORY_DOWN" }
   | { type: "CLEAR_TRANSCRIPT" }
@@ -282,6 +283,24 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         history: [action.value, ...state.history.filter((entry) => entry !== action.value)].slice(0, 50),
         historyIndex: -1,
       };
+    case "SUBMIT_PROMPT_RUN": {
+      const nextHistory = action.historyValue
+        ? [action.historyValue, ...state.history.filter((entry) => entry !== action.historyValue)].slice(0, 50)
+        : state.history;
+      return {
+        ...state,
+        activeEvents: action.events,
+        uiState: reduceTracedUIState(
+          state.uiState,
+          { type: "PROMPT_RUN_STARTED", turnId: action.turnId },
+          { reason: "SUBMIT_PROMPT_RUN", runId: action.runId },
+        ),
+        inputValue: "",
+        cursor: 0,
+        history: nextHistory,
+        historyIndex: -1,
+      };
+    }
     case "HISTORY_UP": {
       if (state.history.length === 0) return state;
       const nextIndex = Math.min(state.historyIndex + 1, state.history.length - 1);

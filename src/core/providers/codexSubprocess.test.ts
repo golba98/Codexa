@@ -47,3 +47,22 @@ test("codex subprocess cleanup skips kill after process close", () => {
   assert.ok(exitedIndex < cleanupIndex);
   assert.ok(skipIndex < killIndex);
 });
+
+test("codex subprocess reports lifecycle boundaries for terminal title reassertion", () => {
+  const source = readFileSync(fileURLToPath(new URL("./codexSubprocess.ts", import.meta.url)), "utf8");
+  const beforeSpawnIndex = source.indexOf('handlers.onProcessLifecycle?.("before-spawn")');
+  const spawnIndex = source.indexOf("proc = spawnCodexProcess");
+  const spawnedIndex = source.indexOf('handlers.onProcessLifecycle?.("spawned")', spawnIndex);
+  const closeIndex = source.indexOf('proc.on("close"', spawnIndex);
+  const exitIndex = source.indexOf('handlers.onProcessLifecycle?.("exit")', closeIndex);
+  const errorIndex = source.indexOf('proc.on("error"', spawnIndex);
+  const lifecycleErrorIndex = source.indexOf('handlers.onProcessLifecycle?.("error")', errorIndex);
+  const cleanupIndex = source.indexOf("return () =>", spawnedIndex);
+  const lifecycleCleanupIndex = source.indexOf('handlers.onProcessLifecycle?.("cleanup")', cleanupIndex);
+
+  assert.ok(beforeSpawnIndex >= 0 && beforeSpawnIndex < spawnIndex);
+  assert.ok(spawnedIndex > spawnIndex);
+  assert.ok(exitIndex > closeIndex);
+  assert.ok(lifecycleErrorIndex > errorIndex);
+  assert.ok(lifecycleCleanupIndex > cleanupIndex);
+});

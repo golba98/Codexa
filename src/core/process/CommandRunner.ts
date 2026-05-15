@@ -28,6 +28,7 @@ export interface CommandResult {
 export interface CommandStreamHandlers {
   onStdout?: (text: string) => void;
   onStderr?: (text: string) => void;
+  onProcessLifecycle?: (event: "before-spawn" | "spawned" | "exit" | "error" | "cancel") => void;
 }
 
 function splitOutputLines(text: string): string[] {
@@ -137,12 +138,14 @@ export function runCommand(
     origin: "shell",
   });
 
+  handlers.onProcessLifecycle?.("before-spawn");
   const child = spawn(spec.executable, spec.args, {
     cwd: spec.cwd,
     env: spec.env,
     shell: spec.shell ?? false,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  handlers.onProcessLifecycle?.("spawned");
 
   const result = new Promise<CommandResult>((resolve) => {
     const finish = (partial: Omit<CommandResult, "stdout" | "stderr" | "startedAt" | "endedAt" | "durationMs" | "userMessage"> & { endedAt?: number }) => {
@@ -181,6 +184,7 @@ export function runCommand(
     });
 
     child.once("error", (error: NodeJS.ErrnoException) => {
+      handlers.onProcessLifecycle?.("error");
       finish({
         status: canceled ? "canceled" : "spawn_error",
         exitCode: null,
@@ -191,6 +195,7 @@ export function runCommand(
     });
 
     child.once("close", (code, signal) => {
+      handlers.onProcessLifecycle?.("exit");
       finish({
         status: canceled ? "canceled" : code === 0 ? "completed" : "failed",
         exitCode: code,
@@ -217,6 +222,7 @@ export function runCommand(
     result,
     cancel: () => {
       canceled = true;
+      handlers.onProcessLifecycle?.("cancel");
       if (!child.killed) {
         try {
           child.kill();

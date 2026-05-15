@@ -61,6 +61,79 @@ function stateWithActiveRun(turnId: number): SessionState {
   };
 }
 
+test("SUBMIT_PROMPT_RUN atomically clears composer, records history, appends one turn, and enters thinking", () => {
+  const turnId = 50;
+  const runId = 2;
+  const initial: SessionState = {
+    ...createInitialSessionState(),
+    inputValue: "hello",
+    cursor: 5,
+    history: ["older"],
+  };
+
+  const state = reduceSessionState(initial, {
+    type: "SUBMIT_PROMPT_RUN",
+    historyValue: "hello",
+    turnId,
+    runId,
+    events: [makeUserEvent(turnId), makeRunEvent(turnId)],
+  });
+
+  assert.equal(state.inputValue, "");
+  assert.equal(state.cursor, 0);
+  assert.deepEqual(state.history, ["hello", "older"]);
+  assert.deepEqual(state.activeEvents.map((event) => event.type), ["user", "run"]);
+  assert.equal(state.activeEvents.filter((event) => event.type === "user").length, 1);
+  assert.equal(state.activeEvents.filter((event) => event.type === "run").length, 1);
+  assert.deepEqual(state.uiState, { kind: "THINKING", turnId });
+  assert.deepEqual(state.staticEvents, []);
+});
+
+test("busy lifecycle preserves one canonical active turn until finalization", () => {
+  const turnId = 51;
+  let state = reduceSessionState(createInitialSessionState(), {
+    type: "SUBMIT_PROMPT_RUN",
+    historyValue: "hello",
+    turnId,
+    runId: 2,
+    events: [makeUserEvent(turnId), makeRunEvent(turnId)],
+  });
+
+  state = reduceSessionState(state, {
+    type: "RUN_APPEND_ASSISTANT_DELTA",
+    turnId,
+    runId: 2,
+    chunk: "Hello",
+    eventFactory: () => makeAssistantEvent(turnId, "Hello"),
+  });
+  state = reduceSessionState(state, {
+    type: "RUN_MARK_FINAL_ANSWER_OBSERVED",
+    runId: 2,
+    turnId,
+    response: "Hello",
+  });
+
+  assert.deepEqual(state.activeEvents.map((event) => event.type), ["user", "run", "assistant"]);
+  assert.equal(state.activeEvents.filter((event) => event.type === "user").length, 1);
+  assert.equal(state.activeEvents.filter((event) => event.type === "assistant").length, 1);
+  assert.deepEqual(state.staticEvents, []);
+
+  state = reduceSessionState(state, {
+    type: "FINALIZE_RUN",
+    runId: 2,
+    turnId,
+    status: "completed",
+    response: undefined,
+    assistantFactory: () => makeAssistantEvent(turnId, ""),
+  });
+
+  assert.deepEqual(state.activeEvents, []);
+  assert.deepEqual(state.staticEvents.map((event) => event.type), ["user", "run", "assistant"]);
+  assert.equal(state.staticEvents.filter((event) => event.type === "user").length, 1);
+  assert.equal(state.staticEvents.filter((event) => event.type === "assistant").length, 1);
+  assert.equal(state.uiState.kind, "IDLE");
+});
+
 test("CLEAR_TRANSCRIPT removes all rendered transcript event state and preserves prompt history", () => {
   const turnId = 7;
   const shellEvent: TimelineEvent = {

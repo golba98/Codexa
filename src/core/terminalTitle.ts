@@ -39,10 +39,12 @@ function writeTerminalTitleDebugRecord(fields: Record<string, unknown>): void {
 }
 
 let lastWrittenTerminalTitle = "";
+let intendedTerminalTitle = DEFAULT_TERMINAL_TITLE;
 
 /** FOR TESTING ONLY: Reset the cached title. */
 export function __resetTerminalTitleCache() {
   lastWrittenTerminalTitle = "";
+  intendedTerminalTitle = DEFAULT_TERMINAL_TITLE;
 }
 
 export function setTerminalTitleLifecycleState(state: string): void {
@@ -56,8 +58,41 @@ export interface TerminalTitleOptions {
   reason?: string;
 }
 
+function looksLikeRawWindowsPath(title: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(title.trim()) || /^\\\\/.test(title.trim());
+}
+
+export function normalizeTerminalTitle(title: string | null | undefined): string {
+  const cleanTitle = sanitizeTerminalTitle(title ?? "");
+  if (!cleanTitle || looksLikeRawWindowsPath(cleanTitle)) {
+    return DEFAULT_TERMINAL_TITLE;
+  }
+  return cleanTitle;
+}
+
+export function setIntendedTerminalTitle(title: string | null | undefined, options?: TerminalTitleOptions): string {
+  intendedTerminalTitle = normalizeTerminalTitle(title);
+  writeCodexaTerminalTitle(intendedTerminalTitle, {
+    ...options,
+    reason: options?.reason ?? "set-intended-title",
+  });
+  return intendedTerminalTitle;
+}
+
+export function getIntendedTerminalTitle(): string {
+  return intendedTerminalTitle;
+}
+
+export function reassertIntendedTerminalTitle(options?: TerminalTitleOptions): void {
+  writeCodexaTerminalTitle(intendedTerminalTitle, {
+    force: true,
+    ...options,
+    reason: options?.reason ?? "reassert-intended-title",
+  });
+}
+
 export function writeCodexaTerminalTitle(title: string, options?: TerminalTitleOptions) {
-  const cleanTitle = sanitizeTerminalTitle(title) || "Codexa";
+  const cleanTitle = normalizeTerminalTitle(title);
 
   if (!options?.force && cleanTitle === lastWrittenTerminalTitle) {
     debugLog(`skipped title="${cleanTitle}" reason=${options?.reason ?? "unknown"} (unchanged)`);
@@ -136,13 +171,13 @@ export function refreshTerminalTitle(options: {
   debugEventName?: string;
   busyState?: boolean;
 }) {
-  const title = computeTerminalTitle(options);
+  const title = normalizeTerminalTitle(computeTerminalTitle(options));
   if (DEBUG_TERMINAL_TITLE) {
     debugLog(
       `refreshTerminalTitle(event=${options.debugEventName || "unknown"}, mode=${options.terminalTitleMode}, workspace=${options.workspaceName}, busy=${!!options.busyState}) -> "${title}"`,
     );
   }
-  writeCodexaTerminalTitle(title, {
+  setIntendedTerminalTitle(title, {
     force: options.force,
     write: options.write,
     reason: options.debugEventName ?? "refreshTerminalTitle",
@@ -251,7 +286,7 @@ export function writeGuardedTerminalOutput(
  * shell integration which often overwrites the title shortly after startup.
  */
 export function beginColdStartSequence(title: string, options?: { write?: (chunk: string) => void }) {
-  writeCodexaTerminalTitle(title, { force: true, write: options?.write, reason: "cold-start-immediate" });
+  setIntendedTerminalTitle(title, { force: true, write: options?.write, reason: "cold-start-immediate" });
 
   const timers: ReturnType<typeof setTimeout>[] = [];
   let cancelled = false;
@@ -260,7 +295,7 @@ export function beginColdStartSequence(title: string, options?: { write?: (chunk
     const id = setTimeout(() => {
       if (!cancelled) {
         debugLog(`cold-start retry t=${delayMs}ms fired`);
-        writeCodexaTerminalTitle(title, { force: true, write: options?.write, reason: `cold-start-retry-${delayMs}ms` });
+        reassertIntendedTerminalTitle({ write: options?.write, reason: `cold-start-retry-${delayMs}ms` });
       }
     }, delayMs);
     timers.push(id);
@@ -278,6 +313,38 @@ export function beginColdStartSequence(title: string, options?: { write?: (chunk
   };
 }
 
+export function startTerminalTitleStartupGuard(options?: {
+  write?: (chunk: string) => void;
+  intervalMs?: number;
+  durationMs?: number;
+  reason?: string;
+}): () => void {
+  const intervalMs = options?.intervalMs ?? 150;
+  const durationMs = options?.durationMs ?? 3500;
+  const reason = options?.reason ?? "startup-guard";
+  let stopped = false;
+  const startedAt = Date.now();
+
+  reassertIntendedTerminalTitle({ write: options?.write, reason: `${reason}-start` });
+  const interval = setInterval(() => {
+    if (stopped) return;
+    if (Date.now() - startedAt >= durationMs) {
+      stopped = true;
+      clearInterval(interval);
+      reassertIntendedTerminalTitle({ write: options?.write, reason: `${reason}-end` });
+      return;
+    }
+    reassertIntendedTerminalTitle({ write: options?.write, reason });
+  }, intervalMs);
+  interval.unref?.();
+
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(interval);
+  };
+}
+
 export function sanitizeTerminalTitle(title: string): string {
   return title
     .replace(/[\u0000-\u001f\u007f]/g, " ")
@@ -286,7 +353,7 @@ export function sanitizeTerminalTitle(title: string): string {
 }
 
 export function buildTerminalTitleSequence(title: string): string {
-  const safeTitle = sanitizeTerminalTitle(title);
+  const safeTitle = normalizeTerminalTitle(title);
   // \x1b]0; sets both icon name and window title.
   // \x1b]2; sets window title.
   // We use both for compatibility.

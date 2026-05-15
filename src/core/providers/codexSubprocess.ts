@@ -236,8 +236,10 @@ export const codexSubprocessProvider: BackendProvider = {
             }
           };
 
+          handlers.onProcessLifecycle?.("before-spawn");
           proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
           procExited = false;
+          handlers.onProcessLifecycle?.("spawned");
           handlers.benchmarkHooks?.onCodexProcessSpawned?.({
             executable: launchPlan.executable,
             argv: launchPlan.args,
@@ -266,6 +268,7 @@ export const codexSubprocessProvider: BackendProvider = {
 
           proc.on("close", (code) => {
             procExited = true;
+            handlers.onProcessLifecycle?.("exit");
             if (cancelled || done) return;
             ingestStdoutText(stdoutTitleStripper.flush());
             ingestStderrText(stderrTitleStripper.flush());
@@ -320,6 +323,7 @@ export const codexSubprocessProvider: BackendProvider = {
           });
 
           proc.on("error", (err) => {
+            handlers.onProcessLifecycle?.("error");
             if (cancelled || done) return;
             const errno = err as NodeJS.ErrnoException;
             finishError(formatCodexLaunchError(errno));
@@ -351,6 +355,7 @@ export const codexSubprocessProvider: BackendProvider = {
       cancelled = true;
       done = true;
       handlers.benchmarkHooks?.onCleanupStart?.();
+      handlers.onProcessLifecycle?.("cleanup");
       if (!proc || procExited || proc.killed) {
         handlers.benchmarkHooks?.onCleanupComplete?.({ skipped: true });
         return;
