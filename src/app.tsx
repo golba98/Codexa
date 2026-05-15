@@ -116,6 +116,25 @@ import { loadProjectInstructions } from "./core/projectInstructions.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
+import { launchProviderCli } from "./core/providerLauncher/launcher.js";
+import { buildProviderRegistry, findProvider, getActiveRouteProviderId } from "./core/providerLauncher/registry.js";
+import type { ProviderId, ProviderPickerAction, ProviderWorkspaceConfig } from "./core/providerLauncher/types.js";
+import {
+  discoverProviderModels,
+  getProviderRouteSetupMessage,
+  getProviderRuntime,
+  isProviderRouteConfigured,
+  isProviderRoutableInCodexa,
+  resolveActiveProviderRoute,
+  validateProviderRouteActivation,
+} from "./core/providerRuntime/registry.js";
+import { providerModelsToCodexCapabilities } from "./core/providerRuntime/models.js";
+import {
+  loadProviderWorkspaceConfig,
+  saveProviderWorkspaceConfig,
+  setProviderActiveRoute,
+  setProviderWorkspaceDefault,
+} from "./core/providerLauncher/workspaceConfig.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
 import { createTerminalModeController, setTerminalControlUIState } from "./core/terminalControl.js";
 import {
@@ -169,6 +188,7 @@ import { ModelPickerScreen } from "./ui/ModelPickerScreen.js";
 import { ModePicker } from "./ui/ModePicker.js";
 import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } from "./ui/PlanActionPicker.js";
 import { PermissionsPanel, type PermissionsPanelAction } from "./ui/PermissionsPanel.js";
+import { ProviderPicker } from "./ui/ProviderPicker.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
 import { SelectionPanel } from "./ui/SelectionPanel.js";
 import { SettingsPanel } from "./ui/SettingsPanel.js";
@@ -256,6 +276,7 @@ export function App({ launchArgs }: AppProps) {
     ? projectInstructionsLoad.instructions
     : null;
   const initialSettings = useRef(loadSettings());
+  const initialProviderWorkspaceConfig = useRef<ProviderWorkspaceConfig>(loadProviderWorkspaceConfig(workspaceRoot));
   const initialLayeredConfig = useRef<LayeredConfigResult | null>(null);
   if (initialLayeredConfig.current === null) {
     initialLayeredConfig.current = resolveLayeredConfig({ workspaceRoot, launchArgs });
@@ -271,7 +292,17 @@ export function App({ launchArgs }: AppProps) {
   const terminalLayout = useTerminalViewport();
 
   const [baseLayeredConfig, setBaseLayeredConfig] = useState<LayeredConfigResult>(initialLayeredConfig.current);
-  const [sessionRuntimeOverride, setSessionRuntimeOverride] = useState<PartialRuntimeConfig>({});
+  const [sessionRuntimeOverride, setSessionRuntimeOverride] = useState<PartialRuntimeConfig>(() => {
+    const initialRoute = initialProviderWorkspaceConfig.current.activeRoute;
+    if (!initialRoute || !isProviderRoutableInCodexa(initialRoute.providerId)) {
+      return {};
+    }
+
+    return {
+      model: initialRoute.modelId,
+      ...(initialRoute.reasoning ? { reasoningLevel: initialRoute.reasoning } : {}),
+    };
+  });
   const [authPreference, setAuthPreference] = useState<AuthPreference>(initialSettings.current.auth.preference);
   const [workspaceDisplayMode, setWorkspaceDisplayMode] = useState<WorkspaceDisplayMode>(
     initialSettings.current.ui.workspaceDisplayMode,
@@ -285,6 +316,10 @@ export function App({ launchArgs }: AppProps) {
   const [terminalMouseMode, setTerminalMouseMode] = useState<TerminalMouseMode>(
     initialSettings.current.ui.terminalMouseMode,
   );
+  const [providerWorkspaceConfig, setProviderWorkspaceConfig] = useState<ProviderWorkspaceConfig>(
+    initialProviderWorkspaceConfig.current,
+  );
+  const [pendingRouteProviderId, setPendingRouteProviderId] = useState<ProviderId | null>(null);
   const [themeSelection, setThemeSelection] = useState<ThemeSelectionState>({
     committedTheme: initialSettings.current.ui.theme,
     previewTheme: null,
@@ -384,17 +419,89 @@ export function App({ launchArgs }: AppProps) {
   const { provider: backend, model, mode, reasoningLevel, planMode } = runtimeConfig;
   const resolvedRuntimeConfig = useMemo(() => resolveRuntimeConfig(runtimeConfig), [runtimeConfig]);
   const runtimeSummary = useMemo(() => buildRuntimeSummary(resolvedRuntimeConfig), [resolvedRuntimeConfig]);
+  const activeProviderRoute = useMemo(
+    () => resolveActiveProviderRoute({
+      workspaceConfigActiveRoute: providerWorkspaceConfig.activeRoute,
+      currentModel: model,
+      currentReasoning: reasoningLevel,
+    }),
+    [model, providerWorkspaceConfig.activeRoute, reasoningLevel],
+  );
+  const activeProviderRuntime = useMemo(
+    () => getProviderRuntime(activeProviderRoute.providerId),
+    [activeProviderRoute.providerId],
+  );
+  const providerRegistry = useMemo(
+    () => buildProviderRegistry({ activeModel: model, workspaceConfig: providerWorkspaceConfig }),
+    [model, providerWorkspaceConfig],
+  );
+  const workspaceDefaultProvider = useMemo(
+    () => providerRegistry.find((provider) => provider.isDefault) ?? providerRegistry[0] ?? null,
+    [providerRegistry],
+  );
+  const activeRouteProviderId = activeProviderRoute.providerId;
+  const activeRouteProvider = useMemo(
+    () => findProvider(providerRegistry, activeRouteProviderId) ?? providerRegistry[0] ?? null,
+    [activeRouteProviderId, providerRegistry],
+  );
+  const modelPickerProviderId = pendingRouteProviderId ?? activeProviderRoute.providerId;
+  const modelPickerRuntime = useMemo(
+    () => getProviderRuntime(modelPickerProviderId),
+    [modelPickerProviderId],
+  );
+  const providerModelCapabilities = useMemo(() => {
+    if (modelPickerProviderId === "openai") return null;
+    const discovery = discoverProviderModels(modelPickerProviderId);
+    return providerModelsToCodexCapabilities(discovery.models, activeProviderRoute.modelId);
+  }, [activeProviderRoute.modelId, modelPickerProviderId]);
+  const activeRouteModelCapabilities = useMemo(() => {
+    if (activeProviderRoute.providerId === "openai") return modelCapabilities;
+    const discovery = discoverProviderModels(activeProviderRoute.providerId);
+    return providerModelsToCodexCapabilities(discovery.models, activeProviderRoute.modelId);
+  }, [activeProviderRoute.modelId, activeProviderRoute.providerId, modelCapabilities]);
+  const modelPickerModels = useMemo(
+    () => providerModelCapabilities
+      ? getSelectableModelCapabilities(providerModelCapabilities)
+      : (modelCapabilities ? getSelectableModelCapabilities(modelCapabilities) : []),
+    [modelCapabilities, providerModelCapabilities],
+  );
+  const modelPickerCurrentModel = pendingRouteProviderId
+    ? (getSelectableModelCapabilities(providerModelCapabilities ?? activeRouteModelCapabilities ?? createFallbackModelCapabilities(null))[0]?.model ?? model)
+    : activeProviderRoute.modelId;
+  const modelPickerProviderLabel = useMemo(
+    () => findProvider(providerRegistry, modelPickerProviderId)?.displayName ?? modelPickerRuntime.label,
+    [modelPickerProviderId, modelPickerRuntime.label, providerRegistry],
+  );
+  const routeStatusMessage = useMemo(() => {
+    const providerLines = providerRegistry.map((provider) => {
+      const runtime = getProviderRuntime(provider.id);
+      const routingStatus = runtime.routeAvailable
+        ? isProviderRouteConfigured(provider.id) ? "configured" : "not configured"
+        : "unavailable";
+      return `  ${provider.displayName} routing: ${routingStatus}`;
+    });
+
+    return [
+      "Route status:",
+      `  Workspace default provider: ${workspaceDefaultProvider?.displayName ?? "OpenAI"}`,
+      `  Active chat route: ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeProviderRoute.modelId}`,
+      `  Route source: ${activeProviderRoute.backendKind}`,
+      `  In-Codexa routing: ${activeProviderRuntime.routeAvailable ? isProviderRouteConfigured(activeProviderRoute.providerId) ? "configured" : "not configured" : "unavailable"}`,
+      `  External launch: ${activeRouteProvider?.launchCommand ? "Available" : "Unavailable"}`,
+      ...(providerLines.length > 0 ? providerLines : []),
+    ].join("\n");
+  }, [activeProviderRoute.backendKind, activeProviderRoute.modelId, activeProviderRoute.providerId, activeProviderRuntime.routeAvailable, activeRouteProvider, providerRegistry, workspaceDefaultProvider]);
   const selectionProfile = useMemo(
     () => getTerminalSelectionProfile(process.env),
     [],
   );
   const selectableModelCapabilities = useMemo(
-    () => modelCapabilities ? getSelectableModelCapabilities(modelCapabilities) : [],
-    [modelCapabilities],
+    () => activeRouteModelCapabilities ? getSelectableModelCapabilities(activeRouteModelCapabilities) : [],
+    [activeRouteModelCapabilities],
   );
   const currentModelCapability = useMemo(
-    () => findModelCapability(modelCapabilities, model),
-    [model, modelCapabilities],
+    () => findModelCapability(activeRouteModelCapabilities, activeProviderRoute.modelId),
+    [activeProviderRoute.modelId, activeRouteModelCapabilities],
   );
   const currentReasoningCapabilities = currentModelCapability?.supportedReasoningLevels ?? [];
   const workspaceLabel = useMemo(
@@ -657,7 +764,32 @@ export function App({ launchArgs }: AppProps) {
     };
   }, [composerRows, terminalLayout.cols, terminalLayout.layoutEpoch, terminalLayout.rows]);
 
-  const provider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
+  const backendProvider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
+  const provider: BackendProvider = useMemo(() => {
+    if (activeProviderRoute.providerId === "openai") {
+      return backendProvider;
+    }
+
+    const routeRuntime = getProviderRuntime(activeProviderRoute.providerId);
+    return {
+      id: backend,
+      label: routeRuntime.label,
+      description: routeRuntime.routeStatus,
+      authState: routeRuntime.routeAvailable ? "delegated" : "coming-soon",
+      authLabel: routeRuntime.routeAvailable ? "Configured" : "Not configured",
+      statusMessage: routeRuntime.routeStatus,
+      supportsModels: (candidateModel) => candidateModel === activeProviderRoute.modelId,
+      run: routeRuntime.run
+        ? (prompt, options, handlers) => routeRuntime.run?.({
+          prompt,
+          route: activeProviderRoute,
+          runtime: options.runtime,
+          workspaceRoot: options.workspaceRoot,
+          projectInstructions: options.projectInstructions,
+        }, handlers) ?? (() => undefined)
+        : undefined,
+    };
+  }, [activeProviderRoute, backend, backendProvider]);
 
   const getInputDebugSnapshot = useCallback((extra: Record<string, unknown> = {}) => {
     const currentScreen = screenRef.current;
@@ -989,6 +1121,9 @@ export function App({ launchArgs }: AppProps) {
   }, []);
 
   useEffect(() => {
+    if (activeProviderRoute.providerId !== "openai") {
+      return;
+    }
     if (modelCapabilities?.status !== "ready") {
       return;
     }
@@ -1021,7 +1156,7 @@ export function App({ launchArgs }: AppProps) {
         `Reasoning level is now ${formatReasoningLabel(nextReasoning)} for ${nextModel}.`,
       );
     }
-  }, [appendSystemEvent, model, modelCapabilities, reasoningLevel, updateRuntimeConfig]);
+  }, [activeProviderRoute.providerId, appendSystemEvent, model, modelCapabilities, reasoningLevel, updateRuntimeConfig]);
 
   const updateRuntimePolicy = useCallback((updater: (current: RuntimeConfig["policy"]) => RuntimeConfig["policy"]) => {
     updateRuntimeConfig((current) => ({
@@ -1029,6 +1164,23 @@ export function App({ launchArgs }: AppProps) {
       policy: updater(current.policy),
     }));
   }, [updateRuntimeConfig]);
+
+  const persistActiveRoute = useCallback((providerId: ProviderId, nextModel: string, nextReasoning: string, backendKindOverride?: ReturnType<typeof getProviderRuntime>["backendKind"]) => {
+    try {
+      const runtime = getProviderRuntime(providerId);
+      const nextConfig = setProviderActiveRoute(providerWorkspaceConfig, {
+        providerId,
+        modelId: nextModel,
+        backendKind: backendKindOverride ?? runtime.backendKind,
+        reasoning: nextReasoning,
+      });
+      saveProviderWorkspaceConfig(workspaceRoot, nextConfig);
+      setProviderWorkspaceConfig(nextConfig);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to save active route.";
+      appendErrorEvent("Route save failed", message);
+    }
+  }, [appendErrorEvent, providerWorkspaceConfig, workspaceRoot]);
 
   const setBackendWithNotice = useCallback((nextBackend: AvailableBackend) => {
     const gate = guardConfigMutation("backend", busy);
@@ -1117,7 +1269,7 @@ export function App({ launchArgs }: AppProps) {
     setPlanModeWithNotice(!planMode);
   }, [planMode, setPlanModeWithNotice]);
 
-  const setModelWithNotice = useCallback((nextModel: AvailableModel) => {
+  const setModelWithNotice = useCallback(async (nextModel: AvailableModel) => {
     const gate = guardConfigMutation("model", busy);
     if (!gate.allowed) {
       traceInputDebug("model_selection_blocked", getInputDebugSnapshot({
@@ -1136,12 +1288,30 @@ export function App({ launchArgs }: AppProps) {
     }));
 
     try {
-      const normalizedReasoning = normalizeReasoningForModelCapabilities(nextModel, reasoningLevel, modelCapabilities);
+      const routeProviderId = activeProviderRoute.providerId;
+      const normalizedReasoning = normalizeReasoningForModelCapabilities(nextModel, reasoningLevel, activeRouteModelCapabilities);
+      const validation = await validateProviderRouteActivation({
+        route: {
+          providerId: routeProviderId,
+          modelId: nextModel,
+          backendKind: getProviderRuntime(routeProviderId).backendKind,
+          reasoning: normalizedReasoning,
+        },
+        workspaceRoot,
+      });
+      if (validation.status !== "ready") {
+        appendSystemEvent(
+          "Provider route unavailable",
+          `${validation.message ?? getProviderRouteSetupMessage(routeProviderId)} Previous active route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeProviderRoute.modelId}.`,
+        );
+        return;
+      }
       updateRuntimeConfig((current) => ({
         ...current,
         model: nextModel,
-        reasoningLevel: normalizeReasoningForModelCapabilities(nextModel, current.reasoningLevel, modelCapabilities),
+        reasoningLevel: normalizeReasoningForModelCapabilities(nextModel, current.reasoningLevel, activeRouteModelCapabilities),
       }));
+      persistActiveRoute(routeProviderId, nextModel, normalizedReasoning, validation.backendKind);
       traceInputDebug("model_selection_app_success", getInputDebugSnapshot({
         handler: "setModelWithNotice",
         model: nextModel,
@@ -1167,9 +1337,9 @@ export function App({ launchArgs }: AppProps) {
       modelSelectionInFlightRef.current = false;
       returnToChatMode("selection");
     }
-  }, [appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, modelCapabilities, reasoningLevel, returnToChatMode, updateRuntimeConfig]);
+  }, [activeProviderRoute.modelId, activeProviderRoute.providerId, activeRouteModelCapabilities, activeRouteProvider, appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, persistActiveRoute, reasoningLevel, returnToChatMode, updateRuntimeConfig, workspaceRoot]);
 
-  const setModelAndReasoningWithNotice = useCallback((nextModel: AvailableModel, nextReasoning: ReasoningLevel) => {
+  const setModelAndReasoningWithNotice = useCallback(async (nextModel: AvailableModel, nextReasoning: ReasoningLevel, providerId: ProviderId = activeProviderRoute.providerId) => {
     const gate = guardConfigMutation("model", busy);
     if (!gate.allowed) {
       traceInputDebug("model_selection_blocked", getInputDebugSnapshot({
@@ -1183,7 +1353,10 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
-    const selectedCapability = findModelCapability(modelCapabilities, nextModel);
+    const routeCapabilities = providerId === "openai"
+      ? modelCapabilities
+      : providerModelsToCodexCapabilities(discoverProviderModels(providerId).models, nextModel);
+    const selectedCapability = findModelCapability(routeCapabilities, nextModel);
     const supported = selectedCapability?.supportedReasoningLevels;
     if (supported && supported.length > 0 && !supported.some((item) => item.id === nextReasoning)) {
       appendErrorEvent(
@@ -1202,12 +1375,37 @@ export function App({ launchArgs }: AppProps) {
     }));
 
     try {
-      const normalizedReasoning = normalizeReasoningForModelCapabilities(nextModel, nextReasoning, modelCapabilities);
+      const normalizedReasoning = normalizeReasoningForModelCapabilities(nextModel, nextReasoning, routeCapabilities);
+      const validation = await validateProviderRouteActivation({
+        route: {
+          providerId,
+          modelId: nextModel,
+          backendKind: getProviderRuntime(providerId).backendKind,
+          reasoning: normalizedReasoning,
+        },
+        workspaceRoot,
+      });
+      if (validation.status !== "ready") {
+        traceInputDebug("model_selection_app_failure", getInputDebugSnapshot({
+          handler: "setModelAndReasoningWithNotice",
+          model: nextModel,
+          reasoning: nextReasoning,
+          error: validation.message ?? getProviderRouteSetupMessage(providerId),
+        }));
+        appendSystemEvent(
+          "Provider route unavailable",
+          `${validation.message ?? getProviderRouteSetupMessage(providerId)} Previous active route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeProviderRoute.modelId}.`,
+        );
+        setPendingRouteProviderId(null);
+        return;
+      }
       updateRuntimeConfig((current) => ({
         ...current,
         model: nextModel,
         reasoningLevel: normalizedReasoning,
       }));
+      persistActiveRoute(providerId, nextModel, normalizedReasoning, validation.backendKind);
+      setPendingRouteProviderId(null);
       traceInputDebug("model_selection_app_success", getInputDebugSnapshot({
         handler: "setModelAndReasoningWithNotice",
         model: nextModel,
@@ -1218,8 +1416,8 @@ export function App({ launchArgs }: AppProps) {
         ? selectedCapability.label
         : nextModel;
       appendSystemEvent(
-        "Model settings updated",
-        `${modelLabel} · reasoning: ${formatReasoningLabel(normalizedReasoning)}`,
+        "Route updated",
+        `${getProviderRuntime(providerId).label} / ${modelLabel} · reasoning: ${formatReasoningLabel(normalizedReasoning)}`,
       );
       refreshTerminalTitle({
         terminalTitleMode,
@@ -1239,7 +1437,7 @@ export function App({ launchArgs }: AppProps) {
       modelSelectionInFlightRef.current = false;
       returnToChatMode("selection");
     }
-  }, [appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, modelCapabilities, returnToChatMode, updateRuntimeConfig]);
+  }, [activeProviderRoute.modelId, activeProviderRoute.providerId, activeRouteProvider, appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, modelCapabilities, persistActiveRoute, returnToChatMode, updateRuntimeConfig, workspaceRoot]);
 
   const setAuthPreferenceWithNotice = useCallback((nextPreference: AuthPreference) => {
     setAuthPreference(nextPreference);
@@ -1401,7 +1599,181 @@ export function App({ launchArgs }: AppProps) {
     setScreen("backend-picker");
   }, [appendSystemEvent, busy]);
 
+  const openProviderPicker = useCallback(() => {
+    const gate = guardConfigMutation("backend", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before opening providers.");
+      return;
+    }
+
+    setScreen("provider-picker");
+  }, [appendSystemEvent, busy]);
+
+  const setWorkspaceDefaultProviderWithNotice = useCallback((providerId: ProviderId) => {
+    const provider = findProvider(providerRegistry, providerId);
+    if (!provider) {
+      appendErrorEvent("Provider unavailable", `Unknown provider: ${providerId}`);
+      return;
+    }
+
+    try {
+      const nextConfig = setProviderWorkspaceDefault(providerWorkspaceConfig, providerId);
+      saveProviderWorkspaceConfig(workspaceRoot, nextConfig);
+      setProviderWorkspaceConfig(nextConfig);
+      setScreen("main");
+      const routeConfigured = isProviderRouteConfigured(providerId);
+      appendSystemEvent(
+        "Provider default updated",
+        provider.routeMode === "in-codexa" && routeConfigured
+          ? `${provider.displayName} is now the workspace default provider. Active chat route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${model}.`
+          : `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet. Active chat route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${model}.`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to save provider workspace config.";
+      appendErrorEvent("Provider default failed", message);
+    }
+  }, [activeRouteProvider, appendErrorEvent, appendSystemEvent, model, providerRegistry, providerWorkspaceConfig, workspaceRoot]);
+
+  const handleProviderAction = useCallback((providerId: ProviderId, action: ProviderPickerAction) => {
+    if (action === "cancel") {
+      setScreen("main");
+      return;
+    }
+
+    if (action === "set-default") {
+      setWorkspaceDefaultProviderWithNotice(providerId);
+      return;
+    }
+
+    const provider = findProvider(providerRegistry, providerId);
+    if (!provider) {
+      setScreen("main");
+      appendErrorEvent("Provider unavailable", `Unknown provider: ${providerId}`);
+      return;
+    }
+
+    if (action === "use-in-codexa") {
+      if (!isProviderRoutableInCodexa(providerId)) {
+        appendSystemEvent(
+          "Provider route unavailable",
+          provider.isDefault
+            ? `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet.`
+            : `${provider.displayName} in-Codexa routing is not configured yet.`,
+        );
+        return;
+      }
+      if (providerId !== "google" && !isProviderRouteConfigured(providerId)) {
+        appendSystemEvent("Provider route unavailable", getProviderRouteSetupMessage(providerId));
+        return;
+      }
+
+      setPendingRouteProviderId(providerId);
+      intendedInputModeRef.current = "model-picker";
+      intendedFocusTargetRef.current = FOCUS_IDS.modelPicker;
+      setScreen("model-picker");
+      appendSystemEvent("Provider route", `Choose a ${provider.displayName} model to use inside Codexa.`);
+      return;
+    }
+
+    if (action === "select-model") {
+      if (!isProviderRoutableInCodexa(providerId)) {
+        appendSystemEvent(
+          "Provider route unavailable",
+          provider.isDefault
+            ? `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet.`
+            : `${provider.displayName} in-Codexa routing is not configured yet.`,
+        );
+        return;
+      }
+      if (providerId !== "google" && !isProviderRouteConfigured(providerId)) {
+        appendSystemEvent("Provider route unavailable", getProviderRouteSetupMessage(providerId));
+        return;
+      }
+
+      if (providerId === "openai" && !modelCapabilities) {
+        void refreshModelCapabilities(false, false);
+      }
+      setPendingRouteProviderId(providerId);
+      intendedInputModeRef.current = "model-picker";
+      intendedFocusTargetRef.current = FOCUS_IDS.modelPicker;
+      setScreen("model-picker");
+      return;
+    }
+
+    if (action === "refresh-models") {
+      if (!isProviderRoutableInCodexa(providerId)) {
+        appendSystemEvent(
+          "Provider route unavailable",
+          provider.isDefault
+            ? `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet.`
+            : `${provider.displayName} in-Codexa routing is not configured yet.`,
+        );
+        return;
+      }
+
+      if (providerId === "openai") {
+        void refreshModelCapabilities(true, true);
+        appendSystemEvent("Model discovery", `Refreshing models for ${provider.displayName}.`);
+      } else {
+        const discovery = discoverProviderModels(providerId);
+        appendSystemEvent(
+          "Model discovery",
+          discovery.status === "ready"
+            ? `Loaded ${discovery.models.length} configured models for ${provider.displayName}.`
+            : discovery.message ?? `${provider.displayName} model routing is not configured yet.`,
+        );
+      }
+      return;
+    }
+
+    if (busyRef.current) {
+      appendSystemEvent("Busy", "Finish the current run before launching a provider CLI.");
+      return;
+    }
+
+    setScreen("main");
+    appendSystemEvent(
+      "Provider launch",
+      `Suspending Codexa and launching ${provider.displayName}. Codexa will resume when the external CLI exits.`,
+    );
+
+    void launchProviderCli(provider, {
+      cwd: workspaceRoot,
+      stdin,
+      beforeLaunch: () => {
+        terminalControl.setMouseReporting(false, "src/app.tsx:providerLaunch.disableMouse");
+        stdout.write("\n");
+      },
+      afterLaunch: () => {
+        terminalControl.setMouseReporting(mouseCapture, "src/app.tsx:providerLaunch.restoreMouse");
+        forceRefreshCurrentTerminalTitle("provider_launch_return", false);
+      },
+    }).then((result) => {
+      if (!isMountedRef.current) return;
+      appendSystemEvent("Provider launch", result.message);
+    }).catch((error) => {
+      if (!isMountedRef.current) return;
+      const message = error instanceof Error ? error.message : "Provider launch failed.";
+      appendErrorEvent("Provider launch failed", message);
+    });
+  }, [
+    appendErrorEvent,
+    appendSystemEvent,
+    forceRefreshCurrentTerminalTitle,
+    mouseCapture,
+    providerRegistry,
+    modelCapabilities,
+    reasoningLevel,
+    refreshModelCapabilities,
+    setWorkspaceDefaultProviderWithNotice,
+    stdin,
+    stdout,
+    terminalControl,
+    workspaceRoot,
+  ]);
+
   const openModelPicker = useCallback(() => {
+    setPendingRouteProviderId(null);
     traceInputDebug("model_picker_open_request", getInputDebugSnapshot({
       handler: "openModelPicker",
       currentScreen: screen,
@@ -1433,7 +1805,7 @@ export function App({ launchArgs }: AppProps) {
     // subscribe to the existing promise instead of spawning duplicate jobs or
     // log entries. Open the picker immediately; it renders a loading state
     // until the promise resolves and state updates commit the model list.
-    if (!modelCapabilities) {
+    if (activeProviderRoute.providerId === "openai" && !modelCapabilities) {
       traceInputDebug("model_picker_loading_trigger", getInputDebugSnapshot({
         handler: "openModelPicker",
       }));
@@ -1448,7 +1820,7 @@ export function App({ launchArgs }: AppProps) {
       nextScreen: "model-picker",
       focusTarget: FOCUS_IDS.modelPicker,
     }));
-  }, [appendSystemEvent, busy, focusManager, getInputDebugSnapshot, modelCapabilities, refreshModelCapabilities, screen]);
+  }, [activeProviderRoute.providerId, appendSystemEvent, busy, focusManager, getInputDebugSnapshot, modelCapabilities, refreshModelCapabilities, screen]);
 
   const openModePicker = useCallback(() => {
     const gate = guardConfigMutation("mode", busy);
@@ -2086,6 +2458,8 @@ export function App({ launchArgs }: AppProps) {
     const runtimeConfigForTurn = {
       ...requestedRuntime,
       mode: effectiveMode,
+      model: activeProviderRoute.modelId,
+      reasoningLevel: activeProviderRoute.reasoning ?? requestedRuntime.reasoningLevel,
     };
     let runtimeForTurn = resolveRuntimeConfig(runtimeConfigForTurn);
     const fastCleanupRun = isClearlySafeGeneratedCleanupRequest(safeProviderPrompt)
@@ -2119,7 +2493,7 @@ export function App({ launchArgs }: AppProps) {
     }
     const runProvider = provider.run;
 
-    if (backend === "codex-subprocess") {
+    if (activeProviderRoute.providerId === "openai" && backend === "codex-subprocess") {
       const decision = getRunGateDecision(authStatus.state, {
         warnOnUnknown: authStatus.checkedAt > 0,
       });
@@ -2250,7 +2624,7 @@ export function App({ launchArgs }: AppProps) {
 
       // Capture the workspace state after the visible run has had a chance to
       // render, so first-prompt filesystem work cannot block initial progress.
-      if (backend === "codex-subprocess") {
+      if (activeProviderRoute.providerId === "openai" && backend === "codex-subprocess") {
         preRunSnapshot = captureWorkspaceSnapshot(workspaceRoot);
         activityTracker = createWorkspaceActivityTracker({
           rootDir: workspaceRoot,
@@ -2687,7 +3061,9 @@ export function App({ launchArgs }: AppProps) {
       },
       workspace: workspaceCommandContext,
       tokensUsed: estimateTokens(conversationChars),
-      modelCapabilities,
+      modelCapabilities: activeRouteModelCapabilities,
+      routeStatusMessage,
+      activeRouteProviderLabel: activeRouteProvider?.displayName ?? "OpenAI",
     });
     const isCommand = commandResult !== null;
 
@@ -2733,6 +3109,11 @@ export function App({ launchArgs }: AppProps) {
         case "runtime_writable_roots_list":
           if (commandResult.message) {
             appendSystemEvent("Runtime status", commandResult.message);
+          }
+          return;
+        case "route_status":
+          if (commandResult.message) {
+            appendSystemEvent("Route status", commandResult.message);
           }
           return;
         case "config_status":
@@ -2900,6 +3281,9 @@ export function App({ launchArgs }: AppProps) {
         case "open_backend_picker":
           openBackendPicker();
           return;
+        case "open_provider_picker":
+          openProviderPicker();
+          return;
         case "open_model_picker":
           openModelPicker();
           return;
@@ -3043,6 +3427,7 @@ export function App({ launchArgs }: AppProps) {
     mode,
     openAuthPanel,
     openBackendPicker,
+    openProviderPicker,
     openModePicker,
     openModelPicker,
     openPermissionsPanel,
@@ -3146,6 +3531,7 @@ export function App({ launchArgs }: AppProps) {
         onHistoryUp={handleHistoryUp}
         onHistoryDown={handleHistoryDown}
         onOpenBackendPicker={openBackendPicker}
+        onOpenProviderPicker={openProviderPicker}
         onOpenModelPicker={openModelPicker}
         onOpenModePicker={openModePicker}
         onOpenThemePicker={openThemePicker}
@@ -3184,6 +3570,7 @@ export function App({ launchArgs }: AppProps) {
     handleHistoryUp,
     handleHistoryDown,
     openBackendPicker,
+    openProviderPicker,
     openModelPicker,
     openModePicker,
     openThemePicker,
@@ -3224,15 +3611,28 @@ export function App({ launchArgs }: AppProps) {
               />
             )}
 
+              {screen === "provider-picker" && (
+                <ProviderPicker
+                  layout={terminalLayout}
+                  providers={providerRegistry}
+                  onAction={handleProviderAction}
+                  onCancel={() => setScreen("main")}
+                />
+              )}
+
               {screen === "model-picker" && (
                 <ModelPickerScreen
                   layout={terminalLayout}
-                  models={selectableModelCapabilities}
-                  currentModel={model}
+                  models={modelPickerModels}
+                  currentModel={modelPickerCurrentModel}
                   currentReasoning={reasoningLevel}
-                  isLoading={modelCapabilitiesBusy && selectableModelCapabilities.length === 0}
-                  onSelect={(m, r) => setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel)}
-                  onCancel={returnToChatMode}
+                  activeProviderLabel={modelPickerProviderLabel}
+                  isLoading={modelPickerProviderId === "openai" && modelCapabilitiesBusy && modelPickerModels.length === 0}
+                  onSelect={(m, r) => setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel, modelPickerProviderId)}
+                  onCancel={() => {
+                    setPendingRouteProviderId(null);
+                    returnToChatMode();
+                  }}
                 />
               )}
 

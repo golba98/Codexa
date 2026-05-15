@@ -12,6 +12,8 @@ import type {
   RunResponseSegment,
   RunStreamItem,
   RunToolActivity,
+  SystemEvent,
+  ErrorEvent,
   TimelineEvent,
   UIState,
 } from "./types.js";
@@ -899,7 +901,23 @@ export function cancelRunEvent(event: RunEvent, durationMs = Date.now() - event.
 }
 
 export function appendStaticEvents(events: TimelineEvent[], additions: TimelineEvent[]): TimelineEvent[] {
-  return [...events, ...additions];
+  const result = [...events];
+  for (const addition of additions) {
+    const last = result[result.length - 1];
+    let isDuplicate = false;
+    if (last && last.type === addition.type) {
+      if (addition.type === "system" || addition.type === "error") {
+        const lastTyped = last as SystemEvent | ErrorEvent;
+        const additionTyped = addition as SystemEvent | ErrorEvent;
+        isDuplicate = lastTyped.title === additionTyped.title && lastTyped.content === additionTyped.content;
+      }
+    }
+
+    if (!isDuplicate) {
+      result.push(addition);
+    }
+  }
+  return result;
 }
 
 export function trimStaticEvents(events: TimelineEvent[]): TimelineEvent[] {

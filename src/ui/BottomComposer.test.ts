@@ -7,6 +7,7 @@ import {
   measureBottomComposerRows,
 } from "./BottomComposer.js";
 import { createLayoutSnapshot } from "./layout.js";
+import { getSlashCommandSuggestions } from "./slashCommands.js";
 
 test("maps the idle state to the idle composer persona", () => {
   assert.equal(getComposerPersona({ kind: "IDLE" }), "idle");
@@ -68,6 +69,62 @@ test("keeps partial slash command suggestions visible", () => {
   assert.equal(partial.showSuggestions, true);
   assert.equal(partial.reserveSuggestionRow, true);
   assert.deepEqual(partial.suggestions.map((suggestion) => suggestion.cmd), ["/clear"]);
+});
+
+test("surfaces the provider picker suggestion for root prefixes and alias input", () => {
+  const rootSuggestions = getCommandSuggestionState({
+    value: "/",
+    allowCommands: true,
+    inputLocked: false,
+  });
+
+  assert.equal(rootSuggestions.showSuggestions, true);
+  assert.ok(rootSuggestions.suggestions.map((suggestion) => suggestion.cmd).includes("/providers"));
+
+  const pSuggestions = getCommandSuggestionState({
+    value: "/p",
+    allowCommands: true,
+    inputLocked: false,
+  });
+
+  assert.ok(pSuggestions.suggestions.map((suggestion) => suggestion.cmd).includes("/providers"));
+
+  const shortProviderSuggestions = getCommandSuggestionState({
+    value: "/pro",
+    allowCommands: true,
+    inputLocked: false,
+  });
+
+  assert.ok(shortProviderSuggestions.suggestions.map((suggestion) => suggestion.cmd).includes("/providers"));
+
+  const prefixProviderSuggestions = getCommandSuggestionState({
+    value: "/pr",
+    allowCommands: true,
+    inputLocked: false,
+  });
+
+  assert.ok(prefixProviderSuggestions.suggestions.map((suggestion) => suggestion.cmd).includes("/providers"));
+
+  const providerSuggestions = getCommandSuggestionState({
+    value: "/provider",
+    allowCommands: true,
+    inputLocked: false,
+  });
+
+  assert.equal(providerSuggestions.showSuggestions, true);
+  assert.deepEqual(providerSuggestions.suggestions.map((suggestion) => suggestion.cmd), ["/providers"]);
+
+  const exactProviderSuggestions = getCommandSuggestionState({
+    value: "/providers",
+    allowCommands: true,
+    inputLocked: false,
+  });
+
+  assert.equal(exactProviderSuggestions.showSuggestions, true);
+  assert.deepEqual(exactProviderSuggestions.suggestions.map((suggestion) => suggestion.cmd), ["/providers"]);
+
+  const aliasMetadata = getSlashCommandSuggestions("/provider").find((suggestion) => suggestion.cmd === "/providers");
+  assert.deepEqual(aliasMetadata?.aliases, ["/provider"]);
 });
 
 test("keeps exact and partial slash command row budgets stable", () => {

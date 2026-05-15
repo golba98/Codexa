@@ -26,6 +26,7 @@ import * as renderDebug from "../core/perf/renderDebug.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
 import { isAnimatedBusyState } from "./busyStatusAnimation.js";
 import type { TerminalSelectionProfile } from "../core/terminalSelection.js";
+import { getSlashCommandSuggestions, type CommandSuggestion } from "./slashCommands.js";
 
 type ComposerPersona = "idle" | "busy" | "answer" | "error";
 type DeleteIntent = "backspace" | "delete";
@@ -86,6 +87,7 @@ interface BottomComposerProps {
   onHistoryUp: () => void;
   onHistoryDown: () => void;
   onOpenBackendPicker: () => void;
+  onOpenProviderPicker?: () => void;
   onOpenModelPicker: () => void;
   onOpenModePicker: () => void;
   onOpenThemePicker: () => void;
@@ -108,30 +110,6 @@ export interface BottomComposerMeasureParams {
   value: string;
   cursor: number;
 }
-
-const COMMANDS = [
-  { cmd: "/help", desc: "Show available commands" },
-  { cmd: "/clear", desc: "Clear chat and cancel active run" },
-  { cmd: "/model", desc: "Change active model" },
-  { cmd: "/mode", desc: "Change execution mode" },
-  { cmd: "/backend", desc: "Change active backend" },
-  { cmd: "/reasoning", desc: "Change reasoning level" },
-  { cmd: "/plan", desc: "Show or toggle session plan mode" },
-  { cmd: "/setting", desc: "Open the settings picker" },
-  { cmd: "/settings", desc: "Open the settings picker" },
-  { cmd: "/status", desc: "Show effective runtime configuration" },
-  { cmd: "/permissions", desc: "Inspect or update permissions and sandbox controls" },
-  { cmd: "/runtime", desc: "Compatibility runtime policy controls" },
-  { cmd: "/themes", desc: "Open visual theme picker" },
-  { cmd: "/verbose", desc: "Toggle verbose mode (detailed processing info)" },
-  { cmd: "/auth", desc: "Manage authentication" },
-  { cmd: "/workspace", desc: "Show the locked workspace" },
-  { cmd: "/copy", desc: "Copy the full conversation transcript to clipboard" },
-  { cmd: "/mouse", desc: "Toggle mouse capture for wheel scrolling (off by default)" },
-  { cmd: "/exit", desc: "Quit the application" },
-] as const;
-
-export type CommandSuggestion = (typeof COMMANDS)[number];
 
 export interface CommandSuggestionState {
   showSuggestions: boolean;
@@ -177,10 +155,11 @@ export function getCommandSuggestionState({
   const isCmdPrefix = allowCommands && value.startsWith("/");
   const cmdPrefix = value.split(" ")[0]?.toLowerCase() ?? "";
   const canSuggest = !inputLocked && isCmdPrefix && !value.includes(" ");
-  const matchingSuggestions = canSuggest
-    ? COMMANDS.filter((command) => command.cmd.startsWith(cmdPrefix)).slice(0, 5)
-    : [];
-  const suggestions = matchingSuggestions.filter((command) => command.cmd !== cmdPrefix);
+  const matchingSuggestions = canSuggest ? getSlashCommandSuggestions(cmdPrefix) : [];
+  const exactMatch = matchingSuggestions.find((command) => command.cmd === cmdPrefix);
+  const exactMatchAliases = exactMatch && "aliases" in exactMatch ? exactMatch.aliases : undefined;
+  const suppressExactMatch = exactMatch ? !(exactMatchAliases?.length ?? 0) : true;
+  const suggestions = matchingSuggestions.filter((command) => !(suppressExactMatch && command.cmd === cmdPrefix));
 
   return {
     showSuggestions: canSuggest,
@@ -302,6 +281,7 @@ export function BottomComposer({
   onHistoryUp,
   onHistoryDown,
   onOpenBackendPicker,
+  onOpenProviderPicker = () => undefined,
   onOpenModelPicker,
   onOpenModePicker,
   onOpenThemePicker,
@@ -576,6 +556,13 @@ export function BottomComposer({
     if (allowCommands && key.ctrl) {
       switch (input) {
         case "b": onOpenBackendPicker(); return;
+        case "p":
+          if (key.meta) {
+            onOpenProviderPicker();
+            return;
+          }
+          onOpenModePicker();
+          return;
         case "m": onOpenModelPicker(); return;
         case "o":
           traceInputDebug("ctrl_o_received", {
@@ -588,7 +575,6 @@ export function BottomComposer({
           });
           onOpenModelPicker();
           return;
-        case "p": onOpenModePicker(); return;
         case "t": onOpenThemePicker(); return;
         case "a": onOpenAuthPanel(); return;
         case "l": onClear(); return;
@@ -634,9 +620,18 @@ export function BottomComposer({
 
     if (key.return) {
       if (showSuggestions && suggestions.length > 0) {
-        const selected = suggestions[selectedIndex]?.cmd;
-        if (selected && value.trim() !== selected) {
-          commitInputChange(`${selected} `, selected.length + 1);
+        const selected = suggestions[selectedIndex];
+        const trimmedValue = value.trim().toLowerCase();
+        const selectedAliases = selected && "aliases" in selected ? selected.aliases : undefined;
+        const isExactPrimary = selected ? trimmedValue === selected.cmd : false;
+        const isExactAlias = selectedAliases?.some((alias) => alias === trimmedValue) ?? false;
+        if (selected && !isExactPrimary && !isExactAlias) {
+          const selectedCmd = selected.cmd;
+          commitInputChange(`${selectedCmd} `, selectedCmd.length + 1);
+          return;
+        }
+        if (selected) {
+          onSubmit();
           return;
         }
       }
@@ -824,7 +819,7 @@ export function BottomComposer({
             </Text>
             <Text color={theme.DIM}>{" "}</Text>
             <Text color={modeDisplay.labelColor} bold={modeDisplay.labelBold}>{modeDisplay.label}</Text>
-            <Text color={theme.DIM}>{"  "}{model}{reasoningSuffix}{"  Ctrl+O"}</Text>
+            <Text color={theme.DIM}>{"  "}{model}{reasoningSuffix}{"  Ctrl+O Ctrl+Alt+P"}</Text>
             {planMode && <Text color={theme.ACCENT}>{"  Plan"}</Text>}
           </Box>
           <Box flexShrink={0}>

@@ -55,6 +55,8 @@ export type CommandAction =
   | "logout"
   | "auth_status"
   | "backend"
+  | "open_provider_picker"
+  | "route_status"
   | "model"
   | "mode"
   | "auth"
@@ -117,6 +119,8 @@ export interface CommandContext {
   workspace: WorkspaceCommandContext;
   tokensUsed?: number;
   modelCapabilities?: CodexModelCapabilities | null;
+  routeStatusMessage?: string;
+  activeRouteProviderLabel?: string;
 }
 
 const APPROVAL_POLICY_VALUES = ["inherit", "untrusted", "on-request", "never"] as const;
@@ -383,6 +387,22 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       };
     }
 
+    case "providers":
+    case "provider":
+      return { action: "open_provider_picker" };
+
+    case "route":
+      return {
+        action: "route_status",
+        message: context.routeStatusMessage ?? [
+          "Route status:",
+          "  Workspace default: OpenAI",
+          `  Active chat route: OpenAI / ${context.runtime.model}`,
+          `  Active model: ${context.runtime.model}`,
+          "  Active provider mode: Usable inside Codexa",
+        ].join("\n"),
+      };
+
     case "model": {
       if (!arg) return { action: "open_model_picker" };
       const detectedModels = context.modelCapabilities
@@ -400,6 +420,9 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
         message: `Unknown model: ${arg}. Use /models to list available models.`,
       };
     }
+
+    case "models":
+      return { action: "open_model_picker" };
 
     case "mode": {
       if (!arg) return { action: "open_mode_picker" };
@@ -584,19 +607,6 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       return {
         action: "unknown",
         message: `Unknown theme: ${arg}. Use /themes to list available themes.`,
-      };
-    }
-
-    case "models": {
-      const list = context.modelCapabilities
-        ? formatModelCapabilitiesList(context.modelCapabilities, context.runtime.model)
-        : AVAILABLE_MODELS.map((model, index) => `  ${index + 1}. ${model}`).join("\n");
-      const prefix = context.modelCapabilities
-        ? "Available models"
-        : "Available models (legacy fallback while runtime discovery is pending)";
-      return {
-        action: "models",
-        message: `${prefix}:\n${list}\n\nCurrent: ${context.runtime.model}\nBackend: ${formatBackendLabel(context.runtime.provider)}`,
       };
     }
 
@@ -785,6 +795,8 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "  /clear             Clear the chat window and cancel the active run",
           "  /diagnose github   Run GitHub connectivity diagnostics",
           "  /backend [name]    Switch backend (no arg opens picker)",
+          "  /providers         Open provider picker (/provider alias)",
+          "  /route             Show workspace default and active chat route",
           "  /model [name]      Switch model (no arg opens picker)",
           `  /mode [name]       Switch execution mode (${formatModeCommandHelp()})`,
           "                     suggest = read-only-style prompting, auto-edit = file edits, full-auto = strongest autonomy",
@@ -820,7 +832,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "  /login             Show guided ChatGPT subscription login steps",
           "  /logout            Show guided logout steps",
           "  /backends          List all available backends",
-          "  /models            List all available models",
+          "  /models            Open model picker",
           "  /workspace         Show the locked workspace for this session",
           "  /workspace relaunch <path> Restart the app in another workspace folder",
           `  Current reasoning: ${formatReasoningLabel(context.runtime.reasoningLevel)}`,
@@ -837,6 +849,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           "  Ctrl+O    Open model picker",
           "  Shift+Tab Toggle plan mode",
           "  Ctrl+P    Open mode picker",
+          "  Ctrl+Alt+P Open provider picker",
           "  Ctrl+A    Open auth panel",
           "  Ctrl+L    Clear chat and cancel active run",
           "  Esc       Cancel active run or shell command",

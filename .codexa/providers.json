@@ -1,0 +1,9 @@
+{
+  "workspaceDefaultProviderId": "anthropic",
+  "activeRoute": {
+    "providerId": "google",
+    "modelId": "gemini-3.1-pro",
+    "backendKind": "gemini-cli-headless",
+    "reasoning": "high"
+  }
+}

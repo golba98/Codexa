@@ -3,12 +3,16 @@ import test from "node:test";
 import React from "react";
 import { PassThrough } from "node:stream";
 import { Box, Text, render, useFocus, useFocusManager } from "ink";
+import { handleCommand } from "../commands/handler.js";
+import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../config/runtimeConfig.js";
 import type { AvailableModel, ReasoningLevel } from "../config/settings.js";
 import { createFallbackModelCapabilities, getSelectableModelCapabilities } from "../core/codexModelCapabilities.js";
+import { buildProviderRegistry } from "../core/providerLauncher/registry.js";
 import { BottomComposer } from "./BottomComposer.js";
 import { getFocusTargetForScreen } from "./focus.js";
 import { ModelPickerScreen } from "./ModelPickerScreen.js";
 import { PlanActionPicker } from "./PlanActionPicker.js";
+import { ProviderPicker } from "./ProviderPicker.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { TextEntryPanel } from "./TextEntryPanel.js";
 import { ThemeProvider } from "./theme.js";
@@ -46,6 +50,70 @@ class TestOutput extends PassThrough {
 
 const TEST_LAYOUT = createLayoutSnapshot(120, 40);
 const TEST_MODEL_CAPABILITIES = getSelectableModelCapabilities(createFallbackModelCapabilities());
+const TEST_COMMAND_CONTEXT = {
+  config: {
+    runtime: normalizeRuntimeConfig({
+      provider: "codex-subprocess",
+      model: "gpt-5.4",
+      mode: "suggest",
+      reasoningLevel: "high",
+    }),
+    diagnostics: {
+      projectRoot: "C:\\Workspace",
+      projectTrusted: false,
+      selectedProfile: null,
+      selectedProfileSource: null,
+      cliOverrides: [],
+      layers: [
+        { label: "Built-in defaults", status: "loaded" as const },
+        { label: "User config", status: "missing" as const, path: "C:\\Users\\Test\\.codex\\config.toml" },
+      ],
+      ignoredEntries: [],
+      fieldSources: {
+        provider: "Built-in defaults",
+        model: "Built-in defaults",
+        reasoningLevel: "Built-in defaults",
+        mode: "Built-in defaults",
+        planMode: "Built-in defaults",
+        "policy.approvalPolicy": "Built-in defaults",
+        "policy.sandboxMode": "Built-in defaults",
+        "policy.networkAccess": "Built-in defaults",
+        "policy.writableRoots": "Built-in defaults",
+        "policy.serviceTier": "Built-in defaults",
+        "policy.personality": "Built-in defaults",
+      },
+    },
+  },
+  runtime: normalizeRuntimeConfig({
+    provider: "codex-subprocess",
+    model: "gpt-5.4",
+    mode: "suggest",
+    reasoningLevel: "high",
+  }),
+  resolvedRuntime: resolveRuntimeConfig(
+    normalizeRuntimeConfig({
+      provider: "codex-subprocess",
+      model: "gpt-5.4",
+      mode: "suggest",
+      reasoningLevel: "high",
+    }),
+  ),
+  settings: {
+    workspaceDisplayMode: "dir" as const,
+    terminalTitleMode: "dir" as const,
+    showBusyLoader: true,
+  },
+  workspace: {
+    root: "C:\\Workspace",
+    summaryMessage: [
+      "Active workspace:",
+      "  C:\\Workspace",
+      "",
+      "Launch mode: installed codexa",
+    ].join("\n"),
+  },
+  tokensUsed: 1200,
+};
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
@@ -357,6 +425,82 @@ function ShortcutModelPickerHarness() {
   );
 }
 
+function ShortcutProviderPickerHarness() {
+  const focusManager = useFocusManager();
+  const [screen, setScreen] = React.useState<"main" | "provider-picker">("main");
+  const [value, setValue] = React.useState("");
+  const [cursor, setCursor] = React.useState(0);
+  const [submitCount, setSubmitCount] = React.useState(0);
+  const [composerInstanceKey, setComposerInstanceKey] = React.useState(0);
+  const previousScreenRef = React.useRef<"main" | "provider-picker">("main");
+  const providers = React.useMemo(() => buildProviderRegistry({ activeModel: "gpt-5.4" }), []);
+
+  React.useEffect(() => {
+    const previousScreen = previousScreenRef.current;
+    if (shouldBumpComposerInstance(previousScreen, screen)) {
+      setComposerInstanceKey((currentKey) => currentKey + 1);
+    }
+    previousScreenRef.current = screen;
+  }, [screen]);
+
+  React.useEffect(() => {
+    focusManager.focus(getFocusTargetForScreen(screen));
+  }, [composerInstanceKey, focusManager, screen]);
+
+  return (
+    <ThemeProvider theme="purple">
+      <Box flexDirection="column">
+        <Text>{`screen:${screen}`}</Text>
+        <Text>{`submit:${submitCount}`}</Text>
+        <Text>{`value:${JSON.stringify(value)}`}</Text>
+        {screen === "provider-picker" ? (
+          <ProviderPicker
+            layout={TEST_LAYOUT}
+            providers={providers}
+            onAction={() => setScreen("main")}
+            onCancel={() => setScreen("main")}
+          />
+        ) : (
+          <BottomComposer
+            key={composerInstanceKey}
+            layout={TEST_LAYOUT}
+            uiState={{ kind: "IDLE" }}
+            value={value}
+            cursor={cursor}
+            onChangeInput={(nextValue, nextCursor) => {
+              setValue(nextValue);
+              setCursor(nextCursor);
+            }}
+            onSubmit={() => {
+              setSubmitCount((count) => count + 1);
+              const result = handleCommand(value, TEST_COMMAND_CONTEXT);
+              if (result?.action === "open_provider_picker") {
+                setScreen("provider-picker");
+              }
+              setValue("");
+              setCursor(0);
+            }}
+            onCancel={() => {}}
+            onChangeValue={setValue}
+            onChangeCursor={setCursor}
+            onHistoryUp={() => {}}
+            onHistoryDown={() => {}}
+            onOpenBackendPicker={() => {}}
+            onOpenModelPicker={() => {}}
+            onOpenModePicker={() => {}}
+            onOpenThemePicker={() => {}}
+            onOpenAuthPanel={() => {}}
+            onTogglePlanMode={() => {}}
+            onClear={() => {}}
+            onCycleMode={() => {}}
+            onQuit={() => {}}
+          />
+        )}
+      </Box>
+    </ThemeProvider>
+  );
+}
+
 function ShortcutModelReasoningPickerHarness({ delayedModels = false }: { delayedModels?: boolean } = {}) {
   const focusManager = useFocusManager();
   const [screen, setScreen] = React.useState<"main" | "model-picker">("main");
@@ -648,6 +792,34 @@ test("ctrl+o opens the existing model picker path without submitting", async () 
     assert.match(output, /model:gpt-5\.4-mini/);
     assert.match(output, /submit:0/);
     assert.equal(getLastComposerValue(output), "az");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("accepting the provider suggestion opens the provider picker and manual alias entry does too", async () => {
+  const harness = createInkHarness(<ShortcutProviderPickerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("/pro");
+    await sleep(40);
+    harness.stdin.write("\t");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(120);
+    harness.stdin.write("\u001b");
+    await sleep(80);
+    harness.stdin.write("/provider");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(120);
+
+    const output = harness.getOutput();
+    assert.match(output, /screen:provider-picker/);
+    assert.match(output, /Providers/);
+    assert.match(output, /screen:main/);
+    assert.match(output, /submit:2/);
   } finally {
     await harness.cleanup();
   }

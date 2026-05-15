@@ -18,6 +18,7 @@ interface ModelPickerScreenProps {
   models: readonly CodexModelCapability[];
   currentModel: string;
   currentReasoning: string;
+  activeProviderLabel?: string;
   isLoading?: boolean;
   onSelect: (model: string, reasoning: string) => void;
   onCancel: (reason?: ModelPickerCloseReason) => void;
@@ -90,6 +91,7 @@ export function ModelPickerScreen({
   models,
   currentModel,
   currentReasoning,
+  activeProviderLabel = "OpenAI",
   isLoading = false,
   onSelect,
   onCancel,
@@ -214,6 +216,7 @@ export function ModelPickerScreen({
     ? "↑↓ · ←→ · Enter · Esc"
     : "↑↓ model · ←→ reasoning · Enter select · Esc cancel";
   const title = clampVisualText(`Select model   ${help}`, innerWidth);
+  const routeText = `Active route: ${activeProviderLabel}`;
   const reasoningText = reasoningUnavailable
     ? "Reasoning: unavailable"
     : `Reasoning: ${formatReasoningLabel(draftReasoning)}`;
@@ -230,6 +233,11 @@ export function ModelPickerScreen({
       >
         <Box width="100%" overflow="hidden">
           <Text color={theme.ACCENT} bold>{title}</Text>
+        </Box>
+        <Box width="100%" overflow="hidden">
+          <Text color={theme.MUTED}>
+            {clampVisualText(routeText, innerWidth)}
+          </Text>
         </Box>
         <Box width="100%" overflow="hidden">
           <Text color={reasoningUnavailable ? theme.DIM : theme.MUTED}>

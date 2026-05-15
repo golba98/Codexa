@@ -2,6 +2,11 @@
 
 Terminal UI wrapper around the Codexa neural network, built with TypeScript, Bun, and Ink.
 
+## Hello World
+
+```text
+Hello world
+```
 
 ## Prerequisites
 
