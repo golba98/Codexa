@@ -1,10 +1,14 @@
 export type ProviderId = "openai" | "anthropic" | "google" | "local";
 
 export type ProviderBackendType =
-  | "Codex CLI"
-  | "Claude Code"
-  | "Gemini CLI"
-  | "LM Studio/Ollama";
+  | "codex-cli-auth"
+  | "gemini-cli-auth"
+  | "claude-code-auth"
+  | "openai-api-key"
+  | "gemini-api-key"
+  | "anthropic-api-key"
+  | "local-openai-compatible"
+  | "unavailable";
 
 export type ProviderLaunchAction = "launch" | "set-default" | "cancel";
 export type ProviderRouteAction = "use-in-codexa" | "select-model" | "refresh-models";
@@ -41,6 +45,7 @@ export interface ProviderActiveRoute {
   modelId: string;
   backendKind?: import("../providerRuntime/types.js").ProviderBackendKind;
   reasoning?: string;
+  modelSelection?: import("../providerRuntime/types.js").GeminiModelSelection;
 }
 
 export interface ProviderWorkspaceOverride {

@@ -113,10 +113,9 @@ test("provider picker renders compact aligned provider rows", async () => {
     assert.match(output, /Anthropic/);
     assert.match(output, /Google/);
     assert.match(output, /Local/);
-    assert.match(output, /Codex CLI/);
-    assert.match(output, /Claude Code/);
-    assert.match(output, /Gemini CLI/);
-    assert.match(output, /LM Studio\/Ollama/);
+    assert.match(output, /codex-cli-auth/);
+    assert.match(output, /claude-code-auth/);
+    assert.match(output, /gemini-cli-auth/);    assert.match(output, /unavailable/);
     assert.match(output, /Disabled/);
   } finally {
     await harness.cleanup();

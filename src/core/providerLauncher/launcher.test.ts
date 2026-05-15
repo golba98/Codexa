@@ -9,7 +9,7 @@ function makeProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
     id: "openai",
     displayName: "OpenAI",
     currentModel: "gpt-5.4",
-    backendType: "Codex CLI",
+    backendType: "codex-cli-auth",
     routeMode: "in-codexa",
     enabled: true,
     statusLabel: "Enabled",
@@ -37,7 +37,7 @@ test("disabled providers fail before spawning", () => {
   const result = buildProviderLaunchSpec(makeProvider({
     id: "local",
     displayName: "Local",
-    backendType: "LM Studio/Ollama",
+    backendType: "local-openai-compatible",
     enabled: false,
     statusLabel: "Disabled",
     launchCommand: null,

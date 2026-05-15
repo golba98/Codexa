@@ -18,6 +18,22 @@ export const GEMINI_FALLBACK_MODELS: readonly ProviderModel[] = [
     defaultReasoningLevel: "medium",
     supportedReasoningLevels: null,
   },
+  {
+    id: "gemini-2.5-pro",
+    modelId: "gemini-2.5-pro",
+    label: "Gemini 2.5 Pro",
+    description: "Gemini 2.5 Pro route placeholder.",
+    defaultReasoningLevel: "high",
+    supportedReasoningLevels: null,
+  },
+  {
+    id: "gemini-2.5-flash",
+    modelId: "gemini-2.5-flash",
+    label: "Gemini 2.5 Flash",
+    description: "Gemini 2.5 Flash route placeholder.",
+    defaultReasoningLevel: "medium",
+    supportedReasoningLevels: null,
+  },
 ] as const;
 
 export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [

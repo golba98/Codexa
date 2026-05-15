@@ -60,6 +60,7 @@ function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
   const modelId = value.modelId ?? value.model_id;
   const backendKind = value.backendKind ?? value.backend_kind;
   const reasoning = value.reasoning;
+  const modelSelection = value.modelSelection ?? value.model_selection;
 
   if (typeof providerId !== "string" || !isKnownProviderId(providerId) || !isProviderRoutableInCodexa(providerId)) return undefined;
   if (typeof modelId !== "string" || !modelId.trim()) return undefined;
@@ -69,6 +70,7 @@ function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
     modelId: modelId.trim(),
     backendKind: typeof backendKind === "string" ? getProviderRuntime(providerId).backendKind : getProviderRuntime(providerId).backendKind,
     ...(typeof reasoning === "string" && reasoning.trim() ? { reasoning: reasoning.trim() } : {}),
+    ...(isRecord(modelSelection) ? { modelSelection: modelSelection as any } : {}),
   };
 }
 
@@ -132,6 +134,7 @@ export function serializeProviderWorkspaceConfig(config: ProviderWorkspaceConfig
         modelId: config.activeRoute.modelId,
         backendKind: config.activeRoute.backendKind ?? getProviderRuntime(config.activeRoute.providerId).backendKind,
         ...(config.activeRoute.reasoning ? { reasoning: config.activeRoute.reasoning } : {}),
+        ...(config.activeRoute.modelSelection ? { modelSelection: config.activeRoute.modelSelection } : {}),
       },
     } : {}),
     ...(Object.keys(providers).length > 0 ? { providers } : {}),

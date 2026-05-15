@@ -73,7 +73,7 @@ test("parses provider workspace config from Codexa-owned JSON", () => {
   assert.deepEqual(config.activeRoute, {
     providerId: "openai",
     modelId: "gpt-5.5",
-    backendKind: "codex-cli",
+    backendKind: "codex-cli-auth",
     reasoning: "high",
   });
   assert.deepEqual(config.providers?.local, {
@@ -127,7 +127,7 @@ test("workspace provider config reload preserves default and active route separa
       activeRoute: {
         providerId: "openai",
         modelId: "gpt-5.5",
-        backendKind: "codex-cli",
+        backendKind: "codex-cli-auth",
         reasoning: "high",
       },
     });
@@ -137,7 +137,7 @@ test("workspace provider config reload preserves default and active route separa
       activeRoute: {
         providerId: "openai",
         modelId: "gpt-5.5",
-        backendKind: "codex-cli",
+        backendKind: "codex-cli-auth",
         reasoning: "high",
       },
     });
@@ -157,7 +157,7 @@ test("active Anthropic route persists without secrets", () => {
       activeRoute: {
         providerId: "anthropic",
         modelId: "claude-sonnet-4-20250514",
-        backendKind: "anthropic-api",
+        backendKind: "claude-code-auth",
         reasoning: "high",
       },
     });
@@ -168,7 +168,7 @@ test("active Anthropic route persists without secrets", () => {
       activeRoute: {
         providerId: "anthropic",
         modelId: "claude-sonnet-4-20250514",
-        backendKind: "anthropic-api",
+        backendKind: "claude-code-auth",
         reasoning: "high",
       },
     });
@@ -189,20 +189,20 @@ test("setProviderActiveRoute rejects unconfigured Gemini routes", () => {
       activeRoute: {
         providerId: "openai",
         modelId: "gpt-5.5",
-        backendKind: "codex-cli",
+        backendKind: "codex-cli-auth",
         reasoning: "high",
       },
     }, {
       providerId: "google",
       modelId: "gemini-3.1-pro",
-      backendKind: "gemini-cli-headless",
+      backendKind: "gemini-cli-auth",
       reasoning: "high",
     });
 
     assert.deepEqual(config.activeRoute, {
       providerId: "openai",
       modelId: "gpt-5.5",
-      backendKind: "codex-cli",
+      backendKind: "codex-cli-auth",
       reasoning: "high",
     });
   });
@@ -213,14 +213,14 @@ test("setProviderActiveRoute persists Gemini routes when GEMINI_API_KEY is confi
     const config = setProviderActiveRoute({}, {
       providerId: "google",
       modelId: "gemini-3.1-pro",
-      backendKind: "google-api",
+      backendKind: "gemini-api-key",
       reasoning: "high",
     });
 
     assert.deepEqual(config.activeRoute, {
       providerId: "google",
       modelId: "gemini-3.1-pro",
-      backendKind: "google-api",
+      backendKind: "gemini-api-key",
       reasoning: "high",
     });
     assert.doesNotMatch(JSON.stringify(serializeProviderWorkspaceConfig(config)), /test-gemini-key/);
@@ -232,14 +232,14 @@ test("setProviderActiveRoute persists Gemini routes when GOOGLE_API_KEY is confi
     const config = setProviderActiveRoute({}, {
       providerId: "google",
       modelId: "gemini-3.1-pro",
-      backendKind: "google-api",
+      backendKind: "gemini-api-key",
       reasoning: "high",
     });
 
     assert.deepEqual(config.activeRoute, {
       providerId: "google",
       modelId: "gemini-3.1-pro",
-      backendKind: "google-api",
+      backendKind: "gemini-api-key",
       reasoning: "high",
     });
     assert.doesNotMatch(JSON.stringify(serializeProviderWorkspaceConfig(config)), /test-google-key/);

@@ -1,14 +1,18 @@
 import type {
   ProviderConfig,
   ProviderId,
+  ProviderBackendType,
   ProviderLaunchCommand,
   ProviderWorkspaceConfig,
   ProviderWorkspaceOverride,
 } from "./types.js";
+import { DEFAULT_MODEL } from "../../config/settings.js";
 import {
   getDefaultRouteModel,
+  getProviderRouteSetupMessage,
   getProviderRuntime,
   isProviderRoutableInCodexa,
+  isProviderRouteConfigured,
 } from "../providerRuntime/registry.js";
 
 const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "google", "local"];
@@ -26,7 +30,7 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
     id: "openai",
     displayName: "OpenAI",
     currentModel: (activeModel) => activeModel,
-    backendType: "Codex CLI",
+    backendType: "codex-cli-auth",
     routeMode: "in-codexa",
     enabled: true,
     launchCommand: { executable: "codex", args: [] },
@@ -37,18 +41,18 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
     id: "anthropic",
     displayName: "Anthropic",
     currentModel: () => "Claude Code default",
-    backendType: "Claude Code",
-    routeMode: "launch-only",
+    backendType: "claude-code-auth",
+    routeMode: "in-codexa",
     enabled: true,
     launchCommand: { executable: "claude", args: [] },
     isActiveRoute: false,
-    routeUnavailableReason: "Anthropic in-Codexa routing is not configured yet.",
+    routeUnavailableReason: null,
   },
   google: {
     id: "google",
     displayName: "Google",
     currentModel: () => "gemini-3.1-pro",
-    backendType: "Gemini CLI",
+    backendType: "gemini-cli-auth",
     routeMode: "in-codexa",
     enabled: true,
     launchCommand: { executable: "gemini", args: [] },
@@ -59,7 +63,7 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
     id: "local",
     displayName: "Local",
     currentModel: () => "Local default",
-    backendType: "LM Studio/Ollama",
+    backendType: "local-openai-compatible",
     routeMode: "launch-only",
     enabled: false,
     launchCommand: null,
@@ -136,20 +140,42 @@ export function buildProviderRegistry(options: {
 
   return PROVIDER_ORDER.map((id) => {
     const defaults = DEFAULT_PROVIDERS[id];
+    const runtime = getProviderRuntime(id);
+    const discovery = runtime.discoverModels();
+
+    const activeRoute = options.workspaceConfig?.activeRoute;
+    const isThisActive = activeRoute?.providerId === id;
+
+    let currentModelLabel = isThisActive && activeRoute
+      ? activeRoute.modelId
+      : getDefaultRouteModel(id, id === "openai" ? DEFAULT_MODEL : defaults.currentModel(options.activeModel));
+
+    if (id === "google") {
+      const geminiRoute = isThisActive ? activeRoute : options.workspaceConfig?.providers?.google?.currentModel === undefined ? activeRoute : null;
+      const selection = geminiRoute?.modelSelection;
+      if (selection) {
+        if (selection.kind === "auto") {
+          currentModelLabel = `Auto (${selection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"})`;
+        } else {
+          currentModelLabel = selection.modelId;
+        }
+      }
+    }
+
     const provider: ProviderConfig = {
       id,
       displayName: defaults.displayName,
-      currentModel: options.workspaceConfig?.activeRoute?.providerId === id
-        ? options.workspaceConfig.activeRoute.modelId
-        : getDefaultRouteModel(id, defaults.currentModel(options.activeModel)),
-      backendType: defaults.backendType,
-      routeMode: getProviderRuntime(id).routeAvailable ? "in-codexa" : "launch-only",
+      currentModel: currentModelLabel,
+      backendType: discovery.backendKind as ProviderBackendType,
+      routeMode: runtime.routeAvailable ? "in-codexa" : "launch-only",
       enabled: defaults.enabled,
       statusLabel: defaults.enabled ? "Enabled" : "Disabled",
       launchCommand: defaults.launchCommand ? { ...defaults.launchCommand, args: [...defaults.launchCommand.args] } : null,
       isDefault: id === defaultProviderId,
       isActiveRoute: id === activeRouteProviderId,
-      routeUnavailableReason: getProviderRuntime(id).routeAvailable ? null : getProviderRuntime(id).routeStatus,
+      routeUnavailableReason: runtime.routeAvailable
+        ? (isProviderRouteConfigured(id) ? null : getProviderRouteSetupMessage(id))
+        : runtime.routeStatus,
     };
 
     return applyOverride(provider, options.workspaceConfig?.providers?.[id]);

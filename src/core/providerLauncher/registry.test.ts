@@ -68,7 +68,7 @@ test("google can be selected as an active in-Codexa route", () => {
       activeRoute: {
         providerId: "google",
         modelId: "gemini-3.1-pro",
-        backendKind: "gemini-cli-headless",
+        backendKind: "gemini-cli-auth",
       },
     },
   });
@@ -86,7 +86,7 @@ test("anthropic can be selected as an active in-Codexa route", () => {
       activeRoute: {
         providerId: "anthropic",
         modelId: "claude-sonnet-4-20250514",
-        backendKind: "anthropic-api",
+        backendKind: "anthropic-api-key",
       },
     },
   });

@@ -36,6 +36,7 @@ const BRACKETED_PASTE_END = /(?:\u001B)?\[201~/;
 const DELETE_ESCAPE_SEQUENCE = /^\u001b\[3(?:;\d+)?~$/;
 const BACKTAB_ESCAPE_SEQUENCE = /\u001b\[Z/;
 const CTRL_M_ESCAPE_SEQUENCE = /^\u001b\[(?:109|13);5u$/;
+const CTRL_ALT_P_ESCAPE_SEQUENCE = /(?:\x1b\x10|\x1b\[112;[78]u)/;
 const MAX_VISIBLE_INPUT_ROWS = 5;
 
 function resolveDeleteIntentFromRawInput(raw: string): DeleteIntent | null {
@@ -342,9 +343,11 @@ export function BottomComposer({
   const deleteIntentRef = useRef<DeleteIntent | null>(null);
   const backtabEventTickRef = useRef(false);
   const ctrlMEventTickRef = useRef(false);
+  const ctrlAltPEventTickRef = useRef(false);
   const mouseEventTickRef = useRef(false);
   const backtabEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ctrlMEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ctrlAltPEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mouseEventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -372,6 +375,15 @@ export function BottomComposer({
         if (ctrlMEventTimeoutRef.current) clearTimeout(ctrlMEventTimeoutRef.current);
         ctrlMEventTimeoutRef.current = setTimeout(() => {
           ctrlMEventTickRef.current = false;
+        }, 64);
+      }
+
+      // ESC ^P or CSI u style modified key reporting for Ctrl+Alt+P.
+      if (CTRL_ALT_P_ESCAPE_SEQUENCE.test(raw)) {
+        ctrlAltPEventTickRef.current = true;
+        if (ctrlAltPEventTimeoutRef.current) clearTimeout(ctrlAltPEventTimeoutRef.current);
+        ctrlAltPEventTimeoutRef.current = setTimeout(() => {
+          ctrlAltPEventTickRef.current = false;
         }, 64);
       }
 
@@ -531,6 +543,18 @@ export function BottomComposer({
           stdin: getStdinDebugState(stdin),
         });
         onOpenModelPicker();
+      }
+      return;
+    }
+
+    if (ctrlAltPEventTickRef.current) {
+      ctrlAltPEventTickRef.current = false;
+      if (ctrlAltPEventTimeoutRef.current) {
+        clearTimeout(ctrlAltPEventTimeoutRef.current);
+        ctrlAltPEventTimeoutRef.current = null;
+      }
+      if (!inputLocked && allowCommands) {
+        onOpenProviderPicker();
       }
       return;
     }

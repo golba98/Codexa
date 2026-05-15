@@ -1,19 +1,31 @@
+import { runCommand } from "../process/CommandRunner.js";
+import type { CommandResult } from "../process/CommandRunner.js";
 import { sanitizeTerminalOutput } from "../terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
-import type { ProviderChatRequest, ProviderRuntime } from "./types.js";
+import type { ProviderBackendKind, ProviderChatRequest, ProviderRouteValidationResult, ProviderRuntime } from "./types.js";
 
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const ANTHROPIC_MAX_TOKENS = 1024;
-export const ANTHROPIC_ROUTE_SETUP_MESSAGE = "Anthropic/Claude is not configured for in-Codexa routing.\nSet ANTHROPIC_API_KEY, or choose Launch external CLI.";
+const ANTHROPIC_TIMEOUT_MS = 120_000;
+const ANTHROPIC_ROUTE_VALIDATION_TIMEOUT_MS = 30_000;
+export const ANTHROPIC_ROUTE_SETUP_MESSAGE = "Anthropic/Claude is not configured for in-Codexa routing.\nSign in with Claude Code or set ANTHROPIC_API_KEY.";
+
+type CommandRunner = typeof runCommand;
+
+let claudeCodeValidated = false;
 
 function getAnthropicApiKey(): string | null {
   return process.env.ANTHROPIC_API_KEY?.trim() || null;
 }
 
 export function isAnthropicRouteConfigured(): boolean {
-  return getAnthropicApiKey() !== null;
+  return getAnthropicApiKey() !== null || claudeCodeValidated;
+}
+
+export function resetAnthropicRouteValidationCacheForTests(): void {
+  claudeCodeValidated = false;
 }
 
 async function runAnthropicApi(request: ProviderChatRequest): Promise<string> {
@@ -63,19 +75,88 @@ async function runAnthropicApi(request: ProviderChatRequest): Promise<string> {
   return text;
 }
 
+function runClaudeCode(request: ProviderChatRequest): Promise<string> {
+  const args = [
+    "--print",
+    request.prompt,
+  ];
+  const runner = runCommand({
+    executable: "claude",
+    args,
+    cwd: request.workspaceRoot,
+    timeoutMs: ANTHROPIC_TIMEOUT_MS,
+  });
+
+  return runner.result.then((result) => {
+    if (result.status !== "completed" || result.exitCode !== 0) {
+      throw new Error(result.userMessage || result.stderr || "Claude Code headless route failed.");
+    }
+
+    return sanitizeTerminalOutput(result.stdout).trim();
+  });
+}
+
+export async function validateAnthropicRoute(options: {
+  cwd: string;
+  env?: NodeJS.ProcessEnv;
+  runCommandImpl?: CommandRunner;
+  timeoutMs?: number;
+}): Promise<ProviderRouteValidationResult> {
+  const runner = (options.runCommandImpl ?? runCommand)({
+    executable: "claude",
+    args: ["--print", "Respond with READY only."],
+    cwd: options.cwd,
+    timeoutMs: options.timeoutMs ?? ANTHROPIC_ROUTE_VALIDATION_TIMEOUT_MS,
+  });
+  const result = await runner.result;
+  if (result.status === "completed" && result.exitCode === 0) {
+    claudeCodeValidated = true;
+    return {
+      status: "ready",
+      providerId: "anthropic",
+      backendKind: "claude-code-auth",
+      message: "Claude Code auth is configured.",
+    };
+  }
+
+  claudeCodeValidated = false;
+  if (getAnthropicApiKey() !== null) {
+    return {
+      status: "ready",
+      providerId: "anthropic",
+      backendKind: "anthropic-api-key",
+      message: "Anthropic API key is configured.",
+    };
+  }
+
+  return {
+    status: "not-configured",
+    providerId: "anthropic",
+    backendKind: "unavailable",
+    message: ANTHROPIC_ROUTE_SETUP_MESSAGE,
+  };
+}
+
+function getAnthropicRuntimeBackendKind(): ProviderBackendKind {
+  return claudeCodeValidated ? "claude-code-auth" : getAnthropicApiKey() ? "anthropic-api-key" : "claude-code-auth";
+}
+
 export const anthropicRuntime: ProviderRuntime = {
   providerId: "anthropic",
   label: "Anthropic/Claude",
-  backendKind: "anthropic-api",
+  backendKind: "claude-code-auth",
   routeAvailable: true,
-  routeStatus: "Uses ANTHROPIC_API_KEY with the Anthropic Messages API.",
+  routeStatus: "Uses Claude Code subscription-backed route when available, otherwise ANTHROPIC_API_KEY.",
   routeSetupMessage: ANTHROPIC_ROUTE_SETUP_MESSAGE,
   launchAvailable: true,
   isRouteConfigured: isAnthropicRouteConfigured,
+  validateRoute: async ({ workspaceRoot }) => validateAnthropicRoute({
+    cwd: workspaceRoot,
+  }),
   discoverModels: () => ({
     status: "ready",
     providerId: "anthropic",
-    backendKind: "anthropic-api",
+    backendKind: getAnthropicRuntimeBackendKind(),
     models: ANTHROPIC_FALLBACK_MODELS,
   }),
   run: (request, handlers: BackendRunHandlers) => {
@@ -87,7 +168,13 @@ export const anthropicRuntime: ProviderRuntime = {
       text: "Routing prompt through Anthropic/Claude inside Codexa...",
     });
 
-    runAnthropicApi(request)
+    const runAnthropic = claudeCodeValidated
+      ? runClaudeCode(request)
+      : getAnthropicApiKey()
+        ? runAnthropicApi(request)
+        : runClaudeCode(request);
+
+    runAnthropic
       .then((text) => {
         if (cancelled) return;
         handlers.onAssistantDelta?.(text);

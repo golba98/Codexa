@@ -7,6 +7,7 @@ import { geminiRuntime } from "./gemini.js";
 import { ANTHROPIC_FALLBACK_MODELS, GEMINI_FALLBACK_MODELS } from "./models.js";
 import type {
   ActiveProviderRoute,
+  GeminiModelSelection,
   ProviderChatRequest,
   ProviderModelDiscoveryResult,
   ProviderRoute,
@@ -17,14 +18,14 @@ import type {
 const openAiRuntime: ProviderRuntime = {
   providerId: "openai",
   label: "OpenAI/Codex",
-  backendKind: "codex-cli",
+  backendKind: "codex-cli-auth",
   routeAvailable: true,
   routeStatus: "Uses the configured Codex/OpenAI backend inside Codexa.",
   launchAvailable: true,
   discoverModels: () => ({
     status: "ready",
     providerId: "openai",
-    backendKind: "codex-cli",
+    backendKind: "codex-cli-auth",
     models: [],
   }),
   run: (request: ProviderChatRequest, handlers: BackendRunHandlers) => codexSubprocessProvider.run!(
@@ -42,14 +43,14 @@ function unavailableRuntime(providerId: ProviderId, label: string): ProviderRunt
   return {
     providerId,
     label,
-    backendKind: "not-configured",
+    backendKind: "unavailable",
     routeAvailable: false,
     routeStatus: `${label} is available as a launcher, but in-Codexa routing is not configured yet.`,
     launchAvailable: providerId !== "local",
     discoverModels: (): ProviderModelDiscoveryResult => ({
       status: "not-configured",
       providerId,
-      backendKind: "not-configured",
+      backendKind: "unavailable",
       models: [],
       message: `${label} is available as a launcher, but in-Codexa routing is not configured yet.`,
     }),
@@ -94,7 +95,7 @@ export async function validateProviderRouteActivation(options: {
     return {
       status: "not-configured",
       providerId: options.route.providerId,
-      backendKind: "not-configured",
+      backendKind: "unavailable",
       message: getProviderRouteSetupMessage(options.route.providerId),
     };
   }
@@ -107,7 +108,7 @@ export async function validateProviderRouteActivation(options: {
     return {
       status: "not-configured",
       providerId: options.route.providerId,
-      backendKind: "not-configured",
+      backendKind: "unavailable",
       message: getProviderRouteSetupMessage(options.route.providerId),
     };
   }
@@ -119,6 +120,19 @@ export async function validateProviderRouteActivation(options: {
   };
 }
 
+export function resolveGeminiModelId(selection: GeminiModelSelection): string {
+  if (selection.kind === "manual") {
+    return selection.modelId;
+  }
+  if (selection.family === "gemini-3") {
+    return "gemini-3.1-pro";
+  }
+  if (selection.family === "gemini-2.5") {
+    return "gemini-2.5-pro";
+  }
+  return "gemini-3.1-pro";
+}
+
 export function resolveActiveProviderRoute(options: {
   workspaceConfigActiveRoute?: ProviderActiveRoute;
   currentModel: string;
@@ -126,18 +140,25 @@ export function resolveActiveProviderRoute(options: {
 }): ActiveProviderRoute {
   const configuredRoute = options.workspaceConfigActiveRoute;
   if (configuredRoute && isProviderRoutableInCodexa(configuredRoute.providerId)) {
-    return {
+    const route: ActiveProviderRoute = {
       providerId: configuredRoute.providerId,
       modelId: configuredRoute.modelId,
       backendKind: configuredRoute.backendKind ?? getProviderRuntime(configuredRoute.providerId).backendKind,
       ...(configuredRoute.reasoning ? { reasoning: configuredRoute.reasoning } : {}),
+      ...(configuredRoute.modelSelection ? { modelSelection: configuredRoute.modelSelection } : {}),
     };
+
+    if (route.providerId === "google" && route.modelSelection) {
+      route.modelId = resolveGeminiModelId(route.modelSelection);
+    }
+
+    return route;
   }
 
   return {
     providerId: "openai",
     modelId: options.currentModel,
-    backendKind: "codex-cli",
+    backendKind: "codex-cli-auth",
     reasoning: options.currentReasoning,
   };
 }

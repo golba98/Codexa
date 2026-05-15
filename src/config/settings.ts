@@ -52,6 +52,7 @@ export type AvailableBackend = (typeof AVAILABLE_BACKENDS)[number]["id"];
 
 // Legacy fallback only. Runtime model discovery is the source of truth.
 export const LEGACY_FALLBACK_MODELS = [
+  "gpt-5.5",
   "gpt-5.4",
   "gpt-5.4-mini",
   "gpt-5.3-codex",

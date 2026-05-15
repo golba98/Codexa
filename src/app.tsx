@@ -138,6 +138,7 @@ import {
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
 import { createTerminalModeController, setTerminalControlUIState } from "./core/terminalControl.js";
 import {
+  acquireTerminalTitleGuard,
   beginColdStartSequence,
   deriveTerminalTitle,
   reassertIntendedTerminalTitle,
@@ -404,6 +405,7 @@ export function App({ launchArgs }: AppProps) {
   const intendedInputModeRef = useRef<"chat/input" | "model-picker">("chat/input");
   const intendedFocusTargetRef = useRef<string>(FOCUS_IDS.composer);
   const modelSelectionInFlightRef = useRef(false);
+  const providerRouteErrorsRef = useRef<Record<string, string>>({});
   const initialPromptSubmittedRef = useRef(false);
   const activeThemeName = getDisplayedThemeName(themeSelection);
   const activeTheme =
@@ -449,21 +451,30 @@ export function App({ launchArgs }: AppProps) {
     () => getProviderRuntime(modelPickerProviderId),
     [modelPickerProviderId],
   );
-  const providerModelCapabilities = useMemo(() => {
+  const modelPickerDiscovery = useMemo(() => {
     if (modelPickerProviderId === "openai") return null;
-    const discovery = discoverProviderModels(modelPickerProviderId);
-    return providerModelsToCodexCapabilities(discovery.models, activeProviderRoute.modelId);
-  }, [activeProviderRoute.modelId, modelPickerProviderId]);
+    return discoverProviderModels(modelPickerProviderId);
+  }, [modelPickerProviderId]);
+  const providerModelCapabilities = useMemo(() => {
+    if (!modelPickerDiscovery) return null;
+    return providerModelsToCodexCapabilities(modelPickerDiscovery.models, activeProviderRoute.modelId);
+  }, [activeProviderRoute.modelId, modelPickerDiscovery]);
   const activeRouteModelCapabilities = useMemo(() => {
     if (activeProviderRoute.providerId === "openai") return modelCapabilities;
     const discovery = discoverProviderModels(activeProviderRoute.providerId);
     return providerModelsToCodexCapabilities(discovery.models, activeProviderRoute.modelId);
   }, [activeProviderRoute.modelId, activeProviderRoute.providerId, modelCapabilities]);
   const modelPickerModels = useMemo(
-    () => providerModelCapabilities
-      ? getSelectableModelCapabilities(providerModelCapabilities)
-      : (modelCapabilities ? getSelectableModelCapabilities(modelCapabilities) : []),
-    [modelCapabilities, providerModelCapabilities],
+    () => {
+      if (providerModelCapabilities) {
+        return getSelectableModelCapabilities(providerModelCapabilities);
+      }
+      if (modelPickerProviderId === "openai") {
+        return getSelectableModelCapabilities(modelCapabilities ?? createFallbackModelCapabilities(null));
+      }
+      return [];
+    },
+    [modelCapabilities, modelPickerProviderId, providerModelCapabilities],
   );
   const modelPickerCurrentModel = pendingRouteProviderId
     ? (getSelectableModelCapabilities(providerModelCapabilities ?? activeRouteModelCapabilities ?? createFallbackModelCapabilities(null))[0]?.model ?? model)
@@ -472,25 +483,42 @@ export function App({ launchArgs }: AppProps) {
     () => findProvider(providerRegistry, modelPickerProviderId)?.displayName ?? modelPickerRuntime.label,
     [modelPickerProviderId, modelPickerRuntime.label, providerRegistry],
   );
+  const modelPickerEmptyMessage = useMemo(() => {
+    if (modelPickerProviderId === "openai") {
+      return modelCapabilities?.error ? `No models available: ${modelCapabilities.error}` : "No models available.";
+    }
+    if (modelPickerDiscovery?.status === "ready" && modelPickerDiscovery.models.length === 0) {
+      const setup = getProviderRouteSetupMessage(modelPickerProviderId);
+      return `No ${modelPickerProviderLabel} models available because the route is not configured. ${setup}`;
+    }
+    return modelPickerDiscovery?.message ?? "No models available.";
+  }, [modelCapabilities, modelPickerDiscovery, modelPickerProviderId, modelPickerProviderLabel]);
   const routeStatusMessage = useMemo(() => {
     const providerLines = providerRegistry.map((provider) => {
       const runtime = getProviderRuntime(provider.id);
+      const discovery = runtime.discoverModels();
       const routingStatus = runtime.routeAvailable
         ? isProviderRouteConfigured(provider.id) ? "configured" : "not configured"
         : "unavailable";
-      return `  ${provider.displayName} routing: ${routingStatus}`;
+      return `  ${provider.displayName} routing: ${routingStatus} (${discovery.backendKind})`;
     });
+
+    const activeModelInfo = activeProviderRoute.providerId === "google" && activeProviderRoute.modelSelection
+      ? (activeProviderRoute.modelSelection.kind === "auto"
+          ? `Auto (${activeProviderRoute.modelSelection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"}) -> ${activeProviderRoute.modelId}`
+          : activeProviderRoute.modelId)
+      : activeProviderRoute.modelId;
 
     return [
       "Route status:",
       `  Workspace default provider: ${workspaceDefaultProvider?.displayName ?? "OpenAI"}`,
-      `  Active chat route: ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeProviderRoute.modelId}`,
-      `  Route source: ${activeProviderRoute.backendKind}`,
+      `  Active chat route: ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeModelInfo}`,
+      `  Backend kind: ${activeProviderRoute.backendKind}`,
       `  In-Codexa routing: ${activeProviderRuntime.routeAvailable ? isProviderRouteConfigured(activeProviderRoute.providerId) ? "configured" : "not configured" : "unavailable"}`,
       `  External launch: ${activeRouteProvider?.launchCommand ? "Available" : "Unavailable"}`,
       ...(providerLines.length > 0 ? providerLines : []),
     ].join("\n");
-  }, [activeProviderRoute.backendKind, activeProviderRoute.modelId, activeProviderRoute.providerId, activeProviderRuntime.routeAvailable, activeRouteProvider, providerRegistry, workspaceDefaultProvider]);
+  }, [activeProviderRoute.backendKind, activeProviderRoute.modelId, activeProviderRoute.modelSelection, activeProviderRoute.providerId, activeProviderRuntime.routeAvailable, activeRouteProvider, providerRegistry, workspaceDefaultProvider]);
   const selectionProfile = useMemo(
     () => getTerminalSelectionProfile(process.env),
     [],
@@ -1165,7 +1193,13 @@ export function App({ launchArgs }: AppProps) {
     }));
   }, [updateRuntimeConfig]);
 
-  const persistActiveRoute = useCallback((providerId: ProviderId, nextModel: string, nextReasoning: string, backendKindOverride?: ReturnType<typeof getProviderRuntime>["backendKind"]) => {
+  const persistActiveRoute = useCallback((
+    providerId: ProviderId,
+    nextModel: string,
+    nextReasoning: string,
+    backendKindOverride?: ReturnType<typeof getProviderRuntime>["backendKind"],
+    modelSelection?: import("./core/providerRuntime/types.js").GeminiModelSelection,
+  ) => {
     try {
       const runtime = getProviderRuntime(providerId);
       const nextConfig = setProviderActiveRoute(providerWorkspaceConfig, {
@@ -1173,6 +1207,7 @@ export function App({ launchArgs }: AppProps) {
         modelId: nextModel,
         backendKind: backendKindOverride ?? runtime.backendKind,
         reasoning: nextReasoning,
+        modelSelection,
       });
       saveProviderWorkspaceConfig(workspaceRoot, nextConfig);
       setProviderWorkspaceConfig(nextConfig);
@@ -1339,7 +1374,12 @@ export function App({ launchArgs }: AppProps) {
     }
   }, [activeProviderRoute.modelId, activeProviderRoute.providerId, activeRouteModelCapabilities, activeRouteProvider, appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, persistActiveRoute, reasoningLevel, returnToChatMode, updateRuntimeConfig, workspaceRoot]);
 
-  const setModelAndReasoningWithNotice = useCallback(async (nextModel: AvailableModel, nextReasoning: ReasoningLevel, providerId: ProviderId = activeProviderRoute.providerId) => {
+  const setModelAndReasoningWithNotice = useCallback(async (
+    nextModel: AvailableModel,
+    nextReasoning: ReasoningLevel,
+    providerId: ProviderId = activeProviderRoute.providerId,
+    geminiSelection?: import("./core/providerRuntime/types.js").GeminiModelSelection,
+  ) => {
     const gate = guardConfigMutation("model", busy);
     if (!gate.allowed) {
       traceInputDebug("model_selection_blocked", getInputDebugSnapshot({
@@ -1376,15 +1416,25 @@ export function App({ launchArgs }: AppProps) {
 
     try {
       const normalizedReasoning = normalizeReasoningForModelCapabilities(nextModel, nextReasoning, routeCapabilities);
-      const validation = await validateProviderRouteActivation({
-        route: {
-          providerId,
-          modelId: nextModel,
-          backendKind: getProviderRuntime(providerId).backendKind,
-          reasoning: normalizedReasoning,
-        },
-        workspaceRoot,
+      const releaseTitleGuard = acquireTerminalTitleGuard(500, () => {
+        forceRefreshCurrentTerminalTitle("provider_validation_active", true);
       });
+      let validation;
+      try {
+        validation = await validateProviderRouteActivation({
+          route: {
+            providerId,
+            modelId: nextModel,
+            backendKind: getProviderRuntime(providerId).backendKind,
+            reasoning: normalizedReasoning,
+            modelSelection: geminiSelection,
+          },
+          workspaceRoot,
+        });
+      } finally {
+        releaseTitleGuard();
+        forceRefreshCurrentTerminalTitle("after_provider_validation", false);
+      }
       if (validation.status !== "ready") {
         traceInputDebug("model_selection_app_failure", getInputDebugSnapshot({
           handler: "setModelAndReasoningWithNotice",
@@ -1392,19 +1442,36 @@ export function App({ launchArgs }: AppProps) {
           reasoning: nextReasoning,
           error: validation.message ?? getProviderRouteSetupMessage(providerId),
         }));
-        appendSystemEvent(
-          "Provider route unavailable",
-          `${validation.message ?? getProviderRouteSetupMessage(providerId)} Previous active route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeProviderRoute.modelId}.`,
-        );
+        const errorMessage = validation.message ?? getProviderRouteSetupMessage(providerId);
+        if (providerRouteErrorsRef.current[providerId] !== errorMessage) {
+          appendSystemEvent(
+            "Provider route unavailable",
+            `${errorMessage} Previous active route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeProviderRoute.modelId}.`,
+          );
+          providerRouteErrorsRef.current[providerId] = errorMessage;
+        }
         setPendingRouteProviderId(null);
         return;
       }
+
+      if (providerRouteErrorsRef.current[providerId]) {
+        appendSystemEvent(
+          "Provider route available",
+          validation.message ?? (providerId === "google"
+            ? "Google/Gemini is available via Gemini CLI."
+            : providerId === "anthropic"
+              ? "Anthropic/Claude is available via Claude Code."
+              : `${getProviderRuntime(providerId).label} is available via ${validation.backendKind}.`),
+        );
+        delete providerRouteErrorsRef.current[providerId];
+      }
+
       updateRuntimeConfig((current) => ({
         ...current,
         model: nextModel,
         reasoningLevel: normalizedReasoning,
       }));
-      persistActiveRoute(providerId, nextModel, normalizedReasoning, validation.backendKind);
+      persistActiveRoute(providerId, nextModel, normalizedReasoning, validation.backendKind, geminiSelection);
       setPendingRouteProviderId(null);
       traceInputDebug("model_selection_app_success", getInputDebugSnapshot({
         handler: "setModelAndReasoningWithNotice",
@@ -1415,9 +1482,14 @@ export function App({ launchArgs }: AppProps) {
       const modelLabel = selectedCapability?.label && selectedCapability.label !== nextModel
         ? selectedCapability.label
         : nextModel;
+
+      const finalLabel = providerId === "google" && geminiSelection?.kind === "auto"
+        ? `Auto (${geminiSelection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"}) -> ${nextModel}`
+        : modelLabel;
+
       appendSystemEvent(
         "Route updated",
-        `${getProviderRuntime(providerId).label} / ${modelLabel} · reasoning: ${formatReasoningLabel(normalizedReasoning)}`,
+        `${getProviderRuntime(providerId).label} / ${finalLabel} · reasoning: ${formatReasoningLabel(normalizedReasoning)}`,
       );
       refreshTerminalTitle({
         terminalTitleMode,
@@ -1433,6 +1505,7 @@ export function App({ launchArgs }: AppProps) {
         error: message,
       }));
       appendErrorEvent("Model selection failed", message);
+      forceRefreshCurrentTerminalTitle("model_selection_failed", false);
     } finally {
       modelSelectionInFlightRef.current = false;
       returnToChatMode("selection");
@@ -1600,6 +1673,7 @@ export function App({ launchArgs }: AppProps) {
   }, [appendSystemEvent, busy]);
 
   const openProviderPicker = useCallback(() => {
+    setPendingRouteProviderId(null);
     const gate = guardConfigMutation("backend", busy);
     if (!gate.allowed) {
       appendSystemEvent("Busy", gate.message ?? "Finish the current run before opening providers.");
@@ -1654,41 +1728,70 @@ export function App({ launchArgs }: AppProps) {
 
     if (action === "use-in-codexa") {
       if (!isProviderRoutableInCodexa(providerId)) {
-        appendSystemEvent(
-          "Provider route unavailable",
-          provider.isDefault
-            ? `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet.`
-            : `${provider.displayName} in-Codexa routing is not configured yet.`,
-        );
-        return;
-      }
-      if (providerId !== "google" && !isProviderRouteConfigured(providerId)) {
-        appendSystemEvent("Provider route unavailable", getProviderRouteSetupMessage(providerId));
+        const message = provider.isDefault
+          ? `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet.`
+          : `${provider.displayName} in-Codexa routing is not configured yet.`;
+        if (providerRouteErrorsRef.current[providerId] !== message) {
+          appendSystemEvent("Provider route unavailable", message);
+          providerRouteErrorsRef.current[providerId] = message;
+        }
         return;
       }
 
+      appendSystemEvent("Provider selected", `Selected ${provider.displayName} for in-Codexa routing.`);
+
+      const workspaceProviderConfig = providerWorkspaceConfig.providers?.[providerId];
+      const activeRoute = providerWorkspaceConfig.activeRoute;
+      const isCurrentActive = activeRoute?.providerId === providerId;
+      
+      // A "real" model is one that isn't a generic placeholder label from registry.ts
+      const isRealModel = provider.currentModel && 
+                         !provider.currentModel.endsWith("default") && 
+                         provider.currentModel !== "Google default";
+
+      if (isRealModel || isCurrentActive) {
+        let geminiSelection: import("./core/providerRuntime/types.js").GeminiModelSelection | undefined;
+        if (providerId === "google") {
+          if (isCurrentActive && activeRoute?.modelSelection) {
+            geminiSelection = activeRoute.modelSelection;
+          } else if (workspaceProviderConfig?.currentModel) {
+            geminiSelection = { kind: "manual", modelId: workspaceProviderConfig.currentModel };
+          } else {
+            // Default to Gemini 3 auto if nothing else known
+            geminiSelection = { kind: "auto", family: "gemini-3" };
+          }
+        }
+
+        void setModelAndReasoningWithNotice(
+          (workspaceProviderConfig?.currentModel ?? provider.currentModel) as AvailableModel,
+          reasoningLevel as ReasoningLevel,
+          providerId,
+          geminiSelection,
+        );
+        return;
+      }
+
+      // No clear model to use, open the picker.
       setPendingRouteProviderId(providerId);
       intendedInputModeRef.current = "model-picker";
       intendedFocusTargetRef.current = FOCUS_IDS.modelPicker;
       setScreen("model-picker");
-      appendSystemEvent("Provider route", `Choose a ${provider.displayName} model to use inside Codexa.`);
       return;
     }
 
     if (action === "select-model") {
       if (!isProviderRoutableInCodexa(providerId)) {
-        appendSystemEvent(
-          "Provider route unavailable",
-          provider.isDefault
-            ? `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet.`
-            : `${provider.displayName} in-Codexa routing is not configured yet.`,
-        );
+        const message = provider.isDefault
+          ? `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet.`
+          : `${provider.displayName} in-Codexa routing is not configured yet.`;
+        if (providerRouteErrorsRef.current[providerId] !== message) {
+          appendSystemEvent("Provider route unavailable", message);
+          providerRouteErrorsRef.current[providerId] = message;
+        }
         return;
       }
-      if (providerId !== "google" && !isProviderRouteConfigured(providerId)) {
-        appendSystemEvent("Provider route unavailable", getProviderRouteSetupMessage(providerId));
-        return;
-      }
+
+      appendSystemEvent("Provider selected", `Selected ${provider.displayName}. Choose a model to activate.`);
 
       if (providerId === "openai" && !modelCapabilities) {
         void refreshModelCapabilities(false, false);
@@ -1702,12 +1805,13 @@ export function App({ launchArgs }: AppProps) {
 
     if (action === "refresh-models") {
       if (!isProviderRoutableInCodexa(providerId)) {
-        appendSystemEvent(
-          "Provider route unavailable",
-          provider.isDefault
-            ? `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet.`
-            : `${provider.displayName} in-Codexa routing is not configured yet.`,
-        );
+        const message = provider.isDefault
+          ? `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet.`
+          : `${provider.displayName} in-Codexa routing is not configured yet.`;
+        if (providerRouteErrorsRef.current[providerId] !== message) {
+          appendSystemEvent("Provider route unavailable", message);
+          providerRouteErrorsRef.current[providerId] = message;
+        }
         return;
       }
 
@@ -3467,6 +3571,15 @@ export function App({ launchArgs }: AppProps) {
     workspaceRoot,
   ]);
 
+  const modelDisplayName = useMemo(() => {
+    if (activeProviderRoute.providerId === "google" && activeProviderRoute.modelSelection) {
+      if (activeProviderRoute.modelSelection.kind === "auto") {
+        return `auto ${activeProviderRoute.modelSelection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"}`;
+      }
+    }
+    return model;
+  }, [activeProviderRoute.modelSelection, activeProviderRoute.providerId, model]);
+
   // Memoize the composer element so AppShell's memo check (prev.composer ===
   // next.composer) passes during streaming. Without this, a new JSX element is
   // created on every App render, forcing the entire AppShell tree (header +
@@ -3514,7 +3627,7 @@ export function App({ launchArgs }: AppProps) {
         layout={terminalLayout}
         uiState={uiState}
         mode={mode}
-        model={model}
+        model={modelDisplayName}
         themeName={activeThemeName}
         reasoningLevel={reasoningLevel}
         planMode={planMode}
@@ -3628,7 +3741,8 @@ export function App({ launchArgs }: AppProps) {
                   currentReasoning={reasoningLevel}
                   activeProviderLabel={modelPickerProviderLabel}
                   isLoading={modelPickerProviderId === "openai" && modelCapabilitiesBusy && modelPickerModels.length === 0}
-                  onSelect={(m, r) => setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel, modelPickerProviderId)}
+                  emptyMessage={modelPickerEmptyMessage}
+                  onSelect={(m, r, geminiSelection) => setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel, modelPickerProviderId, geminiSelection)}
                   onCancel={() => {
                     setPendingRouteProviderId(null);
                     returnToChatMode();

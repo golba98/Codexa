@@ -5,12 +5,14 @@ import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
 import type { ProviderId } from "../providerLauncher/types.js";
 
 export type ProviderBackendKind =
-  | "codex-cli"
-  | "gemini-cli-headless"
-  | "google-api"
-  | "anthropic-api"
+  | "codex-cli-auth"
+  | "gemini-cli-auth"
+  | "claude-code-auth"
+  | "openai-api-key"
+  | "gemini-api-key"
+  | "anthropic-api-key"
   | "local-openai-compatible"
-  | "not-configured";
+  | "unavailable";
 
 export interface ProviderModel {
   id: string;
@@ -29,11 +31,18 @@ export interface ProviderModelDiscoveryResult {
   message?: string;
 }
 
+export type GeminiModelFamily = "gemini-3" | "gemini-2.5";
+
+export type GeminiModelSelection =
+  | { kind: "auto"; family: GeminiModelFamily }
+  | { kind: "manual"; modelId: string };
+
 export interface ProviderRoute {
   providerId: ProviderId;
   modelId: string;
   backendKind: ProviderBackendKind;
   reasoning?: string;
+  modelSelection?: GeminiModelSelection;
 }
 
 export type ActiveProviderRoute = ProviderRoute;

@@ -127,16 +127,30 @@ export function ProviderPicker({ layout, providers, onAction, onCancel }: Provid
   }, { isActive: isFocused });
 
   const body = useMemo(() => {
-    if (mode === "actions") {
-      return actions.map((action, index) => (
-        <ActionRow
-          key={action.value}
-          label={action.label}
-          disabledReason={action.disabledReason}
-          isHighlighted={index === actionIndex}
-          width={innerWidth}
-        />
-      ));
+    if (mode === "actions" && selectedProvider) {
+      const inCodexaAvailable = selectedProvider.routeMode === "in-codexa";
+      const isConfigured = inCodexaAvailable && !selectedProvider.routeUnavailableReason;
+      const inCodexaStatusText = !inCodexaAvailable ? "Unavailable" : isConfigured ? "Available" : "Needs configuration";
+      const inCodexaStatusColor = !inCodexaAvailable ? theme.ERROR : isConfigured ? theme.SUCCESS : theme.WARNING;
+
+      return (
+        <Box flexDirection="column">
+          <Box marginBottom={1} flexDirection="column" paddingX={2}>
+            <Text color={theme.DIM}>Status: <Text color={theme.TEXT}>{selectedProvider.routeUnavailableReason ?? "Ready"}</Text></Text>
+            <Text color={theme.DIM}>Backend: <Text color={theme.TEXT}>{selectedProvider.backendType}</Text></Text>
+            <Text color={theme.DIM}>Use in Codexa: <Text color={inCodexaStatusColor}>{inCodexaStatusText}</Text></Text>
+          </Box>
+          {actions.map((action, index) => (
+            <ActionRow
+              key={action.value}
+              label={action.label}
+              disabledReason={action.disabledReason}
+              isHighlighted={index === actionIndex}
+              width={innerWidth}
+            />
+          ))}
+        </Box>
+      );
     }
 
     return providers.map((provider, index) => (

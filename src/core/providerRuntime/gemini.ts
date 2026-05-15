@@ -131,15 +131,6 @@ export async function validateGeminiRoute(options: {
   runCommandImpl?: CommandRunner;
   timeoutMs?: number;
 }): Promise<ProviderRouteValidationResult> {
-  if (hasGeminiApiKey(options.env)) {
-    return {
-      status: "ready",
-      providerId: "google",
-      backendKind: "google-api",
-      message: "Google/Gemini API key is configured.",
-    };
-  }
-
   const runner = (options.runCommandImpl ?? runCommand)({
     executable: "gemini",
     args: buildGeminiCliValidationArgs(options.modelId),
@@ -152,29 +143,39 @@ export async function validateGeminiRoute(options: {
     return {
       status: "ready",
       providerId: "google",
-      backendKind: "gemini-cli-headless",
-      message: "Gemini CLI headless auth is configured.",
+      backendKind: "gemini-cli-auth",
+      message: "Gemini CLI auth is configured.",
+    };
+  }
+
+  geminiCliHeadlessValidated = false;
+  if (hasGeminiApiKey(options.env)) {
+    return {
+      status: "ready",
+      providerId: "google",
+      backendKind: "gemini-api-key",
+      message: "Google/Gemini API key is configured.",
     };
   }
 
   return {
     status: "not-configured",
     providerId: "google",
-    backendKind: "not-configured",
+    backendKind: "unavailable",
     message: GEMINI_ROUTE_SETUP_MESSAGE,
   };
 }
 
 function getGeminiRuntimeBackendKind(): ProviderBackendKind {
-  return hasGeminiApiKey() ? "google-api" : "gemini-cli-headless";
+  return geminiCliHeadlessValidated ? "gemini-cli-auth" : hasGeminiApiKey() ? "gemini-api-key" : "gemini-cli-auth";
 }
 
 export const geminiRuntime: ProviderRuntime = {
   providerId: "google",
   label: "Google/Gemini",
-  backendKind: "gemini-cli-headless",
+  backendKind: "gemini-cli-auth",
   routeAvailable: true,
-  routeStatus: "Uses Gemini CLI headless mode when available, otherwise GEMINI_API_KEY or GOOGLE_API_KEY.",
+  routeStatus: "Uses Gemini CLI subscription-backed route when available, otherwise GEMINI_API_KEY or GOOGLE_API_KEY.",
   routeSetupMessage: GEMINI_ROUTE_SETUP_MESSAGE,
   launchAvailable: true,
   isRouteConfigured: isGeminiRouteConfigured,
@@ -197,9 +198,11 @@ export const geminiRuntime: ProviderRuntime = {
       text: "Routing prompt through Google/Gemini inside Codexa...",
     });
 
-    const runGemini = hasGeminiApiKey()
-      ? runGeminiApi(request)
-      : runGeminiCli(request);
+    const runGemini = geminiCliHeadlessValidated
+      ? runGeminiCli(request)
+      : hasGeminiApiKey()
+        ? runGeminiApi(request)
+        : runGeminiCli(request);
 
     runGemini
       .then((text) => {

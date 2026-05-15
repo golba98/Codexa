@@ -84,46 +84,45 @@ test("Gemini route validation fails without API key or authenticated headless CL
     });
 
     assert.equal(validation.status, "not-configured");
-    assert.equal(validation.backendKind, "not-configured");
+    assert.equal(validation.backendKind, "unavailable");
     assert.equal(validation.message, GEMINI_ROUTE_SETUP_MESSAGE);
     assert.equal(isGeminiRouteConfigured(), false);
   });
 });
 
-test("Gemini route validation allows GEMINI_API_KEY without launching CLI", async () => {
+test("Gemini route validation prefers authenticated CLI over API key", async () => {
   await withGeminiEnv({ GEMINI_API_KEY: "gemini-key" }, async () => {
     let commandCalled = false;
     const validation = await validateGeminiRoute({
       cwd: process.cwd(),
       modelId: "gemini-3.1-pro",
-      runCommandImpl: mockRunCommand(commandResult({}), () => {
+      runCommandImpl: mockRunCommand(commandResult({
+        stdout: JSON.stringify({ response: "READY" }),
+      }), () => {
         commandCalled = true;
       }),
     });
 
     assert.equal(validation.status, "ready");
-    assert.equal(validation.backendKind, "google-api");
-    assert.equal(commandCalled, false);
-    assert.equal(hasGeminiApiKey(), true);
+    assert.equal(validation.backendKind, "gemini-cli-auth");
+    assert.equal(commandCalled, true);
     assert.equal(isGeminiRouteConfigured(), true);
   });
 });
 
-test("Gemini route validation allows GOOGLE_API_KEY without launching CLI", async () => {
-  await withGeminiEnv({ GOOGLE_API_KEY: "google-key" }, async () => {
-    let commandCalled = false;
+test("Gemini route validation falls back to GEMINI_API_KEY if CLI fails", async () => {
+  await withGeminiEnv({ GEMINI_API_KEY: "gemini-key" }, async () => {
     const validation = await validateGeminiRoute({
       cwd: process.cwd(),
       modelId: "gemini-3.1-pro",
-      runCommandImpl: mockRunCommand(commandResult({}), () => {
-        commandCalled = true;
-      }),
+      runCommandImpl: mockRunCommand(commandResult({
+        status: "spawn_error",
+        exitCode: 1,
+      })),
     });
 
     assert.equal(validation.status, "ready");
-    assert.equal(validation.backendKind, "google-api");
-    assert.equal(commandCalled, false);
-    assert.equal(hasGeminiApiKey(), true);
+    assert.equal(validation.backendKind, "gemini-api-key");
   });
 });
 
@@ -141,7 +140,7 @@ test("Gemini route validation accepts authenticated headless CLI", async () => {
     });
 
     assert.equal(validation.status, "ready");
-    assert.equal(validation.backendKind, "gemini-cli-headless");
+    assert.equal(validation.backendKind, "gemini-cli-auth");
     assert.deepEqual(observedArgs, [
       "--prompt",
       "Respond with READY only.",
