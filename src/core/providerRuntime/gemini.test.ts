@@ -70,7 +70,7 @@ function mockRunCommand(result: CommandResult, onCall?: (spec: Parameters<typeof
   }) as typeof runCommand;
 }
 
-test("Gemini route validation fails without API key or authenticated headless CLI", async () => {
+test("Gemini route validation returns command-not-found diagnostic when executable missing", async () => {
   await withGeminiEnv({}, async () => {
     const validation = await validateGeminiRoute({
       cwd: process.cwd(),
@@ -85,8 +85,58 @@ test("Gemini route validation fails without API key or authenticated headless CL
 
     assert.equal(validation.status, "not-configured");
     assert.equal(validation.backendKind, "unavailable");
-    assert.equal(validation.message, GEMINI_ROUTE_SETUP_MESSAGE);
+    assert.equal(validation.message, "Gemini CLI was not found on PATH. Install Gemini CLI or fix PATH.");
     assert.equal(isGeminiRouteConfigured(), false);
+  });
+});
+
+test("Gemini route validation returns timeout diagnostic on probe timeout", async () => {
+  await withGeminiEnv({}, async () => {
+    const validation = await validateGeminiRoute({
+      cwd: process.cwd(),
+      modelId: "gemini-3.1-pro",
+      runCommandImpl: mockRunCommand(commandResult({
+        status: "timeout",
+        exitCode: null,
+      })),
+    });
+
+    assert.equal(validation.status, "not-configured");
+    assert.equal(validation.message, "Gemini CLI headless probe timed out. Gemini may be waiting for interactive input.");
+  });
+});
+
+test("Gemini route validation returns headless-failed diagnostic when probe exits with non-zero", async () => {
+  await withGeminiEnv({}, async () => {
+    const validation = await validateGeminiRoute({
+      cwd: process.cwd(),
+      modelId: "gemini-3.1-pro",
+      runCommandImpl: mockRunCommand(commandResult({
+        status: "completed",
+        exitCode: 1,
+        stderr: "Access denied",
+      })),
+    });
+
+    assert.equal(validation.status, "not-configured");
+    assert.equal(validation.message, "Gemini CLI is installed, but headless mode failed. Run: gemini --prompt \"Respond with READY only.\"");
+  });
+});
+
+test("Gemini route validation returns unexpected-output diagnostic when probe returns garbage", async () => {
+  await withGeminiEnv({}, async () => {
+    const validation = await validateGeminiRoute({
+      cwd: process.cwd(),
+      modelId: "gemini-3.1-pro",
+      runCommandImpl: mockRunCommand(commandResult({
+        status: "completed",
+        exitCode: 0,
+        stdout: JSON.stringify({ response: "NOT READY" }),
+      })),
+    });
+
+    assert.equal(validation.status, "not-configured");
+    assert.equal(validation.message, "Gemini CLI responded, but Codexa could not validate the headless route. The probe returned unexpected output.");
   });
 });
 
@@ -117,7 +167,7 @@ test("Gemini route validation falls back to GEMINI_API_KEY if CLI fails", async 
       modelId: "gemini-3.1-pro",
       runCommandImpl: mockRunCommand(commandResult({
         status: "spawn_error",
-        exitCode: 1,
+        errorCode: "ENOENT",
       })),
     });
 

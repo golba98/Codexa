@@ -134,6 +134,8 @@ export function getActiveRouteProviderId(config: ProviderWorkspaceConfig | null 
 export function buildProviderRegistry(options: {
   activeModel: string;
   workspaceConfig?: ProviderWorkspaceConfig | null;
+  diagnostics?: Record<string, Record<string, string | number | boolean | null>>;
+  routeErrors?: Record<string, string>;
 }): ProviderConfig[] {
   const defaultProviderId = getDefaultProviderId(options.workspaceConfig);
   const activeRouteProviderId = getActiveRouteProviderId(options.workspaceConfig);
@@ -174,8 +176,9 @@ export function buildProviderRegistry(options: {
       isDefault: id === defaultProviderId,
       isActiveRoute: id === activeRouteProviderId,
       routeUnavailableReason: runtime.routeAvailable
-        ? (isProviderRouteConfigured(id) ? null : getProviderRouteSetupMessage(id))
+        ? (isProviderRouteConfigured(id) ? null : (options.routeErrors?.[id] ?? getProviderRouteSetupMessage(id)))
         : runtime.routeStatus,
+      routeDiagnostics: options.diagnostics?.[id],
     };
 
     return applyOverride(provider, options.workspaceConfig?.providers?.[id]);

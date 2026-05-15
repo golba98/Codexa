@@ -120,8 +120,31 @@ function buildGeminiCliValidationArgs(modelId: string): string[] {
   ];
 }
 
-function isGeminiHeadlessResultUsable(result: CommandResult): boolean {
-  return result.status === "completed" && result.exitCode === 0;
+async function captureGeminiEnvironment(cwd: string, runCommandImpl: CommandRunner): Promise<{ path: string | null; version: string | null }> {
+  try {
+    const pathExecutable = process.platform === "win32" ? "where.exe" : "which";
+    const pathRunner = runCommandImpl({
+      executable: pathExecutable,
+      args: ["gemini"],
+      cwd,
+      timeoutMs: 5000,
+    });
+    const versionRunner = runCommandImpl({
+      executable: "gemini",
+      args: ["--version"],
+      cwd,
+      timeoutMs: 5000,
+    });
+
+    const [pathResult, versionResult] = await Promise.all([pathRunner.result, versionRunner.result]);
+
+    return {
+      path: pathResult.status === "completed" && pathResult.exitCode === 0 ? pathResult.stdout.trim().split(/[\r\n]+/)[0] ?? null : null,
+      version: versionResult.status === "completed" && versionResult.exitCode === 0 ? versionResult.stdout.trim() : null,
+    };
+  } catch {
+    return { path: null, version: null };
+  }
 }
 
 export async function validateGeminiRoute(options: {
@@ -131,21 +154,43 @@ export async function validateGeminiRoute(options: {
   runCommandImpl?: CommandRunner;
   timeoutMs?: number;
 }): Promise<ProviderRouteValidationResult> {
-  const runner = (options.runCommandImpl ?? runCommand)({
+  const runImpl = options.runCommandImpl ?? runCommand;
+  const envInfoPromise = captureGeminiEnvironment(options.cwd, runImpl);
+
+  const validationArgs = buildGeminiCliValidationArgs(options.modelId);
+  const runner = runImpl({
     executable: "gemini",
-    args: buildGeminiCliValidationArgs(options.modelId),
+    args: validationArgs,
     cwd: options.cwd,
     timeoutMs: options.timeoutMs ?? GEMINI_ROUTE_VALIDATION_TIMEOUT_MS,
   });
   const result = await runner.result;
-  if (isGeminiHeadlessResultUsable(result)) {
-    geminiCliHeadlessValidated = true;
-    return {
-      status: "ready",
-      providerId: "google",
-      backendKind: "gemini-cli-auth",
-      message: "Gemini CLI auth is configured.",
-    };
+  const envInfo = await envInfoPromise;
+  
+  const diagnostics: Record<string, string | number | boolean | null> = {
+    executablePath: envInfo.path,
+    version: envInfo.version,
+    command: `gemini ${validationArgs.join(" ")}`,
+    status: result.status,
+    exitCode: result.exitCode,
+    timeout: result.status === "timeout",
+    stdoutSummary: result.stdout.trim().slice(0, 200),
+    stderrSummary: result.stderr.trim().slice(0, 200),
+  };
+
+  if (result.status === "completed" && result.exitCode === 0) {
+    const parsed = parseGeminiJsonResponse(result.stdout);
+    diagnostics.probeMatch = parsed?.trim() === "READY";
+    if (diagnostics.probeMatch) {
+      geminiCliHeadlessValidated = true;
+      return {
+        status: "ready",
+        providerId: "google",
+        backendKind: "gemini-cli-auth",
+        message: "Gemini CLI auth is configured.",
+        diagnostics,
+      };
+    }
   }
 
   geminiCliHeadlessValidated = false;
@@ -155,14 +200,29 @@ export async function validateGeminiRoute(options: {
       providerId: "google",
       backendKind: "gemini-api-key",
       message: "Google/Gemini API key is configured.",
+      diagnostics,
     };
+  }
+
+  let errorMessage = GEMINI_ROUTE_SETUP_MESSAGE;
+  if (result.status === "completed" && result.exitCode === 0) {
+    errorMessage = "Gemini CLI responded, but Codexa could not validate the headless route. The probe returned unexpected output.";
+  } else if (result.status === "spawn_error" || result.errorCode === "ENOENT") {
+    errorMessage = "Gemini CLI was not found on PATH. Install Gemini CLI or fix PATH.";
+  } else if (result.status === "timeout") {
+    errorMessage = "Gemini CLI headless probe timed out. Gemini may be waiting for interactive input.";
+  } else if (result.status === "completed" && result.exitCode !== 0) {
+    errorMessage = "Gemini CLI is installed, but headless mode failed. Run: gemini --prompt \"Respond with READY only.\"";
+  } else if (result.status === "failed") {
+    errorMessage = "Gemini CLI is installed, but headless mode failed. Run: gemini --prompt \"Respond with READY only.\"";
   }
 
   return {
     status: "not-configured",
     providerId: "google",
     backendKind: "unavailable",
-    message: GEMINI_ROUTE_SETUP_MESSAGE,
+    message: errorMessage,
+    diagnostics,
   };
 }
 

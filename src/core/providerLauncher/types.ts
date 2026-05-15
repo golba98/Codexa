@@ -32,6 +32,7 @@ export interface ProviderConfig {
   isDefault: boolean;
   isActiveRoute: boolean;
   routeUnavailableReason: string | null;
+  routeDiagnostics?: Record<string, string | number | boolean | null>;
 }
 
 export interface ProviderWorkspaceConfig {

@@ -57,6 +57,7 @@ export interface ProviderRouteValidationResult {
   providerId: ProviderId;
   backendKind: ProviderBackendKind;
   message?: string;
+  diagnostics?: Record<string, string | number | boolean | null>;
 }
 
 export interface ProviderChatRequest {

@@ -128,6 +128,7 @@ import {
   resolveActiveProviderRoute,
   validateProviderRouteActivation,
 } from "./core/providerRuntime/registry.js";
+import { hasGeminiApiKey } from "./core/providerRuntime/gemini.js";
 import { providerModelsToCodexCapabilities } from "./core/providerRuntime/models.js";
 import {
   loadProviderWorkspaceConfig,
@@ -327,6 +328,7 @@ export function App({ launchArgs }: AppProps) {
   });
   const [customTheme, setCustomTheme] = useState(initialSettings.current.ui.customTheme);
   const [screen, setScreen] = useState<Screen>("main");
+  const [registryNonce, setRegistryNonce] = useState(0);
   const screenRef = useRef<Screen>("main");
   screenRef.current = screen;
   const [composerInstanceKey, setComposerInstanceKey] = useState(0);
@@ -406,6 +408,7 @@ export function App({ launchArgs }: AppProps) {
   const intendedFocusTargetRef = useRef<string>(FOCUS_IDS.composer);
   const modelSelectionInFlightRef = useRef(false);
   const providerRouteErrorsRef = useRef<Record<string, string>>({});
+  const providerDiagnosticsRef = useRef<Record<string, Record<string, string | number | boolean | null>>>({});
   const initialPromptSubmittedRef = useRef(false);
   const activeThemeName = getDisplayedThemeName(themeSelection);
   const activeTheme =
@@ -434,7 +437,12 @@ export function App({ launchArgs }: AppProps) {
     [activeProviderRoute.providerId],
   );
   const providerRegistry = useMemo(
-    () => buildProviderRegistry({ activeModel: model, workspaceConfig: providerWorkspaceConfig }),
+    () => buildProviderRegistry({
+      activeModel: model,
+      workspaceConfig: providerWorkspaceConfig,
+      diagnostics: providerDiagnosticsRef.current,
+      routeErrors: providerRouteErrorsRef.current,
+    }),
     [model, providerWorkspaceConfig],
   );
   const workspaceDefaultProvider = useMemo(
@@ -500,7 +508,27 @@ export function App({ launchArgs }: AppProps) {
       const routingStatus = runtime.routeAvailable
         ? isProviderRouteConfigured(provider.id) ? "configured" : "not configured"
         : "unavailable";
-      return `  ${provider.displayName} routing: ${routingStatus} (${discovery.backendKind})`;
+      
+      let line = `  ${provider.displayName} routing: ${routingStatus} (${discovery.backendKind})`;
+      
+      const diagnostics = providerDiagnosticsRef.current[provider.id];
+      if (diagnostics && provider.id === "google") {
+        const lines = [line];
+        if (diagnostics.executablePath) lines.push(`    CLI path: ${diagnostics.executablePath}`);
+        if (diagnostics.version) lines.push(`    CLI version: ${diagnostics.version}`);
+        lines.push(`    Headless probe: ${diagnostics.status === "completed" && diagnostics.exitCode === 0 && diagnostics.probeMatch ? "success" : "failed"}`);
+        if (diagnostics.status !== "completed" || diagnostics.exitCode !== 0 || !diagnostics.probeMatch) {
+          const reason = diagnostics.timeout ? "timeout" : 
+                         diagnostics.status === "spawn_error" ? "command not found" :
+                         diagnostics.exitCode !== 0 ? `exit code ${diagnostics.exitCode}` :
+                         !diagnostics.probeMatch ? "unexpected output" : "unknown";
+          lines.push(`    Reason: ${reason}`);
+        }
+        lines.push(`    API fallback: ${hasGeminiApiKey() ? "available" : "unavailable"}`);
+        line = lines.join("\n");
+      }
+
+      return line;
     });
 
     const activeModelInfo = activeProviderRoute.providerId === "google" && activeProviderRoute.modelSelection
@@ -1431,6 +1459,10 @@ export function App({ launchArgs }: AppProps) {
           },
           workspaceRoot,
         });
+        if (validation.diagnostics) {
+          providerDiagnosticsRef.current[providerId] = validation.diagnostics as Record<string, string | number | boolean | null>;
+        }
+        setRegistryNonce((n) => n + 1);
       } finally {
         releaseTitleGuard();
         forceRefreshCurrentTerminalTitle("after_provider_validation", false);
