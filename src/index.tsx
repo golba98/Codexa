@@ -7,7 +7,11 @@ import { APP_NAME, formatTerminalTitlePath } from "./config/settings.js";
 import { getTerminalCapability } from "./core/terminalCapabilities.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
-import { writeCodexaTerminalTitle } from "./core/terminalTitle.js";
+import {
+  reassertIntendedTerminalTitle,
+  setIntendedTerminalTitle,
+  startTerminalTitleStartupGuard,
+} from "./core/terminalTitle.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import {
   createTerminalModeController,
@@ -158,6 +162,17 @@ export function startApp({
     return { started: false, exitCode: 1 };
   }
   const launchArgs: LaunchArgs = parsedLaunchArgs.value;
+  setIntendedTerminalTitle(env.CODEXA_INITIAL_TERMINAL_TITLE ?? APP_NAME, {
+    force: true,
+    reason: "index-safe-fallback-title",
+    write: (chunk) => writeStdout(chunk, "src/index.tsx:title.fallback"),
+  });
+  const stopStartupTitleGuard = startTerminalTitleStartupGuard({
+    write: (chunk) => writeStdout(chunk, "src/index.tsx:title.startupGuard"),
+    reason: "index-startup-guard",
+    intervalMs: 150,
+    durationMs: 3500,
+  });
 
   // Clear the screen and move cursor to home before rendering so no stale
   // content from a previous process (e.g. bun --watch restart) ghosts above
@@ -167,17 +182,19 @@ export function startApp({
   // It is managed exclusively by the React app (app.tsx) and defaults to OFF
   // so native terminal drag-selection and copy work without any special steps.
   traceTerminalClear("src/index.tsx:startup", { mode: "hard" });
-  // Clear the screen before setting the title so the viewport is blank before
-  // any terminal title-change OSC sequences are processed.
   writeStdout(TERMINAL_SEQUENCES.hardRepaint, "src/index.tsx:startup");
   const startupWorkspaceRoot = resolveWorkspaceRoot();
   const startupSettings = loadSettings();
   const startupTitle =
     formatTerminalTitlePath(startupWorkspaceRoot, startupSettings.ui.terminalTitleMode) || APP_NAME;
-  writeCodexaTerminalTitle(startupTitle, {
+  setIntendedTerminalTitle(startupTitle, {
     force: true,
     reason: "startup-title",
     write: (chunk) => writeStdout(chunk, "src/index.tsx:startup.title"),
+  });
+  reassertIntendedTerminalTitle({
+    write: (chunk) => writeStdout(chunk, "src/index.tsx:startup.titleReady"),
+    reason: "startup-title-ready",
   });
   terminal.setBracketedPaste(true, "src/index.tsx:startup.bracketedPaste");
 
@@ -213,6 +230,7 @@ export function startApp({
   const cleanup = () => {
     if (cleanupDone) return;
     cleanupDone = true;
+    stopStartupTitleGuard();
     stdout.off("resize", onResize);
     renderHandle?.cleanup();
     // Restore terminal state: disable mouse reporting and bracketed paste.

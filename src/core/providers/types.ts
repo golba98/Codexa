@@ -22,6 +22,8 @@ export interface BackendRunHandlers {
   onFinalAnswerObserved?: (response: string) => void;
   /** Called when the backend starts or finishes a tool/shell action during a run. */
   onToolActivity?: (activity: RunToolActivity) => void;
+  /** Called around backend child-process lifecycle boundaries. */
+  onProcessLifecycle?: (event: "before-spawn" | "spawned" | "exit" | "error" | "cleanup") => void;
   /** Lightweight hooks used only by headless benchmark diagnostics. */
   benchmarkHooks?: {
     onProviderPromptPrepared?: (context: { policy: "raw" | "wrapped"; characterCount: number }) => void;

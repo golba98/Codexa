@@ -203,6 +203,77 @@ function Harness({
   );
 }
 
+function AppShellHarness({
+  staticEvents,
+  activeEvents,
+  uiState,
+  workspaceLabel = "13-Custom-CLI-Normal",
+  mouseCapture = false,
+}: {
+  staticEvents: TimelineEvent[];
+  activeEvents: TimelineEvent[];
+  uiState: UIState;
+  workspaceLabel?: string;
+  mouseCapture?: boolean;
+}) {
+  const layout = createLayoutSnapshot(120, 40);
+  const composerRows = measureBottomComposerRows({
+    layout,
+    uiState,
+    mode: "suggest",
+    model: "gpt-5.4",
+    reasoningLevel: "balanced",
+    value: "",
+    cursor: 0,
+  });
+
+  return (
+    <ThemeProvider theme="purple">
+      <AppShell
+        layout={layout}
+        screen="main"
+        authState="authenticated"
+        workspaceLabel={workspaceLabel}
+        runtimeSummary={null}
+        staticEvents={staticEvents}
+        activeEvents={activeEvents}
+        uiState={uiState}
+        composerRows={composerRows}
+        panel={null}
+        mouseCapture={mouseCapture}
+        composer={(
+          <BottomComposer
+            layout={layout}
+            uiState={uiState}
+            mode="suggest"
+            model="gpt-5.4"
+            reasoningLevel="balanced"
+            tokensUsed={100}
+            value=""
+            cursor={0}
+            onChangeInput={() => {}}
+            onSubmit={() => {}}
+            onCancel={() => {}}
+            onChangeValue={() => {}}
+            onChangeCursor={() => {}}
+            onHistoryUp={() => {}}
+            onHistoryDown={() => {}}
+            onOpenBackendPicker={() => {}}
+            onOpenModelPicker={() => {}}
+            onOpenModePicker={() => {}}
+            onOpenThemePicker={() => {}}
+            onOpenAuthPanel={() => {}}
+            onTogglePlanMode={() => {}}
+            onClear={() => {}}
+            onCycleMode={() => {}}
+            onQuit={() => {}}
+          />
+        )}
+      />
+    </ThemeProvider>
+  );
+}
+
 function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 }
@@ -385,6 +456,99 @@ test("appending a second action does not remount existing action rows", async ()
       .filter((rowKey) => rowKey.includes("-action-2-"));
 
     assert.deepEqual(firstActionUnmounts, []);
+  } finally {
+    instance.unmount();
+    renderDebug.configureRenderDebug({});
+    rmSync(logPath, { force: true });
+  }
+});
+
+test("native AppShell finalize keeps transcript rows in one keyed tree", async () => {
+  const logPath = join(tmpdir(), `codexa-native-finalize-${process.pid}.jsonl`);
+  rmSync(logPath, { force: true });
+  renderDebug.configureRenderDebug({
+    CODEXA_DEBUG_RENDER_TRACE: "1",
+    CODEXA_RENDER_DEBUG_FILE: logPath,
+  });
+
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const runningEvents = makeActiveEvents("completed");
+  const completedEvents = JSON.parse(JSON.stringify(runningEvents)) as TimelineEvent[];
+  const completedRun = completedEvents.find((event): event is Extract<TimelineEvent, { type: "run" }> => event.type === "run");
+  assert.ok(completedRun);
+  completedRun.status = "completed";
+  completedRun.durationMs = 1234;
+  completedRun.responseSegments = [{
+    id: "response-2-3",
+    streamSeq: 3,
+    chunks: ["Hello"],
+    status: "completed",
+    startedAt: 5,
+  }];
+  completedRun.streamItems = [
+    ...(completedRun.streamItems ?? []),
+    { kind: "response", streamSeq: 3, refId: "response-2-3" },
+  ];
+  completedEvents.push({
+    id: 3,
+    type: "assistant",
+    createdAt: 6,
+    content: "Hello",
+    contentChunks: [],
+    turnId: 1,
+  });
+
+  const instance = render(
+    <AppShellHarness
+      staticEvents={[]}
+      activeEvents={runningEvents}
+      uiState={{ kind: "THINKING", turnId: 1 }}
+      mouseCapture={false}
+    />,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+    },
+  );
+
+  try {
+    await sleep(100);
+    const beforeFinalize = readRecords(logPath);
+
+    instance.rerender(
+      <AppShellHarness
+        staticEvents={completedEvents}
+        activeEvents={[]}
+        uiState={{ kind: "IDLE" }}
+        mouseCapture={false}
+      />,
+    );
+    await sleep(100);
+
+    const finalizeWindow = readRecords(logPath).slice(beforeFinalize.length);
+    const unmountedActionRows = finalizeWindow
+      .filter((record) => record.kind === "flicker" && record.event === "timelineRowUnmount")
+      .map((record) => String(record.rowKey ?? ""))
+      .filter((rowKey) => rowKey.includes("-action-"));
+    const majorUnmounts = finalizeWindow
+      .filter((record) => record.kind === "lifecycle" && record.event === "unmount")
+      .map((record) => String(record.component ?? ""))
+      .filter((component) => ["AppShell", "Header", "Composer"].includes(component));
+
+    assert.deepEqual(unmountedActionRows, []);
+    assert.deepEqual(majorUnmounts, []);
+    const frame = stripAnsi(output);
+    assert.match(frame, /13-Custom-CLI-Normal/);
+    assert.match(frame, /Hello/);
   } finally {
     instance.unmount();
     renderDebug.configureRenderDebug({});

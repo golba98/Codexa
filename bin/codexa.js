@@ -16,6 +16,7 @@ let launcherPreviousElapsedMs = 0;
 const titleSequencePattern = /\x1b\](?:0|2);[^\x07]*(?:\x07|\x1b\\)/g;
 const titleSequenceDetectPattern = /\x1b\]([02]);([\s\S]*?)(?:\x07|\x1b\\)/g;
 const incompleteTitleSequencePattern = /\x1b\](?:0|2);[^\x07]*$/;
+let intendedTerminalTitle = "Codexa";
 
 function writeRenderDebugRecord(kind, fields) {
   if (process.env.CODEXA_RENDER_DEBUG !== "1" && process.env.CODEXA_DEBUG_RENDER !== "1") {
@@ -92,6 +93,63 @@ function traceTitleSequences(text, fields) {
     });
   }
   return found;
+}
+
+function sanitizeTerminalTitle(title) {
+  return String(title ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\x1b/g, "")
+    .trim();
+}
+
+function normalizeTerminalTitle(title) {
+  const cleanTitle = sanitizeTerminalTitle(title);
+  if (!cleanTitle || /^[a-zA-Z]:[\\/]/.test(cleanTitle) || /^\\\\/.test(cleanTitle)) {
+    return "Codexa";
+  }
+  return cleanTitle;
+}
+
+function buildTitleSequence(title) {
+  const safeTitle = normalizeTerminalTitle(title);
+  return `\x1b]0;${safeTitle}\x07\x1b]2;${safeTitle}\x07`;
+}
+
+function writeIntendedTitle(reason, force = true) {
+  const sequence = buildTitleSequence(intendedTerminalTitle);
+  writeRenderDebugRecord("stdout", {
+    event: "directWrite",
+    source: `bin/codexa.js:${reason}`,
+    bytes: Buffer.byteLength(sequence),
+    containsViewportClear: false,
+    containsScrollbackClear: false,
+    containsCursorHome: false,
+    containsTerminalReset: false,
+    containsTitleSequence: true,
+  });
+  process.stdout.write(sequence);
+  writeTerminalTitleDebugRecord({
+    event: "codexaTitleWrite",
+    source: `bin/codexa.js:${reason}`,
+    title: intendedTerminalTitle,
+    reason,
+    force,
+    bytes: Buffer.byteLength(sequence),
+  });
+}
+
+function startLauncherTitleGuard() {
+  const startedAt = Date.now();
+  const interval = setInterval(() => {
+    if (Date.now() - startedAt >= 2500) {
+      clearInterval(interval);
+      writeIntendedTitle("launcher-title-guard-end");
+      return;
+    }
+    writeIntendedTitle("launcher-title-guard");
+  }, 150);
+  interval.unref?.();
+  return () => clearInterval(interval);
 }
 
 function createTitleStripper(fields) {
@@ -193,6 +251,13 @@ function markExecTiming(phase, fields = {}) {
 
 markExecTiming("launcher_start", { pid: process.pid });
 
+let stopLauncherTitleGuard = null;
+if (!isHeadlessMode && parentHasTTY) {
+  intendedTerminalTitle = normalizeTerminalTitle(process.env.CODEXA_INITIAL_TERMINAL_TITLE || "Codexa");
+  writeIntendedTitle("launcher-startup-title");
+  stopLauncherTitleGuard = startLauncherTitleGuard();
+}
+
 if (!isHeadlessMode && hasFlag(forwardArgs, "--help", "-h")) {
   printHelp();
   process.exit(0);
@@ -201,29 +266,6 @@ if (!isHeadlessMode && hasFlag(forwardArgs, "--help", "-h")) {
 if (!isHeadlessMode && hasFlag(forwardArgs, "--version", "-v")) {
   console.log(readPackageVersion() ?? "unknown");
   process.exit(0);
-}
-
-const titleSequence = "\x1b]0;Codexa\x07\x1b]2;Codexa\x07";
-if (!isHeadlessMode && parentHasTTY) {
-  writeRenderDebugRecord("stdout", {
-    event: "directWrite",
-    source: "bin/codexa.js:title",
-    bytes: Buffer.byteLength(titleSequence),
-    containsViewportClear: false,
-    containsScrollbackClear: false,
-    containsCursorHome: false,
-    containsTerminalReset: false,
-    containsTitleSequence: true,
-  });
-  process.stdout.write(titleSequence);
-  writeTerminalTitleDebugRecord({
-    event: "codexaTitleWrite",
-    source: "bin/codexa.js:title",
-    title: "Codexa",
-    reason: "launcher-startup-title",
-    force: true,
-    bytes: Buffer.byteLength(titleSequence),
-  });
 }
 
 /**
@@ -293,6 +335,9 @@ debugLaunch("resolved launch mode", {
 });
 
 markExecTiming("bun_spawn_start", { executable: bunExecutable });
+if (!isHeadlessMode && parentHasTTY) {
+  writeIntendedTitle("before-bun-spawn");
+}
 
 const child = spawn(
   bunExecutable,
@@ -311,9 +356,18 @@ const child = spawn(
       CODEXA_PARENT_HAS_TTY: parentHasTTY ? "1" : "0",
       CODEXA_HEADLESS_BENCHMARK: isHeadlessBenchmark ? "1" : "0",
       CODEXA_EXEC_TIMING_EPOCH_MS: String(launcherStartTimeMs),
+      CODEXA_INITIAL_TERMINAL_TITLE: intendedTerminalTitle,
     },
   },
 );
+
+child.once("spawn", () => {
+  if (!isHeadlessMode && parentHasTTY) {
+    writeIntendedTitle("after-bun-spawn");
+    stopLauncherTitleGuard?.();
+    stopLauncherTitleGuard = null;
+  }
+});
 
 if (!isHeadlessMode && !parentHasTTY) {
   const mouseFilter = createMouseFilter();
@@ -366,6 +420,9 @@ if (!isHeadlessMode) {
 }
 
 child.on("error", (error) => {
+  if (!isHeadlessMode && parentHasTTY) {
+    writeIntendedTitle("bun-spawn-error");
+  }
   markExecTiming("bun_spawn_error", { message: error.message });
   console.error(`Failed to launch Bun: ${error.message}`);
   console.error("Bun is required to launch codexa. Install Bun, then run this command again.");
@@ -373,6 +430,11 @@ child.on("error", (error) => {
 });
 
 child.on("close", (code, signal) => {
+  if (!isHeadlessMode && parentHasTTY) {
+    writeIntendedTitle("bun-close");
+    stopLauncherTitleGuard?.();
+    stopLauncherTitleGuard = null;
+  }
   markExecTiming("launcher_exit", { exit_code: code ?? 0, signal: signal ?? null });
   if (signal) {
     process.kill(process.pid, signal);

@@ -808,7 +808,7 @@ export function buildActiveRenderItems(
     return {
       key: `turn-${item.turnId}`,
       type: "turn",
-      padded: true,
+      padded: false,
       item,
       renderState: {
         opacity: resolveTurnOpacity(turnIds, item.turnId, activeTurnId),

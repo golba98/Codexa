@@ -6,9 +6,14 @@ import {
   computeTerminalTitle,
   deriveTerminalTitle,
   formatTerminalTitleLabel,
+  getIntendedTerminalTitle,
+  normalizeTerminalTitle,
   reassertTerminalTitle,
+  reassertIntendedTerminalTitle,
   sanitizeTerminalTitle,
+  setIntendedTerminalTitle,
   setTerminalTitle,
+  startTerminalTitleStartupGuard,
   beginColdStartSequence,
   createTerminalTitleSequenceStripper,
   stripTerminalTitleSequences,
@@ -26,6 +31,13 @@ test("buildTerminalTitleSequence emits OSC 0 and OSC 2 with sanitized title text
   const sequence = buildTerminalTitleSequence("Codexa\u0007!");
   assert.equal(sequence, "\x1b]0;Codexa !\x07\x1b]2;Codexa !\x07");
   assert.equal(sanitizeTerminalTitle("  Codexa  "), "Codexa");
+});
+
+test("title normalization never exposes raw Windows paths", () => {
+  assert.equal(normalizeTerminalTitle("C:\\WINDOWS\\system"), "Codexa");
+  assert.equal(normalizeTerminalTitle("c:/Users/example"), "Codexa");
+  assert.equal(normalizeTerminalTitle("\\\\server\\share"), "Codexa");
+  assert.equal(buildTerminalTitleSequence("C:\\WINDOWS\\system"), buildTerminalTitleSequence("Codexa"));
 });
 
 test("stripTerminalTitleSequences removes OSC 0 title sequences with BEL terminator", () => {
@@ -179,6 +191,46 @@ test("writeCodexaTerminalTitle delegates to central title writer with force supp
   assert.deepEqual(writes, [buildTerminalTitleSequence("Codexa")]);
 });
 
+test("intended terminal title fallback is safe and later replaced by workspace title", () => {
+  const writes: string[] = [];
+  __resetTerminalTitleCache();
+
+  setIntendedTerminalTitle("C:\\WINDOWS\\system", {
+    force: true,
+    reason: "test-fallback",
+    write: (chunk) => writes.push(chunk),
+  });
+  assert.equal(getIntendedTerminalTitle(), "Codexa");
+  assert.equal(writes.at(-1), buildTerminalTitleSequence("Codexa"));
+
+  setIntendedTerminalTitle("13-Custom-CLI-Normal", {
+    force: true,
+    reason: "test-workspace",
+    write: (chunk) => writes.push(chunk),
+  });
+  assert.equal(getIntendedTerminalTitle(), "13-Custom-CLI-Normal");
+  assert.equal(writes.at(-1), buildTerminalTitleSequence("13-Custom-CLI-Normal"));
+});
+
+test("busy idle reassertion keeps the same intended title", () => {
+  const writes: string[] = [];
+  __resetTerminalTitleCache();
+
+  setIntendedTerminalTitle("13-Custom-CLI-Normal", {
+    force: true,
+    write: (chunk) => writes.push(chunk),
+  });
+  reassertIntendedTerminalTitle({ reason: "busy-start", write: (chunk) => writes.push(chunk) });
+  reassertIntendedTerminalTitle({ reason: "busy-end", write: (chunk) => writes.push(chunk) });
+
+  assert.equal(getIntendedTerminalTitle(), "13-Custom-CLI-Normal");
+  assert.deepEqual(writes, [
+    buildTerminalTitleSequence("13-Custom-CLI-Normal"),
+    buildTerminalTitleSequence("13-Custom-CLI-Normal"),
+    buildTerminalTitleSequence("13-Custom-CLI-Normal"),
+  ]);
+});
+
 test("writeGuardedTerminalOutput strips external title OSC and preserves SGR", () => {
   const writes: string[] = [];
   const result = writeGuardedTerminalOutput(
@@ -220,4 +272,28 @@ test("beginColdStartSequence writes immediately then retries", async () => {
   cancel();
   await sleep(300);
   assert.equal(writes.length, 2, "should not have retried further after cancel");
+});
+
+test("startup guard reasserts intended title until cancelled", async () => {
+  const writes: string[] = [];
+  __resetTerminalTitleCache();
+
+  setIntendedTerminalTitle("13-Custom-CLI-Normal", {
+    force: true,
+    write: (chunk) => writes.push(chunk),
+  });
+  const cancel = startTerminalTitleStartupGuard({
+    intervalMs: 10,
+    durationMs: 100,
+    write: (chunk) => writes.push(chunk),
+  });
+
+  await sleep(25);
+  cancel();
+  const writesAfterCancel = writes.length;
+  await sleep(25);
+
+  assert.ok(writesAfterCancel >= 3, `expected guard to reassert title, got ${writesAfterCancel} writes`);
+  assert.equal(writes.length, writesAfterCancel);
+  assert.ok(writes.every((chunk) => chunk === buildTerminalTitleSequence("13-Custom-CLI-Normal")));
 });

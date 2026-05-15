@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { summarizeCommandResult, type CommandResult } from "./CommandRunner.js";
 
@@ -42,4 +44,23 @@ test("preserves the failure message for unsuccessful commands", () => {
   });
 
   assert.equal(summarizeCommandResult("git status", result), "git exited with code 1.");
+});
+
+test("command runner reports lifecycle boundaries for terminal title reassertion", () => {
+  const source = readFileSync(fileURLToPath(new URL("./CommandRunner.ts", import.meta.url)), "utf8");
+  const beforeSpawnIndex = source.indexOf('handlers.onProcessLifecycle?.("before-spawn")');
+  const spawnIndex = source.indexOf("child = spawn(");
+  const spawnedIndex = source.indexOf('handlers.onProcessLifecycle?.("spawned")', spawnIndex);
+  const errorIndex = source.indexOf('child.once("error"', spawnIndex);
+  const lifecycleErrorIndex = source.indexOf('handlers.onProcessLifecycle?.("error")', errorIndex);
+  const closeIndex = source.indexOf('child.once("close"', spawnIndex);
+  const exitIndex = source.indexOf('handlers.onProcessLifecycle?.("exit")', closeIndex);
+  const cancelIndex = source.indexOf("const cancel = () =>");
+  const lifecycleCancelIndex = source.indexOf('handlers.onProcessLifecycle?.("cancel")', cancelIndex);
+
+  assert.ok(beforeSpawnIndex >= 0 && beforeSpawnIndex < spawnIndex);
+  assert.ok(spawnedIndex > spawnIndex);
+  assert.ok(lifecycleErrorIndex > errorIndex);
+  assert.ok(exitIndex > closeIndex);
+  assert.ok(lifecycleCancelIndex > cancelIndex);
 });

@@ -6,6 +6,8 @@ import { readFileSync } from "node:fs";
 import type { RenderOptions } from "ink";
 import { startApp } from "./index.js";
 
+const TITLE_SEQUENCE_PATTERN = /\x1b\](?:0|2);[^\x07]*(?:\x07|\x1b\\)/g;
+
 class MockStdout extends EventEmitter {
   isTTY = true;
   columns = 120;
@@ -401,18 +403,22 @@ test("normal app render writes do not clear the terminal after startup", async (
   await flushMicrotasks();
 });
 
-test("startup writes OSC terminal title after repaint and before Ink render setup", async () => {
+test("startup writes safe fallback title before repaint and workspace title before Ink render setup", async () => {
   const harness = createSupportedHarness();
   startApp(harness.deps);
 
   const repaintIndex = harness.stdout.writes.indexOf("\x1b[2J\x1b[H");
-  const titleIndex = harness.stdout.writes.indexOf("\x1b]0;");
+  const firstTitleIndex = harness.stdout.writes.indexOf("\x1b]0;");
+  const postRepaintTitleIndex = harness.stdout.writes.indexOf("\x1b]0;", repaintIndex + 1);
   const bracketedPasteIndex = harness.stdout.writes.indexOf("\x1b[?2004h");
 
   assert.ok(repaintIndex >= 0, "startup repaint should be written");
-  assert.ok(titleIndex > repaintIndex, "title should be written after startup repaint");
-  assert.ok(bracketedPasteIndex > titleIndex, "title should be written before bracketed paste/render setup");
+  assert.ok(firstTitleIndex >= 0, "fallback title should be written");
+  assert.ok(firstTitleIndex < repaintIndex, "safe fallback title should be written before startup repaint");
+  assert.ok(postRepaintTitleIndex > repaintIndex, "workspace title should be written after startup repaint");
+  assert.ok(bracketedPasteIndex > postRepaintTitleIndex, "workspace title should be written before bracketed paste/render setup");
   assert.match(harness.stdout.writes, /\x1b\]0;[^\x07]+\x07\x1b\]2;[^\x07]+\x07/);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\](?:0|2);[a-zA-Z]:[\\/]/);
 
   harness.resolveExit();
   await flushMicrotasks();
@@ -570,7 +576,7 @@ test("debounced repaint fires after rapid resizes to identical dimensions", asyn
 
     // Valid resize remains a soft repaint, even when rapid events collapse.
     assert.equal(harness.stdout.clearCalls, 0);
-    assert.equal(harness.stdout.writes, "");
+    assert.equal(harness.stdout.writes.replace(TITLE_SEQUENCE_PATTERN, ""), "");
   } finally {
     harness.resolveExit();
     await flushMicrotasks();
@@ -599,7 +605,7 @@ test("scheduled soft repaint does not call renderHandle.clear when inkInstance i
   // In test mocks inkInstance is null; normal valid resize should still avoid
   // the fallback clear path.
   assert.equal(harness.stdout.clearCalls, 0);
-  assert.equal(harness.stdout.writes, "");
+  assert.equal(harness.stdout.writes.replace(TITLE_SEQUENCE_PATTERN, ""), "");
 
   harness.resolveExit();
   await flushMicrotasks();
