@@ -4,7 +4,15 @@ import { sanitizeTerminalOutput } from "../terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
 import type { ProviderBackendKind, ProviderChatRequest, ProviderModel, ProviderModelDiscoveryResult, ProviderRouteValidationResult, ProviderRuntime } from "./types.js";
-import { resolveClaudeExecutable, buildClaudeSpawnSpec, resetClaudeExecutableCacheForTests } from "../claudeExecutable.js";
+import { buildClaudeSpawnSpec, resetClaudeExecutableCacheForTests } from "../claudeExecutable.js";
+import { CLAUDE_CODE_EFFORT_IDS } from "./reasoning.js";
+import {
+  claudeCodeModelsToProviderModels,
+  discoverClaudeCodeCapabilities,
+  getClaudeModelDefaultEffort,
+  modelSupportsClaudeEffort,
+  type ClaudeCodeCapabilityDiscovery,
+} from "./claudeCodeDiscovery.js";
 
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -13,12 +21,14 @@ const ANTHROPIC_TIMEOUT_MS = 120_000;
 const ANTHROPIC_AUTH_CHECK_TIMEOUT_MS = 10_000;
 const ANTHROPIC_ROUTE_VALIDATION_TIMEOUT_MS = 15_000;
 export const ANTHROPIC_ROUTE_SETUP_MESSAGE = "Anthropic/Claude is not configured for in-Codexa routing.\nSign in with Claude Code or set ANTHROPIC_API_KEY.";
+export { parseClaudeAuthStatus } from "./claudeCodeDiscovery.js";
 
 type CommandRunner = typeof runCommand;
 
 let claudeCodeValidated = false;
 let resolvedClaudeExecutable: string = "claude";
 let discoveredAnthropicModels: readonly ProviderModel[] | null = null;
+let claudeCapabilityDiscovery: ClaudeCodeCapabilityDiscovery | null = null;
 
 function getAnthropicApiKey(): string | null {
   return process.env.ANTHROPIC_API_KEY?.trim() || null;
@@ -32,100 +42,8 @@ export function resetAnthropicRouteValidationCacheForTests(): void {
   claudeCodeValidated = false;
   resolvedClaudeExecutable = "claude";
   discoveredAnthropicModels = null;
+  claudeCapabilityDiscovery = null;
   resetClaudeExecutableCacheForTests();
-}
-
-// ---------------------------------------------------------------------------
-// Auth status JSON parsing
-// ---------------------------------------------------------------------------
-
-interface ClaudeAuthStatusJson {
-  loggedIn: boolean;
-  authMethod?: string;
-  apiProvider?: string;
-  subscriptionType?: string;
-}
-
-export function parseClaudeAuthStatus(stdout: string): ClaudeAuthStatusJson | null {
-  try {
-    const parsed = JSON.parse(stdout.trim()) as unknown;
-    if (typeof parsed !== "object" || parsed === null) return null;
-    const obj = parsed as Record<string, unknown>;
-    return {
-      loggedIn: obj["loggedIn"] === true,
-      authMethod: typeof obj["authMethod"] === "string" ? obj["authMethod"] : undefined,
-      apiProvider: typeof obj["apiProvider"] === "string" ? obj["apiProvider"] : undefined,
-      subscriptionType: typeof obj["subscriptionType"] === "string" ? obj["subscriptionType"] : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Environment capture
-// ---------------------------------------------------------------------------
-
-async function captureClaudeEnvironment(
-  executable: string,
-  cwd: string,
-  runCommandImpl: CommandRunner,
-): Promise<{ path: string; version: string | null }> {
-  try {
-    const versionRunner = runCommandImpl({
-      executable,
-      args: ["--version"],
-      cwd,
-      timeoutMs: 5000,
-    });
-    const versionResult = await versionRunner.result;
-    return {
-      path: executable,
-      version: versionResult.status === "completed" && versionResult.exitCode === 0
-        ? versionResult.stdout.trim().split(/[\r\n]+/)[0] ?? null
-        : null,
-    };
-  } catch {
-    return { path: executable, version: null };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Model discovery
-// ---------------------------------------------------------------------------
-
-function buildAnthropicModelsFromVersion(version: string | null): readonly ProviderModel[] {
-  const source: "discovered" | "fallback" = version !== null ? "discovered" : "fallback";
-  const versionNote = version ? `Claude Code ${version}` : "Claude Code CLI";
-  return [
-    {
-      id: "opus",
-      modelId: "opus",
-      label: "Opus 4.7",
-      description: `${versionNote} · Claude Opus 4.7`,
-      defaultReasoningLevel: "high",
-      supportedReasoningLevels: null,
-      source,
-    },
-    {
-      id: "sonnet",
-      modelId: "sonnet",
-      label: "Sonnet 4.6",
-      description: `${versionNote} · Claude Sonnet 4.6`,
-      defaultReasoningLevel: "high",
-      supportedReasoningLevels: null,
-      source,
-    },
-    {
-      id: "haiku",
-      modelId: "haiku",
-      label: "Haiku 4.5",
-      description: `${versionNote} · Claude Haiku 4.5`,
-      defaultReasoningLevel: "medium",
-      supportedReasoningLevels: null,
-      source,
-    },
-  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -139,15 +57,17 @@ export function mapModelIdToClaudeArg(modelId: string): string {
 }
 
 export function mapReasoningToEffort(reasoning: string | null | undefined): string | null {
-  if (reasoning === "low" || reasoning === "medium" || reasoning === "high") return reasoning;
+  if (reasoning && CLAUDE_CODE_EFFORT_IDS.has(reasoning)) return reasoning;
   return null;
 }
 
 function buildClaudeCodeBaseArgs(request: ProviderChatRequest): string[] {
   const effort = mapReasoningToEffort(request.route.reasoning ?? null);
+  const models = getActiveAnthropicModels();
+  const supportedEffort = effort && modelSupportsClaudeEffort(request.route.modelId, effort, models) ? effort : null;
   return [
-    "--model", mapModelIdToClaudeArg(request.route.modelId),
-    ...(effort ? ["--effort", effort] : []),
+    ...(request.route.modelId ? ["--model", mapModelIdToClaudeArg(request.route.modelId)] : []),
+    ...(supportedEffort ? ["--effort", supportedEffort] : []),
     "--permission-mode", "default",
     request.prompt,
   ];
@@ -282,6 +202,35 @@ function isClaudeStreamJsonRequiresVerboseError(result: CommandResult): boolean 
   return /stream-json requires --verbose/i.test(combined);
 }
 
+function isClaudeInvalidEffortError(result: CommandResult): boolean {
+  const combined = `${result.userMessage}\n${result.stderr}\n${result.stdout}`;
+  return /\beffort\b/i.test(combined)
+    && /\b(invalid|unsupported|not supported|unknown|expected|allowed|valid)\b/i.test(combined);
+}
+
+function withClaudeEffort(request: ProviderChatRequest, effort: string): ProviderChatRequest {
+  return {
+    ...request,
+    route: {
+      ...request.route,
+      reasoning: effort,
+    },
+  };
+}
+
+function disableClaudeEffortForSession(modelId: string, effort: string): void {
+  const models = getActiveAnthropicModels();
+  discoveredAnthropicModels = models.map((model) => {
+    const isTarget = model.modelId === modelId || model.id === modelId || model.family === modelId || model.canonicalId === modelId;
+    if (!isTarget || !model.supportedReasoningLevels) return model;
+    return {
+      ...model,
+      supportedReasoningLevels: model.supportedReasoningLevels.filter((level) => level.id !== effort),
+      description: `${model.description ?? model.label} - ${effort} disabled after Claude Code rejection this session`,
+    };
+  });
+}
+
 function formatClaudeCommandDiagnostic(
   executable: string,
   args: string[],
@@ -300,10 +249,14 @@ export function runClaudeCodeWithRunner(
   let currentCancel: (() => void) | null = null;
   let canceled = false;
 
-  const runAttempt = (mode: "stream-json" | "plain-text") => {
+  const runAttempt = (
+    mode: "stream-json" | "plain-text",
+    attemptRequest: ProviderChatRequest = request,
+    effortFallbackUsed = false,
+  ) => {
     const args = mode === "stream-json"
-      ? buildClaudeCodeArgs(request)
-      : buildClaudeCodePlainTextArgs(request);
+      ? buildClaudeCodeArgs(attemptRequest)
+      : buildClaudeCodePlainTextArgs(attemptRequest);
     const spawnSpec = buildClaudeSpawnSpec(executable, args);
 
     let accumulatedText = "";
@@ -353,6 +306,30 @@ export function runClaudeCodeWithRunner(
           return;
         }
 
+        const requestedEffort = mapReasoningToEffort(attemptRequest.route.reasoning ?? null);
+        const fallbackEffort = getClaudeModelDefaultEffort(attemptRequest.route.modelId, getActiveAnthropicModels());
+        if (requestedEffort && isClaudeInvalidEffortError(result)) {
+          disableClaudeEffortForSession(attemptRequest.route.modelId, requestedEffort);
+        }
+        if (!effortFallbackUsed && requestedEffort && requestedEffort !== fallbackEffort && isClaudeInvalidEffortError(result)) {
+          const fallbackRequest = withClaudeEffort(attemptRequest, fallbackEffort);
+          const fallbackArgs = mode === "stream-json"
+            ? buildClaudeCodeArgs(fallbackRequest)
+            : buildClaudeCodePlainTextArgs(fallbackRequest);
+          const fallbackSpawnSpec = buildClaudeSpawnSpec(executable, fallbackArgs);
+          handlers.onProgress?.({
+            id: "anthropic-claude-effort-fallback",
+            source: "stderr",
+            text: [
+              `${diagnostic}`,
+              `Claude Code rejected effort "${requestedEffort}" for ${request.route.modelId}; retrying once with --effort ${fallbackEffort}.`,
+              formatClaudeCommandDiagnostic(fallbackSpawnSpec.executable, fallbackSpawnSpec.args, request.prompt),
+            ].join("\n"),
+          });
+          runAttempt(mode, fallbackRequest, true);
+          return;
+        }
+
         const message = result.userMessage || result.stderr || "Claude Code execution failed.";
         handlers.onError(message, diagnostic);
         return;
@@ -399,17 +376,16 @@ export async function validateAnthropicRoute(options: {
   env?: NodeJS.ProcessEnv;
   runCommandImpl?: CommandRunner;
   timeoutMs?: number;
+  configuredPath?: string | null;
 }): Promise<ProviderRouteValidationResult> {
-  const runImpl = options.runCommandImpl ?? runCommand;
-
-  // 1. Resolve the actual Claude executable (where.exe or CLAUDE_EXECUTABLE override)
-  let executable: string;
+  let discovery: ClaudeCodeCapabilityDiscovery;
   try {
-    executable = await resolveClaudeExecutable({
-      runCommandImpl: options.runCommandImpl,
+    discovery = await discoverClaudeCodeCapabilities({
       cwd: options.cwd,
+      runCommandImpl: options.runCommandImpl,
+      configuredPath: options.configuredPath,
+      timeoutMs: options.timeoutMs ?? ANTHROPIC_ROUTE_VALIDATION_TIMEOUT_MS,
     });
-    resolvedClaudeExecutable = executable;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to resolve Claude executable.";
     return {
@@ -421,62 +397,29 @@ export async function validateAnthropicRoute(options: {
     };
   }
 
-  // 2. Capture version info in parallel with auth check
-  const envInfoPromise = captureClaudeEnvironment(executable, options.cwd, runImpl);
-
-  const authSpawnSpec = buildClaudeSpawnSpec(executable, ["auth", "status"]);
-  const authRunner = runImpl({
-    executable: authSpawnSpec.executable,
-    args: authSpawnSpec.args,
-    cwd: options.cwd,
-    timeoutMs: options.timeoutMs ?? ANTHROPIC_AUTH_CHECK_TIMEOUT_MS,
-  });
-  const authResult = await authRunner.result;
-  const envInfo = await envInfoPromise;
-
-  // Populate model discovery cache from version info — runs regardless of auth result
-  // so models are available even when auth is unconfigured.
-  discoveredAnthropicModels = buildAnthropicModelsFromVersion(envInfo.version);
+  resolvedClaudeExecutable = discovery.resolvedCommand;
+  claudeCapabilityDiscovery = discovery;
+  discoveredAnthropicModels = claudeCodeModelsToProviderModels(discovery.models);
 
   const diagnostics: Record<string, string | number | boolean | null> = {
-    resolvedCommand: executable,
-    executablePath: envInfo.path,
-    version: envInfo.version,
-    authCommand: `${executable} auth status`,
-    authStatus: authResult.exitCode,
-    authCheckStatus: authResult.status,
-    timeout: authResult.status === "timeout",
-    stderrSummary: authResult.stderr.trim().slice(0, 200),
-    modelSource: discoveredAnthropicModels[0]?.source ?? "fallback",
+    resolvedCommand: discovery.resolvedCommand,
+    executablePath: discovery.resolvedCommand,
+    authCommand: `${discovery.resolvedCommand} auth status`,
+    modelSource: discovery.modelSource,
+    discoveredAt: discovery.discoveredAt,
+    loggedIn: discovery.auth.loggedIn,
+    authMethod: discovery.auth.authMethod ?? null,
+    apiProvider: discovery.auth.apiProvider ?? null,
+    subscriptionType: discovery.auth.subscriptionType ?? null,
+    settingsPath: discovery.settings?.path ?? null,
+    settingsModel: discovery.settings?.model ?? null,
+    settingsEffortLevel: discovery.settings?.effortLevel ?? null,
+    ...(discovery.diagnostics ?? {}),
   };
 
-  if (authResult.status === "completed" && authResult.exitCode === 0) {
-    const authJson = parseClaudeAuthStatus(authResult.stdout);
-
-    const extraDiag: Record<string, string | number | boolean | null> = authJson
-      ? {
-          loggedIn: authJson.loggedIn,
-          authMethod: authJson.authMethod ?? null,
-          apiProvider: authJson.apiProvider ?? null,
-          subscriptionType: authJson.subscriptionType ?? null,
-        }
-      : { loggedIn: null, authJsonParsed: false };
-
-    // JSON parsed but explicitly not logged in
-    if (authJson !== null && !authJson.loggedIn) {
-      claudeCodeValidated = false;
-      return {
-        status: "not-configured",
-        providerId: "anthropic",
-        backendKind: "unavailable",
-        message: "Claude Code is not signed in. Run: claude auth login",
-        diagnostics: { ...diagnostics, ...extraDiag },
-      };
-    }
-
-    // loggedIn === true, or JSON parse failed (old CLI that doesn't output JSON — accept exit 0)
+  if (discovery.auth.loggedIn === true) {
     claudeCodeValidated = true;
-    const authMethodLabel = authJson?.authMethod ?? null;
+    const authMethodLabel = discovery.auth.authMethod ?? null;
     return {
       status: "ready",
       providerId: "anthropic",
@@ -484,7 +427,7 @@ export async function validateAnthropicRoute(options: {
       message: authMethodLabel
         ? `Claude Code authenticated (${authMethodLabel}).`
         : "Claude Code auth is configured.",
-      diagnostics: { ...diagnostics, ...extraDiag },
+      diagnostics,
     };
   }
 
@@ -500,22 +443,27 @@ export async function validateAnthropicRoute(options: {
     };
   }
 
-  let errorMessage: string;
-  if (authResult.status === "spawn_error" || authResult.errorCode === "ENOENT") {
-    errorMessage = `\`${executable}\` command not found. Install Claude Code from https://claude.ai/code or set CLAUDE_EXECUTABLE to the full path.`;
-  } else if (authResult.status === "timeout") {
-    errorMessage = `Claude Code auth check timed out. Run: ${executable} auth status`;
-  } else if (authResult.exitCode === 1) {
-    errorMessage = `Claude Code is installed but not signed in. Run: ${executable} auth login`;
+  const authStatus = String(diagnostics["authStatus"] ?? "");
+  const authExitCode = diagnostics["authExitCode"];
+  const authJsonParsed = diagnostics["authJsonParsed"] === true;
+  let message: string;
+  if (authStatus === "spawn_error") {
+    message = `\`${discovery.resolvedCommand}\` command not found. Install Claude Code from https://claude.ai/code or set CLAUDE_EXECUTABLE to the full path.`;
+  } else if (authStatus === "timeout") {
+    message = `Claude Code auth check timed out. Run: ${discovery.resolvedCommand} auth status`;
+  } else if (authExitCode === 1) {
+    message = `Claude Code is installed but not signed in. Run: ${discovery.resolvedCommand} auth login`;
+  } else if (!authJsonParsed) {
+    message = `Claude Code auth status did not return valid JSON. Run: ${discovery.resolvedCommand} auth status`;
   } else {
-    errorMessage = `Claude Code auth check failed. Run: ${executable} auth status`;
+    message = `Claude Code is not signed in. Run: ${discovery.resolvedCommand} auth login`;
   }
 
   return {
     status: "not-configured",
     providerId: "anthropic",
     backendKind: "unavailable",
-    message: errorMessage,
+    message,
     diagnostics,
   };
 }
@@ -550,15 +498,49 @@ export const anthropicRuntime: ProviderRuntime = {
     providerId: "anthropic",
     backendKind: getAnthropicRuntimeBackendKind(),
     models: getActiveAnthropicModels(),
+    diagnostics: claudeCapabilityDiscovery ? {
+      resolvedCommand: claudeCapabilityDiscovery.resolvedCommand,
+      modelSource: claudeCapabilityDiscovery.modelSource,
+      discoveredAt: claudeCapabilityDiscovery.discoveredAt,
+      loggedIn: claudeCapabilityDiscovery.auth.loggedIn,
+      settingsPath: claudeCapabilityDiscovery.settings?.path ?? null,
+    } : { modelSource: "fallback" },
   }),
   refreshModels: async ({ cwd }): Promise<ProviderModelDiscoveryResult> => {
-    const envInfo = await captureClaudeEnvironment(resolvedClaudeExecutable, cwd, runCommand);
-    discoveredAnthropicModels = buildAnthropicModelsFromVersion(envInfo.version);
+    let discovery: ClaudeCodeCapabilityDiscovery;
+    try {
+      discovery = await discoverClaudeCodeCapabilities({ cwd, runCommandImpl: runCommand });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Claude capability refresh failed.";
+      return {
+        status: "ready",
+        providerId: "anthropic",
+        backendKind: getAnthropicRuntimeBackendKind(),
+        models: getActiveAnthropicModels(),
+        message: `Refresh Claude capabilities failed; keeping previous Claude capability data. ${message}`,
+        diagnostics: {
+          resolvedCommand: resolvedClaudeExecutable,
+          modelSource: claudeCapabilityDiscovery?.modelSource ?? "fallback",
+          refreshFailed: true,
+        },
+      };
+    }
+    resolvedClaudeExecutable = discovery.resolvedCommand;
+    claudeCapabilityDiscovery = discovery;
+    claudeCodeValidated = discovery.auth.loggedIn;
+    discoveredAnthropicModels = claudeCodeModelsToProviderModels(discovery.models);
     return {
       status: "ready",
       providerId: "anthropic",
       backendKind: getAnthropicRuntimeBackendKind(),
       models: discoveredAnthropicModels,
+      message: `Refreshed Claude capabilities (${discovery.modelSource}).`,
+      diagnostics: {
+        resolvedCommand: discovery.resolvedCommand,
+        modelSource: discovery.modelSource,
+        discoveredAt: discovery.discoveredAt,
+        loggedIn: discovery.auth.loggedIn,
+      },
     };
   },
   run: (request, handlers: BackendRunHandlers) => {

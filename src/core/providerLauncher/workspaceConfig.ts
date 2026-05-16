@@ -42,6 +42,12 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
     override.currentModel = value.current_model;
   }
 
+  if (typeof value.currentReasoning === "string") {
+    override.currentReasoning = value.currentReasoning;
+  } else if (typeof value.current_reasoning === "string") {
+    override.currentReasoning = value.current_reasoning;
+  }
+
   if (typeof value.enabled === "boolean") {
     override.enabled = value.enabled;
   }
@@ -49,6 +55,11 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
   const command = parseLaunchCommand(value.command);
   if (command !== undefined) {
     override.command = command;
+  }
+
+  const claudeCommandPath = value.claudeCommandPath ?? value.claude_command_path;
+  if (typeof claudeCommandPath === "string" && claudeCommandPath.trim()) {
+    override.claudeCommandPath = claudeCommandPath.trim();
   }
 
   return override;
@@ -120,8 +131,10 @@ export function serializeProviderWorkspaceConfig(config: ProviderWorkspaceConfig
       id,
       {
         ...(override.currentModel !== undefined ? { current_model: override.currentModel } : {}),
+        ...(override.currentReasoning !== undefined ? { current_reasoning: override.currentReasoning } : {}),
         ...(override.enabled !== undefined ? { enabled: override.enabled } : {}),
         ...(override.command !== undefined ? { command: serializeLaunchCommand(override.command) } : {}),
+        ...(override.claudeCommandPath !== undefined ? { claude_command_path: override.claudeCommandPath } : {}),
       },
     ]),
   );
@@ -181,6 +194,23 @@ export function setProviderDefaultModel(
       [providerId]: {
         ...config.providers?.[providerId],
         currentModel: modelId,
+      },
+    },
+  };
+}
+
+export function setProviderDefaultReasoning(
+  config: ProviderWorkspaceConfig,
+  providerId: ProviderId,
+  reasoning: string,
+): ProviderWorkspaceConfig {
+  return {
+    ...config,
+    providers: {
+      ...config.providers,
+      [providerId]: {
+        ...config.providers?.[providerId],
+        currentReasoning: reasoning,
       },
     },
   };

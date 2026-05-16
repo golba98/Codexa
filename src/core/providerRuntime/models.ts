@@ -1,5 +1,6 @@
 import type { CodexModelCapability, CodexModelCapabilities } from "../codexModelCapabilities.js";
 import type { ProviderModel } from "./types.js";
+import { getClaudeCodeEffortLevels } from "./reasoning.js";
 
 export const GEMINI_FALLBACK_MODELS: readonly ProviderModel[] = [
   {
@@ -41,28 +42,40 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
     id: "opus",
     modelId: "opus",
     label: "Opus 4.7",
-    description: "Claude Opus 4.7 — Claude Code CLI",
-    defaultReasoningLevel: "high",
-    supportedReasoningLevels: null,
+    description: "Claude Opus 4.7 - Fallback defaults",
+    defaultReasoningLevel: "xhigh",
+    supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high", "xhigh", "max"]),
     source: "fallback",
+    canonicalId: "claude-opus-4-7",
+    family: "opus",
+    effortSource: "fallback",
+    effortVerified: false,
   },
   {
     id: "sonnet",
     modelId: "sonnet",
     label: "Sonnet 4.6",
-    description: "Claude Sonnet 4.6 — Claude Code CLI",
+    description: "Claude Sonnet 4.6 - Fallback defaults",
     defaultReasoningLevel: "high",
-    supportedReasoningLevels: null,
+    supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high", "max"]),
     source: "fallback",
+    canonicalId: "claude-sonnet-4-6",
+    family: "sonnet",
+    effortSource: "fallback",
+    effortVerified: false,
   },
   {
     id: "haiku",
     modelId: "haiku",
     label: "Haiku 4.5",
-    description: "Claude Haiku 4.5 — Claude Code CLI",
+    description: "Claude Haiku 4.5 - Fallback defaults; effort metadata unverified",
     defaultReasoningLevel: "medium",
-    supportedReasoningLevels: null,
+    supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high"]),
     source: "fallback",
+    canonicalId: "claude-haiku-4-5",
+    family: "haiku",
+    effortSource: "fallback",
+    effortVerified: false,
   },
 ] as const;
 
@@ -81,11 +94,11 @@ export function providerModelsToCodexCapabilities(
       defaultReasoningLevel: model.defaultReasoningLevel,
       supportedReasoningLevels: model.supportedReasoningLevels,
       reasoningLevelCount: model.supportedReasoningLevels ? model.supportedReasoningLevels.length : null,
-      source: model.source === "discovered" || model.source === "config" ? "runtime" : "fallback",
+      source: model.source === "discovered" || model.source === "claude-code" || model.source === "settings" || model.source === "config" ? "runtime" : "fallback",
       raw: model,
     }));
 
-  const anyDiscovered = models.some((m) => m.source === "discovered" || m.source === "config");
+  const anyDiscovered = models.some((m) => m.source === "discovered" || m.source === "claude-code" || m.source === "settings" || m.source === "config");
   return {
     status: "ready",
     source: anyDiscovered ? "runtime" : "fallback",

@@ -9,6 +9,7 @@ interface ReasoningPickerProps {
   currentModel: string;
   reasoningLevels: readonly ReasoningEffortCapability[];
   defaultReasoning: string | null;
+  sourceLabel?: string | null;
   onSelect: (reasoning: string) => void;
   onCancel: () => void;
 }
@@ -18,6 +19,7 @@ export function ReasoningPicker({
   currentModel,
   reasoningLevels,
   defaultReasoning,
+  sourceLabel,
   onSelect,
   onCancel,
 }: ReasoningPickerProps) {
@@ -26,9 +28,10 @@ export function ReasoningPicker({
     value: reasoning.id,
   }));
 
-  const subtitle = defaultReasoning
+  const baseSubtitle = defaultReasoning
     ? `Suggested for ${currentModel}: ${formatReasoningLabel(defaultReasoning)}`
     : `Detected levels for ${currentModel}`;
+  const subtitle = sourceLabel ? `${baseSubtitle} · ${sourceLabel}` : baseSubtitle;
 
   return (
     <SelectionPanel
