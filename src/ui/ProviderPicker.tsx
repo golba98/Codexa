@@ -65,7 +65,7 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
     return [
       { value: "use-in-codexa", label: "Use in Codexa", disabledReason: routeUnavailable },
       { value: "select-model", label: "Select model", disabledReason: routeUnavailable },
-      { value: "refresh-models", label: "Refresh models", disabledReason: routeUnavailable },
+      { value: "refresh-models", label: selectedProvider?.id === "anthropic" ? "Refresh Claude capabilities" : "Refresh models", disabledReason: routeUnavailable },
       { value: "launch", label: "Launch external CLI" },
       { value: "set-default", label: "Set as workspace default" },
       { value: "cancel", label: "Cancel" },

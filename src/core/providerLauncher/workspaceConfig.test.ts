@@ -12,6 +12,7 @@ import {
   saveProviderWorkspaceConfig,
   serializeProviderWorkspaceConfig,
   setProviderActiveRoute,
+  setProviderDefaultReasoning,
   setProviderDefaultModel,
   setProviderWorkspaceDefault,
 } from "./workspaceConfig.js";
@@ -62,6 +63,7 @@ test("parses provider workspace config from Codexa-owned JSON", () => {
     providers: {
       local: {
         current_model: "llama",
+        current_reasoning: "medium",
         command: "ollama",
       },
       unknown: {
@@ -79,6 +81,7 @@ test("parses provider workspace config from Codexa-owned JSON", () => {
   });
   assert.deepEqual(config.providers?.local, {
     currentModel: "llama",
+    currentReasoning: "medium",
     command: "ollama",
   });
   assert.equal("unknown" in (config.providers ?? {}), false);
@@ -235,12 +238,13 @@ test("setProviderActiveRoute persists Gemini routes when GEMINI_API_KEY is confi
 test("setProviderDefaultModel saves model without overwriting other provider fields", () => {
   const initial = {
     providers: {
-      anthropic: { currentModel: "opus", enabled: true },
+      anthropic: { currentModel: "opus", currentReasoning: "high", enabled: true },
       google: { currentModel: "gemini-2.5-pro" },
     },
   };
   const updated = setProviderDefaultModel(initial, "anthropic", "sonnet");
   assert.equal(updated.providers?.["anthropic"]?.currentModel, "sonnet");
+  assert.equal(updated.providers?.["anthropic"]?.currentReasoning, "high", "reasoning must be preserved");
   assert.equal(updated.providers?.["anthropic"]?.enabled, true, "enabled flag must be preserved");
   assert.equal(updated.providers?.["google"]?.currentModel, "gemini-2.5-pro", "other provider unchanged");
 });
@@ -255,6 +259,57 @@ test("setProviderDefaultModel round-trips through serialize/parse", () => {
   const serialized = serializeProviderWorkspaceConfig(config);
   const reparsed = parseProviderWorkspaceConfig(serialized);
   assert.equal(reparsed.providers?.["anthropic"]?.currentModel, "sonnet");
+});
+
+test("setProviderDefaultReasoning saves provider-scoped reasoning without touching other providers", () => {
+  const initial = {
+    providers: {
+      openai: { currentReasoning: "high" },
+      anthropic: { currentModel: "sonnet", currentReasoning: "medium" },
+    },
+  };
+  const updated = setProviderDefaultReasoning(initial, "anthropic", "max");
+  assert.equal(updated.providers?.anthropic?.currentModel, "sonnet");
+  assert.equal(updated.providers?.anthropic?.currentReasoning, "max");
+  assert.equal(updated.providers?.openai?.currentReasoning, "high");
+});
+
+test("provider default reasoning round-trips through serialize/parse", () => {
+  const config = setProviderDefaultReasoning(
+    setProviderDefaultModel({}, "anthropic", "sonnet"),
+    "anthropic",
+    "xhigh",
+  );
+  const serialized = serializeProviderWorkspaceConfig(config);
+  assert.deepEqual(serialized.providers, {
+    anthropic: {
+      current_model: "sonnet",
+      current_reasoning: "xhigh",
+    },
+  });
+  const reparsed = parseProviderWorkspaceConfig(serialized);
+  assert.equal(reparsed.providers?.anthropic?.currentModel, "sonnet");
+  assert.equal(reparsed.providers?.anthropic?.currentReasoning, "xhigh");
+});
+
+test("Anthropic claudeCommandPath round-trips through serialize/parse", () => {
+  const config = parseProviderWorkspaceConfig({
+    providers: {
+      anthropic: {
+        current_model: "sonnet",
+        claude_command_path: "C:\\Users\\jorda.local\\bin\\claude.exe",
+      },
+    },
+  });
+
+  assert.equal(config.providers?.anthropic?.claudeCommandPath, "C:\\Users\\jorda.local\\bin\\claude.exe");
+  const serialized = serializeProviderWorkspaceConfig(config);
+  assert.deepEqual(serialized.providers, {
+    anthropic: {
+      current_model: "sonnet",
+      claude_command_path: "C:\\Users\\jorda.local\\bin\\claude.exe",
+    },
+  });
 });
 
 test("setProviderActiveRoute persists Gemini routes when GOOGLE_API_KEY is configured", () => {

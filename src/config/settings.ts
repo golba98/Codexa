@@ -70,7 +70,8 @@ export const AVAILABLE_REASONING_LEVELS = [
   { id: "low", label: "Low" },
   { id: "medium", label: "Medium" },
   { id: "high", label: "High" },
-  { id: "xhigh", label: "Extra high" },
+  { id: "xhigh", label: "XHigh" },
+  { id: "max", label: "Max" },
 ] as const;
 
 export type ReasoningLevel = string;

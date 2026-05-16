@@ -135,6 +135,7 @@ import {
   loadProviderWorkspaceConfig,
   saveProviderWorkspaceConfig,
   setProviderActiveRoute,
+  setProviderDefaultReasoning,
   setProviderDefaultModel,
   setProviderWorkspaceDefault,
 } from "./core/providerLauncher/workspaceConfig.js";
@@ -500,6 +501,30 @@ export function App({ launchArgs }: AppProps) {
     );
     return storedDefault ?? selectable[0]?.model ?? model;
   }, [activeProviderRoute, model, pendingRouteProviderId, providerModelCapabilities, providerWorkspaceConfig]);
+  const modelPickerCurrentReasoning = useMemo(() => {
+    if (!pendingRouteProviderId) {
+      return activeProviderRoute.reasoning ?? reasoningLevel;
+    }
+    if (pendingRouteProviderId === activeProviderRoute.providerId) {
+      return activeProviderRoute.reasoning ?? reasoningLevel;
+    }
+    const storedReasoning = providerWorkspaceConfig.providers?.[pendingRouteProviderId]?.currentReasoning;
+    if (storedReasoning) return storedReasoning;
+    const pickerCapabilities = pendingRouteProviderId === "openai" ? modelCapabilities : providerModelCapabilities;
+    const capability = findModelCapability(pickerCapabilities, modelPickerCurrentModel);
+    return capability?.defaultReasoningLevel
+      ?? capability?.supportedReasoningLevels?.[0]?.id
+      ?? reasoningLevel;
+  }, [
+    activeProviderRoute.providerId,
+    activeProviderRoute.reasoning,
+    modelPickerCurrentModel,
+    modelCapabilities,
+    pendingRouteProviderId,
+    providerModelCapabilities,
+    providerWorkspaceConfig.providers,
+    reasoningLevel,
+  ]);
   const modelPickerProviderLabel = useMemo(
     () => modelPickerRuntime.modelPickerLabel
       ?? findProvider(providerRegistry, modelPickerProviderId)?.displayName
@@ -575,6 +600,13 @@ export function App({ launchArgs }: AppProps) {
     [activeProviderRoute.modelId, activeRouteModelCapabilities],
   );
   const currentReasoningCapabilities = currentModelCapability?.supportedReasoningLevels ?? [];
+  const currentReasoningSourceLabel = useMemo(() => {
+    if (activeProviderRoute.providerId !== "anthropic") return null;
+    const raw = currentModelCapability?.raw as { source?: string; effortVerified?: boolean } | null | undefined;
+    if (raw?.source === "claude-code" || raw?.source === "discovered") return "Discovered from Claude Code";
+    if (raw?.source === "settings" || raw?.source === "config") return "From Claude settings";
+    return raw?.effortVerified === false ? "Fallback defaults; unverified" : "Fallback defaults";
+  }, [activeProviderRoute.providerId, currentModelCapability]);
   const workspaceLabel = useMemo(
     () => formatWorkspaceDisplayPath(workspaceRoot, workspaceDisplayMode),
     [workspaceDisplayMode, workspaceRoot],
@@ -1268,13 +1300,18 @@ export function App({ launchArgs }: AppProps) {
   ) => {
     try {
       const runtime = getProviderRuntime(providerId);
-      const nextConfig = setProviderActiveRoute(providerWorkspaceConfig, {
+      let nextConfig = setProviderActiveRoute(providerWorkspaceConfig, {
         providerId,
         modelId: nextModel,
         backendKind: backendKindOverride ?? runtime.backendKind,
         reasoning: nextReasoning,
         modelSelection,
       });
+      nextConfig = setProviderDefaultReasoning(
+        setProviderDefaultModel(nextConfig, providerId, nextModel),
+        providerId,
+        nextReasoning,
+      );
       saveProviderWorkspaceConfig(workspaceRoot, nextConfig);
       setProviderWorkspaceConfig(nextConfig);
     } catch (error) {
@@ -1283,17 +1320,19 @@ export function App({ launchArgs }: AppProps) {
     }
   }, [appendErrorEvent, providerWorkspaceConfig, workspaceRoot]);
 
-  const persistProviderDefaultModel = useCallback((
+  const persistProviderDefaultModelAndReasoning = useCallback((
     providerId: ProviderId,
     modelId: string,
+    nextReasoning: string,
   ) => {
     try {
-      const nextConfig = setProviderDefaultModel(providerWorkspaceConfig, providerId, modelId);
+      const withModel = setProviderDefaultModel(providerWorkspaceConfig, providerId, modelId);
+      const nextConfig = setProviderDefaultReasoning(withModel, providerId, nextReasoning);
       saveProviderWorkspaceConfig(workspaceRoot, nextConfig);
       setProviderWorkspaceConfig(nextConfig);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to save provider default model.";
-      appendErrorEvent("Model save failed", message);
+      const message = error instanceof Error ? error.message : "Unable to save provider defaults.";
+      appendErrorEvent("Provider defaults save failed", message);
     }
   }, [appendErrorEvent, providerWorkspaceConfig, workspaceRoot]);
 
@@ -1354,6 +1393,17 @@ export function App({ launchArgs }: AppProps) {
       ...current,
       reasoningLevel: nextReasoningLevel,
     }));
+    if (activeProviderRoute.providerId === "openai") {
+      persistProviderDefaultModelAndReasoning("openai", activeProviderRoute.modelId, nextReasoningLevel);
+    } else {
+      persistActiveRoute(
+        activeProviderRoute.providerId,
+        activeProviderRoute.modelId,
+        nextReasoningLevel,
+        activeProviderRoute.backendKind,
+        activeProviderRoute.modelSelection,
+      );
+    }
     setScreen("main");
     appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(nextReasoningLevel)}.`);
     refreshTerminalTitle({
@@ -1361,7 +1411,21 @@ export function App({ launchArgs }: AppProps) {
       workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
       force: true,
     });
-  }, [appendErrorEvent, appendSystemEvent, busy, currentModelCapability, model, terminalTitleMode, updateRuntimeConfig, workspaceRoot]);
+  }, [
+    activeProviderRoute.backendKind,
+    activeProviderRoute.modelId,
+    activeProviderRoute.modelSelection,
+    activeProviderRoute.providerId,
+    appendErrorEvent,
+    appendSystemEvent,
+    busy,
+    currentModelCapability,
+    model,
+    persistActiveRoute,
+    terminalTitleMode,
+    updateRuntimeConfig,
+    workspaceRoot,
+  ]);
 
   const setPlanModeWithNotice = useCallback((nextEnabled: boolean) => {
     const gate = guardConfigMutation("mode", busy);
@@ -1838,6 +1902,10 @@ export function App({ launchArgs }: AppProps) {
                          !provider.currentModel.endsWith("default") && 
                          provider.currentModel !== "Google default";
 
+      const providerReasoning = workspaceProviderConfig?.currentReasoning
+        ?? (isCurrentActive ? activeRoute?.reasoning : undefined)
+        ?? reasoningLevel;
+
       if (isRealModel || isCurrentActive) {
         let geminiSelection: import("./core/providerRuntime/types.js").GeminiModelSelection | undefined;
         if (providerId === "google") {
@@ -1853,7 +1921,7 @@ export function App({ launchArgs }: AppProps) {
 
         void setModelAndReasoningWithNotice(
           (workspaceProviderConfig?.currentModel ?? provider.currentModel) as AvailableModel,
-          reasoningLevel as ReasoningLevel,
+          providerReasoning as ReasoningLevel,
           providerId,
           geminiSelection,
         );
@@ -1899,12 +1967,14 @@ export function App({ launchArgs }: AppProps) {
       } else {
         const runtime = getProviderRuntime(providerId);
         if (runtime.refreshModels) {
-          appendSystemEvent("Model discovery", `Refreshing models for ${provider.displayName}...`);
+          appendSystemEvent("Model discovery", providerId === "anthropic"
+            ? "Refreshing Claude capabilities..."
+            : `Refreshing models for ${provider.displayName}...`);
           void runtime.refreshModels({ cwd: workspaceRoot }).then((discovery) => {
             appendSystemEvent(
               "Model discovery",
               discovery.status === "ready"
-                ? `Loaded ${discovery.models.length} models for ${provider.displayName} (${discovery.models[0]?.source ?? "fallback"}).`
+                ? discovery.message ?? `Loaded ${discovery.models.length} models for ${provider.displayName} (${discovery.models[0]?.source ?? "fallback"}).`
                 : discovery.message ?? `${provider.displayName} model routing is not configured yet.`,
             );
             setRegistryNonce((n) => n + 1);
@@ -3664,13 +3734,26 @@ export function App({ launchArgs }: AppProps) {
   ]);
 
   const modelDisplayName = useMemo(() => {
+    if (activeProviderRoute.providerId === "anthropic") {
+      const modelLabel = currentModelCapability?.label ?? activeProviderRoute.modelId;
+      return `Claude Code CLI / ${modelLabel} / reasoning: ${formatReasoningLabel(activeProviderRoute.reasoning ?? reasoningLevel)}`;
+    }
     if (activeProviderRoute.providerId === "google" && activeProviderRoute.modelSelection) {
       if (activeProviderRoute.modelSelection.kind === "auto") {
         return `auto ${activeProviderRoute.modelSelection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"}`;
       }
     }
     return model;
-  }, [activeProviderRoute.modelSelection, activeProviderRoute.providerId, model]);
+  }, [
+    activeProviderRoute.modelId,
+    activeProviderRoute.modelSelection,
+    activeProviderRoute.providerId,
+    activeProviderRoute.reasoning,
+    currentModelCapability?.label,
+    model,
+    reasoningLevel,
+  ]);
+  const composerReasoningLevel = activeProviderRoute.providerId === "anthropic" ? "" : reasoningLevel;
 
   // Memoize the composer element so AppShell's memo check (prev.composer ===
   // next.composer) passes during streaming. Without this, a new JSX element is
@@ -3721,7 +3804,7 @@ export function App({ launchArgs }: AppProps) {
         mode={mode}
         model={modelDisplayName}
         themeName={activeThemeName}
-        reasoningLevel={reasoningLevel}
+        reasoningLevel={composerReasoningLevel}
         planMode={planMode}
         showBusyLoader={showBusyLoader}
         tokensUsed={estimateTokens(conversationChars)}
@@ -3759,9 +3842,9 @@ export function App({ launchArgs }: AppProps) {
     terminalLayout,
     uiState,
     mode,
-    model,
+    modelDisplayName,
     activeThemeName,
-    reasoningLevel,
+    composerReasoningLevel,
     planMode,
     showBusyLoader,
     conversationChars,
@@ -3834,7 +3917,7 @@ export function App({ launchArgs }: AppProps) {
                   layout={terminalLayout}
                   models={modelPickerModels}
                   currentModel={modelPickerCurrentModel}
-                  currentReasoning={reasoningLevel}
+                  currentReasoning={modelPickerCurrentReasoning}
                   activeProviderLabel={modelPickerProviderLabel}
                   isLoading={modelPickerProviderId === "openai" && modelCapabilitiesBusy && modelPickerModels.length === 0}
                   emptyMessage={modelPickerEmptyMessage}
@@ -3842,10 +3925,10 @@ export function App({ launchArgs }: AppProps) {
                     if (pendingRouteProviderId && pendingRouteProviderId !== activeProviderRoute.providerId) {
                       // Non-active provider: save as provider default without switching the active route.
                       // User must click "Use in Codexa" to validate and activate.
-                      persistProviderDefaultModel(pendingRouteProviderId, m);
+                      persistProviderDefaultModelAndReasoning(pendingRouteProviderId, m, r);
                       appendSystemEvent(
                         "Provider model saved",
-                        `${modelPickerProviderLabel} default model set to ${m}. Choose "Use in Codexa" to activate this provider.`,
+                        `${modelPickerProviderLabel} default model set to ${m} with reasoning ${formatReasoningLabel(r)}. Choose "Use in Codexa" to activate this provider.`,
                       );
                       setScreen("provider-picker");
                     } else {
@@ -3869,10 +3952,11 @@ export function App({ launchArgs }: AppProps) {
 
               {screen === "reasoning-picker" && (
                 <ReasoningPicker
-                  currentModel={model}
-                  currentReasoning={reasoningLevel}
+                  currentModel={activeProviderRoute.modelId}
+                  currentReasoning={activeProviderRoute.reasoning ?? reasoningLevel}
                   reasoningLevels={currentReasoningCapabilities}
                   defaultReasoning={currentModelCapability?.defaultReasoningLevel ?? null}
+                  sourceLabel={currentReasoningSourceLabel}
                   onSelect={(value) => setReasoningWithNotice(value as ReasoningLevel)}
                   onCancel={() => setScreen("main")}
                 />

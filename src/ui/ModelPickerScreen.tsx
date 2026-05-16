@@ -45,6 +45,14 @@ function getReasoningLevels(model: CodexModelCapability | undefined): readonly R
   return model?.supportedReasoningLevels ?? [];
 }
 
+function getModelSourceMarker(models: readonly CodexModelCapability[], activeProviderLabel: string): string | null {
+  if (activeProviderLabel !== "Claude" || models.length === 0) return null;
+  const source = (models[0]?.raw as { source?: string } | null | undefined)?.source;
+  if (source === "claude-code" || source === "discovered") return "Discovered from Claude Code";
+  if (source === "settings" || source === "config") return "From Claude settings";
+  return "Fallback defaults";
+}
+
 function normalizeDraftReasoning(
   model: CodexModelCapability | undefined,
   reasoning: string,
@@ -277,6 +285,7 @@ export function ModelPickerScreen({
   const reasoningText = reasoningUnavailable
     ? (models.length === 0 ? "Reasoning: current/default" : "Reasoning: unavailable")
     : `Reasoning: ${formatReasoningLabel(draftReasoning)}`;
+  const sourceMarker = getModelSourceMarker(models, activeProviderLabel);
 
   return (
     <Box flexDirection="column" width={panelWidth}>
@@ -301,6 +310,13 @@ export function ModelPickerScreen({
             {clampVisualText(reasoningText, innerWidth)}
           </Text>
         </Box>
+        {sourceMarker && (
+          <Box width="100%" overflow="hidden">
+            <Text color={theme.DIM}>
+              {clampVisualText(sourceMarker, innerWidth)}
+            </Text>
+          </Box>
+        )}
 
         <Box flexDirection="column" marginTop={0} width="100%">
           {models.length === 0 ? (

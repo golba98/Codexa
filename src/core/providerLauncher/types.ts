@@ -51,6 +51,8 @@ export interface ProviderActiveRoute {
 
 export interface ProviderWorkspaceOverride {
   currentModel?: string;
+  currentReasoning?: string;
   enabled?: boolean;
   command?: string | ProviderLaunchCommand | null;
+  claudeCommandPath?: string;
 }

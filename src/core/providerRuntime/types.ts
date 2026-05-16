@@ -21,7 +21,11 @@ export interface ProviderModel {
   description: string | null;
   defaultReasoningLevel: string | null;
   supportedReasoningLevels: readonly ReasoningEffortCapability[] | null;
-  source?: "discovered" | "config" | "fallback";
+  source?: "discovered" | "claude-code" | "settings" | "config" | "fallback";
+  canonicalId?: string;
+  family?: string;
+  effortSource?: "claude-code" | "settings" | "config" | "fallback";
+  effortVerified?: boolean;
 }
 
 export interface ProviderModelDiscoveryResult {
@@ -30,6 +34,7 @@ export interface ProviderModelDiscoveryResult {
   backendKind: ProviderBackendKind;
   models: readonly ProviderModel[];
   message?: string;
+  diagnostics?: Record<string, string | number | boolean | null>;
 }
 
 export type GeminiModelFamily = "gemini-3" | "gemini-2.5";

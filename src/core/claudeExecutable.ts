@@ -26,17 +26,19 @@ export function resetClaudeExecutableCacheForTests(): void {
 export async function resolveClaudeExecutable(options?: {
   runCommandImpl?: CommandRunner;
   cwd?: string;
+  configuredPath?: string | null;
 }): Promise<string> {
-  if (!options?.runCommandImpl && cachedExecutable !== null) {
+  if (!options?.configuredPath && !options?.runCommandImpl && cachedExecutable !== null) {
     return cachedExecutable;
   }
 
   const result = await doResolve(
     options?.runCommandImpl ?? runCommand,
     options?.cwd ?? process.cwd(),
+    options?.configuredPath ?? null,
   );
 
-  if (!options?.runCommandImpl) {
+  if (!options?.configuredPath && !options?.runCommandImpl) {
     cachedExecutable = result;
   }
   return result;
@@ -46,45 +48,65 @@ function looksLikeAbsolutePath(value: string): boolean {
   return /[\\/]/.test(value) || /^[A-Za-z]:/.test(value);
 }
 
-async function doResolve(runCommandImpl: CommandRunner, cwd: string): Promise<string> {
-  // 1. CLAUDE_EXECUTABLE env var override
-  const envOverride = process.env.CLAUDE_EXECUTABLE?.trim();
-  if (envOverride) {
-    if (looksLikeAbsolutePath(envOverride) && !existsSync(envOverride)) {
-      throw new Error(
-        `CLAUDE_EXECUTABLE path does not exist: "${envOverride}"\n` +
-        `Check the path is correct and the file is accessible, or unset CLAUDE_EXECUTABLE.`,
-      );
-    }
-    return envOverride;
+function validateConfiguredExecutable(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (looksLikeAbsolutePath(trimmed) && !existsSync(trimmed)) {
+    throw new Error(
+      `${label} path does not exist: "${trimmed}"\n` +
+      `Check the path is correct and the file is accessible, or unset ${label}.`,
+    );
+  }
+  return trimmed;
+}
+
+async function resolveWithWhere(
+  runCommandImpl: CommandRunner,
+  cwd: string,
+  query: string,
+): Promise<string | null> {
+  const whereRunner = runCommandImpl({
+    executable: "where.exe",
+    args: [query],
+    cwd,
+    timeoutMs: 5000,
+  });
+  const whereResult = await whereRunner.result;
+  if (whereResult.status !== "completed" || whereResult.exitCode !== 0) return null;
+  const lines = whereResult.stdout
+    .trim()
+    .split(/[\r\n]+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return lines[0] ?? null;
+}
+
+async function doResolve(runCommandImpl: CommandRunner, cwd: string, configuredPath: string | null): Promise<string> {
+  // 1. Configured path override
+  if (configuredPath?.trim()) {
+    return validateConfiguredExecutable(configuredPath, "claudeCommandPath");
   }
 
-  // 2. Windows: use where.exe to find the real file behind any PS function wrapper
+  // 2. CLAUDE_EXECUTABLE env var override
+  const envOverride = process.env.CLAUDE_EXECUTABLE?.trim();
+  if (envOverride) {
+    return validateConfiguredExecutable(envOverride, "CLAUDE_EXECUTABLE");
+  }
+
+  // 3. Windows PATH lookup by executable name, in deterministic preference order.
   if (process.platform === "win32") {
-    const whereRunner = runCommandImpl({
-      executable: "where.exe",
-      args: ["claude"],
-      cwd,
-      timeoutMs: 5000,
-    });
-    const whereResult = await whereRunner.result;
-    if (whereResult.status === "completed" && whereResult.exitCode === 0) {
-      const lines = whereResult.stdout
-        .trim()
-        .split(/[\r\n]+/)
-        .map((l) => l.trim())
-        .filter(Boolean);
-      // Prefer .exe > .cmd > .bat > anything else
-      const resolved =
-        lines.find((l) => l.toLowerCase().endsWith(".exe")) ??
-        lines.find((l) => l.toLowerCase().endsWith(".cmd")) ??
-        lines.find((l) => l.toLowerCase().endsWith(".bat")) ??
-        lines[0];
+    for (const candidate of ["claude.exe", "claude.cmd", "claude.bat", "claude"]) {
+      const resolved = await resolveWithWhere(runCommandImpl, cwd, candidate);
       if (resolved) return resolved;
     }
   }
 
-  // 3. Windows known-path fallbacks — covers installs not on system PATH
+  // 4. Windows: where.exe fallback for launchers exposed as "claude".
+  if (process.platform === "win32") {
+    const resolved = await resolveWithWhere(runCommandImpl, cwd, "claude");
+    if (resolved) return resolved;
+  }
+
+  // 5. Windows known-path fallbacks — covers installs not on system PATH
   //    (e.g. %USERPROFILE%\bin or %USERPROFILE%\.local\bin from manual/npm global installs)
   if (process.platform === "win32") {
     const userProfile = process.env.USERPROFILE;
@@ -92,8 +114,10 @@ async function doResolve(runCommandImpl: CommandRunner, cwd: string): Promise<st
       const knownCandidates: readonly string[] = [
         join(userProfile, ".local", "bin", "claude.exe"),
         join(userProfile, ".local", "bin", "claude.cmd"),
+        join(userProfile, ".local", "bin", "claude.bat"),
         join(userProfile, "bin", "claude.exe"),
         join(userProfile, "bin", "claude.cmd"),
+        join(userProfile, "bin", "claude.bat"),
       ];
       for (const candidate of knownCandidates) {
         if (existsSync(candidate)) return candidate;
@@ -101,7 +125,7 @@ async function doResolve(runCommandImpl: CommandRunner, cwd: string): Promise<st
     }
   }
 
-  // 4. Bare name fallback
+  // 6. Bare name fallback
   return "claude";
 }
 

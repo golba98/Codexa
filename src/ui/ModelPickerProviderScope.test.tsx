@@ -117,6 +117,24 @@ test("providerModelsToCodexCapabilities converts Anthropic models to selectable 
   for (const id of modelIds) {
     assert.ok(!id.startsWith("gpt-"), `Converted Anthropic capabilities must not contain OpenAI model: "${id}"`);
   }
+  const sonnet = selectable.find((model) => model.model === "sonnet");
+  assert.deepEqual(
+    sonnet?.supportedReasoningLevels?.map((level) => level.id),
+    ["low", "medium", "high", "max"],
+  );
+});
+
+test("Claude reasoning options do not include OpenAI-only levels", () => {
+  const caps = providerModelsToCodexCapabilities(ANTHROPIC_FALLBACK_MODELS, "sonnet");
+  const sonnet = getSelectableModelCapabilities(caps).find((model) => model.model === "sonnet");
+  const opus = getSelectableModelCapabilities(caps).find((model) => model.model === "opus");
+  const ids = sonnet?.supportedReasoningLevels?.map((level) => level.id) ?? [];
+
+  assert.deepEqual(ids, ["low", "medium", "high", "max"]);
+  assert.deepEqual(opus?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
+  assert.ok(!ids.includes("xhigh"), "Sonnet fallback must not show xhigh unless verified");
+  assert.ok(!ids.includes("none"), "Claude picker must not show OpenAI none reasoning");
+  assert.ok(!ids.includes("minimal"), "Claude picker must not show OpenAI minimal reasoning");
 });
 
 test("providerModelsToCodexCapabilities converts Gemini models to selectable capabilities", () => {
@@ -354,6 +372,7 @@ test("ProviderPicker with initialProviderId=anthropic starts in actions mode sho
       !stripped.includes("Select model") || stripped.includes("Anthropic"),
       "Actions panel should be scoped to Anthropic",
     );
+    assert.ok(stripped.includes("Refresh Claude capabilities"), "Anthropic action should refresh Claude capabilities");
   } finally {
     cleanup();
   }

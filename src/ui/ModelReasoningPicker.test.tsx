@@ -8,6 +8,7 @@ import { ThemeProvider } from "./theme.js";
 import { ModelPickerScreen } from "./ModelPickerScreen.js";
 import { ReasoningPicker } from "./ReasoningPicker.js";
 import { createLayoutSnapshot } from "./layout.js";
+import { CLAUDE_CODE_EFFORT_LEVELS } from "../core/providerRuntime/reasoning.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -177,7 +178,7 @@ test("model picker renders a compact command panel", async () => {
     const output = harness.getOutput();
     assert.match(output, /Select model/);
     assert.match(output, /↑↓ model · ←→ reasoning · Enter select · Esc cancel/);
-    assert.match(output, /Active route: OpenAI/);
+    assert.match(output, /Choose an OpenAI model to use inside Codexa/);
     assert.match(output, /Reasoning: Medium/);
     assert.match(output, /Model Four \(model-four\)/);
     assert.match(output, /Model Two \(model-two\)/);
@@ -410,6 +411,36 @@ test("reasoning picker renders only detected levels for the selected model", asy
     assert.match(output, /High/);
     assert.doesNotMatch(output, /Extra high/);
     assert.doesNotMatch(output, /\bLow\b/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("reasoning picker renders Claude effort levels without OpenAI-only levels", async () => {
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ReasoningPicker
+        currentModel="sonnet"
+        currentReasoning="medium"
+        reasoningLevels={CLAUDE_CODE_EFFORT_LEVELS}
+        defaultReasoning="medium"
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    assert.match(output, /Low/);
+    assert.match(output, /Medium/);
+    assert.match(output, /High/);
+    assert.match(output, /XHigh/);
+    assert.match(output, /Max/);
+    assert.doesNotMatch(output, /Minimal/);
+    assert.doesNotMatch(output, /\bNone\b/);
+    assert.doesNotMatch(output, /Extra high/);
   } finally {
     await harness.cleanup();
   }
