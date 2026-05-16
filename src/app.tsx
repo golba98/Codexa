@@ -129,11 +129,13 @@ import {
   validateProviderRouteActivation,
 } from "./core/providerRuntime/registry.js";
 import { hasGeminiApiKey } from "./core/providerRuntime/gemini.js";
+import { validateAnthropicRoute, ANTHROPIC_ROUTE_SETUP_MESSAGE } from "./core/providerRuntime/anthropic.js";
 import { providerModelsToCodexCapabilities } from "./core/providerRuntime/models.js";
 import {
   loadProviderWorkspaceConfig,
   saveProviderWorkspaceConfig,
   setProviderActiveRoute,
+  setProviderDefaultModel,
   setProviderWorkspaceDefault,
 } from "./core/providerLauncher/workspaceConfig.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
@@ -443,7 +445,11 @@ export function App({ launchArgs }: AppProps) {
       diagnostics: providerDiagnosticsRef.current,
       routeErrors: providerRouteErrorsRef.current,
     }),
-    [model, providerWorkspaceConfig],
+    // registryNonce is intentionally included: startup probes and post-validation
+    // updates mutate providerDiagnosticsRef/providerRouteErrorsRef (refs, not state)
+    // and then increment the nonce to trigger a re-read of those refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [model, providerWorkspaceConfig, registryNonce],
   );
   const workspaceDefaultProvider = useMemo(
     () => providerRegistry.find((provider) => provider.isDefault) ?? providerRegistry[0] ?? null,
@@ -484,12 +490,21 @@ export function App({ launchArgs }: AppProps) {
     },
     [modelCapabilities, modelPickerProviderId, providerModelCapabilities],
   );
-  const modelPickerCurrentModel = pendingRouteProviderId
-    ? (getSelectableModelCapabilities(providerModelCapabilities ?? activeRouteModelCapabilities ?? createFallbackModelCapabilities(null))[0]?.model ?? model)
-    : activeProviderRoute.modelId;
+  const modelPickerCurrentModel = useMemo(() => {
+    if (!pendingRouteProviderId) return activeProviderRoute.modelId;
+    if (pendingRouteProviderId === activeProviderRoute.providerId) return activeProviderRoute.modelId;
+    // Non-active provider: use stored default, fall back to first selectable model
+    const storedDefault = providerWorkspaceConfig.providers?.[pendingRouteProviderId]?.currentModel;
+    const selectable = getSelectableModelCapabilities(
+      providerModelCapabilities ?? createFallbackModelCapabilities(null),
+    );
+    return storedDefault ?? selectable[0]?.model ?? model;
+  }, [activeProviderRoute, model, pendingRouteProviderId, providerModelCapabilities, providerWorkspaceConfig]);
   const modelPickerProviderLabel = useMemo(
-    () => findProvider(providerRegistry, modelPickerProviderId)?.displayName ?? modelPickerRuntime.label,
-    [modelPickerProviderId, modelPickerRuntime.label, providerRegistry],
+    () => modelPickerRuntime.modelPickerLabel
+      ?? findProvider(providerRegistry, modelPickerProviderId)?.displayName
+      ?? modelPickerRuntime.label,
+    [modelPickerProviderId, modelPickerRuntime, providerRegistry],
   );
   const modelPickerEmptyMessage = useMemo(() => {
     if (modelPickerProviderId === "openai") {
@@ -1148,6 +1163,29 @@ export function App({ launchArgs }: AppProps) {
     void refreshAuthStatus(false);
   }, []);
 
+  // Probe Anthropic/Claude Code CLI auth at startup so the provider picker
+  // shows the correct route availability without requiring manual activation.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const result = await validateAnthropicRoute({ cwd: workspaceRoot });
+        if (result.diagnostics) {
+          providerDiagnosticsRef.current["anthropic"] = result.diagnostics as Record<string, string | number | boolean | null>;
+        }
+        if (result.status !== "ready") {
+          providerRouteErrorsRef.current["anthropic"] = result.message ?? ANTHROPIC_ROUTE_SETUP_MESSAGE;
+        } else {
+          delete providerRouteErrorsRef.current["anthropic"];
+        }
+      } catch {
+        // Best-effort probe — failures are surfaced only when the user activates the route.
+      }
+      setRegistryNonce((n) => n + 1);
+    })();
+  // workspaceRoot is stable for the session lifetime; this runs exactly once.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceRoot]);
+
   useEffect(() => {
     const devLaunchNotice = buildDevLaunchNotice(launchContext);
     if (!devLaunchNotice) return;
@@ -1242,6 +1280,20 @@ export function App({ launchArgs }: AppProps) {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save active route.";
       appendErrorEvent("Route save failed", message);
+    }
+  }, [appendErrorEvent, providerWorkspaceConfig, workspaceRoot]);
+
+  const persistProviderDefaultModel = useCallback((
+    providerId: ProviderId,
+    modelId: string,
+  ) => {
+    try {
+      const nextConfig = setProviderDefaultModel(providerWorkspaceConfig, providerId, modelId);
+      saveProviderWorkspaceConfig(workspaceRoot, nextConfig);
+      setProviderWorkspaceConfig(nextConfig);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to save provider default model.";
+      appendErrorEvent("Model save failed", message);
     }
   }, [appendErrorEvent, providerWorkspaceConfig, workspaceRoot]);
 
@@ -1519,9 +1571,14 @@ export function App({ launchArgs }: AppProps) {
         ? `Auto (${geminiSelection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"}) -> ${nextModel}`
         : modelLabel;
 
+      const routeBackendLabel =
+        validation.backendKind === "claude-code-auth" ? "Claude Code CLI"
+        : validation.backendKind === "anthropic-api-key" ? "Anthropic API"
+        : getProviderRuntime(providerId).label;
+
       appendSystemEvent(
         "Route updated",
-        `${getProviderRuntime(providerId).label} / ${finalLabel} · reasoning: ${formatReasoningLabel(normalizedReasoning)}`,
+        `${routeBackendLabel} / ${finalLabel} · reasoning: ${formatReasoningLabel(normalizedReasoning)}`,
       );
       refreshTerminalTitle({
         terminalTitleMode,
@@ -1812,17 +1869,6 @@ export function App({ launchArgs }: AppProps) {
     }
 
     if (action === "select-model") {
-      if (!isProviderRoutableInCodexa(providerId)) {
-        const message = provider.isDefault
-          ? `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet.`
-          : `${provider.displayName} in-Codexa routing is not configured yet.`;
-        if (providerRouteErrorsRef.current[providerId] !== message) {
-          appendSystemEvent("Provider route unavailable", message);
-          providerRouteErrorsRef.current[providerId] = message;
-        }
-        return;
-      }
-
       appendSystemEvent("Provider selected", `Selected ${provider.displayName}. Choose a model to activate.`);
 
       if (providerId === "openai" && !modelCapabilities) {
@@ -1851,13 +1897,27 @@ export function App({ launchArgs }: AppProps) {
         void refreshModelCapabilities(true, true);
         appendSystemEvent("Model discovery", `Refreshing models for ${provider.displayName}.`);
       } else {
-        const discovery = discoverProviderModels(providerId);
-        appendSystemEvent(
-          "Model discovery",
-          discovery.status === "ready"
-            ? `Loaded ${discovery.models.length} configured models for ${provider.displayName}.`
-            : discovery.message ?? `${provider.displayName} model routing is not configured yet.`,
-        );
+        const runtime = getProviderRuntime(providerId);
+        if (runtime.refreshModels) {
+          appendSystemEvent("Model discovery", `Refreshing models for ${provider.displayName}...`);
+          void runtime.refreshModels({ cwd: workspaceRoot }).then((discovery) => {
+            appendSystemEvent(
+              "Model discovery",
+              discovery.status === "ready"
+                ? `Loaded ${discovery.models.length} models for ${provider.displayName} (${discovery.models[0]?.source ?? "fallback"}).`
+                : discovery.message ?? `${provider.displayName} model routing is not configured yet.`,
+            );
+            setRegistryNonce((n) => n + 1);
+          });
+        } else {
+          const discovery = discoverProviderModels(providerId);
+          appendSystemEvent(
+            "Model discovery",
+            discovery.status === "ready"
+              ? `Loaded ${discovery.models.length} configured models for ${provider.displayName}.`
+              : discovery.message ?? `${provider.displayName} model routing is not configured yet.`,
+          );
+        }
       }
       return;
     }
@@ -3761,7 +3821,11 @@ export function App({ launchArgs }: AppProps) {
                   layout={terminalLayout}
                   providers={providerRegistry}
                   onAction={handleProviderAction}
-                  onCancel={() => setScreen("main")}
+                  onCancel={() => {
+                    setPendingRouteProviderId(null);
+                    setScreen("main");
+                  }}
+                  initialProviderId={pendingRouteProviderId ?? undefined}
                 />
               )}
 
@@ -3774,7 +3838,20 @@ export function App({ launchArgs }: AppProps) {
                   activeProviderLabel={modelPickerProviderLabel}
                   isLoading={modelPickerProviderId === "openai" && modelCapabilitiesBusy && modelPickerModels.length === 0}
                   emptyMessage={modelPickerEmptyMessage}
-                  onSelect={(m, r, geminiSelection) => setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel, modelPickerProviderId, geminiSelection)}
+                  onSelect={(m, r, geminiSelection) => {
+                    if (pendingRouteProviderId && pendingRouteProviderId !== activeProviderRoute.providerId) {
+                      // Non-active provider: save as provider default without switching the active route.
+                      // User must click "Use in Codexa" to validate and activate.
+                      persistProviderDefaultModel(pendingRouteProviderId, m);
+                      appendSystemEvent(
+                        "Provider model saved",
+                        `${modelPickerProviderLabel} default model set to ${m}. Choose "Use in Codexa" to activate this provider.`,
+                      );
+                      setScreen("provider-picker");
+                    } else {
+                      void setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel, modelPickerProviderId, geminiSelection);
+                    }
+                  }}
                   onCancel={() => {
                     setPendingRouteProviderId(null);
                     returnToChatMode();

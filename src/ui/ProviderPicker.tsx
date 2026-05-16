@@ -11,6 +11,8 @@ interface ProviderPickerProps {
   providers: readonly ProviderConfig[];
   onAction: (providerId: ProviderId, action: ProviderPickerAction) => void;
   onCancel: () => void;
+  /** When set, the picker mounts directly at this provider's action panel. */
+  initialProviderId?: ProviderId;
 }
 
 interface ProviderActionItem {
@@ -24,11 +26,16 @@ function clampIndex(index: number, length: number): number {
   return Math.max(0, Math.min(length - 1, index));
 }
 
-export function ProviderPicker({ layout, providers, onAction, onCancel }: ProviderPickerProps) {
+export function ProviderPicker({ layout, providers, onAction, onCancel, initialProviderId }: ProviderPickerProps) {
   const theme = useTheme();
   const { isFocused } = useFocus({ id: FOCUS_IDS.providerPicker, autoFocus: true });
-  const [providerIndex, setProviderIndex] = useState(0);
-  const [mode, setMode] = useState<"providers" | "actions">("providers");
+  const initialIndex = initialProviderId
+    ? Math.max(0, providers.findIndex((p) => p.id === initialProviderId))
+    : 0;
+  const [providerIndex, setProviderIndex] = useState(initialIndex);
+  const [mode, setMode] = useState<"providers" | "actions">(
+    initialProviderId ? "actions" : "providers",
+  );
   const [actionIndex, setActionIndex] = useState(0);
 
   const selectedProvider = providers[clampIndex(providerIndex, providers.length)];

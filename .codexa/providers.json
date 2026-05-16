@@ -1,9 +1,9 @@
 {
   "workspaceDefaultProviderId": "anthropic",
   "activeRoute": {
-    "providerId": "openai",
-    "modelId": "gpt-5.5",
-    "backendKind": "codex-cli-auth",
-    "reasoning": "high"
+    "providerId": "anthropic",
+    "modelId": "haiku",
+    "backendKind": "claude-code-auth",
+    "reasoning": "low"
   }
 }

@@ -169,6 +169,23 @@ export function setProviderWorkspaceDefault(
   };
 }
 
+export function setProviderDefaultModel(
+  config: ProviderWorkspaceConfig,
+  providerId: ProviderId,
+  modelId: string,
+): ProviderWorkspaceConfig {
+  return {
+    ...config,
+    providers: {
+      ...config.providers,
+      [providerId]: {
+        ...config.providers?.[providerId],
+        currentModel: modelId,
+      },
+    },
+  };
+}
+
 export function setProviderActiveRoute(
   config: ProviderWorkspaceConfig,
   activeRoute: ProviderActiveRoute,

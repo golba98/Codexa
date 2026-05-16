@@ -21,6 +21,7 @@ export interface ProviderModel {
   description: string | null;
   defaultReasoningLevel: string | null;
   supportedReasoningLevels: readonly ReasoningEffortCapability[] | null;
+  source?: "discovered" | "config" | "fallback";
 }
 
 export interface ProviderModelDiscoveryResult {
@@ -76,6 +77,7 @@ export interface ProviderChatResponse {
 export interface ProviderRuntime {
   providerId: ProviderId;
   label: string;
+  modelPickerLabel?: string;
   backendKind: ProviderBackendKind;
   routeAvailable: boolean;
   routeStatus: string;
@@ -84,5 +86,6 @@ export interface ProviderRuntime {
   isRouteConfigured?: () => boolean;
   validateRoute?: (request: ProviderRouteValidationRequest) => Promise<ProviderRouteValidationResult>;
   discoverModels: () => ProviderModelDiscoveryResult;
+  refreshModels?: (options: { cwd: string }) => Promise<ProviderModelDiscoveryResult>;
   run?: (request: ProviderChatRequest, handlers: BackendRunHandlers) => () => void;
 }

@@ -38,28 +38,31 @@ export const GEMINI_FALLBACK_MODELS: readonly ProviderModel[] = [
 
 export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
   {
-    id: "claude-sonnet-4-20250514",
-    modelId: "claude-sonnet-4-20250514",
-    label: "Claude Sonnet 4",
-    description: "Anthropic Claude Sonnet 4 API model.",
+    id: "opus",
+    modelId: "opus",
+    label: "Opus 4.7",
+    description: "Claude Opus 4.7 — Claude Code CLI",
     defaultReasoningLevel: "high",
     supportedReasoningLevels: null,
+    source: "fallback",
   },
   {
-    id: "claude-opus-4-1-20250805",
-    modelId: "claude-opus-4-1-20250805",
-    label: "Claude Opus 4.1",
-    description: "Anthropic Claude Opus 4.1 API model.",
+    id: "sonnet",
+    modelId: "sonnet",
+    label: "Sonnet 4.6",
+    description: "Claude Sonnet 4.6 — Claude Code CLI",
     defaultReasoningLevel: "high",
     supportedReasoningLevels: null,
+    source: "fallback",
   },
   {
-    id: "claude-3-5-haiku-20241022",
-    modelId: "claude-3-5-haiku-20241022",
-    label: "Claude Haiku 3.5",
-    description: "Anthropic Claude Haiku 3.5 API model.",
+    id: "haiku",
+    modelId: "haiku",
+    label: "Haiku 4.5",
+    description: "Claude Haiku 4.5 — Claude Code CLI",
     defaultReasoningLevel: "medium",
     supportedReasoningLevels: null,
+    source: "fallback",
   },
 ] as const;
 
@@ -78,13 +81,14 @@ export function providerModelsToCodexCapabilities(
       defaultReasoningLevel: model.defaultReasoningLevel,
       supportedReasoningLevels: model.supportedReasoningLevels,
       reasoningLevelCount: model.supportedReasoningLevels ? model.supportedReasoningLevels.length : null,
-      source: "fallback",
+      source: model.source === "discovered" || model.source === "config" ? "runtime" : "fallback",
       raw: model,
     }));
 
+  const anyDiscovered = models.some((m) => m.source === "discovered" || m.source === "config");
   return {
     status: "ready",
-    source: "fallback",
+    source: anyDiscovered ? "runtime" : "fallback",
     models: capabilities,
     discoveredAt: Date.now(),
     executable: null,

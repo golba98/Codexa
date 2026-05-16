@@ -233,6 +233,7 @@ function getGeminiRuntimeBackendKind(): ProviderBackendKind {
 export const geminiRuntime: ProviderRuntime = {
   providerId: "google",
   label: "Google/Gemini",
+  modelPickerLabel: "Gemini",
   backendKind: "gemini-cli-auth",
   routeAvailable: true,
   routeStatus: "Uses Gemini CLI subscription-backed route when available, otherwise GEMINI_API_KEY or GOOGLE_API_KEY.",

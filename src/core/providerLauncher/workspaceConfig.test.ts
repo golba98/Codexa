@@ -12,6 +12,7 @@ import {
   saveProviderWorkspaceConfig,
   serializeProviderWorkspaceConfig,
   setProviderActiveRoute,
+  setProviderDefaultModel,
   setProviderWorkspaceDefault,
 } from "./workspaceConfig.js";
 
@@ -225,6 +226,35 @@ test("setProviderActiveRoute persists Gemini routes when GEMINI_API_KEY is confi
     });
     assert.doesNotMatch(JSON.stringify(serializeProviderWorkspaceConfig(config)), /test-gemini-key/);
   });
+});
+
+// ---------------------------------------------------------------------------
+// setProviderDefaultModel
+// ---------------------------------------------------------------------------
+
+test("setProviderDefaultModel saves model without overwriting other provider fields", () => {
+  const initial = {
+    providers: {
+      anthropic: { currentModel: "opus", enabled: true },
+      google: { currentModel: "gemini-2.5-pro" },
+    },
+  };
+  const updated = setProviderDefaultModel(initial, "anthropic", "sonnet");
+  assert.equal(updated.providers?.["anthropic"]?.currentModel, "sonnet");
+  assert.equal(updated.providers?.["anthropic"]?.enabled, true, "enabled flag must be preserved");
+  assert.equal(updated.providers?.["google"]?.currentModel, "gemini-2.5-pro", "other provider unchanged");
+});
+
+test("setProviderDefaultModel creates providers entry when none exists", () => {
+  const config = setProviderDefaultModel({}, "anthropic", "haiku");
+  assert.equal(config.providers?.["anthropic"]?.currentModel, "haiku");
+});
+
+test("setProviderDefaultModel round-trips through serialize/parse", () => {
+  const config = setProviderDefaultModel({}, "anthropic", "sonnet");
+  const serialized = serializeProviderWorkspaceConfig(config);
+  const reparsed = parseProviderWorkspaceConfig(serialized);
+  assert.equal(reparsed.providers?.["anthropic"]?.currentModel, "sonnet");
 });
 
 test("setProviderActiveRoute persists Gemini routes when GOOGLE_API_KEY is configured", () => {
