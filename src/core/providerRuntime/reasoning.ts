@@ -1,4 +1,4 @@
-import type { ReasoningEffortCapability } from "../codexModelCapabilities.js";
+import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
 
 export const CLAUDE_CODE_EFFORT_LEVELS: readonly ReasoningEffortCapability[] = [
   { id: "low", label: "Low", description: "Claude Code low effort." },

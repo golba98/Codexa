@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { resolveRuntimeConfig, normalizeRuntimeConfig } from "../config/runtimeConfig.js";
 import { prepareCodexExecLaunch } from "./codexLaunch.js";
-import type { CodexCliCapabilities } from "./codexCapabilities.js";
+import type { CodexCliCapabilities } from "./models/codexCapabilities.js";
 
 test("prepares a shared launch plan with resolved executable strategy and source metadata", async () => {
   const capabilities: CodexCliCapabilities = {

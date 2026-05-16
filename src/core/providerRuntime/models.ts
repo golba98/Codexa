@@ -1,4 +1,4 @@
-import type { CodexModelCapability, CodexModelCapabilities } from "../codexModelCapabilities.js";
+import type { CodexModelCapability, CodexModelCapabilities } from "../models/codexModelCapabilities.js";
 import type { ProviderModel } from "./types.js";
 import { getClaudeCodeEffortLevels } from "./reasoning.js";
 

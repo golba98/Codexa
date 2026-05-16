@@ -1,5 +1,5 @@
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
-import type { CodexCliCapabilities } from "./codexCapabilities.js";
+import type { CodexCliCapabilities } from "./models/codexCapabilities.js";
 
 export interface BuildCodexExecArgsOptions {
   runtime: ResolvedRuntimeConfig;

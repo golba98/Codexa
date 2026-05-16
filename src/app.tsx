@@ -94,7 +94,7 @@ import {
   getSelectableModelCapabilities,
   normalizeReasoningForModelCapabilities,
   type CodexModelCapabilities,
-} from "./core/codexModelCapabilities.js";
+} from "./core/models/codexModelCapabilities.js";
 import {
   buildDevLaunchNotice,
   buildWorkspaceCommandContext,
@@ -113,7 +113,7 @@ import {
   resolveModelSpec,
   type ModelSpec,
   type VerifiedModelSpec,
-} from "./core/modelSpecs.js";
+} from "./core/models/modelSpecs.js";
 import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots } from "./core/workspaceActivity.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import { loadProjectInstructions } from "./core/projectInstructions.js";

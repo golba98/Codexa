@@ -6,7 +6,7 @@ import { Box, Text, render, useFocus, useFocusManager } from "ink";
 import { handleCommand } from "../commands/handler.js";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../config/runtimeConfig.js";
 import type { AvailableModel, ReasoningLevel } from "../config/settings.js";
-import { createFallbackModelCapabilities, getSelectableModelCapabilities } from "../core/codexModelCapabilities.js";
+import { createFallbackModelCapabilities, getSelectableModelCapabilities } from "../core/models/codexModelCapabilities.js";
 import { buildProviderRegistry } from "../core/providerLauncher/registry.js";
 import { BottomComposer } from "./BottomComposer.js";
 import { getFocusTargetForScreen } from "./focus.js";

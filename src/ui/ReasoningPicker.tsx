@@ -1,5 +1,5 @@
 import React from "react";
-import { type ReasoningEffortCapability } from "../core/codexModelCapabilities.js";
+import { type ReasoningEffortCapability } from "../core/models/codexModelCapabilities.js";
 import { formatReasoningLabel } from "../config/settings.js";
 import { FOCUS_IDS } from "./focus.js";
 import { SelectionPanel } from "./SelectionPanel.js";

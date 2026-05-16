@@ -45,7 +45,7 @@ import {
   formatModelCapabilitiesList,
   getSelectableModelCapabilities,
   type CodexModelCapabilities,
-} from "../core/codexModelCapabilities.js";
+} from "../core/models/codexModelCapabilities.js";
 import type { WorkspaceCommandContext } from "../core/launchContext.js";
 
 export type CommandAction =

@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
-import type { ModelSpec } from "../core/modelSpecs.js";
+import type { ModelSpec } from "../core/models/modelSpecs.js";
 import type { UIState } from "../session/types.js";
 import { FOCUS_IDS } from "./focus.js";
 import {
