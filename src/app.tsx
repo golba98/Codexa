@@ -1,6 +1,10 @@
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { spawn } from "child_process";
 import { existsSync } from "fs";
+
+function appDiagLog(msg: string): void {
+  void msg;
+}
 import { Box, Text, useApp, useFocusManager, useInput, useStdin, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
 import {
@@ -128,7 +132,7 @@ import {
   resolveActiveProviderRoute,
   validateProviderRouteActivation,
 } from "./core/providerRuntime/registry.js";
-import { hasGeminiApiKey } from "./core/providerRuntime/gemini.js";
+import { hasGeminiApiKey, runGeminiDiagnostics } from "./core/providerRuntime/gemini.js";
 import { validateAnthropicRoute, ANTHROPIC_ROUTE_SETUP_MESSAGE } from "./core/providerRuntime/anthropic.js";
 import { providerModelsToCodexCapabilities } from "./core/providerRuntime/models.js";
 import {
@@ -554,15 +558,15 @@ export function App({ launchArgs }: AppProps) {
       const diagnostics = providerDiagnosticsRef.current[provider.id];
       if (diagnostics && provider.id === "google") {
         const lines = [line];
-        if (diagnostics.executablePath) lines.push(`    CLI path: ${diagnostics.executablePath}`);
-        if (diagnostics.version) lines.push(`    CLI version: ${diagnostics.version}`);
-        lines.push(`    Headless probe: ${diagnostics.status === "completed" && diagnostics.exitCode === 0 && diagnostics.probeMatch ? "success" : "failed"}`);
+        if (diagnostics.resolvedCommand ?? diagnostics.executablePath) lines.push(`    Resolved command: ${diagnostics.resolvedCommand ?? diagnostics.executablePath}`);
+        if (diagnostics.version) lines.push(`    Version: ${diagnostics.version}`);
+        if (diagnostics.headlessPromptMode) lines.push(`    Headless prompt mode: ${diagnostics.headlessPromptMode}`);
+        lines.push(`    Status: ${diagnostics.probeStatus ?? (diagnostics.status === "completed" && diagnostics.exitCode === 0 && diagnostics.probeMatch ? "Ready" : "failed")}`);
+        if (diagnostics.lastProbeCommandArgs) lines.push(`    Last probe command args: ${diagnostics.lastProbeCommandArgs}`);
         if (diagnostics.status !== "completed" || diagnostics.exitCode !== 0 || !diagnostics.probeMatch) {
-          const reason = diagnostics.timeout ? "timeout" : 
-                         diagnostics.status === "spawn_error" ? "command not found" :
-                         diagnostics.exitCode !== 0 ? `exit code ${diagnostics.exitCode}` :
-                         !diagnostics.probeMatch ? "unexpected output" : "unknown";
+          const reason = diagnostics.failureReason ?? (diagnostics.timeout ? "timeout" : "unknown");
           lines.push(`    Reason: ${reason}`);
+          if (diagnostics.firstUsefulOutputLine) lines.push(`    First output: ${diagnostics.firstUsefulOutputLine}`);
         }
         lines.push(`    API fallback: ${hasGeminiApiKey() ? "available" : "unavailable"}`);
         line = lines.join("\n");
@@ -883,16 +887,21 @@ export function App({ launchArgs }: AppProps) {
       statusMessage: routeRuntime.routeStatus,
       supportsModels: (candidateModel) => candidateModel === activeProviderRoute.modelId,
       run: routeRuntime.run
-        ? (prompt, options, handlers) => routeRuntime.run?.({
-          prompt,
-          route: activeProviderRoute,
-          runtime: options.runtime,
-          workspaceRoot: options.workspaceRoot,
-          projectInstructions: options.projectInstructions,
-        }, handlers) ?? (() => undefined)
+        ? (prompt, options, handlers) => {
+          const geminiCommandPath = activeProviderRoute.providerId === "google"
+            ? providerWorkspaceConfig.providers?.google?.geminiCommandPath ?? options.runtime.geminiCommandPath
+            : options.runtime.geminiCommandPath;
+          return routeRuntime.run?.({
+            prompt,
+            route: activeProviderRoute,
+            runtime: geminiCommandPath ? { ...options.runtime, geminiCommandPath } : options.runtime,
+            workspaceRoot: options.workspaceRoot,
+            projectInstructions: options.projectInstructions,
+          }, handlers) ?? (() => undefined);
+        }
         : undefined,
     };
-  }, [activeProviderRoute, backend, backendProvider]);
+  }, [activeProviderRoute, backend, backendProvider, providerWorkspaceConfig.providers]);
 
   const getInputDebugSnapshot = useCallback((extra: Record<string, unknown> = {}) => {
     const currentScreen = screenRef.current;
@@ -1477,6 +1486,7 @@ export function App({ launchArgs }: AppProps) {
           reasoning: normalizedReasoning,
         },
         workspaceRoot,
+        geminiCommandPath: providerWorkspaceConfig.providers?.google?.geminiCommandPath ?? runtimeConfig.geminiCommandPath,
       });
       if (validation.status !== "ready") {
         appendSystemEvent(
@@ -1516,7 +1526,7 @@ export function App({ launchArgs }: AppProps) {
       modelSelectionInFlightRef.current = false;
       returnToChatMode("selection");
     }
-  }, [activeProviderRoute.modelId, activeProviderRoute.providerId, activeRouteModelCapabilities, activeRouteProvider, appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, persistActiveRoute, reasoningLevel, returnToChatMode, updateRuntimeConfig, workspaceRoot]);
+  }, [activeProviderRoute.modelId, activeProviderRoute.providerId, activeRouteModelCapabilities, activeRouteProvider, appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, persistActiveRoute, providerWorkspaceConfig.providers, reasoningLevel, returnToChatMode, runtimeConfig.geminiCommandPath, updateRuntimeConfig, workspaceRoot]);
 
   const setModelAndReasoningWithNotice = useCallback(async (
     nextModel: AvailableModel,
@@ -1574,6 +1584,7 @@ export function App({ launchArgs }: AppProps) {
             modelSelection: geminiSelection,
           },
           workspaceRoot,
+          geminiCommandPath: providerWorkspaceConfig.providers?.google?.geminiCommandPath ?? runtimeConfig.geminiCommandPath,
         });
         if (validation.diagnostics) {
           providerDiagnosticsRef.current[providerId] = validation.diagnostics as Record<string, string | number | boolean | null>;
@@ -1663,7 +1674,7 @@ export function App({ launchArgs }: AppProps) {
       modelSelectionInFlightRef.current = false;
       returnToChatMode("selection");
     }
-  }, [activeProviderRoute.modelId, activeProviderRoute.providerId, activeRouteProvider, appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, modelCapabilities, persistActiveRoute, returnToChatMode, updateRuntimeConfig, workspaceRoot]);
+  }, [activeProviderRoute.modelId, activeProviderRoute.providerId, activeRouteProvider, appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, modelCapabilities, persistActiveRoute, providerWorkspaceConfig.providers, returnToChatMode, runtimeConfig.geminiCommandPath, updateRuntimeConfig, workspaceRoot]);
 
   const setAuthPreferenceWithNotice = useCallback((nextPreference: AuthPreference) => {
     setAuthPreference(nextPreference);
@@ -1914,7 +1925,6 @@ export function App({ launchArgs }: AppProps) {
           } else if (workspaceProviderConfig?.currentModel) {
             geminiSelection = { kind: "manual", modelId: workspaceProviderConfig.currentModel };
           } else {
-            // Default to Gemini 3 auto if nothing else known
             geminiSelection = { kind: "auto", family: "gemini-3" };
           }
         }
@@ -1992,6 +2002,36 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
+    if (action === "run-diagnostics") {
+      if (providerId !== "google") {
+        appendErrorEvent("Provider diagnostics unavailable", `Diagnostics are not implemented for ${provider.displayName}.`);
+        return;
+      }
+
+      setScreen("main");
+      appendSystemEvent("Gemini diagnostics", "Running Gemini diagnostics...");
+      const geminiCommandPath = providerWorkspaceConfig.providers?.google?.geminiCommandPath ?? runtimeConfig.geminiCommandPath;
+      void runGeminiDiagnostics({
+        cwd: workspaceRoot,
+        runtime: geminiCommandPath ? { ...resolvedRuntimeConfig, geminiCommandPath } : resolvedRuntimeConfig,
+        configuredPath: geminiCommandPath,
+        selectedModel: activeProviderRoute.providerId === "google"
+          ? activeProviderRoute.modelId
+          : providerWorkspaceConfig.providers?.google?.currentModel ?? "gemini-3-flash-preview",
+        selectedReasoning: activeProviderRoute.providerId === "google"
+          ? activeProviderRoute.reasoning ?? reasoningLevel
+          : providerWorkspaceConfig.providers?.google?.currentReasoning ?? reasoningLevel,
+      }).then((message) => {
+        if (!isMountedRef.current) return;
+        appendSystemEvent("Gemini diagnostics", message);
+      }).catch((error) => {
+        if (!isMountedRef.current) return;
+        const message = error instanceof Error ? error.message : "Gemini diagnostics failed.";
+        appendErrorEvent("Gemini diagnostics failed", message);
+      });
+      return;
+    }
+
     if (busyRef.current) {
       appendSystemEvent("Busy", "Finish the current run before launching a provider CLI.");
       return;
@@ -2023,14 +2063,18 @@ export function App({ launchArgs }: AppProps) {
       appendErrorEvent("Provider launch failed", message);
     });
   }, [
+    activeProviderRoute,
     appendErrorEvent,
     appendSystemEvent,
     forceRefreshCurrentTerminalTitle,
     mouseCapture,
     providerRegistry,
+    providerWorkspaceConfig.providers,
     modelCapabilities,
     reasoningLevel,
     refreshModelCapabilities,
+    resolvedRuntimeConfig,
+    runtimeConfig.geminiCommandPath,
     setWorkspaceDefaultProviderWithNotice,
     stdin,
     stdout,
@@ -2235,6 +2279,7 @@ export function App({ launchArgs }: AppProps) {
     response?: string,
   ) => {
     if (!isCurrentRun(activeRunIdRef.current, runId)) {
+      appDiagLog(`FINALIZE_RUN_BOUNDARY: ignored stale runId=${runId} turnId=${turnId} status=${status} activeRunId=${activeRunIdRef.current}`);
       return false;
     }
     perf.mark("finalize_start");
@@ -2262,7 +2307,19 @@ export function App({ launchArgs }: AppProps) {
     activeRunTimingRef.current = null;
     activeRunIdRef.current = null;
     activeTurnIdRef.current = null;
+    appDiagLog([
+      "FINALIZE_RUN_BOUNDARY:",
+      `provider=${activeProviderRoute.providerId}`,
+      `runId=${runId}`,
+      `turnId=${turnId}`,
+      `status=${status}`,
+      `responseProvided=${response !== undefined}`,
+      `responseLength=${response?.length ?? 0}`,
+      `messagePresent=${Boolean(message?.trim())}`,
+      `composerUnlockReason=finalizePromptRun:${status}`,
+    ].join(" "));
     focusManager.focus(FOCUS_IDS.composer);
+    appDiagLog(`COMPOSER_ACTIVE_AGAIN: reason=finalizePromptRun:${status} activeRunCleared=true focusTarget=${FOCUS_IDS.composer}`);
     cleanup?.();
     const safeMessage = message ? sanitizeTerminalOutput(message) : undefined;
     // When response is undefined, signal the reducer to preserve streamed content as-is.
@@ -2275,6 +2332,17 @@ export function App({ launchArgs }: AppProps) {
         ? extractAssistantActionRequired(safeResponse)
         : { content: safeResponse, question: null as string | null }
       : { content: safeResponse, question: null as string | null };
+    appDiagLog([
+      "FINALIZE_RUN_PAYLOAD:",
+      `provider=${activeProviderRoute.providerId}`,
+      `runId=${runId}`,
+      `turnId=${turnId}`,
+      `status=${status}`,
+      `safeResponseLength=${safeResponse?.length ?? 0}`,
+      `parsedContentLength=${parsed.content?.length ?? 0}`,
+      `assistantAppendCalledExpected=${Boolean(parsed.content?.trim())}`,
+      `finalRunState=${status}`,
+    ].join(" "));
     dispatchSession({
       type: "FINALIZE_RUN",
       runId,
@@ -2321,7 +2389,7 @@ export function App({ launchArgs }: AppProps) {
     }
 
     return true;
-  }, [dispatchSession, focusManager]);
+  }, [activeProviderRoute.providerId, dispatchSession, focusManager]);
 
   const cancelActiveRun = useCallback((retainHistory = true) => {
     const runId = activeRunIdRef.current;
@@ -2911,17 +2979,37 @@ export function App({ launchArgs }: AppProps) {
           reassertIntendedTerminalTitle({ reason: `codex-process-${event}` });
         },
         onAssistantDelta: (chunk) => {
-          if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) return;
+          const geminiBoundary = activeProviderRoute.providerId === "google";
+          appDiagLog(`onAssistantDelta: provider=${activeProviderRoute.providerId} chunk.length=${chunk?.length ?? 0} isEmpty=${!chunk}`);
+          if (geminiBoundary) {
+            appDiagLog(`GEMINI_APP_BOUNDARY: onAssistantDelta received=yes nonEmpty=${Boolean(chunk)} runId=${runId} turnId=${turnId}`);
+          }
+          if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) {
+            if (geminiBoundary) {
+              appDiagLog(`GEMINI_APP_BOUNDARY: onAssistantDelta assistantAppendCalled=no reason=${!chunk ? "empty-chunk" : "stale-run"} runId=${runId} turnId=${turnId}`);
+            }
+            return;
+          }
           const t0 = performance.now();
           const safeChunk = sanitizeTerminalOutput(chunk, { preserveTabs: false, tabSize: 2 });
           perf.accumulate("sanitize_ms", performance.now() - t0);
           perf.inc("chunks");
-          if (!safeChunk) return;
+          if (!safeChunk) {
+            appDiagLog(`onAssistantDelta: safeChunk empty after sanitize → no content queued to liveScheduler`);
+            if (geminiBoundary) {
+              appDiagLog(`GEMINI_APP_BOUNDARY: onAssistantDelta assistantAppendCalled=no reason=empty-after-sanitize runId=${runId} turnId=${turnId}`);
+            }
+            return;
+          }
+          appDiagLog(`onAssistantDelta: ASSISTANT_APPEND_PATH reached — queuing ${safeChunk.length} chars (liveScheduler→RUN_APPLY_LIVE_UPDATES→assistantEvent in activeEvents→FINALIZE_RUN→staticEvents)`);
           liveScheduler.enqueue({
             type: lifecycle.responsePresentation === "plan" ? "plan" : "assistant",
             chunk: safeChunk,
           });
           streamedAssistantContent += safeChunk;
+          if (geminiBoundary) {
+            appDiagLog(`GEMINI_APP_BOUNDARY: onAssistantDelta assistantAppendCalled=yes queuedLength=${safeChunk.length} totalStreamedLength=${streamedAssistantContent.length} runId=${runId} turnId=${turnId}`);
+          }
         },
         onFinalAnswerObserved: (response) => {
           if (!isCurrentRun(activeRunIdRef.current, runId) || finalAnswerVisibleFired) return;
@@ -2964,7 +3052,17 @@ export function App({ launchArgs }: AppProps) {
           }
         },
         onResponse: (response) => {
-          if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+          const geminiBoundary = activeProviderRoute.providerId === "google";
+          appDiagLog(`onResponse: provider=${activeProviderRoute.providerId} response.length=${response?.length ?? 0}`);
+          if (geminiBoundary) {
+            appDiagLog(`GEMINI_APP_BOUNDARY: onResponse received=yes nonEmpty=${Boolean(response?.trim())} runId=${runId} turnId=${turnId}`);
+          }
+          if (!isCurrentRun(activeRunIdRef.current, runId)) {
+            if (geminiBoundary) {
+              appDiagLog(`GEMINI_APP_BOUNDARY: onResponse finalizeCalled=no reason=stale-run runId=${runId} turnId=${turnId}`);
+            }
+            return;
+          }
           perf.mark("response_cb_start");
 
           // Force one final synchronous workspace poll before finalizing the run.
@@ -3019,6 +3117,24 @@ export function App({ launchArgs }: AppProps) {
               )
                 ? undefined
                 : safeResponse;
+            appDiagLog(`onResponse.finalizeResponse: safeResponse.length=${safeResponse.length} streamedContent.length=${streamedAssistantContent.length} finalResponse=${finalResponse === undefined ? "undefined(use-streamed)" : `${finalResponse.length}chars`}`);
+            if (geminiBoundary) {
+              const extractionStatus = safeResponse.trim() || streamedAssistantContent.trim()
+                ? "assistant-text"
+                : "completed-empty-assistant";
+              appDiagLog([
+                "GEMINI_APP_BOUNDARY:",
+                `onResponse finalizeCalled=yes`,
+                `extractionStatus=${extractionStatus}`,
+                `safeResponseLength=${safeResponse.length}`,
+                `streamedAssistantContentLength=${streamedAssistantContent.length}`,
+                `finalResponseProvided=${finalResponse !== undefined}`,
+                `finalRunState=completed`,
+                `reasonComposerBecomesActive=FINALIZE_RUN_COMPLETED`,
+                `runId=${runId}`,
+                `turnId=${turnId}`,
+              ].join(" "));
+            }
             traceLiveRunDiagnostics("completed");
             void finalizePromptRun(runId, turnId, "completed", undefined, finalResponse);
             forceRefreshCurrentTerminalTitle("prompt_run_completed", false);

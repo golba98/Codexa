@@ -1,9 +1,27 @@
 {
   "workspaceDefaultProviderId": "anthropic",
   "activeRoute": {
-    "providerId": "anthropic",
-    "modelId": "haiku",
-    "backendKind": "claude-code-auth",
-    "reasoning": "low"
+    "providerId": "google",
+    "modelId": "gemini-3-flash-preview",
+    "backendKind": "gemini-cli-auth",
+    "reasoning": "medium",
+    "modelSelection": {
+      "kind": "manual",
+      "modelId": "gemini-3-flash-preview"
+    }
+  },
+  "providers": {
+    "openai": {
+      "current_model": "gpt-5.4-mini",
+      "current_reasoning": "low"
+    },
+    "anthropic": {
+      "current_model": "haiku",
+      "current_reasoning": "low"
+    },
+    "google": {
+      "current_model": "gemini-3-flash-preview",
+      "current_reasoning": "medium"
+    }
   }
 }

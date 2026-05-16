@@ -11,7 +11,7 @@ export type ProviderBackendType =
   | "unavailable";
 
 export type ProviderLaunchAction = "launch" | "set-default" | "cancel";
-export type ProviderRouteAction = "use-in-codexa" | "select-model" | "refresh-models";
+export type ProviderRouteAction = "use-in-codexa" | "select-model" | "refresh-models" | "run-diagnostics";
 export type ProviderPickerAction = ProviderLaunchAction | ProviderRouteAction;
 export type ProviderRouteMode = "in-codexa" | "launch-only";
 
@@ -55,4 +55,5 @@ export interface ProviderWorkspaceOverride {
   enabled?: boolean;
   command?: string | ProviderLaunchCommand | null;
   claudeCommandPath?: string;
+  geminiCommandPath?: string;
 }

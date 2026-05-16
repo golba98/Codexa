@@ -67,7 +67,7 @@ test("google can be selected as an active in-Codexa route", () => {
     workspaceConfig: {
       activeRoute: {
         providerId: "google",
-        modelId: "gemini-3.1-pro",
+        modelId: "gemini-3-flash-preview",
         backendKind: "gemini-cli-auth",
       },
     },
@@ -75,7 +75,7 @@ test("google can be selected as an active in-Codexa route", () => {
 
   assert.equal(providers.find((provider) => provider.id === "google")?.isActiveRoute, true);
   assert.equal(providers.find((provider) => provider.id === "google")?.routeMode, "in-codexa");
-  assert.equal(providers.find((provider) => provider.id === "google")?.currentModel, "gemini-3.1-pro");
+  assert.equal(providers.find((provider) => provider.id === "google")?.currentModel, "gemini-3-flash-preview");
   assert.equal(providers.find((provider) => provider.id === "openai")?.isActiveRoute, false);
 });
 

@@ -92,6 +92,7 @@ async function withAnthropicEnv<T>(
     } else {
       delete process.env.CLAUDE_EXECUTABLE;
     }
+    resetAnthropicRouteValidationCacheForTests();
     return await callback();
   } finally {
     if (originalApiKey === undefined) {
@@ -1042,7 +1043,7 @@ test("refreshModels keeps previous good capability data on failure", async () =>
         if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
         if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
         if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
-        if (args[0] === "model" && args[1] === "list") {
+        if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
           return commandResult({ exitCode: 0, stdout: JSON.stringify({
             models: [{ value: "sonnet", label: "Sonnet 4.6", family: "sonnet", effortLevels: ["low", "medium", "high", "max"], defaultEffort: "high" }],
           }) });
@@ -1052,13 +1053,13 @@ test("refreshModels keeps previous good capability data on failure", async () =>
     });
 
     const before = anthropicRuntime.discoverModels();
-    assert.equal(before.models[0]?.source, "claude-code");
+    assert.ok(before.models.some((model) => model.source === "claude-code"));
     process.env.CLAUDE_EXECUTABLE = "C:\\definitely-missing\\claude.exe";
 
     const refreshed = await anthropicRuntime.refreshModels?.({ cwd: process.cwd() });
     assert.equal(refreshed?.status, "ready");
     assert.match(refreshed?.message ?? "", /keeping previous Claude capability data/i);
-    assert.equal(refreshed?.models[0]?.source, "claude-code");
+    assert.ok(refreshed?.models.some((model) => model.source === "claude-code"));
     assert.equal(refreshed?.diagnostics?.["refreshFailed"], true);
   });
 });

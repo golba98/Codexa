@@ -123,13 +123,13 @@ export function ModelPickerScreen({
     const autoModels: CodexModelCapability[] = [
       {
         id: "auto-gemini-3",
-        model: "gemini-3.1-pro",
+        model: "gemini-3-flash-preview",
         label: "Auto (Gemini 3)",
-        description: "Best available Gemini 3 model.",
+        description: "Best available verified Gemini 3 model.",
         available: true,
         hidden: false,
         isDefault: false,
-        defaultReasoningLevel: "high",
+        defaultReasoningLevel: "medium",
         supportedReasoningLevels: null,
         reasoningLevelCount: null,
         source: "fallback",

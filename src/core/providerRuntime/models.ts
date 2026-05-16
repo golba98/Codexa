@@ -2,20 +2,47 @@ import type { CodexModelCapability, CodexModelCapabilities } from "../codexModel
 import type { ProviderModel } from "./types.js";
 import { getClaudeCodeEffortLevels } from "./reasoning.js";
 
+export const GEMINI_DEFAULT_MODEL_ID = "gemini-3-flash-preview";
+export const GEMINI_VERIFIED_MODEL_IDS = [
+  "gemini-3.1-pro-preview",
+  "gemini-3-flash-preview",
+  "gemini-3.1-flash-lite-preview",
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+] as const;
+
+export function isVerifiedGeminiModelId(modelId: string | null | undefined): modelId is typeof GEMINI_VERIFIED_MODEL_IDS[number] {
+  return typeof modelId === "string" && GEMINI_VERIFIED_MODEL_IDS.includes(modelId as typeof GEMINI_VERIFIED_MODEL_IDS[number]);
+}
+
+export function normalizeGeminiModelId(modelId: string | null | undefined): string {
+  if (modelId === "gemini-3-flash") return "gemini-3-flash-preview";
+  return isVerifiedGeminiModelId(modelId) ? modelId : GEMINI_DEFAULT_MODEL_ID;
+}
+
 export const GEMINI_FALLBACK_MODELS: readonly ProviderModel[] = [
   {
-    id: "gemini-3.1-pro",
-    modelId: "gemini-3.1-pro",
-    label: "Gemini 3.1 Pro",
-    description: "Configured Gemini Pro route placeholder.",
+    id: "gemini-3-flash-preview",
+    modelId: "gemini-3-flash-preview",
+    label: "Gemini 3 Flash Preview",
+    description: "Verified Gemini CLI Flash Preview route.",
+    defaultReasoningLevel: "medium",
+    supportedReasoningLevels: null,
+  },
+  {
+    id: "gemini-3.1-pro-preview",
+    modelId: "gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro Preview",
+    description: "Verified Gemini CLI Pro Preview route.",
     defaultReasoningLevel: "high",
     supportedReasoningLevels: null,
   },
   {
-    id: "gemini-3-flash",
-    modelId: "gemini-3-flash",
-    label: "Gemini 3 Flash",
-    description: "Configured Gemini Flash route placeholder.",
+    id: "gemini-3.1-flash-lite-preview",
+    modelId: "gemini-3.1-flash-lite-preview",
+    label: "Gemini 3.1 Flash Lite Preview",
+    description: "Verified Gemini CLI Flash Lite Preview route.",
     defaultReasoningLevel: "medium",
     supportedReasoningLevels: null,
   },
@@ -23,7 +50,7 @@ export const GEMINI_FALLBACK_MODELS: readonly ProviderModel[] = [
     id: "gemini-2.5-pro",
     modelId: "gemini-2.5-pro",
     label: "Gemini 2.5 Pro",
-    description: "Gemini 2.5 Pro route placeholder.",
+    description: "Verified Gemini CLI Pro route.",
     defaultReasoningLevel: "high",
     supportedReasoningLevels: null,
   },
@@ -31,7 +58,15 @@ export const GEMINI_FALLBACK_MODELS: readonly ProviderModel[] = [
     id: "gemini-2.5-flash",
     modelId: "gemini-2.5-flash",
     label: "Gemini 2.5 Flash",
-    description: "Gemini 2.5 Flash route placeholder.",
+    description: "Verified Gemini CLI Flash route.",
+    defaultReasoningLevel: "medium",
+    supportedReasoningLevels: null,
+  },
+  {
+    id: "gemini-2.5-flash-lite",
+    modelId: "gemini-2.5-flash-lite",
+    label: "Gemini 2.5 Flash Lite",
+    description: "Verified Gemini CLI Flash Lite route.",
     defaultReasoningLevel: "medium",
     supportedReasoningLevels: null,
   },

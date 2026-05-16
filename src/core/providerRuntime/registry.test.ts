@@ -34,7 +34,7 @@ test("active route resolution preserves routable google routes", () => {
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "google",
-      modelId: "gemini-3-flash",
+      modelId: "gemini-2.5-pro",
       backendKind: "gemini-cli-auth",
       reasoning: "medium",
     },
@@ -44,9 +44,29 @@ test("active route resolution preserves routable google routes", () => {
 
   assert.deepEqual(route, {
     providerId: "google",
-    modelId: "gemini-3-flash",
+    modelId: "gemini-2.5-pro",
     backendKind: "gemini-cli-auth",
     reasoning: "medium",
+  });
+});
+
+test("active route resolution normalizes legacy Gemini 3 Flash routes to preview", () => {
+  const route = resolveActiveProviderRoute({
+    workspaceConfigActiveRoute: {
+      providerId: "google",
+      modelId: "gemini-3-flash",
+      backendKind: "gemini-cli-auth",
+      reasoning: "high",
+    },
+    currentModel: "gpt-5.4",
+    currentReasoning: "medium",
+  });
+
+  assert.deepEqual(route, {
+    providerId: "google",
+    modelId: "gemini-3-flash-preview",
+    backendKind: "gemini-cli-auth",
+    reasoning: "high",
   });
 });
 

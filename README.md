@@ -34,7 +34,23 @@ codexa --profile review --config model="gpt-5.4" --config codexa.mode="suggest"
 Supported runtime keys in this rank:
 
 - Native-style keys: `model`, `model_reasoning_effort`, `approval_policy`, `sandbox_mode`, `sandbox_workspace_write.network_access`, `sandbox_workspace_write.writable_roots`, `service_tier`, `personality`
-- CODEXA-specific keys: `[codexa].backend`, `[codexa].mode`
+- CODEXA-specific keys: `[codexa].backend`, `[codexa].mode`, `gemini_command_path`
+
+### Gemini CLI Executable
+
+Codexa runs Gemini through the real CLI executable path directly. It does not route Gemini prompts through a PowerShell `gemini` function, alias, or wrapper.
+
+To force the official Gemini CLI executable, set either:
+
+```powershell
+$env:GEMINI_EXECUTABLE = "C:\Users\jorda\AppData\Roaming\npm\gemini.cmd"
+```
+
+or in `config.toml`:
+
+```toml
+geminiCommandPath = "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd"
+```
 
 Pure UI/auth preferences still live in `~/.codexa-settings.json`.
 
