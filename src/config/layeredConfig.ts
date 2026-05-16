@@ -38,6 +38,7 @@ export const RUNTIME_FIELD_PATHS = [
   "reasoningLevel",
   "mode",
   "planMode",
+  "geminiCommandPath",
   "policy.approvalPolicy",
   "policy.sandboxMode",
   "policy.networkAccess",
@@ -165,6 +166,16 @@ function extractRuntimePatch(
       addTouchedField(touchedFields, "reasoningLevel");
     } else {
       ignoredEntries.push("model_reasoning_effort");
+    }
+  }
+
+  const geminiCommandPath = data.geminiCommandPath ?? data.gemini_command_path;
+  if (geminiCommandPath !== undefined) {
+    if (typeof geminiCommandPath === "string" && geminiCommandPath.trim().length > 0) {
+      patch.geminiCommandPath = geminiCommandPath.trim();
+      addTouchedField(touchedFields, "geminiCommandPath");
+    } else {
+      ignoredEntries.push("gemini_command_path");
     }
   }
 
@@ -579,6 +590,7 @@ function getTouchedFieldsFromPatch(patch: PartialRuntimeConfig): RuntimeFieldPat
   if (patch.reasoningLevel !== undefined) touched.add("reasoningLevel");
   if (patch.mode !== undefined) touched.add("mode");
   if (patch.planMode !== undefined) touched.add("planMode");
+  if (patch.geminiCommandPath !== undefined) touched.add("geminiCommandPath");
   if (patch.policy?.approvalPolicy !== undefined) touched.add("policy.approvalPolicy");
   if (patch.policy?.sandboxMode !== undefined) touched.add("policy.sandboxMode");
   if (patch.policy?.networkAccess !== undefined) touched.add("policy.networkAccess");
@@ -633,6 +645,8 @@ function formatRuntimeFieldValue(runtime: RuntimeConfig, field: RuntimeFieldPath
       return formatModeLabel(runtime.mode);
     case "planMode":
       return runtime.planMode ? "Enabled" : "Disabled";
+    case "geminiCommandPath":
+      return runtime.geminiCommandPath ?? "none";
     case "policy.approvalPolicy":
       return formatApprovalPolicyLabel(runtime.policy.approvalPolicy);
     case "policy.sandboxMode":

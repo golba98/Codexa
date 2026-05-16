@@ -211,6 +211,34 @@ test("provider picker reports Anthropic in-Codexa route actions without launchin
   }
 });
 
+test("provider picker exposes Gemini diagnostics action", async () => {
+  const harness = createInkHarness(<ProviderPickerHarness />);
+
+  try {
+    await sleep(80);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(40);
+    assert.match(harness.getOutput(), /Provider action: Google/);
+    assert.match(harness.getOutput(), /Run Gemini diagnostics/);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+
+    assert.match(harness.getOutput(), /action:google:run-diagnostics/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test("provider picker cancels from provider list with Esc", async () => {
   const harness = createInkHarness(<ProviderPickerHarness />);
 

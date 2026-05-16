@@ -88,10 +88,33 @@ test("GEMINI_FALLBACK_MODELS contains only gemini- model IDs", () => {
 
 test("GEMINI_FALLBACK_MODELS contains the expected models", () => {
   const ids = GEMINI_FALLBACK_MODELS.map((m) => m.modelId);
-  assert.ok(ids.includes("gemini-3.1-pro"), "Missing gemini-3.1-pro");
-  assert.ok(ids.includes("gemini-3-flash"), "Missing gemini-3-flash");
+  assert.equal(ids[0], "gemini-3-flash-preview", "Default fast Gemini route should stay first");
+  assert.ok(ids.includes("gemini-3.1-pro-preview"), "Missing gemini-3.1-pro-preview");
+  assert.ok(ids.includes("gemini-3-flash-preview"), "Missing gemini-3-flash-preview");
+  assert.ok(ids.includes("gemini-3.1-flash-lite-preview"), "Missing gemini-3.1-flash-lite-preview");
   assert.ok(ids.includes("gemini-2.5-pro"), "Missing gemini-2.5-pro");
   assert.ok(ids.includes("gemini-2.5-flash"), "Missing gemini-2.5-flash");
+  assert.ok(ids.includes("gemini-2.5-flash-lite"), "Missing gemini-2.5-flash-lite");
+  assert.ok(!ids.includes("gemini-3-flash"), "Gemini 3 Flash must not be offered; use preview ID");
+  assert.ok(!ids.includes("gemini-3.1-pro"), "Gemini 3.1 Pro must not be offered without preview suffix");
+});
+
+test("GEMINI_FALLBACK_MODELS maps display names to exact CLI IDs with no reasoning support", () => {
+  const expected = new Map([
+    ["Gemini 3.1 Pro Preview", "gemini-3.1-pro-preview"],
+    ["Gemini 3 Flash Preview", "gemini-3-flash-preview"],
+    ["Gemini 3.1 Flash Lite Preview", "gemini-3.1-flash-lite-preview"],
+    ["Gemini 2.5 Pro", "gemini-2.5-pro"],
+    ["Gemini 2.5 Flash", "gemini-2.5-flash"],
+    ["Gemini 2.5 Flash Lite", "gemini-2.5-flash-lite"],
+  ]);
+
+  assert.equal(GEMINI_FALLBACK_MODELS.length, expected.size);
+  for (const model of GEMINI_FALLBACK_MODELS) {
+    assert.equal(model.modelId, expected.get(model.label), `Unexpected CLI ID for ${model.label}`);
+    assert.equal(model.id, model.modelId);
+    assert.equal(model.supportedReasoningLevels, null);
+  }
 });
 
 test("GEMINI_FALLBACK_MODELS does not contain OpenAI or Claude model IDs", () => {
@@ -143,10 +166,19 @@ test("providerModelsToCodexCapabilities converts Gemini models to selectable cap
 
   assert.ok(selectable.length > 0, "Should produce selectable models");
   const modelIds = selectable.map((m) => m.model);
+  assert.ok(modelIds.includes("gemini-3.1-pro-preview"), "Should include gemini-3.1-pro-preview");
+  assert.ok(modelIds.includes("gemini-3-flash-preview"), "Should include gemini-3-flash-preview");
+  assert.ok(modelIds.includes("gemini-3.1-flash-lite-preview"), "Should include gemini-3.1-flash-lite-preview");
   assert.ok(modelIds.includes("gemini-2.5-pro"), "Should include gemini-2.5-pro");
+  assert.ok(modelIds.includes("gemini-2.5-flash"), "Should include gemini-2.5-flash");
+  assert.ok(modelIds.includes("gemini-2.5-flash-lite"), "Should include gemini-2.5-flash-lite");
+  assert.ok(!modelIds.includes("gemini-3-flash"), "Should not include legacy non-preview Gemini 3 Flash");
   for (const id of modelIds) {
     assert.ok(!id.startsWith("gpt-"), `Converted Gemini capabilities must not contain OpenAI model: "${id}"`);
     assert.ok(!id.startsWith("claude-"), `Converted Gemini capabilities must not contain Claude model: "${id}"`);
+  }
+  for (const model of selectable) {
+    assert.equal(model.supportedReasoningLevels, null);
   }
 });
 

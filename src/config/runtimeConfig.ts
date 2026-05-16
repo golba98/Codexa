@@ -70,6 +70,7 @@ export interface RuntimeConfig {
   reasoningLevel: ReasoningLevel;
   mode: AvailableMode;
   planMode: boolean;
+  geminiCommandPath?: string;
   policy: RuntimePolicyConfig;
 }
 
@@ -92,6 +93,7 @@ export interface ResolvedRuntimeConfig {
   reasoningLevel: ReasoningLevel;
   mode: AvailableMode;
   planMode: boolean;
+  geminiCommandPath?: string;
   policy: ResolvedRuntimePolicy;
 }
 
@@ -214,6 +216,9 @@ export function normalizeRuntimeConfig(input: PartialRuntimeConfig | null | unde
     model,
     mode,
     planMode: typeof input?.planMode === "boolean" ? input.planMode : DEFAULT_RUNTIME_CONFIG.planMode,
+    ...(typeof input?.geminiCommandPath === "string" && input.geminiCommandPath.trim()
+      ? { geminiCommandPath: input.geminiCommandPath.trim() }
+      : {}),
     reasoningLevel: normalizeReasoningForModel(model, reasoningInput),
     policy: normalizeRuntimePolicy(input?.policy),
   };
@@ -290,6 +295,9 @@ export function diffRuntimeConfig(base: RuntimeConfig, target: RuntimeConfig): P
     ...(normalizedBase.planMode !== normalizedTarget.planMode
       ? { planMode: normalizedTarget.planMode }
       : {}),
+    ...(normalizedBase.geminiCommandPath !== normalizedTarget.geminiCommandPath
+      ? { geminiCommandPath: normalizedTarget.geminiCommandPath }
+      : {}),
     ...(Object.keys(policyPatch).length > 0 ? { policy: policyPatch } : {}),
   };
 }
@@ -329,6 +337,7 @@ export function resolveRuntimeConfig(config: RuntimeConfig): ResolvedRuntimeConf
     model: normalized.model,
     mode: normalized.mode,
     planMode: normalized.planMode,
+    ...(normalized.geminiCommandPath ? { geminiCommandPath: normalized.geminiCommandPath } : {}),
     reasoningLevel: normalizeReasoningForModel(normalized.model, normalized.reasoningLevel),
     policy: {
       approvalPolicy,

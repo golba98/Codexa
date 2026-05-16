@@ -198,7 +198,7 @@ test("setProviderActiveRoute rejects unconfigured Gemini routes", () => {
       },
     }, {
       providerId: "google",
-      modelId: "gemini-3.1-pro",
+      modelId: "gemini-2.5-flash",
       backendKind: "gemini-cli-auth",
       reasoning: "high",
     });
@@ -216,14 +216,14 @@ test("setProviderActiveRoute persists Gemini routes when GEMINI_API_KEY is confi
   withGeminiEnv({ GEMINI_API_KEY: "test-gemini-key" }, () => {
     const config = setProviderActiveRoute({}, {
       providerId: "google",
-      modelId: "gemini-3.1-pro",
+      modelId: "gemini-2.5-flash",
       backendKind: "gemini-api-key",
       reasoning: "high",
     });
 
     assert.deepEqual(config.activeRoute, {
       providerId: "google",
-      modelId: "gemini-3.1-pro",
+      modelId: "gemini-2.5-flash",
       backendKind: "gemini-api-key",
       reasoning: "high",
     });
@@ -312,18 +312,64 @@ test("Anthropic claudeCommandPath round-trips through serialize/parse", () => {
   });
 });
 
+test("Gemini geminiCommandPath round-trips through serialize/parse", () => {
+  const config = parseProviderWorkspaceConfig({
+    providers: {
+      google: {
+        current_model: "gemini-2.5-flash",
+        gemini_command_path: "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd",
+      },
+    },
+  });
+
+  assert.equal(config.providers?.google?.geminiCommandPath, "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd");
+  const serialized = serializeProviderWorkspaceConfig(config);
+  assert.deepEqual(serialized.providers, {
+    google: {
+      current_model: "gemini-2.5-flash",
+      gemini_command_path: "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd",
+    },
+  });
+});
+
+test("Gemini workspace config normalizes legacy flash model IDs to preview", () => {
+  const config = parseProviderWorkspaceConfig({
+    activeRoute: {
+      providerId: "google",
+      modelId: "gemini-3-flash",
+      backendKind: "gemini-cli-auth",
+      modelSelection: {
+        kind: "manual",
+        modelId: "gemini-3-flash",
+      },
+    },
+    providers: {
+      google: {
+        current_model: "gemini-3-flash",
+      },
+    },
+  });
+
+  assert.equal(config.activeRoute?.modelId, "gemini-3-flash-preview");
+  assert.deepEqual(config.activeRoute?.modelSelection, {
+    kind: "manual",
+    modelId: "gemini-3-flash-preview",
+  });
+  assert.equal(config.providers?.google?.currentModel, "gemini-3-flash-preview");
+});
+
 test("setProviderActiveRoute persists Gemini routes when GOOGLE_API_KEY is configured", () => {
   withGeminiEnv({ GOOGLE_API_KEY: "test-google-key" }, () => {
     const config = setProviderActiveRoute({}, {
       providerId: "google",
-      modelId: "gemini-3.1-pro",
+      modelId: "gemini-2.5-flash",
       backendKind: "gemini-api-key",
       reasoning: "high",
     });
 
     assert.deepEqual(config.activeRoute, {
       providerId: "google",
-      modelId: "gemini-3.1-pro",
+      modelId: "gemini-2.5-flash",
       backendKind: "gemini-api-key",
       reasoning: "high",
     });

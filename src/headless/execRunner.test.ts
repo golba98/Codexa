@@ -75,6 +75,7 @@ function createLayeredConfig(): LayeredConfigResult {
         reasoningLevel: "test",
         mode: "test",
         planMode: "test",
+        geminiCommandPath: "test",
         "policy.approvalPolicy": "test",
         "policy.sandboxMode": "test",
         "policy.networkAccess": "test",

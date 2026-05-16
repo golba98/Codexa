@@ -3,6 +3,7 @@ import { dirname, join } from "path";
 import { normalizeWorkspaceRoot } from "../workspaceRoot.js";
 import { isKnownProviderId } from "./registry.js";
 import { getProviderRuntime, isProviderRouteConfigured, isProviderRoutableInCodexa } from "../providerRuntime/registry.js";
+import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 import type {
   ProviderActiveRoute,
   ProviderId,
@@ -62,6 +63,11 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
     override.claudeCommandPath = claudeCommandPath.trim();
   }
 
+  const geminiCommandPath = value.geminiCommandPath ?? value.gemini_command_path;
+  if (typeof geminiCommandPath === "string" && geminiCommandPath.trim()) {
+    override.geminiCommandPath = geminiCommandPath.trim();
+  }
+
   return override;
 }
 
@@ -76,12 +82,19 @@ function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
   if (typeof providerId !== "string" || !isKnownProviderId(providerId) || !isProviderRoutableInCodexa(providerId)) return undefined;
   if (typeof modelId !== "string" || !modelId.trim()) return undefined;
 
+  const normalizedModelId = providerId === "google" ? normalizeGeminiModelId(modelId.trim()) : modelId.trim();
+  const normalizedModelSelection = providerId === "google" && isRecord(modelSelection)
+    ? modelSelection.kind === "manual"
+      ? { kind: "manual" as const, modelId: normalizeGeminiModelId(typeof modelSelection.modelId === "string" ? modelSelection.modelId : null) }
+      : { kind: "auto" as const, family: modelSelection.family === "gemini-2.5" ? "gemini-2.5" as const : "gemini-3" as const }
+    : undefined;
+
   return {
     providerId,
-    modelId: modelId.trim(),
+    modelId: normalizedModelId,
     backendKind: typeof backendKind === "string" ? getProviderRuntime(providerId).backendKind : getProviderRuntime(providerId).backendKind,
     ...(typeof reasoning === "string" && reasoning.trim() ? { reasoning: reasoning.trim() } : {}),
-    ...(isRecord(modelSelection) ? { modelSelection: modelSelection as any } : {}),
+    ...(normalizedModelSelection ? { modelSelection: normalizedModelSelection } : {}),
   };
 }
 
@@ -107,6 +120,9 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
     for (const [id, value] of Object.entries(data.providers)) {
       if (!isKnownProviderId(id)) continue;
       const override = parseProviderOverride(value);
+      if (id === "google" && override?.currentModel) {
+        override.currentModel = normalizeGeminiModelId(override.currentModel);
+      }
       if (override) providers[id] = override;
     }
     config.providers = providers;
@@ -135,6 +151,7 @@ export function serializeProviderWorkspaceConfig(config: ProviderWorkspaceConfig
         ...(override.enabled !== undefined ? { enabled: override.enabled } : {}),
         ...(override.command !== undefined ? { command: serializeLaunchCommand(override.command) } : {}),
         ...(override.claudeCommandPath !== undefined ? { claude_command_path: override.claudeCommandPath } : {}),
+        ...(override.geminiCommandPath !== undefined ? { gemini_command_path: override.geminiCommandPath } : {}),
       },
     ]),
   );

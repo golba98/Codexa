@@ -14,6 +14,7 @@ import {
   isProviderRoutableInCodexa,
   isProviderRouteConfigured,
 } from "../providerRuntime/registry.js";
+import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 
 const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "google", "local"];
 
@@ -51,7 +52,7 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
   google: {
     id: "google",
     displayName: "Google",
-    currentModel: () => "gemini-3.1-pro",
+    currentModel: () => "gemini-3-flash-preview",
     backendType: "gemini-cli-auth",
     routeMode: "in-codexa",
     enabled: true,
@@ -109,10 +110,14 @@ function applyOverride(
       ? true
       : provider.enabled;
 
+  const overrideModel = typeof override.currentModel === "string" && override.currentModel.trim()
+    ? override.currentModel.trim()
+    : null;
+
   return {
     ...provider,
-    currentModel: typeof override.currentModel === "string" && override.currentModel.trim()
-      ? override.currentModel.trim()
+    currentModel: overrideModel
+      ? provider.id === "google" ? normalizeGeminiModelId(overrideModel) : overrideModel
       : provider.currentModel,
     enabled: nextEnabled,
     launchCommand: nextCommand,
@@ -159,8 +164,10 @@ export function buildProviderRegistry(options: {
         if (selection.kind === "auto") {
           currentModelLabel = `Auto (${selection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"})`;
         } else {
-          currentModelLabel = selection.modelId;
+          currentModelLabel = normalizeGeminiModelId(selection.modelId);
         }
+      } else {
+        currentModelLabel = normalizeGeminiModelId(currentModelLabel);
       }
     }
 

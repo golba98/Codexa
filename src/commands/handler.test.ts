@@ -31,6 +31,7 @@ const baseConfig: LayeredConfigResult = {
       reasoningLevel: "Built-in defaults",
       mode: "Built-in defaults",
       planMode: "Built-in defaults",
+      geminiCommandPath: "Built-in defaults",
       "policy.approvalPolicy": "Built-in defaults",
       "policy.sandboxMode": "Built-in defaults",
       "policy.networkAccess": "Built-in defaults",

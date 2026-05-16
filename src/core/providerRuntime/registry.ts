@@ -4,7 +4,12 @@ import type { ProviderId } from "../providerLauncher/types.js";
 import type { ProviderActiveRoute } from "../providerLauncher/types.js";
 import { anthropicRuntime } from "./anthropic.js";
 import { geminiRuntime } from "./gemini.js";
-import { ANTHROPIC_FALLBACK_MODELS, GEMINI_FALLBACK_MODELS } from "./models.js";
+import {
+  ANTHROPIC_FALLBACK_MODELS,
+  GEMINI_DEFAULT_MODEL_ID,
+  GEMINI_FALLBACK_MODELS,
+  normalizeGeminiModelId,
+} from "./models.js";
 import type {
   ActiveProviderRoute,
   GeminiModelSelection,
@@ -89,6 +94,7 @@ export function discoverProviderModels(providerId: ProviderId): ProviderModelDis
 export async function validateProviderRouteActivation(options: {
   route: ProviderRoute;
   workspaceRoot: string;
+  geminiCommandPath?: string | null;
 }): Promise<ProviderRouteValidationResult> {
   const runtime = getProviderRuntime(options.route.providerId);
   if (!runtime.routeAvailable) {
@@ -122,15 +128,15 @@ export async function validateProviderRouteActivation(options: {
 
 export function resolveGeminiModelId(selection: GeminiModelSelection): string {
   if (selection.kind === "manual") {
-    return selection.modelId;
+    return normalizeGeminiModelId(selection.modelId);
   }
   if (selection.family === "gemini-3") {
-    return "gemini-3.1-pro";
+    return "gemini-3-flash-preview";
   }
   if (selection.family === "gemini-2.5") {
     return "gemini-2.5-pro";
   }
-  return "gemini-3.1-pro";
+  return GEMINI_DEFAULT_MODEL_ID;
 }
 
 export function resolveActiveProviderRoute(options: {
@@ -150,6 +156,8 @@ export function resolveActiveProviderRoute(options: {
 
     if (route.providerId === "google" && route.modelSelection) {
       route.modelId = resolveGeminiModelId(route.modelSelection);
+    } else if (route.providerId === "google") {
+      route.modelId = normalizeGeminiModelId(route.modelId);
     }
 
     return route;
@@ -168,7 +176,7 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
     return ANTHROPIC_FALLBACK_MODELS[0]?.modelId ?? "claude-sonnet-4-20250514";
   }
   if (providerId === "google") {
-    return GEMINI_FALLBACK_MODELS[0]?.modelId ?? "gemini-3.1-pro";
+    return GEMINI_FALLBACK_MODELS[0]?.modelId ?? GEMINI_DEFAULT_MODEL_ID;
   }
   return currentOpenAiModel;
 }

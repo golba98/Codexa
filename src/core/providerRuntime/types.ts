@@ -2,6 +2,7 @@ import type { ReasoningEffortCapability } from "../codexModelCapabilities.js";
 import type { ProjectInstructions } from "../projectInstructions.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
+export type { ResolvedRuntimeConfig };
 import type { ProviderId } from "../providerLauncher/types.js";
 
 export type ProviderBackendKind =
@@ -56,6 +57,7 @@ export type ActiveProviderRoute = ProviderRoute;
 export interface ProviderRouteValidationRequest {
   route: ProviderRoute;
   workspaceRoot: string;
+  geminiCommandPath?: string | null;
 }
 
 export interface ProviderRouteValidationResult {
