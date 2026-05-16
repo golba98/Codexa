@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
 import { runCommand, type CommandResult } from "../process/CommandRunner.js";
-import { buildClaudeSpawnSpec, resetClaudeExecutableCacheForTests } from "../claudeExecutable.js";
+import { buildClaudeSpawnSpec, resetClaudeExecutableCacheForTests } from "../executables/claudeExecutable.js";
 import {
   ANTHROPIC_ROUTE_SETUP_MESSAGE,
   anthropicRuntime,
@@ -220,7 +220,7 @@ test("resolver: CLAUDE_EXECUTABLE env var is used without calling where.exe", as
     });
 
     // Manually test the resolver (bypass the cache since we're injecting mockImpl)
-    const { resolveClaudeExecutable } = await import("../claudeExecutable.js");
+    const { resolveClaudeExecutable } = await import("../executables/claudeExecutable.js");
     const resolved = await resolveClaudeExecutable({ runCommandImpl: mockImpl, cwd: process.cwd() });
 
     assert.equal(resolved, "my-claude", "Should use CLAUDE_EXECUTABLE directly");

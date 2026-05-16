@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ChildProcess } from "node:child_process";
-import { runCommand, type CommandResult } from "./process/CommandRunner.js";
+import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 import { resolveExecutable, buildSpawnSpec } from "./executableResolver.js";
 
 function commandResult(overrides: Partial<CommandResult>): CommandResult {

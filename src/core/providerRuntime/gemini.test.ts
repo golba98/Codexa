@@ -14,7 +14,7 @@ import {
   runGeminiCliWithRunner,
   validateGeminiRoute,
 } from "./gemini.js";
-import { resetGeminiExecutableCacheForTests } from "../geminiExecutable.js";
+import { resetGeminiExecutableCacheForTests } from "../executables/geminiExecutable.js";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
 import type { ProviderChatRequest } from "./types.js";
 

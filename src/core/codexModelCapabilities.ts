@@ -1,6 +1,6 @@
 import { type ChildProcess } from "child_process";
 import { APP_NAME, APP_VERSION, DEFAULT_MODEL, LEGACY_FALLBACK_MODELS, formatReasoningLabel } from "../config/settings.js";
-import { resolveCodexExecutable, spawnCodexProcess } from "./codexExecutable.js";
+import { resolveCodexExecutable, spawnCodexProcess } from "./executables/codexExecutable.js";
 
 export type ModelCapabilitySource = "runtime" | "fallback";
 export type ModelCapabilityStatus = "ready" | "fallback";

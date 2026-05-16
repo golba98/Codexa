@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { formatCodexLaunchError, spawnCodexProcess } from "../codexExecutable.js";
+import { formatCodexLaunchError, spawnCodexProcess } from "../executables/codexExecutable.js";
 import { prepareCodexExecLaunch } from "../codexLaunch.js";
 import * as perf from "../perf/profiler.js";
 import { buildCodexPrompt } from "../codexPrompt.js";

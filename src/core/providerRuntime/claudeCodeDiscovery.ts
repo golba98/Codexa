@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { buildClaudeSpawnSpec, resolveClaudeExecutable } from "../claudeExecutable.js";
+import { buildClaudeSpawnSpec, resolveClaudeExecutable } from "../executables/claudeExecutable.js";
 import { runCommand } from "../process/CommandRunner.js";
 import type { CommandResult } from "../process/CommandRunner.js";
 import type { ReasoningEffortCapability } from "../codexModelCapabilities.js";

@@ -1,5 +1,5 @@
 import { join } from "path";
-import { runCommand } from "./process/CommandRunner.js";
+import { runCommand } from "../process/CommandRunner.js";
 import { resolveExecutable } from "./executableResolver.js";
 
 type CommandRunner = typeof runCommand;

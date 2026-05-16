@@ -5,7 +5,7 @@ import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { GEMINI_DEFAULT_MODEL_ID, GEMINI_FALLBACK_MODELS, normalizeGeminiModelId } from "./models.js";
 import type { ProviderBackendKind, ProviderChatRequest, ProviderRouteValidationResult, ProviderRuntime, ResolvedRuntimeConfig } from "./types.js";
-import { resolveGeminiExecutable } from "../geminiExecutable.js";
+import { resolveGeminiExecutable } from "../executables/geminiExecutable.js";
 
 const GEMINI_DIAG_LOG = `${process.env.TEMP ?? process.env.TMPDIR ?? "/tmp"}/codexa-gemini-diag.log`;
 function isGeminiDiagEnabled(): boolean {

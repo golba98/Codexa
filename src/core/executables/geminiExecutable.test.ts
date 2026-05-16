@@ -5,7 +5,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGeminiSpawnSpec, resetGeminiExecutableCacheForTests, resolveGeminiExecutable } from "./geminiExecutable.js";
-import { runCommand, type CommandResult } from "./process/CommandRunner.js";
+import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 
 function commandResult(overrides: Partial<CommandResult>): CommandResult {
   return {
