@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { isNoiseLine } from "./providers/codexTranscript.js";
-import { sanitizeTerminalOutput } from "./terminalSanitize.js";
+import { sanitizeTerminalOutput } from "./terminal/terminalSanitize.js";
 
 type Platform = "win32" | "darwin" | "linux" | string;
 

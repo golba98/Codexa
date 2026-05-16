@@ -104,7 +104,7 @@ export function createStdoutSanitizer(): {
 } {
   // Lazy-import to avoid circular deps at module parse time.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { sanitizeTerminalOutput } = require("../terminalSanitize.js") as typeof import("../terminalSanitize.js");
+  const { sanitizeTerminalOutput } = require("../terminal/terminalSanitize.js") as typeof import("../terminal/terminalSanitize.js");
 
   let carryover = "";
 

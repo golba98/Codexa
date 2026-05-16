@@ -10,7 +10,7 @@ import { getAssistantContent, getResponseSegmentText, getRunPlanText } from "../
 import { normalizeCommand, getFriendlyActionLabel } from "./commandNormalize.js";
 import { formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
-import { sanitizeTerminalLines, sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { sanitizeTerminalLines, sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { clampVisualText, transcriptContentIndent } from "./layout.js";
 import type { Segment } from "./Markdown.js";
 import { classifyOutput, formatForBox, normalizeOutput, sanitizeOutput, sanitizeStreamChunk } from "./outputPipeline.js";

@@ -72,7 +72,7 @@ import {
   isLikelyAuthFailure,
   probeCodexAuthStatus,
 } from "./core/auth/codexAuth.js";
-import { getTerminalSelectionProfile } from "./core/terminalSelection.js";
+import { getTerminalSelectionProfile } from "./core/terminal/terminalSelection.js";
 import { copyToClipboard } from "./core/clipboard.js";
 import { normalizePlanReviewMarkdown, savePlan, readPlan } from "./core/planStorage.js";
 import { getBlockedCleanupFailure } from "./core/cleanupFastFail.js";
@@ -143,8 +143,8 @@ import {
   setProviderDefaultModel,
   setProviderWorkspaceDefault,
 } from "./core/providerLauncher/workspaceConfig.js";
-import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
-import { createTerminalModeController, setTerminalControlUIState } from "./core/terminalControl.js";
+import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminal/terminalSanitize.js";
+import { createTerminalModeController, setTerminalControlUIState } from "./core/terminal/terminalControl.js";
 import {
   acquireTerminalTitleGuard,
   beginColdStartSequence,
@@ -153,7 +153,7 @@ import {
   refreshTerminalTitle,
   setTerminalTitleLifecycleState,
   setIntendedTerminalTitle,
-} from "./core/terminalTitle.js";
+} from "./core/terminal/terminalTitle.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";

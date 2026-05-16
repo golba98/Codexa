@@ -1,4 +1,4 @@
-import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 
 export type DiffRenderLineType = "file" | "hunk" | "add" | "remove" | "context" | "meta";
 

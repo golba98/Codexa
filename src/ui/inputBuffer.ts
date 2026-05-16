@@ -1,6 +1,6 @@
 import type { WrappedTextRow } from "./textLayout.js";
 import { getTextWidth, normalizeLineBreaks, wrapTextRows } from "./textLayout.js";
-import { sanitizeTerminalInput } from "../core/terminalSanitize.js";
+import { sanitizeTerminalInput } from "../core/terminal/terminalSanitize.js";
 
 export type WrappedInputRow = WrappedTextRow;
 

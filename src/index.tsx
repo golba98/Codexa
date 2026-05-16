@@ -4,21 +4,21 @@ import { App } from "./app.js";
 import { parseLaunchArgs, type LaunchArgs } from "./config/launchArgs.js";
 import { loadSettings } from "./config/persistence.js";
 import { APP_NAME, formatTerminalTitlePath } from "./config/settings.js";
-import { getTerminalCapability } from "./core/terminalCapabilities.js";
+import { getTerminalCapability } from "./core/terminal/terminalCapabilities.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 import {
   reassertIntendedTerminalTitle,
   setIntendedTerminalTitle,
   startTerminalTitleStartupGuard,
-} from "./core/terminalTitle.js";
+} from "./core/terminal/terminalTitle.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import {
   createTerminalModeController,
   TERMINAL_SEQUENCES,
   traceTerminalClear,
   writeTerminalControl,
-} from "./core/terminalControl.js";
+} from "./core/terminal/terminalControl.js";
 
 type RenderHandle = Pick<Instance, "clear" | "cleanup" | "waitUntilExit">;
 const KITTY_KEYBOARD_OPTIONS: RenderOptions["kittyKeyboard"] = {

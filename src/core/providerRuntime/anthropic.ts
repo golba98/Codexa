@@ -1,6 +1,6 @@
 import { runCommand } from "../process/CommandRunner.js";
 import type { CommandResult } from "../process/CommandRunner.js";
-import { sanitizeTerminalOutput } from "../terminalSanitize.js";
+import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
 import type { ProviderBackendKind, ProviderChatRequest, ProviderModel, ProviderModelDiscoveryResult, ProviderRouteValidationResult, ProviderRuntime } from "./types.js";

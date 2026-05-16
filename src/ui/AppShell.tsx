@@ -18,7 +18,7 @@ import {
   type TimelineItem,
 } from "./Timeline.js";
 import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow } from "./timelineMeasure.js";
-import type { TerminalSelectionProfile } from "../core/terminalSelection.js";
+import type { TerminalSelectionProfile } from "../core/terminal/terminalSelection.js";
 import { MemoizedTopHeader, measureTopHeaderRows } from "./TopHeader.js";
 
 // Small fixed spacer used before the first user prompt so the composer sits

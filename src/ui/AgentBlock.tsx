@@ -7,7 +7,7 @@ import { getUsableShellWidth } from "./layout.js";
 import { useTheme } from "./theme.js";
 import { wrapPlainText } from "./textLayout.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
-import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import {
   sanitizeOutput,
   sanitizeStreamChunk,

@@ -1,7 +1,7 @@
 import { appendFileSync } from "fs";
 import { runCommand } from "../process/CommandRunner.js";
 import type { CommandResult, CommandStreamHandlers } from "../process/CommandRunner.js";
-import { sanitizeTerminalOutput } from "../terminalSanitize.js";
+import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { GEMINI_DEFAULT_MODEL_ID, GEMINI_FALLBACK_MODELS, normalizeGeminiModelId } from "./models.js";
 import type { ProviderBackendKind, ProviderChatRequest, ProviderRouteValidationResult, ProviderRuntime, ResolvedRuntimeConfig } from "./types.js";
