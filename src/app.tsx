@@ -216,6 +216,8 @@ import {
 import { isBusy as isUiBusy } from "./session/types.js";
 import { AppShell } from "./ui/AppShell.js";
 
+// ─── Module Constants & Helpers ────────────────────────────────────────────────
+
 let nextEventId = 0;
 let nextTurnId = 0;
 // 50ms keeps assistant text live while avoiding frame-wide terminal repaint
@@ -299,6 +301,8 @@ export function App({ launchArgs }: AppProps) {
     [launchContext],
   );
   const terminalLayout = useTerminalViewport();
+
+  // ─── State & Refs ────────────────────────────────────────────────────────────
 
   const [baseLayeredConfig, setBaseLayeredConfig] = useState<LayeredConfigResult>(initialLayeredConfig.current);
   const [sessionRuntimeOverride, setSessionRuntimeOverride] = useState<PartialRuntimeConfig>(() => {
@@ -390,6 +394,8 @@ export function App({ launchArgs }: AppProps) {
   // We apply an idle-timeout: if no wheel events or keypresses occur for 1.5s,
   // we disable mouse reporting so native drag-selection works unmodified.
   const mouseCapture = (mouseOverride ?? (terminalMouseMode === "wheel")) && !isMouseIdle;
+
+  // ─── Effects & Handlers ──────────────────────────────────────────────────────
 
   useEffect(() => {
     // Default path writes the disable sequences defensively, preserving native
@@ -3984,6 +3990,8 @@ export function App({ launchArgs }: AppProps) {
     cycleModeWithNotice,
     handleQuit,
   ]);
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
 
   // Plan review is shown inline in the Timeline, not as a separate overlay.
   const mainPanelElement = null;
