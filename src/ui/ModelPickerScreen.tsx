@@ -10,6 +10,7 @@ import { traceInputDebug } from "../core/inputDebug.js";
 import { FOCUS_IDS } from "./focus.js";
 import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { useTheme } from "./theme.js";
+import type { GeminiModelSelection } from "../core/providerRuntime/types.js";
 
 type ModelPickerCloseReason = "escape" | "empty-selection";
 
@@ -18,12 +19,20 @@ interface ModelPickerScreenProps {
   models: readonly CodexModelCapability[];
   currentModel: string;
   currentReasoning: string;
+  currentGeminiSelection?: GeminiModelSelection;
+  activeProviderLabel?: string;
   isLoading?: boolean;
-  onSelect: (model: string, reasoning: string) => void;
+  emptyMessage?: string;
+  onSelect: (model: string, reasoning: string, geminiSelection?: GeminiModelSelection) => void;
   onCancel: (reason?: ModelPickerCloseReason) => void;
 }
 
-function getInitialCursor(models: readonly CodexModelCapability[], currentModel: string): number {
+function getInitialCursor(models: readonly CodexModelCapability[], currentModel: string, currentGeminiSelection?: GeminiModelSelection): number {
+  if (currentGeminiSelection?.kind === "auto") {
+    const familyId = currentGeminiSelection.family === "gemini-3" ? "auto-gemini-3" : "auto-gemini-2.5";
+    const index = models.findIndex((m) => m.id === familyId);
+    if (index >= 0) return index;
+  }
   const index = models.findIndex((model) => model.model === currentModel || model.id === currentModel);
   return Math.max(0, index);
 }
@@ -87,18 +96,66 @@ function describeInputKey(
 
 export function ModelPickerScreen({
   layout,
-  models,
+  models: baseModels,
   currentModel,
   currentReasoning,
+  currentGeminiSelection,
+  activeProviderLabel = "OpenAI",
   isLoading = false,
+  emptyMessage,
   onSelect,
   onCancel,
 }: ModelPickerScreenProps) {
   const theme = useTheme();
+  const isGoogle = activeProviderLabel === "Google";
+
+  const models = useMemo(() => {
+    if (!isGoogle) return baseModels;
+
+    const autoModels: CodexModelCapability[] = [
+      {
+        id: "auto-gemini-3",
+        model: "gemini-3.1-pro",
+        label: "Auto (Gemini 3)",
+        description: "Best available Gemini 3 model.",
+        available: true,
+        hidden: false,
+        isDefault: false,
+        defaultReasoningLevel: "high",
+        supportedReasoningLevels: null,
+        reasoningLevelCount: null,
+        source: "fallback",
+        raw: { kind: "auto", family: "gemini-3" },
+      },
+      {
+        id: "auto-gemini-2.5",
+        model: "gemini-2.5-pro",
+        label: "Auto (Gemini 2.5)",
+        description: "Best available Gemini 2.5 model.",
+        available: true,
+        hidden: false,
+        isDefault: false,
+        defaultReasoningLevel: "high",
+        supportedReasoningLevels: null,
+        reasoningLevelCount: null,
+        source: "fallback",
+        raw: { kind: "auto", family: "gemini-2.5" },
+      },
+    ];
+
+    const manualModels = baseModels.map((m) => ({
+      ...m,
+      label: `Manual: ${m.label}`,
+      raw: { kind: "manual", modelId: m.model },
+    }));
+
+    return [...autoModels, ...manualModels];
+  }, [baseModels, isGoogle]);
+
   const { isFocused } = useFocus({ id: FOCUS_IDS.modelPicker, autoFocus: true });
-  const [draftSelectedModel, setDraftSelectedModel] = useState(() => getInitialCursor(models, currentModel));
+  const [draftSelectedModel, setDraftSelectedModel] = useState(() => getInitialCursor(models, currentModel, currentGeminiSelection));
   const [draftReasoning, setDraftReasoning] = useState(() =>
-    normalizeDraftReasoning(models[getInitialCursor(models, currentModel)], currentReasoning)
+    normalizeDraftReasoning(models[getInitialCursor(models, currentModel, currentGeminiSelection)], currentReasoning)
   );
 
   const selectedModel = models[draftSelectedModel];
@@ -181,7 +238,8 @@ export function ModelPickerScreen({
           onCancel("empty-selection");
           return;
         }
-        onSelect(model.model, normalizeDraftReasoning(model, draftReasoning));
+        const geminiSelection = isGoogle ? (model.raw as GeminiModelSelection) : undefined;
+        onSelect(model.model, normalizeDraftReasoning(model, draftReasoning), geminiSelection);
         return;
       }
 
@@ -214,8 +272,10 @@ export function ModelPickerScreen({
     ? "↑↓ · ←→ · Enter · Esc"
     : "↑↓ model · ←→ reasoning · Enter select · Esc cancel";
   const title = clampVisualText(`Select model   ${help}`, innerWidth);
+  const aOrAn = /^[aeiou]/i.test(activeProviderLabel) ? "an" : "a";
+  const routeText = `Choose ${aOrAn} ${activeProviderLabel} model to use inside Codexa.`;
   const reasoningText = reasoningUnavailable
-    ? "Reasoning: unavailable"
+    ? (models.length === 0 ? "Reasoning: current/default" : "Reasoning: unavailable")
     : `Reasoning: ${formatReasoningLabel(draftReasoning)}`;
 
   return (
@@ -232,6 +292,11 @@ export function ModelPickerScreen({
           <Text color={theme.ACCENT} bold>{title}</Text>
         </Box>
         <Box width="100%" overflow="hidden">
+          <Text color={theme.MUTED}>
+            {clampVisualText(routeText, innerWidth)}
+          </Text>
+        </Box>
+        <Box width="100%" overflow="hidden">
           <Text color={reasoningUnavailable ? theme.DIM : theme.MUTED}>
             {clampVisualText(reasoningText, innerWidth)}
           </Text>
@@ -240,7 +305,7 @@ export function ModelPickerScreen({
         <Box flexDirection="column" marginTop={0} width="100%">
           {models.length === 0 ? (
             <Text color={theme.MUTED}>
-              {isLoading ? "Discovering models from the Codex runtime..." : "No models available."}
+              {isLoading ? "Discovering models from the Codex runtime..." : (emptyMessage ?? "No models available.")}
             </Text>
           ) : (
             models.map((model, index) => (
@@ -249,6 +314,7 @@ export function ModelPickerScreen({
                 model={model}
                 width={innerWidth}
                 currentModel={currentModel}
+                currentGeminiSelection={currentGeminiSelection}
                 isHighlighted={index === draftSelectedModel}
                 selectedReasoning={index === draftSelectedModel ? draftReasoning : normalizeDraftReasoning(model, currentReasoning)}
               />
@@ -264,17 +330,28 @@ function ModelPickerRow({
   model,
   width,
   currentModel,
+  currentGeminiSelection,
   isHighlighted,
   selectedReasoning,
 }: {
   model: CodexModelCapability;
   width: number;
   currentModel: string;
+  currentGeminiSelection?: GeminiModelSelection;
   isHighlighted: boolean;
   selectedReasoning: string;
 }) {
   const theme = useTheme();
-  const isCurrent = model.model === currentModel || model.id === currentModel;
+
+  let isCurrent = false;
+  if (currentGeminiSelection?.kind === "auto") {
+    isCurrent = (model.raw as GeminiModelSelection)?.kind === "auto" && (model.raw as any).family === currentGeminiSelection.family;
+  } else if (currentGeminiSelection?.kind === "manual") {
+    isCurrent = (model.raw as GeminiModelSelection)?.kind === "manual" && (model.raw as any).modelId === currentGeminiSelection.modelId;
+  } else {
+    isCurrent = model.model === currentModel || model.id === currentModel;
+  }
+
   const levels = getReasoningLevels(model);
   const markerWidth = 2;
   const checkWidth = 2;

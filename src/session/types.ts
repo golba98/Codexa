@@ -10,6 +10,7 @@ export type Screen =
   | "model-picker"
   | "mode-picker"
   | "backend-picker"
+  | "provider-picker"
   | "auth-panel"
   | "reasoning-picker"
   | "theme-picker"

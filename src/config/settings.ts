@@ -14,6 +14,7 @@ export const DEFAULT_TERMINAL_TITLE_MODE = "dir";
 export const DEFAULT_SHOW_BUSY_LOADER = true;
 export const DEFAULT_AUTH_PREFERENCE = "chatgpt-login-goal";
 export const CODEX_EXECUTABLE = process.env.CODEX_EXECUTABLE || "codex";
+export const CLAUDE_EXECUTABLE = process.env.CLAUDE_EXECUTABLE || null;
 export const MAX_CHAT_LINES = 2000;
 export const MAX_VISIBLE_EVENTS = 8;
 
@@ -52,6 +53,7 @@ export type AvailableBackend = (typeof AVAILABLE_BACKENDS)[number]["id"];
 
 // Legacy fallback only. Runtime model discovery is the source of truth.
 export const LEGACY_FALLBACK_MODELS = [
+  "gpt-5.5",
   "gpt-5.4",
   "gpt-5.4-mini",
   "gpt-5.3-codex",

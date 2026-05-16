@@ -310,15 +310,12 @@ test("shows effective runtime status", () => {
   assert.match(result?.message ?? "", /Tokens used: ~1,200/i);
 });
 
-test("/models reports dynamic runtime capabilities", () => {
+test("/models opens the model picker", () => {
   const result = runCommand("/models", {
     modelCapabilities: dynamicCapabilities,
   });
 
-  assert.equal(result?.action, "models");
-  assert.match(result?.message ?? "", /Detected from Codex runtime/i);
-  assert.match(result?.message ?? "", /dynamic-four.*4 reasoning levels/i);
-  assert.match(result?.message ?? "", /dynamic-two.*2 reasoning levels/i);
+  assert.equal(result?.action, "open_model_picker");
 });
 
 test("shows layered config status", () => {
@@ -465,6 +462,7 @@ test("documents runtime commands in help", () => {
   assert.match(result?.message ?? "", /Current plan mode: Disabled/i);
   assert.match(result?.message ?? "", /Shift\+Tab\s+Toggle plan mode/i);
   assert.match(result?.message ?? "", /Ctrl\+Y\s+Cycle execution mode/i);
+  assert.match(result?.message ?? "", /Ctrl\+Alt\+P\s+Open provider picker/i);
 });
 
 test("shows the active locked workspace", () => {
@@ -501,6 +499,42 @@ test("parses /clear command", () => {
 
 test("parses /model without args as open_model_picker", () => {
   const result = runCommand("/model");
+  assert.equal(result?.action, "open_model_picker");
+});
+
+test("parses /providers as open_provider_picker", () => {
+  const result = runCommand("/providers");
+  assert.equal(result?.action, "open_provider_picker");
+});
+
+test("parses /provider alias as open_provider_picker", () => {
+  const result = runCommand("/provider");
+  assert.equal(result?.action, "open_provider_picker");
+});
+
+test("parses /route as distinct route status", () => {
+  const result = runCommand("/route", {
+    routeStatusMessage: [
+      "Route status:",
+      "  Workspace default: Anthropic",
+      "  Active chat route: OpenAI / gpt-5.4",
+      "  Active model: gpt-5.4",
+      "  Active provider mode: Usable inside Codexa",
+      "  Anthropic in-Codexa routing: not configured yet",
+    ].join("\n"),
+  });
+
+  assert.equal(result?.action, "route_status");
+  assert.match(result?.message ?? "", /Workspace default: Anthropic/);
+  assert.match(result?.message ?? "", /Active chat route: OpenAI \/ gpt-5\.4/);
+});
+
+test("/models is a model picker alias", () => {
+  const result = runCommand("/models", {
+    modelCapabilities: dynamicCapabilities,
+    activeRouteProviderLabel: "OpenAI",
+  });
+
   assert.equal(result?.action, "open_model_picker");
 });
 
@@ -546,6 +580,8 @@ test("every command documented in help is recognized by the parser", () => {
     ["config trust", "config_trust_status"],
     ["auth status", "auth_status"],
     ["workspace relaunch .", "workspace_relaunch"],
+    ["providers", "open_provider_picker"],
+    ["route", "route_status"],
   ] as const;
   for (const [cmd, expectedAction] of multiWord) {
     const result = runCommand(`/${cmd}`);

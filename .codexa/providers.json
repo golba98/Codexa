@@ -1,0 +1,9 @@
+{
+  "workspaceDefaultProviderId": "anthropic",
+  "activeRoute": {
+    "providerId": "anthropic",
+    "modelId": "haiku",
+    "backendKind": "claude-code-auth",
+    "reasoning": "low"
+  }
+}
