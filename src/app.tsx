@@ -311,8 +311,11 @@ export function App({ launchArgs }: AppProps) {
       return {};
     }
 
+    // When --model was given on the CLI, that arg must win over the persisted activeRoute
+    // model so that explicit test/benchmark model flags are actually honoured for the session.
+    const cliModel = launchArgs.modelOverride;
     return {
-      model: initialRoute.modelId,
+      model: cliModel ?? initialRoute.modelId,
       ...(initialRoute.reasoning ? { reasoningLevel: initialRoute.reasoning } : {}),
     };
   });
@@ -437,14 +440,21 @@ export function App({ launchArgs }: AppProps) {
   const { provider: backend, model, mode, reasoningLevel, planMode } = runtimeConfig;
   const resolvedRuntimeConfig = useMemo(() => resolveRuntimeConfig(runtimeConfig), [runtimeConfig]);
   const runtimeSummary = useMemo(() => buildRuntimeSummary(resolvedRuntimeConfig), [resolvedRuntimeConfig]);
-  const activeProviderRoute = useMemo(
-    () => resolveActiveProviderRoute({
-      workspaceConfigActiveRoute: providerWorkspaceConfig.activeRoute,
+  const activeProviderRoute = useMemo(() => {
+    // When --model was given on the CLI, override the stored activeRoute's modelId so
+    // the actual run uses the CLI model instead of whatever is persisted in providers.json.
+    // The providers.json entry is left unchanged so it survives this session.
+    const cliModel = launchArgs.modelOverride;
+    const configuredRoute = providerWorkspaceConfig.activeRoute;
+    const effectiveRoute = cliModel && configuredRoute
+      ? { ...configuredRoute, modelId: cliModel }
+      : configuredRoute;
+    return resolveActiveProviderRoute({
+      workspaceConfigActiveRoute: effectiveRoute,
       currentModel: model,
       currentReasoning: reasoningLevel,
-    }),
-    [model, providerWorkspaceConfig.activeRoute, reasoningLevel],
-  );
+    });
+  }, [launchArgs.modelOverride, model, providerWorkspaceConfig.activeRoute, reasoningLevel]);
   const activeProviderRuntime = useMemo(
     () => getProviderRuntime(activeProviderRoute.providerId),
     [activeProviderRoute.providerId],
@@ -1261,44 +1271,6 @@ export function App({ launchArgs }: AppProps) {
     });
   }, []);
 
-  useEffect(() => {
-    if (activeProviderRoute.providerId !== "openai") {
-      return;
-    }
-    if (modelCapabilities?.status !== "ready") {
-      return;
-    }
-
-    const nextModel = getPreferredModelFromCapabilities(modelCapabilities, model);
-    const nextReasoning = normalizeReasoningForModelCapabilities(
-      nextModel,
-      reasoningLevel,
-      modelCapabilities,
-    );
-
-    if (nextModel === model && nextReasoning === reasoningLevel) {
-      return;
-    }
-
-    updateRuntimeConfig((current) => ({
-      ...current,
-      model: nextModel,
-      reasoningLevel: nextReasoning,
-    }));
-
-    if (nextModel !== model) {
-      appendSystemEvent(
-        "Model updated",
-        `Configured model ${model} is unavailable in the detected Codex runtime. Active model is now ${nextModel}.`,
-      );
-    } else if (nextReasoning !== reasoningLevel) {
-      appendSystemEvent(
-        "Reasoning updated",
-        `Reasoning level is now ${formatReasoningLabel(nextReasoning)} for ${nextModel}.`,
-      );
-    }
-  }, [activeProviderRoute.providerId, appendSystemEvent, model, modelCapabilities, reasoningLevel, updateRuntimeConfig]);
-
   const updateRuntimePolicy = useCallback((updater: (current: RuntimeConfig["policy"]) => RuntimeConfig["policy"]) => {
     updateRuntimeConfig((current) => ({
       ...current,
@@ -1350,6 +1322,54 @@ export function App({ launchArgs }: AppProps) {
       appendErrorEvent("Provider defaults save failed", message);
     }
   }, [appendErrorEvent, providerWorkspaceConfig, workspaceRoot]);
+
+  // Auto-correct the runtime model when capabilities load and the configured model is
+  // unavailable. Placed after persistActiveRoute / persistProviderDefaultModelAndReasoning
+  // declarations because the effect calls persistActiveRoute (TDZ-safe from here).
+  useEffect(() => {
+    if (activeProviderRoute.providerId !== "openai") {
+      return;
+    }
+    if (modelCapabilities?.status !== "ready") {
+      return;
+    }
+
+    const nextModel = getPreferredModelFromCapabilities(modelCapabilities, model);
+    const nextReasoning = normalizeReasoningForModelCapabilities(
+      nextModel,
+      reasoningLevel,
+      modelCapabilities,
+    );
+
+    if (nextModel === model && nextReasoning === reasoningLevel) {
+      return;
+    }
+
+    updateRuntimeConfig((current) => ({
+      ...current,
+      model: nextModel,
+      reasoningLevel: nextReasoning,
+    }));
+
+    // Persist the corrected model so providers.json stays in sync and the same
+    // correction does not silently re-fire on every restart. Skip persistence
+    // when --model was given on the CLI: that session is intentionally temporary.
+    if (nextModel !== model && !launchArgs.modelOverride) {
+      persistActiveRoute(activeProviderRoute.providerId, nextModel, nextReasoning);
+    }
+
+    if (nextModel !== model) {
+      appendSystemEvent(
+        "Model updated",
+        `Configured model ${model} is unavailable in the detected Codex runtime. Active model is now ${nextModel}.`,
+      );
+    } else if (nextReasoning !== reasoningLevel) {
+      appendSystemEvent(
+        "Reasoning updated",
+        `Reasoning level is now ${formatReasoningLabel(nextReasoning)} for ${nextModel}.`,
+      );
+    }
+  }, [activeProviderRoute.providerId, appendSystemEvent, launchArgs.modelOverride, model, modelCapabilities, persistActiveRoute, reasoningLevel, updateRuntimeConfig]);
 
   const setBackendWithNotice = useCallback((nextBackend: AvailableBackend) => {
     const gate = guardConfigMutation("backend", busy);
@@ -1408,12 +1428,19 @@ export function App({ launchArgs }: AppProps) {
       ...current,
       reasoningLevel: nextReasoningLevel,
     }));
+    // When --model was given on the CLI the active route's modelId reflects that CLI arg,
+    // not what is stored in providers.json. Persist the stored model so the CLI-only
+    // override is never written permanently; fall back to activeProviderRoute.modelId when
+    // no CLI model is active (normal interactive case).
+    const modelToPersist = launchArgs.modelOverride
+      ? (providerWorkspaceConfig.activeRoute?.modelId ?? activeProviderRoute.modelId)
+      : activeProviderRoute.modelId;
     if (activeProviderRoute.providerId === "openai") {
-      persistProviderDefaultModelAndReasoning("openai", activeProviderRoute.modelId, nextReasoningLevel);
+      persistProviderDefaultModelAndReasoning("openai", modelToPersist, nextReasoningLevel);
     } else {
       persistActiveRoute(
         activeProviderRoute.providerId,
-        activeProviderRoute.modelId,
+        modelToPersist,
         nextReasoningLevel,
         activeProviderRoute.backendKind,
         activeProviderRoute.modelSelection,
@@ -1435,8 +1462,11 @@ export function App({ launchArgs }: AppProps) {
     appendSystemEvent,
     busy,
     currentModelCapability,
+    launchArgs.modelOverride,
     model,
     persistActiveRoute,
+    persistProviderDefaultModelAndReasoning,
+    providerWorkspaceConfig.activeRoute,
     terminalTitleMode,
     updateRuntimeConfig,
     workspaceRoot,

@@ -109,6 +109,74 @@ test("active route resolution falls back to OpenAI when provider is launch-only"
   });
 });
 
+// ─── CLI --model override precedence ─────────────────────────────────────────
+// These tests mirror the app-level logic: when --model is given on the CLI,
+// the caller constructs effectiveRoute = { ...savedRoute, modelId: cliModel }
+// before passing it to resolveActiveProviderRoute. The tests verify the resolver
+// honours that override correctly.
+
+test("CLI model override wins over persisted OpenAI activeRoute model", () => {
+  // Simulate: providers.json has gpt-5.4-mini, but user ran --model gpt-5.5
+  const cliModel = "gpt-5.5";
+  const savedRoute = {
+    providerId: "openai" as const,
+    modelId: "gpt-5.4-mini",
+    backendKind: "codex-cli-auth" as const,
+    reasoning: "low",
+  };
+  const effectiveRoute = { ...savedRoute, modelId: cliModel };
+
+  const route = resolveActiveProviderRoute({
+    workspaceConfigActiveRoute: effectiveRoute,
+    currentModel: "gpt-5.5",
+    currentReasoning: "low",
+  });
+
+  assert.equal(route.modelId, "gpt-5.5", "CLI model must be used for the run, not providers.json model");
+  assert.equal(route.providerId, "openai");
+});
+
+test("without CLI model override the persisted providers.json activeRoute model is used", () => {
+  const savedRoute = {
+    providerId: "openai" as const,
+    modelId: "gpt-5.4-mini",
+    backendKind: "codex-cli-auth" as const,
+    reasoning: "low",
+  };
+
+  const route = resolveActiveProviderRoute({
+    workspaceConfigActiveRoute: savedRoute,
+    currentModel: "gpt-5.4",
+    currentReasoning: "high",
+  });
+
+  assert.equal(route.modelId, "gpt-5.4-mini", "Without CLI override, persisted model must win over layered-config default");
+});
+
+test("CLI model override preserves provider from providers.json activeRoute", () => {
+  // --model on the CLI should not change the provider, only the modelId
+  const cliModel = "gpt-5.5";
+  const savedRoute = {
+    providerId: "openai" as const,
+    modelId: "gpt-5.4-mini",
+    backendKind: "codex-cli-auth" as const,
+    reasoning: "low",
+  };
+  const effectiveRoute = { ...savedRoute, modelId: cliModel };
+
+  const route = resolveActiveProviderRoute({
+    workspaceConfigActiveRoute: effectiveRoute,
+    currentModel: cliModel,
+    currentReasoning: "low",
+  });
+
+  assert.equal(route.providerId, "openai", "Provider from providers.json must be preserved");
+  assert.equal(route.modelId, cliModel);
+  assert.equal(route.reasoning, "low", "Reasoning from providers.json must be preserved");
+});
+
+// ─── Authentication and setup gates ──────────────────────────────────────────
+
 test("anthropic route configuration is gated by ANTHROPIC_API_KEY or Claude Code", () => {
   const original = process.env.ANTHROPIC_API_KEY;
 
