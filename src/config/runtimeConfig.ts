@@ -131,7 +131,8 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
 };
 
 function detectPathApi(value: string): typeof win32 | typeof posix {
-  // Matches Windows absolute paths: drive-letter (C:\), UNC (\\server), or forward-slash (/unix)
+  // Alternatives: drive-letter (C:\ or C:/), UNC (\\server), or any forward-slash (Unix).
+  // The forward-slash alternative is intentionally unanchored to catch mixed-separator paths.
   return /^[a-zA-Z]:[\\/]|^\\\\|\\/.test(value) ? win32 : posix;
 }
 
@@ -391,32 +392,31 @@ export function clearWritableRoots(config: RuntimeConfig): RuntimeConfig {
   };
 }
 
+function labelForId(items: ReadonlyArray<{ id: string; label: string }>, id: string): string {
+  return items.find((item) => item.id === id)?.label ?? id;
+}
+
 export function formatApprovalPolicyLabel(value: RuntimeApprovalPolicy | ResolvedApprovalPolicy): string {
-  const found = AVAILABLE_APPROVAL_POLICIES.find((item) => item.id === value);
-  return found?.label ?? value;
+  return labelForId(AVAILABLE_APPROVAL_POLICIES, value);
 }
 
 export function formatSandboxModeLabel(value: RuntimeSandboxMode | ResolvedSandboxMode): string {
-  const found = AVAILABLE_SANDBOX_MODES.find((item) => item.id === value);
-  return found?.label ?? value;
+  return labelForId(AVAILABLE_SANDBOX_MODES, value);
 }
 
 export function formatNetworkAccessLabel(value: RuntimeNetworkAccess | boolean): string {
   if (typeof value === "boolean") {
     return value ? "Enabled" : "Disabled";
   }
-  const found = AVAILABLE_NETWORK_ACCESS_VALUES.find((item) => item.id === value);
-  return found?.label ?? value;
+  return labelForId(AVAILABLE_NETWORK_ACCESS_VALUES, value);
 }
 
 export function formatServiceTierLabel(value: RuntimeServiceTier): string {
-  const found = AVAILABLE_SERVICE_TIERS.find((item) => item.id === value);
-  return found?.label ?? value;
+  return labelForId(AVAILABLE_SERVICE_TIERS, value);
 }
 
 export function formatPersonalityLabel(value: RuntimePersonality): string {
-  const found = AVAILABLE_PERSONALITIES.find((item) => item.id === value);
-  return found?.label ?? value;
+  return labelForId(AVAILABLE_PERSONALITIES, value);
 }
 
 export function buildRuntimeSummary(runtime: ResolvedRuntimeConfig): RuntimeSummary {

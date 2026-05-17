@@ -1,3 +1,13 @@
+const FLAG_HELP = "--help";
+const FLAG_HELP_SHORT = "-h";
+const FLAG_VERSION = "--version";
+const FLAG_VERSION_SHORT = "-v";
+const FLAG_PROFILE = "--profile";
+const FLAG_CONFIG = "--config";
+const FLAG_CONFIG_SHORT = "-c";
+const FLAG_MODEL = "--model";
+const FLAG_MODEL_SHORT = "-m";
+
 export interface LaunchArgs {
   help: boolean;
   version: boolean;
@@ -54,20 +64,21 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       break;
     }
 
-    if (arg === "--help" || arg === "-h") {
+    if (arg === FLAG_HELP || arg === FLAG_HELP_SHORT) {
       help = true;
       continue;
     }
 
-    if (arg === "--version" || arg === "-v") {
+    if (arg === FLAG_VERSION || arg === FLAG_VERSION_SHORT) {
       version = true;
       continue;
     }
 
-    if (arg === "--profile") {
+    // --profile <value> and --profile=<value> both supported.
+    if (arg === FLAG_PROFILE) {
       const value = normalizeProfileValue(argv[index + 1]);
       if (!value) {
-        return { ok: false, error: "Missing value for --profile." };
+        return { ok: false, error: `Missing value for ${FLAG_PROFILE}.` };
       }
       profile = value;
       passthroughArgs.push(arg, value);
@@ -75,17 +86,18 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       continue;
     }
 
-    if (arg.startsWith("--profile=")) {
-      const value = normalizeProfileValue(arg.slice("--profile=".length));
+    if (arg.startsWith(`${FLAG_PROFILE}=`)) {
+      const value = normalizeProfileValue(arg.slice(`${FLAG_PROFILE}=`.length));
       if (!value) {
-        return { ok: false, error: "Missing value for --profile." };
+        return { ok: false, error: `Missing value for ${FLAG_PROFILE}.` };
       }
       profile = value;
-      passthroughArgs.push(`--profile=${value}`);
+      passthroughArgs.push(`${FLAG_PROFILE}=${value}`);
       continue;
     }
 
-    if (arg === "-c" || arg === "--config") {
+    // --config / -c accept key=value pairs; both space-separated and inline = forms supported.
+    if (arg === FLAG_CONFIG_SHORT || arg === FLAG_CONFIG) {
       const value = parseConfigFlagValue(argv[index + 1]);
       if (!value) {
         return { ok: false, error: `Missing key=value payload for ${arg}.` };
@@ -96,27 +108,28 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       continue;
     }
 
-    if (arg.startsWith("--config=")) {
-      const value = parseConfigFlagValue(arg.slice("--config=".length));
+    if (arg.startsWith(`${FLAG_CONFIG}=`)) {
+      const value = parseConfigFlagValue(arg.slice(`${FLAG_CONFIG}=`.length));
       if (!value) {
-        return { ok: false, error: "Missing key=value payload for --config." };
+        return { ok: false, error: `Missing key=value payload for ${FLAG_CONFIG}.` };
       }
       configOverrides.push(value);
-      passthroughArgs.push(`--config=${value}`);
+      passthroughArgs.push(`${FLAG_CONFIG}=${value}`);
       continue;
     }
 
-    if (arg.startsWith("-c=")) {
-      const value = parseConfigFlagValue(arg.slice(3));
+    if (arg.startsWith(`${FLAG_CONFIG_SHORT}=`)) {
+      const value = parseConfigFlagValue(arg.slice(`${FLAG_CONFIG_SHORT}=`.length));
       if (!value) {
-        return { ok: false, error: "Missing key=value payload for -c." };
+        return { ok: false, error: `Missing key=value payload for ${FLAG_CONFIG_SHORT}.` };
       }
       configOverrides.push(value);
-      passthroughArgs.push(`-c=${value}`);
+      passthroughArgs.push(`${FLAG_CONFIG_SHORT}=${value}`);
       continue;
     }
 
-    if (arg === "--model" || arg === "-m") {
+    // --model / -m set the model via a config override, quoted for TOML.
+    if (arg === FLAG_MODEL || arg === FLAG_MODEL_SHORT) {
       const value = normalizeProfileValue(argv[index + 1]);
       if (!value) {
         return { ok: false, error: `Missing value for ${arg}.` };
@@ -127,13 +140,13 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       continue;
     }
 
-    if (arg.startsWith("--model=")) {
-      const value = normalizeProfileValue(arg.slice("--model=".length));
+    if (arg.startsWith(`${FLAG_MODEL}=`)) {
+      const value = normalizeProfileValue(arg.slice(`${FLAG_MODEL}=`.length));
       if (!value) {
-        return { ok: false, error: "Missing value for --model." };
+        return { ok: false, error: `Missing value for ${FLAG_MODEL}.` };
       }
       configOverrides.push(`model=${quoteTomlString(value)}`);
-      passthroughArgs.push(`--model=${value}`);
+      passthroughArgs.push(`${FLAG_MODEL}=${value}`);
       continue;
     }
 
