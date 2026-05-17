@@ -2,6 +2,7 @@ import React, { startTransition, useCallback, useEffect, useMemo, useRef, useSta
 import { spawn } from "child_process";
 import { existsSync } from "fs";
 
+// Diagnostic tracing hook — no-op by default; wire to a real logger when debugging.
 function appDiagLog(msg: string): void {
   void msg;
 }
