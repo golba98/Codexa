@@ -18,6 +18,7 @@ import {
   createTerminalTitleSequenceStripper,
   stripTerminalTitleSequences,
   stripTerminalTitleSequencesFromChunk,
+  traceTerminalTitleSequences,
   writeCodexaTerminalTitle,
   writeGuardedTerminalOutput,
   __resetTerminalTitleCache,
@@ -296,4 +297,32 @@ test("startup guard reasserts intended title until cancelled", async () => {
   assert.ok(writesAfterCancel >= 3, `expected guard to reassert title, got ${writesAfterCancel} writes`);
   assert.equal(writes.length, writesAfterCancel);
   assert.ok(writes.every((chunk) => chunk === buildTerminalTitleSequence("13-Custom-CLI-Normal")));
+});
+
+test("stripTerminalTitleSequences handles very long unterminated OSC without hanging", () => {
+  const long = "\x1b]0;" + "A".repeat(100_000);
+  const start = Date.now();
+  const result = stripTerminalTitleSequences(long);
+  assert.ok(Date.now() - start < 100, "must complete in under 100 ms");
+  assert.ok(result.includes("\x1b]0;"), "unterminated sequence passes through unchanged");
+});
+
+test("stripTerminalTitleSequences strips OSC sequence with empty title", () => {
+  assert.equal(stripTerminalTitleSequences("pre\x1b]0;\x07post"), "prepost");
+  assert.equal(stripTerminalTitleSequences("pre\x1b]2;\x1b\\post"), "prepost");
+});
+
+test("createTerminalTitleSequenceStripper handles OSC split across chunks with ST terminator", () => {
+  const stripper = createTerminalTitleSequenceStripper({ source: "test", stream: "stdout", origin: "child" });
+  assert.equal(stripper.process("hello\x1b]2;MyTitle"), "hello");
+  assert.equal(stripper.process("\x1b\\world"), "world");
+  assert.equal(stripper.flush(), "");
+});
+
+test("traceTerminalTitleSequences does not hang on crafted adversarial input", () => {
+  const crafted = "\x1b]0;" + "X".repeat(10_000) + "\x1b]2;" + "Y".repeat(10_000);
+  const start = Date.now();
+  const found = traceTerminalTitleSequences(crafted, { source: "test", stream: "stdout", origin: "child" });
+  assert.ok(Date.now() - start < 100, "must complete in under 100 ms");
+  assert.equal(found, false, "no complete sequences in adversarial input");
 });
