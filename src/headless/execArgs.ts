@@ -1,5 +1,7 @@
 import type { LaunchArgs } from "../config/launchArgs.js";
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 export interface HeadlessExecArgs {
   help: boolean;
   benchmarkDiagnostics: boolean;
@@ -12,6 +14,8 @@ export interface HeadlessExecArgs {
 export type HeadlessExecArgsParseResult =
   | { ok: true; value: HeadlessExecArgs }
   | { ok: false; error: string };
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function normalizeNonEmpty(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -56,6 +60,8 @@ function buildLaunchArgs(params: {
     passthroughArgs: params.passthroughArgs,
   };
 }
+
+// ─── Parser ──────────────────────────────────────────────────────────────────
 
 export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgsParseResult {
   const configOverrides: string[] = [];
