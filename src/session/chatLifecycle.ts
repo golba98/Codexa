@@ -18,6 +18,8 @@ import type {
   UIState,
 } from "./types.js";
 
+// ─── Types & constants ────────────────────────────────────────────────────────
+
 export const RUN_OUTPUT_TRUNCATION_NOTICE = "Older output was truncated to keep the UI responsive.";
 const ACTION_REQUIRED_BLOCK_PATTERN = /\*{0,2}=+\*{0,2}\s*\n\*{0,2}\[ACTION REQUIRED\]\*{0,2}\s*\n\*{0,2}Verification Question:\*{0,2}\s*\n([\s\S]*?)\n\*{0,2}=+\*{0,2}/i;
 
@@ -113,6 +115,8 @@ export function buildFollowUpPrompt(params: {
   ].join("\n");
 }
 
+// ─── UI state reducer ────────────────────────────────────────────────────────
+
 function stateMatchesTurn(state: UIState, turnId: number): boolean {
   return "turnId" in state && state.turnId === turnId;
 }
@@ -164,6 +168,8 @@ export function reduceUIState(state: UIState, action: UIStateAction): UIState {
       return state;
   }
 }
+
+// ─── Run event creation ───────────────────────────────────────────────────────
 
 export function createRunEvent(params: {
   id: number;
@@ -310,6 +316,8 @@ export function finalizePlanBlock(event: RunEvent, finalPlan?: string): RunEvent
   };
 }
 
+// ─── Tool activities ─────────────────────────────────────────────────────────
+
 export function upsertRunToolActivity(event: RunEvent, activity: RunToolActivity): RunEvent {
   const existingIndex = event.toolActivities.findIndex((item) => item.id === activity.id);
   if (existingIndex < 0) {
@@ -423,6 +431,8 @@ export function appendRunActivity(event: RunEvent, additions: RunFileActivity[])
       : "working...",
   };
 }
+
+// ─── Progress blocks ─────────────────────────────────────────────────────────
 
 function trimProgressText(text: string): string {
   return text
@@ -748,6 +758,8 @@ export function appendRunThinking(event: RunEvent, updates: BackendProgressUpdat
   };
 }
 
+// ─── Assistant response segments ─────────────────────────────────────────────
+
 /**
  * Append a response chunk. Extends the currently active response segment if
  * one exists (`activeResponseSegmentId`); otherwise opens a new segment with
@@ -849,6 +861,8 @@ export function markResponseSegmentsCompleted(event: RunEvent, finalResponse?: s
 
 export const appendRunOutput = appendRunThinking;
 
+// ─── Run lifecycle ────────────────────────────────────────────────────────────
+
 export function completeRunEvent(event: RunEvent, durationMs = Date.now() - event.startedAt): RunEvent {
   const touchedSuffix = event.touchedFileCount > 0
     ? ` · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
@@ -899,6 +913,8 @@ export function cancelRunEvent(event: RunEvent, durationMs = Date.now() - event.
       : "Run canceled",
   };
 }
+
+// ─── Event routing ───────────────────────────────────────────────────────────
 
 export function appendStaticEvents(events: TimelineEvent[], additions: TimelineEvent[]): TimelineEvent[] {
   const result = [...events];

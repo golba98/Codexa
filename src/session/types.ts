@@ -5,6 +5,8 @@ import type {
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import type { RunActivitySummary, RunFileActivity } from "../core/workspaceActivity.js";
 
+// ─── Screen routing ──────────────────────────────────────────────────────────
+
 export type Screen =
   | "main"
   | "model-picker"
@@ -46,6 +48,8 @@ export function isBusy(state: UIState): boolean {
     || state.kind === "ANSWER_VISIBLE"
     || state.kind === "SHELL_RUNNING";
 }
+
+// ─── Timeline events ─────────────────────────────────────────────────────────
 
 export interface TimelineBaseEvent {
   id: number;
