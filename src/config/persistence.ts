@@ -24,8 +24,8 @@ import {
 import {
   mergeRuntimeIntoTomlConfig,
   parseTomlDocument,
-  serializeTomlDocument,
 } from "./layeredConfig.js";
+import { serializeTomlDocument } from "./toml-serialize.js";
 import {
   normalizeRuntimeConfig,
   type RuntimeConfig,

@@ -22,17 +22,13 @@ function parseConfigFlagValue(raw: string | undefined): string | null {
     return null;
   }
 
+  // Require non-empty key and non-empty value on both sides of "="
   const separatorIndex = trimmed.indexOf("=");
   if (separatorIndex <= 0 || separatorIndex === trimmed.length - 1) {
     return null;
   }
 
   return trimmed;
-}
-
-function parseModelFlagValue(raw: string | undefined): string | null {
-  const trimmed = raw?.trim();
-  return trimmed ? trimmed : null;
 }
 
 function quoteTomlString(value: string): string {
@@ -121,7 +117,7 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
     }
 
     if (arg === "--model" || arg === "-m") {
-      const value = parseModelFlagValue(argv[index + 1]);
+      const value = normalizeProfileValue(argv[index + 1]);
       if (!value) {
         return { ok: false, error: `Missing value for ${arg}.` };
       }
@@ -132,7 +128,7 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
     }
 
     if (arg.startsWith("--model=")) {
-      const value = parseModelFlagValue(arg.slice("--model=".length));
+      const value = normalizeProfileValue(arg.slice("--model=".length));
       if (!value) {
         return { ok: false, error: "Missing value for --model." };
       }

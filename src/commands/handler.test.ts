@@ -560,19 +560,19 @@ test("every command documented in help is recognized by the parser", () => {
   assert.equal(helpResult?.action, "help");
   const helpText = helpResult?.message ?? "";
 
-  // Extract primary commands documented with leading whitespace /command
-  const documentedCommands = [...helpText.matchAll(/^\s{2}\/([a-z0-9-]+)/gm)].map((m) => m[1]!);
+  // Capture commands from line-start entries ("  /cmd ...") and comma-listed aliases (", /alias")
+  // so that lines like "  /exit, /quit  Quit..." contribute both "exit" and "quit"
+  const fromLineStart = [...helpText.matchAll(/^\s{2}\/([a-z][a-z0-9-]+)/gm)].map((m) => m[1]!);
+  const fromCommaAlias = [...helpText.matchAll(/,\s*\/([a-z][a-z0-9-]+)/g)].map((m) => m[1]!);
+  const documentedCommands = new Set([...fromLineStart, ...fromCommaAlias]);
+
+  // /diagnose requires the "github" subcommand; bare /diagnose returns unknown by design
+  const requiresSubcommand = new Set(["diagnose"]);
 
   for (const cmd of documentedCommands) {
-    // Some commands like /exit, /quit are listed on the same line.
-    // The regex above might only catch the first one if not careful, 
-    // but the help text usually has one per line or comma separated.
-    const aliases = cmd.split(/,\s*\//);
-    for (const alias of aliases) {
-      if (alias === "diagnose") continue; // Requires an argument (github)
-      const result = runCommand(`/${alias}`);
-      assert.notEqual(result?.action, "unknown", `Command /${alias} documented in /help but returned action 'unknown'`);
-    }
+    if (requiresSubcommand.has(cmd)) continue;
+    const result = runCommand(`/${cmd}`);
+    assert.notEqual(result?.action, "unknown", `Command /${cmd} documented in /help but handler returned 'unknown'`);
   }
 
   // Verify specific multi-word commands mentioned in help

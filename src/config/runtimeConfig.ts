@@ -131,7 +131,12 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
 };
 
 function detectPathApi(value: string): typeof win32 | typeof posix {
+  // Matches Windows absolute paths: drive-letter (C:\), UNC (\\server), or forward-slash (/unix)
   return /^[a-zA-Z]:[\\/]|^\\\\|\\/.test(value) ? win32 : posix;
+}
+
+function toPlatformKey(path: string): string {
+  return process.platform === "win32" ? path.toLowerCase() : path;
 }
 
 function stripTrailingSeparators(value: string, pathApi: typeof win32 | typeof posix): string {
@@ -158,7 +163,7 @@ function dedupeWritableRoots(values: readonly string[]): string[] {
     if (typeof value !== "string") continue;
     const trimmed = normalizePathValue(value);
     if (!trimmed) continue;
-    const key = process.platform === "win32" ? trimmed.toLowerCase() : trimmed;
+    const key = toPlatformKey(trimmed);
     if (seen.has(key)) continue;
     seen.add(key);
     normalized.push(trimmed);
@@ -363,13 +368,13 @@ export function addWritableRoot(config: RuntimeConfig, root: string): RuntimeCon
 
 export function removeWritableRoot(config: RuntimeConfig, root: string): RuntimeConfig {
   const target = normalizePathValue(root);
-  const targetKey = process.platform === "win32" ? target.toLowerCase() : target;
+  const targetKey = toPlatformKey(target);
   return {
     ...config,
     policy: {
       ...config.policy,
       writableRoots: config.policy.writableRoots.filter((value) => {
-        const key = process.platform === "win32" ? normalizePathValue(value).toLowerCase() : normalizePathValue(value);
+        const key = toPlatformKey(normalizePathValue(value));
         return key !== targetKey;
       }),
     },
