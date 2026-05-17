@@ -20,6 +20,7 @@ function createLaunchArgs(): LaunchArgs {
     profile: null,
     configOverrides: [],
     passthroughArgs: [],
+    modelOverride: null,
   };
 }
 

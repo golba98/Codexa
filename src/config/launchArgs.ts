@@ -15,6 +15,8 @@ export interface LaunchArgs {
   profile: string | null;
   configOverrides: string[];
   passthroughArgs: string[];
+  /** Explicitly set when --model / -m was passed on the command line. Null when no model flag was given. */
+  modelOverride: string | null;
 }
 
 export type LaunchArgsParseResult =
@@ -52,6 +54,7 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
   let help = false;
   let version = false;
   let profile: string | null = null;
+  let modelOverride: string | null = null;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -129,6 +132,8 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
     }
 
     // --model / -m set the model via a config override, quoted for TOML.
+    // Also captured in modelOverride so callers can distinguish "was --model given?"
+    // from "what does layered config resolve to?" (which always has a default value).
     if (arg === FLAG_MODEL || arg === FLAG_MODEL_SHORT) {
       const value = normalizeProfileValue(argv[index + 1]);
       if (!value) {
@@ -136,6 +141,7 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       }
       configOverrides.push(`model=${quoteTomlString(value)}`);
       passthroughArgs.push(arg, value);
+      modelOverride = value;
       index += 1;
       continue;
     }
@@ -147,6 +153,7 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       }
       configOverrides.push(`model=${quoteTomlString(value)}`);
       passthroughArgs.push(`${FLAG_MODEL}=${value}`);
+      modelOverride = value;
       continue;
     }
 
@@ -173,6 +180,7 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       profile,
       configOverrides,
       passthroughArgs,
+      modelOverride,
     },
   };
 }

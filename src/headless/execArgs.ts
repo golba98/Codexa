@@ -50,6 +50,7 @@ function buildLaunchArgs(params: {
   profile: string | null;
   configOverrides: string[];
   passthroughArgs: string[];
+  modelOverride: string | null;
 }): LaunchArgs {
   return {
     help: false,
@@ -58,6 +59,7 @@ function buildLaunchArgs(params: {
     profile: params.profile,
     configOverrides: params.configOverrides,
     passthroughArgs: params.passthroughArgs,
+    modelOverride: params.modelOverride,
   };
 }
 
@@ -69,6 +71,7 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
   const positionalPromptParts: string[] = [];
   let explicitPrompt: string | null = null;
   let profile: string | null = null;
+  let modelOverride: string | null = null;
   let help = false;
   let benchmarkDiagnostics = false;
   let timing = false;
@@ -203,6 +206,7 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
       }
       configOverrides.push(`model=${quoteTomlString(value)}`);
       passthroughArgs.push(arg, value);
+      modelOverride = value;
       index += 1;
       continue;
     }
@@ -214,6 +218,7 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
       }
       configOverrides.push(`model=${quoteTomlString(value)}`);
       passthroughArgs.push(`--model=${value}`);
+      modelOverride = value;
       continue;
     }
 
@@ -266,7 +271,7 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
         timing,
         promptPolicy,
         prompt: prompt ?? "",
-        launchArgs: buildLaunchArgs({ prompt, profile, configOverrides, passthroughArgs }),
+        launchArgs: buildLaunchArgs({ prompt, profile, configOverrides, passthroughArgs, modelOverride }),
       },
     };
   }
@@ -283,7 +288,7 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
       timing,
       promptPolicy,
       prompt,
-      launchArgs: buildLaunchArgs({ prompt, profile, configOverrides, passthroughArgs }),
+      launchArgs: buildLaunchArgs({ prompt, profile, configOverrides, passthroughArgs, modelOverride }),
     },
   };
 }

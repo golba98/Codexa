@@ -70,6 +70,7 @@ test("resolves user config, trusted project config, profiles, and CLI overrides 
           "mcp.enabled=true",
         ],
         passthroughArgs: [],
+        modelOverride: "gpt-5.4-mini",
       },
     });
 
@@ -124,6 +125,7 @@ test("blocks project config when the detected project root is untrusted", async 
         profile: null,
         configOverrides: [],
         passthroughArgs: [],
+        modelOverride: null,
       },
     });
 

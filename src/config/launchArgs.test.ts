@@ -94,6 +94,8 @@ test("parses model flags as runtime config overrides", () => {
     "-m",
     "gpt-5.4-mini",
   ]);
+  // Last --model flag wins (same order as layered config)
+  assert.equal(parsed.value.modelOverride, "gpt-5.4-mini");
 });
 
 test("parses inline model flag assignment", () => {
@@ -105,6 +107,16 @@ test("parses inline model flag assignment", () => {
   assert.equal(parsed.value.initialPrompt, "compare this");
   assert.deepEqual(parsed.value.configOverrides, ["model=\"gpt-5.5\""]);
   assert.deepEqual(parsed.value.passthroughArgs, ["--model=gpt-5.5"]);
+  assert.equal(parsed.value.modelOverride, "gpt-5.5");
+});
+
+test("modelOverride is null when no --model flag is given", () => {
+  const parsed = parseLaunchArgs(["--profile", "review", "some", "prompt"]);
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+
+  assert.equal(parsed.value.modelOverride, null);
 });
 
 test("rejects missing model flag values", () => {
