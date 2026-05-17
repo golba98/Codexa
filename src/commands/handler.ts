@@ -4,6 +4,7 @@ import {
   AVAILABLE_BACKENDS,
   AVAILABLE_MODELS,
   AVAILABLE_REASONING_LEVELS,
+  AVAILABLE_THEMES,
   BUSY_LOADER_SETTING_VALUES,
   WORKSPACE_DISPLAY_MODES,
   formatAuthPreferenceLabel,
@@ -19,7 +20,6 @@ import {
   type TerminalTitleMode,
   type WorkspaceDisplayMode,
 } from "../config/settings.js";
-import { AVAILABLE_THEMES } from "../config/settings.js";
 import {
   formatLayeredConfigStatus,
   type LayeredConfigResult,
@@ -142,6 +142,7 @@ function formatWritableRoots(roots: readonly string[]): string {
 function normalizeReasoningCommandArg(arg: string): string {
   const normalized = arg.toLowerCase();
   const reasoningAliasMap: Record<string, string> = {
+    // "extra high" is a user-facing alias for "xhigh"
     "extra high": "xhigh",
     xhigh: "xhigh",
   };
@@ -214,6 +215,7 @@ function handlePolicyCommand(
         };
       }
       if (isOneOf(normalizedRest, NETWORK_ACCESS_VALUES)) {
+        // "on"/"off" are accepted aliases for "enabled"/"disabled"
         const value: RuntimeNetworkAccess = normalizedRest === "on"
           ? "enabled"
           : normalizedRest === "off"
@@ -359,9 +361,9 @@ function formatRenderCounts(): string {
 export function handleCommand(text: string, context: CommandContext): CommandResult | null {
   // Slash commands: / prefix
   if (text.startsWith("/")) {
-    const [rawCmd, ...argParts] = text.slice(1).trim().split(/\s+/);
+    const [rawCmd, ...argTokens] = text.slice(1).trim().split(/\s+/);
     const cmd = rawCmd!.toLowerCase();
-    const arg = argParts.join(" ").trim();
+    const arg = argTokens.join(" ").trim();
     const normalizedArg = arg.toLowerCase();
 
     switch (cmd) {
@@ -516,6 +518,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       const workspaceSettingPrefix = ["workspace ", "workspace-display ", "directory "].find((prefix) => normalizedArg.startsWith(prefix));
       if (workspaceSettingPrefix) {
         const nextValue = normalizedArg.slice(workspaceSettingPrefix.length).trim();
+        // "normal" was the legacy default label before "dir" was introduced
         const legacyMap: Record<string, WorkspaceDisplayMode> = {
           normal: normalizeLegacyDirectoryDisplayMode("normal"),
         };

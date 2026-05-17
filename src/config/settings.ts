@@ -314,6 +314,7 @@ function formatWorkspaceLeaf(workspaceRoot: string): string {
 
   const { root } = parse(trimmed);
   let normalized = trimmed;
+  // Stop at filesystem root — root.length > 0 prevents stripping the root itself
   while (normalized.length > root.length && /[\\/]+$/.test(normalized)) {
     normalized = normalized.slice(0, -1);
   }
