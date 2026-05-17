@@ -10,6 +10,8 @@ import { traceInputDebug } from "../core/inputDebug.js";
 import { FOCUS_IDS } from "./focus.js";
 import { useTheme } from "./theme.js";
 
+// ─── Types & helpers ─────────────────────────────────────────────────────────
+
 type ModelPickerCloseReason = "escape" | "empty-selection";
 
 interface ModelReasoningPickerProps {
@@ -80,6 +82,8 @@ function describeInputKey(
     meta: Boolean(key.meta),
   };
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function ModelReasoningPicker({
   models,
@@ -272,6 +276,8 @@ export function ModelReasoningPicker({
     />
   );
 }
+
+// ─── Subcomponents ───────────────────────────────────────────────────────────
 
 function LoadingPickerView({
   theme,

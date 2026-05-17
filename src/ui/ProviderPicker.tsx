@@ -6,6 +6,8 @@ import { FOCUS_IDS } from "./focus.js";
 import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { useTheme } from "./theme.js";
 
+// ─── Types & helpers ─────────────────────────────────────────────────────────
+
 interface ProviderPickerProps {
   layout: Layout;
   providers: readonly ProviderConfig[];
@@ -25,6 +27,8 @@ function clampIndex(index: number, length: number): number {
   if (length <= 0) return 0;
   return Math.max(0, Math.min(length - 1, index));
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function ProviderPicker({ layout, providers, onAction, onCancel, initialProviderId }: ProviderPickerProps) {
   const theme = useTheme();
@@ -211,6 +215,8 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
     </Box>
   );
 }
+
+// ─── Subcomponents ───────────────────────────────────────────────────────────
 
 function ProviderRow({
   provider,

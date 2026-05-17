@@ -22,6 +22,8 @@ export interface Theme {
   LOGO: string[];
 }
 
+// ─── Theme definitions ────────────────────────────────────────────────────────
+
 export const PURPLE_THEME: Theme = {
   BG: "#1A1B26",
   PANEL: "#24283B",
@@ -337,6 +339,8 @@ export const SYNTHWAVE_THEME: Theme = {
   LOGO: ["#FF7EDB", "#36F9F6", "#72F1B8", "#F97E72"],
 };
 
+// ─── Theme registry ───────────────────────────────────────────────────────────
+
 export const THEMES: Record<string, Theme> = {
   purple: PURPLE_THEME,
   mono: MONO_THEME,
@@ -357,6 +361,8 @@ export const THEMES: Record<string, Theme> = {
 
 // Default for backwards compatibility during migration
 export const theme = PURPLE_THEME;
+
+// ─── Context & hook ───────────────────────────────────────────────────────────
 
 const ThemeContext = createContext<Theme>(PURPLE_THEME);
 

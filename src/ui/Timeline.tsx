@@ -21,6 +21,8 @@ import { buildStableTimelineSnapshot, buildTimelineSnapshot } from "./timelineMe
 import { resolveTurnRunPhase, type TurnOpacity, type TurnRunPhase } from "./TurnGroup.js";
 import { useTheme } from "./theme.js";
 
+// ─── Types & constants ────────────────────────────────────────────────────────
+
 interface TimelineProps {
   staticEvents: TimelineEvent[];
   activeEvents: TimelineEvent[];
@@ -114,6 +116,8 @@ interface FinalizeContinuityOptions {
   previousTotalRows: number;
   viewportRows: number;
 }
+
+// ─── Viewport helpers ────────────────────────────────────────────────────────
 
 function isStandaloneEvent(event: TimelineEvent): event is StandaloneTimelineEvent {
   return event.type === "system" || event.type === "error" || event.type === "shell";
@@ -212,6 +216,8 @@ function getFirstPageAnchor(totalRows: number, viewportRows: number): number {
   }
   return Math.min(totalRows - 1, Math.max(0, viewportRows - 1));
 }
+
+// ─── Timeline item builders ───────────────────────────────────────────────────
 
 export function buildTimelineItems(events: TimelineEvent[]): TimelineItem[] {
   const items: TimelineItem[] = [];
@@ -314,6 +320,8 @@ export function createFinalizeContinuityViewport(
 
   return createAnchoredViewport(snapshot, Math.min(snapshot.totalRows - 1, Math.max(0, anchorRow)));
 }
+
+// ─── Viewport operations ─────────────────────────────────────────────────────
 
 function getFrozenSnapshot(
   viewport: TimelineViewportState,
@@ -695,6 +703,8 @@ export function parseTimelineNavigationInput(raw: string): TimelineNavigationAct
   return actions;
 }
 
+// ─── Row selection & render items ────────────────────────────────────────────
+
 export function selectTimelineRows(
   liveSnapshot: TimelineSnapshot,
   viewport: TimelineViewportState,
@@ -844,6 +854,8 @@ export function buildIntroRenderItem(params: {
   };
 }
 
+// ─── Row rendering ────────────────────────────────────────────────────────────
+
 function getToneColor(theme: ReturnType<typeof useTheme>, tone: TimelineTone | undefined): string | undefined {
   switch (tone) {
     case "text": return theme.TEXT;
@@ -942,6 +954,8 @@ const JumpToBottomBar = memo(function JumpToBottomBar({
     </Box>
   );
 });
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export const Timeline = memo(function Timeline({
   staticEvents,

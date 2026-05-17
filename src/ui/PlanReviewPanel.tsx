@@ -6,6 +6,8 @@ import { parseMarkdown } from "./Markdown.js";
 import { getTextWidth } from "./textLayout.js";
 import { useTheme } from "./theme.js";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type InlinePart =
   | { kind: "text"; text: string }
   | { kind: "code"; text: string }
@@ -26,6 +28,8 @@ type PlanReviewDisplayRow = {
 function inlinePartsToText(parts: InlinePart[]): string {
   return parts.map((part) => part.text).join("");
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 export function buildPlanReviewRows(planText: string, workspaceRoot?: string | null): PlanReviewRow[] {
   const normalized = normalizePlanReviewMarkdown(planText, workspaceRoot);
@@ -166,6 +170,8 @@ function buildTopBorder(width: number, title: string): { title: string; fill: st
   const fillCount = Math.max(1, width - prefixWidth - titleWidth - suffixWidth);
   return { title, fill: "─".repeat(fillCount) };
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function PlanReviewPanel({
   planText,
