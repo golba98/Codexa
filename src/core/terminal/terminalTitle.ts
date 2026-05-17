@@ -7,9 +7,48 @@ export const DEFAULT_TERMINAL_TITLE = APP_NAME;
 // ─── Constants & diagnostics ──────────────────────────────────────────────────
 
 const DEBUG_TERMINAL_TITLE = Boolean(process.env["CODEXA_DEBUG_TERMINAL_TITLE"]);
-const TERMINAL_TITLE_SEQUENCE_PATTERN = /\x1b\](?:0|2);[^\x07]*(?:\x07|\x1b\\)/g;
-const TERMINAL_TITLE_SEQUENCE_DETECT_PATTERN = /\x1b\]([02]);([\s\S]*?)(?:\x07|\x1b\\)/g;
-const INCOMPLETE_TERMINAL_TITLE_SEQUENCE_PATTERN = /\x1b\](?:0|2);[^\x07]*$/;
+
+/** Hard cap applied at every entry-point to prevent O(n²) scanning cost on adversarial input. */
+const MAX_TERMINAL_TITLE_INPUT_LENGTH = 65536;
+
+// Returns start index of the next ESC]0; or ESC]2; header at/after `from`, or -1.
+function findNextOscTitleStart(text: string, from: number): number {
+  const limit = text.length - 3;
+  for (let i = from; i <= limit; i++) {
+    if (
+      text.charCodeAt(i) === 0x1b &&
+      text.charCodeAt(i + 1) === 0x5d &&
+      (text.charCodeAt(i + 2) === 0x30 || text.charCodeAt(i + 2) === 0x32) &&
+      text.charCodeAt(i + 3) === 0x3b
+    ) return i;
+  }
+  return -1;
+}
+
+// Finds the first BEL (0x07) or ST (ESC \) at/after `from`.
+// Returns { contentEnd: terminator-start, seqEnd: after-terminator } or null.
+function findOscSequenceEnd(text: string, from: number): { contentEnd: number; seqEnd: number } | null {
+  for (let i = from; i < text.length; i++) {
+    if (text.charCodeAt(i) === 0x07) return { contentEnd: i, seqEnd: i + 1 };
+    if (text.charCodeAt(i) === 0x1b && i + 1 < text.length && text.charCodeAt(i + 1) === 0x5c)
+      return { contentEnd: i, seqEnd: i + 2 };
+  }
+  return null;
+}
+
+// Returns the start of the first unterminated OSC 0/2 sequence, or -1 if none.
+function findIncompleteOscTitleStart(text: string): number {
+  let pos = 0;
+  while (pos < text.length) {
+    const start = findNextOscTitleStart(text, pos);
+    if (start === -1) return -1;
+    const term = findOscSequenceEnd(text, start + 4);
+    if (term === null) return start;
+    pos = term.seqEnd;
+  }
+  return -1;
+}
+
 const TERMINAL_TITLE_DEBUG_LOG_PATH = process.env["CODEXA_TERMINAL_TITLE_DEBUG_FILE"]?.trim()
   || join(process.cwd(), ".codexa-debug", "terminal-title-debug.log");
 
@@ -202,14 +241,22 @@ export function traceTerminalTitleSequences(
   input: Buffer | string,
   context: TerminalTitleSequenceTraceContext,
 ): boolean {
-  const text = Buffer.isBuffer(input) ? input.toString("utf8") : input;
+  const raw = Buffer.isBuffer(input) ? input.toString("utf8") : input;
+  const text = raw.slice(0, MAX_TERMINAL_TITLE_INPUT_LENGTH);
   if (!text) return false;
 
   let found = false;
-  TERMINAL_TITLE_SEQUENCE_DETECT_PATTERN.lastIndex = 0;
-  for (let match = TERMINAL_TITLE_SEQUENCE_DETECT_PATTERN.exec(text); match; match = TERMINAL_TITLE_SEQUENCE_DETECT_PATTERN.exec(text)) {
+  let pos = 0;
+
+  while (pos < text.length) {
+    const start = findNextOscTitleStart(text, pos);
+    if (start === -1) break;
+    const term = findOscSequenceEnd(text, start + 4);
+    if (term === null) break; // unterminated — nothing to trace
+
     found = true;
-    const title = match[2] ?? "";
+    const title = text.slice(start + 4, term.contentEnd);
+    const oscCode = text.charCodeAt(start + 2); // 0x30='0', 0x32='2'
     writeTerminalTitleDebugRecord({
       event: "terminalTitleSequence",
       source: context.source,
@@ -217,18 +264,35 @@ export function traceTerminalTitleSequences(
       origin: context.origin,
       action: context.action ?? "observed",
       lifecycleState: context.lifecycleState ?? terminalTitleLifecycleState,
-      osc: match[1] === "2" ? "OSC 2" : "OSC 0",
+      osc: oscCode === 0x32 ? "OSC 2" : "OSC 0",
       title,
       containsWindowsSystem: title.toLowerCase().includes("c:\\windows\\system"),
-      bytes: Buffer.byteLength(match[0] ?? ""),
+      bytes: Buffer.byteLength(text.slice(start, term.seqEnd)),
     });
+
+    pos = term.seqEnd;
   }
 
   return found;
 }
 
 export function stripTerminalTitleSequences(input: string): string {
-  return input.replace(TERMINAL_TITLE_SEQUENCE_PATTERN, "");
+  const text = input.slice(0, MAX_TERMINAL_TITLE_INPUT_LENGTH);
+  if (!text) return "";
+
+  let result = "";
+  let pos = 0;
+
+  while (pos < text.length) {
+    const start = findNextOscTitleStart(text, pos);
+    if (start === -1) { result += text.slice(pos); break; }
+    result += text.slice(pos, start);
+    const term = findOscSequenceEnd(text, start + 4);
+    if (term === null) { result += text.slice(start); break; } // unterminated: pass through unchanged
+    pos = term.seqEnd;
+  }
+
+  return result;
 }
 
 export function stripTerminalTitleSequencesFromChunk(chunk: Buffer | string): string {
@@ -257,10 +321,10 @@ export function createTerminalTitleSequenceStripper(context: TerminalTitleSequen
       const input = carryover + text;
       carryover = "";
 
-      const match = INCOMPLETE_TERMINAL_TITLE_SEQUENCE_PATTERN.exec(input);
-      if (match?.index != null) {
-        carryover = input.slice(match.index);
-        return strip(input.slice(0, match.index));
+      const incompleteStart = findIncompleteOscTitleStart(input.slice(0, MAX_TERMINAL_TITLE_INPUT_LENGTH));
+      if (incompleteStart !== -1) {
+        carryover = input.slice(incompleteStart);
+        return strip(input.slice(0, incompleteStart));
       }
 
       return strip(input);
