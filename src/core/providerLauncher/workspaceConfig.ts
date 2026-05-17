@@ -37,6 +37,8 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
   if (!isRecord(value)) return undefined;
   const override: ProviderWorkspaceOverride = {};
 
+  // Accept both camelCase and snake_case field names for compatibility with
+  // config files written by different tool versions.
   if (typeof value.currentModel === "string") {
     override.currentModel = value.currentModel;
   } else if (typeof value.current_model === "string") {
@@ -92,7 +94,7 @@ function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
   return {
     providerId,
     modelId: normalizedModelId,
-    backendKind: typeof backendKind === "string" ? getProviderRuntime(providerId).backendKind : getProviderRuntime(providerId).backendKind,
+    backendKind: getProviderRuntime(providerId).backendKind,
     ...(typeof reasoning === "string" && reasoning.trim() ? { reasoning: reasoning.trim() } : {}),
     ...(normalizedModelSelection ? { modelSelection: normalizedModelSelection } : {}),
   };

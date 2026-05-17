@@ -152,12 +152,12 @@ function normalizeClaudeCodeModel(raw: unknown, source: ClaudeCodeModelSource): 
   if (!value) return null;
   const family = readString(raw.family) ?? modelFamilyFromValue(value);
   const fallback = fallbackModelByFamily(family);
-  const effortLevels = normalizeEffortIds(
-    raw.effortLevels ?? raw.effort_levels ?? raw.supportedEfforts ?? raw.supported_efforts,
-    family,
-  );
+  // Accept both camelCase and snake_case effort field names for compatibility.
+  const rawEffortArray = raw.effortLevels ?? raw.effort_levels ?? raw.supportedEfforts ?? raw.supported_efforts;
+  const effortLevels = normalizeEffortIds(rawEffortArray, family);
   const defaultEffort = readString(raw.defaultEffort ?? raw.default_effort ?? raw.effortLevel ?? raw.effort_level)
     ?? fallbackDefaultEffort(family);
+  const hasRawEffortArray = Array.isArray(rawEffortArray);
 
   return {
     label: readString(raw.label ?? raw.displayName ?? raw.display_name) ?? labelFromModelValue(value, fallback?.label),
@@ -167,8 +167,8 @@ function normalizeClaudeCodeModel(raw: unknown, source: ClaudeCodeModelSource): 
     source,
     effortLevels,
     defaultEffort: effortLevels.includes(defaultEffort) ? defaultEffort : effortLevels[0] ?? "medium",
-    effortSource: Array.isArray(raw.effortLevels ?? raw.effort_levels ?? raw.supportedEfforts ?? raw.supported_efforts) ? source : "fallback",
-    effortVerified: source === "claude-code" && Array.isArray(raw.effortLevels ?? raw.effort_levels ?? raw.supportedEfforts ?? raw.supported_efforts),
+    effortSource: hasRawEffortArray ? source : "fallback",
+    effortVerified: source === "claude-code" && hasRawEffortArray,
     description: readString(raw.description),
   };
 }
@@ -223,6 +223,7 @@ function readClaudeSettings(settingsPath: string | null | undefined): ClaudeSett
   try {
     const parsed = JSON.parse(readFileSync(path, "utf-8")) as unknown;
     if (!isRecord(parsed)) return null;
+    // Accept both camelCase and snake_case field names — Claude settings.json has used both across versions.
     const availableModels = readStringArray(parsed.availableModels ?? parsed.available_models);
     const modelOverrides = parsed.modelOverrides ?? parsed.model_overrides;
     const overrideModels = isRecord(modelOverrides)

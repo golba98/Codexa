@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 type DebugEnv = Record<string, string | undefined>;
 
+// Global debug state — populated lazily on first check, or eagerly via configureRenderDebug().
 let configured = false;
 let enabled = false;
 let renderTraceEnabled = false;
@@ -16,6 +17,8 @@ const counters = new Map<string, number>();
 
 function configureFromEnv(env: DebugEnv = process.env): void {
   renderTraceEnabled = env["CODEXA_DEBUG_RENDER_TRACE"] === "1";
+  // Both CODEXA_RENDER_DEBUG and CODEXA_DEBUG_RENDER activate render debugging —
+  // two names exist for historical reasons; either one is sufficient.
   enabled = env["CODEXA_RENDER_DEBUG"] === "1"
     || env["CODEXA_DEBUG_RENDER"] === "1"
     || renderTraceEnabled;

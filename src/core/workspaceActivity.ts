@@ -137,6 +137,8 @@ interface DiffOperation {
   text: string;
 }
 
+// LCS diff has O(n*m) complexity. Skip diffing for large files to avoid
+// blocking the poll loop — callers treat null as "too large to diff".
 function buildLineDiff(before: string[], after: string[]): DiffOperation[] | null {
   if (before.length + after.length > MAX_DIFFABLE_LINE_COUNT) {
     return null;

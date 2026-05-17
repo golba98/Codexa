@@ -118,9 +118,9 @@ export async function resolveExecutable(options: ExecutableResolverOptions): Pro
     throw new Error(`${options.label} executable was not found.`);
   }
 
-  // 6. Bare name fallback
-  const bareName = options.commandNames.find(c => !c.includes('.')) || options.commandNames[0];
-  return bareName;
+  // 6. Bare name fallback — prefer the name without an extension (works on Unix).
+  const bareName = options.commandNames.find((c) => !c.includes(".")) ?? options.commandNames[0];
+  return bareName!;
 }
 
 /**

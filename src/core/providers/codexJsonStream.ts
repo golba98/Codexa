@@ -185,6 +185,8 @@ export function createCodexJsonStreamParser(handlers: CodexJsonStreamHandlers) {
     handlers.onProgress?.({ id: key, source, text: next });
   };
 
+  // Codex JSON stream sends cumulative text per item ID rather than deltas.
+  // We track the last emitted text and emit only the newly appended suffix.
   const emitAssistantText = (itemId: string, nextText: string) => {
     const previous = assistantTextById.get(itemId) ?? "";
     assistantTextById.set(itemId, nextText);

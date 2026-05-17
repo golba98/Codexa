@@ -23,6 +23,8 @@ function normalizeHelpText(text: string): string {
     .toLowerCase();
 }
 
+// Uses a hand-rolled word-boundary pattern rather than \b so that flag names
+// containing hyphens (e.g. --ask-for-approval) are matched reliably.
 function hasCliToken(helpText: string, token: string): boolean {
   const pattern = new RegExp(`(^|[^a-z0-9-])${escapeRegExp(token.toLowerCase())}(?=$|[^a-z0-9-])`, "m");
   return pattern.test(helpText);

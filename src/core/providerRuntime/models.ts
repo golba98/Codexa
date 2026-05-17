@@ -17,6 +17,7 @@ export function isVerifiedGeminiModelId(modelId: string | null | undefined): mod
 }
 
 export function normalizeGeminiModelId(modelId: string | null | undefined): string {
+  // "gemini-3-flash" is an older shorthand; remap it to the canonical preview ID.
   if (modelId === "gemini-3-flash") return "gemini-3-flash-preview";
   return isVerifiedGeminiModelId(modelId) ? modelId : GEMINI_DEFAULT_MODEL_ID;
 }
@@ -114,26 +115,30 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
   },
 ] as const;
 
+function isRuntimeSource(source: ProviderModel["source"]): boolean {
+  return source === "discovered" || source === "claude-code" || source === "settings" || source === "config";
+}
+
 export function providerModelsToCodexCapabilities(
   models: readonly ProviderModel[],
   currentModel: string,
 ): CodexModelCapabilities {
   const capabilities: readonly CodexModelCapability[] = models.map((model, index) => ({
-      id: model.id,
-      model: model.modelId,
-      label: model.label,
-      description: model.description,
-      available: true,
-      hidden: false,
-      isDefault: model.modelId === currentModel || (!currentModel && index === 0),
-      defaultReasoningLevel: model.defaultReasoningLevel,
-      supportedReasoningLevels: model.supportedReasoningLevels,
-      reasoningLevelCount: model.supportedReasoningLevels ? model.supportedReasoningLevels.length : null,
-      source: model.source === "discovered" || model.source === "claude-code" || model.source === "settings" || model.source === "config" ? "runtime" : "fallback",
-      raw: model,
-    }));
+    id: model.id,
+    model: model.modelId,
+    label: model.label,
+    description: model.description,
+    available: true,
+    hidden: false,
+    isDefault: model.modelId === currentModel || (!currentModel && index === 0),
+    defaultReasoningLevel: model.defaultReasoningLevel,
+    supportedReasoningLevels: model.supportedReasoningLevels,
+    reasoningLevelCount: model.supportedReasoningLevels ? model.supportedReasoningLevels.length : null,
+    source: isRuntimeSource(model.source) ? "runtime" : "fallback",
+    raw: model,
+  }));
 
-  const anyDiscovered = models.some((m) => m.source === "discovered" || m.source === "claude-code" || m.source === "settings" || m.source === "config");
+  const anyDiscovered = models.some((m) => isRuntimeSource(m.source));
   return {
     status: "ready",
     source: anyDiscovered ? "runtime" : "fallback",

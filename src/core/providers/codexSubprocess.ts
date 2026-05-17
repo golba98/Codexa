@@ -15,6 +15,8 @@ import {
 } from "./codexTranscript.js";
 import type { BackendProvider } from "./types.js";
 
+// Detects CLI error messages that indicate --experimental-json is not supported.
+// When this fires the provider retries in legacy transcript mode.
 function looksLikeUnsupportedStructuredOutput(raw: string): boolean {
   return /experimental-json|unknown option|unrecognized option|unexpected argument|unexpected option/i.test(raw);
 }
@@ -89,8 +91,10 @@ export const codexSubprocessProvider: BackendProvider = {
           let mode: "undecided" | "json" | "legacy" = structuredOutput ? "undecided" : "legacy";
           let legacyProgressSequence = 0;
 
-          // Coalescing state for consecutive transcript thinking lines.
-          // Reset when a non-thinking event (assistant delta or tool activity) breaks the sequence.
+          // Consecutive thinking lines from the transcript parser are coalesced into
+          // a single progress update so the UI shows one accumulating block rather
+          // than a rapid series of individual entries. The sequence resets whenever
+          // an assistant delta or tool activity event breaks the run of thinking lines.
           let activeTranscriptThinkingId: string | null = null;
           let activeTranscriptThinkingText = "";
 
