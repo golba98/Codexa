@@ -17,6 +17,7 @@ export type BuildCodexExecArgsResult =
   | { ok: true; args: string[]; strategy: Exclude<CodexLaunchStrategy, "fail"> }
   | { ok: false; error: string; strategy: "fail" };
 
+// Prevents newline/null injection into CLI args — rejects the path if it contains unsafe characters.
 function sanitizeWorkingDirectory(cwd: string): string {
   if (cwd.includes("\n") || cwd.includes("\r") || cwd.includes("\0")) {
     return process.cwd();

@@ -19,6 +19,7 @@ export function streamCodex(
   let done = false;
   let cancelled = false;
   let proc: ReturnType<typeof spawn> | null = null;
+
   const finishError = (message: string) => {
     if (done) return;
     done = true;
@@ -59,6 +60,8 @@ export function streamCodex(
       proc.stdin?.end();
 
       let buffer = "";
+
+      // Strip title escape sequences from child output — prevents the subprocess from overwriting the terminal title.
       const stdoutTitleStripper = createTerminalTitleSequenceStripper({
         source: "src/core/codex.ts:codex.stdout",
         stream: "stdout",

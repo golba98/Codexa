@@ -68,6 +68,8 @@ function executableLooksLikePath(executable: string): boolean {
   return /[\\/]/.test(executable) || /^[A-Za-z]:/.test(executable);
 }
 
+// Probe-spawns the executable to check if it exits cleanly — used instead of `which`/`where`
+// because path-lookup alone doesn't verify the file is actually runnable.
 function captureProcessExit(executable: string, args: string[]): Promise<boolean> {
   return new Promise((resolve) => {
     let child: ChildProcess;

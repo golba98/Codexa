@@ -45,6 +45,8 @@ export function getTerminalCapability(input: TerminalCapabilityInput): TerminalC
     };
   }
 
+  // CODEXA_FORCE_VT=1 bypasses terminal detection entirely — useful when the terminal
+  // doesn't advertise VT support through standard env vars but is actually compatible.
   if (input.env.CODEXA_FORCE_VT === "1") {
     return {
       supported: true,
@@ -70,6 +72,7 @@ export function getTerminalCapability(input: TerminalCapabilityInput): TerminalC
     };
   }
 
+  // Windows-specific terminal detection below.
   if (hasSupportedWindowsTerminal(input.env)) {
     return {
       supported: true,

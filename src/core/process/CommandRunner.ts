@@ -31,6 +31,7 @@ export interface CommandStreamHandlers {
   onProcessLifecycle?: (event: "before-spawn" | "spawned" | "exit" | "error" | "cancel") => void;
 }
 
+// Sanitize before splitting: title sequences can span newlines and must not corrupt the line output.
 function splitOutputLines(text: string): string[] {
   return sanitizeTerminalOutput(text)
     .replace(/\r\n/g, "\n")
