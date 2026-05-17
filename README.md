@@ -1,114 +1,278 @@
 # Codexa
 
-Terminal UI wrapper around the Codexa neural network, built with TypeScript, Bun, and Ink.
-
-## Hello World
-
-```text
-Hello world
-```
+A terminal UI (TUI) wrapper around the `codex` CLI. Built with TypeScript, Bun, and Ink (React for terminal rendering). Codexa gives `codex` a richer interactive shell with scrollable conversation history, workspace locking, layered TOML config, themes, and in-app slash commands.
 
 ## Prerequisites
 
-Codexa requires **Bun** to run locally. Ensure Bun is installed on your system.
+- **Bun** — required to run locally from source
+- **codex CLI** — the underlying agent that Codexa wraps. Must be available on `PATH` or pointed to via `CODEX_EXECUTABLE`
 
 ## Installation
 
-Run npm install -g @golba98/codexa and then run codexa.
-
-## Layered Config
-
-CODEXA now resolves execution settings from a layered `config.toml` surface instead of persisting runtime state in `~/.codexa-settings.json`.
-
-- User config: `~/.codex/config.toml`
-- Project config: `.codex/config.toml` from the detected project root down to the locked workspace
-- Profile selection: `--profile <name>` or top-level `profile = "name"` in loaded TOML layers
-- CLI overrides: repeatable `--config key=<toml-value>` / `-c key=<toml-value>`
-
-Example:
+**Global install (recommended for use):**
 
 ```powershell
-codexa --profile review --config model="gpt-5.4" --config codexa.mode="suggest"
+npm install -g @golba98/codexa
 ```
 
-Supported runtime keys in this rank:
+Then run `codexa` from any workspace directory.
 
-- Native-style keys: `model`, `model_reasoning_effort`, `approval_policy`, `sandbox_mode`, `sandbox_workspace_write.network_access`, `sandbox_workspace_write.writable_roots`, `service_tier`, `personality`
-- CODEXA-specific keys: `[codexa].backend`, `[codexa].mode`, `gemini_command_path`
-
-### Gemini CLI Executable
-
-Codexa runs Gemini through the real CLI executable path directly. It does not route Gemini prompts through a PowerShell `gemini` function, alias, or wrapper.
-
-To force the official Gemini CLI executable, set either:
+**Local development install:**
 
 ```powershell
-$env:GEMINI_EXECUTABLE = "C:\Users\jorda\AppData\Roaming\npm\gemini.cmd"
+bun install
+npm link
 ```
 
-or in `config.toml`:
+## Usage
 
-```toml
-geminiCommandPath = "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd"
-```
+### Interactive mode
 
-Pure UI/auth preferences still live in `~/.codexa-settings.json`.
-
-### Project Trust
-
-Project config is only applied when the detected project root is trusted.
-
-```text
-/config
-/config trust status
-/config trust on
-/config trust off
-```
-
-Untrusted project config is detected but blocked visibly in `/config`.
-
-## Launch in a Target Workspace
-
-Start `codexa` from the folder you want locked as the workspace:
+Launch from the directory you want to use as the workspace:
 
 ```powershell
 cd "<path-to-your-workspace>"
 codexa
 ```
 
-The app will lock that session to the folder you launched from.
+The session is locked to the directory Codexa was launched from.
 
-## Recover From the Wrong Workspace
+### CLI flags
 
-If the app starts in the wrong folder, use:
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--help` | `-h` | Show help |
+| `--version` | `-v` | Show version |
+| `--profile <name>` | | Load a named config profile |
+| `--config <key=value>` | `-c` | Runtime config override (repeatable) |
+| `--model <name>` | `-m` | Override the active model |
 
-```text
-/workspace
-/workspace relaunch <path>
+Non-flag arguments are sent as an initial prompt on startup:
+
+```powershell
+codexa "explain this codebase"
+codexa --profile review --model gpt-5.4 "review src/app.tsx"
 ```
 
-Examples:
+### Exec mode (headless)
+
+Run a single prompt non-interactively and exit:
+
+```powershell
+codexa exec "refactor src/utils.ts to use async/await"
+codexa exec --model gpt-5.4-mini --reasoning low "summarize changes in HEAD"
+codexa exec --timing "run the test suite and fix failures"
+```
+
+Exec-specific flags:
+
+| Flag | Description |
+|------|-------------|
+| `--prompt <text>` | Prompt text (alternative to positional arg) |
+| `--model <name>` | Override model |
+| `--reasoning <level>` | Set reasoning level |
+| `--profile <name>` | Load config profile |
+| `-c <key=value>` | Runtime config override |
+| `--timing` / `--benchmark-diagnostics` | Print performance timing to stderr |
+| `--codexa-prompt-policy <raw\|wrapped>` | Prompt formatting (default: raw) |
+
+## Execution Modes
+
+Set via `/mode` or `[codexa].mode` in `config.toml`:
+
+| Mode | Key | Behavior |
+|------|-----|----------|
+| Read-only | `suggest` | No file writes |
+| Auto | `auto-edit` | Automatic file editing |
+| Full Access | `full-auto` | Strongest autonomy (default) |
+
+Mode aliases for `/mode`: `ask` → `suggest`, `add` / `auto` → `auto-edit`, `plan` / `default` → `full-auto`
+
+## Reasoning
+
+Set via `/reasoning` or `model_reasoning_effort` in `config.toml`:
+
+`none` · `minimal` · `low` · `medium` · `high` (default) · `xhigh` · `max`
+
+## Slash Commands
+
+Type `/` in the composer to access in-app commands. Key commands:
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show full command reference |
+| `/clear` | Clear conversation and cancel active run |
+| `/exit` · `/quit` | Exit the app |
+| `/model [name]` · `/models` | Switch model or open picker |
+| `/backend [name]` · `/backends` | Switch backend or list available |
+| `/providers` | Open provider picker |
+| `/mode [name]` | Switch execution mode |
+| `/reasoning [level]` | Set reasoning level |
+| `/plan [on\|off]` | Toggle plan-review workflow |
+| `/theme [name]` · `/themes` | Switch theme or open picker |
+| `/config` | Show layered config sources and active values |
+| `/config trust [on\|off\|status]` | Manage project trust |
+| `/permissions` | Open permissions panel |
+| `/permissions approval-policy <policy>` | Set approval policy |
+| `/permissions sandbox <mode>` | Set sandbox mode |
+| `/permissions network [on\|off]` | Set network access |
+| `/runtime service-tier [flex\|fast]` | Set service tier |
+| `/runtime personality [none\|friendly\|pragmatic]` | Set personality |
+| `/settings` | Open settings panel |
+| `/status` | Show effective runtime config |
+| `/workspace` | Show locked workspace path |
+| `/workspace relaunch <path>` | Restart TUI in another directory |
+| `/auth` · `/auth status` | Auth panel or status probe |
+| `/mouse` | Toggle mouse mode (wheel scroll vs. native selection) |
+| `/verbose` | Toggle verbose output |
+| `/copy` | Copy last response to clipboard |
+| `/diagnose github` | Run GitHub connectivity diagnostics |
+| `!<command>` | Run a shell command inline |
+
+## Layered Config
+
+Runtime settings are resolved from a layered `config.toml` surface. Priority order (highest wins):
+
+1. CLI `--config` overrides
+2. Active profile patch (`[profiles.<name>]` section)
+3. Project config: `.codex/config.toml` (only when project is trusted)
+4. User config: `~/.codex/config.toml`
+5. Built-in defaults
+
+**Supported TOML keys:**
+
+```toml
+# Model and reasoning
+model = "gpt-5.4"
+model_reasoning_effort = "high"    # none | minimal | low | medium | high | xhigh | max
+
+# Permissions
+approval_policy = "on-request"     # untrusted | on-request | never
+sandbox_mode = "workspace-write"   # read-only | workspace-write | danger-full-access
+service_tier = "flex"              # flex | fast
+personality = "none"               # none | friendly | pragmatic
+
+# Sandbox write permissions
+[sandbox_workspace_write]
+network_access = true
+writable_roots = ["/path/to/dir"]
+
+# Codexa-specific
+[codexa]
+backend = "codex-subprocess"       # codex-subprocess (only active backend in v1)
+mode = "full-auto"                 # suggest | auto-edit | full-auto
+
+# Gemini CLI path (if using Gemini)
+gemini_command_path = "C:\\path\\to\\gemini.cmd"
+
+# Default profile to load
+profile = "dev"
+
+# Named profiles
+[profiles.dev]
+model = "gpt-5.4"
+model_reasoning_effort = "high"
+sandbox_mode = "workspace-write"
+
+[profiles.safe]
+approval_policy = "on-request"
+sandbox_mode = "read-only"
+```
+
+**Example with CLI overrides:**
+
+```powershell
+codexa --profile review --config model="gpt-5.4" --config codexa.mode="suggest"
+```
+
+### Gemini CLI Executable
+
+Codexa resolves the Gemini executable directly by path rather than through shell aliases or wrappers. To specify the Gemini CLI location:
+
+```powershell
+$env:GEMINI_EXECUTABLE = "C:\Users\you\AppData\Roaming\npm\gemini.cmd"
+```
+
+or in `config.toml`:
+
+```toml
+gemini_command_path = "C:\\Users\\you\\AppData\\Roaming\\npm\\gemini.cmd"
+```
+
+### Project Trust
+
+Project config (`.codex/config.toml`) is only applied when the detected project root is explicitly trusted. Manage trust with:
+
+```text
+/config trust status
+/config trust on
+/config trust off
+```
+
+Untrusted project config is detected but blocked, and shown visibly in `/config`.
+
+## Workspace Management
+
+Codexa locks the session to the directory it was launched from. To start in the correct workspace:
+
+```powershell
+cd "<path-to-your-workspace>"
+codexa
+```
+
+To recover from the wrong workspace without restarting manually:
 
 ```text
 /workspace relaunch .
 /workspace relaunch <workspace-path>
 ```
 
-`/workspace relaunch` restarts the TUI in the target directory. It does not switch workspaces live in the current process.
+`/workspace relaunch` restarts the TUI process in the target directory. It does not hot-swap the workspace in the running process.
+
+## Themes
+
+16 built-in themes. Switch with `/theme <name>` or open the picker with `/themes`:
+
+`purple` · `mono` · `dark` · `black` · `emerald` · `solar` · `cyber` · `ocean` · `nordic` · `green` · `amber` · `vaporwave` · `dracula` · `gruvbox` · `synthwave` · `custom`
+
+Default: `mono` (Black & White).
+
+## UI Preferences
+
+UI-only preferences are stored in `~/.codexa-settings.json` (separate from runtime config):
+
+| Setting | Command | Options |
+|---------|---------|---------|
+| Workspace display | `/setting workspace <mode>` | `dir` · `name` · `simple` |
+| Terminal title | `/setting terminal-title <mode>` | `dir` · `name` · `simple` |
+| Busy loader | `/setting busy-loader <bool>` | `true` · `false` |
+| Mouse mode | `/mouse` | wheel scroll · native selection |
 
 ## Development
 
 ```powershell
-bun run dev
+bun install          # Install dependencies
+bun run dev          # Start with file watching
+bun run start        # Single run without watching
+bun run typecheck    # TypeScript type-check (no emit)
 ```
 
-Repo/dev launches lock the session to the directory that launched Bun. For the normal user flow, prefer `npm link` and then run `codexa` from the intended workspace.
+Dev launches lock the workspace to the directory Bun was invoked from. For the normal end-user flow, use `npm link` and run `codexa` from the intended workspace instead.
+
+## Testing
+
+```powershell
+bun test                              # Run all tests
+bun test src/ui/layout.test.ts        # Run a specific file or pattern
+```
+
+Tests are colocated with source files (`*.test.ts` / `*.test.tsx`).
 
 ## Repo Hygiene
 
-This repository is set up to keep local-only files out of GitHub, including:
+Local-only files kept out of version control:
 
 - `node_modules/`
 - `.claude/`
 - `.env` and other local secret files
-- editor, OS, and cache files
+- Editor, OS, and cache files
