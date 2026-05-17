@@ -172,6 +172,58 @@ test("suppresses completed response status while a slash command draft is active
   );
 });
 
+test("shows Gemini-specific status when THINKING with google provider", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "google",
+      runElapsedSeconds: 0,
+    }),
+    "Starting Gemini CLI",
+  );
+});
+
+test("includes elapsed timer in Gemini status after first second", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "google",
+      runElapsedSeconds: 7,
+    }),
+    "Starting Gemini CLI  00:07",
+  );
+});
+
+test("changes Gemini status message after 8 seconds", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "google",
+      runElapsedSeconds: 10,
+    }),
+    "Gemini CLI is taking a moment  00:10",
+  );
+});
+
+test("shows generic thinking status for non-google provider", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "openai",
+      runElapsedSeconds: 10,
+    }),
+    "✧ Codexa is thinking",
+  );
+});
+
 test("getTokenBarDisplay returns null percentage (not 0) for an unknown spec", () => {
   const spec: PendingModelSpec = {
     status: "unknown",

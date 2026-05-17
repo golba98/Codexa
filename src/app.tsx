@@ -3979,6 +3979,7 @@ export function App({ launchArgs }: AppProps) {
         onClear={handleClear}
         onCycleMode={cycleModeWithNotice}
         onQuit={handleQuit}
+        activeProviderId={activeProviderRoute.providerId}
       />
     );
   }, [
@@ -4018,6 +4019,7 @@ export function App({ launchArgs }: AppProps) {
     handleClear,
     cycleModeWithNotice,
     handleQuit,
+    activeProviderRoute.providerId,
   ]);
 
   // ─── Render ──────────────────────────────────────────────────────────────────

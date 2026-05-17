@@ -59,6 +59,12 @@ function formatApprox(n: number): string {
   return `${n}`;
 }
 
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const s = (seconds % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
 // ─── Exported helpers ────────────────────────────────────────────────────────
 
 export function getTokenBarDisplay(tokensUsed: number, modelSpec: ModelSpec) {
@@ -114,6 +120,7 @@ interface BottomComposerProps {
   onClear: () => void;
   onCycleMode: () => void;
   onQuit: () => void;
+  activeProviderId?: string;
   selectionProfile?: TerminalSelectionProfile;
 }
 
@@ -234,8 +241,22 @@ export function measureBottomComposerRows({
   );
 }
 
-function getStatusLine(uiState: UIState): string | null {
-  if (uiState.kind === "THINKING") return "✧ Codexa is thinking";
+function getStatusLine(
+  uiState: UIState,
+  activeProviderId?: string,
+  runElapsedSeconds?: number,
+): string | null {
+  if (uiState.kind === "THINKING") {
+    if (activeProviderId === "google") {
+      const elapsed = runElapsedSeconds ?? 0;
+      const timerStr = elapsed > 0 ? `  ${formatElapsed(elapsed)}` : "";
+      if (elapsed >= 8) {
+        return `Gemini CLI is taking a moment${timerStr}`;
+      }
+      return `Starting Gemini CLI${timerStr}`;
+    }
+    return "✧ Codexa is thinking";
+  }
   if (uiState.kind === "RESPONDING") return "✧ Codexa is thinking";
   if (uiState.kind === "ANSWER_VISIBLE") return "✧ Codexa response complete";
   if (uiState.kind === "SHELL_RUNNING") return "✧ Codexa is running command";
@@ -248,13 +269,17 @@ export function getVisibleComposerStatusLine({
   uiState,
   value,
   allowCommands,
+  activeProviderId,
+  runElapsedSeconds,
 }: {
   uiState: UIState;
   value: string;
   allowCommands: boolean;
+  activeProviderId?: string;
+  runElapsedSeconds?: number;
 }): string {
   const persona = getComposerPersona(uiState);
-  const rawStatusLine = getStatusLine(uiState) ?? "";
+  const rawStatusLine = getStatusLine(uiState, activeProviderId, runElapsedSeconds) ?? "";
   const isCommandDraft = allowCommands && value.startsWith("/");
 
   if (rawStatusLine.length === 0 || persona === "answer" || isCommandDraft) {
@@ -310,6 +335,7 @@ export function BottomComposer({
   onClear,
   onCycleMode,
   onQuit,
+  activeProviderId = "",
   selectionProfile,
 }: BottomComposerProps) {
   renderDebug.useRenderDebug("Composer", {
@@ -347,6 +373,20 @@ export function BottomComposer({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollRow, setScrollRow] = useState(0);
   const persona = getComposerPersona(uiState);
+  const [runElapsedSeconds, setRunElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (uiState.kind !== "THINKING") {
+      setRunElapsedSeconds(0);
+      return;
+    }
+    setRunElapsedSeconds(0);
+    const interval = setInterval(() => {
+      setRunElapsedSeconds((s) => s + 1);
+    }, 1_000);
+    return () => clearInterval(interval);
+  }, [uiState.kind]);
+
   const inputLocked = persona === "busy";
   const allowCommands = persona !== "answer";
   const allowHistory = persona === "idle" || persona === "error";
@@ -448,7 +488,7 @@ export function BottomComposer({
     .map((suggestion, index) => `${index === selectedIndex ? "›" : "·"} ${suggestion.cmd}`)
     .join("   ");
 
-  const rawStatusLine = getVisibleComposerStatusLine({ uiState, value, allowCommands });
+  const rawStatusLine = getVisibleComposerStatusLine({ uiState, value, allowCommands, activeProviderId, runElapsedSeconds });
   const showStatusLine = rawStatusLine.length > 0;
 
   const promptViewport = useMemo(
@@ -927,7 +967,10 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   
   // Re-render if selection profile changes
   if (prev.selectionProfile?.id !== next.selectionProfile?.id) return false;
-  
+
+  // Re-render if active provider changes (affects status line text)
+  if (prev.activeProviderId !== next.activeProviderId) return false;
+
   // Skip re-render - streaming updates within RESPONDING don't affect composer
   return true;
 });
