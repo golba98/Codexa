@@ -7,6 +7,9 @@ export interface VerifiedModelSpec {
   status: "verified";
   contextWindow: number;
   maxOutputTokens: number;
+  // Absent (undefined) means the value comes from official provider documentation.
+  // "estimated" means the value is a conservative best-guess — not from public docs.
+  contextWindowStatus?: "estimated";
   sourceUrl: string;
   verifiedAt: number;
 }
@@ -31,18 +34,54 @@ export const MODEL_SPEC_DOC_URLS: Record<string, string> = {
 
 // Trusted static registry — used as a fallback when the persistent cache hasn't
 // been populated yet and the runtime discovery response doesn't include context
-// metadata. Values sourced from the same OpenAI docs that fetchModelSpecFromDocs
-// scrapes, so they align with verified cache entries once a refresh completes.
+// metadata. Values are sourced from provider documentation:
+//   OpenAI:     developers.openai.com/api/docs/models
+//   Anthropic:  docs.anthropic.com/en/docs/about-claude/models
+//   Google:     ai.google.dev/gemini-api/docs/models
 export interface KnownModelSpec {
   contextWindow: number;
   maxOutputTokens: number;
+  // Absent = value is from official provider documentation.
+  // "estimated" = value is a conservative estimate with no public documentation yet.
+  contextWindowStatus?: "estimated";
 }
 
 export const KNOWN_MODEL_SPECS: Record<string, KnownModelSpec> = {
+  // OpenAI — source: developers.openai.com/api/docs/models
   "gpt-5.4": { contextWindow: 1_050_000, maxOutputTokens: 128_000 },
   "gpt-5.4-mini": { contextWindow: 400_000, maxOutputTokens: 128_000 },
   "gpt-5.3-codex": { contextWindow: 400_000, maxOutputTokens: 128_000 },
   "gpt-5.2": { contextWindow: 400_000, maxOutputTokens: 128_000 },
+
+  // Anthropic — short aliases stored in .codexa/providers.json.
+  // These are Codexa-internal route shortcuts, NOT official Anthropic API model IDs.
+  // They map to the canonical IDs in ANTHROPIC_FALLBACK_MODELS (src/core/providerRuntime/models.ts).
+  // Included here because the modelSpec lookup key equals whatever string is stored in providers.json.
+  // Source: https://docs.anthropic.com/en/docs/about-claude/models
+  "opus":   { contextWindow: 200_000, maxOutputTokens: 32_000 },
+  "sonnet": { contextWindow: 200_000, maxOutputTokens: 64_000 },
+  "haiku":  { contextWindow: 200_000, maxOutputTokens: 16_000 },
+
+  // Anthropic — canonical IDs returned by Claude CLI discovery.
+  // Source: https://docs.anthropic.com/en/docs/about-claude/models
+  "claude-opus-4-7":          { contextWindow: 200_000, maxOutputTokens: 32_000 },
+  "claude-opus-4-5":          { contextWindow: 200_000, maxOutputTokens: 32_000 },
+  "claude-sonnet-4-6":        { contextWindow: 200_000, maxOutputTokens: 64_000 },
+  "claude-sonnet-4-20250514": { contextWindow: 200_000, maxOutputTokens: 64_000 },
+  "claude-haiku-4-5":         { contextWindow: 200_000, maxOutputTokens: 16_000 },
+
+  // Google — GA models.
+  // Source: https://ai.google.dev/gemini-api/docs/models
+  "gemini-2.5-pro":        { contextWindow: 1_048_576, maxOutputTokens: 65_536 },
+  "gemini-2.5-flash":      { contextWindow: 1_048_576, maxOutputTokens: 65_536 },
+  "gemini-2.5-flash-lite": { contextWindow: 1_048_576, maxOutputTokens: 65_536 },
+
+  // Google — preview/unreleased models. Gemini 3.x is not publicly documented yet.
+  // Context window is a conservative estimate matching the Gemini 2.5 GA values.
+  // Update these entries once official documentation is available.
+  "gemini-3-flash-preview":        { contextWindow: 1_048_576, maxOutputTokens: 65_536, contextWindowStatus: "estimated" },
+  "gemini-3.1-pro-preview":        { contextWindow: 1_048_576, maxOutputTokens: 65_536, contextWindowStatus: "estimated" },
+  "gemini-3.1-flash-lite-preview": { contextWindow: 1_048_576, maxOutputTokens: 65_536, contextWindowStatus: "estimated" },
 };
 
 type ModelSpecCache = Partial<Record<string, VerifiedModelSpec>>;
@@ -246,6 +285,7 @@ export function resolveModelSpec(model: string, options: ResolveModelSpecOptions
       status: "verified",
       contextWindow: known.contextWindow,
       maxOutputTokens: known.maxOutputTokens,
+      ...(known.contextWindowStatus ? { contextWindowStatus: known.contextWindowStatus } : {}),
       sourceUrl: getModelSpecDocUrl(model),
       verifiedAt: now,
     };

@@ -63,12 +63,25 @@ function formatApprox(n: number): string {
 
 export function getTokenBarDisplay(tokensUsed: number, modelSpec: ModelSpec) {
   if (modelSpec.status !== "verified") {
-    return { usedText: `~${formatApprox(tokensUsed)}`, limitText: "unknown", percentage: null as number | null };
+    return {
+      usedText: `~${formatApprox(tokensUsed)}`,
+      limitText: "unknown",
+      percentage: null as number | null,
+      isEstimatedLimit: false,
+    };
   }
+  const isEstimatedLimit = modelSpec.contextWindowStatus === "estimated";
   const pct = modelSpec.contextWindow > 0
     ? Math.min(100, Math.round((tokensUsed / modelSpec.contextWindow) * 100))
     : 0;
-  return { usedText: `~${formatApprox(tokensUsed)}`, limitText: modelSpec.contextWindow.toLocaleString("en-US"), percentage: pct };
+  return {
+    usedText: `~${formatApprox(tokensUsed)}`,
+    limitText: isEstimatedLimit
+      ? `~${formatApprox(modelSpec.contextWindow)}`
+      : modelSpec.contextWindow.toLocaleString("en-US"),
+    percentage: pct,
+    isEstimatedLimit,
+  };
 }
 
 interface BottomComposerProps {
@@ -854,7 +867,10 @@ export function BottomComposer({
           </Box>
           <Box flexShrink={0}>
             <Text color={theme.TEXT}>{tokenDisplay.usedText}</Text>
-            <Text color={theme.DIM}>{"/"}{tokenDisplay.limitText}{" ctx "}{tokenDisplay.percentage ?? 0}{"%"}</Text>
+            <Text color={theme.DIM}>
+              {"/"}{tokenDisplay.limitText}
+              {tokenDisplay.percentage !== null ? ` ctx ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%` : ""}
+            </Text>
           </Box>
         </Box>
       )}
