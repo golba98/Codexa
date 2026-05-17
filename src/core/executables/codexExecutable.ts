@@ -87,6 +87,7 @@ function collectExecutableCandidates(): string[] {
     push("codex.cmd");
     push("codex.exe");
     push("codex");
+    // Microsoft Store CLI installs land in WindowsApps.
     const localAppAlias = process.env.LOCALAPPDATA
       ? join(process.env.LOCALAPPDATA, "Microsoft", "WindowsApps", "codex.exe")
       : undefined;
