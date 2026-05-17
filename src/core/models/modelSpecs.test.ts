@@ -17,6 +17,7 @@ import {
   saveModelSpecCache,
   stripHtmlToText,
   type ModelSpec,
+  type VerifiedModelSpec,
 } from "./modelSpecs.js";
 
 test("parses token counts with commas and suffixes", () => {
@@ -250,4 +251,48 @@ test("reports equality across verified and unknown specs", () => {
     ),
     false,
   );
+});
+
+test("resolveModelSpec returns known spec for claude-sonnet-4-6 canonical ID", () => {
+  const spec = resolveModelSpec("claude-sonnet-4-6");
+  assert.equal(spec.status, "verified");
+  assert.equal(spec.contextWindow, 200_000);
+  assert.equal(spec.maxOutputTokens, 64_000);
+});
+
+test("resolveModelSpec returns known spec for anthropic short alias 'haiku'", () => {
+  const spec = resolveModelSpec("haiku");
+  assert.equal(spec.status, "verified");
+  assert.equal(spec.contextWindow, 200_000);
+});
+
+test("resolveModelSpec returns known spec for gemini-2.5-flash", () => {
+  const spec = resolveModelSpec("gemini-2.5-flash");
+  assert.equal(spec.status, "verified");
+  assert.equal(spec.contextWindow, 1_048_576);
+});
+
+test("resolveModelSpec returns null contextWindow (not 0) for an unrecognized model", () => {
+  const spec = resolveModelSpec("totally-unknown-model");
+  assert.equal(spec.status, "unknown");
+  assert.equal(spec.contextWindow, null);
+});
+
+test("resolveModelSpec marks gemini-3-flash-preview as estimated", () => {
+  const spec = resolveModelSpec("gemini-3-flash-preview") as VerifiedModelSpec;
+  assert.equal(spec.status, "verified");
+  assert.equal(spec.contextWindow, 1_048_576);
+  assert.equal(spec.contextWindowStatus, "estimated");
+});
+
+test("resolveModelSpec does not set contextWindowStatus for fully-documented Claude model", () => {
+  const spec = resolveModelSpec("claude-sonnet-4-6") as VerifiedModelSpec;
+  assert.equal(spec.status, "verified");
+  assert.equal(spec.contextWindowStatus, undefined);
+});
+
+test("resolveModelSpec does not set contextWindowStatus for gemini-2.5-flash GA model", () => {
+  const spec = resolveModelSpec("gemini-2.5-flash") as VerifiedModelSpec;
+  assert.equal(spec.status, "verified");
+  assert.equal(spec.contextWindowStatus, undefined);
 });

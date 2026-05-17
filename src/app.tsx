@@ -1046,7 +1046,10 @@ export function App({ launchArgs }: AppProps) {
   // cache + static registry already cover known models synchronously, so the
   // footer is never stuck on "unknown" for supported models. This effect just
   // keeps the persistent cache warm. Runs at most once per model per session.
+  // Only applies to OpenAI — Claude/Gemini specs come from KNOWN_MODEL_SPECS
+  // and there is no equivalent doc-scraping endpoint for those providers.
   useEffect(() => {
+    if (activeProviderRoute.providerId !== "openai") return;
     const existing = modelSpecs[model];
     if (existing && existing.status === "verified") {
       return;
@@ -1068,7 +1071,7 @@ export function App({ launchArgs }: AppProps) {
         return { ...prev, [model]: spec };
       });
     });
-  }, [model, modelSpecRefreshes, modelSpecService, modelSpecs]);
+  }, [activeProviderRoute.providerId, model, modelSpecRefreshes, modelSpecService, modelSpecs]);
 
   const appendStaticEvent = useCallback((event: TimelineEvent) => {
     dispatchSession({ type: "APPEND_STATIC_EVENT", event });

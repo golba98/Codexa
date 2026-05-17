@@ -3,11 +3,13 @@ import test from "node:test";
 import {
   getCommandSuggestionState,
   getComposerPersona,
+  getTokenBarDisplay,
   getVisibleComposerStatusLine,
   measureBottomComposerRows,
 } from "./BottomComposer.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { getSlashCommandSuggestions } from "./slashCommands.js";
+import type { PendingModelSpec, VerifiedModelSpec } from "../core/models/modelSpecs.js";
 
 test("maps the idle state to the idle composer persona", () => {
   assert.equal(getComposerPersona({ kind: "IDLE" }), "idle");
@@ -168,4 +170,61 @@ test("suppresses completed response status while a slash command draft is active
     }),
     "✧ Codexa response complete",
   );
+});
+
+test("getTokenBarDisplay returns null percentage (not 0) for an unknown spec", () => {
+  const spec: PendingModelSpec = {
+    status: "unknown",
+    contextWindow: null,
+    maxOutputTokens: null,
+    sourceUrl: "",
+    verifiedAt: null,
+    error: null,
+  };
+  const display = getTokenBarDisplay(5_000, spec);
+  assert.equal(display.percentage, null, "percentage must be null, not 0, for unknown specs");
+  assert.equal(display.limitText, "unknown");
+  assert.equal(display.isEstimatedLimit, false);
+});
+
+test("getTokenBarDisplay returns correct non-null percentage for a verified spec", () => {
+  const spec: VerifiedModelSpec = {
+    status: "verified",
+    contextWindow: 200_000,
+    maxOutputTokens: 64_000,
+    sourceUrl: "",
+    verifiedAt: 0,
+  };
+  const display = getTokenBarDisplay(10_000, spec);
+  assert.equal(display.percentage, 5);
+  assert.notEqual(display.percentage, null);
+  assert.equal(display.isEstimatedLimit, false);
+});
+
+test("getTokenBarDisplay marks estimated context windows with ~ prefix in limitText", () => {
+  const spec: VerifiedModelSpec = {
+    status: "verified",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 65_536,
+    contextWindowStatus: "estimated",
+    sourceUrl: "",
+    verifiedAt: 0,
+  };
+  const display = getTokenBarDisplay(10_000, spec);
+  assert.equal(display.isEstimatedLimit, true);
+  assert.ok(display.limitText.startsWith("~"), "estimated limitText must start with ~");
+  assert.equal(display.percentage, 1);
+});
+
+test("getTokenBarDisplay does not add ~ prefix for a documented verified context window", () => {
+  const spec: VerifiedModelSpec = {
+    status: "verified",
+    contextWindow: 200_000,
+    maxOutputTokens: 64_000,
+    sourceUrl: "",
+    verifiedAt: 0,
+  };
+  const display = getTokenBarDisplay(10_000, spec);
+  assert.equal(display.isEstimatedLimit, false);
+  assert.ok(!display.limitText.startsWith("~"), "verified limitText must not start with ~");
 });
