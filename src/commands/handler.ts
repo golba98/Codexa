@@ -1,4 +1,19 @@
-import { dumpRenderCounts } from "../core/perf/renderDebug.js";
+import {
+  formatLayeredConfigStatus,
+  type LayeredConfigResult,
+} from "../config/layeredConfig.js";
+import {
+  formatApprovalPolicyLabel,
+  formatNetworkAccessLabel,
+  formatPermissionsStatus,
+  formatPersonalityLabel,
+  formatRuntimeStatus,
+  formatSandboxModeLabel,
+  formatServiceTierLabel,
+  type ResolvedRuntimeConfig,
+  type RuntimeConfig,
+  type RuntimeNetworkAccess,
+} from "../config/runtimeConfig.js";
 import {
   AUTH_PREFERENCES,
   AVAILABLE_BACKENDS,
@@ -20,33 +35,15 @@ import {
   type TerminalTitleMode,
   type WorkspaceDisplayMode,
 } from "../config/settings.js";
-import {
-  formatLayeredConfigStatus,
-  type LayeredConfigResult,
-} from "../config/layeredConfig.js";
-import {
-  formatApprovalPolicyLabel,
-  formatNetworkAccessLabel,
-  formatPermissionsStatus,
-  formatPersonalityLabel,
-  formatRuntimeStatus,
-  formatSandboxModeLabel,
-  formatServiceTierLabel,
-  type ResolvedRuntimeConfig,
-  type RuntimeApprovalPolicy,
-  type RuntimeConfig,
-  type RuntimeNetworkAccess,
-  type RuntimePersonality,
-  type RuntimeSandboxMode,
-  type RuntimeServiceTier,
-} from "../config/runtimeConfig.js";
+
+import type { WorkspaceCommandContext } from "../core/launchContext.js";
 import {
   findModelCapability,
   formatModelCapabilitiesList,
   getSelectableModelCapabilities,
   type CodexModelCapabilities,
 } from "../core/models/codexModelCapabilities.js";
-import type { WorkspaceCommandContext } from "../core/launchContext.js";
+import { dumpRenderCounts } from "../core/perf/renderDebug.js";
 
 export type CommandAction =
   | "exit"
@@ -123,10 +120,15 @@ export interface CommandContext {
   activeRouteProviderLabel?: string;
 }
 
+// Mirrors AVAILABLE_APPROVAL_POLICIES[].id from runtimeConfig.ts
 const APPROVAL_POLICY_VALUES = ["inherit", "untrusted", "on-request", "never"] as const;
+// Mirrors AVAILABLE_SANDBOX_MODES[].id from runtimeConfig.ts
 const SANDBOX_MODE_VALUES = ["inherit", "read-only", "workspace-write", "danger-full-access"] as const;
+// Input aliases — "on"/"off" are mapped to "enabled"/"disabled" in the network case below
 const NETWORK_ACCESS_VALUES = ["inherit", "on", "off"] as const;
+// Mirrors AVAILABLE_SERVICE_TIERS[].id from runtimeConfig.ts
 const SERVICE_TIER_VALUES = ["flex", "fast"] as const;
+// Mirrors AVAILABLE_PERSONALITIES[].id from runtimeConfig.ts
 const PERSONALITY_VALUES = ["none", "friendly", "pragmatic"] as const;
 
 function isOneOf<T extends string>(value: string, list: readonly T[]): value is T {
@@ -139,27 +141,23 @@ function formatWritableRoots(roots: readonly string[]): string {
     : "  - none";
 }
 
-function normalizeReasoningCommandArg(arg: string): string {
+function expandReasoningAliases(arg: string): string {
   const normalized = arg.toLowerCase();
-  const reasoningAliasMap: Record<string, string> = {
-    // "extra high" is a user-facing alias for "xhigh"
-    "extra high": "xhigh",
-    xhigh: "xhigh",
-  };
-  return reasoningAliasMap[normalized] ?? normalized;
+  // "extra high" is a user-facing alias for "xhigh"
+  return normalized === "extra high" ? "xhigh" : normalized;
 }
 
 function isKnownFallbackReasoning(value: string): boolean {
   return AVAILABLE_REASONING_LEVELS.some((item) => item.id === value);
 }
 
-function simplePolicySetter(
+function simplePolicySetter<T extends string>(
   rest: string,
   normalizedRest: string,
   action: CommandAction,
-  values: readonly string[],
+  values: readonly T[],
   statusMessage: string,
-  setMessage: (value: string) => string,
+  setMessage: (value: T) => string,
   usageMessage: string,
 ): CommandResult {
   if (!rest || normalizedRest === "status") {
@@ -190,7 +188,7 @@ function handlePolicyCommand(
         "runtime_approval_policy",
         APPROVAL_POLICY_VALUES,
         `Approval policy: configured ${formatApprovalPolicyLabel(context.runtime.policy.approvalPolicy)}; effective ${formatApprovalPolicyLabel(context.resolvedRuntime.policy.approvalPolicy)}.`,
-        (v) => `Approval policy set to ${formatApprovalPolicyLabel(v as RuntimeApprovalPolicy)}.`,
+        (v) => `Approval policy set to ${formatApprovalPolicyLabel(v)}.`,
         `Usage: ${commandPrefix} approval-policy [status|inherit|untrusted|on-request|never]`,
       );
     }
@@ -202,7 +200,7 @@ function handlePolicyCommand(
         "runtime_sandbox_mode",
         SANDBOX_MODE_VALUES,
         `Sandbox mode: configured ${formatSandboxModeLabel(context.runtime.policy.sandboxMode)}; effective ${formatSandboxModeLabel(context.resolvedRuntime.policy.sandboxMode)}.`,
-        (v) => `Sandbox mode set to ${formatSandboxModeLabel(v as RuntimeSandboxMode)}.`,
+        (v) => `Sandbox mode set to ${formatSandboxModeLabel(v)}.`,
         `Usage: ${commandPrefix} sandbox [status|inherit|read-only|workspace-write|danger-full-access]`,
       );
     }
@@ -297,7 +295,7 @@ function handlePolicyCommand(
         "runtime_service_tier",
         SERVICE_TIER_VALUES,
         `Service tier: ${formatServiceTierLabel(context.runtime.policy.serviceTier)}.`,
-        (v) => `Service tier set to ${formatServiceTierLabel(v as RuntimeServiceTier)}.`,
+        (v) => `Service tier set to ${formatServiceTierLabel(v)}.`,
         `Usage: ${commandPrefix} service-tier [status|flex|fast]`,
       );
     }
@@ -315,7 +313,7 @@ function handlePolicyCommand(
         "runtime_personality",
         PERSONALITY_VALUES,
         `Personality: ${formatPersonalityLabel(context.runtime.policy.personality)}.`,
-        (v) => `Personality set to ${formatPersonalityLabel(v as RuntimePersonality)}.`,
+        (v) => `Personality set to ${formatPersonalityLabel(v)}.`,
         `Usage: ${commandPrefix} personality [status|none|friendly|pragmatic]`,
       );
     }
@@ -417,20 +415,19 @@ function buildHelpMessage(context: CommandContext): string {
 }
 
 export function handleCommand(text: string, context: CommandContext): CommandResult | null {
-  // Slash commands: / prefix
   if (text.startsWith("/")) {
     const [rawCmd, ...argTokens] = text.slice(1).trim().split(/\s+/);
-    const cmd = rawCmd!.toLowerCase();
+    const cmd = rawCmd?.toLowerCase() ?? "";
     const arg = argTokens.join(" ").trim();
     const normalizedArg = arg.toLowerCase();
 
     switch (cmd) {
-      case "exit":
-      case "quit":
-        return { action: "exit" };
+    case "exit":
+    case "quit":
+      return { action: "exit" };
 
-      case "clear":
-        return { action: "clear" };
+    case "clear":
+      return { action: "clear" };
 
     case "backend": {
       if (!arg) return { action: "open_backend_picker" };
@@ -502,7 +499,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
 
     case "reasoning": {
       if (!arg) return { action: "open_reasoning_picker" };
-      const normalized = normalizeReasoningCommandArg(arg);
+      const normalized = expandReasoningAliases(arg);
       const modelCapability = findModelCapability(context.modelCapabilities, context.runtime.model);
       const detectedLevels = modelCapability?.supportedReasoningLevels;
       if (detectedLevels && detectedLevels.some((item) => item.id === normalized)) {
@@ -853,7 +850,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
     }
   }
 
-  // Question-prefix "commands" (like ?clear): treat as invalid command error
+  // "?cmd" is a common mistype of "/cmd" — suggest the corrected form
   if (text.startsWith("?")) {
     const potentialCmd = text.slice(1).trim().split(/\s+/)[0]?.toLowerCase() ?? "";
     return {
