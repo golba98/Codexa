@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState, useDeferredValue, useMemo } from "react";
+import React, { memo, useEffect, useState, useMemo } from "react";
 import { Box, Text } from "ink";
 import type {
   AssistantEvent,
@@ -69,7 +69,7 @@ function UserInputCard({
   dim: boolean;
 }) {
   const theme = useTheme();
-  const borderColor = dim ? theme.BORDER_SUBTLE : theme.BORDER_SUBTLE;
+  const borderColor = theme.BORDER_SUBTLE;
   const contentWidth = Math.max(1, cols - 7);
   const lines = wrapPlainText(sanitizeTerminalOutput(prompt), contentWidth);
 
