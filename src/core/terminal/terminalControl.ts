@@ -82,7 +82,7 @@ export function writeTerminalControl(
       sequenceLength: sequence.length,
       isStartupWrite,
     });
-    
+
     if (!isStartupWrite && !isTranscriptClear) {
       return true;
     }

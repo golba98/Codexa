@@ -452,6 +452,7 @@ function createProgressBlock(entryId: string, sequence: number, createdAt: numbe
   };
 }
 
+// Split streaming progress blocks at readable sentence and list boundaries.
 const MIN_PROGRESS_BLOCK_CHARS = 36;
 const TRANSITION_PHRASE_PATTERN = String.raw`(?:I(?:'|’)m going to|I(?:'|’)ll|I found|I(?:'|’)m checking|I'm checking|I am checking|Next(?:,|\s)|The highest-value improvements|The highest value improvements)`;
 const INLINE_TRANSITION_PATTERN = new RegExp(String.raw`[.!?]\s+(?=${TRANSITION_PHRASE_PATTERN}\b)`, "i");

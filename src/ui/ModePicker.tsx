@@ -1,4 +1,3 @@
-import React from "react";
 import { AVAILABLE_MODES } from "../config/settings.js";
 import { FOCUS_IDS } from "./focus.js";
 import { SelectionPanel } from "./SelectionPanel.js";

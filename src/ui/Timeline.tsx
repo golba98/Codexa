@@ -608,7 +608,7 @@ export function scrollTimelineViewport(
 
   const frozenSnapshot = getFrozenSnapshot(viewport, liveSnapshot);
   const tailRow = Math.max(0, frozenSnapshot.totalRows - 1);
-  
+
   if (deltaRows > 0 && viewport.followTail) {
     return viewport;
   }
@@ -616,7 +616,7 @@ export function scrollTimelineViewport(
   const currentAnchor = viewport.followTail
     ? tailRow
     : clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
-    
+
   const floor = getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows);
 
   let nextAnchor = currentAnchor + deltaRows;
@@ -624,7 +624,7 @@ export function scrollTimelineViewport(
   if (nextAnchor >= tailRow) {
     return createFollowTailViewport(liveSnapshot.totalRows);
   }
-  
+
   if (nextAnchor < floor) {
     nextAnchor = floor;
   }

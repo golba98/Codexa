@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
 import {
   type CodexModelCapability,

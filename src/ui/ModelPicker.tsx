@@ -1,4 +1,3 @@
-import React from "react";
 import { type CodexModelCapability } from "../core/models/codexModelCapabilities.js";
 import { FOCUS_IDS } from "./focus.js";
 import { SelectionPanel } from "./SelectionPanel.js";

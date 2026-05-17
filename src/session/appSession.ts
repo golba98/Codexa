@@ -135,10 +135,9 @@ function reconcileAssistantContent(
   const sNorm = norm(streamed);
   const rNorm = norm(response);
 
-  if (sNorm === rNorm) return streamed;                    // exact → keep streamed formatting
-  if (rNorm.startsWith(sNorm) && sNorm.length > 20)       // streamed is prefix → use response
-    return response;
-  return response;                                          // different → authoritative response wins
+  if (sNorm === rNorm) return streamed;   // exact match → keep streamed formatting
+  // streamed is a prefix of response, or they differ — authoritative response wins either way
+  return response;
 }
 
 function isAnimatedLifecycleKind(kind: UIState["kind"]): boolean {
@@ -675,9 +674,9 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ...state,
         activeEvents: state.activeEvents.filter((event) =>
           !(event.type === "run" && event.id === action.runId)
-          && !(event.type === "assistant" && action.turnId !== null && action.turnId !== undefined && event.turnId === action.turnId)
+          && !(event.type === "assistant" && action.turnId != null && event.turnId === action.turnId)
           && !(event.type === "shell" && event.id === action.runId)
-          && !(event.type === "user" && action.turnId !== null && action.turnId !== undefined && event.turnId === action.turnId),
+          && !(event.type === "user" && action.turnId != null && event.turnId === action.turnId),
         ),
       };
     case "UI_ACTION":

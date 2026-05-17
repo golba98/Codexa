@@ -1,4 +1,3 @@
-import React from "react";
 import { Box } from "ink";
 import type { Layout } from "./layout.js";
 import type { TimelineItem } from "./Timeline.js";

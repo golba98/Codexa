@@ -129,7 +129,7 @@ export function checkLocalGitRemote(): DiagnosticResult {
   try {
     const remote = execSync("git remote -v", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n")[0];
     result.evidence = remote ?? "No remote found";
-    
+
     execSync("git ls-remote origin HEAD", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     result.status = "PASS";
   } catch {

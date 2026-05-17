@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useState, useDeferredValue, useMemo } from "react";
+import React, { memo, useEffect, useState, useMemo } from "react";
 import { Box, Text } from "ink";
 import type {
   AssistantEvent,
@@ -69,7 +69,7 @@ function UserInputCard({
   dim: boolean;
 }) {
   const theme = useTheme();
-  const borderColor = dim ? theme.BORDER_SUBTLE : theme.BORDER_SUBTLE;
+  const borderColor = theme.BORDER_SUBTLE;
   const contentWidth = Math.max(1, cols - 7);
   const lines = wrapPlainText(sanitizeTerminalOutput(prompt), contentWidth);
 
@@ -89,8 +89,6 @@ const MemoizedUserInputCard = memo(UserInputCard, (prev, next) => (
   && prev.cols === next.cols
   && prev.dim === next.dim
 ));
-
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
 // ─── Impact Summary ──────────────────────────────────────────────────────────
 // Compact file-change summary replacing FileScanCard + ActivityCard
@@ -153,7 +151,6 @@ function ImpactSummary({
           })}
         </>
       )}
-      {/* Summary footer */}
       <Text color={theme.DIM}>
         {"  "}
         <Text color={theme.SUCCESS}>{"✔ "}</Text>
@@ -338,12 +335,12 @@ function ActionEventCard({
   const dim = opacity !== "active";
   const actionNormalized = normalizeCommand(tool.command);
   const actionLabel = getFriendlyActionLabel(actionNormalized);
-  
-  const statusIcon = tool.status === "failed" ? "?" : tool.status === "completed" ? "?" : "�";
+
+  const statusIcon = tool.status === "failed" ? "✕" : tool.status === "completed" ? "✔" : "▸";
   const statusColor = tool.status === "failed" ? theme.ERROR : tool.status === "completed" ? theme.SUCCESS : theme.INFO;
   const borderColor = dim ? theme.BORDER_SUBTLE : tool.status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE;
   const detailText = isLiveCursorTarget && tool.status === "running"
-    ? "�"
+    ? "▌"
     : tool.summary?.trim() ? tool.summary : " ";
   const detailColor = isLiveCursorTarget && tool.status === "running" ? theme.ACCENT : theme.MUTED;
   const duration = tool.completedAt != null
@@ -373,7 +370,7 @@ function ActionEventCard({
               <Text color={dim ? theme.DIM : theme.TEXT}>{line || " "}</Text>
             </Box>
           ))}
-          <Text color={theme.MUTED}>{"  "}{" "}</Text>
+          <Text color={theme.MUTED}>{"   "}</Text>
         </>
       )}
       <Text color={detailColor}>{"  "}{detailText}</Text>
@@ -587,13 +584,13 @@ export function TurnGroup({
       {run && (
         <Box marginTop={1}>
           <StreamEventList
-          cols={cols}
-          run={run}
-          assistant={assistant}
-          runPhase={runPhase}
-          opacity={opacity}
-          verboseMode={verboseMode}
-          workspaceRoot={workspaceRoot}
+            cols={cols}
+            run={run}
+            assistant={assistant}
+            runPhase={runPhase}
+            opacity={opacity}
+            verboseMode={verboseMode}
+            workspaceRoot={workspaceRoot}
           />
         </Box>
       )}
