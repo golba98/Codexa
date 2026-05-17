@@ -35,6 +35,8 @@ export interface LiveRenderSchedulerStats {
   maxFlushIntervalMs: number;
 }
 
+// ─── Update coalescing ───────────────────────────────────────────────────────
+
 function findPendingUpdateIndex(
   updates: LiveRenderUpdate[],
   predicate: (update: LiveRenderUpdate) => boolean,
@@ -95,6 +97,8 @@ function mergeLiveRenderUpdate(updates: LiveRenderUpdate[], update: LiveRenderUp
   }
   return false;
 }
+
+// ─── Scheduler ───────────────────────────────────────────────────────────────
 
 export function createLiveRenderScheduler({
   flush,

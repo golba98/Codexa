@@ -19,6 +19,8 @@ export interface WrappedTextRow {
   breakType: "soft" | "hard" | "end";
 }
 
+// ─── Character measurement ───────────────────────────────────────────────────
+
 export function getCharWidth(char: string): number {
   return Math.max(1, stringWidth(char));
 }
@@ -78,6 +80,8 @@ function trimToWidthFromStart(text: string, maxWidth: number): string {
 
   return output;
 }
+
+// ─── Input window ────────────────────────────────────────────────────────────
 
 export function flattenInputForDisplay(text: string, cursor: number): { text: string; cursor: number } {
   const normalized = normalizeLineBreaks(text);
@@ -192,6 +196,8 @@ export function splitTextAtColumn(text: string, column: number): { before: strin
   };
 }
 
+// ─── Text wrapping ────────────────────────────────────────────────────────────
+
 export function wrapTextRows(text: string, maxWidth: number): WrappedTextRow[] {
   const normalized = normalizeLineBreaks(text);
   const safeWidth = Math.max(1, maxWidth);
@@ -249,7 +255,6 @@ export function wrapTextRows(text: string, maxWidth: number): WrappedTextRow[] {
 export function wrapPlainText(text: string, maxWidth: number): string[] {
   return wrapTextRows(text, maxWidth).map((row) => row.text);
 }
-
 
 export function wrapCommandText(text: string, maxWidth: number): string[] {
   if (maxWidth <= 2) return [];

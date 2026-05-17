@@ -2,6 +2,8 @@ import type { AvailableMode } from "../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import type { ProjectInstructions } from "./projectInstructions.js";
 
+// ─── Write-intent detection ───────────────────────────────────────────────────
+
 const WRITE_INTENT_PATTERNS = [
   /\b(create|make|build|implement|add|generate|write|scaffold|fix|edit|update|refactor|cleanup|clean up|delete|remove|prune|purge)\b/i,
   /\b(file|files|folder|folders|directory|directories|artifact|artifacts|generated|cache|caches|build|dist|coverage|app|component|script|cli|project|test|tests|bug|feature)\b/i,
@@ -16,6 +18,8 @@ const BROAD_DESTRUCTIVE_CLEANUP_PATTERN =
 const BROAD_ALL_FILES_CLEANUP_PATTERN =
   /\b(delete|remove|cleanup|clean up|wipe|purge|prune)\s+all\s+(?!generated|clearly safe|safe generated)(files|folders|directories|contents)\b/i;
 const FORCEFUL_DELETE_PATTERN = /\b(rm\s+-rf|rmdir\s+\/s|del\s+\/[fsq]|format|nuke|wipe)\b/i;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ExecutionModeDecision {
   mode: AvailableMode;
@@ -41,6 +45,8 @@ export interface PlanExecutionPromptParams {
 export interface CodexPromptOptions {
   projectInstructions?: ProjectInstructions | null;
 }
+
+// ─── Prompt utility functions ─────────────────────────────────────────────────
 
 const TERMINAL_RESPONSE_INSTRUCTIONS = [
   "Final answer style for this terminal UI:",
@@ -205,6 +211,8 @@ export function buildPlanExecutionPrompt({
   return sections.join("\n");
 }
 
+// ─── Hollow response detection ───────────────────────────────────────────────
+
 export type HollowResponseKind = "greeting" | "filler" | "clarification" | "short-no-action" | "none";
 
 export interface HollowResponseResult {
@@ -275,6 +283,8 @@ export function detectHollowResponse(prompt: string, response: string): HollowRe
 
   return { isHollow: false, kind: "none", reason: "" };
 }
+
+// ─── Prompt builders ─────────────────────────────────────────────────────────
 
 function resolvePromptRuntime(
   modeOrRuntime: AvailableMode | Pick<ResolvedRuntimeConfig, "mode" | "policy" | "planMode">,

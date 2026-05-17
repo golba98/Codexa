@@ -12,6 +12,8 @@ import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { useTheme } from "./theme.js";
 import type { GeminiModelSelection } from "../core/providerRuntime/types.js";
 
+// ─── Types & helpers ─────────────────────────────────────────────────────────
+
 type ModelPickerCloseReason = "escape" | "empty-selection";
 
 interface ModelPickerScreenProps {
@@ -101,6 +103,8 @@ function describeInputKey(
     meta: Boolean(key.meta),
   };
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function ModelPickerScreen({
   layout,
@@ -341,6 +345,8 @@ export function ModelPickerScreen({
     </Box>
   );
 }
+
+// ─── Subcomponents ───────────────────────────────────────────────────────────
 
 function ModelPickerRow({
   model,

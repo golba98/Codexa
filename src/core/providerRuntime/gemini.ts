@@ -6,6 +6,8 @@ import { GEMINI_DEFAULT_MODEL_ID, GEMINI_FALLBACK_MODELS, normalizeGeminiModelId
 import type { ProviderBackendKind, ProviderChatRequest, ProviderRouteValidationResult, ProviderRuntime, ResolvedRuntimeConfig } from "./types.js";
 import { resolveGeminiExecutable } from "../executables/geminiExecutable.js";
 
+// ─── Diagnostics ─────────────────────────────────────────────────────────────
+
 const GEMINI_DIAG_LOG = `${process.env.TEMP ?? process.env.TMPDIR ?? "/tmp"}/codexa-gemini-diag.log`;
 function isGeminiDiagEnabled(): boolean {
   return process.env.CODEXA_GEMINI_DEBUG === "1";
@@ -125,6 +127,8 @@ export function resolveGeminiApprovalMode(runtime?: ResolvedRuntimeConfig | bool
   }
   return "default";
 }
+
+// ─── Command building ─────────────────────────────────────────────────────────
 
 export function buildGeminiCliValidationArgs(): string[] {
   return ["--model", GEMINI_DEFAULT_MODEL_ID, "-p", GEMINI_READY_PROMPT];
@@ -249,6 +253,8 @@ function recordExtractionDiagnostics(result: CommandResult, text: string): Gemin
 
   return extractionStatus;
 }
+
+// ─── Execution ───────────────────────────────────────────────────────────────
 
 async function executeGeminiCommand(
   command: GeminiCommandSpec,
@@ -485,6 +491,8 @@ async function captureGeminiEnvironment(
   }
 }
 
+// ─── Route validation ─────────────────────────────────────────────────────────
+
 export async function validateGeminiRoute(options: {
   cwd: string;
   modelId: string;
@@ -681,6 +689,8 @@ export async function runGeminiDiagnostics(options: {
     `  Prompt preview command args: ${JSON.stringify(redactedPromptArgs(promptPreview))}`,
   ].filter(Boolean).join("\n");
 }
+
+// ─── Runtime ─────────────────────────────────────────────────────────────────
 
 export const geminiRuntime: ProviderRuntime = {
   providerId: "google",

@@ -28,6 +28,8 @@ import { isAnimatedBusyState } from "./busyStatusAnimation.js";
 import type { TerminalSelectionProfile } from "../core/terminal/terminalSelection.js";
 import { getSlashCommandSuggestions, type CommandSuggestion } from "./slashCommands.js";
 
+// ─── Types & constants ────────────────────────────────────────────────────────
+
 type ComposerPersona = "idle" | "busy" | "answer" | "error";
 type DeleteIntent = "backspace" | "delete";
 
@@ -56,6 +58,8 @@ function formatApprox(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return `${n}`;
 }
+
+// ─── Exported helpers ────────────────────────────────────────────────────────
 
 export function getTokenBarDisplay(tokensUsed: number, modelSpec: ModelSpec) {
   if (modelSpec.status !== "verified") {
@@ -260,6 +264,8 @@ function getPlaceholder(persona: ComposerPersona): string {
       return "Ask Codexa, run !shell, or use /command";
   }
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function BottomComposer({
   layout,
@@ -872,6 +878,8 @@ function getUiStateKey(uiState: UIState): string {
   }
   return "idle";
 }
+
+// ─── Memoized export ─────────────────────────────────────────────────────────
 
 // Memoize to prevent re-renders during streaming when props haven't meaningfully changed
 export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {

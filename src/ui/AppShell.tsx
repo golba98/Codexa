@@ -25,6 +25,8 @@ import { MemoizedTopHeader, measureTopHeaderRows } from "./TopHeader.js";
 // close to the logo without a disproportionate blank gap on cold start.
 const COLD_START_SPACER_ROWS = 3;
 
+// ─── Types & constants ────────────────────────────────────────────────────────
+
 type AppShellLayout = Layout & { layoutEpoch?: number };
 type NativeStaticItem =
   { type: "rows" } & NativeTranscriptRowItem;
@@ -51,6 +53,8 @@ export interface AppShellProps {
   selectionProfile?: TerminalSelectionProfile;
   clearCount?: number;
 }
+
+// ─── Helpers & subcomponents ─────────────────────────────────────────────────
 
 export function isCrampedViewport(rows: number | undefined): boolean {
   return (rows ?? 24) <= 24;
@@ -83,6 +87,8 @@ function NativeRowsItem({ rows }: { rows: TimelineRow[] }) {
     </Box>
   );
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 function AppShellInner({
   layout,

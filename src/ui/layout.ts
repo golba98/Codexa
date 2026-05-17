@@ -45,6 +45,8 @@ export interface TerminalViewport extends Layout {
   layoutEpoch: number;
 }
 
+// ─── Dimension helpers ────────────────────────────────────────────────────────
+
 function isValidDimension(value: number | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
@@ -209,6 +211,8 @@ export function advanceTerminalViewport(
     layoutEpoch: current.layoutEpoch,
   };
 }
+
+// ─── Hook ────────────────────────────────────────────────────────────────────
 
 /** React hook — returns live layout that ignores transient invalid restore sizes. */
 export function useTerminalViewport(): TerminalViewport {

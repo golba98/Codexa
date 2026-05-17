@@ -5,6 +5,8 @@ import { Panel } from "./Panel.js";
 import { maybeRenderDiff, type DiffRenderLineType } from "./diffRenderer.js";
 import { formatLocalPathForTerminal, formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 
+// ─── Markdown parser ─────────────────────────────────────────────────────────
+
 type InlinePart =
   | { kind: "text"; text: string }
   | { kind: "code"; text: string }
@@ -121,6 +123,8 @@ export function parseMarkdown(content: string): Segment[] {
   return out;
 }
 
+// ─── Rendering helpers ────────────────────────────────────────────────────────
+
 function InlineText({ parts, color }: { parts: InlinePart[]; color: string }) {
   const theme = useTheme();
 
@@ -193,6 +197,8 @@ function getDiffColor(kind: DiffRenderLineType, theme: ReturnType<typeof useThem
       return theme.MUTED;
   }
 }
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function RenderMessage({ segments, width, brightHeadings = false }: { segments: Segment[]; width: number; brightHeadings?: boolean }) {
   const theme = useTheme();

@@ -4,6 +4,8 @@ import { dirname, join } from "path";
 
 export const DEFAULT_TERMINAL_TITLE = APP_NAME;
 
+// ─── Constants & diagnostics ──────────────────────────────────────────────────
+
 const DEBUG_TERMINAL_TITLE = Boolean(process.env["CODEXA_DEBUG_TERMINAL_TITLE"]);
 const TERMINAL_TITLE_SEQUENCE_PATTERN = /\x1b\](?:0|2);[^\x07]*(?:\x07|\x1b\\)/g;
 const TERMINAL_TITLE_SEQUENCE_DETECT_PATTERN = /\x1b\]([02]);([\s\S]*?)(?:\x07|\x1b\\)/g;
@@ -37,6 +39,8 @@ function writeTerminalTitleDebugRecord(fields: Record<string, unknown>): void {
     // Diagnostics must never disturb the TUI.
   }
 }
+
+// ─── Title write helpers ──────────────────────────────────────────────────────
 
 let lastWrittenTerminalTitle = "";
 let intendedTerminalTitle = DEFAULT_TERMINAL_TITLE;
@@ -184,6 +188,8 @@ export function refreshTerminalTitle(options: {
   });
 }
 
+// ─── Sequence stripping ───────────────────────────────────────────────────────
+
 export interface TerminalTitleSequenceTraceContext {
   source: string;
   stream: "stdout" | "stderr" | "unknown";
@@ -282,6 +288,8 @@ export function writeGuardedTerminalOutput(
   if (!safeText) return true;
   return write(safeText) !== false;
 }
+
+// ─── Startup guard ────────────────────────────────────────────────────────────
 
 /**
  * Schedules a sequence of title assertions to outlast Windows Terminal's

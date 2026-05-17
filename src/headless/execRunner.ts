@@ -16,6 +16,8 @@ import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { resolveWorkspaceRoot } from "../core/workspaceRoot.js";
 import type { RunToolActivity } from "../session/types.js";
 
+// ─── Types & constants ────────────────────────────────────────────────────────
+
 export const HEADLESS_EXEC_PARSE_ERROR = 2;
 export const HEADLESS_EXEC_PROVIDER_UNAVAILABLE = 3;
 export const HEADLESS_EXEC_RUN_FAILED = 1;
@@ -91,6 +93,8 @@ const DEFAULT_DEPENDENCIES: HeadlessExecDependencies = {
   loadProjectInstructions,
 };
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 function writeLine(stream: Pick<NodeJS.WriteStream, "write">, line: string): void {
   stream.write(`${line}\n`);
 }
@@ -159,6 +163,8 @@ function formatRuntimeStartup(runtime: ResolvedRuntimeConfig, workspaceRoot: str
     `network ${runtime.policy.networkAccess ? "enabled" : "disabled"}`,
   ].join("; ");
 }
+
+// ─── Runner ───────────────────────────────────────────────────────────────────
 
 export async function runHeadlessExec(
   options: HeadlessExecOptions,

@@ -49,6 +49,8 @@ export function normalizeCursorOffset(text: string, cursorOffset: number): numbe
   return safeCursor;
 }
 
+// ─── Cursor movement ─────────────────────────────────────────────────────────
+
 export function moveCursorLeft(text: string, cursorOffset: number): number {
   const safeCursor = normalizeCursorOffset(text, cursorOffset);
   if (safeCursor <= 0) return 0;
@@ -75,6 +77,8 @@ export function moveCursorRight(text: string, cursorOffset: number): number {
 
   return safeCursor + 1;
 }
+
+// ─── Text mutations ───────────────────────────────────────────────────────────
 
 export function insertInputText(params: {
   value: string;
@@ -125,6 +129,8 @@ export function deleteInputForward(params: {
     cursorOffset: safeCursor,
   };
 }
+
+// ─── Viewport ────────────────────────────────────────────────────────────────
 
 export function wrapInputRows(text: string, width: number): WrappedInputRow[] {
   return wrapTextRows(normalizeInputText(text), width);

@@ -2,6 +2,8 @@ import type { RunProgressBlock, RunProgressEntry, RunProgressSource } from "../s
 import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { wrapPlainText } from "./textLayout.js";
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 export interface VisibleProgressBlock {
   id: string;
   key: string;
@@ -24,6 +26,8 @@ export interface VisibleProgressBlocks {
   latestBlock: VisibleProgressBlock | null;
   latestActiveBlock: VisibleProgressBlock | null;
 }
+
+// ─── Block selection ─────────────────────────────────────────────────────────
 
 function sourceLabel(source: RunProgressSource): string {
   switch (source) {

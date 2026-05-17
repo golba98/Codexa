@@ -23,6 +23,8 @@ import type { RunToolActivity } from "./types.js";
 import type { LiveRenderUpdate } from "./liveRenderScheduler.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 export interface SessionState {
   staticEvents: TimelineEvent[];
   activeEvents: TimelineEvent[];
@@ -91,6 +93,8 @@ export type SessionAction =
   | { type: "UPDATE_SHELL_LINES"; shellId: number; stream: "stdout" | "stderr"; lines: string[] }
   | { type: "REMOVE_ACTIVE_RUNTIME"; runId: number; turnId?: number | null }
   | { type: "UI_ACTION"; action: UIStateAction };
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 export function createInitialSessionState(): SessionState {
   return {
@@ -262,6 +266,8 @@ function preserveUIStateIdentity(previous: UIState, next: UIState): UIState {
 function eventCount(state: SessionState): number {
   return state.staticEvents.length + state.activeEvents.length;
 }
+
+// ─── Reducer ─────────────────────────────────────────────────────────────────
 
 export function reduceSessionState(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
@@ -680,6 +686,8 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       return state;
   }
 }
+
+// ─── Hook ────────────────────────────────────────────────────────────────────
 
 export function useAppSessionState() {
   const [state, setState] = useState<SessionState>(createInitialSessionState);

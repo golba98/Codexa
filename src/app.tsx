@@ -2568,8 +2568,7 @@ export function App({ launchArgs }: AppProps) {
     appendSystemEvent("Plan file", [`Path: ${planFilePath}`, "", sanitized].join("\n"));
   }, [appendErrorEvent, appendSystemEvent, workspaceRoot]);
 
-
-  // ── Stable composer-input callbacks ────────────────────────────────────────
+  // ─── Stable composer-input callbacks ──────────────────────────────────────────
   // These use refs so the function identity never changes, avoiding
   // unnecessary downstream work even though the memo comparator on
   // MemoizedBottomComposer already skips callback checks.
