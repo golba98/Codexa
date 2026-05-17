@@ -135,10 +135,9 @@ function reconcileAssistantContent(
   const sNorm = norm(streamed);
   const rNorm = norm(response);
 
-  if (sNorm === rNorm) return streamed;                    // exact → keep streamed formatting
-  if (rNorm.startsWith(sNorm) && sNorm.length > 20)       // streamed is prefix → use response
-    return response;
-  return response;                                          // different → authoritative response wins
+  if (sNorm === rNorm) return streamed;   // exact match → keep streamed formatting
+  // streamed is a prefix of response, or they differ — authoritative response wins either way
+  return response;
 }
 
 function isAnimatedLifecycleKind(kind: UIState["kind"]): boolean {

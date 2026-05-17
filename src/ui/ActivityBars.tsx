@@ -55,8 +55,8 @@ export function PulseBar({ tick, color, dimColor }: PulseBarProps) {
   const pos = raw < PULSE_MAX_POS ? raw : PULSE_PERIOD - raw;
 
   const before = "░".repeat(pos);
-  const fill   = "█".repeat(PULSE_FILL);
-  const after  = "░".repeat(PULSE_TOTAL - pos - PULSE_FILL);
+  const fill = "█".repeat(PULSE_FILL);
+  const after = "░".repeat(PULSE_TOTAL - pos - PULSE_FILL);
 
   return (
     <Box>

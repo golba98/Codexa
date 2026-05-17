@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { Box, Text } from "ink";
 import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
 import { getUsableShellWidth } from "./layout.js";

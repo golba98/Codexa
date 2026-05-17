@@ -1,4 +1,3 @@
-import React from "react";
 import type { ResolvedRuntimeConfig, RuntimeConfig } from "../config/runtimeConfig.js";
 import {
   formatApprovalPolicyLabel,

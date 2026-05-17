@@ -256,22 +256,22 @@ export function formatReasoningLabel(reasoning: string): string {
 }
 
 export const AVAILABLE_THEMES = [
-  { id: "purple",    label: "Midnight Purple" },
-  { id: "mono",      label: "Black & White" },
-  { id: "dark",      label: "Modern Dark" },
-  { id: "black",     label: "Codex the Black" },
-  { id: "emerald",   label: "Emerald Night" },
-  { id: "solar",     label: "Solar Flare" },
-  { id: "cyber",     label: "Cyberpunk Neon" },
-  { id: "ocean",     label: "Deep Oceanic" },
-  { id: "nordic",    label: "Nordic Frost" },
-  { id: "green",     label: "Terminal Green" },
-  { id: "amber",     label: "Terminal Amber" },
+  { id: "purple", label: "Midnight Purple" },
+  { id: "mono", label: "Black & White" },
+  { id: "dark", label: "Modern Dark" },
+  { id: "black", label: "Codex the Black" },
+  { id: "emerald", label: "Emerald Night" },
+  { id: "solar", label: "Solar Flare" },
+  { id: "cyber", label: "Cyberpunk Neon" },
+  { id: "ocean", label: "Deep Oceanic" },
+  { id: "nordic", label: "Nordic Frost" },
+  { id: "green", label: "Terminal Green" },
+  { id: "amber", label: "Terminal Amber" },
   { id: "vaporwave", label: "Vaporwave Dream" },
-  { id: "dracula",   label: "Dracula Night" },
-  { id: "gruvbox",   label: "Gruvbox Hard" },
+  { id: "dracula", label: "Dracula Night" },
+  { id: "gruvbox", label: "Gruvbox Hard" },
   { id: "synthwave", label: "Synthwave '84" },
-  { id: "custom",    label: "Customize..." },
+  { id: "custom", label: "Customize..." },
 ] as const;
 
 export type AvailableTheme = (typeof AVAILABLE_THEMES)[number]["id"];

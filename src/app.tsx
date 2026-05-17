@@ -249,7 +249,6 @@ function createInitialAuthStatus(): CodexAuthProbeResult {
   };
 }
 
-
 interface AppProps {
   launchArgs: LaunchArgs;
 }
@@ -3830,9 +3829,6 @@ export function App({ launchArgs }: AppProps) {
     addWritableRootWithNotice,
     clearWritableRootsWithNotice,
     removeWritableRootWithNotice,
-    mode,
-    planMode,
-    runPlanGeneration,
     setApprovalPolicyWithNotice,
     setAuthPreferenceWithNotice,
     setBackendWithNotice,
@@ -4023,232 +4019,232 @@ export function App({ launchArgs }: AppProps) {
               />
             )}
 
-              {screen === "provider-picker" && (
-                <ProviderPicker
-                  layout={terminalLayout}
-                  providers={providerRegistry}
-                  onAction={handleProviderAction}
-                  onCancel={() => {
-                    setPendingRouteProviderId(null);
-                    setScreen("main");
-                  }}
-                  initialProviderId={pendingRouteProviderId ?? undefined}
-                />
-              )}
+            {screen === "provider-picker" && (
+              <ProviderPicker
+                layout={terminalLayout}
+                providers={providerRegistry}
+                onAction={handleProviderAction}
+                onCancel={() => {
+                  setPendingRouteProviderId(null);
+                  setScreen("main");
+                }}
+                initialProviderId={pendingRouteProviderId ?? undefined}
+              />
+            )}
 
-              {screen === "model-picker" && (
-                <ModelPickerScreen
-                  layout={terminalLayout}
-                  models={modelPickerModels}
-                  currentModel={modelPickerCurrentModel}
-                  currentReasoning={modelPickerCurrentReasoning}
-                  activeProviderLabel={modelPickerProviderLabel}
-                  isLoading={modelPickerProviderId === "openai" && modelCapabilitiesBusy && modelPickerModels.length === 0}
-                  emptyMessage={modelPickerEmptyMessage}
-                  onSelect={(m, r, geminiSelection) => {
-                    if (pendingRouteProviderId && pendingRouteProviderId !== activeProviderRoute.providerId) {
-                      // Non-active provider: save as provider default without switching the active route.
-                      // User must click "Use in Codexa" to validate and activate.
-                      persistProviderDefaultModelAndReasoning(pendingRouteProviderId, m, r);
-                      appendSystemEvent(
-                        "Provider model saved",
-                        `${modelPickerProviderLabel} default model set to ${m} with reasoning ${formatReasoningLabel(r)}. Choose "Use in Codexa" to activate this provider.`,
-                      );
-                      setScreen("provider-picker");
-                    } else {
-                      void setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel, modelPickerProviderId, geminiSelection);
-                    }
-                  }}
-                  onCancel={() => {
-                    setPendingRouteProviderId(null);
-                    returnToChatMode();
-                  }}
-                />
-              )}
+            {screen === "model-picker" && (
+              <ModelPickerScreen
+                layout={terminalLayout}
+                models={modelPickerModels}
+                currentModel={modelPickerCurrentModel}
+                currentReasoning={modelPickerCurrentReasoning}
+                activeProviderLabel={modelPickerProviderLabel}
+                isLoading={modelPickerProviderId === "openai" && modelCapabilitiesBusy && modelPickerModels.length === 0}
+                emptyMessage={modelPickerEmptyMessage}
+                onSelect={(m, r, geminiSelection) => {
+                  if (pendingRouteProviderId && pendingRouteProviderId !== activeProviderRoute.providerId) {
+                    // Non-active provider: save as provider default without switching the active route.
+                    // User must click "Use in Codexa" to validate and activate.
+                    persistProviderDefaultModelAndReasoning(pendingRouteProviderId, m, r);
+                    appendSystemEvent(
+                      "Provider model saved",
+                      `${modelPickerProviderLabel} default model set to ${m} with reasoning ${formatReasoningLabel(r)}. Choose "Use in Codexa" to activate this provider.`,
+                    );
+                    setScreen("provider-picker");
+                  } else {
+                    void setModelAndReasoningWithNotice(m as AvailableModel, r as ReasoningLevel, modelPickerProviderId, geminiSelection);
+                  }
+                }}
+                onCancel={() => {
+                  setPendingRouteProviderId(null);
+                  returnToChatMode();
+                }}
+              />
+            )}
 
-              {screen === "mode-picker" && (
-                <ModePicker
-                  currentMode={mode}
-                  onSelect={(value) => setModeWithNotice(value as AvailableMode)}
-                  onCancel={() => setScreen("main")}
-                />
-              )}
+            {screen === "mode-picker" && (
+              <ModePicker
+                currentMode={mode}
+                onSelect={(value) => setModeWithNotice(value as AvailableMode)}
+                onCancel={() => setScreen("main")}
+              />
+            )}
 
-              {screen === "reasoning-picker" && (
-                <ReasoningPicker
-                  currentModel={activeProviderRoute.modelId}
-                  currentReasoning={activeProviderRoute.reasoning ?? reasoningLevel}
-                  reasoningLevels={currentReasoningCapabilities}
-                  defaultReasoning={currentModelCapability?.defaultReasoningLevel ?? null}
-                  sourceLabel={currentReasoningSourceLabel}
-                  onSelect={(value) => setReasoningWithNotice(value as ReasoningLevel)}
-                  onCancel={() => setScreen("main")}
-                />
-              )}
+            {screen === "reasoning-picker" && (
+              <ReasoningPicker
+                currentModel={activeProviderRoute.modelId}
+                currentReasoning={activeProviderRoute.reasoning ?? reasoningLevel}
+                reasoningLevels={currentReasoningCapabilities}
+                defaultReasoning={currentModelCapability?.defaultReasoningLevel ?? null}
+                sourceLabel={currentReasoningSourceLabel}
+                onSelect={(value) => setReasoningWithNotice(value as ReasoningLevel)}
+                onCancel={() => setScreen("main")}
+              />
+            )}
 
-              {screen === "auth-panel" && (
-                <AuthPanel
-                  focusId={FOCUS_IDS.authPanel}
-                  provider={provider}
-                  authPreference={authPreference}
-                  authStatus={authStatus}
-                  authStatusBusy={authStatusBusy}
-                  onSetPreference={(value) => setAuthPreferenceWithNotice(value as AuthPreference)}
-                  onRefreshAuthStatus={() => {
-                    void refreshAuthStatus(false);
-                  }}
-                  onClose={() => setScreen("main")}
-                />
-              )}
+            {screen === "auth-panel" && (
+              <AuthPanel
+                focusId={FOCUS_IDS.authPanel}
+                provider={provider}
+                authPreference={authPreference}
+                authStatus={authStatus}
+                authStatusBusy={authStatusBusy}
+                onSetPreference={(value) => setAuthPreferenceWithNotice(value as AuthPreference)}
+                onRefreshAuthStatus={() => {
+                  void refreshAuthStatus(false);
+                }}
+                onClose={() => setScreen("main")}
+              />
+            )}
 
-              {screen === "permissions-panel" && (
-                <PermissionsPanel
-                  runtime={runtimeConfig}
-                  resolvedRuntime={resolvedRuntimeConfig}
-                  onSelect={handlePermissionsPanelAction}
-                  onCancel={() => setScreen("main")}
-                />
-              )}
+            {screen === "permissions-panel" && (
+              <PermissionsPanel
+                runtime={runtimeConfig}
+                resolvedRuntime={resolvedRuntimeConfig}
+                onSelect={handlePermissionsPanelAction}
+                onCancel={() => setScreen("main")}
+              />
+            )}
 
-              {screen === "permissions-approval-picker" && (
-                <SelectionPanel
-                  focusId={FOCUS_IDS.permissionsApprovalPicker}
-                  title="Approval Policy"
-                  subtitle="Choose how Codexa should handle approval prompts."
-                  items={AVAILABLE_APPROVAL_POLICIES.map((item) => ({
-                    label: item.id === runtimeConfig.policy.approvalPolicy
-                      ? `${item.label}  ✓`
-                      : item.label,
-                    value: item.id,
-                  }))}
-                  onSelect={(value) => {
-                    setApprovalPolicyWithNotice(value as RuntimeApprovalPolicy);
-                    setScreen("permissions-panel");
-                  }}
-                  onCancel={() => setScreen("permissions-panel")}
-                />
-              )}
+            {screen === "permissions-approval-picker" && (
+              <SelectionPanel
+                focusId={FOCUS_IDS.permissionsApprovalPicker}
+                title="Approval Policy"
+                subtitle="Choose how Codexa should handle approval prompts."
+                items={AVAILABLE_APPROVAL_POLICIES.map((item) => ({
+                  label: item.id === runtimeConfig.policy.approvalPolicy
+                    ? `${item.label}  ✓`
+                    : item.label,
+                  value: item.id,
+                }))}
+                onSelect={(value) => {
+                  setApprovalPolicyWithNotice(value as RuntimeApprovalPolicy);
+                  setScreen("permissions-panel");
+                }}
+                onCancel={() => setScreen("permissions-panel")}
+              />
+            )}
 
-              {screen === "permissions-sandbox-picker" && (
-                <SelectionPanel
-                  focusId={FOCUS_IDS.permissionsSandboxPicker}
-                  title="Sandbox Mode"
-                  subtitle="Choose the effective filesystem sandbox for future runs."
-                  items={AVAILABLE_SANDBOX_MODES.map((item) => ({
-                    label: item.id === runtimeConfig.policy.sandboxMode
-                      ? `${item.label}  ✓`
-                      : item.label,
-                    value: item.id,
-                  }))}
-                  onSelect={(value) => {
-                    setSandboxModeWithNotice(value as RuntimeSandboxMode);
-                    setScreen("permissions-panel");
-                  }}
-                  onCancel={() => setScreen("permissions-panel")}
-                />
-              )}
+            {screen === "permissions-sandbox-picker" && (
+              <SelectionPanel
+                focusId={FOCUS_IDS.permissionsSandboxPicker}
+                title="Sandbox Mode"
+                subtitle="Choose the effective filesystem sandbox for future runs."
+                items={AVAILABLE_SANDBOX_MODES.map((item) => ({
+                  label: item.id === runtimeConfig.policy.sandboxMode
+                    ? `${item.label}  ✓`
+                    : item.label,
+                  value: item.id,
+                }))}
+                onSelect={(value) => {
+                  setSandboxModeWithNotice(value as RuntimeSandboxMode);
+                  setScreen("permissions-panel");
+                }}
+                onCancel={() => setScreen("permissions-panel")}
+              />
+            )}
 
-              {screen === "permissions-network-picker" && (
-                <SelectionPanel
-                  focusId={FOCUS_IDS.permissionsNetworkPicker}
-                  title="Network Access"
-                  subtitle="Choose whether network access is enabled for future runs."
-                  items={AVAILABLE_NETWORK_ACCESS_VALUES.map((item) => ({
-                    label: item.id === runtimeConfig.policy.networkAccess
-                      ? `${item.label}  ✓`
-                      : item.label,
-                    value: item.id,
-                  }))}
-                  onSelect={(value) => {
-                    setNetworkAccessWithNotice(value as RuntimeNetworkAccess);
-                    setScreen("permissions-panel");
-                  }}
-                  onCancel={() => setScreen("permissions-panel")}
-                />
-              )}
+            {screen === "permissions-network-picker" && (
+              <SelectionPanel
+                focusId={FOCUS_IDS.permissionsNetworkPicker}
+                title="Network Access"
+                subtitle="Choose whether network access is enabled for future runs."
+                items={AVAILABLE_NETWORK_ACCESS_VALUES.map((item) => ({
+                  label: item.id === runtimeConfig.policy.networkAccess
+                    ? `${item.label}  ✓`
+                    : item.label,
+                  value: item.id,
+                }))}
+                onSelect={(value) => {
+                  setNetworkAccessWithNotice(value as RuntimeNetworkAccess);
+                  setScreen("permissions-panel");
+                }}
+                onCancel={() => setScreen("permissions-panel")}
+              />
+            )}
 
-              {screen === "permissions-add-writable-root" && (
-                <TextEntryPanel
-                  focusId={FOCUS_IDS.permissionsAddWritableRoot}
-                  title="Add Writable Root"
-                  subtitle="Enter an absolute path or a path relative to the locked workspace."
-                  placeholder="relative\\or\\absolute\\path"
-                  inputLabel="Path"
-                  footerHint="Enter save  Esc cancel  Backspace delete"
-                  onSubmit={(value) => {
-                    if (!value.trim()) {
-                      appendSystemEvent("Runtime policy", "Writable root path cannot be empty.");
-                      return;
-                    }
-                    addWritableRootWithNotice(value);
-                    setScreen("permissions-panel");
-                  }}
-                  onCancel={() => setScreen("permissions-panel")}
-                />
-              )}
+            {screen === "permissions-add-writable-root" && (
+              <TextEntryPanel
+                focusId={FOCUS_IDS.permissionsAddWritableRoot}
+                title="Add Writable Root"
+                subtitle="Enter an absolute path or a path relative to the locked workspace."
+                placeholder="relative\\or\\absolute\\path"
+                inputLabel="Path"
+                footerHint="Enter save  Esc cancel  Backspace delete"
+                onSubmit={(value) => {
+                  if (!value.trim()) {
+                    appendSystemEvent("Runtime policy", "Writable root path cannot be empty.");
+                    return;
+                  }
+                  addWritableRootWithNotice(value);
+                  setScreen("permissions-panel");
+                }}
+                onCancel={() => setScreen("permissions-panel")}
+              />
+            )}
 
-              {screen === "permissions-remove-writable-root" && (
-                <SelectionPanel
-                  focusId={FOCUS_IDS.permissionsRemoveWritableRoot}
-                  title="Remove Writable Root"
-                  subtitle="Select a configured writable root to remove."
-                  items={runtimeConfig.policy.writableRoots.map((root) => ({
-                    label: root,
-                    value: root,
-                  }))}
-                  onSelect={(value) => {
-                    removeWritableRootWithNotice(value);
-                    setScreen("permissions-panel");
-                  }}
-                  onCancel={() => setScreen("permissions-panel")}
-                />
-              )}
+            {screen === "permissions-remove-writable-root" && (
+              <SelectionPanel
+                focusId={FOCUS_IDS.permissionsRemoveWritableRoot}
+                title="Remove Writable Root"
+                subtitle="Select a configured writable root to remove."
+                items={runtimeConfig.policy.writableRoots.map((root) => ({
+                  label: root,
+                  value: root,
+                }))}
+                onSelect={(value) => {
+                  removeWritableRootWithNotice(value);
+                  setScreen("permissions-panel");
+                }}
+                onCancel={() => setScreen("permissions-panel")}
+              />
+            )}
 
-              {screen === "theme-picker" && (
-                <ThemePicker
-                  currentTheme={themeSelection.committedTheme}
-                  onSelect={(value) => {
-                    if (themePreviewTimerRef.current) {
-                      clearTimeout(themePreviewTimerRef.current);
-                      themePreviewTimerRef.current = null;
-                    }
-                    setThemeSelection((currentTheme) => commitThemeSelection(currentTheme, value));
-                    setScreen("main");
-                    appendSystemEvent("Theme updated", `Visual theme switched to ${formatThemeLabel(value)}.`);
-                    if (value === "custom") {
-                      if (!customTheme) {
-                        setCustomTheme({ ...THEMES.purple });
-                      }
-                      appendSystemEvent(
-                        "Custom Theme",
-                        "Add a \"custom_theme\" object to ~/.codexa-settings.json with any of these keys: BG, PANEL, PANEL_ALT, PANEL_SOFT, BORDER, BORDER_ACTIVE, BORDER_SUBTLE, TEXT, MUTED, DIM, ACCENT, PROMPT, SUCCESS, WARNING, ERROR, INFO, STAR. Unset keys fall back to Midnight Purple defaults.",
-                      );
-                    }
-                  }}
-                  onHighlight={(value) => {
-                    if (themePreviewTimerRef.current) clearTimeout(themePreviewTimerRef.current);
-                    themePreviewTimerRef.current = setTimeout(() => {
-                      setThemeSelection((currentTheme) => previewThemeSelection(currentTheme, value));
-                    }, 120);
-                  }}
-                  onCancel={() => {
-                    if (themePreviewTimerRef.current) clearTimeout(themePreviewTimerRef.current);
+            {screen === "theme-picker" && (
+              <ThemePicker
+                currentTheme={themeSelection.committedTheme}
+                onSelect={(value) => {
+                  if (themePreviewTimerRef.current) {
+                    clearTimeout(themePreviewTimerRef.current);
                     themePreviewTimerRef.current = null;
-                    setThemeSelection((currentTheme) => cancelThemeSelection(currentTheme));
-                    setScreen("main");
-                  }}
-                />
-              )}
+                  }
+                  setThemeSelection((currentTheme) => commitThemeSelection(currentTheme, value));
+                  setScreen("main");
+                  appendSystemEvent("Theme updated", `Visual theme switched to ${formatThemeLabel(value)}.`);
+                  if (value === "custom") {
+                    if (!customTheme) {
+                      setCustomTheme({ ...THEMES.purple });
+                    }
+                    appendSystemEvent(
+                      "Custom Theme",
+                      "Add a \"custom_theme\" object to ~/.codexa-settings.json with any of these keys: BG, PANEL, PANEL_ALT, PANEL_SOFT, BORDER, BORDER_ACTIVE, BORDER_SUBTLE, TEXT, MUTED, DIM, ACCENT, PROMPT, SUCCESS, WARNING, ERROR, INFO, STAR. Unset keys fall back to Midnight Purple defaults.",
+                    );
+                  }
+                }}
+                onHighlight={(value) => {
+                  if (themePreviewTimerRef.current) clearTimeout(themePreviewTimerRef.current);
+                  themePreviewTimerRef.current = setTimeout(() => {
+                    setThemeSelection((currentTheme) => previewThemeSelection(currentTheme, value));
+                  }, 120);
+                }}
+                onCancel={() => {
+                  if (themePreviewTimerRef.current) clearTimeout(themePreviewTimerRef.current);
+                  themePreviewTimerRef.current = null;
+                  setThemeSelection((currentTheme) => cancelThemeSelection(currentTheme));
+                  setScreen("main");
+                }}
+              />
+            )}
 
-              {screen === "settings-panel" && (
-                <SettingsPanel
-                  focusId={FOCUS_IDS.settingsPanel}
-                  settings={USER_SETTING_DEFINITIONS}
-                  values={currentUserSettings}
-                  onSave={(values) => saveSettingsFromPanel(values as UserSettingValues)}
-                  onCancel={() => setScreen("main")}
-                />
-              )}
+            {screen === "settings-panel" && (
+              <SettingsPanel
+                focusId={FOCUS_IDS.settingsPanel}
+                settings={USER_SETTING_DEFINITIONS}
+                values={currentUserSettings}
+                onSave={(values) => saveSettingsFromPanel(values as UserSettingValues)}
+                onCancel={() => setScreen("main")}
+              />
+            )}
           </>
         }
         mainPanel={null}

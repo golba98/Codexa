@@ -422,371 +422,342 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
     const normalizedArg = arg.toLowerCase();
 
     switch (cmd) {
-    case "exit":
-    case "quit":
-      return { action: "exit" };
+      case "exit":
+      case "quit":
+        return { action: "exit" };
 
-    case "clear":
-      return { action: "clear" };
+      case "clear":
+        return { action: "clear" };
 
-    case "backend": {
-      if (!arg) return { action: "open_backend_picker" };
-      if (AVAILABLE_BACKENDS.some((item) => item.id === arg)) {
-        return {
-          action: "backend",
-          value: arg,
-          message: `Backend switched to ${formatBackendLabel(arg)}`,
-        };
-      }
-      return {
-        action: "unknown",
-        message: `Unknown backend: ${arg}. Use /backends to list available backends.`,
-      };
-    }
-
-    case "providers":
-    case "provider":
-      return { action: "open_provider_picker" };
-
-    case "route":
-      return {
-        action: "route_status",
-        message: context.routeStatusMessage ?? [
-          "Route status:",
-          "  Workspace default: OpenAI",
-          `  Active chat route: OpenAI / ${context.runtime.model}`,
-          `  Active model: ${context.runtime.model}`,
-          "  Active provider mode: Usable inside Codexa",
-        ].join("\n"),
-      };
-
-    case "model": {
-      if (!arg) return { action: "open_model_picker" };
-      const detectedModels = context.modelCapabilities
-        ? getSelectableModelCapabilities(context.modelCapabilities)
-        : [];
-      const detectedModel = detectedModels.find((model) => model.model === arg || model.id === arg);
-      if (detectedModel) {
-        return { action: "model", value: detectedModel.model, message: `Model switched to ${detectedModel.model}` };
-      }
-      if (!context.modelCapabilities && (AVAILABLE_MODELS as readonly string[]).includes(arg)) {
-        return { action: "model", value: arg, message: `Model switched to ${arg}` };
-      }
-      return {
-        action: "unknown",
-        message: `Unknown model: ${arg}. Use /models to list available models.`,
-      };
-    }
-
-    case "models":
-      return { action: "open_model_picker" };
-
-    case "mode": {
-      if (!arg) return { action: "open_mode_picker" };
-      const resolvedMode = resolveModeCommand(arg);
-      if (resolvedMode) {
-        return {
-          action: "mode",
-          value: resolvedMode,
-          message: `Mode switched to ${formatModeLabel(resolvedMode)}`,
-        };
-      }
-      return {
-        action: "unknown",
-        message: `Unknown mode: ${arg}. Valid: ${formatModeCommandHelp()}`,
-      };
-    }
-
-    case "reasoning": {
-      if (!arg) return { action: "open_reasoning_picker" };
-      const normalized = expandReasoningAliases(arg);
-      const modelCapability = findModelCapability(context.modelCapabilities, context.runtime.model);
-      const detectedLevels = modelCapability?.supportedReasoningLevels;
-      if (detectedLevels && detectedLevels.some((item) => item.id === normalized)) {
-        return {
-          action: "reasoning",
-          value: normalized,
-          message: `Reasoning level switched to ${formatReasoningLabel(normalized)}`,
-        };
-      }
-      if (detectedLevels) {
-        const valid = detectedLevels.map((item) => item.id).join(", ");
+      case "backend": {
+        if (!arg) return { action: "open_backend_picker" };
+        if (AVAILABLE_BACKENDS.some((item) => item.id === arg)) {
+          return {
+            action: "backend",
+            value: arg,
+            message: `Backend switched to ${formatBackendLabel(arg)}`,
+          };
+        }
         return {
           action: "unknown",
-          message: `Unknown reasoning level for ${context.runtime.model}: ${arg}. Valid: ${valid}`,
-        };
-      }
-      if (isKnownFallbackReasoning(normalized)) {
-        return {
-          action: "reasoning",
-          value: normalized,
-          message: `Reasoning level switched to ${formatReasoningLabel(normalized)} (runtime metadata unavailable)`,
-        };
-      }
-      return {
-        action: "unknown",
-        message: `Unknown reasoning level: ${arg}. Runtime reasoning metadata is unavailable for ${context.runtime.model}.`,
-      };
-    }
-
-    case "plan": {
-      if (!arg || normalizedArg === "status") {
-        return {
-          action: "plan_mode",
-          message: `Plan mode: ${context.runtime.planMode ? "Enabled" : "Disabled"}.`,
+          message: `Unknown backend: ${arg}. Use /backends to list available backends.`,
         };
       }
 
-      if (normalizedArg === "on" || normalizedArg === "off") {
+      case "providers":
+      case "provider":
+        return { action: "open_provider_picker" };
+
+      case "route":
         return {
-          action: "plan_mode",
-          value: normalizedArg,
-          message: `Plan mode ${normalizedArg === "on" ? "enabled" : "disabled"}.`,
-        };
-      }
-
-      return {
-        action: "unknown",
-        message: "Usage: /plan [on|off]",
-      };
-    }
-
-    case "setting":
-    case "settings": {
-      if (!arg) {
-        return { action: "open_settings_panel" };
-      }
-
-      if (normalizedArg === "workspace" || normalizedArg === "workspace-display" || normalizedArg === "directory") {
-        return {
-          action: "setting_workspace_display",
-          message: [
-            `Workspace display: ${formatWorkspaceDisplayModeLabel(context.settings.workspaceDisplayMode)} (${context.settings.workspaceDisplayMode})`,
-            "Allowed values: dir, name, simple",
-            "dir = show the current workspace folder name",
-            "name = show Codexa",
-            "simple = show only the final folder name",
+          action: "route_status",
+          message: context.routeStatusMessage ?? [
+            "Route status:",
+            "  Workspace default: OpenAI",
+            `  Active chat route: OpenAI / ${context.runtime.model}`,
+            `  Active model: ${context.runtime.model}`,
+            "  Active provider mode: Usable inside Codexa",
           ].join("\n"),
         };
+
+      case "model": {
+        if (!arg) return { action: "open_model_picker" };
+        const detectedModels = context.modelCapabilities
+          ? getSelectableModelCapabilities(context.modelCapabilities)
+          : [];
+        const detectedModel = detectedModels.find((model) => model.model === arg || model.id === arg);
+        if (detectedModel) {
+          return { action: "model", value: detectedModel.model, message: `Model switched to ${detectedModel.model}` };
+        }
+        if (!context.modelCapabilities && (AVAILABLE_MODELS as readonly string[]).includes(arg)) {
+          return { action: "model", value: arg, message: `Model switched to ${arg}` };
+        }
+        return {
+          action: "unknown",
+          message: `Unknown model: ${arg}. Use /models to list available models.`,
+        };
       }
 
-      const workspaceSettingPrefix = ["workspace ", "workspace-display ", "directory "].find((prefix) => normalizedArg.startsWith(prefix));
-      if (workspaceSettingPrefix) {
-        const nextValue = normalizedArg.slice(workspaceSettingPrefix.length).trim();
-        // "normal" was the legacy default label before "dir" was introduced
-        const legacyMap: Record<string, WorkspaceDisplayMode> = {
-          normal: normalizeLegacyDirectoryDisplayMode("normal"),
+      case "models":
+        return { action: "open_model_picker" };
+
+      case "mode": {
+        if (!arg) return { action: "open_mode_picker" };
+        const resolvedMode = resolveModeCommand(arg);
+        if (resolvedMode) {
+          return {
+            action: "mode",
+            value: resolvedMode,
+            message: `Mode switched to ${formatModeLabel(resolvedMode)}`,
+          };
+        }
+        return {
+          action: "unknown",
+          message: `Unknown mode: ${arg}. Valid: ${formatModeCommandHelp()}`,
         };
-        const mappedValue = legacyMap[nextValue] ?? nextValue;
-        if (WORKSPACE_DISPLAY_MODES.includes(mappedValue as WorkspaceDisplayMode)) {
-          const value = mappedValue as WorkspaceDisplayMode;
+      }
+
+      case "reasoning": {
+        if (!arg) return { action: "open_reasoning_picker" };
+        const normalized = expandReasoningAliases(arg);
+        const modelCapability = findModelCapability(context.modelCapabilities, context.runtime.model);
+        const detectedLevels = modelCapability?.supportedReasoningLevels;
+        if (detectedLevels && detectedLevels.some((item) => item.id === normalized)) {
+          return {
+            action: "reasoning",
+            value: normalized,
+            message: `Reasoning level switched to ${formatReasoningLabel(normalized)}`,
+          };
+        }
+        if (detectedLevels) {
+          const valid = detectedLevels.map((item) => item.id).join(", ");
+          return {
+            action: "unknown",
+            message: `Unknown reasoning level for ${context.runtime.model}: ${arg}. Valid: ${valid}`,
+          };
+        }
+        if (isKnownFallbackReasoning(normalized)) {
+          return {
+            action: "reasoning",
+            value: normalized,
+            message: `Reasoning level switched to ${formatReasoningLabel(normalized)} (runtime metadata unavailable)`,
+          };
+        }
+        return {
+          action: "unknown",
+          message: `Unknown reasoning level: ${arg}. Runtime reasoning metadata is unavailable for ${context.runtime.model}.`,
+        };
+      }
+
+      case "plan": {
+        if (!arg || normalizedArg === "status") {
+          return {
+            action: "plan_mode",
+            message: `Plan mode: ${context.runtime.planMode ? "Enabled" : "Disabled"}.`,
+          };
+        }
+
+        if (normalizedArg === "on" || normalizedArg === "off") {
+          return {
+            action: "plan_mode",
+            value: normalizedArg,
+            message: `Plan mode ${normalizedArg === "on" ? "enabled" : "disabled"}.`,
+          };
+        }
+
+        return {
+          action: "unknown",
+          message: "Usage: /plan [on|off]",
+        };
+      }
+
+      case "setting":
+      case "settings": {
+        if (!arg) {
+          return { action: "open_settings_panel" };
+        }
+
+        if (normalizedArg === "workspace" || normalizedArg === "workspace-display" || normalizedArg === "directory") {
           return {
             action: "setting_workspace_display",
-            value,
-            message: `Workspace display set to ${formatWorkspaceDisplayModeLabel(value)} (${value}).`,
+            message: [
+              `Workspace display: ${formatWorkspaceDisplayModeLabel(context.settings.workspaceDisplayMode)} (${context.settings.workspaceDisplayMode})`,
+              "Allowed values: dir, name, simple",
+              "dir = show the current workspace folder name",
+              "name = show Codexa",
+              "simple = show only the final folder name",
+            ].join("\n"),
           };
         }
 
-        return {
-          action: "unknown",
-          message: "Usage: /setting workspace [dir|name|simple]",
-        };
-      }
+        const workspaceSettingPrefix = ["workspace ", "workspace-display ", "directory "].find((prefix) => normalizedArg.startsWith(prefix));
+        if (workspaceSettingPrefix) {
+          const nextValue = normalizedArg.slice(workspaceSettingPrefix.length).trim();
+          // "normal" was the legacy default label before "dir" was introduced
+          const legacyMap: Record<string, WorkspaceDisplayMode> = {
+            normal: normalizeLegacyDirectoryDisplayMode("normal"),
+          };
+          const mappedValue = legacyMap[nextValue] ?? nextValue;
+          if (WORKSPACE_DISPLAY_MODES.includes(mappedValue as WorkspaceDisplayMode)) {
+            const value = mappedValue as WorkspaceDisplayMode;
+            return {
+              action: "setting_workspace_display",
+              value,
+              message: `Workspace display set to ${formatWorkspaceDisplayModeLabel(value)} (${value}).`,
+            };
+          }
 
-      if (normalizedArg === "terminal-title" || normalizedArg === "terminal") {
-        return {
-          action: "setting_terminal_title",
-          message: [
-            `Terminal title: ${formatWorkspaceDisplayModeLabel(context.settings.terminalTitleMode)} (${context.settings.terminalTitleMode})`,
-            "Allowed values: dir, name, simple",
-            "dir = show the current workspace folder name",
-            "name = show Codexa",
-            "simple = show only the final folder name",
-          ].join("\n"),
-        };
-      }
+          return {
+            action: "unknown",
+            message: "Usage: /setting workspace [dir|name|simple]",
+          };
+        }
 
-      const terminalTitleSettingPrefix = ["terminal-title ", "terminal "].find((prefix) => normalizedArg.startsWith(prefix));
-      if (terminalTitleSettingPrefix) {
-        const nextValue = normalizedArg.slice(terminalTitleSettingPrefix.length).trim();
-        if (WORKSPACE_DISPLAY_MODES.includes(nextValue as WorkspaceDisplayMode)) {
-          const value = nextValue as TerminalTitleMode;
+        if (normalizedArg === "terminal-title" || normalizedArg === "terminal") {
           return {
             action: "setting_terminal_title",
-            value,
-            message: `Terminal title set to ${formatWorkspaceDisplayModeLabel(value)} (${value}).`,
+            message: [
+              `Terminal title: ${formatWorkspaceDisplayModeLabel(context.settings.terminalTitleMode)} (${context.settings.terminalTitleMode})`,
+              "Allowed values: dir, name, simple",
+              "dir = show the current workspace folder name",
+              "name = show Codexa",
+              "simple = show only the final folder name",
+            ].join("\n"),
           };
         }
 
-        return {
-          action: "unknown",
-          message: "Usage: /setting terminal-title [dir|name|simple]",
-        };
-      }
+        const terminalTitleSettingPrefix = ["terminal-title ", "terminal "].find((prefix) => normalizedArg.startsWith(prefix));
+        if (terminalTitleSettingPrefix) {
+          const nextValue = normalizedArg.slice(terminalTitleSettingPrefix.length).trim();
+          if (WORKSPACE_DISPLAY_MODES.includes(nextValue as WorkspaceDisplayMode)) {
+            const value = nextValue as TerminalTitleMode;
+            return {
+              action: "setting_terminal_title",
+              value,
+              message: `Terminal title set to ${formatWorkspaceDisplayModeLabel(value)} (${value}).`,
+            };
+          }
 
-      if (normalizedArg === "busy-loader") {
-        return {
-          action: "setting_busy_loader",
-          message: `Busy loader: ${context.settings.showBusyLoader ? "true" : "false"}`,
-        };
-      }
+          return {
+            action: "unknown",
+            message: "Usage: /setting terminal-title [dir|name|simple]",
+          };
+        }
 
-      if (normalizedArg.startsWith("busy-loader ")) {
-        const nextValue = normalizedArg.slice("busy-loader ".length).trim();
-        if (BUSY_LOADER_SETTING_VALUES.includes(nextValue as BusyLoaderSettingValue)) {
+        if (normalizedArg === "busy-loader") {
           return {
             action: "setting_busy_loader",
-            value: nextValue,
-            message: `Busy loader ${nextValue === "true" ? "enabled" : "disabled"}.`,
+            message: `Busy loader: ${context.settings.showBusyLoader ? "true" : "false"}`,
+          };
+        }
+
+        if (normalizedArg.startsWith("busy-loader ")) {
+          const nextValue = normalizedArg.slice("busy-loader ".length).trim();
+          if (BUSY_LOADER_SETTING_VALUES.includes(nextValue as BusyLoaderSettingValue)) {
+            return {
+              action: "setting_busy_loader",
+              value: nextValue,
+              message: `Busy loader ${nextValue === "true" ? "enabled" : "disabled"}.`,
+            };
+          }
+
+          return {
+            action: "unknown",
+            message: "Usage: /setting busy-loader [true|false]",
           };
         }
 
         return {
           action: "unknown",
-          message: "Usage: /setting busy-loader [true|false]",
+          message: "Usage: /setting, /setting workspace [dir|name|simple], /setting terminal-title [dir|name|simple], or /setting busy-loader [true|false]",
         };
       }
 
-      return {
-        action: "unknown",
-        message: "Usage: /setting, /setting workspace [dir|name|simple], /setting terminal-title [dir|name|simple], or /setting busy-loader [true|false]",
-      };
-    }
-
-    case "theme": {
-      if (!arg) return { action: "open_theme_picker" };
-      if (AVAILABLE_THEMES.some((item) => item.id === arg)) {
-        return {
-          action: "theme",
-          value: arg,
-          message: `Theme switched to ${formatThemeLabel(arg)}`,
-        };
-      }
-      return {
-        action: "unknown",
-        message: `Unknown theme: ${arg}. Use /themes to list available themes.`,
-      };
-    }
-
-    case "backends": {
-      const list = AVAILABLE_BACKENDS
-        .map((item, index) => `  ${index + 1}. ${item.label} (${item.id})`)
-        .join("\n");
-      return {
-        action: "backends",
-        message: `Available backends:\n${list}\n\nCurrent: ${formatBackendLabel(context.runtime.provider)}`,
-      };
-    }
-
-    case "workspace": {
-      if (!arg) {
-        return {
-          action: "workspace",
-          message: context.workspace.summaryMessage,
-        };
-      }
-
-      if (normalizedArg === "relaunch") {
+      case "theme": {
+        if (!arg) return { action: "open_theme_picker" };
+        if (AVAILABLE_THEMES.some((item) => item.id === arg)) {
+          return {
+            action: "theme",
+            value: arg,
+            message: `Theme switched to ${formatThemeLabel(arg)}`,
+          };
+        }
         return {
           action: "unknown",
-          message: "Usage: /workspace relaunch <path>",
+          message: `Unknown theme: ${arg}. Use /themes to list available themes.`,
         };
       }
 
-      if (normalizedArg.startsWith("relaunch ")) {
+      case "backends": {
+        const list = AVAILABLE_BACKENDS
+          .map((item, index) => `  ${index + 1}. ${item.label} (${item.id})`)
+          .join("\n");
         return {
-          action: "workspace_relaunch",
-          value: arg.slice("relaunch".length).trim(),
+          action: "backends",
+          message: `Available backends:\n${list}\n\nCurrent: ${formatBackendLabel(context.runtime.provider)}`,
         };
       }
 
-      return {
-        action: "unknown",
-        message: "Unknown workspace command. Use /workspace or /workspace relaunch <path>.",
-      };
-    }
+      case "workspace": {
+        if (!arg) {
+          return {
+            action: "workspace",
+            message: context.workspace.summaryMessage,
+          };
+        }
 
-    case "config": {
-      if (!arg || normalizedArg === "status") {
+        if (normalizedArg === "relaunch") {
+          return {
+            action: "unknown",
+            message: "Usage: /workspace relaunch <path>",
+          };
+        }
+
+        if (normalizedArg.startsWith("relaunch ")) {
+          return {
+            action: "workspace_relaunch",
+            value: arg.slice("relaunch".length).trim(),
+          };
+        }
+
         return {
-          action: "config_status",
-          message: formatLayeredConfigStatus(context.config),
+          action: "unknown",
+          message: "Unknown workspace command. Use /workspace or /workspace relaunch <path>.",
         };
       }
 
-      if (normalizedArg === "trust" || normalizedArg === "trust status") {
+      case "config": {
+        if (!arg || normalizedArg === "status") {
+          return {
+            action: "config_status",
+            message: formatLayeredConfigStatus(context.config),
+          };
+        }
+
+        if (normalizedArg === "trust" || normalizedArg === "trust status") {
+          return {
+            action: "config_trust_status",
+            message: [
+              "Project trust:",
+              `  Root: ${context.config.diagnostics.projectRoot}`,
+              `  Status: ${context.config.diagnostics.projectTrusted ? "Trusted" : "Untrusted"}`,
+            ].join("\n"),
+          };
+        }
+
+        if (normalizedArg === "trust on" || normalizedArg === "trust off") {
+          return {
+            action: "config_trust_set",
+            value: normalizedArg.endsWith("on") ? "on" : "off",
+            message: `Project trust ${normalizedArg.endsWith("on") ? "enabled" : "disabled"}.`,
+          };
+        }
+
         return {
-          action: "config_trust_status",
-          message: [
-            "Project trust:",
-            `  Root: ${context.config.diagnostics.projectRoot}`,
-            `  Status: ${context.config.diagnostics.projectTrusted ? "Trusted" : "Untrusted"}`,
-          ].join("\n"),
+          action: "unknown",
+          message: "Unknown config command. Use /config, /config status, or /config trust [status|on|off].",
         };
       }
 
-      if (normalizedArg === "trust on" || normalizedArg === "trust off") {
+      case "auth": {
+        if (!arg) return { action: "open_auth_panel" };
+        if (arg === "status") {
+          return { action: "auth_status" };
+        }
+        if (AUTH_PREFERENCES.some((item) => item.id === arg)) {
+          return {
+            action: "auth",
+            value: arg,
+            message: `Auth preference set to ${formatAuthPreferenceLabel(arg)}`,
+          };
+        }
         return {
-          action: "config_trust_set",
-          value: normalizedArg.endsWith("on") ? "on" : "off",
-          message: `Project trust ${normalizedArg.endsWith("on") ? "enabled" : "disabled"}.`,
+          action: "unknown",
+          message: "Unknown auth option. Use /auth, /auth status, or one of the documented preference ids.",
         };
       }
 
-      return {
-        action: "unknown",
-        message: "Unknown config command. Use /config, /config status, or /config trust [status|on|off].",
-      };
-    }
-
-    case "auth": {
-      if (!arg) return { action: "open_auth_panel" };
-      if (arg === "status") {
-        return { action: "auth_status" };
-      }
-      if (AUTH_PREFERENCES.some((item) => item.id === arg)) {
-        return {
-          action: "auth",
-          value: arg,
-          message: `Auth preference set to ${formatAuthPreferenceLabel(arg)}`,
-        };
-      }
-      return {
-        action: "unknown",
-        message: "Unknown auth option. Use /auth, /auth status, or one of the documented preference ids.",
-      };
-    }
-
-    case "status":
-      return {
-        action: "status",
-        message: formatRuntimeStatus(context.resolvedRuntime, {
-          workspaceRoot: context.workspace.root,
-          tokensUsed: context.tokensUsed,
-        }),
-      };
-
-    case "permissions": {
-      if (!arg) {
-        return { action: "open_permissions_panel" };
-      }
-
-      if (normalizedArg === "status") {
-        return {
-          action: "permissions_status",
-          message: formatPermissionsStatus(
-            context.runtime,
-            context.resolvedRuntime,
-            context.workspace.root,
-          ),
-        };
-      }
-
-      return handlePolicyCommand("/permissions", arg, context, false);
-    }
-
-    case "runtime": {
-      if (!arg) {
+      case "status":
         return {
           action: "status",
           message: formatRuntimeStatus(context.resolvedRuntime, {
@@ -794,60 +765,89 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
             tokensUsed: context.tokensUsed,
           }),
         };
+
+      case "permissions": {
+        if (!arg) {
+          return { action: "open_permissions_panel" };
+        }
+
+        if (normalizedArg === "status") {
+          return {
+            action: "permissions_status",
+            message: formatPermissionsStatus(
+              context.runtime,
+              context.resolvedRuntime,
+              context.workspace.root,
+            ),
+          };
+        }
+
+        return handlePolicyCommand("/permissions", arg, context, false);
       }
-      return handlePolicyCommand("/runtime", arg, context, true);
-    }
 
-    case "login":
-      return { action: "login" };
+      case "runtime": {
+        if (!arg) {
+          return {
+            action: "status",
+            message: formatRuntimeStatus(context.resolvedRuntime, {
+              workspaceRoot: context.workspace.root,
+              tokensUsed: context.tokensUsed,
+            }),
+          };
+        }
+        return handlePolicyCommand("/runtime", arg, context, true);
+      }
 
-    case "logout":
-      return { action: "logout" };
+      case "login":
+        return { action: "login" };
 
-    case "copy":
-      return { action: "copy" };
+      case "logout":
+        return { action: "logout" };
 
-    case "themes":
-      return { action: "open_theme_picker" };
+      case "copy":
+        return { action: "copy" };
 
-    case "mouse":
-      return { action: "mouse_toggle" };
+      case "themes":
+        return { action: "open_theme_picker" };
 
-    case "verbose":
-      return { action: "verbose_toggle" };
+      case "mouse":
+        return { action: "mouse_toggle" };
 
-    case "debug": {
-      if (normalizedArg === "renders") {
+      case "verbose":
+        return { action: "verbose_toggle" };
+
+      case "debug": {
+        if (normalizedArg === "renders") {
+          return {
+            action: "verbose_toggle",
+            message: formatRenderCounts(),
+          };
+        }
+        return { action: "verbose_toggle" };
+      }
+
+      case "diagnose": {
+        if (normalizedArg === "github") {
+          return {
+            action: "diagnose_github",
+            message: "Running GitHub connectivity diagnostics...",
+          };
+        }
         return {
-          action: "verbose_toggle",
-          message: formatRenderCounts(),
+          action: "unknown",
+          message: "Usage: /diagnose github",
         };
       }
-      return { action: "verbose_toggle" };
-    }
 
-    case "diagnose": {
-      if (normalizedArg === "github") {
+      case "help":
+        return { action: "help", message: buildHelpMessage(context) };
+
+      default:
         return {
-          action: "diagnose_github",
-          message: "Running GitHub connectivity diagnostics...",
+          action: "unknown",
+          message: `Unknown command: /${cmd}. Type /help for available commands.`,
         };
       }
-      return {
-        action: "unknown",
-        message: "Usage: /diagnose github",
-      };
-    }
-
-    case "help":
-      return { action: "help", message: buildHelpMessage(context) };
-
-    default:
-      return {
-        action: "unknown",
-        message: `Unknown command: /${cmd}. Type /help for available commands.`,
-      };
-    }
   }
 
   // "?cmd" is a common mistype of "/cmd" — suggest the corrected form
