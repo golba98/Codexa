@@ -1,6 +1,5 @@
 import { appendFileSync } from "fs";
-import { runCommand } from "../process/CommandRunner.js";
-import type { CommandResult, CommandStreamHandlers } from "../process/CommandRunner.js";
+import { runCommand, type CommandResult, type CommandStreamHandlers } from "../process/CommandRunner.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { GEMINI_DEFAULT_MODEL_ID, GEMINI_FALLBACK_MODELS, normalizeGeminiModelId } from "./models.js";
@@ -234,7 +233,7 @@ function recordExtractionDiagnostics(result: CommandResult, text: string): Gemin
       ...lastPromptDiagnostics,
       extractionStatus,
       finalAssistantTextLength: text.length,
-    finalAssistantTextPreview: "",
+      finalAssistantTextPreview: "",
     };
   }
 
@@ -514,7 +513,7 @@ export async function validateGeminiRoute(options: {
       status: hasGeminiApiKey(options.env) ? "ready" : "not-configured",
       providerId: "google",
       backendKind: hasGeminiApiKey(options.env) ? "gemini-api-key" : "unavailable",
-      message: hasGeminiApiKey(options.env) ? "Google/Gemini API key is configured." : `${message} Set GEMINI_EXECUTABLE=C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd or geminiCommandPath = "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd".`,
+      message: hasGeminiApiKey(options.env) ? "Google/Gemini API key is configured." : `${message} Set GEMINI_EXECUTABLE to a known working Gemini CLI command/path.`,
       diagnostics: {
         resolvedCommand: null,
         executablePath: null,
@@ -592,7 +591,7 @@ export async function validateGeminiRoute(options: {
   } else if (result.status === "completed" && result.exitCode === 0) {
     errorMessage = "Gemini CLI responded, but Codexa could not validate the headless route. The probe returned unexpected output.";
   } else if (!looksFound) {
-    errorMessage = `Gemini CLI was not found as a real executable file. Install Gemini CLI or set GEMINI_EXECUTABLE=C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd.`;
+    errorMessage = "Gemini CLI was not found as a real executable file. Install Gemini CLI or set GEMINI_EXECUTABLE to a known working command/path.";
   } else if (result.status === "timeout") {
     errorMessage = "Installed but headless probe timed out.";
   } else if (result.status === "completed" && result.exitCode !== 0) {

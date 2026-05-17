@@ -101,6 +101,7 @@ export function resolvePlanDir(platformOverride?: Platform): string {
   return join(homedir(), ".local", "share", "codexa", "plans");
 }
 
+// SHA-256 of the workspace path ensures filename uniqueness across projects with the same name.
 function workspaceHash(workspaceRoot: string): string {
   return createHash("sha256").update(workspaceRoot).digest("hex").slice(0, 8);
 }

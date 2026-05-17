@@ -4,6 +4,7 @@ import { getCodexCliCapabilities, type CodexCliCapabilities } from "./models/cod
 import { resolveCodexExecutable } from "./executables/codexExecutable.js";
 import * as perf from "./perf/profiler.js";
 
+// Assumed capability set when probeCapabilities is false — avoids a slow help-output probe on every run.
 const MODERN_CODEX_CLI_CAPABILITIES: CodexCliCapabilities = {
   askForApproval: false,
   sandbox: false,

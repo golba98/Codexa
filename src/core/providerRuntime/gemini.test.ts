@@ -111,7 +111,7 @@ test("Gemini route validation returns command-not-found diagnostic with PS comma
     assert.equal(validation.status, "not-configured");
     assert.equal(validation.backendKind, "unavailable");
     assert.match(validation.message ?? "", /Gemini CLI was not found|Gemini CLI was not found as a real executable/);
-    assert.match(validation.message ?? "", /GEMINI_EXECUTABLE=/);
+    assert.match(validation.message ?? "", /GEMINI_EXECUTABLE/);
     assert.equal(isGeminiRouteConfigured(), false);
   });
 });

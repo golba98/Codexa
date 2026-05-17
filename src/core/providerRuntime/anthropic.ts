@@ -1,5 +1,4 @@
-import { runCommand } from "../process/CommandRunner.js";
-import type { CommandResult } from "../process/CommandRunner.js";
+import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
