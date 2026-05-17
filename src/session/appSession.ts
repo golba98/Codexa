@@ -675,9 +675,9 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         ...state,
         activeEvents: state.activeEvents.filter((event) =>
           !(event.type === "run" && event.id === action.runId)
-          && !(event.type === "assistant" && action.turnId !== null && action.turnId !== undefined && event.turnId === action.turnId)
+          && !(event.type === "assistant" && action.turnId != null && event.turnId === action.turnId)
           && !(event.type === "shell" && event.id === action.runId)
-          && !(event.type === "user" && action.turnId !== null && action.turnId !== undefined && event.turnId === action.turnId),
+          && !(event.type === "user" && action.turnId != null && event.turnId === action.turnId),
         ),
       };
     case "UI_ACTION":
