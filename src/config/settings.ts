@@ -51,7 +51,9 @@ export const AVAILABLE_BACKENDS = [
 
 export type AvailableBackend = (typeof AVAILABLE_BACKENDS)[number]["id"];
 
-// Legacy fallback only. Runtime model discovery is the source of truth.
+// Static model list used when runtime model discovery is unavailable.
+// Named "legacy fallback" because dynamic discovery is the preferred source of truth,
+// but this list is the live exported AVAILABLE_MODELS for now.
 export const LEGACY_FALLBACK_MODELS = [
   "gpt-5.5",
   "gpt-5.4",
@@ -289,6 +291,7 @@ export function formatTerminalTitleModeLabel(mode: TerminalTitleMode): string {
   return formatWorkspaceDisplayModeLabel(mode);
 }
 
+// Maps the old "normal" value (pre-rename) to the current "dir" equivalent.
 export function normalizeLegacyDirectoryDisplayMode(mode: LegacyDirectoryDisplayMode): WorkspaceDisplayMode {
   return mode === "simple" ? "simple" : "dir";
 }

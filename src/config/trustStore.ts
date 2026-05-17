@@ -34,6 +34,7 @@ function loadTrustStore(): TrustStoreData {
     const text = readFileSync(trustStoreFile, "utf-8");
     return parseTrustStoreData(JSON.parse(text));
   } catch {
+    // Best-effort persistence; corrupt or missing file silently resets to empty.
     return getDefaultTrustStore();
   }
 }

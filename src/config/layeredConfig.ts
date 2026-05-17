@@ -94,6 +94,8 @@ interface ParsedConfigLayer {
   topLevelProfile: string | null;
 }
 
+// ─── Field source tracking ─────────────────────────────────────────────────────
+
 function createFieldSources(label: string): Record<RuntimeFieldPath, string> {
   return Object.fromEntries(
     RUNTIME_FIELD_PATHS.map((field) => [field, label]),
@@ -115,7 +117,10 @@ function assignPolicyValue<T extends keyof NonNullable<PartialRuntimeConfig["pol
   };
 }
 
+// ─── TOML patch extraction ─────────────────────────────────────────────────────
+
 function isAbsolutePath(pathValue: string): boolean {
+  // Matches Windows drive-letter paths (C:\ or C:/), UNC paths (\\server), and Unix absolute paths (/).
   return /^(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(pathValue);
 }
 
@@ -287,6 +292,8 @@ function extractRuntimePatch(
   };
 }
 
+// ─── Layer loading ─────────────────────────────────────────────────────────────
+
 export function parseTomlDocument(text: string): Record<string, unknown> {
   const parsed = (globalThis as { Bun?: { TOML?: { parse?: (input: string) => unknown } } }).Bun?.TOML?.parse?.(text);
   if (parsed === undefined) {
@@ -418,6 +425,8 @@ function extractRuntimePatchFromOverride(
   return extractRuntimePatch(overrideData, sourceLabel, configPath);
 }
 
+// ─── Config resolution ─────────────────────────────────────────────────────────
+
 function findProjectRoot(workspaceRoot: string): string {
   let current = normalizeWorkspaceRoot(workspaceRoot);
 
@@ -478,7 +487,8 @@ export function resolveLayeredConfig(options: ResolveLayeredConfigOptions): Laye
 
   let runtime = DEFAULT_RUNTIME_CONFIG;
   const loadedLayers: ParsedConfigLayer[] = [];
-  let profileCandidate: { name: string; source: string } | null = null;
+  // The last profile name found in any config file. CLI --profile takes priority over this.
+  let configFileProfile: { name: string; source: string } | null = null;
 
   const userConfigFile = getCodexConfigFile();
   const userLayer = tryLoadConfigLayer("User config", userConfigFile);
@@ -488,7 +498,7 @@ export function resolveLayeredConfig(options: ResolveLayeredConfigOptions): Laye
     diagnostics.ignoredEntries.push(...userLayer.topLevelPatch.ignoredEntries);
     loadedLayers.push(userLayer);
     if (userLayer.topLevelProfile) {
-      profileCandidate = { name: userLayer.topLevelProfile, source: "User config" };
+      configFileProfile = { name: userLayer.topLevelProfile, source: "User config" };
     }
   } else {
     diagnostics.layers.push(userLayer);
@@ -524,7 +534,7 @@ export function resolveLayeredConfig(options: ResolveLayeredConfigOptions): Laye
         diagnostics.ignoredEntries.push(...layer.topLevelPatch.ignoredEntries);
         loadedLayers.push(layer);
         if (layer.topLevelProfile) {
-          profileCandidate = { name: layer.topLevelProfile, source: layer.label };
+          configFileProfile = { name: layer.topLevelProfile, source: layer.label };
         }
       } else {
         diagnostics.layers.push(layer);
@@ -535,9 +545,9 @@ export function resolveLayeredConfig(options: ResolveLayeredConfigOptions): Laye
   if (options.launchArgs.profile) {
     diagnostics.selectedProfile = options.launchArgs.profile;
     diagnostics.selectedProfileSource = "CLI --profile";
-  } else if (profileCandidate) {
-    diagnostics.selectedProfile = profileCandidate.name;
-    diagnostics.selectedProfileSource = profileCandidate.source;
+  } else if (configFileProfile) {
+    diagnostics.selectedProfile = configFileProfile.name;
+    diagnostics.selectedProfileSource = configFileProfile.source;
   }
 
   if (diagnostics.selectedProfile) {
@@ -584,6 +594,8 @@ export function resolveLayeredConfig(options: ResolveLayeredConfigOptions): Laye
     diagnostics,
   };
 }
+
+// ─── Runtime override helpers ──────────────────────────────────────────────────
 
 function getTouchedFieldsFromPatch(patch: PartialRuntimeConfig): RuntimeFieldPath[] {
   const touched = new Set<RuntimeFieldPath>();
@@ -635,6 +647,8 @@ export function applyLayeredRuntimeOverride(
     },
   };
 }
+
+// ─── Diagnostics formatting ────────────────────────────────────────────────────
 
 function formatRuntimeFieldValue(runtime: RuntimeConfig, field: RuntimeFieldPath): string {
   switch (field) {
@@ -706,6 +720,8 @@ export function formatLayeredConfigStatus(result: LayeredConfigResult): string {
 
   return lines.join("\n");
 }
+
+// ─── TOML merge helpers ────────────────────────────────────────────────────────
 
 function cloneTomlValue(value: unknown): unknown {
   if (Array.isArray(value)) {

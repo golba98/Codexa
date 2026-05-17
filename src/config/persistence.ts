@@ -50,6 +50,25 @@ export interface AppSettings {
   auth: AuthSettings;
 }
 
+// Pick the first string value found under the camelCase or snake_case key.
+// Falls through to the snake_case key only when the camelCase value is absent or not a string.
+function pickStr(src: Record<string, unknown>, camel: string, snake: string): string | undefined {
+  const camelVal = src[camel];
+  if (typeof camelVal === "string") return camelVal;
+  const snakeVal = src[snake];
+  if (typeof snakeVal === "string") return snakeVal;
+  return undefined;
+}
+
+// Same as pickStr but for boolean values.
+function pickBool(src: Record<string, unknown>, camel: string, snake: string): boolean | undefined {
+  const camelVal = src[camel];
+  if (typeof camelVal === "boolean") return camelVal;
+  const snakeVal = src[snake];
+  if (typeof snakeVal === "boolean") return snakeVal;
+  return undefined;
+}
+
 function normalizeAuthPreference(value: unknown): AuthPreference {
   return typeof value === "string" && AUTH_PREFERENCES.some((item) => item.id === value)
     ? (value as AuthPreference)
@@ -127,6 +146,18 @@ function parseTerminalTitleMode(uiSource: Record<string, unknown>, fallback: Ter
   return fallback;
 }
 
+function parseTerminalMouseMode(uiSource: Record<string, unknown>, fallback: TerminalMouseMode): TerminalMouseMode {
+  const camel = uiSource.terminalMouseMode;
+  if (typeof camel === "string" && TERMINAL_MOUSE_MODES.includes(camel as TerminalMouseMode)) {
+    return camel as TerminalMouseMode;
+  }
+  const snake = uiSource.terminal_mouse_mode;
+  if (typeof snake === "string" && TERMINAL_MOUSE_MODES.includes(snake as TerminalMouseMode)) {
+    return snake as TerminalMouseMode;
+  }
+  return fallback;
+}
+
 function parseWorkspaceDisplayMode(uiSource: Record<string, unknown>, fallback: WorkspaceDisplayMode): WorkspaceDisplayMode {
   const direct = uiSource.workspaceDisplayMode ?? uiSource.workspace_display_mode;
   if (typeof direct === "string" && WORKSPACE_DISPLAY_MODES.includes(direct as WorkspaceDisplayMode)) {
@@ -162,24 +193,12 @@ export function parseSettingsData(data: unknown): AppSettings {
 
   return {
     ui: normalizeUiSettings({
-      layoutStyle: typeof uiSource.layoutStyle === "string"
-        ? uiSource.layoutStyle
-        : typeof uiSource.layout_style === "string"
-          ? uiSource.layout_style
-          : defaults.ui.layoutStyle,
-      theme: typeof uiSource.theme === "string" ? uiSource.theme : defaults.ui.theme,
+      layoutStyle: pickStr(uiSource, "layoutStyle", "layout_style") ?? defaults.ui.layoutStyle,
+      theme: pickStr(uiSource, "theme", "theme") ?? defaults.ui.theme,
       workspaceDisplayMode: parseWorkspaceDisplayMode(uiSource, defaults.ui.workspaceDisplayMode),
       terminalTitleMode: parseTerminalTitleMode(uiSource, defaults.ui.terminalTitleMode),
-      showBusyLoader: typeof uiSource.showBusyLoader === "boolean"
-        ? uiSource.showBusyLoader
-        : typeof uiSource.show_busy_loader === "boolean"
-          ? uiSource.show_busy_loader
-          : defaults.ui.showBusyLoader,
-      terminalMouseMode: typeof uiSource.terminalMouseMode === "string" && TERMINAL_MOUSE_MODES.includes(uiSource.terminalMouseMode as TerminalMouseMode)
-        ? uiSource.terminalMouseMode as TerminalMouseMode
-        : typeof uiSource.terminal_mouse_mode === "string" && TERMINAL_MOUSE_MODES.includes(uiSource.terminal_mouse_mode as TerminalMouseMode)
-          ? uiSource.terminal_mouse_mode as TerminalMouseMode
-          : defaults.ui.terminalMouseMode,
+      showBusyLoader: pickBool(uiSource, "showBusyLoader", "show_busy_loader") ?? defaults.ui.showBusyLoader,
+      terminalMouseMode: parseTerminalMouseMode(uiSource, defaults.ui.terminalMouseMode),
       customTheme: (uiSource.customTheme ?? uiSource.custom_theme) as Partial<Theme> | undefined,
     }),
     auth: {
