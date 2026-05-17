@@ -19,7 +19,6 @@ export function resetGeminiExecutableCacheForTests(): void {
  *   3. Windows PATH lookup for real files: gemini.exe, gemini.cmd, gemini.bat, gemini
  *   4. Windows where.exe gemini fallback
  *   5. Common npm/global locations on Windows
- *   6. Known user path fallback
  */
 export async function resolveGeminiExecutable(options?: {
   runCommandImpl?: CommandRunner;
@@ -56,9 +55,7 @@ export async function resolveGeminiExecutable(options?: {
     envOverrides: ["GEMINI_EXECUTABLE", "GEMINI_CLI_PATH"],
     commandNames: ["gemini.exe", "gemini.cmd", "gemini.bat", "gemini"],
     knownPathDirectories,
-    knownFilePaths: [
-      "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd",
-    ],
+    knownFilePaths: [],
     label: "gemini",
     allowBareFallback: process.platform !== "win32",
     requireResolvedFile: true,

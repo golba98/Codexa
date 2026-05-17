@@ -132,12 +132,14 @@ function normalizeRuntimeModel(raw: unknown): CodexModelCapability | null {
     return null;
   }
 
+  // Accept both "model" and "id" fields — Codex runtime has used both across versions.
   const model = normalizeString(raw.model ?? raw.id);
   const id = normalizeString(raw.id ?? raw.model) ?? model;
   if (!model || !id) {
     return null;
   }
 
+  // Accept both camelCase and snake_case reasoning effort fields.
   const rawReasoning = Array.isArray(raw.supportedReasoningEfforts)
     ? raw.supportedReasoningEfforts
     : Array.isArray(raw.supported_reasoning_efforts)
@@ -245,7 +247,7 @@ function asModelListResponse(value: unknown): ModelListResponse {
 
   return {
     data: value.data,
-    nextCursor: value.nextCursor ?? value.next_cursor,
+    nextCursor: value.nextCursor ?? value.next_cursor, // accept both field name styles
   };
 }
 
@@ -437,6 +439,8 @@ export async function discoverCodexModelCapabilities(
   });
 }
 
+// Cache chain: TTL-based in-memory cache → live discovery → fallback model list on error.
+// Failed discoveries are evicted from the cache so retries are possible.
 export async function getCodexModelCapabilities(
   options: GetCodexModelCapabilitiesOptions = {},
 ): Promise<CodexModelCapabilities> {

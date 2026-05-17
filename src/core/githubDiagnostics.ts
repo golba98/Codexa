@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 export interface RepoIdentity {
   owner: string;
@@ -96,20 +96,21 @@ export function checkGhCli(): DiagnosticResult {
   }
 
   try {
+    // gh auth status output format is not structured JSON; pattern-match on known strings.
     const authStatus = execSync("gh auth status", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     result.evidence += " | Authenticated";
     if (authStatus.includes("Token scopes")) {
-       const scopes = authStatus.match(/Token scopes: (.*)/)?.[1];
-       if (scopes && !scopes.includes("repo")) {
-         result.status = "PARTIAL";
-         result.blocker = "Token missing 'repo' scope";
-       } else {
-         result.status = "PASS";
-       }
+      const scopes = authStatus.match(/Token scopes: (.*)/)?.[1];
+      if (scopes && !scopes.includes("repo")) {
+        result.status = "PARTIAL";
+        result.blocker = "Token missing 'repo' scope";
+      } else {
+        result.status = "PASS";
+      }
     } else {
       result.status = "PASS";
     }
-  } catch (e: any) {
+  } catch {
     result.blocker = "Not logged in to GitHub CLI";
   }
 
@@ -147,21 +148,20 @@ export function checkLocalGitWrite(): DiagnosticResult {
     recommendedUse: false,
   };
 
-  const indexLock = path.join(".git", "index.lock");
-  if (fs.existsSync(indexLock)) {
+  const indexLock = join(".git", "index.lock");
+  if (existsSync(indexLock)) {
     result.blocker = ".git/index.lock exists (git process might be running)";
     return result;
   }
 
   try {
-    // Try to create and delete a temporary ref lock
     execSync("git update-ref refs/heads/codexa-diagnostic-lock-test HEAD", { stdio: "ignore" });
     execSync("git update-ref -d refs/heads/codexa-diagnostic-lock-test", { stdio: "ignore" });
     result.status = "PASS";
     result.evidence = "Can create/delete refs";
-  } catch (e: any) {
+  } catch (error) {
     result.blocker = "Failed to create/delete ref lock (permission denied?)";
-    result.evidence = e.message;
+    result.evidence = error instanceof Error ? error.message : String(error);
   }
 
   return result;

@@ -158,7 +158,10 @@ export function buildProviderRegistry(options: {
       : getDefaultRouteModel(id, id === "openai" ? DEFAULT_MODEL : defaults.currentModel(options.activeModel));
 
     if (id === "google") {
-      const geminiRoute = isThisActive ? activeRoute : options.workspaceConfig?.providers?.google?.currentModel === undefined ? activeRoute : null;
+      // Use the active route's model selection when this provider is active, or when
+      // the workspace config has no explicit Google model override.
+      const hasGoogleOverride = options.workspaceConfig?.providers?.google?.currentModel !== undefined;
+      const geminiRoute = isThisActive || !hasGoogleOverride ? activeRoute : null;
       const selection = geminiRoute?.modelSelection;
       if (selection) {
         if (selection.kind === "auto") {

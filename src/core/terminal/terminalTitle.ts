@@ -231,6 +231,8 @@ export function stripTerminalTitleSequencesFromChunk(chunk: Buffer | string): st
   );
 }
 
+// Each stripper maintains a carryover buffer so that a title escape sequence
+// split across two Node `data` events is still detected and stripped correctly.
 export function createTerminalTitleSequenceStripper(context: TerminalTitleSequenceTraceContext): {
   process(chunk: Buffer | string): string;
   flush(): string;
@@ -283,7 +285,10 @@ export function writeGuardedTerminalOutput(
 
 /**
  * Schedules a sequence of title assertions to outlast Windows Terminal's
- * shell integration which often overwrites the title shortly after startup.
+ * shell integration, which overwrites the process title at unpredictable
+ * points during startup (shell prompt init, profile scripts, etc.).
+ * The retries at 50/250/500/1000ms are intentional: no single delay is
+ * reliable across all terminal configurations, so we assert multiple times.
  */
 export function beginColdStartSequence(title: string, options?: { write?: (chunk: string) => void }) {
   setIntendedTerminalTitle(title, { force: true, write: options?.write, reason: "cold-start-immediate" });

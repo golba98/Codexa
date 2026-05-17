@@ -113,12 +113,13 @@ export function buildSummary(session: PerfSession): string {
   return lines.join("\n");
 }
 
+// Sessions are appended as JSONL to ~/.codexa-perf.jsonl for offline analysis.
 export function persistSession(session: PerfSession): void {
   try {
     const logPath = join(homedir(), ".codexa-perf.jsonl");
     const line = JSON.stringify({ ...session, ts: Date.now() }) + "\n";
     appendFileSync(logPath, line, "utf8");
   } catch {
-    // ignore write errors — profiling must never crash the app
+    // Profiling must never crash the app.
   }
 }
