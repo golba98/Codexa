@@ -1,5 +1,5 @@
 import { isNoiseLine } from "../core/providers/codexTranscript.js";
-import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { parseMarkdown, type Segment } from "./Markdown.js";
 
 /**

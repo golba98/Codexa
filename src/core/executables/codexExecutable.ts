@@ -1,6 +1,6 @@
 import { spawn } from "child_process";
 import { join } from "path";
-import { CODEX_EXECUTABLE } from "../config/settings.js";
+import { CODEX_EXECUTABLE } from "../../config/settings.js";
 
 let cachedExecutable: string | null = null;
 let resolveInFlight: Promise<string> | null = null;

@@ -1,5 +1,5 @@
 import { readFileSync, renameSync, writeFileSync } from "fs";
-import { MODEL_SPECS_FILE } from "../config/settings.js";
+import { MODEL_SPECS_FILE } from "../../config/settings.js";
 
 export type ModelSpecStatus = "verified" | "loading" | "unknown";
 

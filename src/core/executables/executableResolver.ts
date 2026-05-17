@@ -1,6 +1,6 @@
 import { existsSync } from "fs";
 import { join } from "path";
-import { runCommand } from "./process/CommandRunner.js";
+import { runCommand } from "../process/CommandRunner.js";
 
 type CommandRunner = typeof runCommand;
 

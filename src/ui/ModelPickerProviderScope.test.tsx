@@ -16,7 +16,7 @@ import { createLayoutSnapshot } from "./layout.js";
 import { ANTHROPIC_FALLBACK_MODELS, GEMINI_FALLBACK_MODELS, providerModelsToCodexCapabilities } from "../core/providerRuntime/models.js";
 import { anthropicRuntime } from "../core/providerRuntime/anthropic.js";
 import { geminiRuntime } from "../core/providerRuntime/gemini.js";
-import { getSelectableModelCapabilities } from "../core/codexModelCapabilities.js";
+import { getSelectableModelCapabilities } from "../core/models/codexModelCapabilities.js";
 import { ProviderPicker } from "./ProviderPicker.js";
 import type { ProviderConfig } from "../core/providerLauncher/types.js";
 

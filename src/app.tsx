@@ -72,7 +72,7 @@ import {
   isLikelyAuthFailure,
   probeCodexAuthStatus,
 } from "./core/auth/codexAuth.js";
-import { getTerminalSelectionProfile } from "./core/terminalSelection.js";
+import { getTerminalSelectionProfile } from "./core/terminal/terminalSelection.js";
 import { copyToClipboard } from "./core/clipboard.js";
 import { normalizePlanReviewMarkdown, savePlan, readPlan } from "./core/planStorage.js";
 import { getBlockedCleanupFailure } from "./core/cleanupFastFail.js";
@@ -94,7 +94,7 @@ import {
   getSelectableModelCapabilities,
   normalizeReasoningForModelCapabilities,
   type CodexModelCapabilities,
-} from "./core/codexModelCapabilities.js";
+} from "./core/models/codexModelCapabilities.js";
 import {
   buildDevLaunchNotice,
   buildWorkspaceCommandContext,
@@ -113,7 +113,7 @@ import {
   resolveModelSpec,
   type ModelSpec,
   type VerifiedModelSpec,
-} from "./core/modelSpecs.js";
+} from "./core/models/modelSpecs.js";
 import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots } from "./core/workspaceActivity.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
 import { loadProjectInstructions } from "./core/projectInstructions.js";
@@ -143,8 +143,8 @@ import {
   setProviderDefaultModel,
   setProviderWorkspaceDefault,
 } from "./core/providerLauncher/workspaceConfig.js";
-import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminalSanitize.js";
-import { createTerminalModeController, setTerminalControlUIState } from "./core/terminalControl.js";
+import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminal/terminalSanitize.js";
+import { createTerminalModeController, setTerminalControlUIState } from "./core/terminal/terminalControl.js";
 import {
   acquireTerminalTitleGuard,
   beginColdStartSequence,
@@ -153,7 +153,7 @@ import {
   refreshTerminalTitle,
   setTerminalTitleLifecycleState,
   setIntendedTerminalTitle,
-} from "./core/terminalTitle.js";
+} from "./core/terminal/terminalTitle.js";
 import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
@@ -215,6 +215,8 @@ import {
 } from "./ui/themeFlow.js";
 import { isBusy as isUiBusy } from "./session/types.js";
 import { AppShell } from "./ui/AppShell.js";
+
+// ─── Module Constants & Helpers ────────────────────────────────────────────────
 
 let nextEventId = 0;
 let nextTurnId = 0;
@@ -299,6 +301,8 @@ export function App({ launchArgs }: AppProps) {
     [launchContext],
   );
   const terminalLayout = useTerminalViewport();
+
+  // ─── State & Refs ────────────────────────────────────────────────────────────
 
   const [baseLayeredConfig, setBaseLayeredConfig] = useState<LayeredConfigResult>(initialLayeredConfig.current);
   const [sessionRuntimeOverride, setSessionRuntimeOverride] = useState<PartialRuntimeConfig>(() => {
@@ -390,6 +394,8 @@ export function App({ launchArgs }: AppProps) {
   // We apply an idle-timeout: if no wheel events or keypresses occur for 1.5s,
   // we disable mouse reporting so native drag-selection works unmodified.
   const mouseCapture = (mouseOverride ?? (terminalMouseMode === "wheel")) && !isMouseIdle;
+
+  // ─── Effects & Handlers ──────────────────────────────────────────────────────
 
   useEffect(() => {
     // Default path writes the disable sequences defensively, preserving native
@@ -3984,6 +3990,8 @@ export function App({ launchArgs }: AppProps) {
     cycleModeWithNotice,
     handleQuit,
   ]);
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
 
   // Plan review is shown inline in the Timeline, not as a separate overlay.
   const mainPanelElement = null;

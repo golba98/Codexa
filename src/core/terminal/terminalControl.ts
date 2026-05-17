@@ -1,5 +1,5 @@
-import * as renderDebug from "./perf/renderDebug.js";
-import { APP_NAME } from "../config/settings.js";
+import * as renderDebug from "../perf/renderDebug.js";
+import { APP_NAME } from "../../config/settings.js";
 import { setTerminalTitleLifecycleState, traceTerminalTitleSequences, writeGuardedTerminalOutput } from "./terminalTitle.js";
 
 export const TERMINAL_TITLE = APP_NAME;

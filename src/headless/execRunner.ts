@@ -12,7 +12,7 @@ import { loadProjectInstructions, type ProjectInstructionsLoadResult } from "../
 import { getBackendProvider } from "../core/providers/registry.js";
 import type { BackendProvider } from "../core/providers/types.js";
 import { isNoiseLine } from "../core/providers/codexTranscript.js";
-import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { resolveWorkspaceRoot } from "../core/workspaceRoot.js";
 import type { RunToolActivity } from "../session/types.js";
 

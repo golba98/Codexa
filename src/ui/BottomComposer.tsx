@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
-import type { ModelSpec } from "../core/modelSpecs.js";
+import type { ModelSpec } from "../core/models/modelSpecs.js";
 import type { UIState } from "../session/types.js";
 import { FOCUS_IDS } from "./focus.js";
 import {
@@ -20,12 +20,12 @@ import { useTheme } from "./theme.js";
 import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { getTextWidth, splitTextAtColumn } from "./textLayout.js";
 import { useThrottledValue } from "./useThrottledValue.js";
-import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { getStdinDebugState, traceInputDebug } from "../core/inputDebug.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
 import { isAnimatedBusyState } from "./busyStatusAnimation.js";
-import type { TerminalSelectionProfile } from "../core/terminalSelection.js";
+import type { TerminalSelectionProfile } from "../core/terminal/terminalSelection.js";
 import { getSlashCommandSuggestions, type CommandSuggestion } from "./slashCommands.js";
 
 type ComposerPersona = "idle" | "busy" | "answer" | "error";

@@ -15,7 +15,7 @@ import { formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
 import { DashCard } from "./DashCard.js";
 import { useTheme } from "./theme.js";
-import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { wrapPlainText, wrapCommandText } from "./textLayout.js";
 import { selectVisibleRunActivity } from "./runActivityView.js";
 import type { RunFileActivity } from "../core/workspaceActivity.js";

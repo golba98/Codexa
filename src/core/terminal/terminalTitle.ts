@@ -1,4 +1,4 @@
-import { APP_NAME, type TerminalTitleMode, formatTerminalTitlePath } from "../config/settings.js";
+import { APP_NAME, type TerminalTitleMode, formatTerminalTitlePath } from "../../config/settings.js";
 import { appendFileSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 

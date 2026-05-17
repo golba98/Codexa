@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
-import { sanitizeTerminalOutput } from "../terminalSanitize.js";
-import { createTerminalTitleSequenceStripper } from "../terminalTitle.js";
+import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
+import { createTerminalTitleSequenceStripper } from "../terminal/terminalTitle.js";
 
 export interface CommandSpec {
   executable: string;

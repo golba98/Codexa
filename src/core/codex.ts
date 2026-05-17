@@ -1,8 +1,8 @@
 import { spawn } from "child_process";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
-import { formatCodexLaunchError, spawnCodexProcess } from "./codexExecutable.js";
+import { formatCodexLaunchError, spawnCodexProcess } from "./executables/codexExecutable.js";
 import { prepareCodexExecLaunch } from "./codexLaunch.js";
-import { createTerminalTitleSequenceStripper } from "./terminalTitle.js";
+import { createTerminalTitleSequenceStripper } from "./terminal/terminalTitle.js";
 
 export interface CodexHandlers {
   onLine: (line: string) => void;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { resolveRuntimeConfig, normalizeRuntimeConfig } from "../config/runtimeConfig.js";
 import { buildCodexExecArgs } from "./codexExecArgs.js";
-import type { CodexCliCapabilities } from "./codexCapabilities.js";
+import type { CodexCliCapabilities } from "./models/codexCapabilities.js";
 
 const fullCapabilities: CodexCliCapabilities = {
   askForApproval: true,

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { LayeredConfigResult } from "../config/layeredConfig.js";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../config/runtimeConfig.js";
-import { normalizeCodexModelListResponses } from "../core/codexModelCapabilities.js";
+import { normalizeCodexModelListResponses } from "../core/models/codexModelCapabilities.js";
 import { handleCommand, type CommandContext } from "./handler.js";
 
 const baseRuntime = normalizeRuntimeConfig({

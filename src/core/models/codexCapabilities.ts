@@ -1,5 +1,5 @@
-import { captureCodexProcessOutput } from "./codexExecutable.js";
-import { stripAnsi, stripNonPrintableControls } from "./providers/codexTranscript.js";
+import { captureCodexProcessOutput } from "../executables/codexExecutable.js";
+import { stripAnsi, stripNonPrintableControls } from "../providers/codexTranscript.js";
 
 const HELP_TIMEOUT_MS = 5000;
 

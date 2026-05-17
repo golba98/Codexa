@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Text } from "ink";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { useTheme } from "./theme.js";
-import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { BUSY_STATUS_FRAME_MS, BUSY_STATUS_FRAMES, getBusyStatusFrame } from "./busyStatusAnimation.js";
 
 interface AnimatedStatusTextProps {

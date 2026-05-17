@@ -3,7 +3,7 @@ import test from "node:test";
 import React from "react";
 import { PassThrough } from "node:stream";
 import { Box, Text, render } from "ink";
-import { normalizeCodexModelListResponses, type CodexModelCapability } from "../core/codexModelCapabilities.js";
+import { normalizeCodexModelListResponses, type CodexModelCapability } from "../core/models/codexModelCapabilities.js";
 import { ThemeProvider } from "./theme.js";
 import { ModelPickerScreen } from "./ModelPickerScreen.js";
 import { ReasoningPicker } from "./ReasoningPicker.js";

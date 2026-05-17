@@ -1,5 +1,5 @@
 import type { RunProgressBlock, RunProgressEntry, RunProgressSource } from "../session/types.js";
-import { sanitizeTerminalOutput } from "../core/terminalSanitize.js";
+import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { wrapPlainText } from "./textLayout.js";
 
 export interface VisibleProgressBlock {

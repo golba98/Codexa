@@ -4,7 +4,7 @@ import {
   type CodexModelCapability,
   type ReasoningEffortCapability,
   normalizeReasoningForModelCapabilities,
-} from "../core/codexModelCapabilities.js";
+} from "../core/models/codexModelCapabilities.js";
 import { formatReasoningLabel } from "../config/settings.js";
 import { traceInputDebug } from "../core/inputDebug.js";
 import { FOCUS_IDS } from "./focus.js";

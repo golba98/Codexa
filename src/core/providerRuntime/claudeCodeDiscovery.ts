@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { buildClaudeSpawnSpec, resolveClaudeExecutable } from "../claudeExecutable.js";
+import { buildClaudeSpawnSpec, resolveClaudeExecutable } from "../executables/claudeExecutable.js";
 import { runCommand } from "../process/CommandRunner.js";
 import type { CommandResult } from "../process/CommandRunner.js";
-import type { ReasoningEffortCapability } from "../codexModelCapabilities.js";
+import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
 import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
 import { CLAUDE_CODE_EFFORT_IDS, getClaudeCodeEffortLevels } from "./reasoning.js";
 import type { ProviderModel } from "./types.js";

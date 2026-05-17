@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { formatCodexLaunchError, resolveCodexExecutable, spawnCodexProcess } from "../codexExecutable.js";
+import { formatCodexLaunchError, resolveCodexExecutable, spawnCodexProcess } from "../executables/codexExecutable.js";
 
 export type CodexAuthState = "checking" | "authenticated" | "unauthenticated" | "unknown";
 
