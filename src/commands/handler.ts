@@ -153,58 +153,58 @@ function isKnownFallbackReasoning(value: string): boolean {
   return AVAILABLE_REASONING_LEVELS.some((item) => item.id === value);
 }
 
+function simplePolicySetter(
+  rest: string,
+  normalizedRest: string,
+  action: CommandAction,
+  values: readonly string[],
+  statusMessage: string,
+  setMessage: (value: string) => string,
+  usageMessage: string,
+): CommandResult {
+  if (!rest || normalizedRest === "status") {
+    return { action, message: statusMessage };
+  }
+  if (isOneOf(normalizedRest, values)) {
+    return { action, value: normalizedRest, message: setMessage(normalizedRest) };
+  }
+  return { action: "unknown", message: usageMessage };
+}
+
 function handlePolicyCommand(
   commandPrefix: "/runtime" | "/permissions",
   arg: string,
   context: CommandContext,
   includeExtendedControls = true,
 ): CommandResult {
-  const [subcommandRaw, ...restParts] = arg.split(/\s+/);
+  const [subcommandRaw, ...restTokens] = arg.split(/\s+/);
   const subcommand = subcommandRaw?.toLowerCase() ?? "";
-  const rest = restParts.join(" ").trim();
+  const rest = restTokens.join(" ").trim();
   const normalizedRest = rest.toLowerCase();
 
   switch (subcommand) {
     case "approval-policy": {
-      if (!rest || normalizedRest === "status") {
-        return {
-          action: "runtime_approval_policy",
-          message: `Approval policy: configured ${formatApprovalPolicyLabel(context.runtime.policy.approvalPolicy)}; effective ${formatApprovalPolicyLabel(context.resolvedRuntime.policy.approvalPolicy)}.`,
-        };
-      }
-      if (isOneOf(normalizedRest, APPROVAL_POLICY_VALUES)) {
-        const value = normalizedRest as RuntimeApprovalPolicy;
-        return {
-          action: "runtime_approval_policy",
-          value,
-          message: `Approval policy set to ${formatApprovalPolicyLabel(value)}.`,
-        };
-      }
-      return {
-        action: "unknown",
-        message: `Usage: ${commandPrefix} approval-policy [status|inherit|untrusted|on-request|never]`,
-      };
+      return simplePolicySetter(
+        rest,
+        normalizedRest,
+        "runtime_approval_policy",
+        APPROVAL_POLICY_VALUES,
+        `Approval policy: configured ${formatApprovalPolicyLabel(context.runtime.policy.approvalPolicy)}; effective ${formatApprovalPolicyLabel(context.resolvedRuntime.policy.approvalPolicy)}.`,
+        (v) => `Approval policy set to ${formatApprovalPolicyLabel(v as RuntimeApprovalPolicy)}.`,
+        `Usage: ${commandPrefix} approval-policy [status|inherit|untrusted|on-request|never]`,
+      );
     }
 
     case "sandbox": {
-      if (!rest || normalizedRest === "status") {
-        return {
-          action: "runtime_sandbox_mode",
-          message: `Sandbox mode: configured ${formatSandboxModeLabel(context.runtime.policy.sandboxMode)}; effective ${formatSandboxModeLabel(context.resolvedRuntime.policy.sandboxMode)}.`,
-        };
-      }
-      if (isOneOf(normalizedRest, SANDBOX_MODE_VALUES)) {
-        const value = normalizedRest as RuntimeSandboxMode;
-        return {
-          action: "runtime_sandbox_mode",
-          value,
-          message: `Sandbox mode set to ${formatSandboxModeLabel(value)}.`,
-        };
-      }
-      return {
-        action: "unknown",
-        message: `Usage: ${commandPrefix} sandbox [status|inherit|read-only|workspace-write|danger-full-access]`,
-      };
+      return simplePolicySetter(
+        rest,
+        normalizedRest,
+        "runtime_sandbox_mode",
+        SANDBOX_MODE_VALUES,
+        `Sandbox mode: configured ${formatSandboxModeLabel(context.runtime.policy.sandboxMode)}; effective ${formatSandboxModeLabel(context.resolvedRuntime.policy.sandboxMode)}.`,
+        (v) => `Sandbox mode set to ${formatSandboxModeLabel(v as RuntimeSandboxMode)}.`,
+        `Usage: ${commandPrefix} sandbox [status|inherit|read-only|workspace-write|danger-full-access]`,
+      );
     }
 
     case "network": {
@@ -291,24 +291,15 @@ function handlePolicyCommand(
           message: `Unknown ${commandPrefix.slice(1)} command. Use ${commandPrefix} <approval-policy|sandbox|network|writable-roots>.`,
         };
       }
-      if (!rest || normalizedRest === "status") {
-        return {
-          action: "runtime_service_tier",
-          message: `Service tier: ${formatServiceTierLabel(context.runtime.policy.serviceTier)}.`,
-        };
-      }
-      if (isOneOf(normalizedRest, SERVICE_TIER_VALUES)) {
-        const value = normalizedRest as RuntimeServiceTier;
-        return {
-          action: "runtime_service_tier",
-          value,
-          message: `Service tier set to ${formatServiceTierLabel(value)}.`,
-        };
-      }
-      return {
-        action: "unknown",
-        message: `Usage: ${commandPrefix} service-tier [status|flex|fast]`,
-      };
+      return simplePolicySetter(
+        rest,
+        normalizedRest,
+        "runtime_service_tier",
+        SERVICE_TIER_VALUES,
+        `Service tier: ${formatServiceTierLabel(context.runtime.policy.serviceTier)}.`,
+        (v) => `Service tier set to ${formatServiceTierLabel(v as RuntimeServiceTier)}.`,
+        `Usage: ${commandPrefix} service-tier [status|flex|fast]`,
+      );
     }
 
     case "personality": {
@@ -318,24 +309,15 @@ function handlePolicyCommand(
           message: `Unknown ${commandPrefix.slice(1)} command. Use ${commandPrefix} <approval-policy|sandbox|network|writable-roots>.`,
         };
       }
-      if (!rest || normalizedRest === "status") {
-        return {
-          action: "runtime_personality",
-          message: `Personality: ${formatPersonalityLabel(context.runtime.policy.personality)}.`,
-        };
-      }
-      if (isOneOf(normalizedRest, PERSONALITY_VALUES)) {
-        const value = normalizedRest as RuntimePersonality;
-        return {
-          action: "runtime_personality",
-          value,
-          message: `Personality set to ${formatPersonalityLabel(value)}.`,
-        };
-      }
-      return {
-        action: "unknown",
-        message: `Usage: ${commandPrefix} personality [status|none|friendly|pragmatic]`,
-      };
+      return simplePolicySetter(
+        rest,
+        normalizedRest,
+        "runtime_personality",
+        PERSONALITY_VALUES,
+        `Personality: ${formatPersonalityLabel(context.runtime.policy.personality)}.`,
+        (v) => `Personality set to ${formatPersonalityLabel(v as RuntimePersonality)}.`,
+        `Usage: ${commandPrefix} personality [status|none|friendly|pragmatic]`,
+      );
     }
 
     default:
@@ -356,6 +338,82 @@ function formatRenderCounts(): string {
   return lines.length > 0
     ? `Render counts:\n${lines.join("\n")}`
     : "No render counts recorded. Set CODEXA_RENDER_DEBUG=1 to enable.";
+}
+
+function buildHelpMessage(context: CommandContext): string {
+  return [
+    "Shell execution:",
+    "  !<command>         Run any shell command directly  e.g. !ls -la",
+    "                     Output streams live in a terminal block",
+    "                     Esc cancels a running command",
+    "",
+    "Commands:",
+    "  /exit, /quit       Quit the application and cancel active run",
+    "  /clear             Clear the chat window and cancel the active run",
+    "  /diagnose github   Run GitHub connectivity diagnostics",
+    "  /backend [name]    Switch backend (no arg opens picker)",
+    "  /providers         Open provider picker (/provider alias)",
+    "  /route             Show workspace default and active chat route",
+    "  /model [name]      Switch model (no arg opens picker)",
+    `  /mode [name]       Switch execution mode (${formatModeCommandHelp()})`,
+    "                     suggest = read-only-style prompting, auto-edit = file edits, full-auto = strongest autonomy",
+    "  /reasoning [level] Set reasoning level (no arg opens picker)",
+    "  /plan [on|off]     Show or toggle session plan mode",
+    "  /setting, /settings Open the settings picker",
+    "  /setting workspace [dir|name|simple] Control the header workspace label",
+    "  /setting terminal-title [dir|name|simple] Control the terminal tab title",
+    "  /setting busy-loader [true|false] Control the busy footer animation",
+    "  /status            Show the effective runtime configuration",
+    "  /config            Show layered config sources and winning values",
+    "  /config trust [status|on|off] Manage whether project config is allowed to load",
+    "  /permissions       Open or update permissions and sandbox controls",
+    "  /permissions status",
+    "  /permissions approval-policy [status|inherit|untrusted|on-request|never]",
+    "  /permissions sandbox [status|inherit|read-only|workspace-write|danger-full-access]",
+    "  /permissions network [status|inherit|on|off]",
+    "  /permissions writable-roots [list|add <path>|remove <path>|clear]",
+    "  /runtime ...       Inspect or update runtime policy controls",
+    "                     Compatibility surface; /permissions is the primary entry point",
+    "  /runtime approval-policy [status|inherit|untrusted|on-request|never]",
+    "  /runtime sandbox [status|inherit|read-only|workspace-write|danger-full-access]",
+    "  /runtime network [status|inherit|on|off]",
+    "  /runtime writable-roots [list|add <path>|remove <path>|clear]",
+    "  /runtime service-tier [status|flex|fast]",
+    "  /runtime personality [status|none|friendly|pragmatic]",
+    "  /theme [name]      Switch theme directly (no arg opens picker)",
+    "  /themes            Open visual theme picker (Up/Down + Enter)",
+    "  /verbose           Toggle verbose mode (shows detailed processing info)",
+    "  /mouse             Toggle SGR mouse capture for in-app wheel scroll (off by default). On: wheel scrolls the Codexa timeline; drag-select requires Shift. Off: native drag-select and native wheel scroll work without modifiers.",
+    "  /auth [option]     Open auth panel or set auth preference",
+    "  /auth status       Probe Codexa auth status",
+    "  /login             Show guided ChatGPT subscription login steps",
+    "  /logout            Show guided logout steps",
+    "  /backends          List all available backends",
+    "  /models            Open model picker",
+    "  /workspace         Show the locked workspace for this session",
+    "  /workspace relaunch <path> Restart the app in another workspace folder",
+    `  Current reasoning: ${formatReasoningLabel(context.runtime.reasoningLevel)}`,
+    `  Current plan mode: ${context.runtime.planMode ? "Enabled" : "Disabled"}`,
+    "  /copy              Copy last response to clipboard",
+    "  /help              Show this help",
+    "",
+    "Install on Windows:",
+    "  npm link           Make the codexa command available",
+    "  where codexa       Verify the command resolves",
+    "",
+    "Shortcuts:",
+    "  Ctrl+B    Open backend picker",
+    "  Ctrl+O    Open model picker",
+    "  Shift+Tab Toggle plan mode",
+    "  Ctrl+P    Open mode picker",
+    "  Ctrl+Alt+P Open provider picker",
+    "  Ctrl+A    Open auth panel",
+    "  Ctrl+L    Clear chat and cancel active run",
+    "  Esc       Cancel active run or shell command",
+    "  Ctrl+Y    Cycle execution mode",
+    "  Ctrl+C / Ctrl+Q    Quit",
+    "  ↑ / ↓    Navigate input history",
+  ].join("\n");
 }
 
 export function handleCommand(text: string, context: CommandContext): CommandResult | null {
@@ -785,82 +843,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
     }
 
     case "help":
-      return {
-        action: "help",
-        message: [
-          "Shell execution:",
-          "  !<command>         Run any shell command directly  e.g. !ls -la",
-          "                     Output streams live in a terminal block",
-          "                     Esc cancels a running command",
-          "",
-          "Commands:",
-          "  /exit, /quit       Quit the application and cancel active run",
-          "  /clear             Clear the chat window and cancel the active run",
-          "  /diagnose github   Run GitHub connectivity diagnostics",
-          "  /backend [name]    Switch backend (no arg opens picker)",
-          "  /providers         Open provider picker (/provider alias)",
-          "  /route             Show workspace default and active chat route",
-          "  /model [name]      Switch model (no arg opens picker)",
-          `  /mode [name]       Switch execution mode (${formatModeCommandHelp()})`,
-          "                     suggest = read-only-style prompting, auto-edit = file edits, full-auto = strongest autonomy",
-          "  /reasoning [level] Set reasoning level (no arg opens picker)",
-          "  /plan [on|off]     Show or toggle session plan mode",
-          "  /setting, /settings Open the settings picker",
-          "  /setting workspace [dir|name|simple] Control the header workspace label",
-          "  /setting terminal-title [dir|name|simple] Control the terminal tab title",
-          "  /setting busy-loader [true|false] Control the busy footer animation",
-          "  /status            Show the effective runtime configuration",
-          "  /config            Show layered config sources and winning values",
-          "  /config trust [status|on|off] Manage whether project config is allowed to load",
-          "  /permissions       Open or update permissions and sandbox controls",
-          "  /permissions status",
-          "  /permissions approval-policy [status|inherit|untrusted|on-request|never]",
-          "  /permissions sandbox [status|inherit|read-only|workspace-write|danger-full-access]",
-          "  /permissions network [status|inherit|on|off]",
-          "  /permissions writable-roots [list|add <path>|remove <path>|clear]",
-          "  /runtime ...       Inspect or update runtime policy controls",
-          "                     Compatibility surface; /permissions is the primary entry point",
-          "  /runtime approval-policy [status|inherit|untrusted|on-request|never]",
-          "  /runtime sandbox [status|inherit|read-only|workspace-write|danger-full-access]",
-          "  /runtime network [status|inherit|on|off]",
-          "  /runtime writable-roots [list|add <path>|remove <path>|clear]",
-          "  /runtime service-tier [status|flex|fast]",
-          "  /runtime personality [status|none|friendly|pragmatic]",
-          "  /theme [name]      Switch theme directly (no arg opens picker)",
-          "  /themes            Open visual theme picker (Up/Down + Enter)",
-          "  /verbose           Toggle verbose mode (shows detailed processing info)",
-          "  /mouse             Toggle SGR mouse capture for in-app wheel scroll (off by default). On: wheel scrolls the Codexa timeline; drag-select requires Shift. Off: native drag-select and native wheel scroll work without modifiers.",
-          "  /auth [option]     Open auth panel or set auth preference",
-          "  /auth status       Probe Codexa auth status",
-          "  /login             Show guided ChatGPT subscription login steps",
-          "  /logout            Show guided logout steps",
-          "  /backends          List all available backends",
-          "  /models            Open model picker",
-          "  /workspace         Show the locked workspace for this session",
-          "  /workspace relaunch <path> Restart the app in another workspace folder",
-          `  Current reasoning: ${formatReasoningLabel(context.runtime.reasoningLevel)}`,
-          `  Current plan mode: ${context.runtime.planMode ? "Enabled" : "Disabled"}`,
-          "  /copy              Copy last response to clipboard",
-          "  /help              Show this help",
-          "",
-          "Install on Windows:",
-          "  npm link           Make the codexa command available",
-          "  where codexa       Verify the command resolves",
-          "",
-          "Shortcuts:",
-          "  Ctrl+B    Open backend picker",
-          "  Ctrl+O    Open model picker",
-          "  Shift+Tab Toggle plan mode",
-          "  Ctrl+P    Open mode picker",
-          "  Ctrl+Alt+P Open provider picker",
-          "  Ctrl+A    Open auth panel",
-          "  Ctrl+L    Clear chat and cancel active run",
-          "  Esc       Cancel active run or shell command",
-          "  Ctrl+Y    Cycle execution mode",
-          "  Ctrl+C / Ctrl+Q    Quit",
-          "  ↑ / ↓    Navigate input history",
-        ].join("\n"),
-      };
+      return { action: "help", message: buildHelpMessage(context) };
 
     default:
       return {

@@ -459,6 +459,12 @@ function listProjectLayerPaths(projectRoot: string, workspaceRoot: string): stri
 }
 
 export function resolveLayeredConfig(options: ResolveLayeredConfigOptions): LayeredConfigResult {
+  // Config resolution order (each layer wins over the previous):
+  //   1. Built-in defaults (DEFAULT_RUNTIME_CONFIG)
+  //   2. User config  (~/.codex/config.toml)
+  //   3. Project config  (.codex/config.toml, only when project is trusted)
+  //   4. Profile patch  ([profiles.<name>] from any loaded layer)
+  //   5. CLI overrides  (--config key=value flags)
   const workspaceRoot = normalizeWorkspaceRoot(options.workspaceRoot);
   const projectRoot = findProjectRoot(workspaceRoot);
   const projectTrusted = isProjectTrusted(projectRoot);
