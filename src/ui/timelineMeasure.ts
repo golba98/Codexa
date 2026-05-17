@@ -26,6 +26,8 @@ import { getTextUnits, getTextWidth, wrapPlainText, wrapCommandText } from "./te
 import type { RenderTimelineItem } from "./Timeline.js";
 import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
 
+// ─── Exported types ───────────────────────────────────────────────────────────
+
 export type TimelineTone =
   | "text"
   | "dim"
@@ -81,6 +83,8 @@ export interface NativeTranscriptParts {
   liveRows: TimelineRow[];
 }
 
+// ─── Internal types & constants ──────────────────────────────────────────────
+
 interface MarkdownInlinePart {
   kind: "text" | "code" | "bold";
   text: string;
@@ -115,6 +119,8 @@ function splitSentenceWall(text: string): string {
     .map((part, index) => (index % 2 === 0 ? part.replace(SENTENCE_WALL_SPLIT_RE, "$1\n\n") : part))
     .join("```");
 }
+
+// ─── Span & row primitives ────────────────────────────────────────────────────
 
 function createSpan(
   text: string,
@@ -280,6 +286,8 @@ function buildPrefixedContentRows(
   ));
 }
 
+// ─── Border & card builders ───────────────────────────────────────────────────
+
 function buildIndentedRows(
   keyPrefix: string,
   rows: TimelineRowSpan[][],
@@ -425,6 +433,8 @@ function buildPanelRows(params: {
 
   return rows;
 }
+
+// ─── Turn content builders ────────────────────────────────────────────────────
 
 function buildUserInputRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number): TimelineRow[] {
   const dim = item.renderState.opacity === "dim";
@@ -724,6 +734,8 @@ function buildImpactSummaryRows(item: Extract<RenderTimelineItem, { type: "turn"
   return rows;
 }
 
+// ─── Markdown rendering ───────────────────────────────────────────────────────
+
 function normalizeMarkdownParts(parts: unknown): MarkdownInlinePart[] {
   if (!Array.isArray(parts)) return [];
   return parts
@@ -913,7 +925,7 @@ function buildMarkdownRows(segments: Segment[], width: number): TimelineRowSpan[
   return rows.length > 0 ? rows : [];
 }
 
-// ── Incremental row cache for streaming content ─────────────────────────────
+// ─── Row cache ────────────────────────────────────────────────────────────────
 // During streaming, we cache previously computed markdown rows and only re-run
 // the pipeline on new content from the last safe paragraph boundary onward.
 // This reduces per-frame work from O(total_content) to O(new_delta + tail_paragraph).
@@ -1047,6 +1059,8 @@ function findSafeBoundary(content: string, searchFrom: number): number {
   // No safe boundary found — must re-process from searchFrom
   return searchFrom;
 }
+
+// ─── Agent & action builders ──────────────────────────────────────────────────
 
 function buildAgentRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, verbose = false): TimelineRow[] {
   const run = item.item.run!;
@@ -1340,6 +1354,8 @@ function buildActionRequiredRows(item: Extract<RenderTimelineItem, { type: "turn
   return rows;
 }
 
+// ─── Standalone event & intro rows ───────────────────────────────────────────
+
 export function buildStandaloneEventRows(item: Extract<RenderTimelineItem, { type: "event" }>, width: number): TimelineRow[] {
   const rows: TimelineRow[] = [];
   const event = item.event;
@@ -1591,6 +1607,8 @@ function applyTurnOpacity(rows: TimelineRow[], opacity: "active" | "recent" | "d
 }
 
 
+// ─── Stream event types ───────────────────────────────────────────────────────
+
 export type StreamEvent =
   | { kind: "thinking"; streamSeq: number; block: RunProgressBlock; isActive: boolean }
   | { kind: "response"; streamSeq: number; segment: RunResponseSegment }
@@ -1648,6 +1666,8 @@ function compactActionBursts(events: StreamEvent[], verbose: boolean): StreamEve
 
   return compacted;
 }
+
+// ─── Codex stream block builders ─────────────────────────────────────────────
 
 function buildCodexPlainRows(
   keyPrefix: string,
@@ -2045,6 +2065,8 @@ function buildCodexResponseRows(params: {
   return buildRows();
 }
 
+// ─── Plan & unified stream rendering ─────────────────────────────────────────
+
 function buildApprovedPlanRows(params: {
   keyPrefix: string;
   width: number;
@@ -2267,6 +2289,8 @@ function collectStreamEvents(
 
   return events;
 }
+
+// ─── Turn assembly & static caching ──────────────────────────────────────────
 
 function buildTurnRows(
   item: Extract<RenderTimelineItem, { type: "turn" }>,
@@ -2566,6 +2590,8 @@ function buildStableActiveTurnGroups(
   };
 }
 
+// ─── Native transcript builders ───────────────────────────────────────────────
+
 function isNativeLiveStreamEvent(event: StreamEvent, run: RunEvent): boolean {
   if (run.status !== "running") return false;
   if (event.kind === "action") return event.tool.status === "running";
@@ -2770,6 +2796,8 @@ export function buildNativeTranscriptParts(
 
   return output;
 }
+
+// ─── Public snapshot builders ─────────────────────────────────────────────────
 
 export function buildStableTimelineSnapshot(
   items: RenderTimelineItem[],
