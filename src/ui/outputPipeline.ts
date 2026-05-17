@@ -3,14 +3,14 @@ import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { parseMarkdown, type Segment } from "./Markdown.js";
 
 /**
- * 1. Sanitize: Strip ANSI escape sequences and non-printable control characters.
+ * Sanitize: Strip ANSI escape sequences and non-printable control characters.
  * Removes known UI chrome bleed (e.g. box drawing characters) before rendering.
  *
  * Note on diff colours: Diff colouring in this app is applied at the React/Ink
- * *rendering* layer via getDiffTone() tones, NOT via raw ANSI escape sequences.
+ * rendering layer via getDiffTone() tones, NOT via raw ANSI escape sequences.
  * This means sanitizeTerminalOutput() can safely strip all raw ANSI here —
  * the correct theme colours are re-applied by buildCodePanelRows/buildMarkdownRows
- * in timelineMeasure.ts.  There is no need to preserve SGR codes at this stage.
+ * in timelineMeasure.ts. There is no need to preserve SGR codes at this stage.
  */
 export function sanitizeOutput(raw: string): string {
   if (!raw) return "";
@@ -19,14 +19,14 @@ export function sanitizeOutput(raw: string): string {
 }
 
 /**
- * 1b. Sanitize streamed chunks directly.
+ * Sanitize streamed chunks directly (delegates to sanitizeOutput).
  */
 export function sanitizeStreamChunk(chunk: string): string {
   return sanitizeOutput(chunk);
 }
 
 /**
- * 2. Normalize: Normalizes text formatting for the box wrappers.
+ * Normalize: Normalizes text formatting for the box wrappers.
  * Replaces CRLF with LF and collapses excessive blank lines to prevent
  * vertical stretching and layout popping.
  */
@@ -43,10 +43,10 @@ export function normalizeOutput(clean: string): string {
 }
 
 /**
- * 3. Classify: Segments the normalized string into typed semantic blocks
+ * Classify: Segments the normalized string into typed semantic blocks
  * such as prose, code blocks, diffs, lists, and headers.
  *
- * Diff colouring is applied at render time (step 4) via getDiffTone() in
+ * Diff colouring is applied at render time via getDiffTone() in
  * timelineMeasure.ts, which maps each diff line to a TimelineTone that
  * the theme system resolves to the correct terminal colour.
  */
@@ -55,9 +55,9 @@ export function classifyOutput(normalized: string): Segment[] {
 }
 
 /**
- * 4. Format For Box: Fits the classified segments to the actual box width safely.
- * We rely on the layout engine and wrapper to visually confine this later,
- * but this formalizes the wrapping boundaries at the data layer.
+ * Format For Box: Intentional pass-through — segments are returned as-is.
+ * Width-fitting is handled downstream by the layout engine in timelineMeasure.ts.
+ * This function exists as a named pipeline stage for clarity and future extension.
  */
 export function formatForBox(classified: Segment[], boxWidth: number): Segment[] {
   return classified;
