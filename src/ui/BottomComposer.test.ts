@@ -445,3 +445,118 @@ test("getTokenBarDisplay does not add ~ prefix for a documented verified context
   assert.equal(display.isEstimatedLimit, false);
   assert.ok(!display.limitText.startsWith("~"), "verified limitText must not start with ~");
 });
+
+// ─── externalCliStatus: provider readiness gate ───────────────────────────────
+
+test("shows 'Codexa is thinking' (not startup message) when provider is ready and THINKING — google", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 2 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "google",
+      runElapsedSeconds: 0,
+      externalCliStatus: "ready",
+    }),
+    "✧ Codexa is thinking",
+  );
+});
+
+test("shows 'Codexa is thinking' even at 20 seconds elapsed when provider is ready — google", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 2 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "google",
+      runElapsedSeconds: 20,
+      externalCliStatus: "ready",
+    }),
+    "✧ Codexa is thinking",
+  );
+});
+
+test("shows 'Codexa is thinking' (not startup message) when provider is ready and THINKING — anthropic", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 2 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "anthropic",
+      runElapsedSeconds: 0,
+      externalCliStatus: "ready",
+    }),
+    "✧ Codexa is thinking",
+  );
+});
+
+test("shows 'Codexa is thinking' (not startup message) when provider is ready and THINKING — openai", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 2 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "openai",
+      runElapsedSeconds: 0,
+      externalCliStatus: "ready",
+    }),
+    "✧ Codexa is thinking",
+  );
+});
+
+test("still shows startup messages when externalCliStatus is 'starting' — google at 0 seconds", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "google",
+      runElapsedSeconds: 0,
+      externalCliStatus: "starting",
+    }),
+    "Starting Gemini CLI",
+  );
+});
+
+test("still shows 'Still waiting' when externalCliStatus is 'starting' at 15 seconds — google", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "google",
+      runElapsedSeconds: 15,
+      externalCliStatus: "starting",
+    }),
+    "Still waiting for Gemini CLI  00:15",
+  );
+});
+
+test("still shows startup messages when externalCliStatus is 'idle' (first prompt, not yet starting)", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "google",
+      runElapsedSeconds: 0,
+      externalCliStatus: "idle",
+    }),
+    "Starting Gemini CLI",
+  );
+});
+
+test("regression: second prompt with ready provider never shows 'Still waiting for Gemini CLI'", () => {
+  const statusLine = getVisibleComposerStatusLine({
+    uiState: { kind: "THINKING", turnId: 2 },
+    value: "",
+    allowCommands: true,
+    activeProviderId: "google",
+    runElapsedSeconds: 20,
+    externalCliStatus: "ready",
+  });
+  assert.ok(
+    !/Still waiting for Gemini CLI|Starting Gemini CLI|Checking Gemini/i.test(statusLine),
+    `Expected no startup text but got: "${statusLine}"`,
+  );
+});

@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
 import type { ModelSpec } from "../core/models/modelSpecs.js";
-import type { UIState } from "../session/types.js";
+import type { ExternalCliStatus, UIState } from "../session/types.js";
 import { FOCUS_IDS } from "./focus.js";
 import {
   createInputViewport,
@@ -122,6 +122,7 @@ interface BottomComposerProps {
   onCycleMode: () => void;
   onQuit: () => void;
   activeProviderId?: string;
+  externalCliStatus?: ExternalCliStatus;
   selectionProfile?: TerminalSelectionProfile;
 }
 
@@ -260,10 +261,11 @@ function getStatusLine(
   uiState: UIState,
   activeProviderId?: string,
   runElapsedSeconds?: number,
+  externalCliStatus?: ExternalCliStatus,
 ): string | null {
   if (uiState.kind === "THINKING") {
     const cliLabel = activeProviderId ? getExternalCliLabel(activeProviderId) : null;
-    if (cliLabel) {
+    if (cliLabel && externalCliStatus !== "ready") {
       const elapsed = runElapsedSeconds ?? 0;
       const timerStr = elapsed > 0 ? `  ${formatElapsed(elapsed)}` : "";
       if (elapsed >= 15) return `Still waiting for ${cliLabel}${timerStr}`;
@@ -290,15 +292,17 @@ export function getVisibleComposerStatusLine({
   allowCommands,
   activeProviderId,
   runElapsedSeconds,
+  externalCliStatus,
 }: {
   uiState: UIState;
   value: string;
   allowCommands: boolean;
   activeProviderId?: string;
   runElapsedSeconds?: number;
+  externalCliStatus?: ExternalCliStatus;
 }): string {
   const persona = getComposerPersona(uiState);
-  const rawStatusLine = getStatusLine(uiState, activeProviderId, runElapsedSeconds) ?? "";
+  const rawStatusLine = getStatusLine(uiState, activeProviderId, runElapsedSeconds, externalCliStatus) ?? "";
   const isCommandDraft = allowCommands && value.startsWith("/");
 
   if (rawStatusLine.length === 0 || persona === "answer" || isCommandDraft) {
@@ -355,6 +359,7 @@ export function BottomComposer({
   onCycleMode,
   onQuit,
   activeProviderId = "",
+  externalCliStatus,
   selectionProfile,
 }: BottomComposerProps) {
   renderDebug.useRenderDebug("Composer", {
@@ -507,7 +512,7 @@ export function BottomComposer({
     .map((suggestion, index) => `${index === selectedIndex ? "›" : "·"} ${suggestion.cmd}`)
     .join("   ");
 
-  const rawStatusLine = getVisibleComposerStatusLine({ uiState, value, allowCommands, activeProviderId, runElapsedSeconds });
+  const rawStatusLine = getVisibleComposerStatusLine({ uiState, value, allowCommands, activeProviderId, runElapsedSeconds, externalCliStatus });
   const showStatusLine = rawStatusLine.length > 0;
 
   const promptViewport = useMemo(
