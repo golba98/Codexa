@@ -1690,10 +1690,16 @@ export function App({ launchArgs }: AppProps) {
         : validation.backendKind === "anthropic-api-key" ? "Anthropic API"
         : getProviderRuntime(providerId).label;
 
-      appendSystemEvent(
-        "Route updated",
-        `${routeBackendLabel} / ${finalLabel} · reasoning: ${formatReasoningLabel(normalizedReasoning)}`,
-      );
+      const routeChanged =
+        providerId !== activeProviderRoute.providerId ||
+        nextModel !== activeProviderRoute.modelId;
+
+      if (routeChanged) {
+        appendSystemEvent(
+          "Route updated",
+          `${routeBackendLabel} / ${finalLabel} · reasoning: ${formatReasoningLabel(normalizedReasoning)}`,
+        );
+      }
       refreshTerminalTitle({
         terminalTitleMode,
         workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
@@ -1941,8 +1947,6 @@ export function App({ launchArgs }: AppProps) {
         return;
       }
 
-      appendSystemEvent("Provider selected", `Selected ${provider.displayName} for in-Codexa routing.`);
-
       const workspaceProviderConfig = providerWorkspaceConfig.providers?.[providerId];
       const activeRoute = providerWorkspaceConfig.activeRoute;
       const isCurrentActive = activeRoute?.providerId === providerId;
@@ -1968,6 +1972,9 @@ export function App({ launchArgs }: AppProps) {
           }
         }
 
+        intendedInputModeRef.current = "chat/input";
+        intendedFocusTargetRef.current = FOCUS_IDS.composer;
+        setScreen("main");
         void setModelAndReasoningWithNotice(
           (workspaceProviderConfig?.currentModel ?? provider.currentModel) as AvailableModel,
           providerReasoning as ReasoningLevel,
@@ -1986,8 +1993,6 @@ export function App({ launchArgs }: AppProps) {
     }
 
     if (action === "select-model") {
-      appendSystemEvent("Provider selected", `Selected ${provider.displayName}. Choose a model to activate.`);
-
       if (providerId === "openai" && !modelCapabilities) {
         void refreshModelCapabilities(false, false);
       }

@@ -721,7 +721,7 @@ export const geminiRuntime: ProviderRuntime = {
     handlers.onProgress?.({
       id: "gemini-route",
       source: "stdout",
-      text: "Routing prompt through Google/Gemini inside Codexa...",
+      text: "Starting Gemini CLI",
     });
     if (isGeminiDiagEnabled()) {
       handlers.onProgress?.({

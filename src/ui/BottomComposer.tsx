@@ -25,6 +25,7 @@ import { getStdinDebugState, traceInputDebug } from "../core/inputDebug.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
 import { isAnimatedBusyState } from "./busyStatusAnimation.js";
+import { Spinner } from "./Spinner.js";
 import type { TerminalSelectionProfile } from "../core/terminal/terminalSelection.js";
 import { getSlashCommandSuggestions, type CommandSuggestion } from "./slashCommands.js";
 
@@ -241,23 +242,41 @@ export function measureBottomComposerRows({
   );
 }
 
+function getExternalCliLabel(providerId: string): string | null {
+  if (providerId === "google") return "Gemini CLI";
+  if (providerId === "anthropic") return "Claude Code";
+  if (providerId === "openai") return "Codex CLI";
+  return null;
+}
+
+function getProviderReadyLabel(providerId: string): string | null {
+  if (providerId === "google") return "Gemini";
+  if (providerId === "anthropic") return "Claude";
+  if (providerId === "openai") return "Codex";
+  return null;
+}
+
 function getStatusLine(
   uiState: UIState,
   activeProviderId?: string,
   runElapsedSeconds?: number,
 ): string | null {
   if (uiState.kind === "THINKING") {
-    if (activeProviderId === "google") {
+    const cliLabel = activeProviderId ? getExternalCliLabel(activeProviderId) : null;
+    if (cliLabel) {
       const elapsed = runElapsedSeconds ?? 0;
       const timerStr = elapsed > 0 ? `  ${formatElapsed(elapsed)}` : "";
-      if (elapsed >= 8) {
-        return `Gemini CLI is taking a moment${timerStr}`;
-      }
-      return `Starting Gemini CLI${timerStr}`;
+      if (elapsed >= 15) return `Still waiting for ${cliLabel}${timerStr}`;
+      if (elapsed >= 5) return `${cliLabel} is still starting. The upstream CLI can take a moment${timerStr}`;
+      return `Starting ${cliLabel}${timerStr}`;
     }
     return "✧ Codexa is thinking";
   }
-  if (uiState.kind === "RESPONDING") return "✧ Codexa is thinking";
+  if (uiState.kind === "RESPONDING") {
+    const readyLabel = activeProviderId ? getProviderReadyLabel(activeProviderId) : null;
+    if (readyLabel) return `✧ ${readyLabel} ready`;
+    return "✧ Codexa is thinking";
+  }
   if (uiState.kind === "ANSWER_VISIBLE") return "✧ Codexa response complete";
   if (uiState.kind === "SHELL_RUNNING") return "✧ Codexa is running command";
   if (uiState.kind === "AWAITING_USER_ACTION") return "✧ waiting for your answer";
@@ -869,11 +888,17 @@ export function BottomComposer({
       <Box paddingX={1} marginTop={0} height={1} width="100%" justifyContent="space-between" overflow="hidden">
         {showStatusLine && (
           <>
-            <Box flexShrink={1} flexGrow={1} overflow="hidden">
-              <AnimatedStatusText 
-                baseText={rawStatusLine} 
-                isActive={inputLocked && showBusyLoader} 
-                isError={persona === "error"} 
+            <Box flexShrink={1} flexGrow={1} overflow="hidden" flexDirection="row">
+              {!!getExternalCliLabel(activeProviderId ?? "") && uiState.kind === "THINKING" && (
+                <>
+                  <Spinner color={theme.ACCENT} />
+                  <Text>{" "}</Text>
+                </>
+              )}
+              <AnimatedStatusText
+                baseText={rawStatusLine}
+                isActive={!getExternalCliLabel(activeProviderId ?? "") && inputLocked && showBusyLoader}
+                isError={persona === "error"}
               />
             </Box>
             {inputLocked && (
