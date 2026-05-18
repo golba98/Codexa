@@ -546,7 +546,7 @@ export const anthropicRuntime: ProviderRuntime = {
     handlers.onProgress?.({
       id: "anthropic-route",
       source: "stdout",
-      text: "Routing prompt through Anthropic/Claude inside Codexa...",
+      text: "Starting Claude Code",
     });
 
     if (claudeCodeValidated) {

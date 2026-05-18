@@ -172,7 +172,7 @@ test("suppresses completed response status while a slash command draft is active
   );
 });
 
-test("shows Gemini-specific status when THINKING with google provider", () => {
+test("shows Gemini-specific status when THINKING with google provider at 0 seconds", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "THINKING", turnId: 1 },
@@ -192,35 +192,200 @@ test("includes elapsed timer in Gemini status after first second", () => {
       value: "",
       allowCommands: true,
       activeProviderId: "google",
-      runElapsedSeconds: 7,
+      runElapsedSeconds: 3,
     }),
-    "Starting Gemini CLI  00:07",
+    "Starting Gemini CLI  00:03",
   );
 });
 
-test("changes Gemini status message after 8 seconds", () => {
+test("shows reassurance message in Gemini status at 5 seconds", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "THINKING", turnId: 1 },
       value: "",
       allowCommands: true,
       activeProviderId: "google",
-      runElapsedSeconds: 10,
+      runElapsedSeconds: 5,
     }),
-    "Gemini CLI is taking a moment  00:10",
+    "Gemini CLI is still starting. The upstream CLI can take a moment  00:05",
   );
 });
 
-test("shows generic thinking status for non-google provider", () => {
+test("shows still waiting message in Gemini status at 15 seconds", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "google",
+      runElapsedSeconds: 15,
+    }),
+    "Still waiting for Gemini CLI  00:15",
+  );
+});
+
+test("shows generic thinking status for unknown/local provider", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "local",
+      runElapsedSeconds: 10,
+    }),
+    "✧ Codexa is thinking",
+  );
+});
+
+test("shows Starting Claude Code at 0 seconds for anthropic provider", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "anthropic",
+      runElapsedSeconds: 0,
+    }),
+    "Starting Claude Code",
+  );
+});
+
+test("includes elapsed timer in Claude Code status after first second", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "anthropic",
+      runElapsedSeconds: 3,
+    }),
+    "Starting Claude Code  00:03",
+  );
+});
+
+test("shows reassurance message at 5 seconds for Claude Code", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "anthropic",
+      runElapsedSeconds: 5,
+    }),
+    "Claude Code is still starting. The upstream CLI can take a moment  00:05",
+  );
+});
+
+test("shows still waiting message at 15 seconds for Claude Code", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "anthropic",
+      runElapsedSeconds: 15,
+    }),
+    "Still waiting for Claude Code  00:15",
+  );
+});
+
+test("shows Starting Codex CLI at 0 seconds for openai provider", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "THINKING", turnId: 1 },
       value: "",
       allowCommands: true,
       activeProviderId: "openai",
-      runElapsedSeconds: 10,
+      runElapsedSeconds: 0,
+    }),
+    "Starting Codex CLI",
+  );
+});
+
+test("includes elapsed timer in Codex CLI status after first second", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "THINKING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "openai",
+      runElapsedSeconds: 3,
+    }),
+    "Starting Codex CLI  00:03",
+  );
+});
+
+test("shows Gemini ready status when RESPONDING with google provider", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "RESPONDING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "google",
+    }),
+    "✧ Gemini ready",
+  );
+});
+
+test("shows Claude ready status when RESPONDING with anthropic provider", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "RESPONDING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "anthropic",
+    }),
+    "✧ Claude ready",
+  );
+});
+
+test("shows Codex ready status when RESPONDING with openai provider", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "RESPONDING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "openai",
+    }),
+    "✧ Codex ready",
+  );
+});
+
+test("shows generic thinking status when RESPONDING with unknown provider", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "RESPONDING", turnId: 1 },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "local",
     }),
     "✧ Codexa is thinking",
+  );
+});
+
+test("shows error message in status for google provider in ERROR state regardless of elapsed time", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "ERROR", turnId: 1, message: "Gemini CLI failed to start" },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "google",
+      runElapsedSeconds: 30,
+    }),
+    "Gemini CLI failed to start",
+  );
+});
+
+test("shows error message in status for anthropic provider in ERROR state regardless of elapsed time", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "ERROR", turnId: 1, message: "Claude Code failed to start" },
+      value: "",
+      allowCommands: true,
+      activeProviderId: "anthropic",
+      runElapsedSeconds: 30,
+    }),
+    "Claude Code failed to start",
   );
 });
 

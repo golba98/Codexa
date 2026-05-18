@@ -32,15 +32,22 @@ const openAiRuntime: ProviderRuntime = {
     backendKind: "codex-cli-auth",
     models: [],
   }),
-  run: (request: ProviderChatRequest, handlers: BackendRunHandlers) => codexSubprocessProvider.run!(
-    request.prompt,
-    {
-      runtime: request.runtime,
-      workspaceRoot: request.workspaceRoot,
-      projectInstructions: request.projectInstructions,
-    },
-    handlers,
-  ),
+  run: (request: ProviderChatRequest, handlers: BackendRunHandlers) => {
+    handlers.onProgress?.({
+      id: "openai-route",
+      source: "stdout",
+      text: "Starting Codex CLI",
+    });
+    return codexSubprocessProvider.run!(
+      request.prompt,
+      {
+        runtime: request.runtime,
+        workspaceRoot: request.workspaceRoot,
+        projectInstructions: request.projectInstructions,
+      },
+      handlers,
+    );
+  },
 };
 
 function unavailableRuntime(providerId: ProviderId, label: string): ProviderRuntime {
