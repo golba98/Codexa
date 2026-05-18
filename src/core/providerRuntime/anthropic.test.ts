@@ -158,11 +158,11 @@ test("resolver: where.exe returns .exe path → validation uses that path", asyn
       cwd: process.cwd(),
       runCommandImpl: mockRunCommand((executable, args) => {
         if (executable === "where.exe") {
-          return commandResult({ exitCode: 0, stdout: "C:\\Users\\jorda.local\\bin\\claude.exe\n" });
+          return commandResult({ exitCode: 0, stdout: "C:\\Users\\Example\\.local\\bin\\claude.exe\n" });
         }
         // Track which executable is used for auth/version
         resolvedPaths.push(executable);
-        if (executable === "C:\\Users\\jorda.local\\bin\\claude.exe" && args[0] === "auth") {
+        if (executable === "C:\\Users\\Example\\.local\\bin\\claude.exe" && args[0] === "auth") {
           return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }) });
         }
         return commandResult({ exitCode: 0 });
@@ -171,10 +171,10 @@ test("resolver: where.exe returns .exe path → validation uses that path", asyn
 
     assert.equal(validation.status, "ready");
     assert.equal(validation.backendKind, "claude-code-auth");
-    assert.equal(validation.diagnostics?.["resolvedCommand"], "C:\\Users\\jorda.local\\bin\\claude.exe");
+    assert.equal(validation.diagnostics?.["resolvedCommand"], "C:\\Users\\Example\\.local\\bin\\claude.exe");
     // The auth command should have used the resolved path, not bare "claude"
     assert.ok(
-      resolvedPaths.some((p) => p === "C:\\Users\\jorda.local\\bin\\claude.exe"),
+      resolvedPaths.some((p) => p === "C:\\Users\\Example\\.local\\bin\\claude.exe"),
       `Expected resolved path to be used for auth; got: ${resolvedPaths.join(", ")}`,
     );
   });
@@ -476,14 +476,14 @@ test("validateAnthropicRoute: diagnostics include resolvedCommand", async () => 
     const validation = await validateAnthropicRoute({
       cwd: process.cwd(),
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\Users\\jorda.local\\bin\\claude.exe\n" });
+        if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\Users\\Example\\.local\\bin\\claude.exe\n" });
         if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }) });
         return commandResult({ exitCode: 0 });
       }),
     });
 
-    assert.equal(validation.diagnostics?.["resolvedCommand"], "C:\\Users\\jorda.local\\bin\\claude.exe");
-    assert.equal(validation.diagnostics?.["authCommand"], "C:\\Users\\jorda.local\\bin\\claude.exe auth status");
+    assert.equal(validation.diagnostics?.["resolvedCommand"], "C:\\Users\\Example\\.local\\bin\\claude.exe");
+    assert.equal(validation.diagnostics?.["authCommand"], "C:\\Users\\Example\\.local\\bin\\claude.exe auth status");
   });
 });
 

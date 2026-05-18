@@ -1,6 +1,9 @@
 import { spawn } from "child_process";
 import { join } from "path";
-import { CODEX_EXECUTABLE } from "../../config/settings.js";
+import { runCommand } from "../process/CommandRunner.js";
+import { buildSpawnSpec, resolveExecutable } from "./executableResolver.js";
+
+type CommandRunner = typeof runCommand;
 
 let cachedExecutable: string | null = null;
 let resolveInFlight: Promise<string> | null = null;
@@ -15,25 +18,59 @@ export interface CapturedProcessOutput {
   stderr: string;
 }
 
-export async function resolveCodexExecutable(): Promise<string> {
-  if (cachedExecutable) return cachedExecutable;
-  if (resolveInFlight) return resolveInFlight;
+export function resetCodexExecutableCacheForTests(): void {
+  cachedExecutable = null;
+}
 
-  resolveInFlight = (async () => {
-    const candidates = collectExecutableCandidates();
-    const executable = candidates[0];
-    if (!executable) {
-      throw createExecutableResolutionError("ENOENT", candidates);
-    }
-    cachedExecutable = executable;
-    return executable;
-  })();
-
-  try {
-    return await resolveInFlight;
-  } finally {
-    resolveInFlight = null;
+export async function resolveCodexExecutable(options?: {
+  runCommandImpl?: CommandRunner;
+  cwd?: string;
+  configuredPath?: string | null;
+}): Promise<string> {
+  if (!options?.configuredPath && !options?.runCommandImpl && cachedExecutable !== null) {
+    return cachedExecutable;
   }
+
+  if (!options?.configuredPath && !options?.runCommandImpl) {
+    if (resolveInFlight) return resolveInFlight;
+
+    resolveInFlight = (async () => {
+      const result = await doResolveCodexExecutable(options);
+      cachedExecutable = result;
+      return result;
+    })();
+
+    try {
+      return await resolveInFlight;
+    } finally {
+      resolveInFlight = null;
+    }
+  }
+
+  return doResolveCodexExecutable(options);
+}
+
+async function doResolveCodexExecutable(options?: {
+  runCommandImpl?: CommandRunner;
+  cwd?: string;
+  configuredPath?: string | null;
+}): Promise<string> {
+  const knownFilePaths: string[] = [];
+  if (process.platform === "win32" && process.env.LOCALAPPDATA) {
+    knownFilePaths.push(join(process.env.LOCALAPPDATA, "Microsoft", "WindowsApps", "codex.exe"));
+  }
+
+  return resolveExecutable({
+    runCommandImpl: options?.runCommandImpl,
+    cwd: options?.cwd,
+    configuredPath: options?.configuredPath,
+    envOverrides: ["CODEX_EXECUTABLE"],
+    commandNames: process.platform === "win32"
+      ? ["codex.cmd", "codex.exe", "codex"]
+      : ["codex"],
+    knownFilePaths,
+    label: "codex",
+  });
 }
 
 export function formatCodexLaunchError(err: NodeJS.ErrnoException): string {
@@ -58,58 +95,13 @@ export function formatCodexLaunchError(err: NodeJS.ErrnoException): string {
   return err.message;
 }
 
-export function createExecutableResolutionError(
-  code: string,
-  attemptedCandidates: string[],
-): NodeJS.ErrnoException {
-  const error = new Error(
-    [
-      "Unable to launch Codex executable from this process.",
-      `Tried: ${attemptedCandidates.join(", ")}`,
-      "Set CODEX_EXECUTABLE to a known working Codex command/path.",
-    ].join("\n"),
-  ) as NodeJS.ErrnoException;
-  error.code = code;
-  return error;
-}
-
-function collectExecutableCandidates(): string[] {
-  const set = new Set<string>();
-  const push = (candidate?: string) => {
-    const value = candidate?.trim();
-    if (value) set.add(value);
-  };
-
-  if (process.env.CODEX_EXECUTABLE?.trim()) {
-    push(CODEX_EXECUTABLE);
-  }
-  if (process.platform === "win32") {
-    push("codex.cmd");
-    push("codex.exe");
-    push("codex");
-    // Microsoft Store CLI installs land in WindowsApps.
-    const localAppAlias = process.env.LOCALAPPDATA
-      ? join(process.env.LOCALAPPDATA, "Microsoft", "WindowsApps", "codex.exe")
-      : undefined;
-    push(localAppAlias);
-  } else {
-    push(CODEX_EXECUTABLE);
-    push("codex");
-  }
-
-  return [...set];
-}
-
 export function spawnCodexProcess(
   executable: string,
   args: string[],
   options: SpawnOptions,
 ): ReturnType<typeof spawn> {
-  if (executable.toLowerCase().endsWith(".cmd")) {
-    return spawn("cmd.exe", ["/d", "/s", "/c", executable, ...args], options);
-  }
-
-  return spawn(executable, args, options);
+  const spec = buildSpawnSpec(executable, args);
+  return spawn(spec.executable, spec.args, options);
 }
 
 export function captureCodexProcessOutput(

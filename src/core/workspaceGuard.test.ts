@@ -11,11 +11,11 @@ import {
 } from "./workspaceGuard.js";
 import { normalizeWorkspaceRoot } from "./workspaceRoot.js";
 
-const workspaceRoot = normalizeWorkspaceRoot("C:/Users/jorda/OneDrive/Desktop/3-Python/Programs/2-Personal/20-Tester");
+const workspaceRoot = normalizeWorkspaceRoot("C:/Users/Example/OneDrive/Desktop/3-Python/Programs/2-Personal/20-Tester");
 
 test("allows absolute paths inside the locked workspace", () => {
   const violations = findOutsideWorkspacePaths(
-    "Please update C:\\Users\\jorda\\OneDrive\\Desktop\\3-Python\\Programs\\2-Personal\\20-Tester\\src\\main.py",
+    "Please update C:\\Users\\Example\\OneDrive\\Desktop\\3-Python\\Programs\\2-Personal\\20-Tester\\src\\main.py",
     workspaceRoot,
   );
 
@@ -24,34 +24,34 @@ test("allows absolute paths inside the locked workspace", () => {
 
 test("blocks absolute paths outside the locked workspace", () => {
   const violations = findOutsideWorkspacePaths(
-    "Please edit C:\\Users\\jorda\\Desktop\\Other\\notes.txt",
+    "Please edit C:\\Users\\Example\\Desktop\\Other\\notes.txt",
     workspaceRoot,
   );
 
   assert.equal(violations.length, 1);
   assert.equal(
     violations[0]?.normalizedPath,
-    "C:\\Users\\jorda\\Desktop\\Other\\notes.txt",
+    "C:\\Users\\Example\\Desktop\\Other\\notes.txt",
   );
 });
 
 test("parses quoted windows paths with spaces", () => {
   const violations = findOutsideWorkspacePaths(
-    "Use \"C:\\Users\\jorda\\Desktop\\Other Folder\\notes file.txt\" instead",
+    "Use \"C:\\Users\\Example\\Desktop\\Other Folder\\notes file.txt\" instead",
     workspaceRoot,
   );
 
   assert.equal(violations.length, 1);
   assert.equal(
     violations[0]?.normalizedPath,
-    "C:\\Users\\jorda\\Desktop\\Other Folder\\notes file.txt",
+    "C:\\Users\\Example\\Desktop\\Other Folder\\notes file.txt",
   );
 });
 
 test("resolves relative paths inside the workspace", () => {
   assert.equal(
     resolveWorkspacePath("src\\main.py", workspaceRoot),
-    "C:\\Users\\jorda\\OneDrive\\Desktop\\3-Python\\Programs\\2-Personal\\20-Tester\\src\\main.py",
+    "C:\\Users\\Example\\OneDrive\\Desktop\\3-Python\\Programs\\2-Personal\\20-Tester\\src\\main.py",
   );
   assert.equal(isPathInsideWorkspace("src\\main.py", workspaceRoot), true);
 });
@@ -62,14 +62,14 @@ test("blocks explicit relative paths that escape the workspace", () => {
   assert.equal(violations.length, 1);
   assert.equal(
     violations[0]?.normalizedPath,
-    "C:\\Users\\jorda\\OneDrive\\Desktop\\3-Python\\Programs\\2-Personal\\outside.txt",
+    "C:\\Users\\Example\\OneDrive\\Desktop\\3-Python\\Programs\\2-Personal\\outside.txt",
   );
 });
 
 test("treats same-path drive letter case differences as inside the workspace", () => {
   assert.equal(
     isPathInsideWorkspace(
-      "c:\\users\\jorda\\onedrive\\desktop\\3-python\\programs\\2-personal\\20-tester\\src\\main.py",
+      "c:\\users\\Example\\onedrive\\desktop\\3-python\\programs\\2-personal\\20-tester\\src\\main.py",
       workspaceRoot,
     ),
     true,
@@ -77,22 +77,22 @@ test("treats same-path drive letter case differences as inside the workspace", (
 });
 
 test("allows configured writable roots outside the locked workspace", () => {
-  const extraRoot = "C:\\Users\\jorda\\Desktop\\Allowed Root";
+  const extraRoot = "C:\\Users\\Example\\Desktop\\Allowed Root";
 
   assert.equal(
-    isPathInsideAllowedRoots("C:\\Users\\jorda\\Desktop\\Allowed Root\\notes.txt", workspaceRoot, [extraRoot]),
+    isPathInsideAllowedRoots("C:\\Users\\Example\\Desktop\\Allowed Root\\notes.txt", workspaceRoot, [extraRoot]),
     true,
   );
 
   const promptMessage = getPromptWorkspaceGuardMessage(
-    "Edit \"C:\\Users\\jorda\\Desktop\\Allowed Root\\notes.txt\"",
+    "Edit \"C:\\Users\\Example\\Desktop\\Allowed Root\\notes.txt\"",
     workspaceRoot,
     [extraRoot],
   );
   assert.equal(promptMessage, null);
 
   const shellMessage = getShellWorkspaceGuardMessage(
-    "type \"C:\\Users\\jorda\\Desktop\\Allowed Root\\notes.txt\"",
+    "type \"C:\\Users\\Example\\Desktop\\Allowed Root\\notes.txt\"",
     workspaceRoot,
     [extraRoot],
   );
@@ -100,9 +100,9 @@ test("allows configured writable roots outside the locked workspace", () => {
 });
 
 test("still blocks paths outside the workspace and configured writable roots", () => {
-  const extraRoot = "C:\\Users\\jorda\\Desktop\\Allowed Root";
+  const extraRoot = "C:\\Users\\Example\\Desktop\\Allowed Root";
   const message = getPromptWorkspaceGuardMessage(
-    "Edit C:\\Users\\jorda\\Desktop\\Other\\notes.txt",
+    "Edit C:\\Users\\Example\\Desktop\\Other\\notes.txt",
     workspaceRoot,
     [extraRoot],
   );
@@ -114,7 +114,7 @@ test("still blocks paths outside the workspace and configured writable roots", (
 
 test("returns a prompt guard message before a run starts", () => {
   const message = getPromptWorkspaceGuardMessage(
-    "Edit C:\\Users\\jorda\\Desktop\\Other\\notes.txt",
+    "Edit C:\\Users\\Example\\Desktop\\Other\\notes.txt",
     workspaceRoot,
   );
 
@@ -135,7 +135,7 @@ test("blocks directory-changing shell commands", () => {
 
 test("blocks shell commands that reference outside absolute paths", () => {
   const message = getShellWorkspaceGuardMessage(
-    "type C:\\Users\\jorda\\Desktop\\Other\\notes.txt",
+    "type C:\\Users\\Example\\Desktop\\Other\\notes.txt",
     workspaceRoot,
   );
 

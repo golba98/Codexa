@@ -26,7 +26,7 @@ test("prepares a shared launch plan with resolved executable strategy and source
       structuredOutput: false,
       probeCapabilities: true,
     },
-    "file:///C:/Development/1-JavaScript/13-Custom%20CLI/src/core/providers/codexSubprocess.ts",
+    "file:///C:/project/src/core/providers/codexSubprocess.ts",
     {
       resolveExecutable: async () => "C:/tools/codex.cmd",
       getCapabilities: async () => capabilities,
@@ -38,7 +38,7 @@ test("prepares a shared launch plan with resolved executable strategy and source
     strategy: "config-overrides",
     executable: "C:/tools/codex.cmd",
     capabilities,
-    responsibleModulePath: "C:\\Development\\1-JavaScript\\13-Custom CLI\\src\\core\\providers\\codexSubprocess.ts",
+    responsibleModulePath: "C:\\project\\src\\core\\providers\\codexSubprocess.ts",
     responsibleModuleKind: "src",
     launchContext: {
       launchKind: process.env.CODEXA_LAUNCH_KIND,

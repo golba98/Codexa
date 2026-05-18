@@ -56,4 +56,5 @@ export interface ProviderWorkspaceOverride {
   command?: string | ProviderLaunchCommand | null;
   claudeCommandPath?: string;
   geminiCommandPath?: string;
+  codexCommandPath?: string;
 }

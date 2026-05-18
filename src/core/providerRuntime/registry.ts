@@ -101,6 +101,7 @@ export async function validateProviderRouteActivation(options: {
   route: ProviderRoute;
   workspaceRoot: string;
   geminiCommandPath?: string | null;
+  claudeCommandPath?: string | null;
 }): Promise<ProviderRouteValidationResult> {
   const runtime = getProviderRuntime(options.route.providerId);
   if (!runtime.routeAvailable) {

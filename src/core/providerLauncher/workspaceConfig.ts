@@ -70,6 +70,11 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
     override.geminiCommandPath = geminiCommandPath.trim();
   }
 
+  const codexCommandPath = value.codexCommandPath ?? value.codex_command_path;
+  if (typeof codexCommandPath === "string" && codexCommandPath.trim()) {
+    override.codexCommandPath = codexCommandPath.trim();
+  }
+
   return override;
 }
 
@@ -154,6 +159,7 @@ export function serializeProviderWorkspaceConfig(config: ProviderWorkspaceConfig
         ...(override.command !== undefined ? { command: serializeLaunchCommand(override.command) } : {}),
         ...(override.claudeCommandPath !== undefined ? { claude_command_path: override.claudeCommandPath } : {}),
         ...(override.geminiCommandPath !== undefined ? { gemini_command_path: override.geminiCommandPath } : {}),
+        ...(override.codexCommandPath !== undefined ? { codex_command_path: override.codexCommandPath } : {}),
       },
     ]),
   );

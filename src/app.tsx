@@ -1235,7 +1235,7 @@ export function App({ launchArgs }: AppProps) {
   useEffect(() => {
     void (async () => {
       try {
-        const result = await validateAnthropicRoute({ cwd: workspaceRoot });
+        const result = await validateAnthropicRoute({ cwd: workspaceRoot, configuredPath: providerWorkspaceConfig.providers?.anthropic?.claudeCommandPath });
         if (result.diagnostics) {
           providerDiagnosticsRef.current["anthropic"] = result.diagnostics as Record<string, string | number | boolean | null>;
         }
@@ -1537,6 +1537,7 @@ export function App({ launchArgs }: AppProps) {
         },
         workspaceRoot,
         geminiCommandPath: providerWorkspaceConfig.providers?.google?.geminiCommandPath ?? runtimeConfig.geminiCommandPath,
+        claudeCommandPath: providerWorkspaceConfig.providers?.anthropic?.claudeCommandPath,
       });
       if (validation.status !== "ready") {
         appendSystemEvent(
@@ -1635,6 +1636,7 @@ export function App({ launchArgs }: AppProps) {
           },
           workspaceRoot,
           geminiCommandPath: providerWorkspaceConfig.providers?.google?.geminiCommandPath ?? runtimeConfig.geminiCommandPath,
+          claudeCommandPath: providerWorkspaceConfig.providers?.anthropic?.claudeCommandPath,
         });
         if (validation.diagnostics) {
           providerDiagnosticsRef.current[providerId] = validation.diagnostics as Record<string, string | number | boolean | null>;
@@ -2848,6 +2850,9 @@ export function App({ launchArgs }: AppProps) {
       mode: effectiveMode,
       model: activeProviderRoute.modelId,
       reasoningLevel: activeProviderRoute.reasoning ?? requestedRuntime.reasoningLevel,
+      ...(providerWorkspaceConfig.providers?.openai?.codexCommandPath
+        ? { codexCommandPath: providerWorkspaceConfig.providers.openai.codexCommandPath }
+        : {}),
     };
     let runtimeForTurn = resolveRuntimeConfig(runtimeConfigForTurn);
     const fastCleanupRun = isClearlySafeGeneratedCleanupRequest(safeProviderPrompt)
@@ -3668,6 +3673,34 @@ export function App({ launchArgs }: AppProps) {
             setAuthPreferenceWithNotice(commandResult.value as AuthPreference);
           }
           return;
+        case "diagnose_providers": {
+          const lines: string[] = ["Provider CLI diagnostics:"];
+          const diags = providerDiagnosticsRef.current;
+          const providerIds = ["openai", "anthropic", "google"] as const;
+          const labels: Record<string, string> = { openai: "OpenAI/Codex", anthropic: "Anthropic/Claude", google: "Google/Gemini" };
+          for (const id of providerIds) {
+            const diag = diags[id];
+            lines.push(`\n  ${labels[id] ?? id}:`);
+            if (!diag) {
+              lines.push("    No diagnostic data (provider not yet validated).");
+              continue;
+            }
+            const fields: Array<[string, string]> = [
+              ["resolvedCommand", "Resolved command"],
+              ["executablePath", "Executable path"],
+              ["loggedIn", "Logged in"],
+              ["authMethod", "Auth method"],
+              ["subscriptionType", "Subscription"],
+              ["apiProvider", "API provider"],
+              ["modelSource", "Model source"],
+            ];
+            for (const [key, label] of fields) {
+              if (diag[key] != null) lines.push(`    ${label}: ${diag[key]}`);
+            }
+          }
+          appendSystemEvent("Provider diagnostics", lines.join("\n"));
+          return;
+        }
         case "setting_status":
           if (commandResult.message) {
             appendSystemEvent("Settings", commandResult.message);

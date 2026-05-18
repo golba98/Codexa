@@ -549,6 +549,11 @@ test("parses /diagnose github command", () => {
   assert.equal(result?.action, "diagnose_github");
 });
 
+test("parses /diagnose providers command", () => {
+  const result = runCommand("/diagnose providers");
+  assert.equal(result?.action, "diagnose_providers");
+});
+
 test("unknown commands show /help suggestion", () => {
   const result = runCommand("/unknown-cmd-123");
   assert.equal(result?.action, "unknown");
@@ -578,6 +583,7 @@ test("every command documented in help is recognized by the parser", () => {
   // Verify specific multi-word commands mentioned in help
   const multiWord = [
     ["diagnose github", "diagnose_github"],
+    ["diagnose providers", "diagnose_providers"],
     ["config trust", "config_trust_status"],
     ["auth status", "auth_status"],
     ["workspace relaunch .", "workspace_relaunch"],

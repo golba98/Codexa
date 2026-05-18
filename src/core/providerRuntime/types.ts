@@ -58,6 +58,7 @@ export interface ProviderRouteValidationRequest {
   route: ProviderRoute;
   workspaceRoot: string;
   geminiCommandPath?: string | null;
+  claudeCommandPath?: string | null;
 }
 
 export interface ProviderRouteValidationResult {
