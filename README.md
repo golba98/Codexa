@@ -199,6 +199,54 @@ or in `config.toml`:
 gemini_command_path = "C:\\Users\\you\\AppData\\Roaming\\npm\\gemini.cmd"
 ```
 
+### Using local models with LM Studio
+
+Codexa can route the Local provider through OpenAI-compatible local servers such as LM Studio.
+
+1. Start LM Studio.
+2. Load a model.
+3. Enable the LM Studio local server.
+4. Confirm the endpoint is `http://localhost:1234/v1`.
+5. Open Codexa's provider picker with `/providers`.
+6. Select `Local`, refresh models if needed, then choose `Use in Codexa`.
+
+Codexa checks `GET http://localhost:1234/v1/models` and uses the returned model IDs in the Local model picker. If LM Studio returns `google/gemma-4-26b-a4b`, that model appears as a selectable Local model.
+
+Context length is detected separately from model discovery. Codexa first looks for context metadata returned by the provider, then CLI metadata, then an explicit workspace config override, then exact known registry entries. If no trusted source provides a limit, Codexa shows `Context: Unknown` and does not calculate a context percentage.
+
+Environment variable configuration:
+
+```powershell
+$env:CODEXA_LOCAL_BASE_URL = "http://localhost:1234/v1"
+$env:CODEXA_LOCAL_API_KEY = "lm-studio"
+$env:CODEXA_LOCAL_MODEL = "google/gemma-4-26b-a4b"
+```
+
+Workspace provider configuration in `.codexa/providers.json`:
+
+```json
+{
+  "providers": {
+    "local": {
+      "enabled": true,
+      "type": "openai-compatible",
+      "base_url": "http://localhost:1234/v1",
+      "api_key": "lm-studio",
+      "default_model": "google/gemma-4-26b-a4b",
+      "models": {
+        "google/gemma-4-26b-a4b": {
+          "contextLength": 8192
+        }
+      }
+    }
+  }
+}
+```
+
+`OPENAI_BASE_URL`, `OPENAI_API_BASE`, and `OPENAI_API_KEY` are also accepted for the Local provider only. They do not redirect OpenAI/Codex, Gemini, or Claude routes.
+
+Use the `models.<modelId>.contextLength` override only when you know the loaded model/server limit. Values must be positive integers; zero, negative, and non-numeric values are ignored.
+
 ### Project Trust
 
 Project config (`.codex/config.toml`) is only applied when the detected project root is explicitly trusted. Manage trust with:

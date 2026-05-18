@@ -1,14 +1,10 @@
 {
   "workspaceDefaultProviderId": "anthropic",
   "activeRoute": {
-    "providerId": "google",
-    "modelId": "gemini-3-flash-preview",
-    "backendKind": "gemini-cli-auth",
-    "reasoning": "medium",
-    "modelSelection": {
-      "kind": "manual",
-      "modelId": "gemini-3-flash-preview"
-    }
+    "providerId": "openai",
+    "modelId": "gpt-5.4-mini",
+    "backendKind": "codex-cli-auth",
+    "reasoning": "low"
   },
   "providers": {
     "openai": {
@@ -21,6 +17,10 @@
     },
     "google": {
       "current_model": "gemini-3-flash-preview",
+      "current_reasoning": "medium"
+    },
+    "local": {
+      "current_model": "google/gemma-4-26b-a4b",
       "current_reasoning": "medium"
     }
   }

@@ -22,7 +22,8 @@ export type Screen =
   | "permissions-sandbox-picker"
   | "permissions-network-picker"
   | "permissions-add-writable-root"
-  | "permissions-remove-writable-root";
+  | "permissions-remove-writable-root"
+  | "import-confirmation";
 
 // ─── Provider readiness ───────────────────────────────────────────────────────
 

@@ -400,8 +400,10 @@ test("getTokenBarDisplay returns null percentage (not 0) for an unknown spec", (
   };
   const display = getTokenBarDisplay(5_000, spec);
   assert.equal(display.percentage, null, "percentage must be null, not 0, for unknown specs");
-  assert.equal(display.limitText, "unknown");
+  assert.equal(display.usedText, "Context");
+  assert.equal(display.limitText, "Unknown");
   assert.equal(display.isEstimatedLimit, false);
+  assert.equal(display.hasKnownLimit, false);
 });
 
 test("getTokenBarDisplay returns correct non-null percentage for a verified spec", () => {
@@ -416,21 +418,23 @@ test("getTokenBarDisplay returns correct non-null percentage for a verified spec
   assert.equal(display.percentage, 5);
   assert.notEqual(display.percentage, null);
   assert.equal(display.isEstimatedLimit, false);
+  assert.equal(display.hasKnownLimit, true);
+  assert.equal(display.usedText, "10,000", "usedText should be exact number with thousands separator");
 });
 
-test("getTokenBarDisplay marks estimated context windows with ~ prefix in limitText", () => {
+test("getTokenBarDisplay formats refreshed LM Studio context meter", () => {
   const spec: VerifiedModelSpec = {
     status: "verified",
-    contextWindow: 1_048_576,
-    maxOutputTokens: 65_536,
-    contextWindowStatus: "estimated",
-    sourceUrl: "",
+    contextWindow: 32_000,
+    maxOutputTokens: 32_000,
+    sourceUrl: "lmstudio-api",
     verifiedAt: 0,
   };
-  const display = getTokenBarDisplay(10_000, spec);
-  assert.equal(display.isEstimatedLimit, true);
-  assert.ok(display.limitText.startsWith("~"), "estimated limitText must start with ~");
-  assert.equal(display.percentage, 1);
+  const display = getTokenBarDisplay(0, spec);
+  assert.equal(display.usedText, "0");
+  assert.equal(display.limitText, "32,000");
+  assert.equal(display.percentage, 0);
+  assert.equal(display.hasKnownLimit, true);
 });
 
 test("getTokenBarDisplay does not add ~ prefix for a documented verified context window", () => {
@@ -559,4 +563,46 @@ test("regression: second prompt with ready provider never shows 'Still waiting f
     !/Still waiting for Gemini CLI|Starting Gemini CLI|Checking Gemini/i.test(statusLine),
     `Expected no startup text but got: "${statusLine}"`,
   );
+});
+
+// ─── getTokenBarDisplay — new format ─────────────────────────────────────────
+
+test("getTokenBarDisplay(0, 64k spec) shows '0' usedText and '64,000' limitText, not Unknown", () => {
+  const spec: VerifiedModelSpec = {
+    status: "verified",
+    contextWindow: 64_000,
+    maxOutputTokens: 64_000,
+    sourceUrl: "",
+    verifiedAt: 0,
+  };
+  const display = getTokenBarDisplay(0, spec);
+  assert.equal(display.hasKnownLimit, true, "64k verified spec must have known limit");
+  assert.equal(display.usedText, "0", "0 tokens used renders as '0'");
+  assert.equal(display.limitText, "64,000");
+  assert.equal(display.percentage, 0);
+});
+
+test("getTokenBarDisplay uses Math.floor — 1999/200000 rounds down to 0%", () => {
+  const spec: VerifiedModelSpec = {
+    status: "verified",
+    contextWindow: 200_000,
+    maxOutputTokens: 200_000,
+    sourceUrl: "",
+    verifiedAt: 0,
+  };
+  const display = getTokenBarDisplay(1_999, spec);
+  // floor(1999/200000*100) = floor(0.9995) = 0; Math.round would give 1
+  assert.equal(display.percentage, 0, "percentage must use Math.floor, not Math.round");
+});
+
+test("getTokenBarDisplay unknown spec regression — hasKnownLimit is false", () => {
+  const spec: PendingModelSpec = {
+    status: "unknown",
+    contextWindow: null,
+    maxOutputTokens: null,
+    sourceUrl: "",
+    verifiedAt: null,
+    error: null,
+  };
+  assert.equal(getTokenBarDisplay(99_999, spec).hasKnownLimit, false);
 });

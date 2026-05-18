@@ -1,6 +1,7 @@
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { spawn } from "child_process";
 import { existsSync } from "fs";
+import path from "node:path";
 
 // Diagnostic tracing hook — no-op by default; wire to a real logger when debugging.
 function appDiagLog(msg: string): void {
@@ -104,19 +105,26 @@ import {
   resolveLaunchContext,
 } from "./core/launchContext.js";
 import {
+  findOutsideWorkspacePaths,
   getPromptWorkspaceGuardMessage,
   getShellWorkspaceGuardMessage,
 } from "./core/workspaceGuard.js";
 import {
-  areModelSpecsEqual,
-  createModelSpecService,
-  loadModelSpecCache,
-  resolveModelSpec,
   type ModelSpec,
-  type VerifiedModelSpec,
 } from "./core/models/modelSpecs.js";
+import {
+  contextMetadataToModelSpec,
+  formatContextLength,
+  resolveModelContextLength,
+  type ModelContextMetadata,
+} from "./core/providerRuntime/contextMetadata.js";
 import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots } from "./core/workspaceActivity.js";
 import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
+import {
+  importExternalFile,
+  isImageFile,
+  rewritePromptWithImportedPaths,
+} from "./core/attachments.js";
 import { loadProjectInstructions } from "./core/projectInstructions.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
@@ -134,6 +142,7 @@ import {
   validateProviderRouteActivation,
 } from "./core/providerRuntime/registry.js";
 import { hasGeminiApiKey, runGeminiDiagnostics } from "./core/providerRuntime/gemini.js";
+import { checkLocalProvider, runLocalDiagnostics, setLocalProviderConfig } from "./core/providerRuntime/local.js";
 import { validateAnthropicRoute, ANTHROPIC_ROUTE_SETUP_MESSAGE } from "./core/providerRuntime/anthropic.js";
 import { providerModelsToCodexCapabilities } from "./core/providerRuntime/models.js";
 import {
@@ -200,6 +209,7 @@ import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } f
 import { PermissionsPanel, type PermissionsPanelAction } from "./ui/PermissionsPanel.js";
 import { ProviderPicker } from "./ui/ProviderPicker.js";
 import { ReasoningPicker } from "./ui/ReasoningPicker.js";
+import { AttachmentImportPanel, type PendingImportFile } from "./ui/AttachmentImportPanel.js";
 import { SelectionPanel } from "./ui/SelectionPanel.js";
 import { SettingsPanel } from "./ui/SettingsPanel.js";
 import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/TextEntryPanel.js";
@@ -342,6 +352,11 @@ export function App({ launchArgs }: AppProps) {
   });
   const [customTheme, setCustomTheme] = useState(initialSettings.current.ui.customTheme);
   const [screen, setScreen] = useState<Screen>("main");
+  const [pendingImport, setPendingImport] = useState<{
+    prompt: string;
+    files: PendingImportFile[];
+    attachmentsDir: string;
+  } | null>(null);
   const [registryNonce, setRegistryNonce] = useState(0);
   const screenRef = useRef<Screen>("main");
   screenRef.current = screen;
@@ -353,16 +368,7 @@ export function App({ launchArgs }: AppProps) {
   const [conversationChars, setConversationChars] = useState(0);
   const [modelCapabilities, setModelCapabilities] = useState<CodexModelCapabilities | null>(null);
   const [modelCapabilitiesBusy, setModelCapabilitiesBusy] = useState(false);
-  // Seed model specs from the persistent on-disk cache so the footer shows
-  // real context-window numbers on startup without waiting for a network
-  // fetch. Background refresh updates the cache and state as soon as a new
-  // spec is verified.
-  const initialModelSpecCache = useRef<Partial<Record<string, VerifiedModelSpec>>>(loadModelSpecCache());
-  const modelSpecService = useMemo(() => createModelSpecService(), []);
-  const [modelSpecs, setModelSpecs] = useState<Partial<Record<string, ModelSpec>>>(
-    () => ({ ...initialModelSpecCache.current }),
-  );
-  const [modelSpecRefreshes, setModelSpecRefreshes] = useState<Record<string, true>>({});
+  const [activeContextMetadata, setActiveContextMetadata] = useState<ModelContextMetadata | null>(null);
   const { stdout } = useStdout();
   const { stdin } = useStdin();
   const terminalControl = useMemo(() => createTerminalModeController((chunk) => stdout.write(chunk)), [stdout]);
@@ -455,18 +461,21 @@ export function App({ launchArgs }: AppProps) {
       currentModel: model,
       currentReasoning: reasoningLevel,
     });
-  }, [launchArgs.modelOverride, model, providerWorkspaceConfig.activeRoute, reasoningLevel]);
+  }, [launchArgs.modelOverride, model, providerWorkspaceConfig.activeRoute, reasoningLevel, registryNonce]);
   const activeProviderRuntime = useMemo(
     () => getProviderRuntime(activeProviderRoute.providerId),
     [activeProviderRoute.providerId],
   );
   const providerRegistry = useMemo(
-    () => buildProviderRegistry({
-      activeModel: model,
-      workspaceConfig: providerWorkspaceConfig,
-      diagnostics: providerDiagnosticsRef.current,
-      routeErrors: providerRouteErrorsRef.current,
-    }),
+    () => {
+      setLocalProviderConfig(providerWorkspaceConfig.providers?.local);
+      return buildProviderRegistry({
+        activeModel: model,
+        workspaceConfig: providerWorkspaceConfig,
+        diagnostics: providerDiagnosticsRef.current,
+        routeErrors: providerRouteErrorsRef.current,
+      });
+    },
     // registryNonce is intentionally included: startup probes and post-validation
     // updates mutate providerDiagnosticsRef/providerRouteErrorsRef (refs, not state)
     // and then increment the nonce to trigger a re-read of those refs.
@@ -595,6 +604,29 @@ export function App({ launchArgs }: AppProps) {
         line = lines.join("\n");
       }
 
+      if (diagnostics && provider.id === "local") {
+        const lines = [line];
+        lines.push(`    Base URL: ${diagnostics.baseUrl ?? "unknown"}`);
+        lines.push(`    Selected model: ${diagnostics.selectedModel ?? "none"}`);
+        lines.push(`    Models: ${diagnostics.discoveredModels || "none"}`);
+        lines.push(`    Endpoint check: ${diagnostics.endpointCheckResult ?? "unknown"}`);
+        if (diagnostics.errorMessage) lines.push(`    Error: ${diagnostics.errorMessage}`);
+        line = lines.join("\n");
+      }
+
+      if (diagnostics?.contextSource || diagnostics?.contextError) {
+        const contextLength = typeof diagnostics.contextLength === "number"
+          ? diagnostics.contextLength
+          : null;
+        const lines = line.split("\n");
+        lines.push(`    Context: ${formatContextLength(contextLength)}`);
+        lines.push(`    Context source: ${diagnostics.contextSource ?? "unknown"}`);
+        lines.push(`    Context confidence: ${diagnostics.contextConfidence ?? "unknown"}`);
+        if (diagnostics.contextRawField) lines.push(`    Context field: ${diagnostics.contextRawField}`);
+        if (diagnostics.contextError) lines.push(`    Context reason: ${diagnostics.contextError}`);
+        line = lines.join("\n");
+      }
+
       return line;
     });
 
@@ -626,6 +658,10 @@ export function App({ launchArgs }: AppProps) {
     () => findModelCapability(activeRouteModelCapabilities, activeProviderRoute.modelId),
     [activeProviderRoute.modelId, activeRouteModelCapabilities],
   );
+  const currentModelRawMetadataKey = useMemo(
+    () => currentModelCapability?.raw === undefined ? "" : JSON.stringify(currentModelCapability.raw),
+    [currentModelCapability?.raw],
+  );
   const currentReasoningCapabilities = currentModelCapability?.supportedReasoningLevels ?? [];
   const currentReasoningSourceLabel = useMemo(() => {
     if (activeProviderRoute.providerId !== "anthropic") return null;
@@ -634,6 +670,44 @@ export function App({ launchArgs }: AppProps) {
     if (raw?.source === "settings" || raw?.source === "config") return "From Claude settings";
     return raw?.effortVerified === false ? "Fallback defaults; unverified" : "Fallback defaults";
   }, [activeProviderRoute.providerId, currentModelCapability]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const providerId = activeProviderRoute.providerId;
+    const modelId = activeProviderRoute.modelId;
+    const rawMetadata = currentModelCapability?.raw;
+
+    void resolveModelContextLength({
+      providerId,
+      modelId,
+      providerConfig: providerWorkspaceConfig.providers?.[providerId],
+      rawMetadata,
+    }).then((metadata) => {
+      if (cancelled || !isMountedRef.current) return;
+      setActiveContextMetadata(metadata);
+
+      const contextSource = metadata.source === "known-registry" ? "registry" : metadata.source;
+      providerDiagnosticsRef.current[providerId] = {
+        ...(providerDiagnosticsRef.current[providerId] ?? {}),
+        contextLength: metadata.contextLength,
+        contextSource,
+        contextConfidence: metadata.confidence,
+        contextRawField: metadata.rawField ?? null,
+        contextError: metadata.error ?? null,
+      };
+      setRegistryNonce((current) => current + 1);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeProviderRoute.modelId,
+    activeProviderRoute.providerId,
+    currentModelRawMetadataKey,
+    providerWorkspaceConfig.providers,
+  ]);
+
   const workspaceLabel = useMemo(
     () => formatWorkspaceDisplayPath(workspaceRoot, workspaceDisplayMode),
     [workspaceDisplayMode, workspaceRoot],
@@ -671,15 +745,15 @@ export function App({ launchArgs }: AppProps) {
   );
 
   const currentModelSpec = useMemo<ModelSpec>(() => {
-    const cachedSpec = modelSpecs[model];
-    if (cachedSpec && cachedSpec.status === "verified") {
-      return cachedSpec;
-    }
-    return resolveModelSpec(model, {
-      cache: modelSpecs as Partial<Record<string, VerifiedModelSpec>>,
-      refreshInFlight: Boolean(modelSpecRefreshes[model]),
+    return contextMetadataToModelSpec(activeContextMetadata ?? {
+      providerId: activeProviderRoute.providerId,
+      modelId: activeProviderRoute.modelId,
+      contextLength: null,
+      source: "unknown",
+      confidence: "unknown",
+      error: "Context length unavailable for this model.",
     });
-  }, [model, modelSpecRefreshes, modelSpecs]);
+  }, [activeContextMetadata, activeProviderRoute.modelId, activeProviderRoute.providerId]);
 
   const hasUserPrompt = useMemo(
     () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
@@ -920,6 +994,9 @@ export function App({ launchArgs }: AppProps) {
             runtime: geminiCommandPath ? { ...options.runtime, geminiCommandPath } : options.runtime,
             workspaceRoot: options.workspaceRoot,
             projectInstructions: options.projectInstructions,
+            localConfig: activeProviderRoute.providerId === "local"
+              ? providerWorkspaceConfig.providers?.local
+              : undefined,
           }, handlers) ?? (() => undefined);
         }
         : undefined,
@@ -1048,37 +1125,6 @@ export function App({ launchArgs }: AppProps) {
     setScreen("main");
     focusManager.focus(FOCUS_IDS.composer);
   }, [focusManager, getInputDebugSnapshot]);
-
-  // Lazily refresh the verified spec for the currently selected model. The
-  // cache + static registry already cover known models synchronously, so the
-  // footer is never stuck on "unknown" for supported models. This effect just
-  // keeps the persistent cache warm. Runs at most once per model per session.
-  // Only applies to OpenAI — Claude/Gemini specs come from KNOWN_MODEL_SPECS
-  // and there is no equivalent doc-scraping endpoint for those providers.
-  useEffect(() => {
-    if (activeProviderRoute.providerId !== "openai") return;
-    const existing = modelSpecs[model];
-    if (existing && existing.status === "verified") {
-      return;
-    }
-    if (modelSpecRefreshes[model]) {
-      return;
-    }
-    setModelSpecRefreshes((prev) => ({ ...prev, [model]: true }));
-    void modelSpecService.refreshSpec(model).then((spec) => {
-      if (!isMountedRef.current) return;
-      setModelSpecs((prev) => {
-        const current = prev[model];
-        if (current?.status === "verified" && spec.status !== "verified") {
-          return prev;
-        }
-        if (areModelSpecsEqual(current, spec)) {
-          return prev;
-        }
-        return { ...prev, [model]: spec };
-      });
-    });
-  }, [activeProviderRoute.providerId, model, modelSpecRefreshes, modelSpecService, modelSpecs]);
 
   const appendStaticEvent = useCallback((event: TimelineEvent) => {
     dispatchSession({ type: "APPEND_STATIC_EVENT", event });
@@ -1250,6 +1296,30 @@ export function App({ launchArgs }: AppProps) {
       setRegistryNonce((n) => n + 1);
     })();
   // workspaceRoot is stable for the session lifetime; this runs exactly once.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceRoot]);
+
+  // Probe local OpenAI-compatible servers such as LM Studio at startup so the
+  // provider picker can show actual availability and loaded model IDs.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const result = await checkLocalProvider({ override: providerWorkspaceConfig.providers?.local });
+        if (result.diagnostics) {
+          providerDiagnosticsRef.current["local"] = result.diagnostics as Record<string, string | number | boolean | null>;
+        }
+        if (result.status !== "ready") {
+          providerRouteErrorsRef.current["local"] = result.message ?? "Local provider unavailable.";
+        } else {
+          delete providerRouteErrorsRef.current["local"];
+        }
+      } catch {
+        // Best-effort probe — failures are surfaced only when the user activates the route.
+      }
+      setRegistryNonce((n) => n + 1);
+    })();
+  // workspaceRoot is stable for the session lifetime; local provider config is
+  // loaded before this first startup probe.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceRoot]);
 
@@ -1538,6 +1608,7 @@ export function App({ launchArgs }: AppProps) {
         workspaceRoot,
         geminiCommandPath: providerWorkspaceConfig.providers?.google?.geminiCommandPath ?? runtimeConfig.geminiCommandPath,
         claudeCommandPath: providerWorkspaceConfig.providers?.anthropic?.claudeCommandPath,
+        localConfig: providerWorkspaceConfig.providers?.local,
       });
       if (validation.status !== "ready") {
         appendSystemEvent(
@@ -1637,6 +1708,7 @@ export function App({ launchArgs }: AppProps) {
           workspaceRoot,
           geminiCommandPath: providerWorkspaceConfig.providers?.google?.geminiCommandPath ?? runtimeConfig.geminiCommandPath,
           claudeCommandPath: providerWorkspaceConfig.providers?.anthropic?.claudeCommandPath,
+          localConfig: providerWorkspaceConfig.providers?.local,
         });
         if (validation.diagnostics) {
           providerDiagnosticsRef.current[providerId] = validation.diagnostics as Record<string, string | number | boolean | null>;
@@ -1903,7 +1975,19 @@ export function App({ launchArgs }: AppProps) {
     }
 
     setScreen("provider-picker");
-  }, [appendSystemEvent, busy]);
+    void checkLocalProvider({ override: providerWorkspaceConfig.providers?.local }).then((result) => {
+      if (!isMountedRef.current) return;
+      if (result.diagnostics) {
+        providerDiagnosticsRef.current["local"] = result.diagnostics as Record<string, string | number | boolean | null>;
+      }
+      if (result.status === "ready") {
+        delete providerRouteErrorsRef.current["local"];
+      } else {
+        providerRouteErrorsRef.current["local"] = result.message ?? "Local provider unavailable.";
+      }
+      setRegistryNonce((n) => n + 1);
+    }).catch(() => undefined);
+  }, [appendSystemEvent, busy, providerWorkspaceConfig.providers]);
 
   const setWorkspaceDefaultProviderWithNotice = useCallback((providerId: ProviderId) => {
     const provider = findProvider(providerRegistry, providerId);
@@ -1957,6 +2041,40 @@ export function App({ launchArgs }: AppProps) {
           appendSystemEvent("Provider route unavailable", message);
           providerRouteErrorsRef.current[providerId] = message;
         }
+        return;
+      }
+
+      if (providerId === "local") {
+        appendSystemEvent("Model discovery", "Refreshing LM Studio metadata...");
+        void checkLocalProvider({ override: providerWorkspaceConfig.providers?.local }).then((validation) => {
+          if (!isMountedRef.current) return;
+          if (validation.diagnostics) {
+            providerDiagnosticsRef.current["local"] = validation.diagnostics as Record<string, string | number | boolean | null>;
+          }
+          if (validation.status !== "ready") {
+            const message = validation.message ?? "Local provider unavailable.";
+            providerRouteErrorsRef.current["local"] = message;
+            appendSystemEvent("Provider route unavailable", message);
+            setRegistryNonce((n) => n + 1);
+            return;
+          }
+          delete providerRouteErrorsRef.current["local"];
+          const selectedModel = typeof validation.diagnostics?.selectedModel === "string" && validation.diagnostics.selectedModel.trim()
+            ? validation.diagnostics.selectedModel.trim()
+            : provider.currentModel;
+          setRegistryNonce((n) => n + 1);
+          intendedInputModeRef.current = "chat/input";
+          intendedFocusTargetRef.current = FOCUS_IDS.composer;
+          setScreen("main");
+          void setModelAndReasoningWithNotice(
+            selectedModel as AvailableModel,
+            (providerWorkspaceConfig.providers?.local?.currentReasoning ?? activeProviderRoute.reasoning ?? reasoningLevel) as ReasoningLevel,
+            "local",
+          );
+        }).catch((error) => {
+          if (!isMountedRef.current) return;
+          appendErrorEvent("Local refresh failed", error instanceof Error ? error.message : String(error));
+        });
         return;
       }
 
@@ -2037,7 +2155,18 @@ export function App({ launchArgs }: AppProps) {
           appendSystemEvent("Model discovery", providerId === "anthropic"
             ? "Refreshing Claude capabilities..."
             : `Refreshing models for ${provider.displayName}...`);
-          void runtime.refreshModels({ cwd: workspaceRoot }).then((discovery) => {
+          void runtime.refreshModels({
+            cwd: workspaceRoot,
+            localConfig: providerId === "local" ? providerWorkspaceConfig.providers?.local : undefined,
+          }).then((discovery) => {
+            if (discovery.diagnostics) {
+              providerDiagnosticsRef.current[providerId] = discovery.diagnostics as Record<string, string | number | boolean | null>;
+            }
+            if (discovery.status === "ready") {
+              delete providerRouteErrorsRef.current[providerId];
+            } else if (discovery.message) {
+              providerRouteErrorsRef.current[providerId] = discovery.message;
+            }
             appendSystemEvent(
               "Model discovery",
               discovery.status === "ready"
@@ -2060,12 +2189,36 @@ export function App({ launchArgs }: AppProps) {
     }
 
     if (action === "run-diagnostics") {
-      if (providerId !== "google") {
+      if (providerId !== "google" && providerId !== "local") {
         appendErrorEvent("Provider diagnostics unavailable", `Diagnostics are not implemented for ${provider.displayName}.`);
         return;
       }
 
       setScreen("main");
+      if (providerId === "local") {
+        appendSystemEvent("Local diagnostics", "Running Local provider diagnostics...");
+        void runLocalDiagnostics({
+          localConfig: providerWorkspaceConfig.providers?.local,
+        }).then((message) => {
+          if (!isMountedRef.current) return;
+          const discovery = discoverProviderModels("local");
+          if (discovery.diagnostics) {
+            providerDiagnosticsRef.current["local"] = discovery.diagnostics as Record<string, string | number | boolean | null>;
+          }
+          if (discovery.status === "ready") {
+            delete providerRouteErrorsRef.current["local"];
+          } else if (discovery.message) {
+            providerRouteErrorsRef.current["local"] = discovery.message;
+          }
+          appendSystemEvent("Local diagnostics", message);
+          setRegistryNonce((n) => n + 1);
+        }).catch((error) => {
+          if (!isMountedRef.current) return;
+          appendErrorEvent("Local diagnostics failed", error instanceof Error ? error.message : String(error));
+        });
+        return;
+      }
+
       appendSystemEvent("Gemini diagnostics", "Running Gemini diagnostics...");
       const geminiCommandPath = providerWorkspaceConfig.providers?.google?.geminiCommandPath ?? runtimeConfig.geminiCommandPath;
       void runGeminiDiagnostics({
@@ -3300,6 +3453,27 @@ export function App({ launchArgs }: AppProps) {
     workspaceRoot,
   ]);
 
+  const handleImportConfirm = useCallback(async () => {
+    if (!pendingImport) return;
+    const replacements: Array<{ rawPath: string; workspaceRelativePath: string }> = [];
+    for (const file of pendingImport.files) {
+      const destPath = await importExternalFile(file.srcPath, pendingImport.attachmentsDir);
+      const relPath = path.relative(workspaceRoot, destPath).replace(/\\/g, "/");
+      replacements.push({ rawPath: file.rawPath, workspaceRelativePath: relPath });
+    }
+    const rewrittenPrompt = rewritePromptWithImportedPaths(pendingImport.prompt, replacements);
+    setPendingImport(null);
+    setScreen("main");
+    startPromptRun(rewrittenPrompt, rewrittenPrompt, { submitTiming: createPromptRunTiming(), commitPrompt: true });
+  }, [pendingImport, workspaceRoot, startPromptRun]);
+
+  const handleImportCancel = useCallback(() => {
+    if (!pendingImport) return;
+    dispatchSession({ type: "SET_INPUT", value: pendingImport.prompt, cursor: pendingImport.prompt.length });
+    setPendingImport(null);
+    setScreen("main");
+  }, [pendingImport, dispatchSession]);
+
   const runPlanGeneration = useCallback((
     state: Extract<PlanFlowState, { kind: "generating" }>,
     displayPrompt: string,
@@ -3864,10 +4038,27 @@ export function App({ launchArgs }: AppProps) {
     }
 
     // Validate workspace access for normal prompts
-    const workspaceGuardMessage = getPromptWorkspaceGuardMessage(value, workspaceRoot, allowedWritableRoots);
-    if (workspaceGuardMessage) {
-      appendErrorEvent("Workspace boundary", workspaceGuardMessage);
-      return;
+    const outsideViolations = findOutsideWorkspacePaths(value, workspaceRoot, allowedWritableRoots);
+    if (outsideViolations.length > 0) {
+      if (runtimeConfig.policy.allowExternalFileImport) {
+        const attachmentsDir = path.isAbsolute(runtimeConfig.policy.attachmentDir)
+          ? runtimeConfig.policy.attachmentDir
+          : path.join(workspaceRoot, runtimeConfig.policy.attachmentDir);
+        const importFiles: PendingImportFile[] = outsideViolations.map((v) => ({
+          srcPath: v.normalizedPath,
+          rawPath: v.rawPath,
+          destFilename: path.basename(v.normalizedPath),
+          isImage: isImageFile(v.normalizedPath),
+        }));
+        setPendingImport({ prompt: value, files: importFiles, attachmentsDir });
+        setScreen("import-confirmation");
+        return;
+      }
+      const workspaceGuardMessage = getPromptWorkspaceGuardMessage(value, workspaceRoot, allowedWritableRoots);
+      if (workspaceGuardMessage) {
+        appendErrorEvent("Workspace boundary", workspaceGuardMessage);
+        return;
+      }
     }
 
     // Submit to provider or plan mode
@@ -3946,6 +4137,9 @@ export function App({ launchArgs }: AppProps) {
       if (activeProviderRoute.modelSelection.kind === "auto") {
         return `auto ${activeProviderRoute.modelSelection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"}`;
       }
+    }
+    if (activeProviderRoute.providerId === "local") {
+      return activeProviderRoute.modelId;
     }
     return model;
   }, [
@@ -4332,6 +4526,18 @@ export function App({ launchArgs }: AppProps) {
                 values={currentUserSettings}
                 onSave={(values) => saveSettingsFromPanel(values as UserSettingValues)}
                 onCancel={() => setScreen("main")}
+              />
+            )}
+
+            {screen === "import-confirmation" && pendingImport && (
+              <AttachmentImportPanel
+                focusId={FOCUS_IDS.importConfirmationPanel}
+                files={pendingImport.files}
+                attachmentsDir={pendingImport.attachmentsDir}
+                workspaceRoot={workspaceRoot}
+                modelSupportsVision={activeRouteProvider?.capabilityProfile?.supportsVision ?? null}
+                onConfirm={() => { void handleImportConfirm(); }}
+                onCancel={handleImportCancel}
               />
             )}
           </>

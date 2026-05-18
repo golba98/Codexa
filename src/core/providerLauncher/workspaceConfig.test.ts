@@ -5,6 +5,7 @@ import { join } from "path";
 import test from "node:test";
 import { buildProviderRegistry } from "./registry.js";
 import { resetGeminiRouteValidationCacheForTests } from "../providerRuntime/gemini.js";
+import { checkLocalProvider, resetLocalProviderStateForTests } from "../providerRuntime/local.js";
 import {
   getProviderWorkspaceConfigFile,
   loadProviderWorkspaceConfig,
@@ -64,6 +65,10 @@ test("parses provider workspace config from Codexa-owned JSON", () => {
       local: {
         current_model: "llama",
         current_reasoning: "medium",
+        type: "openai-compatible",
+        base_url: "http://localhost:1234/v1",
+        api_key: "lm-studio",
+        default_model: "llama",
         command: "ollama",
       },
       unknown: {
@@ -82,6 +87,10 @@ test("parses provider workspace config from Codexa-owned JSON", () => {
   assert.deepEqual(config.providers?.local, {
     currentModel: "llama",
     currentReasoning: "medium",
+    type: "openai-compatible",
+    baseUrl: "http://localhost:1234/v1",
+    apiKey: "lm-studio",
+    defaultModel: "llama",
     command: "ollama",
   });
   assert.equal("unknown" in (config.providers ?? {}), false);
@@ -352,6 +361,106 @@ test("Codex codexCommandPath round-trips through serialize/parse", () => {
   });
 });
 
+test("Local OpenAI-compatible config round-trips through serialize/parse", () => {
+  const config = parseProviderWorkspaceConfig({
+    providers: {
+      local: {
+        enabled: true,
+        type: "openai-compatible",
+        base_url: "http://localhost:1234/v1",
+        api_key: "lm-studio",
+        pinned_model: "qwen/qwen3.6-27b",
+        default_model: "google/gemma-4-26b-a4b",
+        models: {
+          "google/gemma-4-26b-a4b": {
+            contextLength: 8192,
+          },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(config.providers?.local, {
+    enabled: true,
+    type: "openai-compatible",
+    baseUrl: "http://localhost:1234/v1",
+    apiKey: "lm-studio",
+    pinnedModel: "qwen/qwen3.6-27b",
+    defaultModel: "google/gemma-4-26b-a4b",
+    models: {
+      "google/gemma-4-26b-a4b": {
+        contextLength: 8192,
+      },
+    },
+  });
+  assert.deepEqual(serializeProviderWorkspaceConfig(config).providers, {
+    local: {
+      enabled: true,
+      type: "openai-compatible",
+      base_url: "http://localhost:1234/v1",
+      api_key: "lm-studio",
+      pinned_model: "qwen/qwen3.6-27b",
+      default_model: "google/gemma-4-26b-a4b",
+      models: {
+        "google/gemma-4-26b-a4b": {
+          contextLength: 8192,
+        },
+      },
+    },
+  });
+});
+
+test("provider model context length config rejects invalid values", () => {
+  const config = parseProviderWorkspaceConfig({
+    providers: {
+      local: {
+        models: {
+          zero: { contextLength: 0 },
+          negative: { contextLength: -1 },
+          decimal: { contextLength: 8192.5 },
+          text: { contextLength: "8192" },
+          valid: { context_length: 32768 },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(config.providers?.local?.models, {
+    valid: {
+      contextLength: 32768,
+    },
+  });
+});
+
+test("setProviderActiveRoute persists Local routes after endpoint discovery", async () => {
+  resetLocalProviderStateForTests();
+  try {
+    await checkLocalProvider({
+      fetchImpl: (async (input) => {
+        if (String(input).includes("/api/v0/")) {
+          return new Response(null, { status: 404 });
+        }
+        return new Response(JSON.stringify({
+          data: [{ id: "google/gemma-4-26b-a4b" }],
+        }), { status: 200 });
+      }) as typeof fetch,
+    });
+    const config = setProviderActiveRoute({}, {
+      providerId: "local",
+      modelId: "google/gemma-4-26b-a4b",
+      backendKind: "local-openai-compatible",
+    });
+
+    assert.deepEqual(config.activeRoute, {
+      providerId: "local",
+      modelId: "google/gemma-4-26b-a4b",
+      backendKind: "local-openai-compatible",
+    });
+  } finally {
+    resetLocalProviderStateForTests();
+  }
+});
+
 test("Gemini workspace config normalizes legacy flash model IDs to preview", () => {
   const config = parseProviderWorkspaceConfig({
     activeRoute: {
@@ -376,6 +485,86 @@ test("Gemini workspace config normalizes legacy flash model IDs to preview", () 
     modelId: "gemini-3-flash-preview",
   });
   assert.equal(config.providers?.google?.currentModel, "gemini-3-flash-preview");
+});
+
+test("Local model capability fields round-trip through serialize/parse", () => {
+  const config = parseProviderWorkspaceConfig({
+    providers: {
+      local: {
+        enabled: true,
+        type: "openai-compatible",
+        base_url: "http://localhost:1234/v1",
+        api_key: "lm-studio",
+        default_model: "test-model",
+        models: {
+          "test-model": {
+            contextLength: 8192,
+            supportsToolCalls: false,
+            supportsStreaming: true,
+            supportsSystemPrompt: true,
+            maxOutputTokens: 4096,
+          },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(config.providers?.local?.models?.["test-model"], {
+    contextLength: 8192,
+    supportsToolCalls: false,
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
+    maxOutputTokens: 4096,
+  });
+
+  const serialized = serializeProviderWorkspaceConfig(config);
+  const reparsed = parseProviderWorkspaceConfig(serialized);
+  assert.deepEqual(reparsed.providers?.local?.models?.["test-model"], {
+    contextLength: 8192,
+    supportsToolCalls: false,
+    supportsStreaming: true,
+    supportsSystemPrompt: true,
+    maxOutputTokens: 4096,
+  });
+});
+
+test("Local model capability boolean string values are rejected", () => {
+  const config = parseProviderWorkspaceConfig({
+    providers: {
+      local: {
+        models: {
+          "bad-model": {
+            supportsStreaming: "true",
+            supportsToolCalls: 1,
+            supportsSystemPrompt: null,
+          },
+        },
+      },
+    },
+  });
+
+  // None of the invalid values should create a model entry
+  assert.equal(config.providers?.local?.models?.["bad-model"], undefined);
+});
+
+test("Local model maxOutputTokens: 4096 round-trips; invalid values are rejected", () => {
+  const config = parseProviderWorkspaceConfig({
+    providers: {
+      local: {
+        models: {
+          valid: { max_output_tokens: 4096 },
+          zero: { maxOutputTokens: 0 },
+          negative: { max_output_tokens: -512 },
+          decimal: { maxOutputTokens: 1024.5 },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(config.providers?.local?.models?.valid, { maxOutputTokens: 4096 });
+  assert.equal(config.providers?.local?.models?.zero, undefined);
+  assert.equal(config.providers?.local?.models?.negative, undefined);
+  assert.equal(config.providers?.local?.models?.decimal, undefined);
 });
 
 test("setProviderActiveRoute persists Gemini routes when GOOGLE_API_KEY is configured", () => {

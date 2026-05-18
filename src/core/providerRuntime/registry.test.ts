@@ -9,6 +9,7 @@ import {
 } from "./registry.js";
 import { resetGeminiRouteValidationCacheForTests } from "./gemini.js";
 import { resetAnthropicRouteValidationCacheForTests } from "./anthropic.js";
+import { checkLocalProvider, resetLocalProviderStateForTests } from "./local.js";
 
 test("google runtime exposes configured Gemini models for in-Codexa routing", () => {
   const runtime = getProviderRuntime("google");
@@ -90,23 +91,29 @@ test("active route resolution preserves routable anthropic routes", () => {
   });
 });
 
-test("active route resolution falls back to OpenAI when provider is launch-only", () => {
+test("active route resolution preserves routable local routes", async () => {
+  resetLocalProviderStateForTests();
+  await checkLocalProvider({
+    fetchImpl: (async () => new Response(JSON.stringify({
+      data: [{ id: "llama-local" }],
+    }), { status: 200 })) as typeof fetch,
+  });
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "local",
       modelId: "llama-local",
-      backendKind: "unavailable",
+      backendKind: "local-openai-compatible",
     },
     currentModel: "gpt-5.4",
     currentReasoning: "high",
   });
 
   assert.deepEqual(route, {
-    providerId: "openai",
-    modelId: "gpt-5.4",
-    backendKind: "codex-cli-auth",
-    reasoning: "high",
+    providerId: "local",
+    modelId: "llama-local",
+    backendKind: "local-openai-compatible",
   });
+  resetLocalProviderStateForTests();
 });
 
 // ─── CLI --model override precedence ─────────────────────────────────────────
@@ -204,4 +211,23 @@ test("google route configuration is gated by Gemini API key or validated headles
     if (originalGemini) process.env.GEMINI_API_KEY = originalGemini;
     if (originalGoogle) process.env.GOOGLE_API_KEY = originalGoogle;
   }
+});
+
+test("local route configuration is gated by endpoint model discovery", async () => {
+  resetLocalProviderStateForTests();
+  assert.equal(isProviderRouteConfigured("local"), false);
+
+  await checkLocalProvider({
+    fetchImpl: (async (input) => {
+      if (String(input).includes("/api/v0/")) {
+        return new Response(null, { status: 404 });
+      }
+      return new Response(JSON.stringify({
+        data: [{ id: "google/gemma-4-26b-a4b" }],
+      }), { status: 200 });
+    }) as typeof fetch,
+  });
+
+  assert.equal(isProviderRouteConfigured("local"), true);
+  resetLocalProviderStateForTests();
 });

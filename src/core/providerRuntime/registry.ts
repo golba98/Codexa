@@ -1,8 +1,9 @@
 import { codexSubprocessProvider } from "../providers/codexSubprocess.js";
 import type { BackendRunHandlers } from "../providers/types.js";
-import type { ProviderId, ProviderActiveRoute } from "../providerLauncher/types.js";
+import type { ProviderId, ProviderActiveRoute, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
 import { anthropicRuntime } from "./anthropic.js";
 import { geminiRuntime } from "./gemini.js";
+import { localRuntime } from "./local.js";
 import {
   ANTHROPIC_FALLBACK_MODELS,
   GEMINI_DEFAULT_MODEL_ID,
@@ -72,7 +73,7 @@ const PROVIDER_RUNTIMES: Record<ProviderId, ProviderRuntime> = {
   openai: openAiRuntime,
   anthropic: anthropicRuntime,
   google: geminiRuntime,
-  local: unavailableRuntime("local", "Local"),
+  local: localRuntime,
 };
 
 export function getProviderRuntime(providerId: ProviderId): ProviderRuntime {
@@ -102,6 +103,7 @@ export async function validateProviderRouteActivation(options: {
   workspaceRoot: string;
   geminiCommandPath?: string | null;
   claudeCommandPath?: string | null;
+  localConfig?: ProviderWorkspaceOverride | null;
 }): Promise<ProviderRouteValidationResult> {
   const runtime = getProviderRuntime(options.route.providerId);
   if (!runtime.routeAvailable) {
@@ -165,6 +167,14 @@ export function resolveActiveProviderRoute(options: {
       route.modelId = resolveGeminiModelId(route.modelSelection);
     } else if (route.providerId === "google") {
       route.modelId = normalizeGeminiModelId(route.modelId);
+    } else if (route.providerId === "local") {
+      const discovery = discoverProviderModels("local");
+      const selectedModel = typeof discovery.diagnostics?.selectedModel === "string"
+        ? discovery.diagnostics.selectedModel.trim()
+        : "";
+      if (discovery.status === "ready" && selectedModel) {
+        route.modelId = selectedModel;
+      }
     }
 
     return route;
@@ -184,6 +194,10 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
   }
   if (providerId === "google") {
     return GEMINI_FALLBACK_MODELS[0]?.modelId ?? GEMINI_DEFAULT_MODEL_ID;
+  }
+  if (providerId === "local") {
+    const discovery = discoverProviderModels("local");
+    return discovery.models[0]?.modelId ?? "Local default";
   }
   return currentOpenAiModel;
 }

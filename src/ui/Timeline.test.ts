@@ -15,6 +15,7 @@ import {
   endTimelineViewport,
   findAnchorItem,
   homeTimelineViewport,
+  isNearBottom,
   pageDownTimelineViewport,
   pageUpTimelineViewport,
   parseTimelineNavigationInput,
@@ -1964,4 +1965,103 @@ test("buildTimelineSnapshot reuses cached rows for completed entries on repeated
     assert.ok(a && b, `item ${i} must exist in both snapshots`);
     assert.equal(a.rowCount, b.rowCount, `item ${i} rowCount must match`);
   }
+});
+
+// ─── Scroll-jump prevention ───────────────────────────────────────────────────
+
+test("syncTimelineViewport with empty snapshot preserves frozen scroll offset", () => {
+  // User scrolled to anchorRow=50 in a 100-row transcript.
+  const snapshot = createSnapshot(Array.from({ length: 100 }, () => 1));
+  const frozen: TimelineViewportState = {
+    anchorRow: 50,
+    followTail: false,
+    unseenItems: 0,
+    unseenRows: 0,
+    frozenSnapshot: snapshot,
+  };
+  const emptySnapshot = createSnapshot([]);
+
+  // Transient empty snapshot must NOT reset position to row 0.
+  const result = syncTimelineViewport(frozen, emptySnapshot);
+  assert.equal(result.followTail, false, "must remain detached");
+  assert.equal(result.anchorRow, 50, "anchor row must be preserved");
+});
+
+test("syncTimelineViewport with empty snapshot resets follow-tail viewport to row 0", () => {
+  const snapshot = createSnapshot([10, 10]);
+  const following = createFollowTailViewport(snapshot.totalRows);
+
+  const empty = createSnapshot([]);
+  const result = syncTimelineViewport(following, empty);
+
+  // Follow-tail with empty snapshot is the initial/cold-start state — reset is expected.
+  assert.equal(result.followTail, true);
+  assert.equal(result.anchorRow, 0);
+});
+
+test("isNearBottom returns true when anchorRow is within threshold of tail", () => {
+  assert.equal(isNearBottom(97, 100), true,  "2 rows from tail → near bottom");
+  assert.equal(isNearBottom(96, 100), true,  "3 rows from tail → near bottom (threshold boundary)");
+  assert.equal(isNearBottom(95, 100), false, "4 rows from tail → NOT near bottom");
+  assert.equal(isNearBottom(99, 100), true,  "at tail → near bottom");
+  assert.equal(isNearBottom(0,  0),   true,  "empty content → near bottom");
+});
+
+test("isNearBottom detects proximity correctly across different snapshot sizes", () => {
+  // Large transcript — threshold 3 rows from end
+  assert.equal(isNearBottom(97, 100), true,  "100-row: 3 rows from tail → near bottom");
+  assert.equal(isNearBottom(95, 100), false, "100-row: 5 rows from tail → NOT near bottom");
+
+  // Small transcript — entire content is within threshold
+  assert.equal(isNearBottom(1, 4), true, "4-row: row 1 within threshold of tail");
+  assert.equal(isNearBottom(0, 4), true, "4-row: row 0 within threshold of tail");
+
+  // Edge cases
+  assert.equal(isNearBottom(0, 0), true, "empty content → near bottom");
+  assert.equal(isNearBottom(99, 100), true, "exactly at tail → near bottom");
+});
+
+test("provider-picker style open/close: frozen scroll position survives empty-snapshot transition", () => {
+  // Simulate: user scrolled up, then a panel opens causing a transient snapshot drop,
+  // then panel closes and snapshot restores.
+  const fullSnapshot = createSnapshot(Array.from({ length: 80 }, () => 1));
+
+  // User scrolls to row 40
+  const scrolled = scrollTimelineViewport(
+    createFollowTailViewport(fullSnapshot.totalRows),
+    fullSnapshot,
+    20,
+    -(fullSnapshot.totalRows - 1 - 40), // navigate to anchorRow ~40
+  );
+  assert.equal(scrolled.followTail, false);
+
+  // Panel opens: transient empty snapshot (liveRows excluded)
+  const afterEmpty = syncTimelineViewport(scrolled, createSnapshot([]));
+  assert.equal(afterEmpty.followTail, false, "panel open must not reset scroll");
+  assert.equal(afterEmpty.anchorRow, scrolled.anchorRow, "anchor must be preserved through empty snapshot");
+
+  // Panel closes: snapshot restores
+  const afterRestore = syncTimelineViewport(afterEmpty, fullSnapshot);
+  assert.equal(afterRestore.followTail, false, "scroll must remain detached after restore");
+});
+
+test("response completion does not jump to top when user is scrolled mid-transcript", () => {
+  // User is scrolled to row 20 in a 50-row transcript
+  const snapshot50 = createSnapshot(Array.from({ length: 50 }, () => 1));
+  const browsing: TimelineViewportState = {
+    anchorRow: 20,
+    followTail: false,
+    unseenItems: 0,
+    unseenRows: 0,
+    frozenSnapshot: snapshot50,
+  };
+
+  // Response finalizes: content grows to 80 rows
+  const snapshot80 = createSnapshot(Array.from({ length: 80 }, () => 1));
+  const afterFinalize = syncTimelineViewport(browsing, snapshot80);
+
+  assert.equal(afterFinalize.followTail, false, "must not snap to follow-tail on finalize");
+  assert.equal(afterFinalize.anchorRow, 20, "anchor must remain at row 20");
+  // Unseen rows should reflect new content
+  assert.equal(afterFinalize.unseenRows, 30, "unseen rows = 80 - 50");
 });
