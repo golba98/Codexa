@@ -55,6 +55,68 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
     override.enabled = value.enabled;
   }
 
+  const providerType = value.type;
+  if (providerType === "openai-compatible") {
+    override.type = providerType;
+  }
+
+  const baseUrl = value.baseUrl ?? value.base_url;
+  if (typeof baseUrl === "string" && baseUrl.trim()) {
+    override.baseUrl = baseUrl.trim();
+  }
+
+  const apiKey = value.apiKey ?? value.api_key;
+  if (typeof apiKey === "string" && apiKey.trim()) {
+    override.apiKey = apiKey.trim();
+  }
+
+  const pinnedModel = value.pinnedModel ?? value.pinned_model;
+  if (typeof pinnedModel === "string" && pinnedModel.trim()) {
+    override.pinnedModel = pinnedModel.trim();
+  }
+
+  const defaultModel = value.defaultModel ?? value.default_model;
+  if (typeof defaultModel === "string" && defaultModel.trim()) {
+    override.defaultModel = defaultModel.trim();
+  }
+
+  if (isRecord(value.models)) {
+    const models: Record<string, import("./types.js").ProviderModelWorkspaceOverride> = {};
+    for (const [modelId, modelValue] of Object.entries(value.models)) {
+      if (!modelId.trim() || !isRecord(modelValue)) continue;
+      const entry: import("./types.js").ProviderModelWorkspaceOverride = {};
+
+      const rawContextLength = modelValue.contextLength ?? modelValue.context_length;
+      if (typeof rawContextLength === "number" && Number.isInteger(rawContextLength) && rawContextLength > 0) {
+        entry.contextLength = rawContextLength;
+      }
+
+      const rawMaxOutput = modelValue.maxOutputTokens ?? modelValue.max_output_tokens;
+      if (typeof rawMaxOutput === "number" && Number.isInteger(rawMaxOutput) && rawMaxOutput > 0) {
+        entry.maxOutputTokens = rawMaxOutput;
+      }
+
+      for (const [camelKey, snakeKey] of [
+        ["supportsStreaming", "supports_streaming"],
+        ["supportsToolCalls", "supports_tool_calls"],
+        ["supportsSystemPrompt", "supports_system_prompt"],
+        ["supportsVision", "supports_vision"],
+      ] as const) {
+        const raw = modelValue[camelKey] ?? modelValue[snakeKey];
+        if (typeof raw === "boolean") {
+          (entry as Record<string, unknown>)[camelKey] = raw;
+        }
+      }
+
+      if (Object.keys(entry).length > 0) {
+        models[modelId] = entry;
+      }
+    }
+    if (Object.keys(models).length > 0) {
+      override.models = models;
+    }
+  }
+
   const command = parseLaunchCommand(value.command);
   if (command !== undefined) {
     override.command = command;
@@ -156,6 +218,24 @@ export function serializeProviderWorkspaceConfig(config: ProviderWorkspaceConfig
         ...(override.currentModel !== undefined ? { current_model: override.currentModel } : {}),
         ...(override.currentReasoning !== undefined ? { current_reasoning: override.currentReasoning } : {}),
         ...(override.enabled !== undefined ? { enabled: override.enabled } : {}),
+        ...(override.type !== undefined ? { type: override.type } : {}),
+        ...(override.baseUrl !== undefined ? { base_url: override.baseUrl } : {}),
+        ...(override.apiKey !== undefined ? { api_key: override.apiKey } : {}),
+        ...(override.pinnedModel !== undefined ? { pinned_model: override.pinnedModel } : {}),
+        ...(override.defaultModel !== undefined ? { default_model: override.defaultModel } : {}),
+        ...(override.models !== undefined ? { models: Object.fromEntries(
+          Object.entries(override.models).map(([modelId, model]) => [
+            modelId,
+            {
+              ...(model.contextLength !== undefined ? { contextLength: model.contextLength } : {}),
+              ...(model.maxOutputTokens !== undefined ? { maxOutputTokens: model.maxOutputTokens } : {}),
+              ...(model.supportsStreaming !== undefined ? { supportsStreaming: model.supportsStreaming } : {}),
+              ...(model.supportsToolCalls !== undefined ? { supportsToolCalls: model.supportsToolCalls } : {}),
+              ...(model.supportsSystemPrompt !== undefined ? { supportsSystemPrompt: model.supportsSystemPrompt } : {}),
+              ...(model.supportsVision !== undefined ? { supportsVision: model.supportsVision } : {}),
+            },
+          ]),
+        ) } : {}),
         ...(override.command !== undefined ? { command: serializeLaunchCommand(override.command) } : {}),
         ...(override.claudeCommandPath !== undefined ? { claude_command_path: override.claudeCommandPath } : {}),
         ...(override.geminiCommandPath !== undefined ? { gemini_command_path: override.geminiCommandPath } : {}),

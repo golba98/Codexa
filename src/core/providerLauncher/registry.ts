@@ -15,6 +15,9 @@ import {
   isProviderRouteConfigured,
 } from "../providerRuntime/registry.js";
 import { normalizeGeminiModelId } from "../providerRuntime/models.js";
+import { setLocalProviderConfig } from "../providerRuntime/local.js";
+import { formatContextLength, resolveModelContextLengthCached } from "../providerRuntime/contextMetadata.js";
+import { resolveModelCapabilityProfileCached } from "../providerRuntime/capabilityProfile.js";
 
 const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "google", "local"];
 
@@ -65,11 +68,11 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
     displayName: "Local",
     currentModel: () => "Local default",
     backendType: "local-openai-compatible",
-    routeMode: "launch-only",
+    routeMode: "in-codexa",
     enabled: false,
     launchCommand: null,
     isActiveRoute: false,
-    routeUnavailableReason: "Local in-Codexa routing is not configured yet.",
+    routeUnavailableReason: "Local provider unavailable. Start LM Studio, load a model, and enable the local server.",
   },
 };
 
@@ -105,10 +108,8 @@ function applyOverride(
   const hasConfiguredCommand = launchCommand !== undefined;
   const nextCommand = hasConfiguredCommand ? launchCommand : provider.launchCommand;
   const nextEnabled = typeof override.enabled === "boolean"
-    ? override.enabled
-    : provider.id === "local" && hasConfiguredCommand && nextCommand !== null
-      ? true
-      : provider.enabled;
+    ? provider.id === "local" ? provider.enabled && override.enabled : override.enabled
+    : provider.enabled;
 
   const overrideModel = typeof override.currentModel === "string" && override.currentModel.trim()
     ? override.currentModel.trim()
@@ -116,7 +117,7 @@ function applyOverride(
 
   return {
     ...provider,
-    currentModel: overrideModel
+    currentModel: overrideModel && provider.id !== "local"
       ? provider.id === "google" ? normalizeGeminiModelId(overrideModel) : overrideModel
       : provider.currentModel,
     enabled: nextEnabled,
@@ -146,6 +147,9 @@ export function buildProviderRegistry(options: {
   const activeRouteProviderId = getActiveRouteProviderId(options.workspaceConfig);
 
   return PROVIDER_ORDER.map((id) => {
+    if (id === "local") {
+      setLocalProviderConfig(options.workspaceConfig?.providers?.local);
+    }
     const defaults = DEFAULT_PROVIDERS[id];
     const runtime = getProviderRuntime(id);
     const discovery = runtime.discoverModels();
@@ -174,19 +178,48 @@ export function buildProviderRegistry(options: {
       }
     }
 
+    if (id === "local") {
+      const selectedModel = typeof discovery.diagnostics?.selectedModel === "string" && discovery.diagnostics.selectedModel.trim()
+        ? discovery.diagnostics.selectedModel.trim()
+        : discovery.models[0]?.modelId;
+      if (selectedModel) {
+        currentModelLabel = selectedModel;
+      }
+    }
+
+    const rawMetadataForModel = discovery.models.find((model) => model.modelId === currentModelLabel)?.raw;
+    const contextMetadata = resolveModelContextLengthCached({
+      providerId: id,
+      modelId: currentModelLabel,
+      providerConfig: options.workspaceConfig?.providers?.[id],
+      rawMetadata: rawMetadataForModel,
+    });
+    const contextSource = contextMetadata.source === "known-registry" ? "registry" : contextMetadata.source;
+    const capabilityProfile = resolveModelCapabilityProfileCached({
+      providerId: id,
+      modelId: currentModelLabel,
+      providerConfig: options.workspaceConfig?.providers?.[id],
+      rawMetadata: rawMetadataForModel,
+    });
+
     const provider: ProviderConfig = {
       id,
       displayName: defaults.displayName,
       currentModel: currentModelLabel,
+      contextLengthLabel: formatContextLength(contextMetadata.contextLength),
+      contextLengthSource: contextSource,
+      capabilityProfile,
       backendType: discovery.backendKind as ProviderBackendType,
       routeMode: runtime.routeAvailable ? "in-codexa" : "launch-only",
-      enabled: defaults.enabled,
-      statusLabel: defaults.enabled ? "Enabled" : "Disabled",
+      enabled: id === "local" ? discovery.status === "ready" : defaults.enabled,
+      statusLabel: id === "local"
+        ? discovery.status === "ready" ? "Enabled" : "Disabled"
+        : defaults.enabled ? "Enabled" : "Disabled",
       launchCommand: defaults.launchCommand ? { ...defaults.launchCommand, args: [...defaults.launchCommand.args] } : null,
       isDefault: id === defaultProviderId,
       isActiveRoute: id === activeRouteProviderId,
       routeUnavailableReason: runtime.routeAvailable
-        ? (isProviderRouteConfigured(id) ? null : (options.routeErrors?.[id] ?? getProviderRouteSetupMessage(id)))
+        ? (isProviderRouteConfigured(id) ? null : (options.routeErrors?.[id] ?? discovery.message ?? getProviderRouteSetupMessage(id)))
         : runtime.routeStatus,
       routeDiagnostics: options.diagnostics?.[id],
     };

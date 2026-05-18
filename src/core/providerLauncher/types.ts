@@ -24,6 +24,9 @@ export interface ProviderConfig {
   id: ProviderId;
   displayName: string;
   currentModel: string;
+  contextLengthLabel?: string;
+  contextLengthSource?: string;
+  capabilityProfile?: import("../providerRuntime/capabilityProfile.js").ModelCapabilityProfile;
   backendType: ProviderBackendType;
   routeMode: ProviderRouteMode;
   enabled: boolean;
@@ -53,8 +56,23 @@ export interface ProviderWorkspaceOverride {
   currentModel?: string;
   currentReasoning?: string;
   enabled?: boolean;
+  type?: "openai-compatible";
+  baseUrl?: string;
+  apiKey?: string;
+  pinnedModel?: string;
+  defaultModel?: string;
+  models?: Record<string, ProviderModelWorkspaceOverride>;
   command?: string | ProviderLaunchCommand | null;
   claudeCommandPath?: string;
   geminiCommandPath?: string;
   codexCommandPath?: string;
+}
+
+export interface ProviderModelWorkspaceOverride {
+  contextLength?: number;
+  maxOutputTokens?: number;
+  supportsStreaming?: boolean;
+  supportsToolCalls?: boolean;
+  supportsSystemPrompt?: boolean;
+  supportsVision?: boolean;
 }

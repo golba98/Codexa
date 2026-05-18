@@ -209,11 +209,11 @@ test("resolveModelSpec falls back to persisted cache when runtime lacks context 
   assert.equal(spec.verifiedAt, 42);
 });
 
-test("resolveModelSpec falls back to the static registry when cache is empty", () => {
+test("resolveModelSpec does not use static registry values when cache is empty", () => {
   const spec = resolveModelSpec("gpt-5.4-mini", { now: () => 11 });
-  assert.equal(spec.status, "verified");
-  assert.equal(spec.contextWindow, KNOWN_MODEL_SPECS["gpt-5.4-mini"]!.contextWindow);
-  assert.equal(spec.maxOutputTokens, KNOWN_MODEL_SPECS["gpt-5.4-mini"]!.maxOutputTokens);
+  assert.equal(spec.status, "unknown");
+  assert.equal(spec.contextWindow, null);
+  assert.deepEqual(KNOWN_MODEL_SPECS, {});
 });
 
 test("resolveModelSpec returns loading while refresh is in-flight for unmapped models", () => {
@@ -228,12 +228,11 @@ test("resolveModelSpec returns unknown only when no source can supply context me
   assert.equal(spec.contextWindow, null);
 });
 
-test("resolveModelSpec selects correct registry entry when switching between known models", () => {
+test("resolveModelSpec does not infer registry entries when switching between model names", () => {
   const specFour = resolveModelSpec("gpt-5.4");
   const specTwo = resolveModelSpec("gpt-5.2");
-  assert.notEqual(specFour.contextWindow, specTwo.contextWindow);
-  assert.equal(specFour.contextWindow, KNOWN_MODEL_SPECS["gpt-5.4"]!.contextWindow);
-  assert.equal(specTwo.contextWindow, KNOWN_MODEL_SPECS["gpt-5.2"]!.contextWindow);
+  assert.equal(specFour.contextWindow, null);
+  assert.equal(specTwo.contextWindow, null);
 });
 
 test("reports equality across verified and unknown specs", () => {
@@ -253,23 +252,22 @@ test("reports equality across verified and unknown specs", () => {
   );
 });
 
-test("resolveModelSpec returns known spec for claude-sonnet-4-6 canonical ID", () => {
+test("resolveModelSpec returns unknown for claude-sonnet-4-6 without runtime/config context", () => {
   const spec = resolveModelSpec("claude-sonnet-4-6");
-  assert.equal(spec.status, "verified");
-  assert.equal(spec.contextWindow, 200_000);
-  assert.equal(spec.maxOutputTokens, 64_000);
+  assert.equal(spec.status, "unknown");
+  assert.equal(spec.contextWindow, null);
 });
 
-test("resolveModelSpec returns known spec for anthropic short alias 'haiku'", () => {
+test("resolveModelSpec returns unknown for anthropic short alias 'haiku'", () => {
   const spec = resolveModelSpec("haiku");
-  assert.equal(spec.status, "verified");
-  assert.equal(spec.contextWindow, 200_000);
+  assert.equal(spec.status, "unknown");
+  assert.equal(spec.contextWindow, null);
 });
 
-test("resolveModelSpec returns known spec for gemini-2.5-flash", () => {
+test("resolveModelSpec returns unknown for gemini-2.5-flash without provider context metadata", () => {
   const spec = resolveModelSpec("gemini-2.5-flash");
-  assert.equal(spec.status, "verified");
-  assert.equal(spec.contextWindow, 1_048_576);
+  assert.equal(spec.status, "unknown");
+  assert.equal(spec.contextWindow, null);
 });
 
 test("resolveModelSpec returns null contextWindow (not 0) for an unrecognized model", () => {
@@ -278,21 +276,8 @@ test("resolveModelSpec returns null contextWindow (not 0) for an unrecognized mo
   assert.equal(spec.contextWindow, null);
 });
 
-test("resolveModelSpec marks gemini-3-flash-preview as estimated", () => {
-  const spec = resolveModelSpec("gemini-3-flash-preview") as VerifiedModelSpec;
-  assert.equal(spec.status, "verified");
-  assert.equal(spec.contextWindow, 1_048_576);
-  assert.equal(spec.contextWindowStatus, "estimated");
-});
-
-test("resolveModelSpec does not set contextWindowStatus for fully-documented Claude model", () => {
-  const spec = resolveModelSpec("claude-sonnet-4-6") as VerifiedModelSpec;
-  assert.equal(spec.status, "verified");
-  assert.equal(spec.contextWindowStatus, undefined);
-});
-
-test("resolveModelSpec does not set contextWindowStatus for gemini-2.5-flash GA model", () => {
-  const spec = resolveModelSpec("gemini-2.5-flash") as VerifiedModelSpec;
-  assert.equal(spec.status, "verified");
-  assert.equal(spec.contextWindowStatus, undefined);
+test("resolveModelSpec does not estimate gemini-3-flash-preview", () => {
+  const spec = resolveModelSpec("gemini-3-flash-preview");
+  assert.equal(spec.status, "unknown");
+  assert.equal(spec.contextWindow, null);
 });

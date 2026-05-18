@@ -62,6 +62,8 @@ export interface RuntimePolicyConfig {
   writableRoots: string[];
   serviceTier: RuntimeServiceTier;
   personality: RuntimePersonality;
+  allowExternalFileImport: boolean;
+  attachmentDir: string;
 }
 
 export interface RuntimeConfig {
@@ -86,6 +88,8 @@ export interface ResolvedRuntimePolicy {
   writableRoots: string[];
   serviceTier: RuntimeServiceTier;
   personality: RuntimePersonality;
+  allowExternalFileImport: boolean;
+  attachmentDir: string;
 }
 
 export interface ResolvedRuntimeConfig {
@@ -121,6 +125,8 @@ export const DEFAULT_RUNTIME_POLICY: RuntimePolicyConfig = {
   writableRoots: [],
   serviceTier: "flex",
   personality: "none",
+  allowExternalFileImport: true,
+  attachmentDir: ".codexa/attachments",
 };
 
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
@@ -206,6 +212,10 @@ export function normalizeRuntimePolicy(input: Partial<RuntimePolicyConfig> | nul
     personality: isAvailableId(AVAILABLE_PERSONALITIES, input?.personality)
       ? input!.personality
       : DEFAULT_RUNTIME_POLICY.personality,
+    allowExternalFileImport: typeof input?.allowExternalFileImport === "boolean"
+      ? input.allowExternalFileImport
+      : DEFAULT_RUNTIME_POLICY.allowExternalFileImport,
+    attachmentDir: normalizeRuntimeString(input?.attachmentDir, DEFAULT_RUNTIME_POLICY.attachmentDir),
   };
 }
 
@@ -354,6 +364,8 @@ export function resolveRuntimeConfig(config: RuntimeConfig): ResolvedRuntimeConf
       writableRoots: dedupeWritableRoots(normalized.policy.writableRoots),
       serviceTier: normalized.policy.serviceTier,
       personality: normalized.policy.personality,
+      allowExternalFileImport: normalized.policy.allowExternalFileImport,
+      attachmentDir: normalized.policy.attachmentDir,
     },
   };
 }

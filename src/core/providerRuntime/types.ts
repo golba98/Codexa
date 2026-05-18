@@ -4,6 +4,7 @@ import type { BackendRunHandlers } from "../providers/types.js";
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
 export type { ResolvedRuntimeConfig };
 import type { ProviderId } from "../providerLauncher/types.js";
+import type { ProviderWorkspaceOverride } from "../providerLauncher/types.js";
 
 export type ProviderBackendKind =
   | "codex-cli-auth"
@@ -27,6 +28,7 @@ export interface ProviderModel {
   family?: string;
   effortSource?: "claude-code" | "settings" | "config" | "fallback";
   effortVerified?: boolean;
+  raw?: unknown;
 }
 
 export interface ProviderModelDiscoveryResult {
@@ -59,6 +61,7 @@ export interface ProviderRouteValidationRequest {
   workspaceRoot: string;
   geminiCommandPath?: string | null;
   claudeCommandPath?: string | null;
+  localConfig?: ProviderWorkspaceOverride | null;
 }
 
 export interface ProviderRouteValidationResult {
@@ -75,6 +78,7 @@ export interface ProviderChatRequest {
   runtime: ResolvedRuntimeConfig;
   workspaceRoot: string;
   projectInstructions?: ProjectInstructions | null;
+  localConfig?: ProviderWorkspaceOverride | null;
 }
 
 export interface ProviderChatResponse {
@@ -94,6 +98,6 @@ export interface ProviderRuntime {
   isRouteConfigured?: () => boolean;
   validateRoute?: (request: ProviderRouteValidationRequest) => Promise<ProviderRouteValidationResult>;
   discoverModels: () => ProviderModelDiscoveryResult;
-  refreshModels?: (options: { cwd: string }) => Promise<ProviderModelDiscoveryResult>;
+  refreshModels?: (options: { cwd: string; localConfig?: ProviderWorkspaceOverride | null }) => Promise<ProviderModelDiscoveryResult>;
   run?: (request: ProviderChatRequest, handlers: BackendRunHandlers) => () => void;
 }
