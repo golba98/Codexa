@@ -113,10 +113,13 @@ test("provider picker renders compact aligned provider rows", async () => {
     assert.match(output, /Anthropic/);
     assert.match(output, /Google/);
     assert.match(output, /Local/);
-    assert.match(output, /codex-cli-auth/);
-    assert.match(output, /claude-code-auth/);
-    assert.match(output, /gemini-cli-auth/);    assert.match(output, /unavailable/);
+    assert.match(output, /Context/);
+    assert.match(output, /Tool/);
+    assert.match(output, /Strm/);
+    assert.match(output, /Unknown/);
+    assert.match(output, /\?/);
     assert.match(output, /Disabled/);
+    assert.doesNotMatch(output, /0\/unknown/);
   } finally {
     await harness.cleanup();
   }

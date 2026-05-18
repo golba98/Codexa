@@ -47,13 +47,14 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
   const panelWidth = Math.max(42, Math.min(shellWidth - 2, layout.mode === "full" ? 86 : 72));
   const innerWidth = Math.max(30, panelWidth - 4);
   const markerWidth = 2;
-  const columnGaps = 3;
-  const columnWidthBudget = Math.max(24, innerWidth - markerWidth - columnGaps);
-  const statusWidth = Math.min(8, Math.max(6, columnWidthBudget - 18));
-  const providerNameWidth = Math.min(layout.mode === "micro" ? 10 : 14, Math.max(8, columnWidthBudget - statusWidth - 14));
-  const remainingColumnWidth = Math.max(10, columnWidthBudget - providerNameWidth - statusWidth);
-  const modelWidth = Math.max(5, Math.ceil(remainingColumnWidth / 2));
-  const backendWidth = Math.max(5, remainingColumnWidth - modelWidth);
+  const columnGaps = 4;
+  const columnWidthBudget = Math.max(26, innerWidth - markerWidth - columnGaps);
+  const statusWidth = Math.min(8, Math.max(6, columnWidthBudget - 20));
+  const toolsWidth = 4;
+  const streamWidth = 4;
+  const contextWidth = Math.min(11, Math.max(7, columnWidthBudget - statusWidth - toolsWidth - streamWidth - 16));
+  const providerNameWidth = Math.min(layout.mode === "micro" ? 10 : 14, Math.max(8, columnWidthBudget - statusWidth - toolsWidth - streamWidth - contextWidth - 8));
+  const modelWidth = Math.max(5, columnWidthBudget - providerNameWidth - contextWidth - toolsWidth - streamWidth - statusWidth);
 
   const helpText = layout.mode === "micro"
     ? "Enter select  S default  Esc"
@@ -69,9 +70,9 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
     return [
       { value: "use-in-codexa", label: "Use in Codexa", disabledReason: routeUnavailable },
       { value: "select-model", label: "Select model", disabledReason: routeUnavailable },
-      { value: "refresh-models", label: selectedProvider?.id === "anthropic" ? "Refresh Claude capabilities" : "Refresh models", disabledReason: routeUnavailable },
-      ...(selectedProvider?.id === "google"
-        ? [{ value: "run-diagnostics" as const, label: "Run Gemini diagnostics" }]
+      { value: "refresh-models", label: selectedProvider?.id === "anthropic" ? "Refresh Claude capabilities" : selectedProvider?.id === "local" ? "Refresh LM Studio metadata" : "Refresh models", disabledReason: routeUnavailable },
+      ...(selectedProvider?.id === "google" || selectedProvider?.id === "local"
+        ? [{ value: "run-diagnostics" as const, label: selectedProvider.id === "local" ? "Run Local diagnostics" : "Run Gemini diagnostics" }]
         : []),
       { value: "launch", label: "Launch external CLI" },
       { value: "set-default", label: "Set as workspace default" },
@@ -172,10 +173,10 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
         key={provider.id}
         provider={provider}
         isHighlighted={index === providerIndex}
-        widths={{ providerNameWidth, modelWidth, backendWidth, statusWidth }}
+        widths={{ providerNameWidth, modelWidth, contextWidth, toolsWidth, streamWidth, statusWidth }}
       />
     ));
-  }, [actionIndex, actions, backendWidth, innerWidth, mode, modelWidth, providerIndex, providerNameWidth, providers, statusWidth]);
+  }, [actionIndex, actions, contextWidth, innerWidth, mode, modelWidth, providerIndex, providerNameWidth, providers, streamWidth, toolsWidth, statusWidth]);
 
   return (
     <Box flexDirection="column" width={panelWidth}>
@@ -201,7 +202,11 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
               {" "}
               {clampVisualText("Model", modelWidth)}
               {" "}
-              {clampVisualText("Backend", backendWidth)}
+              {clampVisualText("Context", contextWidth)}
+              {" "}
+              {clampVisualText("Tool", toolsWidth)}
+              {" "}
+              {clampVisualText("Strm", streamWidth)}
               {" "}
               {clampVisualText("Status", statusWidth)}
             </Text>
@@ -218,6 +223,12 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
 
 // ─── Subcomponents ───────────────────────────────────────────────────────────
 
+function capabilityFlag(value: boolean | null | undefined): string {
+  if (value === true) return "Y";
+  if (value === false) return "N";
+  return "?";
+}
+
 function ProviderRow({
   provider,
   isHighlighted,
@@ -228,7 +239,9 @@ function ProviderRow({
   widths: {
     providerNameWidth: number;
     modelWidth: number;
-    backendWidth: number;
+    contextWidth: number;
+    toolsWidth: number;
+    streamWidth: number;
     statusWidth: number;
   };
 }) {
@@ -253,8 +266,16 @@ function ProviderRow({
         <Text color={theme.MUTED}>{clampVisualText(provider.currentModel, widths.modelWidth)}</Text>
       </Box>
       <Text> </Text>
-      <Box width={widths.backendWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.MUTED}>{clampVisualText(provider.backendType, widths.backendWidth)}</Text>
+      <Box width={widths.contextWidth} flexShrink={0} overflow="hidden">
+        <Text color={theme.MUTED}>{clampVisualText(provider.contextLengthLabel ?? "Unknown", widths.contextWidth)}</Text>
+      </Box>
+      <Text> </Text>
+      <Box width={widths.toolsWidth} flexShrink={0} overflow="hidden">
+        <Text color={theme.MUTED}>{clampVisualText(capabilityFlag(provider.capabilityProfile?.supportsToolCalls), widths.toolsWidth)}</Text>
+      </Box>
+      <Text> </Text>
+      <Box width={widths.streamWidth} flexShrink={0} overflow="hidden">
+        <Text color={theme.MUTED}>{clampVisualText(capabilityFlag(provider.capabilityProfile?.supportsStreaming), widths.streamWidth)}</Text>
       </Box>
       <Text> </Text>
       <Box width={widths.statusWidth} flexShrink={0} overflow="hidden">

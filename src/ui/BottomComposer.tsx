@@ -15,6 +15,7 @@ import {
   normalizeCursorOffset,
 } from "./inputBuffer.js";
 import { getModeDisplaySpec } from "./modeDisplay.js";
+import { ActivityIndicator } from "./ActivityIndicator.js";
 import { measureRunFooterRows, MemoizedRunFooter } from "./RunFooter.js";
 import { useTheme } from "./theme.js";
 import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
@@ -71,23 +72,22 @@ function formatElapsed(seconds: number): string {
 export function getTokenBarDisplay(tokensUsed: number, modelSpec: ModelSpec) {
   if (modelSpec.status !== "verified") {
     return {
-      usedText: `~${formatApprox(tokensUsed)}`,
-      limitText: "unknown",
+      usedText: "Context",
+      limitText: "Unknown",
       percentage: null as number | null,
       isEstimatedLimit: false,
+      hasKnownLimit: false,
     };
   }
-  const isEstimatedLimit = modelSpec.contextWindowStatus === "estimated";
   const pct = modelSpec.contextWindow > 0
-    ? Math.min(100, Math.round((tokensUsed / modelSpec.contextWindow) * 100))
+    ? Math.min(100, Math.floor((tokensUsed / modelSpec.contextWindow) * 100))
     : 0;
   return {
-    usedText: `~${formatApprox(tokensUsed)}`,
-    limitText: isEstimatedLimit
-      ? `~${formatApprox(modelSpec.contextWindow)}`
-      : modelSpec.contextWindow.toLocaleString("en-US"),
+    usedText: tokensUsed.toLocaleString("en-US"),
+    limitText: modelSpec.contextWindow.toLocaleString("en-US"),
     percentage: pct,
-    isEstimatedLimit,
+    isEstimatedLimit: false,
+    hasKnownLimit: true,
   };
 }
 
@@ -936,11 +936,18 @@ export function BottomComposer({
             {planMode && <Text color={theme.ACCENT}>{"  Plan"}</Text>}
           </Box>
           <Box flexShrink={0}>
-            <Text color={theme.TEXT}>{tokenDisplay.usedText}</Text>
-            <Text color={theme.DIM}>
-              {"/"}{tokenDisplay.limitText}
-              {tokenDisplay.percentage !== null ? ` ctx ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%` : ""}
-            </Text>
+            {tokenDisplay.hasKnownLimit ? (
+              <>
+                <Text color={theme.DIM}>Context: </Text>
+                <Text color={theme.TEXT}>{tokenDisplay.usedText}</Text>
+                <Text color={theme.DIM}>
+                  {" / "}{tokenDisplay.limitText}
+                  {tokenDisplay.percentage !== null ? ` · ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%` : ""}
+                </Text>
+              </>
+            ) : (
+              <Text color={theme.DIM}>Context: Unknown</Text>
+            )}
           </Box>
         </Box>
       )}
