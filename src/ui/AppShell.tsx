@@ -440,25 +440,30 @@ function AppShellInner({
           runtimeSummary={runtimeSummary}
         />
 
-        {showTimeline && (
-          <Box flexDirection="column" height={finalTimelineRows} overflow="hidden">
-            <Timeline
-              key={`timeline-${clearCount}`}
-              staticEvents={staticEvents}
-              activeEvents={activeEvents}
-              layout={layout}
-              uiState={uiState}
-              viewportRows={finalTimelineRows}
-              verboseMode={verboseMode}
-              authState={authState}
-              workspaceLabel={workspaceLabel}
-              workspaceRoot={workspaceRoot}
-              mouseCapture={mouseCapture}
-              onMouseActivity={onMouseActivity}
-              contentSized
-            />
-          </Box>
-        )}
+        {/* Keep Timeline always mounted so its viewport scroll state survives panel open/close.
+            display="none" removes it from yoga layout (0 height) without unmounting. */}
+        <Box
+          flexDirection="column"
+          height={finalTimelineRows}
+          overflow="hidden"
+          display={showTimeline ? "flex" : "none"}
+        >
+          <Timeline
+            key={`timeline-${clearCount}`}
+            staticEvents={staticEvents}
+            activeEvents={activeEvents}
+            layout={layout}
+            uiState={uiState}
+            viewportRows={finalTimelineRows}
+            verboseMode={verboseMode}
+            authState={authState}
+            workspaceLabel={workspaceLabel}
+            workspaceRoot={workspaceRoot}
+            mouseCapture={mouseCapture}
+            onMouseActivity={onMouseActivity}
+            contentSized
+          />
+        </Box>
 
         {showMainPanel && (
           <Box flexDirection="column" height={finalTimelineRows} overflow="hidden" justifyContent="center">

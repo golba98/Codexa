@@ -93,6 +93,9 @@ export interface IntroRenderTimelineItem {
 export type RenderTimelineItem = IntroRenderTimelineItem | TurnRenderTimelineItem | EventRenderTimelineItem;
 
 const WHEEL_SCROLL_STEP = 3;
+// Re-enter follow-tail mode when the user scrolls within this many rows of the
+// tail, preventing a "stuck just above bottom" state after a near-end wheel scroll.
+const NEAR_BOTTOM_THRESHOLD = 3;
 const PAGE_UP_KEY_INPUTS = new Set(["\u001b[5~", "\u001b[[5~"]);
 const PAGE_DOWN_KEY_INPUTS = new Set(["\u001b[6~", "\u001b[[6~"]);
 const HOME_KEY_INPUTS = new Set(["\u001b[H", "\u001b[1~", "\u001bOH"]);
@@ -208,6 +211,10 @@ function clampAnchorRow(anchorRow: number, totalRows: number): number {
   }
 
   return Math.max(0, Math.min(anchorRow, totalRows - 1));
+}
+
+export function isNearBottom(anchorRow: number, totalRows: number): boolean {
+  return totalRows <= 0 || anchorRow >= totalRows - 1 - NEAR_BOTTOM_THRESHOLD;
 }
 
 function getFirstPageAnchor(totalRows: number, viewportRows: number): number {
@@ -338,7 +345,10 @@ export function syncTimelineViewport(
   options: { finalizeContinuity?: FinalizeContinuityOptions } = {},
 ): TimelineViewportState {
   if (liveSnapshot.totalRows === 0) {
-    return createFollowTailViewport(0);
+    // Preserve a frozen scroll offset through a transient empty-snapshot moment so
+    // the user's reading position is not reset to row 0.  Only reset when the
+    // viewport is already in follow-tail mode (there is nothing meaningful to preserve).
+    return viewport.followTail ? createFollowTailViewport(0) : viewport;
   }
 
   if (viewport.followTail) {
