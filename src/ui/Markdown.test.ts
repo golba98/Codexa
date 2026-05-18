@@ -93,7 +93,7 @@ test("header immediately followed by text produces two segments", () => {
 });
 
 test("cleans local markdown file links into compact terminal paths", () => {
-  const input = "The app shell lives in [`src/App.tsx`](C:/Users/jorda/OneDrive/Desktop/Project/src/App.tsx#L22).";
+  const input = "The app shell lives in [`src/App.tsx`](C:/Users/Example/Projects/Project/src/App.tsx#L22).";
   const text = segmentText(parseMarkdown(input));
 
   assert.match(text, /src\/App\.tsx:22/);
@@ -102,7 +102,7 @@ test("cleans local markdown file links into compact terminal paths", () => {
 });
 
 test("cleans Windows absolute paths in prose", () => {
-  const input = "Formal proof: C:\\Users\\jorda\\OneDrive\\Desktop\\Project\\docs\\proof.md#L26";
+  const input = "Formal proof: C:\\Users\\Example\\Projects\\Project\\docs\\proof.md#L26";
   const text = segmentText(parseMarkdown(input));
 
   assert.match(text, /docs\/proof\.md:26/);
@@ -110,7 +110,7 @@ test("cleans Windows absolute paths in prose", () => {
 });
 
 test("cleans file paths with encoded spaces", () => {
-  const input = "Overview: [README.md](file:///C:/Users/jorda/OneDrive/Desktop/5-Date%20Verification/README.md)";
+  const input = "Overview: [README.md](file:///C:/Users/Example/Projects/5-Date%20Verification/README.md)";
   const text = segmentText(parseMarkdown(input));
 
   assert.match(text, /README\.md/);
@@ -119,7 +119,7 @@ test("cleans file paths with encoded spaces", () => {
 });
 
 test("cleans local line ranges", () => {
-  const input = "See [proof](C:/Users/jorda/OneDrive/Desktop/Project/docs/proof.md#L26-L31).";
+  const input = "See [proof](C:/Users/Example/Projects/Project/docs/proof.md#L26-L31).";
   const text = segmentText(parseMarkdown(input));
 
   assert.match(text, /proof \(docs\/proof\.md:26-31\)/);
@@ -143,7 +143,7 @@ test("inline-code web links remain unchanged", () => {
 test("code blocks are not rewritten by terminal answer cleanup", () => {
   const input = [
     "```text",
-    "C:/Users/jorda/Project/src/App.tsx#L22",
+    "C:/Users/Example/Project/src/App.tsx#L22",
     "[README.md](file:///C:/Project/README.md)",
     "```",
   ].join("\n");
@@ -151,7 +151,7 @@ test("code blocks are not rewritten by terminal answer cleanup", () => {
   const code = segments[0] as CodeSegment;
 
   assert.deepEqual(code.lines, [
-    "C:/Users/jorda/Project/src/App.tsx#L22",
+    "C:/Users/Example/Project/src/App.tsx#L22",
     "[README.md](file:///C:/Project/README.md)",
   ]);
 });

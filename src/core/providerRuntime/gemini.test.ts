@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChildProcess } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 import {
   buildGeminiCommand,
@@ -17,6 +20,10 @@ import {
 import { resetGeminiExecutableCacheForTests } from "../executables/geminiExecutable.js";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
 import type { ProviderChatRequest } from "./types.js";
+
+// A real temp file used wherever tests need a configured absolute exe path that passes the existence check.
+const FAKE_GEMINI_EXE = join(tmpdir(), "codexa-test-gemini.cmd");
+writeFileSync(FAKE_GEMINI_EXE, "");
 
 function commandResult(overrides: Partial<CommandResult>): CommandResult {
   return {
@@ -88,7 +95,7 @@ function buildRequest(overrides: Partial<ProviderChatRequest> = {}): ProviderCha
     },
     runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
       model: "gemini-3-flash-preview",
-      geminiCommandPath: "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd",
+      geminiCommandPath: FAKE_GEMINI_EXE,
     })),
     workspaceRoot: process.cwd(),
     ...overrides,
@@ -117,7 +124,7 @@ test("Gemini route validation returns command-not-found diagnostic with PS comma
 });
 
 test("Gemini readiness uses resolved executable, Gemini 3 Flash Preview, and combined READY output", async () => {
-  await withGeminiEnv({ GEMINI_EXECUTABLE: "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd" }, async () => {
+  await withGeminiEnv({ GEMINI_EXECUTABLE: FAKE_GEMINI_EXE }, async () => {
     const calls: Array<Parameters<typeof runCommand>[0]> = [];
     const validation = await validateGeminiRoute({
       cwd: process.cwd(),
@@ -129,11 +136,11 @@ test("Gemini readiness uses resolved executable, Gemini 3 Flash Preview, and com
 
     const probe = calls.find((call) => call.args.includes("-p"));
     assert.equal(validation.status, "ready");
-    assert.equal(probe?.executable, "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd");
+    assert.equal(probe?.executable, FAKE_GEMINI_EXE);
     assert.deepEqual(probe?.args, ["--model", "gemini-3-flash-preview", "-p", "Respond with READY only."]);
     assert.equal(probe?.shell, false);
     assert.equal(probe?.args.includes("--reasoning"), false);
-    assert.equal(validation.diagnostics?.resolvedCommand, "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd");
+    assert.equal(validation.diagnostics?.resolvedCommand, FAKE_GEMINI_EXE);
     assert.equal(validation.diagnostics?.lastProbeCommandArgs, JSON.stringify(["--model", "gemini-3-flash-preview", "-p", "Respond with READY only."]));
     assert.equal(validation.diagnostics?.readyTokenObserved, true);
   });
@@ -165,13 +172,13 @@ test("Gemini command builders use verified model IDs and no reasoning argv", () 
 });
 
 test("Gemini command builder returns exact readiness and prompt specs", async () => {
-  await withGeminiEnv({ GEMINI_EXECUTABLE: "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd" }, async () => {
+  await withGeminiEnv({ GEMINI_EXECUTABLE: FAKE_GEMINI_EXE }, async () => {
     const readiness = await buildGeminiCommand({
       cwd: process.cwd(),
       mode: "readiness",
       runCommandImpl: mockRunCommand(commandResult({ stdout: "READY\n" })),
     });
-    assert.equal(readiness.file, "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd");
+    assert.equal(readiness.file, FAKE_GEMINI_EXE);
     assert.deepEqual(readiness.args, ["--model", "gemini-3-flash-preview", "-p", "Respond with READY only."]);
     assert.equal(readiness.mode, "readiness");
     assert.equal(readiness.model, "gemini-3-flash-preview");
@@ -186,7 +193,7 @@ test("Gemini command builder returns exact readiness and prompt specs", async ()
       runtime: resolveRuntimeConfig(normalizeRuntimeConfig({ mode: "full-auto" })),
       runCommandImpl: mockRunCommand(commandResult({ stdout: "READY\n" })),
     });
-    assert.equal(prompt.file, "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd");
+    assert.equal(prompt.file, FAKE_GEMINI_EXE);
     assert.deepEqual(prompt.args, ["--model", "gemini-3-flash-preview", "-p", "hello"]);
     assert.equal(prompt.mode, "prompt");
     assert.equal(prompt.model, "gemini-3-flash-preview");
@@ -206,7 +213,7 @@ test("Gemini prompt execution appends plain stdout as assistant text", async () 
         runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
           model: "gemini-3-flash-preview",
           mode: "full-auto",
-          geminiCommandPath: "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd",
+          geminiCommandPath: FAKE_GEMINI_EXE,
         })),
       }),
       mockRunCommand(commandResult({ stdout: "done\n" }), (spec) => {
@@ -244,7 +251,7 @@ test("Gemini bad PowerShell wrapper -p ambiguity is classified as wrapper confli
   });
   assert.equal(classifyGeminiProbeFailure(result), "shell wrapper/function conflict");
 
-  await withGeminiEnv({ GEMINI_EXECUTABLE: "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd" }, async () => {
+  await withGeminiEnv({ GEMINI_EXECUTABLE: FAKE_GEMINI_EXE }, async () => {
     const validation = await validateGeminiRoute({
       cwd: process.cwd(),
       modelId: "gemini-3-flash-preview",
@@ -346,7 +353,7 @@ test("Gemini non-zero model errors surface without silent retry", async () => {
 });
 
 test("Gemini diagnostics include command details without prompt text", async () => {
-  await withGeminiEnv({ GEMINI_EXECUTABLE: "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd" }, async () => {
+  await withGeminiEnv({ GEMINI_EXECUTABLE: FAKE_GEMINI_EXE }, async () => {
     await runGeminiCliWithRunner(
       buildRequest({ prompt: "secret prompt text" }),
       mockRunCommand(commandResult({ stdout: "done" })),
@@ -356,14 +363,14 @@ test("Gemini diagnostics include command details without prompt text", async () 
       cwd: process.cwd(),
       runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
         mode: "full-auto",
-        geminiCommandPath: "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd",
+        geminiCommandPath: FAKE_GEMINI_EXE,
       })),
       selectedModel: "gemini-3-flash",
       selectedReasoning: "high",
       runCommandImpl: mockRunCommand(commandResult({ stdout: "READY\n" })),
     });
 
-    assert.match(diagnostics, /Resolved executable path: C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini\.cmd/);
+    assert.ok(diagnostics.includes(`Resolved executable path: ${FAKE_GEMINI_EXE}`), `Expected diagnostics to include resolved path`);
     assert.match(diagnostics, /Readiness command args: \["--model","gemini-3-flash-preview","-p","Respond with READY only\."\]/);
     assert.match(diagnostics, /Selected model: gemini-3-flash-preview/);
     assert.match(diagnostics, /Policy args included: false/);

@@ -43,11 +43,11 @@ test("normalizeCommand: returns command unchanged when no wrapper is detected", 
 
 test("normalizeCommand: collapses local file paths inside commands", () => {
   assert.equal(
-    normalizeCommand(`pwsh.exe -Command 'Get-Content C:\\Users\\jorda\\Project\\README.md'`),
+    normalizeCommand(`pwsh.exe -Command 'Get-Content C:\\Users\\Example\\Project\\README.md'`),
     "Get-Content README.md",
   );
   assert.equal(
-    normalizeCommand(`Get-Content C:/Users/jorda/Project/src/App.tsx`),
+    normalizeCommand(`Get-Content C:/Users/Example/Project/src/App.tsx`),
     "Get-Content src/App.tsx",
   );
 });

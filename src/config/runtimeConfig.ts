@@ -71,6 +71,7 @@ export interface RuntimeConfig {
   mode: AvailableMode;
   planMode: boolean;
   geminiCommandPath?: string;
+  codexCommandPath?: string;
   policy: RuntimePolicyConfig;
 }
 
@@ -94,6 +95,7 @@ export interface ResolvedRuntimeConfig {
   mode: AvailableMode;
   planMode: boolean;
   geminiCommandPath?: string;
+  codexCommandPath?: string;
   policy: ResolvedRuntimePolicy;
 }
 

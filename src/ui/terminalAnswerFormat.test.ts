@@ -4,9 +4,9 @@ import { formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 
 test("terminal answer formatting collapses local markdown links and Windows paths", () => {
   const formatted = formatTerminalAnswerInline([
-    "- [`src/App.tsx`](C:/Users/jorda/OneDrive/Desktop/Project/src/App.tsx#L22)",
-    "- [README.md](file:///C:/Users/jorda/OneDrive/Desktop/Project/README.md)",
-    "- C:\\Users\\jorda\\OneDrive\\Desktop\\Project\\docs\\proof.md#L26",
+    "- [`src/App.tsx`](C:/Users/Example/Projects/Project/src/App.tsx#L22)",
+    "- [README.md](file:///C:/Users/Example/Projects/Project/README.md)",
+    "- C:\\Users\\Example\\Projects\\Project\\docs\\proof.md#L26",
     "- [OpenAI](https://platform.openai.com/docs)",
   ].join("\n"));
 

@@ -34,6 +34,7 @@ interface PrepareCodexExecLaunchDependencies {
 
 export interface PrepareCodexExecLaunchOptions extends BuildCodexExecArgsOptions {
   probeCapabilities?: boolean;
+  codexCommandPath?: string | null;
 }
 
 function resolveResponsibleModulePath(moduleUrl: string): string {
@@ -107,7 +108,7 @@ export async function prepareCodexExecLaunch(
   const capabilityResolver = dependencies.getCapabilities ?? getCodexCliCapabilities;
   const diagnosticsLogger = dependencies.diagnosticsLogger;
   perf.mark("exec_resolve_start");
-  const executable = await executableResolver();
+  const executable = await executableResolver({ configuredPath: options.codexCommandPath });
   perf.mark("exec_resolve_end");
   perf.mark("caps_probe_start");
   const capabilities = options.probeCapabilities

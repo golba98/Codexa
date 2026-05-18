@@ -96,6 +96,7 @@ export type CommandAction =
   | "runtime_service_tier"
   | "runtime_personality"
   | "diagnose_github"
+  | "diagnose_providers"
   | "unknown";
 
 export interface CommandResult {
@@ -348,7 +349,7 @@ function buildHelpMessage(context: CommandContext): string {
     "Commands:",
     "  /exit, /quit       Quit the application and cancel active run",
     "  /clear             Clear the chat window and cancel the active run",
-    "  /diagnose github   Run GitHub connectivity diagnostics",
+    "  /diagnose github|providers   Run diagnostics",
     "  /backend [name]    Switch backend (no arg opens picker)",
     "  /providers         Open provider picker (/provider alias)",
     "  /route             Show workspace default and active chat route",
@@ -833,9 +834,15 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
             message: "Running GitHub connectivity diagnostics...",
           };
         }
+        if (normalizedArg === "providers") {
+          return {
+            action: "diagnose_providers",
+            message: "Collecting provider diagnostics...",
+          };
+        }
         return {
           action: "unknown",
-          message: "Usage: /diagnose github",
+          message: "Usage: /diagnose github|providers",
         };
       }
 

@@ -70,6 +70,7 @@ export const codexSubprocessProvider: BackendProvider = {
           cwd: options.workspaceRoot,
           structuredOutput,
           probeCapabilities,
+          codexCommandPath: options.runtime.codexCommandPath,
         },
         import.meta.url,
       )

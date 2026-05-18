@@ -297,17 +297,17 @@ test("Anthropic claudeCommandPath round-trips through serialize/parse", () => {
     providers: {
       anthropic: {
         current_model: "sonnet",
-        claude_command_path: "C:\\Users\\jorda.local\\bin\\claude.exe",
+        claude_command_path: "C:\\Users\\Example\\.local\\bin\\claude.exe",
       },
     },
   });
 
-  assert.equal(config.providers?.anthropic?.claudeCommandPath, "C:\\Users\\jorda.local\\bin\\claude.exe");
+  assert.equal(config.providers?.anthropic?.claudeCommandPath, "C:\\Users\\Example\\.local\\bin\\claude.exe");
   const serialized = serializeProviderWorkspaceConfig(config);
   assert.deepEqual(serialized.providers, {
     anthropic: {
       current_model: "sonnet",
-      claude_command_path: "C:\\Users\\jorda.local\\bin\\claude.exe",
+      claude_command_path: "C:\\Users\\Example\\.local\\bin\\claude.exe",
     },
   });
 });
@@ -317,17 +317,37 @@ test("Gemini geminiCommandPath round-trips through serialize/parse", () => {
     providers: {
       google: {
         current_model: "gemini-2.5-flash",
-        gemini_command_path: "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd",
+        gemini_command_path: "C:\\Users\\Example\\AppData\\Roaming\\npm\\gemini.cmd",
       },
     },
   });
 
-  assert.equal(config.providers?.google?.geminiCommandPath, "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd");
+  assert.equal(config.providers?.google?.geminiCommandPath, "C:\\Users\\Example\\AppData\\Roaming\\npm\\gemini.cmd");
   const serialized = serializeProviderWorkspaceConfig(config);
   assert.deepEqual(serialized.providers, {
     google: {
       current_model: "gemini-2.5-flash",
-      gemini_command_path: "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd",
+      gemini_command_path: "C:\\Users\\Example\\AppData\\Roaming\\npm\\gemini.cmd",
+    },
+  });
+});
+
+test("Codex codexCommandPath round-trips through serialize/parse", () => {
+  const config = parseProviderWorkspaceConfig({
+    providers: {
+      openai: {
+        current_model: "gpt-5.4",
+        codex_command_path: "C:\\Users\\Example\\AppData\\Roaming\\npm\\codex.cmd",
+      },
+    },
+  });
+
+  assert.equal(config.providers?.openai?.codexCommandPath, "C:\\Users\\Example\\AppData\\Roaming\\npm\\codex.cmd");
+  const serialized = serializeProviderWorkspaceConfig(config);
+  assert.deepEqual(serialized.providers, {
+    openai: {
+      current_model: "gpt-5.4",
+      codex_command_path: "C:\\Users\\Example\\AppData\\Roaming\\npm\\codex.cmd",
     },
   });
 });

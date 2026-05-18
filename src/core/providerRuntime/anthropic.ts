@@ -489,8 +489,9 @@ export const anthropicRuntime: ProviderRuntime = {
   routeSetupMessage: ANTHROPIC_ROUTE_SETUP_MESSAGE,
   launchAvailable: true,
   isRouteConfigured: isAnthropicRouteConfigured,
-  validateRoute: async ({ workspaceRoot }) => validateAnthropicRoute({
+  validateRoute: async ({ workspaceRoot, claudeCommandPath }) => validateAnthropicRoute({
     cwd: workspaceRoot,
+    configuredPath: claudeCommandPath,
   }),
   discoverModels: (): ProviderModelDiscoveryResult => ({
     status: "ready",

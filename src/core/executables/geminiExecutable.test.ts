@@ -109,8 +109,8 @@ test("Gemini resolver: PowerShell function text is not accepted as executable pa
 });
 
 test("Gemini spawn spec bypasses PowerShell and targets the resolved executable", () => {
-  const spec = buildGeminiSpawnSpec("C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd", ["-p", "Respond with READY only."]);
-  assert.equal(spec.executable, "C:\\Users\\jorda\\AppData\\Roaming\\npm\\gemini.cmd");
+  const spec = buildGeminiSpawnSpec("C:\\Users\\Example\\AppData\\Roaming\\npm\\gemini.cmd", ["-p", "Respond with READY only."]);
+  assert.equal(spec.executable, "C:\\Users\\Example\\AppData\\Roaming\\npm\\gemini.cmd");
   assert.deepEqual(spec.args, ["-p", "Respond with READY only."]);
   assert.equal(spec.shell, undefined);
 });
