@@ -852,3 +852,46 @@ test("finalized runs retain their runtime snapshot after unrelated state changes
   assert.equal(runEvent.runtime.model, TEST_RUNTIME.model);
   assert.equal(runEvent.runtime.policy.sandboxMode, TEST_RUNTIME.policy.sandboxMode);
 });
+
+// ─── externalCliStatus state machine ─────────────────────────────────────────
+
+test("initial session state has externalCliStatus 'idle'", () => {
+  const state = createInitialSessionState();
+  assert.equal(state.externalCliStatus, "idle");
+});
+
+test("SET_EXTERNAL_CLI_STATUS transitions idle → starting", () => {
+  const state = createInitialSessionState();
+  const next = reduceSessionState(state, { type: "SET_EXTERNAL_CLI_STATUS", status: "starting" });
+  assert.equal(next.externalCliStatus, "starting");
+});
+
+test("SET_EXTERNAL_CLI_STATUS transitions starting → ready", () => {
+  let state = createInitialSessionState();
+  state = reduceSessionState(state, { type: "SET_EXTERNAL_CLI_STATUS", status: "starting" });
+  const next = reduceSessionState(state, { type: "SET_EXTERNAL_CLI_STATUS", status: "ready" });
+  assert.equal(next.externalCliStatus, "ready");
+});
+
+test("SET_EXTERNAL_CLI_STATUS is a no-op when status is already the same (returns same object)", () => {
+  let state = createInitialSessionState();
+  state = reduceSessionState(state, { type: "SET_EXTERNAL_CLI_STATUS", status: "ready" });
+  const again = reduceSessionState(state, { type: "SET_EXTERNAL_CLI_STATUS", status: "ready" });
+  assert.strictEqual(again, state, "should return the exact same state reference");
+});
+
+test("SUBMIT_PROMPT_RUN does not change externalCliStatus when provider is already ready", () => {
+  let state = createInitialSessionState();
+  state = reduceSessionState(state, { type: "SET_EXTERNAL_CLI_STATUS", status: "ready" });
+
+  const userEvent = makeUserEvent(99);
+  const runEvent = makeRunEvent(99);
+  const next = reduceSessionState(state, {
+    type: "SUBMIT_PROMPT_RUN",
+    turnId: 99,
+    runId: 2,
+    events: [userEvent, runEvent],
+  });
+
+  assert.equal(next.externalCliStatus, "ready", "externalCliStatus must remain 'ready' across prompts");
+});

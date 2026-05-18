@@ -416,6 +416,7 @@ export function App({ launchArgs }: AppProps) {
   const activeRunIdRef = useRef<number | null>(null);
   const activeTurnIdRef = useRef<number | null>(null);
   const clearEpochRef = useRef<number>(0); // Incremented on /clear to suppress stale command events
+  const externalCliStatusRef = useRef(sessionState.externalCliStatus);
   const previousScreenRef = useRef<Screen>("main");
   const themePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modelDiscoveryInFlightRef = useRef<Promise<CodexModelCapabilities> | null>(null);
@@ -477,6 +478,12 @@ export function App({ launchArgs }: AppProps) {
     [providerRegistry],
   );
   const activeRouteProviderId = activeProviderRoute.providerId;
+
+  // Reset provider readiness when the user switches to a different provider.
+  useEffect(() => {
+    dispatchSession({ type: "SET_EXTERNAL_CLI_STATUS", status: "idle" });
+  }, [activeRouteProviderId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const activeRouteProvider = useMemo(
     () => findProvider(providerRegistry, activeRouteProviderId) ?? providerRegistry[0] ?? null,
     [activeRouteProviderId, providerRegistry],
@@ -1257,6 +1264,10 @@ export function App({ launchArgs }: AppProps) {
   useEffect(() => {
     clearEpochRef.current = sessionState.clearEpoch;
   }, [sessionState.clearEpoch]);
+
+  useEffect(() => {
+    externalCliStatusRef.current = sessionState.externalCliStatus;
+  }, [sessionState.externalCliStatus]);
 
   const reloadBaseLayeredConfig = useCallback(() => {
     const nextConfig = resolveLayeredConfig({ workspaceRoot, launchArgs });
@@ -2903,6 +2914,9 @@ export function App({ launchArgs }: AppProps) {
     activeTurnIdRef.current = turnId;
     activeRunLifecycleRef.current = lifecycle;
     activeRunTimingRef.current = { ...submitTiming, runId, turnId };
+    if (externalCliStatusRef.current === "idle") {
+      dispatchSession({ type: "SET_EXTERNAL_CLI_STATUS", status: "starting" });
+    }
     dispatchSession({
       type: "SUBMIT_PROMPT_RUN",
       historyValue: lifecycle.commitPrompt ? safeDisplayPrompt : undefined,
@@ -3045,6 +3059,7 @@ export function App({ launchArgs }: AppProps) {
             return;
           }
           appDiagLog(`onAssistantDelta: ASSISTANT_APPEND_PATH reached — queuing ${safeChunk.length} chars (liveScheduler→RUN_APPLY_LIVE_UPDATES→assistantEvent in activeEvents→FINALIZE_RUN→staticEvents)`);
+          dispatchSession({ type: "SET_EXTERNAL_CLI_STATUS", status: "ready" });
           liveScheduler.enqueue({
             type: lifecycle.responsePresentation === "plan" ? "plan" : "assistant",
             chunk: safeChunk,
@@ -3985,6 +4000,7 @@ export function App({ launchArgs }: AppProps) {
         onCycleMode={cycleModeWithNotice}
         onQuit={handleQuit}
         activeProviderId={activeProviderRoute.providerId}
+        externalCliStatus={sessionState.externalCliStatus}
       />
     );
   }, [

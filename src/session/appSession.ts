@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
-import type { AssistantEvent, RunEvent, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./types.js";
+import type { AssistantEvent, ExternalCliStatus, RunEvent, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./types.js";
 import { getAssistantContent, getRunPlanText } from "./types.js";
 import {
   appendRunActivity,
@@ -29,6 +29,7 @@ export interface SessionState {
   staticEvents: TimelineEvent[];
   activeEvents: TimelineEvent[];
   uiState: UIState;
+  externalCliStatus: ExternalCliStatus;
   inputValue: string;
   cursor: number;
   history: string[];
@@ -92,7 +93,8 @@ export type SessionAction =
   | { type: "FINALIZE_SHELL"; shellId: number; finalEvent: ShellEvent }
   | { type: "UPDATE_SHELL_LINES"; shellId: number; stream: "stdout" | "stderr"; lines: string[] }
   | { type: "REMOVE_ACTIVE_RUNTIME"; runId: number; turnId?: number | null }
-  | { type: "UI_ACTION"; action: UIStateAction };
+  | { type: "UI_ACTION"; action: UIStateAction }
+  | { type: "SET_EXTERNAL_CLI_STATUS"; status: ExternalCliStatus };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -101,6 +103,7 @@ export function createInitialSessionState(): SessionState {
     staticEvents: [],
     activeEvents: [],
     uiState: { kind: "IDLE" },
+    externalCliStatus: "idle",
     inputValue: "",
     cursor: 0,
     history: [],
@@ -681,6 +684,9 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       };
     case "UI_ACTION":
       return { ...state, uiState: reduceTracedUIState(state.uiState, action.action) };
+    case "SET_EXTERNAL_CLI_STATUS":
+      if (state.externalCliStatus === action.status) return state;
+      return { ...state, externalCliStatus: action.status };
     default:
       return state;
   }

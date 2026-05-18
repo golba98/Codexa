@@ -24,6 +24,10 @@ export type Screen =
   | "permissions-add-writable-root"
   | "permissions-remove-writable-root";
 
+// ─── Provider readiness ───────────────────────────────────────────────────────
+
+export type ExternalCliStatus = "idle" | "starting" | "ready" | "failed";
+
 // ─── UI State Machine ─────────────────────────────────────────────────────────
 // Drives all visual decisions: border colors, input persona, turn opacity.
 //
