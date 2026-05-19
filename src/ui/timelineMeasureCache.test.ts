@@ -6,11 +6,13 @@ import type { RenderTimelineItem } from "./Timeline.js";
 import {
   __clearTimelineMeasureCachesForTests,
   __getStreamingBlockRowCacheSizeForTests,
+  __wrapStyledSpansForTests,
   buildActionEventRows,
   buildNativeTranscriptParts,
   buildStableTimelineSnapshot,
   buildTimelineSnapshot,
   type StreamEvent,
+  type TimelineRowSpan,
 } from "./timelineMeasure.js";
 
 function makeTool(overrides: Partial<RunToolActivity> = {}): RunToolActivity {
@@ -919,4 +921,66 @@ test("timeline measurement coverage for THINKING -> RESPONDING -> FINALIZE_RUN",
   const snapshot4 = buildTimelineSnapshot([item1], { totalWidth: 120 });
   const actionKeys4 = snapshot4.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
   assert.deepEqual(actionKeys4, actionKeys1);
+});
+
+// ─── wrapStyledSpans word-boundary regression tests ───────────────────────────
+
+function assertNoMidWordSplit(rowTexts: string[], words: string[]) {
+  for (const word of words) {
+    for (let r = 0; r < rowTexts.length - 1; r++) {
+      const tail = rowTexts[r]!;
+      const head = rowTexts[r + 1]!;
+      for (let split = 1; split < word.length; split++) {
+        const prefix = word.slice(0, split);
+        const suffix = word.slice(split);
+        assert.ok(
+          !(tail.endsWith(prefix) && head.startsWith(suffix)),
+          `"${word}" split as "${prefix}" | "${suffix}" between rows ${r} and ${r + 1}`,
+        );
+      }
+    }
+  }
+}
+
+test("wrapStyledSpans: no mid-word split within a single styled span", () => {
+  const spans: TimelineRowSpan[] = [
+    { text: "where the test mock for stdout is missing some WriteStream properties.", tone: "info" },
+  ];
+  const rows = __wrapStyledSpansForTests(spans, 40);
+  const rowTexts = rows.map((row) => row.map((s) => s.text).join(""));
+  assertNoMidWordSplit(rowTexts, ["for", "stdout", "WriteStream", "where", "test", "mock", "missing", "some", "properties"]);
+});
+
+test("wrapStyledSpans: no mid-word split across mixed styled spans", () => {
+  const spans: TimelineRowSpan[] = [
+    { text: "normal text before ", tone: undefined },
+    { text: "src/ui/ActivityIndicator.test.tsx", tone: "info" },
+    { text: " where the test mock for", tone: undefined },
+    { text: " WriteStream", tone: "info" },
+  ];
+  const rows = __wrapStyledSpansForTests(spans, 40);
+  const rowTexts = rows.map((row) => row.map((s) => s.text).join(""));
+  assertNoMidWordSplit(rowTexts, ["for", "WriteStream", "where", "mock", "normal", "text", "before"]);
+});
+
+test("wrapStyledSpans: overlong token falls back to character split within line width", () => {
+  const spans: TimelineRowSpan[] = [
+    { text: "a_very_long_token_without_spaces_that_exceeds_width", tone: "muted" },
+  ];
+  const rows = __wrapStyledSpansForTests(spans, 20);
+  assert.ok(rows.length > 1, "should produce multiple rows for an overlong token");
+  for (const row of rows) {
+    const rowWidth = row.reduce((sum, s) => sum + s.text.length, 0);
+    assert.ok(rowWidth <= 20, `row width ${rowWidth} exceeds 20`);
+  }
+});
+
+test("wrapStyledSpans: hard newlines in span text produce separate rows", () => {
+  const spans: TimelineRowSpan[] = [
+    { text: "first line\nsecond line", tone: "text" as never },
+  ];
+  const rows = __wrapStyledSpansForTests(spans, 80);
+  assert.equal(rows.length, 2);
+  assert.ok(rows[0]!.map((s) => s.text).join("").includes("first line"));
+  assert.ok(rows[1]!.map((s) => s.text).join("").includes("second line"));
 });

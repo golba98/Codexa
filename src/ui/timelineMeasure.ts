@@ -22,7 +22,7 @@ import {
   type VisibleProgressBlock,
 } from "./progressEntries.js";
 import { selectVisibleRunActivity } from "./runActivityView.js";
-import { getTextUnits, getTextWidth, wrapPlainText, wrapCommandText } from "./textLayout.js";
+import { getTextUnits, getTextWidth, wrapPlainText, wrapCommandText, splitTextAtColumn } from "./textLayout.js";
 import type { RenderTimelineItem } from "./Timeline.js";
 import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
 
@@ -228,6 +228,36 @@ function createBlankRow(key: string, width: number): TimelineRow {
   return row;
 }
 
+interface StyledToken {
+  text: string;
+  isWhitespace: boolean;
+  isNewline: boolean;
+  tone?: TimelineTone;
+  bold?: boolean;
+  backgroundTone?: TimelineTone;
+}
+
+function flattenSpansToTokens(spans: TimelineRowSpan[]): StyledToken[] {
+  const tokens: StyledToken[] = [];
+  for (const span of spans) {
+    const parts = span.text.split(/([ \t\n]+)/);
+    for (const part of parts) {
+      if (part === "") continue;
+      const isNewline = part === "\n" || (part.includes("\n") && /^[\s]+$/.test(part));
+      const isWhitespace = /^[ \t\n]+$/.test(part);
+      tokens.push({
+        text: part,
+        isWhitespace,
+        isNewline,
+        tone: span.tone,
+        bold: span.bold,
+        backgroundTone: span.backgroundTone,
+      });
+    }
+  }
+  return tokens;
+}
+
 function wrapStyledSpans(spans: TimelineRowSpan[], width: number): TimelineRowSpan[][] {
   const safeWidth = Math.max(1, width);
   const rows: TimelineRowSpan[][] = [];
@@ -240,20 +270,60 @@ function wrapStyledSpans(spans: TimelineRowSpan[], width: number): TimelineRowSp
     currentWidth = 0;
   };
 
-  for (const span of spans) {
-    for (const unit of getTextUnits(span.text)) {
-      if (unit.text === "\n") {
-        pushRow();
-        continue;
-      }
+  const spanFor = (token: StyledToken, text: string): TimelineRowSpan => ({
+    text,
+    ...(token.tone !== undefined ? { tone: token.tone } : {}),
+    ...(token.bold ? { bold: token.bold } : {}),
+    ...(token.backgroundTone !== undefined ? { backgroundTone: token.backgroundTone } : {}),
+  });
 
-      if (currentWidth > 0 && currentWidth + unit.width > safeWidth) {
-        pushRow();
-      }
-
-      appendSpan(currentRow, cloneSpan(span, unit.text));
-      currentWidth += unit.width;
+  for (const token of flattenSpansToTokens(spans)) {
+    if (token.isNewline) {
+      pushRow();
+      continue;
     }
+
+    const tokenWidth = getTextWidth(token.text);
+
+    if (token.isWhitespace) {
+      if (currentWidth === 0) continue; // skip leading whitespace on a new row
+      if (currentWidth + tokenWidth > safeWidth) {
+        pushRow();
+        continue; // drop whitespace that pushes us over the edge
+      }
+      appendSpan(currentRow, spanFor(token, token.text));
+      currentWidth += tokenWidth;
+      continue;
+    }
+
+    // Word token
+    if (currentWidth + tokenWidth > safeWidth && currentWidth > 0) {
+      pushRow();
+    }
+
+    // Overlong token: character-split across as many rows as needed
+    if (tokenWidth > safeWidth) {
+      let remaining = token.text;
+      let remainingWidth = tokenWidth;
+      while (remainingWidth > safeWidth - currentWidth) {
+        const available = safeWidth - currentWidth;
+        const split = splitTextAtColumn(remaining, available);
+        if (split.before) {
+          appendSpan(currentRow, spanFor(token, split.before));
+        }
+        pushRow();
+        remaining = split.current + split.after;
+        remainingWidth = getTextWidth(remaining);
+      }
+      if (remaining) {
+        appendSpan(currentRow, spanFor(token, remaining));
+        currentWidth += getTextWidth(remaining);
+      }
+      continue;
+    }
+
+    appendSpan(currentRow, spanFor(token, token.text));
+    currentWidth += tokenWidth;
   }
 
   if (currentRow.length === 0 && rows.length === 0) {
@@ -1042,6 +1112,10 @@ export function __clearTimelineMeasureCachesForTests(): void {
 
 export function __getStreamingBlockRowCacheSizeForTests(): number {
   return _streamingBlockRowCache.size;
+}
+
+export function __wrapStyledSpansForTests(spans: TimelineRowSpan[], width: number): TimelineRowSpan[][] {
+  return wrapStyledSpans(spans, width);
 }
 
 /** Find the last safe paragraph boundary (double newline or closed code fence)
