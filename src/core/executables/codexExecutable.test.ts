@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { afterEach } from "node:test";
 import type { ChildProcess } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runCommand, type CommandResult } from "../process/CommandRunner.js";
@@ -79,6 +79,34 @@ test("Codex resolver: CODEX_EXECUTABLE env var used when no configuredPath", asy
     assert.equal(resolved, "env-codex.cmd");
     assert.equal(whereCalled, false, "where.exe should not be called when CODEX_EXECUTABLE is set");
   });
+});
+
+test("Codex resolver: rejects unsafe CODEX_EXECUTABLE values", async () => {
+  await withEnv({ CODEX_EXECUTABLE: "codex.cmd & calc" }, async () => {
+    await assert.rejects(
+      () => resolveCodexExecutable({
+        runCommandImpl: mockRunCommand(commandResult()),
+      }),
+      /shell metacharacters|single executable name/i,
+    );
+  });
+});
+
+test("Codex resolver: accepts environment executable paths with spaces", async () => {
+  const tempRoot = join(tmpdir(), `codexa codex resolver ${Date.now()}`);
+  const codexPath = join(tempRoot, "codex cli.exe");
+  mkdirSync(tempRoot, { recursive: true });
+  writeFileSync(codexPath, "");
+  try {
+    await withEnv({ CODEX_EXECUTABLE: `"${codexPath}"` }, async () => {
+      const resolved = await resolveCodexExecutable({
+        runCommandImpl: mockRunCommand(commandResult()),
+      });
+      assert.equal(resolved, codexPath);
+    });
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("Codex resolver: Windows where.exe PATH lookup used when no env or config", async () => {

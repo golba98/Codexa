@@ -54,6 +54,94 @@ function makeLongTranscript(): TimelineEvent[] {
   ];
 }
 
+test("wheel mode: SGR wheel-up shows JumpToBottomBar with wheel hint", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+  stdout.on("data", (chunk) => { output += chunk.toString(); });
+
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <Timeline
+        staticEvents={makeLongTranscript()}
+        activeEvents={[]}
+        layout={createLayoutSnapshot(100, 30)}
+        uiState={{ kind: "IDLE" }}
+        viewportRows={8}
+        verboseMode={false}
+        mouseCapture={true}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+
+  try {
+    await sleep(100);
+    const beforeWheel = output.length;
+
+    // Send SGR mouse wheel-up event
+    stdin.write("[<64;12;9M");
+    await sleep(100);
+
+    const frame = stripAnsi(output.slice(beforeWheel));
+    assert.match(frame, /Scrolled up/);
+    assert.match(frame, /wheel↓\/End to bottom/);
+  } finally {
+    instance.unmount();
+  }
+});
+
+test("wheel mode: End key after wheel-up hides JumpToBottomBar", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+  stdout.on("data", (chunk) => { output += chunk.toString(); });
+
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <Timeline
+        staticEvents={makeLongTranscript()}
+        activeEvents={[]}
+        layout={createLayoutSnapshot(100, 30)}
+        uiState={{ kind: "IDLE" }}
+        viewportRows={8}
+        verboseMode={false}
+        mouseCapture={true}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+
+  try {
+    await sleep(100);
+    stdin.write("[<64;12;9M");
+    await sleep(100);
+
+    const beforeEnd = output.length;
+    stdin.write("[F");
+    await sleep(100);
+
+    const endFrame = stripAnsi(output.slice(beforeEnd));
+    assert.doesNotMatch(endFrame, /Scrolled up/);
+  } finally {
+    instance.unmount();
+  }
+});
+
 test("PageUp, End, and SGR wheel packets navigate the timeline through Ink input", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();

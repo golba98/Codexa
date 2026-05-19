@@ -1,6 +1,10 @@
 import { existsSync } from "fs";
 import { join } from "path";
 import { runCommand } from "../process/CommandRunner.js";
+import {
+  normalizeExecutableValue,
+  validateWindowsBatchExecutableForCmd,
+} from "../process/processValidation.js";
 
 type CommandRunner = typeof runCommand;
 
@@ -17,19 +21,13 @@ export interface ExecutableResolverOptions {
   requireResolvedFile?: boolean;
 }
 
-function looksLikeAbsolutePath(value: string): boolean {
-  return /[\\/]/.test(value) || /^[A-Za-z]:/.test(value);
-}
-
-function validateConfiguredExecutable(value: string, label: string): string {
-  const trimmed = value.trim();
-  if (looksLikeAbsolutePath(trimmed) && !existsSync(trimmed)) {
-    throw new Error(
-      `${label} path does not exist: "${trimmed}"\n` +
-      `Check the path is correct and the file is accessible, or unset ${label}.`,
-    );
-  }
-  return trimmed;
+function validateConfiguredExecutable(value: string, label: string, cwd: string): string {
+  return normalizeExecutableValue(value, {
+    label,
+    cwd,
+    requireExistingPath: /[\\/]/.test(value) || /^[\s"']*[A-Za-z]:/.test(value),
+    allowBareExecutable: true,
+  });
 }
 
 async function resolveWithWhere(
@@ -74,7 +72,7 @@ export async function resolveExecutable(options: ExecutableResolverOptions): Pro
 
   // 1. Configured path override
   if (options.configuredPath?.trim()) {
-    return validateConfiguredExecutable(options.configuredPath, `${options.label}CommandPath`);
+    return validateConfiguredExecutable(options.configuredPath, `${options.label}CommandPath`, cwd);
   }
 
   // 2. Environment variable overrides
@@ -82,7 +80,7 @@ export async function resolveExecutable(options: ExecutableResolverOptions): Pro
     for (const envVar of options.envOverrides) {
       const envOverride = process.env[envVar]?.trim();
       if (envOverride) {
-        return validateConfiguredExecutable(envOverride, envVar);
+        return validateConfiguredExecutable(envOverride, envVar, cwd);
       }
     }
   }
@@ -134,7 +132,8 @@ export function buildSpawnSpec(
   if (process.platform === "win32") {
     const lower = executable.toLowerCase();
     if (lower.endsWith(".cmd") || lower.endsWith(".bat")) {
-      return { executable: "cmd.exe", args: ["/d", "/s", "/c", executable, ...args] };
+      validateWindowsBatchExecutableForCmd(executable, "Windows batch executable");
+      return { executable: "cmd.exe", args: ["/d", "/s", "/c", "call", executable, ...args] };
     }
   }
   return { executable, args };

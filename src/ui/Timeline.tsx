@@ -1448,7 +1448,7 @@ export const Timeline = memo(function Timeline({
       overflow="hidden"
     >
       <TimelineRowsView rows={rowsForDisplay} />
-      {!contentSized && showJumpToBottom && (
+      {showJumpToBottom && (
         <JumpToBottomBar unseenItems={viewport.unseenItems} mouseCapture={mouseCapture} />
       )}
     </Box>

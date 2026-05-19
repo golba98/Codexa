@@ -49,6 +49,16 @@ test("disabled providers fail before spawning", () => {
   assert.match("status" in result ? result.message : "", /Configure a command/i);
 });
 
+test("unsafe configured launch commands fail before spawning", () => {
+  const result = buildProviderLaunchSpec(makeProvider({
+    launchCommand: { executable: "codex & calc", args: [] },
+  }), "C:\\Workspace");
+
+  assert.equal("status" in result, true);
+  assert.equal("status" in result ? result.status : "", "spawn-error");
+  assert.match("status" in result ? result.message : "", /unsafe launch command/i);
+});
+
 test("missing command spawn errors become friendly launch results", async () => {
   const child = new EventEmitter();
   const spawnImpl = (() => {
@@ -121,8 +131,10 @@ test("launch restores raw mode after child exits", async () => {
 test("launch passes the workspace root as the child cwd", async () => {
   const child = new EventEmitter();
   let observedCwd = "";
-  const spawnImpl = ((_executable: string, _args: string[], options: { cwd?: string }) => {
+  let observedShell: boolean | undefined = undefined;
+  const spawnImpl = ((_executable: string, _args: string[], options: { cwd?: string; shell?: boolean }) => {
     observedCwd = options.cwd ?? "";
+    observedShell = options.shell;
     queueMicrotask(() => child.emit("close", 0, null));
     return child;
   }) as unknown as typeof import("child_process").spawn;
@@ -135,6 +147,36 @@ test("launch passes the workspace root as the child cwd", async () => {
 
   assert.equal(result.status, "completed");
   assert.equal(observedCwd, "C:\\Workspace\\Project");
+  assert.equal(observedShell, false);
+});
+
+test("launch wraps Windows batch commands without enabling shell mode", async () => {
+  if (process.platform !== "win32") return;
+
+  const child = new EventEmitter();
+  let observedExecutable = "";
+  let observedArgs: string[] = [];
+  let observedShell: boolean | undefined = undefined;
+  const spawnImpl = ((executable: string, args: string[], options: { shell?: boolean }) => {
+    observedExecutable = executable;
+    observedArgs = args;
+    observedShell = options.shell;
+    queueMicrotask(() => child.emit("close", 0, null));
+    return child;
+  }) as unknown as typeof import("child_process").spawn;
+
+  const result = await launchProviderCli(makeProvider({
+    launchCommand: { executable: "codex.cmd", args: ["--resume"] },
+  }), {
+    cwd: "C:\\Workspace",
+    commandExists: () => true,
+    spawnImpl,
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(observedExecutable, "cmd.exe");
+  assert.deepEqual(observedArgs, ["/d", "/s", "/c", "call", "codex.cmd", "--resume"]);
+  assert.equal(observedShell, false);
 });
 
 test("launch runs suspend and resume hooks around raw mode changes", async () => {
