@@ -296,7 +296,6 @@ async function executeGeminiCommand(
     args: command.args,
     cwd: command.cwd,
     timeoutMs,
-    shell: false,
   }, streamHandlers);
   diagLog(`SPAWNED: pid=${runner.child?.pid ?? "unknown"} executable=${command.file} timeoutMs=${timeoutMs}`);
   const result = await runner.result;
@@ -460,7 +459,6 @@ async function captureGeminiEnvironment(
       args: ["--version"],
       cwd,
       timeoutMs: 5000,
-      shell: false,
     });
     const versionResult = await versionRunner.result;
     if (versionResult.status === "completed" && versionResult.exitCode === 0) {
@@ -477,7 +475,6 @@ async function captureGeminiEnvironment(
       args: ["--help"],
       cwd,
       timeoutMs: 5000,
-      shell: false,
     });
     const helpResult = await helpRunner.result;
     return {

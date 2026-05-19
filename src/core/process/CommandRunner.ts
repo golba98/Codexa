@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "child_process";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import { createTerminalTitleSequenceStripper } from "../terminal/terminalTitle.js";
+import { validateExecutableForSpawn } from "./processValidation.js";
 
 export interface CommandSpec {
   executable: string;
@@ -8,7 +9,6 @@ export interface CommandSpec {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
-  shell?: boolean;
 }
 
 export interface CommandResult {
@@ -29,6 +29,10 @@ export interface CommandStreamHandlers {
   onStdout?: (text: string) => void;
   onStderr?: (text: string) => void;
   onProcessLifecycle?: (event: "before-spawn" | "spawned" | "exit" | "error" | "cancel") => void;
+}
+
+interface InternalCommandSpec extends CommandSpec {
+  displayExecutable?: string;
 }
 
 // Sanitize before splitting: title sequences can span newlines and must not corrupt the line output.
@@ -123,7 +127,36 @@ export function runCommand(
   spec: CommandSpec,
   handlers: CommandStreamHandlers = {},
 ): { child: ChildProcess; result: Promise<CommandResult>; cancel: () => void } {
+  return runProcess(spec, handlers);
+}
+
+export function runShellCommand(
+  command: string,
+  options: Pick<CommandSpec, "cwd" | "env" | "timeoutMs">,
+  handlers: CommandStreamHandlers = {},
+): { child: ChildProcess; result: Promise<CommandResult>; cancel: () => void } {
+  const shellSpec = process.platform === "win32"
+    ? { executable: "cmd.exe", args: ["/d", "/s", "/c", command] }
+    : { executable: "/bin/sh", args: ["-c", command] };
+
+  return runProcess({
+    ...options,
+    executable: shellSpec.executable,
+    args: shellSpec.args,
+    displayExecutable: command,
+  }, handlers);
+}
+
+function runProcess(
+  spec: InternalCommandSpec,
+  handlers: CommandStreamHandlers,
+): { child: ChildProcess; result: Promise<CommandResult>; cancel: () => void } {
   const startedAt = Date.now();
+  const executable = validateExecutableForSpawn(spec.executable, {
+    label: "Command executable",
+    cwd: spec.cwd,
+  });
+  const displayExecutable = spec.displayExecutable ?? executable;
   let stdout = "";
   let stderr = "";
   let canceled = false;
@@ -140,10 +173,10 @@ export function runCommand(
   });
 
   handlers.onProcessLifecycle?.("before-spawn");
-  const child = spawn(spec.executable, spec.args, {
+  const child = spawn(executable, spec.args, {
     cwd: spec.cwd,
     env: spec.env,
-    shell: spec.shell ?? false,
+    shell: false,
     stdio: ["ignore", "pipe", "pipe"],
   });
   handlers.onProcessLifecycle?.("spawned");
@@ -162,7 +195,7 @@ export function runCommand(
         endedAt,
         durationMs: endedAt - startedAt,
         userMessage: buildUserMessage({
-          executable: spec.executable,
+          executable: displayExecutable,
           code: partial.errorCode,
           exitCode: partial.exitCode,
           stderr,

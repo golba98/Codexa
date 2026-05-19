@@ -101,7 +101,7 @@ export function spawnCodexProcess(
   options: SpawnOptions,
 ): ReturnType<typeof spawn> {
   const spec = buildSpawnSpec(executable, args);
-  return spawn(spec.executable, spec.args, options);
+  return spawn(spec.executable, spec.args, { ...options, shell: false });
 }
 
 export function captureCodexProcessOutput(

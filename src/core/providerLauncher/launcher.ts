@@ -1,12 +1,13 @@
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
+import { buildSpawnSpec } from "../executables/executableResolver.js";
+import { normalizeExecutableValue } from "../process/processValidation.js";
 import type { ProviderConfig, ProviderLaunchCommand } from "./types.js";
 
 export interface ProviderLaunchSpec {
   executable: string;
   args: string[];
   cwd: string;
-  shell: boolean;
 }
 
 export type ProviderLaunchResult =
@@ -48,12 +49,22 @@ export function buildProviderLaunchSpec(provider: ProviderConfig, cwd: string): 
     };
   }
 
-  return {
-    executable: provider.launchCommand.executable,
-    args: provider.launchCommand.args,
-    cwd,
-    shell: process.platform === "win32",
-  };
+  try {
+    return {
+      executable: normalizeExecutableValue(provider.launchCommand.executable, {
+        label: `${provider.displayName} launch command`,
+        cwd,
+      }),
+      args: provider.launchCommand.args,
+      cwd,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid launch command.";
+    return {
+      status: "spawn-error",
+      message: `${provider.displayName} has an unsafe launch command. ${message}`,
+    };
+  }
 }
 
 function setRawMode(stdin: RawModeStream | null | undefined, enabled: boolean): void {
@@ -150,9 +161,10 @@ export async function launchProviderCli(
     return await new Promise<ProviderLaunchResult>((resolve) => {
       let child: ChildProcess;
       try {
-        child = spawnImpl(spec.executable, spec.args, {
+        const spawnSpec = buildSpawnSpec(spec.executable, spec.args);
+        child = spawnImpl(spawnSpec.executable, spawnSpec.args, {
           cwd: spec.cwd,
-          shell: spec.shell,
+          shell: false,
           stdio: "inherit",
         });
       } catch (error) {

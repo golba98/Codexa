@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ChildProcess } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 import { resolveExecutable, buildSpawnSpec } from "./executableResolver.js";
 
@@ -55,6 +58,52 @@ test("resolver: uses environment override", async () => {
   }
 });
 
+test("resolver: rejects environment override with shell metacharacters", async () => {
+  const original = process.env.TEST_EXECUTABLE;
+  process.env.TEST_EXECUTABLE = "custom-test & calc";
+  try {
+    await assert.rejects(
+      () => resolveExecutable({
+        commandNames: ["test"],
+        label: "test",
+        envOverrides: ["TEST_EXECUTABLE"],
+      }),
+      /shell metacharacters|single executable name/i,
+    );
+  } finally {
+    if (original === undefined) delete process.env.TEST_EXECUTABLE;
+    else process.env.TEST_EXECUTABLE = original;
+  }
+});
+
+test("resolver: rejects configured executable values that include arguments", async () => {
+  await assert.rejects(
+    () => resolveExecutable({
+      commandNames: ["test"],
+      label: "test",
+      configuredPath: "test --version",
+    }),
+    /single executable name/i,
+  );
+});
+
+test("resolver: accepts quoted executable paths with spaces", async () => {
+  const tempRoot = join(tmpdir(), `codexa resolver ${Date.now()}`);
+  const executablePath = join(tempRoot, "tool with spaces.exe");
+  mkdirSync(tempRoot, { recursive: true });
+  writeFileSync(executablePath, "");
+  try {
+    const resolved = await resolveExecutable({
+      commandNames: ["test"],
+      label: "test",
+      configuredPath: `"${executablePath}"`,
+    });
+    assert.equal(resolved, executablePath);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("resolver: falls back to bare name if not found", async () => {
   const mockImpl = mockRunCommand(commandResult({ status: "failed", exitCode: 1 }));
   const resolved = await resolveExecutable({
@@ -69,7 +118,7 @@ test("buildSpawnSpec: wraps .cmd files in cmd.exe on Windows", async () => {
   if (process.platform !== "win32") return;
   const spec = buildSpawnSpec("test.cmd", ["arg1"]);
   assert.equal(spec.executable, "cmd.exe");
-  assert.deepEqual(spec.args, ["/d", "/s", "/c", "test.cmd", "arg1"]);
+  assert.deepEqual(spec.args, ["/d", "/s", "/c", "call", "test.cmd", "arg1"]);
 });
 
 test("buildSpawnSpec: does not wrap .exe files", async () => {

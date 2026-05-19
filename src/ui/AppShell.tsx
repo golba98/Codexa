@@ -1,9 +1,10 @@
-import React, { memo, useEffect, useMemo, useRef } from "react";
-import { Box } from "ink";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Box, Text, useStdin } from "ink";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
+import { isBusy } from "../session/types.js";
 import {
   getShellHeight,
   getShellWidth,
@@ -13,6 +14,7 @@ import {
   buildActiveRenderItems,
   buildStaticRenderItems,
   buildTimelineItems,
+  parseTimelineNavigationInput,
   Timeline,
   TimelineRowView,
   type TimelineItem,
@@ -88,6 +90,18 @@ function NativeRowsItem({ rows }: { rows: TimelineRow[] }) {
   );
 }
 
+function NativePauseBar({ unseenRows }: { unseenRows: number }) {
+  return (
+    <Box width="100%" paddingX={1}>
+      <Text dimColor>
+        {unseenRows > 0
+          ? `↓  ${unseenRows} new rows · End to follow`
+          : "↓  New output · End to follow"}
+      </Text>
+    </Box>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 function AppShellInner({
@@ -154,6 +168,48 @@ function AppShellInner({
     shellHeight: number;
     shellWidth: number;
   } | null>(null);
+
+  // ── Native mode scroll-pause state ────────────────────────────────────────
+  // When the user presses Page Up or Home during streaming, we freeze nativeAllRows
+  // so Ink's lastOutputHeight stays constant and the terminal stops auto-scrolling.
+  const [nativePaused, setNativePaused] = useState(false);
+  const nativePausedRef = useRef(false);
+  const frozenNativeRowsRef = useRef<TimelineRow[]>([]);
+  const frozenLiveRowCountRef = useRef(0);
+  const { stdin } = useStdin();
+
+  useEffect(() => {
+    if (mouseCapture) return;
+    if (!isBusy(uiState) && nativePausedRef.current) {
+      setNativePaused(false);
+      nativePausedRef.current = false;
+    }
+  }, [mouseCapture, uiState]);
+
+  useEffect(() => {
+    if (mouseCapture || !stdin) return;
+
+    function handleScrollKeys(chunk: Buffer | string) {
+      const raw = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      const actions = parseTimelineNavigationInput(raw);
+      if (actions.length === 0) return;
+
+      const wantsUp = actions.includes("pageUp") || actions.includes("home");
+      const wantsDown = actions.includes("pageDown") || actions.includes("end");
+
+      if (wantsDown && nativePausedRef.current) {
+        setNativePaused(false);
+        nativePausedRef.current = false;
+      } else if (wantsUp && !nativePausedRef.current && isBusy(uiState)) {
+        setNativePaused(true);
+        nativePausedRef.current = true;
+      }
+    }
+
+    stdin.on("data", handleScrollKeys);
+    return () => { stdin.off("data", handleScrollKeys); };
+  }, [mouseCapture, stdin, uiState]);
+  // ── End native mode scroll-pause state ────────────────────────────────────
 
   const effectiveShowComposer = showComposer;
   const effectiveComposerRows = effectiveShowComposer ? composerRows : 0;
@@ -280,13 +336,35 @@ function AppShellInner({
   const nativeAllRows = useMemo<TimelineRow[]>(
     () => {
       if (mouseCapture) return [];
-      return [
-        ...nativeStaticAllItems.flatMap((item) => item.rows),
+
+      // When the user has paused auto-follow (pressed Page Up while busy),
+      // return the frozen snapshot so Ink's lastOutputHeight stays constant
+      // and the terminal stops auto-scrolling to the cursor on each frame.
+      if (nativePaused) {
+        return frozenNativeRowsRef.current;
+      }
+
+      const allStaticRows = nativeStaticAllItems.flatMap((item) => item.rows);
+      // Trim old static rows so lastOutputHeight stays bounded to ~2 terminal heights.
+      // Rows that fall off the top are already in terminal scrollback.
+      const maxStaticRows = finalShellHeight > 0 ? finalShellHeight * 2 : allStaticRows.length;
+      const trimmedStaticRows = allStaticRows.slice(Math.max(0, allStaticRows.length - maxStaticRows));
+
+      const rows = [
+        ...trimmedStaticRows,
         ...(showTimeline ? nativeTranscriptParts.liveRows : []),
       ];
+      frozenLiveRowCountRef.current = showTimeline ? nativeTranscriptParts.liveRows.length : 0;
+      frozenNativeRowsRef.current = rows;
+      return rows;
     },
-    [mouseCapture, nativeStaticAllItems, nativeTranscriptParts.liveRows, showTimeline],
+    [mouseCapture, nativePaused, nativeStaticAllItems, nativeTranscriptParts.liveRows, showTimeline, finalShellHeight],
   );
+
+  // When paused, count how many live rows have arrived since the freeze point.
+  const nativeUnseenRows = nativePaused
+    ? Math.max(0, (showTimeline ? nativeTranscriptParts.liveRows.length : 0) - frozenLiveRowCountRef.current)
+    : 0;
 
   renderDebug.traceEvent("layout", "nativeTranscript", {
     nativeMode: !mouseCapture,
@@ -397,6 +475,10 @@ function AppShellInner({
 
         {nativeAllRows.length > 0 && (
           <NativeRowsItem rows={nativeAllRows} />
+        )}
+
+        {nativePaused && isBusy(uiState) && (
+          <NativePauseBar unseenRows={nativeUnseenRows} />
         )}
 
         {showMainPanel && (

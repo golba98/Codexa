@@ -273,6 +273,7 @@ test("buildClaudeSpawnSpec wraps .bat files in cmd.exe on Windows", () => {
   const spec = buildClaudeSpawnSpec("C:\\some\\path\\claude.bat", ["-p", "hello"]);
   assert.equal(spec.executable, "cmd.exe");
   assert.ok(spec.args.includes("C:\\some\\path\\claude.bat"), "bat path should appear in args");
+  assert.ok(spec.args.includes("call"), "cmd.exe should use call for batch files");
   assert.ok(spec.args.includes("/c"), "cmd.exe /c flag should be present");
 });
 

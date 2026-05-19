@@ -78,7 +78,7 @@ import { getTerminalSelectionProfile } from "./core/terminal/terminalSelection.j
 import { copyToClipboard } from "./core/clipboard.js";
 import { normalizePlanReviewMarkdown, savePlan, readPlan } from "./core/planStorage.js";
 import { getBlockedCleanupFailure } from "./core/cleanupFastFail.js";
-import { runCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
+import { runShellCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
 import {
   buildPlanExecutionPrompt,
   buildPlanningPrompt,
@@ -2879,8 +2879,9 @@ export function App({ launchArgs }: AppProps) {
       }, LIVE_UPDATE_FLUSH_MS);
     };
 
-    const runner = runCommand(
-      { executable: safeCommand, args: [], shell: true, cwd: workspaceRoot },
+    const runner = runShellCommand(
+      safeCommand,
+      { cwd: workspaceRoot },
       {
         onProcessLifecycle: (event) => {
           reassertIntendedTerminalTitle({ reason: `shell-process-${event}` });
