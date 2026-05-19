@@ -122,7 +122,9 @@ function applyOverride(
       : provider.currentModel,
     enabled: nextEnabled,
     launchCommand: nextCommand,
-    statusLabel: nextEnabled ? "Enabled" : "Disabled",
+    statusLabel: nextEnabled
+      ? (provider.routeUnavailableReason ? "Needs config" : "Enabled")
+      : "Disabled",
   };
 }
 
@@ -202,6 +204,20 @@ export function buildProviderRegistry(options: {
       rawMetadata: rawMetadataForModel,
     });
 
+    const routeUnavailableReason: string | null = runtime.routeAvailable
+      ? (isProviderRouteConfigured(id) ? null : (options.routeErrors?.[id] ?? discovery.message ?? getProviderRouteSetupMessage(id)))
+      : runtime.routeStatus;
+
+    const enabled = id === "local" ? discovery.status === "ready" : defaults.enabled;
+
+    const statusLabel = id === "local"
+      ? (discovery.status === "ready" ? "Enabled" : "Disabled")
+      : !defaults.enabled
+        ? "Disabled"
+        : routeUnavailableReason
+          ? "Needs config"
+          : "Enabled";
+
     const provider: ProviderConfig = {
       id,
       displayName: defaults.displayName,
@@ -211,16 +227,12 @@ export function buildProviderRegistry(options: {
       capabilityProfile,
       backendType: discovery.backendKind as ProviderBackendType,
       routeMode: runtime.routeAvailable ? "in-codexa" : "launch-only",
-      enabled: id === "local" ? discovery.status === "ready" : defaults.enabled,
-      statusLabel: id === "local"
-        ? discovery.status === "ready" ? "Enabled" : "Disabled"
-        : defaults.enabled ? "Enabled" : "Disabled",
+      enabled,
+      statusLabel,
       launchCommand: defaults.launchCommand ? { ...defaults.launchCommand, args: [...defaults.launchCommand.args] } : null,
       isDefault: id === defaultProviderId,
       isActiveRoute: id === activeRouteProviderId,
-      routeUnavailableReason: runtime.routeAvailable
-        ? (isProviderRouteConfigured(id) ? null : (options.routeErrors?.[id] ?? discovery.message ?? getProviderRouteSetupMessage(id)))
-        : runtime.routeStatus,
+      routeUnavailableReason,
       routeDiagnostics: options.diagnostics?.[id],
     };
 

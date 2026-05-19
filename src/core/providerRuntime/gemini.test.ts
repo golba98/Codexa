@@ -138,7 +138,7 @@ test("Gemini readiness uses resolved executable, Gemini 3 Flash Preview, and com
     assert.equal(validation.status, "ready");
     assert.equal(probe?.executable, FAKE_GEMINI_EXE);
     assert.deepEqual(probe?.args, ["--model", "gemini-3-flash-preview", "-p", "Respond with READY only."]);
-    assert.equal(probe?.shell, false);
+    assert.equal("shell" in (probe ?? {}), false);
     assert.equal(probe?.args.includes("--reasoning"), false);
     assert.equal(validation.diagnostics?.resolvedCommand, FAKE_GEMINI_EXE);
     assert.equal(validation.diagnostics?.lastProbeCommandArgs, JSON.stringify(["--model", "gemini-3-flash-preview", "-p", "Respond with READY only."]));
@@ -223,7 +223,7 @@ test("Gemini prompt execution appends plain stdout as assistant text", async () 
 
     assert.equal(text, "done");
     assert.deepEqual(calls[0]?.args, ["--model", "gemini-3-flash-preview", "-p", "hello"]);
-    assert.equal(calls[0]?.shell, false);
+    assert.equal("shell" in (calls[0] ?? {}), false);
   });
 });
 
@@ -384,4 +384,54 @@ test("Gemini API key detection remains provider-specific", () => {
   assert.equal(hasGeminiApiKey({ GEMINI_API_KEY: "key" } as NodeJS.ProcessEnv), true);
   assert.equal(hasGeminiApiKey({ GOOGLE_API_KEY: "key" } as NodeJS.ProcessEnv), true);
   assert.equal(hasGeminiApiKey({} as NodeJS.ProcessEnv), false);
+});
+
+// ─── Provider selection / runtime sync tests ─────────────────────────────────
+
+test("isGeminiRouteConfigured is false with no API key and no cached CLI validation", async () => {
+  await withGeminiEnv({}, () => {
+    assert.equal(isGeminiRouteConfigured(), false);
+  });
+});
+
+test("isGeminiRouteConfigured is true with GEMINI_API_KEY set", async () => {
+  await withGeminiEnv({ GEMINI_API_KEY: "test-key" }, () => {
+    assert.equal(isGeminiRouteConfigured(), true);
+  });
+});
+
+test("isGeminiRouteConfigured is true with GOOGLE_API_KEY set", async () => {
+  await withGeminiEnv({ GOOGLE_API_KEY: "test-key" }, () => {
+    assert.equal(isGeminiRouteConfigured(), true);
+  });
+});
+
+test("isGeminiRouteConfigured is true after successful CLI validation", async () => {
+  await withGeminiEnv({ GEMINI_EXECUTABLE: FAKE_GEMINI_EXE }, async () => {
+    assert.equal(isGeminiRouteConfigured(), false);
+    await validateGeminiRoute({
+      cwd: process.cwd(),
+      modelId: "gemini-3-flash-preview",
+      runCommandImpl: mockRunCommand(commandResult({ stderr: "READY\n" })),
+    });
+    assert.equal(isGeminiRouteConfigured(), true);
+  });
+});
+
+test("validateGeminiRoute not-configured message names missing credentials when CLI not found", async () => {
+  await withGeminiEnv({ GEMINI_EXECUTABLE: FAKE_GEMINI_EXE }, async () => {
+    const result = await validateGeminiRoute({
+      cwd: process.cwd(),
+      modelId: "gemini-3-flash-preview",
+      runCommandImpl: mockRunCommand(commandResult({
+        status: "spawn_error",
+        exitCode: null,
+        errorCode: "ENOENT",
+        userMessage: "`gemini` is not installed or not available on PATH.",
+      })),
+    });
+    assert.equal(result.status, "not-configured");
+    assert.match(result.message ?? "", /GEMINI_API_KEY|GOOGLE_API_KEY|GEMINI_EXECUTABLE|Gemini CLI/);
+    assert.equal(isGeminiRouteConfigured(), false);
+  });
 });

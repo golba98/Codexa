@@ -246,7 +246,11 @@ function ProviderRow({
   };
 }) {
   const theme = useTheme();
-  const statusColor = provider.isActiveRoute || provider.enabled ? theme.SUCCESS : theme.WARNING;
+  const statusColor = provider.isActiveRoute
+    ? theme.SUCCESS
+    : provider.enabled && !provider.routeUnavailableReason
+      ? theme.SUCCESS
+      : theme.WARNING;
   const marker = isHighlighted ? ">" : " ";
   const defaultMark = provider.isActiveRoute ? "@" : provider.isDefault ? "*" : " ";
   const statusText = provider.isActiveRoute ? "Active" : provider.statusLabel;
