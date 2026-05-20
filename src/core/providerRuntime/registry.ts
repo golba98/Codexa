@@ -2,6 +2,7 @@ import { codexSubprocessProvider } from "../providers/codexSubprocess.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { ProviderId, ProviderActiveRoute, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
 import { anthropicRuntime } from "./anthropic.js";
+import { antigravityRuntime } from "./antigravity.js";
 import { geminiRuntime } from "./gemini.js";
 import { localRuntime } from "./local.js";
 import {
@@ -74,6 +75,7 @@ const PROVIDER_RUNTIMES: Record<ProviderId, ProviderRuntime> = {
   anthropic: anthropicRuntime,
   google: geminiRuntime,
   local: localRuntime,
+  antigravity: antigravityRuntime,
 };
 
 export function getProviderRuntime(providerId: ProviderId): ProviderRuntime {
@@ -198,6 +200,9 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
   if (providerId === "local") {
     const discovery = discoverProviderModels("local");
     return discovery.models[0]?.modelId ?? "Local default";
+  }
+  if (providerId === "antigravity") {
+    return "external-antigravity-default";
   }
   return currentOpenAiModel;
 }

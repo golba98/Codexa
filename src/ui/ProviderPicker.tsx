@@ -57,8 +57,8 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
   const modelWidth = Math.max(5, columnWidthBudget - providerNameWidth - contextWidth - toolsWidth - streamWidth - statusWidth);
 
   const helpText = layout.mode === "micro"
-    ? "Enter select  S default  Esc"
-    : "Enter = select, S = set default, Esc = cancel";
+    ? "Enter select  U use  S default  Esc"
+    : "Enter = select, U = use, S = set default, Esc = cancel";
   const title = mode === "actions" && selectedProvider
     ? `Provider action: ${selectedProvider.displayName}`
     : "Providers";
@@ -70,7 +70,7 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
     return [
       { value: "use-in-codexa", label: "Use in Codexa", disabledReason: routeUnavailable },
       { value: "select-model", label: "Select model", disabledReason: routeUnavailable },
-      { value: "refresh-models", label: selectedProvider?.id === "anthropic" ? "Refresh Claude capabilities" : selectedProvider?.id === "local" ? "Refresh LM Studio metadata" : "Refresh models", disabledReason: routeUnavailable },
+      { value: "refresh-models", label: selectedProvider?.id === "anthropic" ? "Refresh Claude capabilities" : selectedProvider?.id === "local" ? "Refresh LM Studio metadata" : selectedProvider?.id === "antigravity" ? "Refresh detected Antigravity model" : "Refresh models", disabledReason: routeUnavailable },
       ...(selectedProvider?.id === "google" || selectedProvider?.id === "local"
         ? [{ value: "run-diagnostics" as const, label: selectedProvider.id === "local" ? "Run Local diagnostics" : "Run Gemini diagnostics" }]
         : []),
@@ -119,6 +119,10 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
       }
       if (input.toLowerCase() === "s" && selectedProvider) {
         onAction(selectedProvider.id, "set-default");
+        return;
+      }
+      if (input.toLowerCase() === "u" && selectedProvider) {
+        onAction(selectedProvider.id, "use-in-codexa");
         return;
       }
       if (key.return && selectedProvider) {

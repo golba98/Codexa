@@ -2,6 +2,7 @@ import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useStdin } from "ink";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
+import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
 import { isBusy } from "../session/types.js";
@@ -54,6 +55,7 @@ export interface AppShellProps {
   onMouseActivity?: () => void;
   selectionProfile?: TerminalSelectionProfile;
   clearCount?: number;
+  headerConfig?: HeaderConfig;
 }
 
 // ─── Helpers & subcomponents ─────────────────────────────────────────────────
@@ -125,6 +127,7 @@ function AppShellInner({
   onMouseActivity,
   selectionProfile,
   clearCount = 0,
+  headerConfig = HEADER_CONFIG_DEFAULTS,
 }: AppShellProps) {
   renderDebug.useRenderDebug("AppShell", {
     cols: layout.cols,
@@ -446,6 +449,7 @@ function AppShellInner({
             workspaceLabel={workspaceLabel}
             layout={layout}
             runtimeSummary={runtimeSummary}
+            headerConfig={headerConfig}
           />
 
           {mainPanel}
@@ -471,6 +475,7 @@ function AppShellInner({
           workspaceLabel={workspaceLabel}
           layout={layout}
           runtimeSummary={runtimeSummary}
+          headerConfig={headerConfig}
         />
 
         {nativeAllRows.length > 0 && (
@@ -520,6 +525,7 @@ function AppShellInner({
           workspaceLabel={workspaceLabel}
           layout={layout}
           runtimeSummary={runtimeSummary}
+          headerConfig={headerConfig}
         />
 
         {/* Keep Timeline always mounted so its viewport scroll state survives panel open/close.

@@ -10,6 +10,7 @@ import {
   DEFAULT_TERMINAL_TITLE_MODE,
   DEFAULT_THEME,
   DEFAULT_WORKSPACE_DISPLAY_MODE,
+  HEADER_CONFIG_DEFAULTS,
   LEGACY_DIRECTORY_DISPLAY_MODES,
   TERMINAL_MOUSE_MODES,
   WORKSPACE_DISPLAY_MODES,
@@ -17,6 +18,7 @@ import {
   normalizeLegacyDirectoryDisplayMode,
   SETTINGS_FILE,
   type AuthPreference,
+  type HeaderConfig,
   type TerminalMouseMode,
   type TerminalTitleMode,
   type WorkspaceDisplayMode,
@@ -48,6 +50,7 @@ export interface AuthSettings {
 export interface AppSettings {
   ui: UiSettings;
   auth: AuthSettings;
+  header: HeaderConfig;
 }
 
 // Pick the first string value found under the camelCase or snake_case key.
@@ -91,12 +94,25 @@ function normalizeUiSettings(input: Partial<UiSettings> | null | undefined): UiS
   };
 }
 
+function normalizeHeaderConfig(input: Partial<HeaderConfig> | null | undefined): HeaderConfig {
+  return {
+    showBrand: typeof input?.showBrand === "boolean" ? input.showBrand : HEADER_CONFIG_DEFAULTS.showBrand,
+    showWorkspace: typeof input?.showWorkspace === "boolean" ? input.showWorkspace : HEADER_CONFIG_DEFAULTS.showWorkspace,
+    showProvider: typeof input?.showProvider === "boolean" ? input.showProvider : HEADER_CONFIG_DEFAULTS.showProvider,
+    showModel: typeof input?.showModel === "boolean" ? input.showModel : HEADER_CONFIG_DEFAULTS.showModel,
+    showReasoning: typeof input?.showReasoning === "boolean" ? input.showReasoning : HEADER_CONFIG_DEFAULTS.showReasoning,
+    showContext: typeof input?.showContext === "boolean" ? input.showContext : HEADER_CONFIG_DEFAULTS.showContext,
+    showAuthStatus: typeof input?.showAuthStatus === "boolean" ? input.showAuthStatus : HEADER_CONFIG_DEFAULTS.showAuthStatus,
+  };
+}
+
 export function getDefaultSettings(): AppSettings {
   return {
     ui: normalizeUiSettings(null),
     auth: {
       preference: DEFAULT_AUTH_PREFERENCE,
     },
+    header: normalizeHeaderConfig(null),
   };
 }
 
@@ -191,6 +207,10 @@ export function parseSettingsData(data: unknown): AppSettings {
     ? record.auth as Record<string, unknown>
     : record;
 
+  const headerSource = typeof record.header === "object" && record.header !== null
+    ? record.header as Record<string, unknown>
+    : {};
+
   return {
     ui: normalizeUiSettings({
       layoutStyle: pickStr(uiSource, "layoutStyle", "layout_style") ?? defaults.ui.layoutStyle,
@@ -204,6 +224,15 @@ export function parseSettingsData(data: unknown): AppSettings {
     auth: {
       preference: normalizeAuthPreference(authSource.preference ?? authSource.auth_preference),
     },
+    header: normalizeHeaderConfig({
+      showBrand: pickBool(headerSource, "showBrand", "show_brand"),
+      showWorkspace: pickBool(headerSource, "showWorkspace", "show_workspace"),
+      showProvider: pickBool(headerSource, "showProvider", "show_provider"),
+      showModel: pickBool(headerSource, "showModel", "show_model"),
+      showReasoning: pickBool(headerSource, "showReasoning", "show_reasoning"),
+      showContext: pickBool(headerSource, "showContext", "show_context"),
+      showAuthStatus: pickBool(headerSource, "showAuthStatus", "show_auth_status"),
+    }),
   };
 }
 
@@ -220,6 +249,15 @@ export function serializeSettings(settings: AppSettings): Record<string, unknown
     },
     auth: {
       preference: settings.auth.preference,
+    },
+    header: {
+      show_brand: settings.header.showBrand,
+      show_workspace: settings.header.showWorkspace,
+      show_provider: settings.header.showProvider,
+      show_model: settings.header.showModel,
+      show_reasoning: settings.header.showReasoning,
+      show_context: settings.header.showContext,
+      show_auth_status: settings.header.showAuthStatus,
     },
   };
 }

@@ -5,6 +5,7 @@ import { PassThrough } from "node:stream";
 import { render, Text } from "ink";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
 import { buildRuntimeSummary } from "../config/runtimeConfig.js";
+import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 import { AppShell, calculateNativeSpacerRows } from "./AppShell.js";
@@ -286,7 +287,6 @@ test("startup uses live compact header at normal shorter terminal height", async
   const output = await renderStartupShell(100, 24);
 
   assert.match(output, /Codexa v/);
-  assert.match(output, /Authenticated/);
   assert.match(output, /C:\\Development\\1-JavaScript\\13-Custom CLI/);
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
   assert.doesNotMatch(output, /██████/);
@@ -773,6 +773,7 @@ function buildShellNode(
     panel?: React.ReactNode;
     activeEvents?: TimelineEvent[];
     uiState?: UIState;
+    headerConfig?: HeaderConfig;
   } = {},
 ) {
   const {
@@ -783,6 +784,7 @@ function buildShellNode(
     panel = null,
     activeEvents = [],
     uiState = { kind: "IDLE" } as UIState,
+    headerConfig = HEADER_CONFIG_DEFAULTS,
   } = options;
   const composerRows = measureBottomComposerRows({
     layout,
@@ -810,6 +812,7 @@ function buildShellNode(
         composer={buildComposerNode(layout, uiState)}
         composerRows={composerRows}
         clearCount={clearCount}
+        headerConfig={headerConfig}
       />
     </ThemeProvider>
   );
@@ -1057,7 +1060,6 @@ test("live header remains visible when transitioning from startup frame to first
   const postPromptOutput = stripAnsi(raw.slice(transitionOffset));
   assert.match(postPromptOutput, /██████/);
   assert.match(postPromptOutput, /Codexa v/);
-  assert.match(postPromptOutput, /Auth: Authenticated/);
   assert.match(postPromptOutput, /Workspace: C:\\Test/);
   assert.match(postPromptOutput, /Reproduce the resize flicker and fix it\./);
   assert.match(postPromptOutput, /Root cause looks like a layout gutter mismatch/);
@@ -1247,8 +1249,11 @@ test("live header updates auth state during startup without transcript output", 
 
   const layout = createLayoutSnapshot(120, 40);
 
+  // Enable showAuthStatus so the header displays auth state changes visibly.
+  const headerConfigWithAuth = { ...HEADER_CONFIG_DEFAULTS, showAuthStatus: true };
+
   // Start with auth in "checking" state (before auth resolves).
-  const instance = render(buildShellNode(layout, [], { authState: "checking" }), {
+  const instance = render(buildShellNode(layout, [], { authState: "checking", headerConfig: headerConfigWithAuth }), {
     stdin: stdin as unknown as NodeJS.ReadStream,
     stdout: stdout as unknown as NodeJS.WriteStream,
     stderr: stdout as unknown as NodeJS.WriteStream,
@@ -1261,16 +1266,19 @@ test("live header updates auth state during startup without transcript output", 
 
   // Auth resolves — update to "authenticated".
   const authUpdateOffset = raw.length;
-  instance.rerender(buildShellNode(layout, [], { authState: "authenticated" }));
+  instance.rerender(buildShellNode(layout, [], { authState: "authenticated", headerConfig: headerConfigWithAuth }));
   await sleep(100);
 
   instance.cleanup();
   await sleep(20);
 
-  const postAuthOutput = stripAnsi(raw.slice(authUpdateOffset));
-  assert.match(postAuthOutput, /██████/);
-  assert.match(postAuthOutput, /Auth: Authenticated/);
-  assert.doesNotMatch(postAuthOutput, /Settings/);
+  // Check the full raw output (not just incremental) contains the auth label and logo.
+  // When showAuthStatus=true, the header should display auth state.
+  const fullOutput = stripAnsi(raw);
+  assert.match(fullOutput, /██████/);
+  assert.match(fullOutput, /Auth: Authenticated/);
+  // Auth update must not have opened a settings panel.
+  assert.doesNotMatch(fullOutput, /Settings/);
 });
 
 test("cold-start stability: opening and closing model picker does not expand UI", async () => {

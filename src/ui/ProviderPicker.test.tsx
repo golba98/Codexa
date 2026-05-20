@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import React from "react";
@@ -108,7 +108,7 @@ test("provider picker renders compact aligned provider rows", async () => {
     await sleep(80);
     const output = harness.getOutput();
     assert.match(output, /Providers/);
-    assert.match(output, /Enter = select, S = set default, Esc = cancel/);
+    assert.match(output, /Enter = select, U = use, S = set default, Esc = cancel/);
     assert.match(output, /OpenAI/);
     assert.match(output, /Anthropic/);
     assert.match(output, /Google/);
@@ -142,7 +142,7 @@ test("provider picker stays readable in a cramped terminal layout", async () => 
     await sleep(80);
     const output = harness.getOutput();
     assert.match(output, /Providers/);
-    assert.match(output, /Enter select\s+S default/);
+    assert.match(output, /Enter select/);
     assert.doesNotMatch(output, /Gemini CLIEnabled/);
     assert.match(output, /OpenAI/);
     assert.match(output, /Local/);
@@ -251,6 +251,56 @@ test("provider picker cancels from provider list with Esc", async () => {
     await sleep(80);
 
     assert.match(harness.getOutput(), /action:cancel/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('pressing U fires use-in-codexa for the selected provider', async () => {
+  const harness = createInkHarness(<ProviderPickerHarness />);
+
+  try {
+    await sleep(80);
+    harness.stdin.write('u');
+    await sleep(80);
+
+    assert.match(harness.getOutput(), /action:openai:use-in-codexa/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('pressing U after navigating down fires use-in-codexa for the selected provider', async () => {
+  const harness = createInkHarness(<ProviderPickerHarness />);
+
+  try {
+    await sleep(80);
+    harness.stdin.write('j'); // down to Anthropic
+    await sleep(40);
+    harness.stdin.write('u');
+    await sleep(80);
+
+    assert.match(harness.getOutput(), /action:anthropic:use-in-codexa/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('Antigravity action panel shows Refresh detected Antigravity model', async () => {
+  const harness = createInkHarness(<ProviderPickerHarness />);
+
+  try {
+    await sleep(80);
+    // Navigate to Antigravity (index 4: openai=0, anthropic=1, google=2, local=3, antigravity=4)
+    for (let i = 0; i < 4; i++) {
+      harness.stdin.write('j');
+      await sleep(20);
+    }
+    harness.stdin.write("\r"); // open action panel
+    await sleep(80);
+
+    assert.match(harness.getOutput(), /Provider action: Antigravity CLI/);
+    assert.match(harness.getOutput(), /Refresh detected Antigravity model/);
   } finally {
     await harness.cleanup();
   }

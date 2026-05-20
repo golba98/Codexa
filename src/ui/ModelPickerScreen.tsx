@@ -25,6 +25,7 @@ interface ModelPickerScreenProps {
   activeProviderLabel?: string;
   isLoading?: boolean;
   emptyMessage?: string;
+  routeTextOverride?: string;
   onSelect: (model: string, reasoning: string, geminiSelection?: GeminiModelSelection) => void;
   onCancel: (reason?: ModelPickerCloseReason) => void;
 }
@@ -115,6 +116,7 @@ export function ModelPickerScreen({
   activeProviderLabel = "OpenAI",
   isLoading = false,
   emptyMessage,
+  routeTextOverride,
   onSelect,
   onCancel,
 }: ModelPickerScreenProps) {
@@ -285,7 +287,7 @@ export function ModelPickerScreen({
     : "↑↓ model · ←→ reasoning · Enter select · Esc cancel";
   const title = clampVisualText(`Select model   ${help}`, innerWidth);
   const aOrAn = /^[aeiou]/i.test(activeProviderLabel) ? "an" : "a";
-  const routeText = `Choose ${aOrAn} ${activeProviderLabel} model to use inside Codexa.`;
+  const routeText = routeTextOverride ?? `Choose ${aOrAn} ${activeProviderLabel} model to use inside Codexa.`;
   const reasoningText = reasoningUnavailable
     ? (models.length === 0 ? "Reasoning: current/default" : "Reasoning: unavailable")
     : `Reasoning: ${formatReasoningLabel(draftReasoning)}`;
