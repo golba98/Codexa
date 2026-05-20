@@ -9,7 +9,8 @@ import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { ThemeProvider } from "./theme.js";
 import { TopHeader } from "./TopHeader.js";
-import { APP_VERSION, formatWorkspaceDisplayPath } from "../config/settings.js";
+import { APP_VERSION, formatWorkspaceDisplayPath, HEADER_CONFIG_DEFAULTS } from "../config/settings.js";
+import type { HeaderConfig } from "../config/settings.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -49,14 +50,17 @@ function sleep(ms = 50): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function renderHeader(cols: number, authState: CodexAuthState): Promise<string> {
-  return renderHeaderWithWorkspace(cols, authState, "C:\\Development\\1-JavaScript\\13-Custom CLI");
+const HEADER_CONFIG_WITH_AUTH: HeaderConfig = { ...HEADER_CONFIG_DEFAULTS, showAuthStatus: true };
+
+async function renderHeader(cols: number, authState: CodexAuthState, headerConfig?: HeaderConfig): Promise<string> {
+  return renderHeaderWithWorkspace(cols, authState, "C:\\Development\\1-JavaScript\\13-Custom CLI", headerConfig);
 }
 
 async function renderHeaderWithWorkspace(
   cols: number,
   authState: CodexAuthState,
   workspaceLabel: string,
+  headerConfig: HeaderConfig = HEADER_CONFIG_DEFAULTS,
 ): Promise<string> {
   const stdin = new TestInput();
   const stdout = new TestOutput();
@@ -74,6 +78,7 @@ async function renderHeaderWithWorkspace(
         workspaceLabel={workspaceLabel}
         layout={createLayoutSnapshot(cols, 40)}
         runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+        headerConfig={headerConfig}
       />
     </ThemeProvider>,
     {
@@ -94,7 +99,7 @@ async function renderHeaderWithWorkspace(
 }
 
 test("full mode renders wordmark at wide terminal", async () => {
-  const output = await renderHeader(130, "authenticated");
+  const output = await renderHeader(130, "authenticated", HEADER_CONFIG_WITH_AUTH);
 
   assert.match(output, /[█╔╗╚╝═║]/);
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
@@ -110,7 +115,7 @@ test("full mode renders wordmark at wide terminal", async () => {
 });
 
 test("compact mode renders version and auth", async () => {
-  const output = await renderHeader(105, "authenticated");
+  const output = await renderHeader(105, "authenticated", HEADER_CONFIG_WITH_AUTH);
 
   assert.match(output, new RegExp(`v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
@@ -133,7 +138,7 @@ test("micro mode renders version and auth", async () => {
 });
 
 test("full mode always shows wordmark regardless of activity", async () => {
-  const output = await renderHeader(180, "authenticated");
+  const output = await renderHeader(180, "authenticated", HEADER_CONFIG_WITH_AUTH);
 
   assert.match(output, /[█╔╗╚╝═║]/);
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
@@ -143,7 +148,7 @@ test("full mode always shows wordmark regardless of activity", async () => {
 });
 
 test("full mode renders Checking for checking auth state", async () => {
-  const output = await renderHeader(130, "checking");
+  const output = await renderHeader(130, "checking", HEADER_CONFIG_WITH_AUTH);
   assert.match(output, /Checking/);
   assert.doesNotMatch(output, /Unknown/);
 });

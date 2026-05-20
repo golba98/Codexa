@@ -355,6 +355,26 @@ export function formatTerminalTitlePath(
   return formatWorkspaceLeaf(workspaceRoot);
 }
 
+export interface HeaderConfig {
+  showBrand: boolean;
+  showWorkspace: boolean;
+  showProvider: boolean;
+  showModel: boolean;
+  showReasoning: boolean;
+  showContext: boolean;
+  showAuthStatus: boolean;
+}
+
+export const HEADER_CONFIG_DEFAULTS: HeaderConfig = {
+  showBrand: true,
+  showWorkspace: true,
+  showProvider: false,
+  showModel: false,
+  showReasoning: false,
+  showContext: false,
+  showAuthStatus: false,
+};
+
 export function getRecommendedReasoningForModel(model: AvailableModel): ReasoningLevel {
   return DEFAULT_REASONING_LEVEL;
 }

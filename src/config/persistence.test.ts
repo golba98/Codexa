@@ -36,6 +36,15 @@ test("keeps UI and auth settings separate from runtime persistence", () => {
     auth: {
       preference: "runner-managed" as const,
     },
+    header: {
+      showBrand: true,
+      showWorkspace: true,
+      showProvider: false,
+      showModel: false,
+      showReasoning: false,
+      showContext: false,
+      showAuthStatus: false,
+    },
   };
 
   const serialized = serializeSettings(initial);

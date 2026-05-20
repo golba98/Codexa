@@ -14,6 +14,7 @@ export type ProviderBackendKind =
   | "gemini-api-key"
   | "anthropic-api-key"
   | "local-openai-compatible"
+  | "antigravity-cli-auth"
   | "unavailable";
 
 export interface ProviderModel {
