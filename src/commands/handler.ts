@@ -119,6 +119,7 @@ export interface CommandContext {
   modelCapabilities?: CodexModelCapabilities | null;
   routeStatusMessage?: string;
   activeRouteProviderLabel?: string;
+  projectInstructions?: import("../core/projectInstructions.js").ProjectInstructionsLoadResult | null;
 }
 
 // Mirrors AVAILABLE_APPROVAL_POLICIES[].id from runtimeConfig.ts
@@ -765,6 +766,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
             formatRuntimeStatus(context.resolvedRuntime, {
               workspaceRoot: context.workspace.root,
               tokensUsed: context.tokensUsed,
+              projectInstructions: context.projectInstructions ?? null,
             }),
             context.routeStatusMessage,
           ].filter((line): line is string => Boolean(line)).join("\n\n"),

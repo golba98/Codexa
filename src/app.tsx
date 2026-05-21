@@ -115,6 +115,7 @@ import {
 } from "./core/models/modelSpecs.js";
 import {
   contextMetadataToModelSpec,
+  formatContextCompact,
   formatContextLength,
   resolveModelContextLength,
   type ModelContextMetadata,
@@ -639,16 +640,24 @@ export function App({ launchArgs }: AppProps) {
           : activeProviderRoute.modelId)
       : activeProviderRoute.modelId;
 
+    const ctxValue = activeContextMetadata?.contextLength != null
+      ? `${activeContextMetadata.confidence === "estimated" ? "~" : ""}${formatContextCompact(activeContextMetadata.contextLength)}`
+      : "Unknown";
+    const ctxSource = activeContextMetadata?.source && activeContextMetadata.source !== "unknown"
+      ? ` (${activeContextMetadata.source})`
+      : "";
+
     return [
       "Route status:",
       `  Workspace default provider: ${workspaceDefaultProvider?.displayName ?? "OpenAI"}`,
       `  Active chat route: ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeModelInfo}`,
+      `  Context: ${ctxValue}${ctxSource}`,
       `  Backend kind: ${activeProviderRoute.backendKind}`,
       `  In-Codexa routing: ${activeProviderRuntime.routeAvailable ? isProviderRouteConfigured(activeProviderRoute.providerId) ? "configured" : "not configured" : "unavailable"}`,
       `  External launch: ${activeRouteProvider?.launchCommand ? "Available" : "Unavailable"}`,
       ...(providerLines.length > 0 ? providerLines : []),
     ].join("\n");
-  }, [activeProviderRoute.backendKind, activeProviderRoute.modelId, activeProviderRoute.modelSelection, activeProviderRoute.providerId, activeProviderRoute.reasoning, activeProviderRuntime.routeAvailable, activeRouteModelCapabilities, activeRouteProvider, providerRegistry, reasoningLevel, workspaceDefaultProvider]);
+  }, [activeContextMetadata, activeProviderRoute.backendKind, activeProviderRoute.modelId, activeProviderRoute.modelSelection, activeProviderRoute.providerId, activeProviderRoute.reasoning, activeProviderRuntime.routeAvailable, activeRouteModelCapabilities, activeRouteProvider, providerRegistry, reasoningLevel, workspaceDefaultProvider]);
   const selectionProfile = useMemo(
     () => getTerminalSelectionProfile(process.env),
     [],
@@ -1171,10 +1180,6 @@ export function App({ launchArgs }: AppProps) {
 
   useEffect(() => {
     if (projectInstructionsLoad.status === "loaded") {
-      appendSystemEvent(
-        "Project instructions",
-        `Loaded ${projectInstructionsLoad.instructions.path}.`,
-      );
       traceInputDebug("project_instructions_loaded", {
         path: projectInstructionsLoad.instructions.path,
         content: projectInstructionsLoad.instructions.content,
@@ -1188,7 +1193,7 @@ export function App({ launchArgs }: AppProps) {
         `Could not read ${projectInstructionsLoad.path}: ${projectInstructionsLoad.message}`,
       );
     }
-  }, [appendErrorEvent, appendSystemEvent, projectInstructionsLoad]);
+  }, [appendErrorEvent, projectInstructionsLoad]);
 
   const refreshModelCapabilities = useCallback((forceRefresh = false, announce = false): Promise<CodexModelCapabilities> => {
     // Single-flight: concurrent requests share the same in-flight discovery
@@ -3677,6 +3682,7 @@ export function App({ launchArgs }: AppProps) {
       modelCapabilities: activeRouteModelCapabilities,
       routeStatusMessage,
       activeRouteProviderLabel: activeRouteProvider?.displayName ?? "OpenAI",
+      projectInstructions: projectInstructionsLoad,
     });
     const isCommand = commandResult !== null;
 

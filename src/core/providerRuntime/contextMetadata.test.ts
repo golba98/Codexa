@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   clearModelContextMetadataCache,
   contextMetadataToModelSpec,
+  formatContextCompact,
   formatContextLength,
   formatContextMeter,
   resolveModelContextLength,
@@ -121,7 +122,8 @@ test("known registry values are exact provider/model matches only", async () => 
   assert.equal(exact.source, "known-registry");
   assert.equal(exact.confidence, "known");
   assert.equal(unknown.contextLength, null);
-  assert.equal(gemini3.contextLength, null);
+  assert.equal(gemini3.contextLength, 1_048_576);
+  assert.equal(gemini3.source, "known-registry");
 });
 
 test("unknown context converts to model spec without fake percentage inputs", async () => {
@@ -251,6 +253,89 @@ test("formatContextMeter(32000, null) returns 'Unknown'", () => {
   assert.equal(formatContextMeter(32000, null), "Unknown");
 });
 
+// ─── Gemini 3 registry entries ────────────────────────────────────────────────
+
+test("gemini-3.1-pro-preview resolves 1,048,576 from known registry", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "google",
+    modelId: "gemini-3.1-pro-preview",
+  });
+  assert.equal(metadata.contextLength, 1_048_576);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "known");
+});
+
+test("gemini-3.1-flash-lite-preview resolves 1,048,576 from known registry", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "google",
+    modelId: "gemini-3.1-flash-lite-preview",
+  });
+  assert.equal(metadata.contextLength, 1_048_576);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "known");
+});
+
+// ─── Anthropic alias normalization ────────────────────────────────────────────
+
+test("anthropic alias 'sonnet' resolves 200,000 via registry normalization", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "anthropic",
+    modelId: "sonnet",
+  });
+  assert.equal(metadata.contextLength, 200_000);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "known");
+  assert.equal(metadata.modelId, "sonnet");
+});
+
+test("anthropic alias 'opus' resolves 200,000 via registry normalization", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "anthropic",
+    modelId: "opus",
+  });
+  assert.equal(metadata.contextLength, 200_000);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "known");
+  assert.equal(metadata.modelId, "opus");
+});
+
+test("anthropic alias 'haiku' resolves 200,000 via registry normalization", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "anthropic",
+    modelId: "haiku",
+  });
+  assert.equal(metadata.contextLength, 200_000);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "known");
+  assert.equal(metadata.modelId, "haiku");
+});
+
+test("anthropic full canonical ID 'claude-sonnet-4-6' still resolves correctly", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "anthropic",
+    modelId: "claude-sonnet-4-6",
+  });
+  assert.equal(metadata.contextLength, 200_000);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.modelId, "claude-sonnet-4-6");
+});
+
+test("unknown anthropic model ID does not resolve from registry", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "anthropic",
+    modelId: "claude-unknown-model",
+  });
+  assert.equal(metadata.contextLength, null);
+  assert.equal(metadata.source, "unknown");
+});
+
 // ─── Nested raw.loaded_context_length lookup ─────────────────────────────────
 
 test("context is resolved from nested raw.loaded_context_length when ProviderModel is passed as rawMetadata", async () => {
@@ -278,4 +363,106 @@ test("context is resolved from nested raw.loaded_context_length when ProviderMod
 
   assert.equal(metadata.contextLength, 64000, "should resolve loaded_context_length from nested raw field");
   assert.equal(metadata.source, "lmstudio-api", "nested loaded_context_length should use lmstudio-api source");
+});
+
+// ─── OpenAI/Codex model ID normalisation ─────────────────────────────────────
+
+test("openai 'GPT-5.5' uppercase normalises and resolves 1,048,576 from registry", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "openai",
+    modelId: "GPT-5.5",
+  });
+  assert.equal(metadata.contextLength, 1_048_576);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "estimated");
+  assert.equal(metadata.modelId, "GPT-5.5");
+});
+
+test("openai 'GPT-5 Codex' spaced label normalises to 'gpt-5-codex' and resolves 400,000", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "openai",
+    modelId: "GPT-5 Codex",
+  });
+  assert.equal(metadata.contextLength, 400_000);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "estimated");
+  assert.equal(metadata.modelId, "GPT-5 Codex");
+});
+
+test("openai 'gpt-5.4' resolves 400,000 with confidence 'estimated'", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "openai",
+    modelId: "gpt-5.4",
+  });
+  assert.equal(metadata.contextLength, 400_000);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "estimated");
+});
+
+test("openai 'gpt-5.4-mini' resolves 200,000 with confidence 'estimated'", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "openai",
+    modelId: "gpt-5.4-mini",
+  });
+  assert.equal(metadata.contextLength, 200_000);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "estimated");
+});
+
+test("openai unknown model 'gpt-5-unknown' returns null contextLength", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "openai",
+    modelId: "gpt-5-unknown",
+  });
+  assert.equal(metadata.contextLength, null);
+  assert.equal(metadata.source, "unknown");
+});
+
+test("contextMetadataToModelSpec with confidence 'estimated' sets isEstimated: true", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "openai",
+    modelId: "gpt-5.4",
+  });
+  const spec = contextMetadataToModelSpec(metadata);
+  assert.equal(spec.status, "verified");
+  assert.equal((spec as { isEstimated?: boolean }).isEstimated, true);
+});
+
+test("contextMetadataToModelSpec with confidence 'known' leaves isEstimated falsy", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "google",
+    modelId: "gemini-2.5-flash",
+  });
+  const spec = contextMetadataToModelSpec(metadata);
+  assert.equal(spec.status, "verified");
+  assert.ok(!(spec as { isEstimated?: boolean }).isEstimated, "known confidence must not set isEstimated");
+});
+
+// ─── formatContextCompact ─────────────────────────────────────────────────────
+
+test("formatContextCompact formats 1,048,576 as '1.0M'", () => {
+  assert.equal(formatContextCompact(1_048_576), "1.0M");
+});
+
+test("formatContextCompact formats 400,000 as '400K'", () => {
+  assert.equal(formatContextCompact(400_000), "400K");
+});
+
+test("formatContextCompact formats 200,000 as '200K'", () => {
+  assert.equal(formatContextCompact(200_000), "200K");
+});
+
+test("formatContextCompact formats 128,000 as '128K'", () => {
+  assert.equal(formatContextCompact(128_000), "128K");
+});
+
+test("formatContextCompact formats small values as plain number", () => {
+  assert.equal(formatContextCompact(512), "512");
 });

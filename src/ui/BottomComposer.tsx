@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
+import { formatContextCompact } from "../core/providerRuntime/contextMetadata.js";
 import type { ModelSpec } from "../core/models/modelSpecs.js";
 import type { ExternalCliStatus, UIState } from "../session/types.js";
 import { FOCUS_IDS } from "./focus.js";
@@ -79,14 +80,17 @@ export function getTokenBarDisplay(tokensUsed: number, modelSpec: ModelSpec) {
       hasKnownLimit: false,
     };
   }
+  const isEstimated = modelSpec.isEstimated === true;
   const pct = modelSpec.contextWindow > 0
     ? Math.min(100, Math.floor((tokensUsed / modelSpec.contextWindow) * 100))
     : 0;
   return {
     usedText: tokensUsed.toLocaleString("en-US"),
-    limitText: modelSpec.contextWindow.toLocaleString("en-US"),
+    limitText: isEstimated
+      ? `~${formatContextCompact(modelSpec.contextWindow)}`
+      : modelSpec.contextWindow.toLocaleString("en-US"),
     percentage: pct,
-    isEstimatedLimit: false,
+    isEstimatedLimit: isEstimated,
     hasKnownLimit: true,
   };
 }

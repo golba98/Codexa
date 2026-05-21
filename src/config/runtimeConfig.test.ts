@@ -177,3 +177,42 @@ test("formats runtime status with effective policy details", () => {
   assert.match(status, /Sandbox mode:/);
   assert.match(status, /Tokens used: ~512/);
 });
+
+test("formats runtime status with loaded project instructions", () => {
+  const resolved = resolveRuntimeConfig(DEFAULT_RUNTIME_CONFIG);
+  const status = formatRuntimeStatus(resolved, {
+    workspaceRoot: "C:\\Workspace",
+    projectInstructions: {
+      status: "loaded",
+      instructions: { path: "C:\\Workspace\\AGENTS.md", content: "# Instructions" },
+    },
+  });
+
+  assert.match(status, /Project instructions: loaded/);
+  assert.match(status, /Source: C:\\Workspace\\AGENTS\.md/);
+});
+
+test("formats runtime status with project instructions error", () => {
+  const resolved = resolveRuntimeConfig(DEFAULT_RUNTIME_CONFIG);
+  const status = formatRuntimeStatus(resolved, {
+    workspaceRoot: "C:\\Workspace",
+    projectInstructions: {
+      status: "error",
+      path: "C:\\Workspace\\AGENTS.md",
+      message: "ENOENT: file not found",
+    },
+  });
+
+  assert.match(status, /Project instructions: error/);
+  assert.match(status, /ENOENT/);
+});
+
+test("formats runtime status with missing project instructions", () => {
+  const resolved = resolveRuntimeConfig(DEFAULT_RUNTIME_CONFIG);
+  const status = formatRuntimeStatus(resolved, {
+    workspaceRoot: "C:\\Workspace",
+    projectInstructions: { status: "missing" },
+  });
+
+  assert.match(status, /Project instructions: none/);
+});

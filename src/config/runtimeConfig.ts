@@ -106,6 +106,7 @@ export interface ResolvedRuntimeConfig {
 export interface RuntimeStatusContext {
   workspaceRoot: string;
   tokensUsed?: number | null;
+  projectInstructions?: import("../core/projectInstructions.js").ProjectInstructionsLoadResult | null;
 }
 
 export interface RuntimeSummary {
@@ -497,6 +498,19 @@ export function formatRuntimeStatus(runtime: ResolvedRuntimeConfig, context: Run
 
   if (typeof context.tokensUsed === "number") {
     lines.push(`  Tokens used: ~${context.tokensUsed.toLocaleString("en-US")}`);
+  }
+
+  if (context.projectInstructions) {
+    const pi = context.projectInstructions;
+    if (pi.status === "loaded") {
+      lines.push("  Project instructions: loaded");
+      lines.push(`  Source: ${pi.instructions.path}`);
+    } else if (pi.status === "error") {
+      lines.push(`  Project instructions: error — ${pi.message}`);
+      lines.push(`  Source: ${pi.path}`);
+    } else {
+      lines.push("  Project instructions: none");
+    }
   }
 
   return lines.join("\n");
