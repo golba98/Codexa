@@ -46,6 +46,23 @@ const KNOWN_CONTEXT_REGISTRY: Record<string, KnownContextRegistryEntry> = {
     sourceUrl: "https://ai.google.dev/gemini-api/docs/models",
     note: "Gemini API documented input token limit for this exact model ID.",
   },
+  // Gemini 3 preview model IDs — verified route IDs from GEMINI_VERIFIED_MODEL_IDS.
+  // Source: https://ai.google.dev/gemini-api/docs/models
+  "google:gemini-3-flash-preview": {
+    contextLength: 1_048_576,
+    sourceUrl: "https://ai.google.dev/gemini-api/docs/models",
+    note: "Gemini 3 Flash Preview — 1M token input limit.",
+  },
+  "google:gemini-3.1-pro-preview": {
+    contextLength: 1_048_576,
+    sourceUrl: "https://ai.google.dev/gemini-api/docs/models",
+    note: "Gemini 3.1 Pro Preview — 1M token input limit.",
+  },
+  "google:gemini-3.1-flash-lite-preview": {
+    contextLength: 1_048_576,
+    sourceUrl: "https://ai.google.dev/gemini-api/docs/models",
+    note: "Gemini 3.1 Flash Lite Preview — 1M token input limit.",
+  },
   // Exact documented Anthropic model IDs only. Provider aliases such as
   // "haiku" remain unknown unless configured or discovered by CLI metadata.
   // Source: https://docs.anthropic.com/en/docs/about-claude/models
@@ -64,6 +81,13 @@ const KNOWN_CONTEXT_REGISTRY: Record<string, KnownContextRegistryEntry> = {
     sourceUrl: "https://docs.anthropic.com/en/docs/about-claude/models",
     note: "Anthropic documented context window for this exact model ID.",
   },
+};
+
+// Short alias IDs used by ANTHROPIC_FALLBACK_MODELS → canonical versioned IDs in the registry.
+const ANTHROPIC_MODEL_ALIAS_MAP: Record<string, string> = {
+  opus:   "claude-opus-4-7",
+  sonnet: "claude-sonnet-4-6",
+  haiku:  "claude-haiku-4-5",
 };
 
 const CONTEXT_FIELD_CANDIDATES = [
@@ -230,7 +254,10 @@ function resolveFromConfig(
 }
 
 function resolveFromKnownRegistry(providerId: ProviderId, modelId: string): ModelContextMetadata | null {
-  const entry = KNOWN_CONTEXT_REGISTRY[`${providerId}:${modelId}`];
+  const lookupId = providerId === "anthropic"
+    ? (ANTHROPIC_MODEL_ALIAS_MAP[modelId] ?? modelId)
+    : modelId;
+  const entry = KNOWN_CONTEXT_REGISTRY[`${providerId}:${lookupId}`];
   if (!entry) return null;
   return {
     providerId,

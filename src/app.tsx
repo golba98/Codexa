@@ -1171,10 +1171,6 @@ export function App({ launchArgs }: AppProps) {
 
   useEffect(() => {
     if (projectInstructionsLoad.status === "loaded") {
-      appendSystemEvent(
-        "Project instructions",
-        `Loaded ${projectInstructionsLoad.instructions.path}.`,
-      );
       traceInputDebug("project_instructions_loaded", {
         path: projectInstructionsLoad.instructions.path,
         content: projectInstructionsLoad.instructions.content,
@@ -1188,7 +1184,7 @@ export function App({ launchArgs }: AppProps) {
         `Could not read ${projectInstructionsLoad.path}: ${projectInstructionsLoad.message}`,
       );
     }
-  }, [appendErrorEvent, appendSystemEvent, projectInstructionsLoad]);
+  }, [appendErrorEvent, projectInstructionsLoad]);
 
   const refreshModelCapabilities = useCallback((forceRefresh = false, announce = false): Promise<CodexModelCapabilities> => {
     // Single-flight: concurrent requests share the same in-flight discovery
@@ -3677,6 +3673,7 @@ export function App({ launchArgs }: AppProps) {
       modelCapabilities: activeRouteModelCapabilities,
       routeStatusMessage,
       activeRouteProviderLabel: activeRouteProvider?.displayName ?? "OpenAI",
+      projectInstructions: projectInstructionsLoad,
     });
     const isCommand = commandResult !== null;
 

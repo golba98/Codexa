@@ -326,6 +326,19 @@ test("/status includes active provider route status when supplied", () => {
   assert.doesNotMatch(result?.message ?? "", /Antigravity/);
 });
 
+test("/status includes project instructions status when supplied", () => {
+  const result = runCommand("/status", {
+    projectInstructions: {
+      status: "loaded",
+      instructions: { path: "C:\\Workspace\\AGENTS.md", content: "" },
+    },
+  });
+
+  assert.equal(result?.action, "status");
+  assert.match(result?.message ?? "", /Project instructions: loaded/);
+  assert.match(result?.message ?? "", /AGENTS\.md/);
+});
+
 test("/models opens the model picker", () => {
   const result = runCommand("/models", {
     modelCapabilities: dynamicCapabilities,

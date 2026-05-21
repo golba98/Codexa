@@ -121,7 +121,8 @@ test("known registry values are exact provider/model matches only", async () => 
   assert.equal(exact.source, "known-registry");
   assert.equal(exact.confidence, "known");
   assert.equal(unknown.contextLength, null);
-  assert.equal(gemini3.contextLength, null);
+  assert.equal(gemini3.contextLength, 1_048_576);
+  assert.equal(gemini3.source, "known-registry");
 });
 
 test("unknown context converts to model spec without fake percentage inputs", async () => {
@@ -249,6 +250,89 @@ test("formatContextMeter(0, null) returns 'Unknown'", () => {
 
 test("formatContextMeter(32000, null) returns 'Unknown'", () => {
   assert.equal(formatContextMeter(32000, null), "Unknown");
+});
+
+// ─── Gemini 3 registry entries ────────────────────────────────────────────────
+
+test("gemini-3.1-pro-preview resolves 1,048,576 from known registry", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "google",
+    modelId: "gemini-3.1-pro-preview",
+  });
+  assert.equal(metadata.contextLength, 1_048_576);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "known");
+});
+
+test("gemini-3.1-flash-lite-preview resolves 1,048,576 from known registry", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "google",
+    modelId: "gemini-3.1-flash-lite-preview",
+  });
+  assert.equal(metadata.contextLength, 1_048_576);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "known");
+});
+
+// ─── Anthropic alias normalization ────────────────────────────────────────────
+
+test("anthropic alias 'sonnet' resolves 200,000 via registry normalization", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "anthropic",
+    modelId: "sonnet",
+  });
+  assert.equal(metadata.contextLength, 200_000);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "known");
+  assert.equal(metadata.modelId, "sonnet");
+});
+
+test("anthropic alias 'opus' resolves 200,000 via registry normalization", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "anthropic",
+    modelId: "opus",
+  });
+  assert.equal(metadata.contextLength, 200_000);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "known");
+  assert.equal(metadata.modelId, "opus");
+});
+
+test("anthropic alias 'haiku' resolves 200,000 via registry normalization", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "anthropic",
+    modelId: "haiku",
+  });
+  assert.equal(metadata.contextLength, 200_000);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.confidence, "known");
+  assert.equal(metadata.modelId, "haiku");
+});
+
+test("anthropic full canonical ID 'claude-sonnet-4-6' still resolves correctly", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "anthropic",
+    modelId: "claude-sonnet-4-6",
+  });
+  assert.equal(metadata.contextLength, 200_000);
+  assert.equal(metadata.source, "known-registry");
+  assert.equal(metadata.modelId, "claude-sonnet-4-6");
+});
+
+test("unknown anthropic model ID does not resolve from registry", async () => {
+  clearModelContextMetadataCache();
+  const metadata = await resolveModelContextLength({
+    providerId: "anthropic",
+    modelId: "claude-unknown-model",
+  });
+  assert.equal(metadata.contextLength, null);
+  assert.equal(metadata.source, "unknown");
 });
 
 // ─── Nested raw.loaded_context_length lookup ─────────────────────────────────
