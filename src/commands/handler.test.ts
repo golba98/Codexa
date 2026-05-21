@@ -311,6 +311,21 @@ test("shows effective runtime status", () => {
   assert.match(result?.message ?? "", /Tokens used: ~1,200/i);
 });
 
+test("/status includes active provider route status when supplied", () => {
+  const result = runCommand("/status", {
+    routeStatusMessage: [
+      "Route status:",
+      "  Active chat route: Google / gemini-3-flash-preview",
+      "  Backend kind: gemini-cli-auth",
+    ].join("\n"),
+  });
+
+  assert.equal(result?.action, "status");
+  assert.match(result?.message ?? "", /Active chat route: Google \/ gemini-3-flash-preview/);
+  assert.match(result?.message ?? "", /Backend kind: gemini-cli-auth/);
+  assert.doesNotMatch(result?.message ?? "", /Antigravity/);
+});
+
 test("/models opens the model picker", () => {
   const result = runCommand("/models", {
     modelCapabilities: dynamicCapabilities,

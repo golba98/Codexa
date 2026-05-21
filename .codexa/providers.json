@@ -26,6 +26,10 @@
     "local": {
       "current_model": "google/gemma-4-26b-a4b",
       "current_reasoning": "medium"
+    },
+    "antigravity": {
+      "current_model": "external-antigravity-default",
+      "current_reasoning": "medium"
     }
   }
 }

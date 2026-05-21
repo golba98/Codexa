@@ -824,6 +824,10 @@ function countLogoInOutput(raw: string): number {
   return (stripAnsi(raw).match(/██╔════╝██╔═══██╗/g) ?? []).length;
 }
 
+function countCodexaMetadataInOutput(raw: string): number {
+  return (stripAnsi(raw).match(/Codexa v/g) ?? []).length;
+}
+
 function assertHeaderBefore(output: string, marker: string) {
   const text = stripAnsi(output);
   const headerIndex = text.indexOf("Codexa v");
@@ -1025,6 +1029,52 @@ test("header remains topmost after multiple prompt and response cycles", async (
   assertHeaderBefore(raw, "Second prompt marker");
   assertHeaderBefore(raw, "Second assistant response marker");
   assert.equal(countLogoInOutput(raw), 1, "header should render once in the initial frame");
+  assert.equal(countCodexaMetadataInOutput(raw), 1, "metadata should render once in the initial frame");
+});
+
+test("header is not duplicated by provider migration and route switch transcript events", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+  const routeEvents: TimelineEvent[] = [
+    {
+      id: 50,
+      type: "system",
+      createdAt: 50,
+      title: "Provider migrated",
+      content: "Antigravity provider is no longer supported. Reverted to OpenAI.",
+    },
+    {
+      id: 51,
+      type: "system",
+      createdAt: 51,
+      title: "Provider route active",
+      content: "Google is active via gemini-cli-auth: gemini-3-flash-preview.",
+    },
+  ];
+
+  const instance = render(buildShellNode(layout, routeEvents), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  assert.match(stripAnsi(raw), /Provider migrated/);
+  assert.match(stripAnsi(raw), /Provider route active/);
+  assert.equal(countLogoInOutput(raw), 1, "route switch events must not add a transcript banner");
+  assert.equal(countCodexaMetadataInOutput(raw), 1, "route switch events must not duplicate metadata");
 });
 
 test("live header remains visible when transitioning from startup frame to first prompt", async () => {

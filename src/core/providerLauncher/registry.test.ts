@@ -6,20 +6,11 @@ import { resetGeminiRouteValidationCacheForTests } from "../providerRuntime/gemi
 import { resetGeminiExecutableCacheForTests } from "../executables/geminiExecutable.js";
 import { setProviderActiveRoute } from "./workspaceConfig.js";
 import { resolveActiveProviderRoute } from "../providerRuntime/registry.js";
-import { resetAntigravityProbeForTests, injectAntigravityProbeForTests } from "../providerRuntime/antigravity.js";
-import {
-  overrideAntigravitySettingsPathForTests,
-  resetAntigravitySettingsStateForTests,
-} from "../providerRuntime/antigravitySettings.js";
-import { writeFileSync } from "fs";
-import { mkdtempSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
 
 test("provider registry exposes the default launcher providers", () => {
   const providers = buildProviderRegistry({ activeModel: "gpt-5.4" });
 
-  assert.deepEqual(providers.map((provider) => provider.id), ["openai", "anthropic", "google", "local", "antigravity"]);
+  assert.deepEqual(providers.map((provider) => provider.id), ["openai", "anthropic", "google", "local"]);
   assert.equal(providers[0]?.displayName, "OpenAI");
   assert.equal(providers[0]?.currentModel, "gpt-5.4");
   assert.deepEqual(providers[0]?.launchCommand, { executable: "codex", args: [] });
@@ -330,110 +321,4 @@ test("setProviderActiveRoute does not update activeRoute when google is not conf
     });
     assert.equal(result.activeRoute?.providerId, "openai");
   });
-});
-
-// ─── Antigravity probe cache integration ─────────────────────────────────────
-
-test("antigravity statusLabel is 'Enabled' when probe cache is empty", () => {
-  resetAntigravityProbeForTests();
-  const providers = buildProviderRegistry({ activeModel: "gpt-5.4" });
-  const agy = providers.find((p) => p.id === "antigravity");
-  assert.equal(agy?.statusLabel, "Enabled");
-});
-
-test("antigravity currentModel is placeholder when probe cache is empty and no settings file", () => {
-  resetAntigravityProbeForTests();
-  overrideAntigravitySettingsPathForTests(join(mkdtempSync(join(tmpdir(), "agy-ph-")), "nonexistent.json"));
-  try {
-    const providers = buildProviderRegistry({ activeModel: "gpt-5.4" });
-    const agy = providers.find((p) => p.id === "antigravity");
-    assert.equal(agy?.currentModel, "External Antigravity default");
-  } finally {
-    resetAntigravityProbeForTests();
-    resetAntigravitySettingsStateForTests();
-  }
-});
-
-test("antigravity statusLabel becomes 'Ready' after probe result is cached", () => {
-  resetAntigravityProbeForTests();
-  const before = buildProviderRegistry({ activeModel: "gpt-5.4" });
-  const agyBefore = before.find((p) => p.id === "antigravity");
-  assert.equal(agyBefore?.statusLabel, "Enabled", "Starts as Enabled before probe");
-
-  injectAntigravityProbeForTests({ modelDisplayName: "Gemini 3.5 Flash", reasoning: "High", source: "antigravity-prompt-probe" });
-
-  const after = buildProviderRegistry({ activeModel: "gpt-5.4" });
-  const agyAfter = after.find((p) => p.id === "antigravity");
-  assert.equal(agyAfter?.statusLabel, "Ready");
-
-  resetAntigravityProbeForTests();
-});
-
-test("google shows isActiveRoute: false when antigravity is the active route", () => {
-  const providers = buildProviderRegistry({
-    activeModel: "gpt-5.4",
-    workspaceConfig: {
-      activeRoute: {
-        providerId: "antigravity",
-        modelId: "external-antigravity-default",
-        backendKind: "antigravity-cli-auth",
-      },
-    },
-  });
-  const google = providers.find((p) => p.id === "google");
-  const agy = providers.find((p) => p.id === "antigravity");
-  assert.equal(google?.isActiveRoute, false);
-  assert.equal(agy?.isActiveRoute, true);
-});
-
-// ─── Antigravity settings-file label integration ──────────────────────────────
-
-test("antigravity currentModel shows displayLabel from settings file when no probe cached", () => {
-  resetAntigravityProbeForTests();
-  const settingsPath = join(mkdtempSync(join(tmpdir(), "agy-reg-test-")), "settings.json");
-  overrideAntigravitySettingsPathForTests(settingsPath);
-  try {
-    writeFileSync(settingsPath, JSON.stringify({ model: "Gemini 3.1 Pro (High)" }), "utf-8");
-    const providers = buildProviderRegistry({ activeModel: "gpt-5.4" });
-    const agy = providers.find((p) => p.id === "antigravity");
-    assert.equal(agy?.currentModel, "Gemini 3.1 Pro");
-  } finally {
-    resetAntigravityProbeForTests();
-    resetAntigravitySettingsStateForTests();
-  }
-});
-
-test("antigravity currentModel shows probe displayName when probe is cached (overrides settings file)", () => {
-  resetAntigravityProbeForTests();
-  const settingsPath = join(mkdtempSync(join(tmpdir(), "agy-reg-probe-")), "settings.json");
-  overrideAntigravitySettingsPathForTests(settingsPath);
-  try {
-    writeFileSync(settingsPath, JSON.stringify({ model: "Gemini 3.1 Pro (High)" }), "utf-8");
-    injectAntigravityProbeForTests({
-      modelDisplayName: "Gemini 3.5 Flash",
-      reasoning: "High",
-      source: "antigravity-prompt-probe",
-    });
-    const providers = buildProviderRegistry({ activeModel: "gpt-5.4" });
-    const agy = providers.find((p) => p.id === "antigravity");
-    // Probe result takes precedence over settings file
-    assert.equal(agy?.currentModel, "Gemini 3.5 Flash");
-  } finally {
-    resetAntigravityProbeForTests();
-    resetAntigravitySettingsStateForTests();
-  }
-});
-
-test("antigravity currentModel shows 'External Antigravity default' when no settings and no probe", () => {
-  resetAntigravityProbeForTests();
-  const dir = mkdtempSync(join(tmpdir(), "agy-reg-nofile-"));
-  overrideAntigravitySettingsPathForTests(join(dir, "nonexistent.json"));
-  try {
-    const providers = buildProviderRegistry({ activeModel: "gpt-5.4" });
-    const agy = providers.find((p) => p.id === "antigravity");
-    assert.equal(agy?.currentModel, "External Antigravity default");
-  } finally {
-    resetAntigravityProbeForTests();
-    resetAntigravitySettingsStateForTests();
-  }
 });

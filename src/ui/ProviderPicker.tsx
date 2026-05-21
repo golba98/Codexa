@@ -70,7 +70,7 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
     return [
       { value: "use-in-codexa", label: "Use in Codexa", disabledReason: routeUnavailable },
       { value: "select-model", label: "Select model", disabledReason: routeUnavailable },
-      { value: "refresh-models", label: selectedProvider?.id === "anthropic" ? "Refresh Claude capabilities" : selectedProvider?.id === "local" ? "Refresh LM Studio metadata" : selectedProvider?.id === "antigravity" ? "Refresh detected Antigravity model" : "Refresh models", disabledReason: routeUnavailable },
+      { value: "refresh-models", label: selectedProvider?.id === "anthropic" ? "Refresh Claude capabilities" : selectedProvider?.id === "local" ? "Refresh LM Studio metadata" : "Refresh models", disabledReason: routeUnavailable },
       ...(selectedProvider?.id === "google" || selectedProvider?.id === "local"
         ? [{ value: "run-diagnostics" as const, label: selectedProvider.id === "local" ? "Run Local diagnostics" : "Run Gemini diagnostics" }]
         : []),

@@ -96,6 +96,57 @@ test("parses provider workspace config from Codexa-owned JSON", () => {
   assert.equal("unknown" in (config.providers ?? {}), false);
 });
 
+test("legacy Antigravity active/default config falls back to OpenAI and drops provider override", () => {
+  const config = parseProviderWorkspaceConfig({
+    workspaceDefaultProviderId: "antigravity",
+    activeRoute: {
+      providerId: "antigravity",
+      modelId: "external-antigravity-default",
+      backendKind: "antigravity-cli-auth",
+      reasoning: "medium",
+    },
+    providers: {
+      antigravity: {
+        current_model: "external-antigravity-default",
+        current_reasoning: "medium",
+      },
+      openai: {
+        current_model: "gpt-5.4-mini",
+        current_reasoning: "low",
+      },
+    },
+  });
+
+  assert.deepEqual(config.activeRoute, {
+    providerId: "openai",
+    modelId: "gpt-5.4-mini",
+    backendKind: "codex-cli-auth",
+    reasoning: "low",
+  });
+  assert.equal(config.workspaceDefaultProviderId, "openai");
+  assert.equal(config.providers?.openai?.currentModel, "gpt-5.4-mini");
+  assert.equal((config.providers as Record<string, unknown> | undefined)?.antigravity, undefined);
+  assert.deepEqual(config.migrationNotice, {
+    deprecatedProviderId: "antigravity",
+    revertedProviderId: "openai",
+  });
+  assert.doesNotMatch(JSON.stringify(serializeProviderWorkspaceConfig(config)), /antigravity/i);
+});
+
+test("legacy Antigravity backend aliases are treated as deprecated routes", () => {
+  const config = parseProviderWorkspaceConfig({
+    active_route: {
+      provider_id: "openai",
+      model_id: "external-antigravity-default",
+      backend_kind: "agy",
+    },
+  });
+
+  assert.equal(config.activeRoute?.providerId, "openai");
+  assert.equal(config.activeRoute?.backendKind, "codex-cli-auth");
+  assert.equal(config.migrationNotice?.revertedProviderId, "openai");
+});
+
 test("serializes and persists provider workspace defaults", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "codexa-provider-config-"));
   try {

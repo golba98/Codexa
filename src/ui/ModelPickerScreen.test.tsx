@@ -66,26 +66,26 @@ async function renderModelPicker(props: Partial<Parameters<typeof ModelPickerScr
 }
 
 test("model picker shows default routeText when no override provided", async () => {
-  const output = await renderModelPicker({ activeProviderLabel: "Antigravity" });
-  assert.match(output, /Choose an Antigravity model to use inside Codexa\./);
+  const output = await renderModelPicker({ activeProviderLabel: "Google" });
+  assert.match(output, /Choose a Google model to use inside Codexa\./);
 });
 
 test("model picker shows routeTextOverride when provided", async () => {
-  const override = "Antigravity model selection is managed externally by Antigravity CLI.";
+  const override = "Model selection is managed by the active provider route.";
   const output = await renderModelPicker({
-    activeProviderLabel: "Antigravity",
+    activeProviderLabel: "Google",
     routeTextOverride: override,
   });
-  assert.match(output, /Antigravity model selection is managed externally by Antigravity CLI\./);
+  assert.match(output, /Model selection is managed by the active provider route\./);
 });
 
 test("routeTextOverride suppresses the default Choose copy", async () => {
-  const override = "Antigravity model selection is managed externally by Antigravity CLI.";
+  const override = "Model selection is managed by the active provider route.";
   const output = await renderModelPicker({
-    activeProviderLabel: "Antigravity",
+    activeProviderLabel: "Google",
     routeTextOverride: override,
   });
-  assert.doesNotMatch(output, /Choose an Antigravity model/);
+  assert.doesNotMatch(output, /Choose a Google model/);
 });
 
 test("default routeText uses 'a' for non-vowel provider labels", async () => {
@@ -94,6 +94,6 @@ test("default routeText uses 'a' for non-vowel provider labels", async () => {
 });
 
 test("default routeText uses 'an' for vowel-starting provider labels", async () => {
-  const output = await renderModelPicker({ activeProviderLabel: "Antigravity" });
-  assert.match(output, /Choose an Antigravity/);
+  const output = await renderModelPicker({ activeProviderLabel: "OpenAI" });
+  assert.match(output, /Choose an OpenAI/);
 });
