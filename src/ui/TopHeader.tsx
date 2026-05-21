@@ -7,8 +7,9 @@ import { getAuthStateLabel } from "../core/auth/codexAuth.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { useTheme } from "./theme.js";
 import type { Layout } from "./layout.js";
+import { getTextWidth } from "./textLayout.js";
 
-const WORDMARK = [
+export const HEADER_WORDMARK_LINES = [
   " ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗ █████╗ ",
   "██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝██╔══██╗",
   "██║     ██║   ██║██║  ██║█████╗   ╚███╔╝ ███████║",
@@ -16,6 +17,22 @@ const WORDMARK = [
   "╚██████╗╚██████╔╝██████╔╝███████╗██╔╝ ██╗██║  ██║",
   " ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝",
 ];
+
+const MIN_METADATA_COLUMN_WIDTH = 60;
+const STACKED_METADATA_GAP_ROWS = 1;
+
+export type HeaderHeroMode = "wide" | "stacked" | "compact";
+
+export interface HeaderHeroLayout {
+  mode: HeaderHeroMode;
+  topMarginRows: number;
+  bottomMarginRows: number;
+  metadataGapColumns: number;
+  metadataGapRows: number;
+  logoRows: number;
+  metadataRows: number;
+  totalRows: number;
+}
 
 
 interface TopHeaderProps {
@@ -26,8 +43,67 @@ interface TopHeaderProps {
   headerConfig?: HeaderConfig;
 }
 
+function getWordmarkWidth(): number {
+  return HEADER_WORDMARK_LINES.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
+}
+
+function getHeaderVerticalMargins(layout: Layout): { topMarginRows: number; bottomMarginRows: number } {
+  if (layout.mode !== "full") {
+    return {
+      topMarginRows: 0,
+      bottomMarginRows: layout.rows > 24 ? 1 : 0,
+    };
+  }
+
+  if (layout.rows <= 24) {
+    return { topMarginRows: 0, bottomMarginRows: 1 };
+  }
+
+  return {
+    topMarginRows: 1,
+    bottomMarginRows: layout.rows >= 36 ? 2 : 1,
+  };
+}
+
+export function getHeaderHeroLayout(layout: Layout): HeaderHeroLayout {
+  const { topMarginRows, bottomMarginRows } = getHeaderVerticalMargins(layout);
+  const metadataRows = 3;
+
+  if (layout.mode !== "full") {
+    return {
+      mode: "compact",
+      topMarginRows,
+      bottomMarginRows,
+      metadataGapColumns: 0,
+      metadataGapRows: 0,
+      logoRows: 1,
+      metadataRows: 0,
+      totalRows: topMarginRows + 1 + bottomMarginRows,
+    };
+  }
+
+  const logoRows = HEADER_WORDMARK_LINES.length;
+  const metadataGapColumns = layout.cols >= 150 ? 6 : layout.cols >= 130 ? 5 : 4;
+  const canUseWideHero = layout.cols >= getWordmarkWidth() + metadataGapColumns + MIN_METADATA_COLUMN_WIDTH + 2;
+  const metadataGapRows = canUseWideHero ? 0 : STACKED_METADATA_GAP_ROWS;
+  const contentRows = canUseWideHero
+    ? logoRows
+    : logoRows + metadataGapRows + metadataRows;
+
+  return {
+    mode: canUseWideHero ? "wide" : "stacked",
+    topMarginRows,
+    bottomMarginRows,
+    metadataGapColumns,
+    metadataGapRows,
+    logoRows,
+    metadataRows,
+    totalRows: topMarginRows + contentRows + bottomMarginRows,
+  };
+}
+
 export function measureTopHeaderRows(layout: Layout): number {
-  return layout.mode === "full" ? WORDMARK.length : 1;
+  return getHeaderHeroLayout(layout).totalRows;
 }
 
 /** Truncate a path to fit within maxWidth, keeping the end and prefixing with "... " if needed */
@@ -66,27 +142,72 @@ export function TopHeader({
     : authLabelRaw;
 
   const wsDisplay = truncatePath(workspaceLabel, Math.max(18, cols - 40));
+  const heroLayout = getHeaderHeroLayout(layout);
+  const metadataLines = [
+    headerConfig.showBrand ? { key: "brand", text: `Codexa v${APP_VERSION}`, color: theme.TEXT, bold: true } : null,
+    headerConfig.showAuthStatus ? { key: "auth", text: `Auth: ${authLabel}`, color: theme.TEXT, bold: false } : null,
+    headerConfig.showWorkspace ? { key: "workspace", text: `Workspace: ${wsDisplay}`, color: theme.MUTED, bold: false } : null,
+  ].filter((line): line is { key: string; text: string; color: string; bold: boolean } => Boolean(line));
 
-  // Full mode: always render wordmark + metadata side-by-side
+  // Add a 1-row gap between the version line and workspace line in wide mode
+  // so the two pieces of metadata have breathing room beside the logo.
+  const hasMetadataGap = heroLayout.mode === "wide"
+    && metadataLines.some((l) => l.key === "brand")
+    && metadataLines.some((l) => l.key === "workspace");
+  const metadataVisualRows = metadataLines.length + (hasMetadataGap ? 1 : 0);
+
+  const metadataColumn = (
+    <Box flexDirection="column" flexGrow={1} minWidth={Math.min(MIN_METADATA_COLUMN_WIDTH, Math.max(1, cols - getWordmarkWidth() - heroLayout.metadataGapColumns - 2))}>
+      {metadataLines.map((line) =>
+        hasMetadataGap && line.key === "workspace" ? (
+          <Box key={line.key} marginTop={1}>
+            <Text color={line.color} bold={line.bold} wrap="truncate">{line.text}</Text>
+          </Box>
+        ) : (
+          <Text key={line.key} color={line.color} bold={line.bold} wrap="truncate">{line.text}</Text>
+        )
+      )}
+    </Box>
+  );
+
+  const logoColumn = (
+    <Box flexDirection="column" flexShrink={0}>
+      {HEADER_WORDMARK_LINES.map((line, i) => (
+        <Text key={i} color={theme.ACCENT} bold>{line}</Text>
+      ))}
+    </Box>
+  );
+
   if (mode === "full") {
+    const metadataTopOffset = Math.max(0, Math.floor((HEADER_WORDMARK_LINES.length - metadataVisualRows) / 2));
+
     return (
-      <Box flexDirection="row" paddingX={1} width="100%">
-        <Box flexDirection="column" flexShrink={0} marginRight={2}>
-          {WORDMARK.map((line, i) => (
-            <Text key={i} color={theme.ACCENT} bold>{line}</Text>
-          ))}
-        </Box>
-        <Box flexDirection="column" justifyContent="center" flexGrow={1}>
-          {headerConfig.showBrand && (
-            <Text color={theme.TEXT} bold>{`Codexa v${APP_VERSION}`}</Text>
-          )}
-          {headerConfig.showAuthStatus && (
-            <Text color={theme.TEXT}>{`Auth: ${authLabel}`}</Text>
-          )}
-          {headerConfig.showWorkspace && (
-            <Text color={theme.MUTED} wrap="truncate">{`Workspace: ${wsDisplay}`}</Text>
-          )}
-        </Box>
+      <Box flexDirection="column" paddingX={1} width="100%">
+        {heroLayout.topMarginRows > 0 && (
+          <Box height={heroLayout.topMarginRows} />
+        )}
+
+        {heroLayout.mode === "wide" ? (
+          <Box flexDirection="row" width="100%">
+            {logoColumn}
+            <Box width={heroLayout.metadataGapColumns} flexShrink={0} />
+            <Box flexDirection="column" flexGrow={1} paddingTop={metadataTopOffset}>
+              {metadataColumn}
+            </Box>
+          </Box>
+        ) : (
+          <Box flexDirection="column" width="100%">
+            {logoColumn}
+            {heroLayout.metadataGapRows > 0 && (
+              <Box height={heroLayout.metadataGapRows} />
+            )}
+            {metadataColumn}
+          </Box>
+        )}
+
+        {heroLayout.bottomMarginRows > 0 && (
+          <Box height={heroLayout.bottomMarginRows} />
+        )}
       </Box>
     );
   }
@@ -108,8 +229,16 @@ export function TopHeader({
   }
 
   return (
-    <Box flexDirection="row" paddingX={1} width="100%">
-      {compactParts}
+    <Box flexDirection="column" paddingX={1} width="100%">
+      {heroLayout.topMarginRows > 0 && (
+        <Box height={heroLayout.topMarginRows} />
+      )}
+      <Box flexDirection="row" width="100%">
+        {compactParts}
+      </Box>
+      {heroLayout.bottomMarginRows > 0 && (
+        <Box height={heroLayout.bottomMarginRows} />
+      )}
     </Box>
   );
 }

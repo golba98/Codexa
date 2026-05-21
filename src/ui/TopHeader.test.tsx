@@ -8,7 +8,7 @@ import { buildRuntimeSummary } from "../config/runtimeConfig.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { ThemeProvider } from "./theme.js";
-import { TopHeader } from "./TopHeader.js";
+import { getHeaderHeroLayout, HEADER_WORDMARK_LINES, TopHeader } from "./TopHeader.js";
 import { APP_VERSION, formatWorkspaceDisplayPath, HEADER_CONFIG_DEFAULTS } from "../config/settings.js";
 import type { HeaderConfig } from "../config/settings.js";
 
@@ -101,6 +101,7 @@ async function renderHeaderWithWorkspace(
 test("full mode renders wordmark at wide terminal", async () => {
   const output = await renderHeader(130, "authenticated", HEADER_CONFIG_WITH_AUTH);
 
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(130, 40)).mode, "wide");
   assert.match(output, /[█╔╗╚╝═║]/);
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
@@ -112,6 +113,52 @@ test("full mode renders wordmark at wide terminal", async () => {
   assert.doesNotMatch(output, /FULL AUTO/i);
   assert.doesNotMatch(output, /Workspace write/i);
   assert.doesNotMatch(output, /On request/i);
+});
+
+test("wide header centers metadata beside the logo with a clear column gap", async () => {
+  const output = await renderHeader(130, "authenticated", HEADER_CONFIG_WITH_AUTH);
+  const rows = output.split("\n");
+  const firstLogoRow = rows.findIndex((row) => row.includes("██████"));
+  const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
+  const workspaceRow = rows.findIndex((row) => row.includes("Workspace:"));
+
+  assert.ok(firstLogoRow >= 0, "logo should render");
+  assert.equal(brandRow, firstLogoRow + 1, "metadata should be vertically centered within the logo block");
+  // With auth shown: brand → auth → [1-row gap] → workspace — so workspace is 3 rows from brand
+  assert.equal(workspaceRow, brandRow + 3, "workspace should sit below auth with a 1-row gap between version and workspace");
+  assert.ok((rows[brandRow]?.indexOf(`Codexa v${APP_VERSION}`) ?? -1) >= 55, "metadata should have a visible left gap from the logo");
+});
+
+test("version and workspace metadata rows have a visible gap between them", async () => {
+  // Default config: brand + workspace only (no auth row between them)
+  const output = await renderHeader(130, "authenticated");
+  const rows = output.split("\n");
+  const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
+  const workspaceRow = rows.findIndex((row) => row.includes("Workspace:"));
+
+  assert.ok(brandRow >= 0, "brand line should render");
+  assert.ok(workspaceRow > brandRow + 1, "workspace should not be immediately adjacent to version");
+  assert.equal(workspaceRow, brandRow + 2, "workspace is exactly 2 rows below brand — 1 blank gap row separates them");
+});
+
+test("narrow full header stacks metadata below the logo instead of squeezing columns", async () => {
+  const output = await renderHeader(110, "authenticated", HEADER_CONFIG_WITH_AUTH);
+  const rows = output.split("\n");
+  const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
+  const lastLogoRow = rows.findIndex((row) => row.includes("╚═════"));
+
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(110, 40)).mode, "stacked");
+  assert.ok(lastLogoRow >= 0, "logo should render");
+  assert.ok(brandRow > lastLogoRow, "metadata should render below the logo when stacked");
+  assert.doesNotMatch(rows[brandRow] ?? "", /[█╔╗╚╝═║]/, "stacked metadata row should not contain logo glyphs");
+});
+
+test("header wordmark lines never contain metadata text", () => {
+  const wordmarkText = HEADER_WORDMARK_LINES.join("\n");
+
+  assert.doesNotMatch(wordmarkText, /Codexa v/);
+  assert.doesNotMatch(wordmarkText, /Workspace:/);
+  assert.doesNotMatch(wordmarkText, /Auth:/);
 });
 
 test("compact mode renders version and auth", async () => {
