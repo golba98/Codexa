@@ -9,6 +9,7 @@ export interface VerifiedModelSpec {
   maxOutputTokens: number;
   sourceUrl: string;
   verifiedAt: number;
+  isEstimated?: boolean;
 }
 
 export interface PendingModelSpec {

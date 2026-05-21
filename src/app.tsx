@@ -115,6 +115,7 @@ import {
 } from "./core/models/modelSpecs.js";
 import {
   contextMetadataToModelSpec,
+  formatContextCompact,
   formatContextLength,
   resolveModelContextLength,
   type ModelContextMetadata,
@@ -639,16 +640,24 @@ export function App({ launchArgs }: AppProps) {
           : activeProviderRoute.modelId)
       : activeProviderRoute.modelId;
 
+    const ctxValue = activeContextMetadata?.contextLength != null
+      ? `${activeContextMetadata.confidence === "estimated" ? "~" : ""}${formatContextCompact(activeContextMetadata.contextLength)}`
+      : "Unknown";
+    const ctxSource = activeContextMetadata?.source && activeContextMetadata.source !== "unknown"
+      ? ` (${activeContextMetadata.source})`
+      : "";
+
     return [
       "Route status:",
       `  Workspace default provider: ${workspaceDefaultProvider?.displayName ?? "OpenAI"}`,
       `  Active chat route: ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeModelInfo}`,
+      `  Context: ${ctxValue}${ctxSource}`,
       `  Backend kind: ${activeProviderRoute.backendKind}`,
       `  In-Codexa routing: ${activeProviderRuntime.routeAvailable ? isProviderRouteConfigured(activeProviderRoute.providerId) ? "configured" : "not configured" : "unavailable"}`,
       `  External launch: ${activeRouteProvider?.launchCommand ? "Available" : "Unavailable"}`,
       ...(providerLines.length > 0 ? providerLines : []),
     ].join("\n");
-  }, [activeProviderRoute.backendKind, activeProviderRoute.modelId, activeProviderRoute.modelSelection, activeProviderRoute.providerId, activeProviderRoute.reasoning, activeProviderRuntime.routeAvailable, activeRouteModelCapabilities, activeRouteProvider, providerRegistry, reasoningLevel, workspaceDefaultProvider]);
+  }, [activeContextMetadata, activeProviderRoute.backendKind, activeProviderRoute.modelId, activeProviderRoute.modelSelection, activeProviderRoute.providerId, activeProviderRoute.reasoning, activeProviderRuntime.routeAvailable, activeRouteModelCapabilities, activeRouteProvider, providerRegistry, reasoningLevel, workspaceDefaultProvider]);
   const selectionProfile = useMemo(
     () => getTerminalSelectionProfile(process.env),
     [],

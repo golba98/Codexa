@@ -2,7 +2,7 @@ import type { ModelSpec } from "../models/modelSpecs.js";
 import type { ProviderId, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
 
 export type ContextLengthSource = "api" | "cli" | "config" | "known-registry" | "lmstudio-api" | "unknown";
-export type ContextConfidence = "verified" | "configured" | "known" | "unknown";
+export type ContextConfidence = "verified" | "configured" | "known" | "estimated" | "unknown";
 
 export interface ModelContextMetadata {
   providerId: ProviderId;
@@ -26,6 +26,7 @@ interface KnownContextRegistryEntry {
   contextLength: number;
   sourceUrl: string;
   note: string;
+  estimated?: boolean;
 }
 
 const KNOWN_CONTEXT_REGISTRY: Record<string, KnownContextRegistryEntry> = {
@@ -81,6 +82,71 @@ const KNOWN_CONTEXT_REGISTRY: Record<string, KnownContextRegistryEntry> = {
     sourceUrl: "https://docs.anthropic.com/en/docs/about-claude/models",
     note: "Anthropic documented context window for this exact model ID.",
   },
+  // OpenAI/Codex model IDs as used by the Codex CLI ("openai" provider).
+  // All values are estimated — Codex CLI effective context may differ from the
+  // OpenAI API. Keys are lowercase-normalised (resolveFromKnownRegistry normalises
+  // before lookup so "GPT-5 Codex" → "gpt-5-codex" matches here).
+  // Source: https://platform.openai.com/docs/models
+  "openai:gpt-5.5": {
+    contextLength: 1_048_576,
+    estimated: true,
+    sourceUrl: "https://platform.openai.com/docs/models",
+    note: "Estimated — Codex CLI effective context unverified.",
+  },
+  "openai:gpt-5.5-mini": {
+    contextLength: 200_000,
+    estimated: true,
+    sourceUrl: "https://platform.openai.com/docs/models",
+    note: "Estimated.",
+  },
+  "openai:gpt-5.4": {
+    contextLength: 400_000,
+    estimated: true,
+    sourceUrl: "https://platform.openai.com/docs/models",
+    note: "Estimated.",
+  },
+  "openai:gpt-5.4-mini": {
+    contextLength: 200_000,
+    estimated: true,
+    sourceUrl: "https://platform.openai.com/docs/models",
+    note: "Estimated.",
+  },
+  "openai:gpt-5.3-codex": {
+    contextLength: 400_000,
+    estimated: true,
+    sourceUrl: "https://platform.openai.com/docs/models",
+    note: "Estimated — Codex variant.",
+  },
+  "openai:gpt-5.2": {
+    contextLength: 200_000,
+    estimated: true,
+    sourceUrl: "https://platform.openai.com/docs/models",
+    note: "Estimated.",
+  },
+  "openai:gpt-5.1-codex": {
+    contextLength: 400_000,
+    estimated: true,
+    sourceUrl: "https://platform.openai.com/docs/models",
+    note: "Estimated — Codex variant.",
+  },
+  "openai:gpt-5.1-codex-mini": {
+    contextLength: 200_000,
+    estimated: true,
+    sourceUrl: "https://platform.openai.com/docs/models",
+    note: "Estimated — Codex mini variant.",
+  },
+  "openai:gpt-5-codex": {
+    contextLength: 400_000,
+    estimated: true,
+    sourceUrl: "https://platform.openai.com/docs/models",
+    note: "Estimated — Codex variant.",
+  },
+  "openai:gpt-5-codex-mini": {
+    contextLength: 200_000,
+    estimated: true,
+    sourceUrl: "https://platform.openai.com/docs/models",
+    note: "Estimated — Codex mini variant.",
+  },
 };
 
 // Short alias IDs used by ANTHROPIC_FALLBACK_MODELS → canonical versioned IDs in the registry.
@@ -89,6 +155,12 @@ const ANTHROPIC_MODEL_ALIAS_MAP: Record<string, string> = {
   sonnet: "claude-sonnet-4-6",
   haiku:  "claude-haiku-4-5",
 };
+
+// Normalise OpenAI/Codex model IDs to lowercase-dashed form before registry lookup.
+// Handles display-label variants like "GPT-5 Codex" → "gpt-5-codex".
+function normalizeOpenAIModelId(modelId: string): string {
+  return modelId.toLowerCase().replace(/\s+/g, "-");
+}
 
 const CONTEXT_FIELD_CANDIDATES = [
   "loaded_context_length",
@@ -140,6 +212,13 @@ export function formatContextLength(value: number | null): string {
   return value === null ? "Unknown" : value.toLocaleString("en-US");
 }
 
+export function formatContextCompact(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 100_000) return `${Math.round(n / 1_000)}K`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return `${n}`;
+}
+
 export function formatContextMeter(
   usedTokens: number | null | undefined,
   contextLimit: number | null,
@@ -170,6 +249,7 @@ export function contextMetadataToModelSpec(metadata: ModelContextMetadata): Mode
     maxOutputTokens: metadata.contextLength,
     sourceUrl: metadata.source,
     verifiedAt: Date.now(),
+    isEstimated: metadata.confidence === "estimated",
   };
 }
 
@@ -256,7 +336,9 @@ function resolveFromConfig(
 function resolveFromKnownRegistry(providerId: ProviderId, modelId: string): ModelContextMetadata | null {
   const lookupId = providerId === "anthropic"
     ? (ANTHROPIC_MODEL_ALIAS_MAP[modelId] ?? modelId)
-    : modelId;
+    : providerId === "openai"
+      ? normalizeOpenAIModelId(modelId)
+      : modelId;
   const entry = KNOWN_CONTEXT_REGISTRY[`${providerId}:${lookupId}`];
   if (!entry) return null;
   return {
@@ -264,7 +346,7 @@ function resolveFromKnownRegistry(providerId: ProviderId, modelId: string): Mode
     modelId,
     contextLength: entry.contextLength,
     source: "known-registry",
-    confidence: "known",
+    confidence: entry.estimated ? "estimated" : "known",
     raw: {
       sourceUrl: entry.sourceUrl,
       note: entry.note,

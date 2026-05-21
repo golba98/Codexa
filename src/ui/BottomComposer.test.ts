@@ -613,3 +613,62 @@ test("getTokenBarDisplay unknown spec regression — hasKnownLimit is false", ()
   };
   assert.equal(getTokenBarDisplay(99_999, spec).hasKnownLimit, false);
 });
+
+// ─── getTokenBarDisplay — estimated specs ─────────────────────────────────────
+
+test("getTokenBarDisplay with isEstimated spec returns limitText with ~ prefix and compact format", () => {
+  const spec: VerifiedModelSpec = {
+    status: "verified",
+    contextWindow: 400_000,
+    maxOutputTokens: 400_000,
+    sourceUrl: "known-registry",
+    verifiedAt: 0,
+    isEstimated: true,
+  };
+  const display = getTokenBarDisplay(0, spec);
+  assert.equal(display.limitText, "~400K");
+  assert.equal(display.isEstimatedLimit, true);
+  assert.equal(display.hasKnownLimit, true);
+});
+
+test("getTokenBarDisplay with isEstimated spec still has correct percentage", () => {
+  const spec: VerifiedModelSpec = {
+    status: "verified",
+    contextWindow: 400_000,
+    maxOutputTokens: 400_000,
+    sourceUrl: "known-registry",
+    verifiedAt: 0,
+    isEstimated: true,
+  };
+  const display = getTokenBarDisplay(40_000, spec);
+  assert.equal(display.percentage, 10);
+  assert.equal(display.hasKnownLimit, true);
+});
+
+test("getTokenBarDisplay with isEstimated uses compact M suffix for 1M context", () => {
+  const spec: VerifiedModelSpec = {
+    status: "verified",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 1_048_576,
+    sourceUrl: "known-registry",
+    verifiedAt: 0,
+    isEstimated: true,
+  };
+  const display = getTokenBarDisplay(0, spec);
+  assert.equal(display.limitText, "~1.0M");
+  assert.equal(display.isEstimatedLimit, true);
+});
+
+test("getTokenBarDisplay with isEstimated: false uses comma format (regression guard)", () => {
+  const spec: VerifiedModelSpec = {
+    status: "verified",
+    contextWindow: 400_000,
+    maxOutputTokens: 400_000,
+    sourceUrl: "",
+    verifiedAt: 0,
+    isEstimated: false,
+  };
+  const display = getTokenBarDisplay(0, spec);
+  assert.equal(display.limitText, "400,000");
+  assert.equal(display.isEstimatedLimit, false);
+});
