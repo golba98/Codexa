@@ -1,4 +1,4 @@
-export type ProviderId = "openai" | "anthropic" | "google" | "local" | "antigravity";
+export type ProviderId = "openai" | "anthropic" | "google" | "local";
 
 export type ProviderBackendType =
   | "codex-cli-auth"
@@ -8,7 +8,6 @@ export type ProviderBackendType =
   | "gemini-api-key"
   | "anthropic-api-key"
   | "local-openai-compatible"
-  | "antigravity-cli-auth"
   | "unavailable";
 
 export type ProviderLaunchAction = "launch" | "set-default" | "cancel";
@@ -43,6 +42,12 @@ export interface ProviderWorkspaceConfig {
   workspaceDefaultProviderId?: ProviderId;
   activeRoute?: ProviderActiveRoute;
   providers?: Partial<Record<ProviderId, ProviderWorkspaceOverride>>;
+  migrationNotice?: ProviderWorkspaceMigrationNotice;
+}
+
+export interface ProviderWorkspaceMigrationNotice {
+  deprecatedProviderId: string;
+  revertedProviderId: ProviderId;
 }
 
 export interface ProviderActiveRoute {

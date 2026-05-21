@@ -761,10 +761,13 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       case "status":
         return {
           action: "status",
-          message: formatRuntimeStatus(context.resolvedRuntime, {
-            workspaceRoot: context.workspace.root,
-            tokensUsed: context.tokensUsed,
-          }),
+          message: [
+            formatRuntimeStatus(context.resolvedRuntime, {
+              workspaceRoot: context.workspace.root,
+              tokensUsed: context.tokensUsed,
+            }),
+            context.routeStatusMessage,
+          ].filter((line): line is string => Boolean(line)).join("\n\n"),
         };
 
       case "permissions": {

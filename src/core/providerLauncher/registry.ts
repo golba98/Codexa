@@ -16,12 +16,10 @@ import {
 } from "../providerRuntime/registry.js";
 import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 import { setLocalProviderConfig } from "../providerRuntime/local.js";
-import { getLatestAntigravityProbe } from "../providerRuntime/antigravity.js";
-import { readCurrentAntigravityModel, SUPPORTED_ANTIGRAVITY_MODELS } from "../providerRuntime/antigravitySettings.js";
 import { formatContextLength, resolveModelContextLengthCached } from "../providerRuntime/contextMetadata.js";
 import { resolveModelCapabilityProfileCached } from "../providerRuntime/capabilityProfile.js";
 
-const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "google", "local", "antigravity"];
+const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "google", "local"];
 
 const DEFAULT_PROVIDER_ID: ProviderId = "openai";
 
@@ -75,17 +73,6 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
     launchCommand: null,
     isActiveRoute: false,
     routeUnavailableReason: "Local provider unavailable. Start LM Studio, load a model, and enable the local server.",
-  },
-  antigravity: {
-    id: "antigravity",
-    displayName: "Antigravity CLI",
-    currentModel: () => getLatestAntigravityProbe()?.modelDisplayName ?? "External Antigravity default",
-    backendType: "antigravity-cli-auth",
-    routeMode: "in-codexa",
-    enabled: true,
-    launchCommand: null,
-    isActiveRoute: false,
-    routeUnavailableReason: null,
   },
 };
 
@@ -202,21 +189,6 @@ export function buildProviderRegistry(options: {
       }
     }
 
-    if (id === "antigravity") {
-      const probe = getLatestAntigravityProbe();
-      if (probe) {
-        currentModelLabel = probe.modelDisplayName;
-      } else {
-        const settingsModel = readCurrentAntigravityModel();
-        if (settingsModel) {
-          const entry = SUPPORTED_ANTIGRAVITY_MODELS.find((m) => m.settingsString === settingsModel);
-          currentModelLabel = entry?.displayLabel ?? settingsModel;
-        } else {
-          currentModelLabel = "External Antigravity default";
-        }
-      }
-    }
-
     const rawMetadataForModel = discovery.models.find((model) => model.modelId === currentModelLabel)?.raw;
     const contextMetadata = resolveModelContextLengthCached({
       providerId: id,
@@ -233,7 +205,11 @@ export function buildProviderRegistry(options: {
     });
 
     const routeUnavailableReason: string | null = runtime.routeAvailable
-      ? (isProviderRouteConfigured(id) ? null : (options.routeErrors?.[id] ?? discovery.message ?? getProviderRouteSetupMessage(id)))
+      ? (isProviderRouteConfigured(id)
+          ? null
+          : (options.routeErrors?.[id]
+            ?? discovery.message
+            ?? getProviderRouteSetupMessage(id)))
       : runtime.routeStatus;
 
     const enabled = id === "local" ? discovery.status === "ready" : defaults.enabled;
@@ -244,9 +220,7 @@ export function buildProviderRegistry(options: {
         ? "Disabled"
         : routeUnavailableReason
           ? "Needs config"
-          : id === "antigravity" && getLatestAntigravityProbe() !== null
-            ? "Ready"
-            : "Enabled";
+          : "Enabled";
 
     const provider: ProviderConfig = {
       id,

@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
+import { DEFAULT_MODEL } from "../../config/settings.js";
 import { normalizeWorkspaceRoot } from "../workspaceRoot.js";
 import { isKnownProviderId } from "./registry.js";
-import { getProviderRuntime, isProviderRouteConfigured, isProviderRoutableInCodexa } from "../providerRuntime/registry.js";
+import { getDefaultRouteModel, getProviderRuntime, isProviderRouteConfigured, isProviderRoutableInCodexa } from "../providerRuntime/registry.js";
 import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 import type {
   ProviderActiveRoute,
@@ -12,12 +13,55 @@ import type {
   ProviderWorkspaceOverride,
 } from "./types.js";
 
+const DEPRECATED_ANTIGRAVITY_PROVIDER_ID = "antigravity";
+const DEPRECATED_ANTIGRAVITY_BACKENDS = new Set(["antigravity-cli-auth", "agy"]);
+
 export function getProviderWorkspaceConfigFile(workspaceRoot: string): string {
   return join(normalizeWorkspaceRoot(workspaceRoot), ".codexa", "providers.json");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isDeprecatedAntigravityProviderId(value: unknown): boolean {
+  return value === DEPRECATED_ANTIGRAVITY_PROVIDER_ID;
+}
+
+function isDeprecatedAntigravityRoute(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return isDeprecatedAntigravityProviderId(value.providerId ?? value.provider_id)
+    || DEPRECATED_ANTIGRAVITY_BACKENDS.has(String(value.backendKind ?? value.backend_kind));
+}
+
+function resolveDeprecatedProviderFallback(
+  providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>>,
+): ProviderId {
+  const candidates: readonly ProviderId[] = ["openai", "google", "anthropic", "local"];
+  return candidates.find((providerId) =>
+    isProviderRoutableInCodexa(providerId)
+    && (providerId === "openai" || providers[providerId] !== undefined || isProviderRouteConfigured(providerId))
+  ) ?? "openai";
+}
+
+function createFallbackActiveRoute(
+  providerId: ProviderId,
+  providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>>,
+): ProviderActiveRoute {
+  const override = providers[providerId];
+  const modelId = providerId === "openai"
+    ? override?.currentModel ?? DEFAULT_MODEL
+    : providerId === "google"
+      ? normalizeGeminiModelId(override?.currentModel ?? getDefaultRouteModel(providerId, DEFAULT_MODEL))
+      : override?.currentModel ?? getDefaultRouteModel(providerId, DEFAULT_MODEL);
+
+  return {
+    providerId,
+    modelId,
+    backendKind: getProviderRuntime(providerId).backendKind,
+    ...(override?.currentReasoning ? { reasoning: override.currentReasoning } : {}),
+    ...(providerId === "google" ? { modelSelection: { kind: "manual" as const, modelId } } : {}),
+  };
 }
 
 function parseLaunchCommand(value: unknown): ProviderWorkspaceOverride["command"] | undefined {
@@ -171,22 +215,15 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
   if (!isRecord(data)) return {};
 
   const config: ProviderWorkspaceConfig = {};
-  const defaultProvider = data.workspaceDefaultProviderId
-    ?? data.workspace_default_provider_id
-    ?? data.defaultProviderId
-    ?? data.default_provider_id;
-  if (typeof defaultProvider === "string" && isKnownProviderId(defaultProvider)) {
-    config.workspaceDefaultProviderId = defaultProvider;
-  }
-
-  const activeRoute = parseActiveRoute(data.activeRoute ?? data.active_route);
-  if (activeRoute) {
-    config.activeRoute = activeRoute;
-  }
+  const providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>> = {};
+  let foundDeprecatedAntigravity = false;
 
   if (isRecord(data.providers)) {
-    const providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>> = {};
     for (const [id, value] of Object.entries(data.providers)) {
+      if (isDeprecatedAntigravityProviderId(id)) {
+        foundDeprecatedAntigravity = true;
+        continue;
+      }
       if (!isKnownProviderId(id)) continue;
       const override = parseProviderOverride(value);
       if (id === "google" && override?.currentModel) {
@@ -195,6 +232,40 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
       if (override) providers[id] = override;
     }
     config.providers = providers;
+  }
+
+  const defaultProvider = data.workspaceDefaultProviderId
+    ?? data.workspace_default_provider_id
+    ?? data.defaultProviderId
+    ?? data.default_provider_id;
+  if (isDeprecatedAntigravityProviderId(defaultProvider)) {
+    foundDeprecatedAntigravity = true;
+    config.workspaceDefaultProviderId = resolveDeprecatedProviderFallback(providers);
+  } else if (typeof defaultProvider === "string" && isKnownProviderId(defaultProvider)) {
+    config.workspaceDefaultProviderId = defaultProvider;
+  }
+
+  const rawActiveRoute = data.activeRoute ?? data.active_route;
+  if (isDeprecatedAntigravityRoute(rawActiveRoute)) {
+    foundDeprecatedAntigravity = true;
+    const fallbackProviderId = resolveDeprecatedProviderFallback(providers);
+    config.activeRoute = createFallbackActiveRoute(fallbackProviderId, providers);
+    config.workspaceDefaultProviderId ??= fallbackProviderId;
+  } else {
+    const activeRoute = parseActiveRoute(rawActiveRoute);
+    if (activeRoute) {
+      config.activeRoute = activeRoute;
+    }
+  }
+
+  if (foundDeprecatedAntigravity) {
+    const revertedProviderId = config.activeRoute?.providerId
+      ?? config.workspaceDefaultProviderId
+      ?? resolveDeprecatedProviderFallback(providers);
+    config.migrationNotice = {
+      deprecatedProviderId: DEPRECATED_ANTIGRAVITY_PROVIDER_ID,
+      revertedProviderId,
+    };
   }
 
   return config;

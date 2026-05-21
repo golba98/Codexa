@@ -113,6 +113,7 @@ test("provider picker renders compact aligned provider rows", async () => {
     assert.match(output, /Anthropic/);
     assert.match(output, /Google/);
     assert.match(output, /Local/);
+    assert.doesNotMatch(output, /Antigravity/);
     assert.match(output, /Context/);
     assert.match(output, /Tool/);
     assert.match(output, /Strm/);
@@ -286,22 +287,3 @@ test('pressing U after navigating down fires use-in-codexa for the selected prov
   }
 });
 
-test('Antigravity action panel shows Refresh detected Antigravity model', async () => {
-  const harness = createInkHarness(<ProviderPickerHarness />);
-
-  try {
-    await sleep(80);
-    // Navigate to Antigravity (index 4: openai=0, anthropic=1, google=2, local=3, antigravity=4)
-    for (let i = 0; i < 4; i++) {
-      harness.stdin.write('j');
-      await sleep(20);
-    }
-    harness.stdin.write("\r"); // open action panel
-    await sleep(80);
-
-    assert.match(harness.getOutput(), /Provider action: Antigravity CLI/);
-    assert.match(harness.getOutput(), /Refresh detected Antigravity model/);
-  } finally {
-    await harness.cleanup();
-  }
-});

@@ -17,7 +17,7 @@ function renderIndicator(props: any): Promise<string> {
   stdout.on("data", (chunk) => {
     output += chunk.toString();
   });
-  const instance = render(<ActivityIndicator {...props} />, { stdout });
+  const instance = render(<ActivityIndicator {...props} />, { stdout: stdout as unknown as NodeJS.WriteStream });
   instance.unmount();
   return Promise.resolve(output);
 }
@@ -29,7 +29,7 @@ test("idle state renders static subtle indicator", async () => {
 
 test("error state renders error indicator", async () => {
   const output = await renderIndicator({ uiState: { kind: "ERROR", turnId: 1, message: "err" } });
-  assert.ok(output.includes("×"));
+  assert.ok(output.includes("ï¿½"));
 });
 
 test("tool/action state renders action indicator", async () => {
@@ -54,5 +54,5 @@ test("provider loading renders animated indicator frame", async () => {
 
 test("provider failed renders error indicator", async () => {
   const output = await renderIndicator({ uiState: { kind: "IDLE" }, externalCliStatus: "failed" });
-  assert.ok(output.includes("×"));
+  assert.ok(output.includes("ï¿½"));
 });

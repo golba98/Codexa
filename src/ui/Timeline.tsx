@@ -1072,11 +1072,8 @@ export const Timeline = memo(function Timeline({
     [activeTurnIds, staticTurnIds],
   );
   const staticRenderItems = useMemo(
-    () => [
-      ...(contentSized ? [] : [buildIntroRenderItem({ authState, workspaceLabel, layout })]),
-      ...buildStaticRenderItems(staticItems, allTurnIds, activeTurnId, questionTurnId, question),
-    ],
-    [contentSized, activeTurnId, allTurnIds, authState, layout.mode, question, questionTurnId, staticItems, workspaceLabel],
+    () => buildStaticRenderItems(staticItems, allTurnIds, activeTurnId, questionTurnId, question),
+    [activeTurnId, allTurnIds, question, questionTurnId, staticItems],
   );
   const activeRenderItems = useMemo(
     () => buildActiveRenderItems(activeItems, allTurnIds, uiState),

@@ -146,7 +146,6 @@ import { hasGeminiApiKey, runGeminiDiagnostics } from "./core/providerRuntime/ge
 import { checkLocalProvider, runLocalDiagnostics, setLocalProviderConfig } from "./core/providerRuntime/local.js";
 import { validateAnthropicRoute, ANTHROPIC_ROUTE_SETUP_MESSAGE } from "./core/providerRuntime/anthropic.js";
 import { providerModelsToCodexCapabilities } from "./core/providerRuntime/models.js";
-import { readCurrentAntigravityModel, writeAntigravityModel } from "./core/providerRuntime/antigravitySettings.js";
 import {
   loadProviderWorkspaceConfig,
   saveProviderWorkspaceConfig,
@@ -435,6 +434,7 @@ export function App({ launchArgs }: AppProps) {
   const modelSelectionInFlightRef = useRef(false);
   const providerRouteErrorsRef = useRef<Record<string, string>>({});
   const providerDiagnosticsRef = useRef<Record<string, Record<string, string | number | boolean | null>>>({});
+  const providerMigrationNoticeShownRef = useRef(false);
   const initialPromptSubmittedRef = useRef(false);
   const activeThemeName = getDisplayedThemeName(themeSelection);
   const activeTheme =
@@ -531,15 +531,6 @@ export function App({ launchArgs }: AppProps) {
     [modelCapabilities, modelPickerProviderId, providerModelCapabilities],
   );
   const modelPickerCurrentModel = useMemo(() => {
-    // For Antigravity: always derive current model from the settings file so the picker
-    // highlights the model that is actually saved there, regardless of activeRoute state.
-    if (pendingRouteProviderId === "antigravity"
-      || (pendingRouteProviderId === null && activeProviderRoute.providerId === "antigravity")) {
-      const selectable = getSelectableModelCapabilities(
-        providerModelCapabilities ?? createFallbackModelCapabilities(null),
-      );
-      return readCurrentAntigravityModel() ?? selectable[0]?.model ?? model;
-    }
     if (!pendingRouteProviderId) return activeProviderRoute.modelId;
     if (pendingRouteProviderId === activeProviderRoute.providerId) return activeProviderRoute.modelId;
     // Non-active provider: use stored default, fall back to first selectable model
@@ -657,7 +648,7 @@ export function App({ launchArgs }: AppProps) {
       `  External launch: ${activeRouteProvider?.launchCommand ? "Available" : "Unavailable"}`,
       ...(providerLines.length > 0 ? providerLines : []),
     ].join("\n");
-  }, [activeProviderRoute.backendKind, activeProviderRoute.modelId, activeProviderRoute.modelSelection, activeProviderRoute.providerId, activeProviderRuntime.routeAvailable, activeRouteProvider, providerRegistry, workspaceDefaultProvider]);
+  }, [activeProviderRoute.backendKind, activeProviderRoute.modelId, activeProviderRoute.modelSelection, activeProviderRoute.providerId, activeProviderRoute.reasoning, activeProviderRuntime.routeAvailable, activeRouteModelCapabilities, activeRouteProvider, providerRegistry, reasoningLevel, workspaceDefaultProvider]);
   const selectionProfile = useMemo(
     () => getTerminalSelectionProfile(process.env),
     [],
@@ -1166,6 +1157,17 @@ export function App({ launchArgs }: AppProps) {
       content: safeContent,
     });
   }, [appendStaticEvent]);
+
+  useEffect(() => {
+    const notice = providerWorkspaceConfig.migrationNotice;
+    if (!notice || providerMigrationNoticeShownRef.current) return;
+    providerMigrationNoticeShownRef.current = true;
+    const providerLabel = findProvider(providerRegistry, notice.revertedProviderId)?.displayName ?? "OpenAI";
+    appendSystemEvent(
+      "Provider migrated",
+      `Antigravity provider is no longer supported. Reverted to ${providerLabel}.`,
+    );
+  }, [appendSystemEvent, providerRegistry, providerWorkspaceConfig.migrationNotice]);
 
   useEffect(() => {
     if (projectInstructionsLoad.status === "loaded") {
@@ -1775,16 +1777,7 @@ export function App({ launchArgs }: AppProps) {
         reasoning: normalizedReasoning,
       }));
 
-      const modelLabel = selectedCapability?.label && selectedCapability.label !== nextModel
-        ? selectedCapability.label
-        : nextModel;
-
-      const finalLabel = providerId === "google" && geminiSelection?.kind === "auto"
-        ? `Auto (${geminiSelection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"}) -> ${nextModel}`
-        : modelLabel;
-
       // Route changes are reflected reactively in the BottomComposer metadata row.
-      // No transcript entry is needed.
       refreshTerminalTitle({
         terminalTitleMode,
         workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
@@ -1804,7 +1797,7 @@ export function App({ launchArgs }: AppProps) {
       modelSelectionInFlightRef.current = false;
       returnToChatMode("selection");
     }
-  }, [activeProviderRoute.modelId, activeProviderRoute.providerId, activeRouteProvider, appendErrorEvent, busy, getInputDebugSnapshot, modelCapabilities, persistActiveRoute, providerWorkspaceConfig.providers, returnToChatMode, runtimeConfig.geminiCommandPath, updateRuntimeConfig, workspaceRoot]);
+  }, [activeProviderRoute.modelId, activeProviderRoute.providerId, activeRouteProvider, appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, modelCapabilities, persistActiveRoute, providerWorkspaceConfig.providers, returnToChatMode, runtimeConfig.geminiCommandPath, updateRuntimeConfig, workspaceRoot]);
 
   const setAuthPreferenceWithNotice = useCallback((nextPreference: AuthPreference) => {
     setAuthPreference(nextPreference);
@@ -2074,33 +2067,6 @@ export function App({ launchArgs }: AppProps) {
         }).catch((error) => {
           if (!isMountedRef.current) return;
           appendErrorEvent("Local refresh failed", error instanceof Error ? error.message : String(error));
-        });
-        return;
-      }
-
-      if (providerId === "antigravity") {
-        appendSystemEvent("Model discovery", "Probing Antigravity CLI...");
-        void getProviderRuntime("antigravity").refreshModels!({ cwd: workspaceRoot }).then((discovery) => {
-          if (!isMountedRef.current) return;
-          if (discovery.diagnostics) {
-            providerDiagnosticsRef.current["antigravity"] =
-              discovery.diagnostics as Record<string, string | number | boolean | null>;
-          }
-          setRegistryNonce((n) => n + 1);
-          const detectedReasoning = typeof discovery.diagnostics?.detectedReasoning === "string"
-            ? discovery.diagnostics.detectedReasoning.toLowerCase()
-            : reasoningLevel;
-          intendedInputModeRef.current = "chat/input";
-          intendedFocusTargetRef.current = FOCUS_IDS.composer;
-          setScreen("main");
-          void setModelAndReasoningWithNotice(
-            "external-antigravity-default" as AvailableModel,
-            detectedReasoning as ReasoningLevel,
-            "antigravity",
-          );
-        }).catch((error) => {
-          if (!isMountedRef.current) return;
-          appendErrorEvent("Antigravity probe failed", error instanceof Error ? error.message : String(error));
         });
         return;
       }
@@ -4169,12 +4135,6 @@ export function App({ launchArgs }: AppProps) {
     if (activeProviderRoute.providerId === "local") {
       return activeProviderRoute.modelId;
     }
-    if (activeProviderRoute.providerId === "antigravity") {
-      const probeLabel = currentModelCapability?.label;
-      return (probeLabel && probeLabel !== "External Antigravity default")
-        ? probeLabel
-        : "Antigravity CLI";
-    }
     return model;
   }, [
     activeProviderRoute.modelId,
@@ -4185,7 +4145,9 @@ export function App({ launchArgs }: AppProps) {
     model,
     reasoningLevel,
   ]);
-  const composerReasoningLevel = activeProviderRoute.providerId === "anthropic" ? "" : reasoningLevel;
+  const composerReasoningLevel = activeProviderRoute.providerId === "anthropic"
+    ? ""
+    : activeProviderRoute.reasoning ?? reasoningLevel;
 
   // Memoize the composer element so AppShell's memo check (prev.composer ===
   // next.composer) passes during streaming. Without this, a new JSX element is
@@ -4359,57 +4321,7 @@ export function App({ launchArgs }: AppProps) {
                 activeProviderLabel={modelPickerProviderLabel}
                 isLoading={modelPickerProviderId === "openai" && modelCapabilitiesBusy && modelPickerModels.length === 0}
                 emptyMessage={modelPickerEmptyMessage}
-                routeTextOverride={modelPickerProviderId === "antigravity"
-                  ? "Select an Antigravity model. The reasoning level is bundled with the model selection."
-                  : undefined}
                 onSelect={(m, r, geminiSelection) => {
-                  // Antigravity: write model to settings file, then probe to activate.
-                  const isAntigravityPicker =
-                    pendingRouteProviderId === "antigravity"
-                    || (pendingRouteProviderId === null && activeProviderRoute.providerId === "antigravity");
-                  if (isAntigravityPicker) {
-                    try {
-                      writeAntigravityModel(m);
-                    } catch (error) {
-                      appendErrorEvent(
-                        "Failed to update Antigravity settings",
-                        error instanceof Error ? error.message : String(error),
-                      );
-                      setScreen("provider-picker");
-                      return;
-                    }
-                    appendSystemEvent("Switching Antigravity model", `Writing model to Antigravity settings...`);
-                    void getProviderRuntime("antigravity").refreshModels!({ cwd: workspaceRoot })
-                      .then((discovery) => {
-                        if (!isMountedRef.current) return;
-                        if (discovery.diagnostics) {
-                          providerDiagnosticsRef.current["antigravity"] =
-                            discovery.diagnostics as Record<string, string | number | boolean | null>;
-                        }
-                        setRegistryNonce((n) => n + 1);
-                        const detectedReasoning =
-                          typeof discovery.diagnostics?.detectedReasoning === "string"
-                            ? discovery.diagnostics.detectedReasoning.toLowerCase()
-                            : r;
-                        intendedInputModeRef.current = "chat/input";
-                        intendedFocusTargetRef.current = FOCUS_IDS.composer;
-                        setScreen("main");
-                        void setModelAndReasoningWithNotice(
-                          m as AvailableModel,
-                          detectedReasoning as ReasoningLevel,
-                          "antigravity",
-                        );
-                      })
-                      .catch((error) => {
-                        if (!isMountedRef.current) return;
-                        appendErrorEvent(
-                          "Antigravity probe failed",
-                          error instanceof Error ? error.message : String(error),
-                        );
-                        setScreen("provider-picker");
-                      });
-                    return;
-                  }
                   if (pendingRouteProviderId && pendingRouteProviderId !== activeProviderRoute.providerId) {
                     // Non-active provider: save as provider default without switching the active route.
                     // User must click "Use in Codexa" to validate and activate.
