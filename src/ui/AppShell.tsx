@@ -10,6 +10,7 @@ import {
   getShellHeight,
   getShellWidth,
   type Layout,
+  type LayoutMode,
 } from "./layout.js";
 import {
   buildActiveRenderItems,
@@ -24,9 +25,9 @@ import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type Timeline
 import type { TerminalSelectionProfile } from "../core/terminal/terminalSelection.js";
 import { MemoizedTopHeader, measureTopHeaderRows } from "./TopHeader.js";
 
-// Small fixed spacer used before the first user prompt so the composer sits
-// close to the logo without a disproportionate blank gap on cold start.
-const COLD_START_SPACER_ROWS = 3;
+const COMPACT_HEADER_TO_COMPOSER_GAP_ROWS = 2;
+const MEDIUM_HEADER_TO_COMPOSER_GAP_ROWS = 4;
+const TALL_HEADER_TO_COMPOSER_GAP_ROWS = 6;
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
@@ -80,6 +81,38 @@ export function calculateNativeSpacerRows({
   const availableBodyRows = Math.max(0, shellRows - introRows - composerRows);
   const visibleBodyContentRows = Math.max(0, staticRows) + Math.max(0, liveRows);
   return Math.max(0, availableBodyRows - visibleBodyContentRows);
+}
+
+export function calculateColdStartSpacerRows({
+  shellRows,
+  headerRows,
+  composerRows,
+  layoutMode,
+  availableRows,
+}: {
+  shellRows: number;
+  headerRows: number;
+  composerRows: number;
+  layoutMode: LayoutMode;
+  availableRows: number;
+}): number {
+  if (availableRows <= 0) return 0;
+
+  const rowsAfterHeaderAndComposer = Math.max(0, shellRows - headerRows - composerRows);
+  const preferredRows = layoutMode === "micro" || shellRows <= 18
+    ? 1
+    : shellRows >= 36
+      ? TALL_HEADER_TO_COMPOSER_GAP_ROWS
+      : shellRows >= 28
+        ? MEDIUM_HEADER_TO_COMPOSER_GAP_ROWS
+        : COMPACT_HEADER_TO_COMPOSER_GAP_ROWS;
+
+  return Math.max(0, Math.min(availableRows, rowsAfterHeaderAndComposer, preferredRows));
+}
+
+export function calculateHeaderToContentGapRows(layout: Layout): number {
+  if (layout.mode === "micro" || layout.rows <= 18) return 0;
+  return 1;
 }
 
 function NativeRowsItem({ rows }: { rows: TimelineRow[] }) {
@@ -156,6 +189,7 @@ function AppShellInner({
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
   const headerRows = measureTopHeaderRows(layout);
+  const headerToContentGapRows = calculateHeaderToContentGapRows(layout);
   const showComposer = screen === "main";
   const showMainPanel = screen === "main" && mainPanel !== undefined && mainPanel !== null;
   const showMainPanelFullOutput = showMainPanel && mainPanelMode === "full-output";
@@ -217,9 +251,29 @@ function AppShellInner({
   const effectiveShowComposer = showComposer;
   const effectiveComposerRows = effectiveShowComposer ? composerRows : 0;
   const panelHintRows = showPanelStage && panelHint ? 2 : 0;
+  const canUseColdStartGap = effectiveShowComposer && !hasUserPrompt && screen === "main" && !showMainPanel;
 
   // Timeline/panel owns all vertical space between the live header and fixed composer.
-  const calculatedTimelineRowsRaw = shellHeight - headerRows - effectiveComposerRows - panelHintRows;
+  const coldStartAvailableRows = Math.max(
+    0,
+    shellHeight - headerRows - headerToContentGapRows - effectiveComposerRows - panelHintRows - 2,
+  );
+  const coldStartComposerGapRows = canUseColdStartGap
+    ? calculateColdStartSpacerRows({
+      shellRows: shellHeight,
+      headerRows,
+      composerRows: effectiveComposerRows,
+      layoutMode: layout.mode,
+      availableRows: coldStartAvailableRows,
+    })
+    : 0;
+  const fixedComposerLeadGapRows = mouseCapture ? coldStartComposerGapRows : 0;
+  const calculatedTimelineRowsRaw = shellHeight
+    - headerRows
+    - headerToContentGapRows
+    - effectiveComposerRows
+    - panelHintRows
+    - fixedComposerLeadGapRows;
   const calculatedTimelineRows = Math.max(2, calculatedTimelineRowsRaw);
 
   const { finalShellHeight, finalShellWidth, finalTimelineRows } = useMemo(() => {
@@ -310,7 +364,7 @@ function AppShellInner({
     if (mouseCapture || !effectiveShowComposer || showMainPanel) return 0;
     const rows = calculateNativeSpacerRows({
       shellRows: finalShellHeight,
-      introRows: headerRows,
+      introRows: headerRows + headerToContentGapRows,
       composerRows: effectiveComposerRows,
       staticRows: nativeStaticTranscriptRows,
       liveRows: nativeTranscriptParts.liveRows.length,
@@ -320,10 +374,16 @@ function AppShellInner({
     // This cap persists across model/auth system events so the layout stays
     // stable after config changes on cold start.
     if (!hasUserPrompt) {
-      return Math.min(rows, COLD_START_SPACER_ROWS);
+      return calculateColdStartSpacerRows({
+        shellRows: finalShellHeight,
+        headerRows,
+        composerRows: effectiveComposerRows,
+        layoutMode: layout.mode,
+        availableRows: rows,
+      });
     }
     return rows;
-  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, headerRows, effectiveComposerRows, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
+  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, headerRows, headerToContentGapRows, effectiveComposerRows, layout.mode, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
 
   // In native mode (no SGR capture), committed rows still render inside the
   // body below the live header. Do not use Ink's static output component here
@@ -452,6 +512,10 @@ function AppShellInner({
             headerConfig={headerConfig}
           />
 
+          {headerToContentGapRows > 0 && (
+            <Box height={headerToContentGapRows} />
+          )}
+
           {mainPanel}
 
           {showComposer && (
@@ -477,6 +541,10 @@ function AppShellInner({
           runtimeSummary={runtimeSummary}
           headerConfig={headerConfig}
         />
+
+        {headerToContentGapRows > 0 && (
+          <Box height={headerToContentGapRows} />
+        )}
 
         {nativeAllRows.length > 0 && (
           <NativeRowsItem rows={nativeAllRows} />
@@ -528,6 +596,10 @@ function AppShellInner({
           headerConfig={headerConfig}
         />
 
+        {headerToContentGapRows > 0 && (
+          <Box height={headerToContentGapRows} />
+        )}
+
         {/* Keep Timeline always mounted so its viewport scroll state survives panel open/close.
             display="none" removes it from yoga layout (0 height) without unmounting. */}
         <Box
@@ -563,6 +635,10 @@ function AppShellInner({
           <Box flexDirection="column" flexGrow={1} overflow="hidden" paddingY={1}>
             {panel}
           </Box>
+        )}
+
+        {fixedComposerLeadGapRows > 0 && (
+          <Box height={fixedComposerLeadGapRows} />
         )}
 
         {effectiveShowComposer && (

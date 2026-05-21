@@ -11,7 +11,7 @@ import {
   getVisualWidth,
   resolveStartupHeaderMode,
 } from "./layout.js";
-import { measureTopHeaderRows } from "./TopHeader.js";
+import { getHeaderHeroLayout, measureTopHeaderRows } from "./TopHeader.js";
 
 test("leaves a one-column gutter to avoid edge-triggered scrollbars", () => {
   assert.equal(getShellWidth(120), 119);
@@ -85,8 +85,13 @@ test("chooses startup header mode from measured row budget", () => {
 });
 
 test("measures the header rows for full and compact layouts", () => {
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(120, 30)), 6);
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(120, 30)), 8);
   assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 1);
+});
+
+test("header hero switches from stacked to wide only when metadata has room", () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(110, 30)).mode, "stacked");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(130, 30)).mode, "wide");
 });
 
 test("preserves the previous layout when resize values are invalid", () => {

@@ -8,7 +8,7 @@ import { buildRuntimeSummary } from "../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
-import { AppShell, calculateNativeSpacerRows } from "./AppShell.js";
+import { AppShell, calculateColdStartSpacerRows, calculateHeaderToContentGapRows, calculateNativeSpacerRows } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "./layout.js";
 import { PlanActionPicker, measurePlanActionPickerRows } from "./PlanActionPicker.js";
 import { buildStaticIntroRows, StaticIntroItem } from "./StaticIntroItem.js";
@@ -540,6 +540,48 @@ test("native spacer clamps when model update events fill the body", () => {
   });
 
   assert.equal(spacerRows, 0);
+});
+
+test("cold-start header gap adapts to terminal height", () => {
+  // micro 17-row: measureTopHeaderRows=1, headerToContentGap=0, shellHeight=16
+  assert.equal(calculateColdStartSpacerRows({
+    shellRows: 16,
+    headerRows: 1,
+    composerRows: 4,
+    layoutMode: "micro",
+    availableRows: 9,
+  }), 1);
+  // full 30-row medium: measureTopHeaderRows=8 (1+6+1), headerToContentGap=1, shellHeight=29
+  assert.equal(calculateColdStartSpacerRows({
+    shellRows: 29,
+    headerRows: 8,
+    composerRows: 7,
+    layoutMode: "full",
+    availableRows: 11,
+  }), 4);
+  // full 40-row tall: measureTopHeaderRows=9 (1+6+2), headerToContentGap=1, shellHeight=39
+  assert.equal(calculateColdStartSpacerRows({
+    shellRows: 39,
+    headerRows: 9,
+    composerRows: 7,
+    layoutMode: "full",
+    availableRows: 20,
+  }), 6);
+});
+
+test("cold-start header gap is capped by available rows", () => {
+  assert.equal(calculateColdStartSpacerRows({
+    shellRows: 39,
+    headerRows: 9,
+    composerRows: 7,
+    layoutMode: "full",
+    availableRows: 2,
+  }), 2);
+});
+
+test("header-to-content gap is reserved outside the hero", () => {
+  assert.equal(calculateHeaderToContentGapRows(createLayoutSnapshot(120, 40)), 1);
+  assert.equal(calculateHeaderToContentGapRows(createLayoutSnapshot(39, 13)), 0);
 });
 
 test("main screen keeps the transcript visible while showing the plan action picker", async () => {
@@ -1077,6 +1119,48 @@ test("header is not duplicated by provider migration and route switch transcript
   assert.equal(countCodexaMetadataInOutput(raw), 1, "route switch events must not duplicate metadata");
 });
 
+test("project instructions render with breathing room below the live header", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+  const projectInstructionEvents: TimelineEvent[] = [
+    {
+      id: 60,
+      type: "system",
+      createdAt: 60,
+      title: "Project instructions",
+      content: "Loaded C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal\\AGENTS.md.",
+    },
+  ];
+
+  const instance = render(buildShellNode(layout, projectInstructionEvents), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  const rows = stripAnsi(raw).split("\n");
+  const lastLogoRow = rows.findIndex((row) => row.includes("╚═════"));
+  const projectRow = rows.findIndex((row) => row.includes("Project instructions"));
+
+  assert.ok(lastLogoRow >= 0, "logo should render");
+  assert.ok(projectRow > lastLogoRow + 2, "project instructions should not touch the logo block");
+  assertHeaderBefore(raw, "Project instructions");
+  assert.equal(countLogoInOutput(raw), 1, "project instruction notice must not add a transcript banner");
+});
+
 test("live header remains visible when transitioning from startup frame to first prompt", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
@@ -1370,6 +1454,47 @@ test("cold-start stability: opening and closing model picker does not expand UI"
   // In real mode, cumulative lines should be low.
   const lines = stripAnsi(raw).split("\n").filter(l => l.trim().length > 0);
   assert.ok(lines.length < 40, "Output should remain bounded on cold start");
+});
+
+test("cold-start stability: opening and closing provider picker does not duplicate header", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 40;
+  let raw = "";
+  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+
+  const layout = createLayoutSnapshot(120, 40);
+
+  const instance = render(buildShellNode(layout, []), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: false,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+  await sleep(100);
+
+  instance.rerender(buildShellNode(layout, [], {
+    screen: "provider-picker",
+    panel: <Text>Provider Picker</Text>,
+  }));
+  await sleep(100);
+
+  const closeOutputOffset = raw.length;
+  instance.rerender(buildShellNode(layout, []));
+  await sleep(100);
+
+  instance.cleanup();
+  await sleep(20);
+
+  const postCloseOutput = stripAnsi(raw.slice(closeOutputOffset));
+  assert.match(postCloseOutput, /██████/);
+  assert.match(postCloseOutput, /Codexa v/);
+  assert.match(postCloseOutput, /\n╭[─]+╮\n│ ❯/);
+  assert.equal(countLogoInOutput(postCloseOutput), 1, "provider picker close frame should have one logo");
+  assert.equal(countCodexaMetadataInOutput(postCloseOutput), 1, "provider picker close frame should have one metadata block");
 });
 
 test("cold-start stability: system events do not break the startup frame", async () => {

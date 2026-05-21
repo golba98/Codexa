@@ -170,6 +170,10 @@ export function shouldRenderBusyFooter(layout: Layout, uiState: UIState): boolea
   return false;
 }
 
+export function getComposerToFooterGapRows(layout: Layout): number {
+  return layout.mode === "micro" || layout.rows <= 24 ? 0 : 1;
+}
+
 export function getCommandSuggestionState({
   value,
   allowCommands,
@@ -230,6 +234,7 @@ export function measureBottomComposerRows({
   const statusLineReservedRows = 1;
   const showMetadata = layout.mode !== "micro" && layout.rows > 24;
   const bottomPadding = layout.mode === "micro" || layout.rows <= 24 ? 0 : 1;
+  const footerGapRows = getComposerToFooterGapRows(layout);
 
   const visiblePromptRows = inputLocked ? 1 : promptViewport.visibleRows.length;
 
@@ -237,6 +242,7 @@ export function measureBottomComposerRows({
     visiblePromptRows
     + 2
     + (commandSuggestionState.reserveSuggestionRow ? 1 : 0)
+    + footerGapRows
     + statusLineReservedRows
     + (showMetadata ? 1 : 0)
     + bottomPadding
@@ -514,6 +520,7 @@ export function BottomComposer({
 
   const rawStatusLine = getVisibleComposerStatusLine({ uiState, value, allowCommands, activeProviderId, runElapsedSeconds, externalCliStatus });
   const showStatusLine = rawStatusLine.length > 0;
+  const footerGapRows = getComposerToFooterGapRows(layout);
 
   const promptViewport = useMemo(
     () => createInputViewport({
@@ -887,6 +894,10 @@ export function BottomComposer({
         <Box paddingLeft={1} marginTop={0} width="100%" overflow="hidden">
           <Text color={theme.DIM} wrap="truncate">{suggestionText || " "}</Text>
         </Box>
+      )}
+
+      {footerGapRows > 0 && (
+        <Box height={footerGapRows} />
       )}
 
       {/* Always reserve the status line height */}

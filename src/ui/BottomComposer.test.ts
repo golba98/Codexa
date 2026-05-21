@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   getCommandSuggestionState,
+  getComposerToFooterGapRows,
   getComposerPersona,
   getTokenBarDisplay,
   getVisibleComposerStatusLine,
@@ -35,7 +36,13 @@ test("measures the standard composer rows from the rendered prompt state", () =>
     cursor: 0,
   });
 
-  assert.equal(rows, 6);
+  assert.equal(rows, 7);
+});
+
+test("adds a measured footer gap only when the viewport has room", () => {
+  assert.equal(getComposerToFooterGapRows(createLayoutSnapshot(100, 30)), 1);
+  assert.equal(getComposerToFooterGapRows(createLayoutSnapshot(100, 24)), 0);
+  assert.equal(getComposerToFooterGapRows(createLayoutSnapshot(39, 30)), 0);
 });
 
 test("uses the run footer row budget in cramped busy viewports", () => {
