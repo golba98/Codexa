@@ -8,7 +8,7 @@ import { buildRuntimeSummary } from "../config/runtimeConfig.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { createLayoutSnapshot } from "./layout.js";
 import { ThemeProvider } from "./theme.js";
-import { getHeaderHeroLayout, HEADER_WORDMARK_LINES, TopHeader } from "./TopHeader.js";
+import { getHeaderHeroLayout, HEADER_WORDMARK_LINES, shortenHeaderWorkspaceLabel, TopHeader } from "./TopHeader.js";
 import { APP_VERSION, formatWorkspaceDisplayPath, HEADER_CONFIG_DEFAULTS } from "../config/settings.js";
 import type { HeaderConfig } from "../config/settings.js";
 
@@ -132,7 +132,7 @@ test("wide header centers metadata beside the logo with a clear column gap", asy
   assert.ok(firstLogoRow >= 0, "logo should render");
   assert.ok(brandRow >= firstLogoRow && brandRow <= firstLogoRow + 2, "metadata should be vertically centered within the logo block");
   assert.equal(workspaceRow, brandRow + 2, "workspace should sit below auth in the metadata block");
-  assert.ok((rows[brandRow]?.indexOf(`Codexa v${APP_VERSION}`) ?? -1) >= 55, "metadata should have a visible left gap from the logo");
+  assert.ok((rows[brandRow]?.indexOf(`Codexa v${APP_VERSION}`) ?? -1) >= 53, "metadata should have a visible left gap from the logo");
 });
 
 test("version and workspace metadata rows have a visible gap between them", async () => {
@@ -150,16 +150,37 @@ test("version and workspace metadata rows have a visible gap between them", asyn
   assert.equal(workspaceRow, brandRow + 2, "workspace is exactly 2 rows below brand — 1 blank gap row separates them");
 });
 
-test("narrow full header stacks metadata below the logo instead of squeezing columns", async () => {
-  const output = await renderHeader(110, "authenticated", HEADER_CONFIG_WITH_AUTH);
+test("medium header keeps metadata beside the logo with compact truncation", async () => {
+  const output = await renderHeaderWithWorkspace(
+    100,
+    "authenticated",
+    "C:\\Development\\1-JavaScript\\13-Custom CLI\\packages\\really-long-subfolder\\nested\\workspace",
+    HEADER_CONFIG_WITH_AUTH,
+  );
+  const rows = output.split("\n");
+  const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
+  const firstLogoRow = rows.findIndex((row) => row.includes("██████"));
+  const workspaceRow = rows.find((row) => row.includes("Workspace:")) ?? "";
+
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(100, 40)).mode, "medium");
+  assert.ok(firstLogoRow >= 0, "logo should render");
+  assert.ok(brandRow >= firstLogoRow && brandRow <= firstLogoRow + 2, "metadata should stay beside the logo");
+  assert.match(workspaceRow, /Workspace:\s*…\\workspace/);
+  assert.ok((rows[brandRow]?.indexOf(`Codexa v${APP_VERSION}`) ?? -1) >= 51, "medium metadata should retain a compact gap from the logo");
+});
+
+test("narrow header stacks metadata below the logo instead of overflowing", async () => {
+  const output = await renderHeader(70, "authenticated", HEADER_CONFIG_WITH_AUTH);
   const rows = output.split("\n");
   const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
   const lastLogoRow = rows.findIndex((row) => row.includes("╚═════"));
+  const visibleRows = rows.filter((row) => row.length > 0);
 
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(110, 40)).mode, "stacked");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(70, 40)).mode, "narrow");
   assert.ok(lastLogoRow >= 0, "logo should render");
-  assert.ok(brandRow > lastLogoRow, "metadata should render below the logo when stacked");
-  assert.doesNotMatch(rows[brandRow] ?? "", /[█╔╗╚╝═║]/, "stacked metadata row should not contain logo glyphs");
+  assert.ok(brandRow > lastLogoRow, "metadata should render below the logo when narrow");
+  assert.doesNotMatch(rows[brandRow] ?? "", /[█╔╗╚╝═║]/, "narrow metadata row should not contain logo glyphs");
+  assert.ok(visibleRows.every((row) => row.length <= 70), "narrow rows should not overflow the terminal width");
 });
 
 test("header wordmark lines never contain metadata text", () => {
@@ -176,7 +197,7 @@ test("compact mode renders version and auth", async () => {
   assert.match(output, /[█╔╗╚╝═║]/);
   assert.match(output, new RegExp(`v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
-  assert.match(output, /Workspace:\s*C:\\Development\\1-JavaScript\\13-Custom CLI/);
+  assert.match(output, /Workspace:\s*…\\13-Custom CLI/);
   assert.match(output, /Provider:\s*Codexa Core/);
   assert.match(output, /Context:\s*Unknown/);
   assert.doesNotMatch(output, /Model:/);
@@ -221,11 +242,67 @@ test("compact mode preserves workspace truncation with runtime text", async () =
     "C:\\Development\\1-JavaScript\\13-Custom CLI\\packages\\really-long-subfolder\\nested\\workspace",
   );
 
-  assert.match(output, /\.\.\. /);
-  assert.match(output, /nested\\workspace/);
+  assert.match(output, /…\\workspace/);
   assert.doesNotMatch(output, /packages\\really-long-subfolder/);
   assert.match(output, /Provider:\s*Codexa Core/);
   assert.doesNotMatch(output, /Model:/);
+});
+
+test("shortens long workspace paths to the leaf segment", () => {
+  assert.equal(
+    shortenHeaderWorkspaceLabel("C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal", 24),
+    "…\\13-Custom-CLI-Normal",
+  );
+});
+
+test("header layout changes when width changes without duplicating the component", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 130;
+  let output = "";
+
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const buildHeader = (cols: number) => (
+    <ThemeProvider theme="purple">
+      <TopHeader
+        authState="authenticated"
+        workspaceLabel="C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"
+        layout={createLayoutSnapshot(cols, 40)}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+        headerConfig={HEADER_CONFIG_WITH_AUTH}
+      />
+    </ThemeProvider>
+  );
+
+  const instance = render(buildHeader(130), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: true,
+    exitOnCtrlC: false,
+    patchConsole: false,
+  });
+
+  await sleep(60);
+  output = "";
+  stdout.columns = 70;
+  instance.rerender(buildHeader(70));
+  await sleep(60);
+
+  instance.cleanup();
+  await sleep(20);
+
+  const rows = stripAnsi(output).split("\n");
+  const brandRows = rows.filter((row) => row.includes(`Codexa v${APP_VERSION}`));
+  const lastLogoRow = rows.findIndex((row) => row.includes("╚═════"));
+  const firstBrandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
+
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(70, 40), HEADER_CONFIG_WITH_AUTH).mode, "narrow");
+  assert.ok(firstBrandRow > lastLogoRow, "rerendered narrow header should stack metadata below the logo");
+  assert.ok(brandRows.length <= 2, "rerender should not duplicate unbounded header instances");
 });
 
 test("renders configured workspace display labels", async () => {

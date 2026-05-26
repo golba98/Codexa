@@ -86,13 +86,15 @@ test("chooses startup header mode from measured row budget", () => {
 
 test("measures the header rows for full and compact layouts", () => {
   assert.equal(measureTopHeaderRows(createLayoutSnapshot(120, 30)), 7);
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 10);
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 6);
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(70, 24)), 10);
   assert.equal(measureTopHeaderRows(createLayoutSnapshot(50, 24)), 1);
 });
 
-test("header hero switches from stacked to wide only when metadata has room", () => {
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(110, 30)).mode, "stacked");
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(130, 30)).mode, "wide");
+test("header hero switches across narrow, medium, and wide breakpoints", () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(70, 30)).mode, "narrow");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(100, 30)).mode, "medium");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(120, 30)).mode, "wide");
 });
 
 test("preserves the previous layout when resize values are invalid", () => {
