@@ -18,6 +18,7 @@ export const FOCUS_IDS = {
   permissionsAddWritableRoot: "permissions-add-writable-root",
   permissionsRemoveWritableRoot: "permissions-remove-writable-root",
   importConfirmationPanel: "import-confirmation",
+  updatePrompt: "update-prompt",
 } as const;
 
 export type FocusTargetId = (typeof FOCUS_IDS)[keyof typeof FOCUS_IDS];
@@ -54,6 +55,8 @@ export function getFocusTargetForScreen(screen: Screen): FocusTargetId {
       return FOCUS_IDS.permissionsRemoveWritableRoot;
     case "import-confirmation":
       return FOCUS_IDS.importConfirmationPanel;
+    case "update-prompt":
+      return FOCUS_IDS.updatePrompt;
     case "main":
     default:
       return FOCUS_IDS.composer;

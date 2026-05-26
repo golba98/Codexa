@@ -1,115 +1,119 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CODEXA_NPM_REGISTRY_URL,
+  CODEXA_UPDATE_COMMAND,
   checkForUpdates,
-  findGitRoot,
+  compareSemver,
   formatUpdateInstructions,
+  isNewerVersion,
+  type NpmRegistryMetadata,
 } from "./updateCheck.js";
 import { isCacheValid, type UpdateCheckCache } from "../config/updateCheckCache.js";
 
-const SHA_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const SHA_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+function metadata(version: string): NpmRegistryMetadata {
+  return { "dist-tags": { latest: version } };
+}
 
-// ─── findGitRoot ──────────────────────────────────────────────────────────────
+test("checkForUpdates returns update-available when installed version is lower than npm latest", async () => {
+  const result = await checkForUpdates(
+    {},
+    {
+      currentVersion: "1.0.1",
+      fetchNpmMetadataFn: async (url) => {
+        assert.equal(url, CODEXA_NPM_REGISTRY_URL);
+        return metadata("1.0.2");
+      },
+    },
+  );
 
-test("findGitRoot returns null for a path that has no .git ancestor", () => {
-  // /tmp is unlikely to have a .git directory
-  const result = findGitRoot("/tmp/definitely-no-git-here-xyzzy");
-  assert.equal(result, null);
+  assert.equal(result.status, "update-available");
+  assert.equal(result.currentVersion, "1.0.1");
+  assert.equal(result.latestVersion, "1.0.2");
 });
 
-// ─── checkForUpdates: disabled ───────────────────────────────────────────────
+test("checkForUpdates returns up-to-date when installed version equals npm latest", async () => {
+  const result = await checkForUpdates(
+    {},
+    {
+      currentVersion: "1.0.2",
+      fetchNpmMetadataFn: async () => metadata("1.0.2"),
+    },
+  );
+
+  assert.equal(result.status, "up-to-date");
+});
+
+test("checkForUpdates does not show update available when installed version is higher than npm latest", async () => {
+  const result = await checkForUpdates(
+    {},
+    {
+      currentVersion: "1.0.3",
+      fetchNpmMetadataFn: async () => metadata("1.0.2"),
+    },
+  );
+
+  assert.equal(result.status, "up-to-date");
+});
+
+test("checkForUpdates returns error status instead of throwing when npm request fails", async () => {
+  const result = await checkForUpdates(
+    {},
+    {
+      currentVersion: "1.0.1",
+      fetchNpmMetadataFn: async () => {
+        throw new Error("network unavailable");
+      },
+    },
+  );
+
+  assert.equal(result.status, "error");
+  assert.match(result.errorMessage ?? "", /network unavailable/);
+});
+
+test("checkForUpdates returns error when npm latest is missing", async () => {
+  const result = await checkForUpdates(
+    {},
+    {
+      currentVersion: "1.0.1",
+      fetchNpmMetadataFn: async () => ({ "dist-tags": {} }),
+    },
+  );
+
+  assert.equal(result.status, "error");
+  assert.match(result.errorMessage ?? "", /dist-tags\.latest/);
+});
 
 test("checkForUpdates returns unknown immediately when enabled=false", async () => {
   let called = false;
   const result = await checkForUpdates(
     { enabled: false },
     {
-      getRemoteCommitFn: async () => { called = true; return SHA_B; },
+      currentVersion: "1.0.1",
+      fetchNpmMetadataFn: async () => {
+        called = true;
+        return metadata("1.0.2");
+      },
     },
   );
+
   assert.equal(result.status, "unknown");
-  assert.equal(called, false, "should not call getRemoteCommitFn when disabled");
+  assert.equal(called, false, "should not call npm when disabled");
 });
 
-// ─── checkForUpdates: update-available ───────────────────────────────────────
-
-test("checkForUpdates returns update-available when remote is different from local", async () => {
-  const result = await checkForUpdates(
-    {},
-    {
-      findGitRootFn: () => "/fake/repo",
-      getLocalCommitFn: async () => SHA_A,
-      getRemoteCommitFn: async () => SHA_B,
-    },
-  );
-  assert.equal(result.status, "update-available");
-  assert.equal(result.localCommit, SHA_A);
-  assert.equal(result.remoteCommit, SHA_B);
+test("semver comparison handles numeric and prerelease ordering", () => {
+  assert.equal(isNewerVersion("1.0.10", "1.0.2"), true);
+  assert.equal(isNewerVersion("1.0.2", "1.0.10"), false);
+  assert.equal(compareSemver("1.0.2", "1.0.2"), 0);
+  assert.equal(isNewerVersion("1.0.2", "1.0.2-beta.1"), true);
+  assert.equal(isNewerVersion("1.0.2-beta.1", "1.0.2"), false);
 });
-
-// ─── checkForUpdates: up-to-date ─────────────────────────────────────────────
-
-test("checkForUpdates returns up-to-date when local and remote match", async () => {
-  const result = await checkForUpdates(
-    {},
-    {
-      findGitRootFn: () => "/fake/repo",
-      getLocalCommitFn: async () => SHA_A,
-      getRemoteCommitFn: async () => SHA_A,
-    },
-  );
-  assert.equal(result.status, "up-to-date");
-});
-
-// ─── checkForUpdates: unknown local commit ───────────────────────────────────
-
-test("checkForUpdates returns unknown when local commit is null", async () => {
-  const result = await checkForUpdates(
-    {},
-    {
-      findGitRootFn: () => "/fake/repo",
-      getLocalCommitFn: async () => null,
-      getRemoteCommitFn: async () => SHA_B,
-    },
-  );
-  assert.equal(result.status, "unknown");
-});
-
-test("checkForUpdates returns unknown when remote commit is null", async () => {
-  const result = await checkForUpdates(
-    {},
-    {
-      findGitRootFn: () => "/fake/repo",
-      getLocalCommitFn: async () => SHA_A,
-      getRemoteCommitFn: async () => null,
-    },
-  );
-  assert.equal(result.status, "unknown");
-});
-
-// ─── checkForUpdates: error handling ─────────────────────────────────────────
-
-test("checkForUpdates returns error status (not throw) when an override throws", async () => {
-  const result = await checkForUpdates(
-    {},
-    {
-      findGitRootFn: () => "/fake/repo",
-      getLocalCommitFn: async () => { throw new Error("simulated failure"); },
-      getRemoteCommitFn: async () => SHA_B,
-    },
-  );
-  assert.equal(result.status, "error");
-  assert.ok(result.errorMessage?.includes("simulated failure"));
-});
-
-// ─── isCacheValid ─────────────────────────────────────────────────────────────
 
 test("isCacheValid returns true when cache is within the interval", () => {
   const cache: UpdateCheckCache = {
-    lastChecked: Date.now() - 1000 * 60 * 30, // 30 minutes ago
-    localCommit: SHA_A,
-    remoteCommit: SHA_A,
+    lastChecked: Date.now() - 1000 * 60 * 30,
+    currentVersion: "1.0.1",
+    latestVersion: "1.0.1",
     updateAvailable: false,
   };
   assert.equal(isCacheValid(cache, 6), true);
@@ -117,77 +121,95 @@ test("isCacheValid returns true when cache is within the interval", () => {
 
 test("isCacheValid returns false when cache is older than the interval", () => {
   const cache: UpdateCheckCache = {
-    lastChecked: Date.now() - 1000 * 60 * 60 * 7, // 7 hours ago
-    localCommit: SHA_A,
-    remoteCommit: SHA_A,
+    lastChecked: Date.now() - 1000 * 60 * 60 * 7,
+    currentVersion: "1.0.1",
+    latestVersion: "1.0.1",
     updateAvailable: false,
   };
   assert.equal(isCacheValid(cache, 6), false);
 });
 
-// ─── formatUpdateInstructions ────────────────────────────────────────────────
-
-test("formatUpdateInstructions formats update-available with known repo path", () => {
+test("formatUpdateInstructions formats update-available npm status", () => {
   const result = formatUpdateInstructions({
     status: "update-available",
-    localCommit: SHA_A,
-    remoteCommit: SHA_B,
-    repoPath: "/fake/repo",
+    currentVersion: "1.0.1",
+    latestVersion: "1.0.2",
     checkedAt: Date.now(),
   });
 
-  assert.match(result, /Update available — remote main has newer Codexa changes/);
-  assert.match(result, /cd \/fake\/repo/);
-  assert.match(result, /git status --short/);
-  assert.match(result, /git pull origin main/);
-  assert.match(result, /hash -r/);
-  assert.match(result, /codexa --version/);
+  assert.match(result, /Current installed version: 1\.0\.1/);
+  assert.match(result, /npm latest version:\s+1\.0\.2/);
+  assert.match(result, /Update available: Codexa 1\.0\.2 is available\. You are using 1\.0\.1\./);
+  assert.match(result, new RegExp(`Run: ${CODEXA_UPDATE_COMMAND.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 });
 
-test("formatUpdateInstructions formats update-available with unknown repo path", () => {
-  const result = formatUpdateInstructions({
-    status: "update-available",
-    localCommit: SHA_A,
-    remoteCommit: SHA_B,
-    repoPath: null,
-    checkedAt: Date.now(),
-  });
-
-  assert.match(result, /Update available — remote main has newer Codexa changes/);
-  assert.match(result, /cd ~\//);
-  assert.equal(result.includes("git status --short"), false);
-  assert.match(result, /git pull origin main/);
-  assert.equal(result.includes("hash -r"), false);
-  assert.equal(result.includes("codexa --version"), false);
-});
-
-test("formatUpdateInstructions formats up-to-date status", () => {
+test("formatUpdateInstructions formats up-to-date npm status", () => {
   const result = formatUpdateInstructions({
     status: "up-to-date",
-    localCommit: SHA_A,
-    remoteCommit: SHA_A,
-    repoPath: "/fake/repo",
+    currentVersion: "1.0.2",
+    latestVersion: "1.0.2",
     checkedAt: Date.now(),
   });
 
   assert.match(result, /Already up to date/);
+  assert.match(result, /npm install -g @golba98\/codexa@latest/);
 });
 
-test("formatUpdateInstructions formats unknown/null result", () => {
-  const result = formatUpdateInstructions(null);
-  assert.match(result, /Status unknown — could not reach origin\/main/);
-});
-
-test("formatUpdateInstructions formats error status", () => {
+test("formatUpdateInstructions formats manual npm errors", () => {
   const result = formatUpdateInstructions({
     status: "error",
-    localCommit: null,
-    remoteCommit: null,
-    repoPath: null,
+    currentVersion: "1.0.1",
+    latestVersion: null,
     errorMessage: "Connection timed out",
     checkedAt: Date.now(),
   });
 
-  assert.match(result, /Error checking update status: Connection timed out/);
+  assert.match(result, /Error checking npm update status: Connection timed out/);
 });
 
+test("/update check path bypasses cache by performing a fresh npm check", async () => {
+  const validCache: UpdateCheckCache = {
+    lastChecked: Date.now(),
+    currentVersion: "1.0.1",
+    latestVersion: "1.0.1",
+    updateAvailable: false,
+  };
+  assert.equal(isCacheValid(validCache, 6), true);
+
+  let calls = 0;
+  const result = await checkForUpdates(
+    { enabled: true },
+    {
+      currentVersion: validCache.currentVersion,
+      fetchNpmMetadataFn: async () => {
+        calls += 1;
+        return metadata("1.0.2");
+      },
+    },
+  );
+
+  assert.equal(calls, 1);
+  assert.equal(result.status, "update-available");
+  assert.equal(result.latestVersion, "1.0.2");
+});
+
+test("shows prompt when update is available and version is not skipped", () => {
+  const latest = "1.0.3";
+  const skipped: string | null = null;
+  // null skipped version never suppresses the prompt
+  assert.notEqual(latest, skipped);
+});
+
+test("skips prompt when skippedUpdateVersion matches the latest version", () => {
+  const latest: string = "1.0.3";
+  const skipped: string = "1.0.3";
+  assert.equal(latest, skipped);
+});
+
+test("shows prompt again when npm latest is newer than skipped version", () => {
+  const latest = "1.0.4";
+  const skipped = "1.0.3";
+  // Different versions means the prompt is shown again
+  assert.notEqual(latest, skipped);
+  assert.equal(isNewerVersion(latest, skipped), true);
+});

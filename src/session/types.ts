@@ -23,7 +23,8 @@ export type Screen =
   | "permissions-network-picker"
   | "permissions-add-writable-root"
   | "permissions-remove-writable-root"
-  | "import-confirmation";
+  | "import-confirmation"
+  | "update-prompt";
 
 // ─── Provider readiness ───────────────────────────────────────────────────────
 
