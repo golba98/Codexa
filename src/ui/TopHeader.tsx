@@ -56,8 +56,6 @@ function getMetadataRowCount(headerConfig: HeaderConfig): number {
     headerConfig.showAuthStatus,
     headerConfig.showWorkspace,
     headerConfig.showProvider,
-    headerConfig.showModel,
-    headerConfig.showReasoning,
     headerConfig.showContext,
   ].filter(Boolean).length;
 }
@@ -135,12 +133,6 @@ function truncatePath(path: string, maxWidth: number): string {
   return "... " + path.slice(path.length - (maxWidth - 4));
 }
 
-function truncateText(text: string, maxWidth: number): string {
-  if (maxWidth <= 1) return "";
-  if (getTextWidth(text) <= maxWidth) return text;
-  return `${text.slice(0, Math.max(0, maxWidth - 1))}…`;
-}
-
 export function TopHeader({
   authState,
   workspaceLabel,
@@ -172,7 +164,6 @@ export function TopHeader({
 
   const wsDisplay = truncatePath(workspaceLabel, Math.max(18, cols - 40));
   const heroLayout = getHeaderHeroLayout(layout, headerConfig);
-  const modelLabel = runtimeSummary?.modelLabel ?? runtimeSummary?.model;
   const metadataLines = [
     headerConfig.showBrand ? { key: "brand", text: `Codexa v${APP_VERSION}`, color: theme.TEXT, bold: true } : null,
     headerConfig.showAuthStatus ? { key: "auth", text: `Auth: ${authLabel}`, color: theme.TEXT, bold: false } : null,
@@ -180,14 +171,8 @@ export function TopHeader({
     headerConfig.showProvider && runtimeSummary?.providerLabel
       ? { key: "provider", text: `Provider: ${runtimeSummary.providerLabel}`, color: theme.TEXT, bold: false }
       : null,
-    headerConfig.showModel && modelLabel
-      ? { key: "model", text: `Model: ${modelLabel}`, color: theme.MUTED, bold: false }
-      : null,
-    headerConfig.showReasoning && runtimeSummary?.reasoningLabel
-      ? { key: "reasoning", text: `Reasoning: ${runtimeSummary.reasoningLabel}`, color: theme.MUTED, bold: false }
-      : null,
-    headerConfig.showContext && runtimeSummary?.contextLabel
-      ? { key: "context", text: `Context: ${runtimeSummary.contextLabel}`, color: theme.MUTED, bold: false }
+    headerConfig.showContext
+      ? { key: "context", text: `Context: ${runtimeSummary?.contextLabel ?? "Unknown"}`, color: theme.MUTED, bold: false }
       : null,
   ].filter((line): line is HeaderMetadataLine => Boolean(line));
 
@@ -231,7 +216,7 @@ export function TopHeader({
         )}
 
         {heroLayout.mode === "wide" ? (
-          <Box flexDirection="row" width="100%">
+          <Box flexDirection="row" width="100%" alignItems="flex-start">
             {logoColumn}
             <Box width={heroLayout.metadataGapColumns} flexShrink={0} />
             <Box flexDirection="column" flexGrow={1} paddingTop={metadataTopOffset}>
@@ -268,15 +253,15 @@ export function TopHeader({
   }
   if (headerConfig.showWorkspace) {
     if (compactParts.length > 0) compactParts.push(<Text key="sep-ws" color={theme.DIM}>{"  ·  "}</Text>);
-    compactParts.push(<Text key="ws" color={theme.MUTED} wrap="truncate">{wsDisplay}</Text>);
+    compactParts.push(<Text key="ws" color={theme.MUTED} wrap="truncate">{`Workspace: ${wsDisplay}`}</Text>);
   }
   if (headerConfig.showProvider && runtimeSummary?.providerLabel) {
     if (compactParts.length > 0) compactParts.push(<Text key="sep-provider" color={theme.DIM}>{"  ·  "}</Text>);
-    compactParts.push(<Text key="provider" color={theme.TEXT} wrap="truncate">{runtimeSummary.providerLabel}</Text>);
+    compactParts.push(<Text key="provider" color={theme.TEXT} wrap="truncate">{`Provider: ${runtimeSummary.providerLabel}`}</Text>);
   }
-  if (headerConfig.showModel && modelLabel) {
-    if (compactParts.length > 0) compactParts.push(<Text key="sep-model" color={theme.DIM}>{"  ·  "}</Text>);
-    compactParts.push(<Text key="model" color={theme.MUTED} wrap="truncate">{truncateText(modelLabel, Math.max(10, cols - 40))}</Text>);
+  if (headerConfig.showContext) {
+    if (compactParts.length > 0) compactParts.push(<Text key="sep-context" color={theme.DIM}>{"  ·  "}</Text>);
+    compactParts.push(<Text key="context" color={theme.MUTED} wrap="truncate">{`Context: ${runtimeSummary?.contextLabel ?? "Unknown"}`}</Text>);
   }
 
   return (

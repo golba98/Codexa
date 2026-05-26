@@ -4156,8 +4156,8 @@ export function App({ launchArgs }: AppProps) {
     : activeProviderRoute.reasoning ?? reasoningLevel;
   const headerRuntimeSummary = useMemo(() => {
     const contextLabel = activeContextMetadata?.contextLength != null
-      ? `${activeContextMetadata.confidence === "estimated" ? "~" : ""}${formatContextCompact(activeContextMetadata.contextLength)}`
-      : undefined;
+      ? `${formatContextCompact(estimateTokens(conversationChars))} / ${activeContextMetadata.confidence === "estimated" ? "~" : ""}${formatContextCompact(activeContextMetadata.contextLength)}`
+      : "Unknown";
 
     return {
       ...runtimeSummary,
@@ -4169,13 +4169,16 @@ export function App({ launchArgs }: AppProps) {
     activeContextMetadata?.confidence,
     activeContextMetadata?.contextLength,
     activeRouteProvider?.displayName,
+    conversationChars,
     modelDisplayName,
     runtimeSummary,
   ]);
   const effectiveHeaderConfig = useMemo<HeaderConfig>(() => ({
     ...headerConfig,
     showProvider: true,
-    showModel: true,
+    showModel: false,
+    showReasoning: false,
+    showContext: true,
   }), [headerConfig]);
 
   // Memoize the composer element so AppShell's memo check (prev.composer ===
