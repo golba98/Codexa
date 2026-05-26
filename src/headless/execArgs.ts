@@ -60,6 +60,7 @@ function buildLaunchArgs(params: {
     configOverrides: params.configOverrides,
     passthroughArgs: params.passthroughArgs,
     modelOverride: params.modelOverride,
+    noClear: false,
   };
 }
 

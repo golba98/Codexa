@@ -1,5 +1,13 @@
 import { homedir } from "os";
-import { basename, join, parse } from "path";
+import { basename, join, parse, win32 } from "path";
+
+function isWindowsStylePath(p: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p);
+}
+
+function smartJoin(base: string, ...parts: string[]): string {
+  return isWindowsStylePath(base) ? win32.join(base, ...parts) : join(base, ...parts);
+}
 
 export const APP_NAME = "Codexa";
 export const APP_VERSION = "1.0.1";
@@ -23,11 +31,11 @@ export function getCodexHome(): string {
 }
 
 export function getCodexConfigFile(): string {
-  return join(getCodexHome(), "config.toml");
+  return smartJoin(getCodexHome(), "config.toml");
 }
 
 export function getCodexaTrustStoreFile(): string {
-  return join(getCodexHome(), "codexa-trust.json");
+  return smartJoin(getCodexHome(), "codexa-trust.json");
 }
 
 export const CODEX_HOME = getCodexHome();
@@ -315,7 +323,8 @@ function formatWorkspaceLeaf(workspaceRoot: string): string {
     return trimmed;
   }
 
-  const { root } = parse(trimmed);
+  const api = isWindowsStylePath(trimmed) ? win32 : { parse, basename };
+  const { root } = api.parse(trimmed);
   let normalized = trimmed;
   // Stop at filesystem root — root.length > 0 prevents stripping the root itself
   while (normalized.length > root.length && /[\\/]+$/.test(normalized)) {
@@ -330,7 +339,7 @@ function formatWorkspaceLeaf(workspaceRoot: string): string {
     return root || trimmed;
   }
 
-  return basename(normalized) || normalized;
+  return api.basename(normalized) || normalized;
 }
 
 export function formatWorkspaceDisplayPath(

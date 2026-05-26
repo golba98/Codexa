@@ -85,16 +85,14 @@ export async function resolveExecutable(options: ExecutableResolverOptions): Pro
     }
   }
 
-  // 3. Windows PATH lookup by explicit command names
-  if (process.platform === "win32") {
-    for (const candidate of options.commandNames) {
-      const resolved = await resolveWithWhere(runCommandImpl, cwd, candidate, options.requireResolvedFile === true);
-      if (resolved) return resolved;
-    }
+  // 3. Windows PATH lookup by explicit command names (where.exe returns null on non-Windows gracefully)
+  for (const candidate of options.commandNames) {
+    const resolved = await resolveWithWhere(runCommandImpl, cwd, candidate, options.requireResolvedFile === true);
+    if (resolved) return resolved;
   }
 
-  // 4. Windows known-path fallbacks
-  if (process.platform === "win32" && options.knownPathDirectories) {
+  // 4. Windows known-path fallbacks (existsSync returns false for non-existent paths on any platform)
+  if (options.knownPathDirectories) {
     const knownCandidates: string[] = [];
     for (const dir of options.knownPathDirectories) {
       for (const candidate of options.commandNames) {

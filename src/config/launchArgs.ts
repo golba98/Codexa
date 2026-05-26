@@ -7,6 +7,7 @@ const FLAG_CONFIG = "--config";
 const FLAG_CONFIG_SHORT = "-c";
 const FLAG_MODEL = "--model";
 const FLAG_MODEL_SHORT = "-m";
+const FLAG_NO_CLEAR = "--no-clear";
 
 export interface LaunchArgs {
   help: boolean;
@@ -17,6 +18,8 @@ export interface LaunchArgs {
   passthroughArgs: string[];
   /** Explicitly set when --model / -m was passed on the command line. Null when no model flag was given. */
   modelOverride: string | null;
+  /** True when --no-clear was passed. Suppresses the startup terminal clear. */
+  noClear: boolean;
 }
 
 export type LaunchArgsParseResult =
@@ -53,6 +56,7 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
   const promptArgs: string[] = [];
   let help = false;
   let version = false;
+  let noClear = false;
   let profile: string | null = null;
   let modelOverride: string | null = null;
 
@@ -74,6 +78,11 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
 
     if (arg === FLAG_VERSION || arg === FLAG_VERSION_SHORT) {
       version = true;
+      continue;
+    }
+
+    if (arg === FLAG_NO_CLEAR) {
+      noClear = true;
       continue;
     }
 
@@ -181,6 +190,7 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       configOverrides,
       passthroughArgs,
       modelOverride,
+      noClear,
     },
   };
 }

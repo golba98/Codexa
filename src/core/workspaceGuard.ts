@@ -94,7 +94,12 @@ export function resolveWorkspacePath(pathValue: string, workspaceRoot: string): 
   }
 
   const pathApi = getPathApi(workspaceStyle);
-  return normalizeAbsolutePath(pathApi.resolve(workspaceRoot, trimmed), workspaceStyle);
+  // Normalize separators in relative paths to match the workspace style so
+  // that Windows-style backslashes work correctly on POSIX systems and vice versa.
+  const separatorNormalized = workspaceStyle === "windows"
+    ? trimmed.replace(/\//g, "\\")
+    : trimmed.replace(/\\/g, "/");
+  return normalizeAbsolutePath(pathApi.resolve(workspaceRoot, separatorNormalized), workspaceStyle);
 }
 
 export function isPathInsideWorkspace(pathValue: string, workspaceRoot: string): boolean {

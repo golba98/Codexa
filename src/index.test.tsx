@@ -365,8 +365,9 @@ test("resize repaint does not erase terminal scrollback buffer", async () => {
   const harness = createSupportedHarness();
   startApp(harness.deps);
 
-  // Startup clears only the visible viewport; native terminal scrollback must survive.
-  assert.doesNotMatch(harness.stdout.writes, /\x1b\[3J/, "startup must not erase scrollback");
+  // Startup intentionally clears scrollback (\x1b[3J) so the app opens into a
+  // clean screen. Verify it IS written exactly once during startup.
+  assert.match(harness.stdout.writes, /\x1b\[3J/, "startup must erase scrollback for clean open");
 
   // Capture offset so we can inspect only post-startup writes.
   const startupEnd = harness.stdout.writes.length;
@@ -407,7 +408,8 @@ test("startup writes safe fallback title before repaint and workspace title befo
   const harness = createSupportedHarness();
   startApp(harness.deps);
 
-  const repaintIndex = harness.stdout.writes.indexOf("\x1b[2J\x1b[H");
+  // Startup now writes a full transcript clear: viewport + scrollback + cursor home.
+  const repaintIndex = harness.stdout.writes.indexOf("\x1b[2J\x1b[3J\x1b[H");
   const firstTitleIndex = harness.stdout.writes.indexOf("\x1b]0;");
   const postRepaintTitleIndex = harness.stdout.writes.indexOf("\x1b]0;", repaintIndex + 1);
   const bracketedPasteIndex = harness.stdout.writes.indexOf("\x1b[?2004h");

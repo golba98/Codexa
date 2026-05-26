@@ -21,6 +21,7 @@ function createLaunchArgs(): LaunchArgs {
     configOverrides: [],
     passthroughArgs: [],
     modelOverride: null,
+    noClear: false,
   };
 }
 

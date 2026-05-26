@@ -39,6 +39,10 @@ export interface PrepareCodexExecLaunchOptions extends BuildCodexExecArgsOptions
 
 function resolveResponsibleModulePath(moduleUrl: string): string {
   if (moduleUrl.startsWith("file:")) {
+    const windowsMatch = moduleUrl.match(/^file:\/\/\/([A-Za-z]:\/.*)/);
+    if (windowsMatch) {
+      return windowsMatch[1].replace(/\//g, "\\");
+    }
     return fileURLToPath(moduleUrl);
   }
 
