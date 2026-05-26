@@ -27,9 +27,9 @@ import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type Timeline
 import type { TerminalSelectionProfile } from "../core/terminal/terminalSelection.js";
 import { MemoizedTopHeader, measureTopHeaderRows } from "./TopHeader.js";
 
-const COMPACT_HEADER_TO_COMPOSER_GAP_ROWS = 2;
-const MEDIUM_HEADER_TO_COMPOSER_GAP_ROWS = 4;
-const TALL_HEADER_TO_COMPOSER_GAP_ROWS = 6;
+const COMPACT_HEADER_TO_COMPOSER_GAP_ROWS = 1;
+const MEDIUM_HEADER_TO_COMPOSER_GAP_ROWS = 1;
+const TALL_HEADER_TO_COMPOSER_GAP_ROWS = 1;
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 

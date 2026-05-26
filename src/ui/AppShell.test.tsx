@@ -564,22 +564,22 @@ test("cold-start header gap adapts to terminal height", () => {
     layoutMode: "micro",
     availableRows: 9,
   }), 1);
-  // full 30-row medium: measureTopHeaderRows=8 (1+6+1), headerToContentGap=1, shellHeight=29
+  // full 30-row medium: measureTopHeaderRows=7 (1+6+0), headerToContentGap=1, shellHeight=29
   assert.equal(calculateColdStartSpacerRows({
     shellRows: 29,
     headerRows: 8,
     composerRows: 7,
     layoutMode: "full",
     availableRows: 11,
-  }), 4);
-  // full 40-row tall: measureTopHeaderRows=9 (1+6+2), headerToContentGap=1, shellHeight=39
+  }), 1);
+  // full 40-row tall: measureTopHeaderRows=7 (1+6+0), headerToContentGap=1, shellHeight=39
   assert.equal(calculateColdStartSpacerRows({
     shellRows: 39,
     headerRows: 9,
     composerRows: 7,
     layoutMode: "full",
     availableRows: 20,
-  }), 6);
+  }), 1);
 });
 
 test("cold-start header gap is capped by available rows", () => {
@@ -589,7 +589,7 @@ test("cold-start header gap is capped by available rows", () => {
     composerRows: 7,
     layoutMode: "full",
     availableRows: 2,
-  }), 2);
+  }), 1);
 });
 
 test("header-to-content gap is reserved outside the hero", () => {
@@ -1169,7 +1169,7 @@ test("project instructions render with breathing room below the live header", as
   const projectRow = rows.findIndex((row) => row.includes("Project instructions"));
 
   assert.ok(lastLogoRow >= 0, "logo should render");
-  assert.ok(projectRow > lastLogoRow + 2, "project instructions should not touch the logo block");
+  assert.ok(projectRow > lastLogoRow + 1, "project instructions should not touch the logo block");
   assertHeaderBefore(raw, "Project instructions");
   assert.equal(countLogoInOutput(raw), 1, "project instruction notice must not add a transcript banner");
 });
