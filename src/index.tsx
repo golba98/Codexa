@@ -19,6 +19,7 @@ import {
   traceTerminalClear,
   writeTerminalControl,
 } from "./core/terminal/terminalControl.js";
+import { performStartupClear } from "./core/terminal/startupClear.js";
 
 type RenderHandle = Pick<Instance, "clear" | "cleanup" | "waitUntilExit">;
 const KITTY_KEYBOARD_OPTIONS: RenderOptions["kittyKeyboard"] = {
@@ -174,15 +175,18 @@ export function startApp({
     durationMs: 3500,
   });
 
-  // Clear the screen and move cursor to home before rendering so no stale
-  // content from a previous process (e.g. bun --watch restart) ghosts above
-  // the new frame.  We stay in the normal screen buffer (no \x1b[?1049h) to
-  // preserve terminal scrollback and allow mouse text selection.
-  // NOTE: Mouse reporting (\x1b[?1000h / \x1b[?1006h) is NOT enabled here.
-  // It is managed exclusively by the React app (app.tsx) and defaults to OFF
-  // so native terminal drag-selection and copy work without any special steps.
-  traceTerminalClear("src/index.tsx:startup", { mode: "hard" });
-  writeStdout(TERMINAL_SEQUENCES.hardRepaint, "src/index.tsx:startup");
+  // Clear the screen (viewport + scrollback) and move cursor home before Ink
+  // renders the first frame.  This removes any previous terminal content so
+  // the app opens into a clean screen.  We stay in the normal screen buffer
+  // (no \x1b[?1049h) to preserve mouse text selection after exit.
+  // Skipped when --no-clear or CODEXA_NO_CLEAR=1 is set.
+  // NOTE: Mouse reporting is NOT enabled here — managed solely by app.tsx.
+  traceTerminalClear("src/index.tsx:startup", { mode: "transcript" });
+  performStartupClear({
+    write: (c) => writeStdout(c, "src/index.tsx:startup"),
+    noClear: launchArgs.noClear,
+    env,
+  });
   const startupWorkspaceRoot = resolveWorkspaceRoot();
   const startupSettings = loadSettings();
   const startupTitle =

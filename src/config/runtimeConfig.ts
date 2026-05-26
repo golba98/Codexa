@@ -146,7 +146,10 @@ function detectPathApi(value: string): typeof win32 | typeof posix {
 }
 
 function toPlatformKey(path: string): string {
-  return process.platform === "win32" ? path.toLowerCase() : path;
+  const isWindows = process.platform === "win32"
+    || /^[A-Za-z]:[\\/]/.test(path)
+    || /^\\\\/.test(path);
+  return isWindows ? path.toLowerCase() : path;
 }
 
 function stripTrailingSeparators(value: string, pathApi: typeof win32 | typeof posix): string {

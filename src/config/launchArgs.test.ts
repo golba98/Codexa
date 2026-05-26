@@ -156,3 +156,34 @@ test("parses arguments after -- as an initial prompt", () => {
   assert.equal(parsed.value.initialPrompt, "--help as text");
   assert.deepEqual(parsed.value.passthroughArgs, []);
 });
+
+test("--no-clear sets noClear to true", () => {
+  const parsed = parseLaunchArgs(["--no-clear"]);
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.value.noClear, true);
+});
+
+test("noClear defaults to false when --no-clear is absent", () => {
+  const parsed = parseLaunchArgs(["--profile", "review"]);
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.value.noClear, false);
+});
+
+test("--no-clear does not consume the next argument as a value", () => {
+  const parsed = parseLaunchArgs(["--no-clear", "my prompt here"]);
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.value.noClear, true);
+  assert.equal(parsed.value.initialPrompt, "my prompt here");
+});
+
+test("--no-clear can be combined with other flags", () => {
+  const parsed = parseLaunchArgs(["--no-clear", "--profile", "fast", "do something"]);
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.value.noClear, true);
+  assert.equal(parsed.value.profile, "fast");
+  assert.equal(parsed.value.initialPrompt, "do something");
+});
