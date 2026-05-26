@@ -214,6 +214,7 @@ import { ReasoningPicker } from "./ui/ReasoningPicker.js";
 import { AttachmentImportPanel, type PendingImportFile } from "./ui/AttachmentImportPanel.js";
 import { SelectionPanel } from "./ui/SelectionPanel.js";
 import { SettingsPanel } from "./ui/SettingsPanel.js";
+import { UpdatePromptPanel } from "./ui/UpdatePromptPanel.js";
 import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/TextEntryPanel.js";
 import { ThemePicker } from "./ui/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
@@ -307,6 +308,9 @@ export function App({ launchArgs }: AppProps) {
     ? projectInstructionsLoad.instructions
     : null;
   const initialSettings = useRef(loadSettings());
+  const skippedUpdateVersionRef = useRef<string | null>(
+    initialSettings.current.updateCheck.skippedUpdateVersion ?? null,
+  );
   const initialProviderWorkspaceConfig = useRef<ProviderWorkspaceConfig>(loadProviderWorkspaceConfig(workspaceRoot));
   const initialLayeredConfig = useRef<LayeredConfigResult | null>(null);
   if (initialLayeredConfig.current === null) {
@@ -1370,14 +1374,16 @@ export function App({ launchArgs }: AppProps) {
         try {
           const cache = loadUpdateCheckCache();
           if (cache && isCacheValid(cache, ucSettings.intervalHours)) {
-            if (cache.updateAvailable) {
+            if (cache.updateAvailable && cache.latestVersion) {
               setUpdateCheckResult({
                 status: "update-available",
-                localCommit: cache.localCommit,
-                remoteCommit: cache.remoteCommit,
-                repoPath: null,
+                currentVersion: cache.currentVersion,
+                latestVersion: cache.latestVersion,
                 checkedAt: cache.lastChecked,
               });
+              if (cache.latestVersion !== skippedUpdateVersionRef.current) {
+                setScreen("update-prompt");
+              }
             }
             return;
           }
@@ -1386,10 +1392,15 @@ export function App({ launchArgs }: AppProps) {
             setUpdateCheckResult(result);
             saveUpdateCheckCache({
               lastChecked: result.checkedAt,
-              localCommit: result.localCommit,
-              remoteCommit: result.remoteCommit,
+              currentVersion: result.currentVersion,
+              latestVersion: result.latestVersion,
               updateAvailable: result.status === "update-available",
             });
+            if (result.status === "update-available" && result.latestVersion) {
+              if (result.latestVersion !== skippedUpdateVersionRef.current) {
+                setScreen("update-prompt");
+              }
+            }
           }
         } catch {
           // Never crash the TUI on a failed update check.
@@ -1898,6 +1909,33 @@ export function App({ launchArgs }: AppProps) {
     }
     setScreen("main");
   }, [applyWorkspaceDisplayMode, showBusyLoader, terminalMouseMode, terminalTitleMode, workspaceDisplayMode]);
+
+  const handleSkipUpdateForSession = useCallback(() => {
+    setScreen("main");
+  }, []);
+
+  const handleSkipUpdateVersion = useCallback((version: string) => {
+    initialSettings.current.updateCheck = {
+      ...initialSettings.current.updateCheck,
+      skippedUpdateVersion: version,
+    };
+    saveSettings({
+      ui: {
+        layoutStyle: initialSettings.current.ui.layoutStyle,
+        theme: themeSelection.committedTheme,
+        workspaceDisplayMode,
+        terminalTitleMode,
+        showBusyLoader,
+        terminalMouseMode,
+        customTheme,
+      },
+      auth: { preference: authPreference },
+      header: headerConfig,
+      updateCheck: initialSettings.current.updateCheck,
+    });
+    skippedUpdateVersionRef.current = version;
+    setScreen("main");
+  }, [authPreference, customTheme, headerConfig, showBusyLoader, terminalMouseMode, terminalTitleMode, themeSelection.committedTheme, workspaceDisplayMode]);
 
   const setApprovalPolicyWithNotice = useCallback((nextValue: RuntimeApprovalPolicy) => {
     const gate = guardConfigMutation("mode", busy);
@@ -4061,8 +4099,8 @@ export function App({ launchArgs }: AppProps) {
                 if (freshResult.status !== "error") {
                   saveUpdateCheckCache({
                     lastChecked: freshResult.checkedAt,
-                    localCommit: freshResult.localCommit,
-                    remoteCommit: freshResult.remoteCommit,
+                    currentVersion: freshResult.currentVersion,
+                    latestVersion: freshResult.latestVersion,
                     updateAvailable: freshResult.status === "update-available",
                   });
                 }
@@ -4070,7 +4108,11 @@ export function App({ launchArgs }: AppProps) {
                 freshResult = null;
               }
             }
-            appendSystemEvent("Update", formatUpdateInstructions(freshResult));
+            if (freshResult?.status === "update-available" && freshResult.latestVersion) {
+              setScreen("update-prompt");
+            } else {
+              appendSystemEvent("Update", formatUpdateInstructions(freshResult));
+            }
           })();
           return;
         }
@@ -4396,7 +4438,6 @@ export function App({ launchArgs }: AppProps) {
         selectionProfile={selectionProfile}
         clearCount={sessionState.clearCount}
         headerConfig={effectiveHeaderConfig}
-        updateCheckResult={updateCheckResult}
         panel={
           <>
             {screen === "backend-picker" && (
@@ -4643,6 +4684,16 @@ export function App({ launchArgs }: AppProps) {
                 modelSupportsVision={activeRouteProvider?.capabilityProfile?.supportsVision ?? null}
                 onConfirm={() => { void handleImportConfirm(); }}
                 onCancel={handleImportCancel}
+              />
+            )}
+
+            {screen === "update-prompt" && updateCheckResult?.status === "update-available" && updateCheckResult.latestVersion && (
+              <UpdatePromptPanel
+                focusId={FOCUS_IDS.updatePrompt}
+                currentVersion={updateCheckResult.currentVersion}
+                latestVersion={updateCheckResult.latestVersion}
+                onSkip={handleSkipUpdateForSession}
+                onSkipUntilNextVersion={handleSkipUpdateVersion}
               />
             )}
           </>

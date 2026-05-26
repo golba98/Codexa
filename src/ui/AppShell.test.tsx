@@ -191,6 +191,12 @@ function renderShell(
   });
 }
 
+test("does not render passive update notice (replaced by interactive prompt)", async () => {
+  const output = await renderShell(120, 40, { kind: "IDLE" });
+  assert.doesNotMatch(output, /Update available: Codexa .* is available/);
+  assert.doesNotMatch(output, /Run: npm install -g @golba98\/codexa@latest/);
+});
+
 function renderStartupShell(
   layoutCols: number,
   layoutRows: number,
@@ -292,12 +298,12 @@ test("startup uses the large logo only when the viewport height can contain it",
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
 });
 
-test("startup uses stacked ASCII header at normal shorter terminal width", async () => {
+test("startup uses compact side-by-side ASCII header at normal shorter terminal width", async () => {
   const output = await renderStartupShell(100, 24);
 
   assert.match(output, /██████/);
   assert.match(output, /Codexa v/);
-  assert.match(output, /C:\\Development\\1-JavaScript\\13-Custom CLI/);
+  assert.match(output, /Workspace:\s*…\\13-Custom CLI/);
   assert.match(output, /Provider: Codexa Core/);
   assert.match(output, /Context: Unknown/);
   assert.doesNotMatch(output, /Model: gpt-5\.4/);

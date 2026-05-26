@@ -50,6 +50,7 @@ export interface AuthSettings {
 export interface UpdateCheckSettings {
   enabled: boolean;
   intervalHours: number;
+  skippedUpdateVersion?: string | null;
 }
 
 export const DEFAULT_UPDATE_CHECK_SETTINGS: UpdateCheckSettings = {
@@ -125,6 +126,7 @@ function normalizeUpdateCheckSettings(
     intervalHours: typeof input?.intervalHours === "number" && input.intervalHours > 0
       ? input.intervalHours
       : DEFAULT_UPDATE_CHECK_SETTINGS.intervalHours,
+    skippedUpdateVersion: input?.skippedUpdateVersion ?? null,
   };
 }
 
@@ -269,6 +271,11 @@ export function parseSettingsData(data: unknown): AppSettings {
         : typeof updateCheckSource.interval_hours === "number"
           ? updateCheckSource.interval_hours
           : undefined,
+      skippedUpdateVersion: typeof updateCheckSource.skippedUpdateVersion === "string"
+        ? updateCheckSource.skippedUpdateVersion
+        : typeof updateCheckSource.skipped_update_version === "string"
+          ? updateCheckSource.skipped_update_version
+          : null,
     }),
   };
 }
@@ -299,6 +306,9 @@ export function serializeSettings(settings: AppSettings): Record<string, unknown
     update_check: {
       enabled: settings.updateCheck.enabled,
       interval_hours: settings.updateCheck.intervalHours,
+      ...(settings.updateCheck.skippedUpdateVersion != null
+        ? { skipped_update_version: settings.updateCheck.skippedUpdateVersion }
+        : {}),
     },
   };
 }
