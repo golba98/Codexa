@@ -101,6 +101,7 @@ export function spawnCodexProcess(
   options: SpawnOptions,
 ): ReturnType<typeof spawn> {
   const spec = buildSpawnSpec(executable, args);
+  if (!spec.executable) throw new Error("Codex executable path is empty.");
   return spawn(spec.executable, spec.args, { ...options, shell: false });
 }
 

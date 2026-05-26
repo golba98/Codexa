@@ -4,8 +4,8 @@ import { dirname, join } from "path";
 
 export interface UpdateCheckCache {
   lastChecked: number;
-  localCommit: string | null;
-  remoteCommit: string | null;
+  currentVersion: string;
+  latestVersion: string | null;
   updateAvailable: boolean;
 }
 
@@ -16,10 +16,11 @@ export function loadUpdateCheckCache(): UpdateCheckCache | null {
     const text = readFileSync(CACHE_FILE, "utf-8");
     const data = JSON.parse(text) as Record<string, unknown>;
     if (typeof data.lastChecked !== "number") return null;
+    if (typeof data.currentVersion !== "string") return null;
     return {
       lastChecked: data.lastChecked,
-      localCommit: typeof data.localCommit === "string" ? data.localCommit : null,
-      remoteCommit: typeof data.remoteCommit === "string" ? data.remoteCommit : null,
+      currentVersion: data.currentVersion,
+      latestVersion: typeof data.latestVersion === "string" ? data.latestVersion : null,
       updateAvailable: data.updateAvailable === true,
     };
   } catch {
