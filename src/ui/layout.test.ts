@@ -86,7 +86,8 @@ test("chooses startup header mode from measured row budget", () => {
 
 test("measures the header rows for full and compact layouts", () => {
   assert.equal(measureTopHeaderRows(createLayoutSnapshot(120, 30)), 8);
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 1);
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 11);
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(50, 24)), 1);
 });
 
 test("header hero switches from stacked to wide only when metadata has room", () => {

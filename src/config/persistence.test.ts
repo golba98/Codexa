@@ -39,8 +39,8 @@ test("keeps UI and auth settings separate from runtime persistence", () => {
     header: {
       showBrand: true,
       showWorkspace: true,
-      showProvider: false,
-      showModel: false,
+      showProvider: true,
+      showModel: true,
       showReasoning: false,
       showContext: false,
       showAuthStatus: false,
