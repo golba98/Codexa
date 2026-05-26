@@ -45,6 +45,10 @@ test("keeps UI and auth settings separate from runtime persistence", () => {
       showContext: false,
       showAuthStatus: false,
     },
+    updateCheck: {
+      enabled: true,
+      intervalHours: 6,
+    },
   };
 
   const serialized = serializeSettings(initial);

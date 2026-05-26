@@ -47,10 +47,21 @@ export interface AuthSettings {
   preference: AuthPreference;
 }
 
+export interface UpdateCheckSettings {
+  enabled: boolean;
+  intervalHours: number;
+}
+
+export const DEFAULT_UPDATE_CHECK_SETTINGS: UpdateCheckSettings = {
+  enabled: true,
+  intervalHours: 6,
+};
+
 export interface AppSettings {
   ui: UiSettings;
   auth: AuthSettings;
   header: HeaderConfig;
+  updateCheck: UpdateCheckSettings;
 }
 
 // Pick the first string value found under the camelCase or snake_case key.
@@ -106,6 +117,17 @@ function normalizeHeaderConfig(input: Partial<HeaderConfig> | null | undefined):
   };
 }
 
+function normalizeUpdateCheckSettings(
+  input: Partial<UpdateCheckSettings> | null | undefined,
+): UpdateCheckSettings {
+  return {
+    enabled: typeof input?.enabled === "boolean" ? input.enabled : DEFAULT_UPDATE_CHECK_SETTINGS.enabled,
+    intervalHours: typeof input?.intervalHours === "number" && input.intervalHours > 0
+      ? input.intervalHours
+      : DEFAULT_UPDATE_CHECK_SETTINGS.intervalHours,
+  };
+}
+
 export function getDefaultSettings(): AppSettings {
   return {
     ui: normalizeUiSettings(null),
@@ -113,6 +135,7 @@ export function getDefaultSettings(): AppSettings {
       preference: DEFAULT_AUTH_PREFERENCE,
     },
     header: normalizeHeaderConfig(null),
+    updateCheck: normalizeUpdateCheckSettings(null),
   };
 }
 
@@ -211,6 +234,12 @@ export function parseSettingsData(data: unknown): AppSettings {
     ? record.header as Record<string, unknown>
     : {};
 
+  const updateCheckSource = typeof record.updateCheck === "object" && record.updateCheck !== null
+    ? record.updateCheck as Record<string, unknown>
+    : typeof record.update_check === "object" && record.update_check !== null
+      ? record.update_check as Record<string, unknown>
+      : {};
+
   return {
     ui: normalizeUiSettings({
       layoutStyle: pickStr(uiSource, "layoutStyle", "layout_style") ?? defaults.ui.layoutStyle,
@@ -232,6 +261,14 @@ export function parseSettingsData(data: unknown): AppSettings {
       showReasoning: pickBool(headerSource, "showReasoning", "show_reasoning"),
       showContext: pickBool(headerSource, "showContext", "show_context"),
       showAuthStatus: pickBool(headerSource, "showAuthStatus", "show_auth_status"),
+    }),
+    updateCheck: normalizeUpdateCheckSettings({
+      enabled: pickBool(updateCheckSource, "enabled", "enabled"),
+      intervalHours: typeof updateCheckSource.intervalHours === "number"
+        ? updateCheckSource.intervalHours
+        : typeof updateCheckSource.interval_hours === "number"
+          ? updateCheckSource.interval_hours
+          : undefined,
     }),
   };
 }
@@ -258,6 +295,10 @@ export function serializeSettings(settings: AppSettings): Record<string, unknown
       show_reasoning: settings.header.showReasoning,
       show_context: settings.header.showContext,
       show_auth_status: settings.header.showAuthStatus,
+    },
+    update_check: {
+      enabled: settings.updateCheck.enabled,
+      interval_hours: settings.updateCheck.intervalHours,
     },
   };
 }
