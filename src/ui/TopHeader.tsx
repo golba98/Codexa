@@ -20,6 +20,8 @@ export const HEADER_WORDMARK_LINES = [
 
 const MIN_METADATA_COLUMN_WIDTH = 60;
 const STACKED_METADATA_GAP_ROWS = 1;
+const MIN_LOGO_TERMINAL_WIDTH = getWordmarkWidth() + 2;
+const MIN_LOGO_TERMINAL_ROWS = 24;
 
 export type HeaderHeroMode = "wide" | "stacked" | "compact";
 
@@ -34,6 +36,7 @@ export interface HeaderHeroLayout {
   totalRows: number;
 }
 
+type HeaderMetadataLine = { key: string; text: string; color: string; bold: boolean };
 
 interface TopHeaderProps {
   authState: CodexAuthState;
@@ -45,6 +48,18 @@ interface TopHeaderProps {
 
 function getWordmarkWidth(): number {
   return HEADER_WORDMARK_LINES.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
+}
+
+function getMetadataRowCount(headerConfig: HeaderConfig): number {
+  return [
+    headerConfig.showBrand,
+    headerConfig.showAuthStatus,
+    headerConfig.showWorkspace,
+    headerConfig.showProvider,
+    headerConfig.showModel,
+    headerConfig.showReasoning,
+    headerConfig.showContext,
+  ].filter(Boolean).length;
 }
 
 function getHeaderVerticalMargins(layout: Layout): { topMarginRows: number; bottomMarginRows: number } {
@@ -65,11 +80,15 @@ function getHeaderVerticalMargins(layout: Layout): { topMarginRows: number; bott
   };
 }
 
-export function getHeaderHeroLayout(layout: Layout): HeaderHeroLayout {
+export function getHeaderHeroLayout(
+  layout: Layout,
+  headerConfig: HeaderConfig = HEADER_CONFIG_DEFAULTS,
+): HeaderHeroLayout {
   const { topMarginRows, bottomMarginRows } = getHeaderVerticalMargins(layout);
-  const metadataRows = 3;
+  const metadataRows = getMetadataRowCount(headerConfig);
+  const canRenderLogo = layout.cols >= MIN_LOGO_TERMINAL_WIDTH && layout.rows >= MIN_LOGO_TERMINAL_ROWS;
 
-  if (layout.mode !== "full") {
+  if (!canRenderLogo) {
     return {
       mode: "compact",
       topMarginRows,
@@ -85,7 +104,7 @@ export function getHeaderHeroLayout(layout: Layout): HeaderHeroLayout {
   const logoRows = HEADER_WORDMARK_LINES.length;
   const metadataGapColumns = layout.cols >= 150 ? 6 : layout.cols >= 130 ? 5 : 4;
   const canUseWideHero = layout.cols >= getWordmarkWidth() + metadataGapColumns + MIN_METADATA_COLUMN_WIDTH + 2;
-  const metadataGapRows = canUseWideHero ? 0 : STACKED_METADATA_GAP_ROWS;
+  const metadataGapRows = canUseWideHero || metadataRows === 0 ? 0 : STACKED_METADATA_GAP_ROWS;
   const contentRows = canUseWideHero
     ? logoRows
     : logoRows + metadataGapRows + metadataRows;
@@ -102,8 +121,11 @@ export function getHeaderHeroLayout(layout: Layout): HeaderHeroLayout {
   };
 }
 
-export function measureTopHeaderRows(layout: Layout): number {
-  return getHeaderHeroLayout(layout).totalRows;
+export function measureTopHeaderRows(
+  layout: Layout,
+  headerConfig: HeaderConfig = HEADER_CONFIG_DEFAULTS,
+): number {
+  return getHeaderHeroLayout(layout, headerConfig).totalRows;
 }
 
 /** Truncate a path to fit within maxWidth, keeping the end and prefixing with "... " if needed */
@@ -113,10 +135,17 @@ function truncatePath(path: string, maxWidth: number): string {
   return "... " + path.slice(path.length - (maxWidth - 4));
 }
 
+function truncateText(text: string, maxWidth: number): string {
+  if (maxWidth <= 1) return "";
+  if (getTextWidth(text) <= maxWidth) return text;
+  return `${text.slice(0, Math.max(0, maxWidth - 1))}…`;
+}
+
 export function TopHeader({
   authState,
   workspaceLabel,
   layout,
+  runtimeSummary = null,
   headerConfig = HEADER_CONFIG_DEFAULTS,
 }: TopHeaderProps) {
   renderDebug.useRenderDebug("Header", {
@@ -133,7 +162,7 @@ export function TopHeader({
     mode: layout.mode,
   });
 
-  const { cols, mode } = layout;
+  const { cols } = layout;
   const theme = useTheme();
 
   const authLabelRaw = getAuthStateLabel(authState);
@@ -142,16 +171,30 @@ export function TopHeader({
     : authLabelRaw;
 
   const wsDisplay = truncatePath(workspaceLabel, Math.max(18, cols - 40));
-  const heroLayout = getHeaderHeroLayout(layout);
+  const heroLayout = getHeaderHeroLayout(layout, headerConfig);
+  const modelLabel = runtimeSummary?.modelLabel ?? runtimeSummary?.model;
   const metadataLines = [
     headerConfig.showBrand ? { key: "brand", text: `Codexa v${APP_VERSION}`, color: theme.TEXT, bold: true } : null,
     headerConfig.showAuthStatus ? { key: "auth", text: `Auth: ${authLabel}`, color: theme.TEXT, bold: false } : null,
     headerConfig.showWorkspace ? { key: "workspace", text: `Workspace: ${wsDisplay}`, color: theme.MUTED, bold: false } : null,
-  ].filter((line): line is { key: string; text: string; color: string; bold: boolean } => Boolean(line));
+    headerConfig.showProvider && runtimeSummary?.providerLabel
+      ? { key: "provider", text: `Provider: ${runtimeSummary.providerLabel}`, color: theme.TEXT, bold: false }
+      : null,
+    headerConfig.showModel && modelLabel
+      ? { key: "model", text: `Model: ${modelLabel}`, color: theme.MUTED, bold: false }
+      : null,
+    headerConfig.showReasoning && runtimeSummary?.reasoningLabel
+      ? { key: "reasoning", text: `Reasoning: ${runtimeSummary.reasoningLabel}`, color: theme.MUTED, bold: false }
+      : null,
+    headerConfig.showContext && runtimeSummary?.contextLabel
+      ? { key: "context", text: `Context: ${runtimeSummary.contextLabel}`, color: theme.MUTED, bold: false }
+      : null,
+  ].filter((line): line is HeaderMetadataLine => Boolean(line));
 
   // Add a 1-row gap between the version line and workspace line in wide mode
   // so the two pieces of metadata have breathing room beside the logo.
   const hasMetadataGap = heroLayout.mode === "wide"
+    && metadataLines.length <= 3
     && metadataLines.some((l) => l.key === "brand")
     && metadataLines.some((l) => l.key === "workspace");
   const metadataVisualRows = metadataLines.length + (hasMetadataGap ? 1 : 0);
@@ -178,7 +221,7 @@ export function TopHeader({
     </Box>
   );
 
-  if (mode === "full") {
+  if (heroLayout.mode !== "compact") {
     const metadataTopOffset = Math.max(0, Math.floor((HEADER_WORDMARK_LINES.length - metadataVisualRows) / 2));
 
     return (
@@ -226,6 +269,14 @@ export function TopHeader({
   if (headerConfig.showWorkspace) {
     if (compactParts.length > 0) compactParts.push(<Text key="sep-ws" color={theme.DIM}>{"  ·  "}</Text>);
     compactParts.push(<Text key="ws" color={theme.MUTED} wrap="truncate">{wsDisplay}</Text>);
+  }
+  if (headerConfig.showProvider && runtimeSummary?.providerLabel) {
+    if (compactParts.length > 0) compactParts.push(<Text key="sep-provider" color={theme.DIM}>{"  ·  "}</Text>);
+    compactParts.push(<Text key="provider" color={theme.TEXT} wrap="truncate">{runtimeSummary.providerLabel}</Text>);
+  }
+  if (headerConfig.showModel && modelLabel) {
+    if (compactParts.length > 0) compactParts.push(<Text key="sep-model" color={theme.DIM}>{"  ·  "}</Text>);
+    compactParts.push(<Text key="model" color={theme.MUTED} wrap="truncate">{truncateText(modelLabel, Math.max(10, cols - 40))}</Text>);
   }
 
   return (

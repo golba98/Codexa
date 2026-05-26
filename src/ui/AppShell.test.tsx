@@ -283,13 +283,15 @@ test("startup uses the large logo only when the viewport height can contain it",
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
 });
 
-test("startup uses live compact header at normal shorter terminal height", async () => {
+test("startup uses stacked ASCII header at normal shorter terminal width", async () => {
   const output = await renderStartupShell(100, 24);
 
+  assert.match(output, /██████/);
   assert.match(output, /Codexa v/);
   assert.match(output, /C:\\Development\\1-JavaScript\\13-Custom CLI/);
+  assert.match(output, /Provider: Codexa Core/);
+  assert.match(output, /Model: gpt-5\.4/);
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
-  assert.doesNotMatch(output, /██████/);
 });
 
 test("startup micro mode keeps the live header and composer visible", async () => {

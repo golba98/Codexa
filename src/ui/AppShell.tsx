@@ -188,7 +188,7 @@ function AppShellInner({
 
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
-  const headerRows = measureTopHeaderRows(layout);
+  const headerRows = measureTopHeaderRows(layout, headerConfig);
   const headerToContentGapRows = calculateHeaderToContentGapRows(layout);
   const showComposer = screen === "main";
   const showMainPanel = screen === "main" && mainPanel !== undefined && mainPanel !== null;

@@ -377,8 +377,8 @@ export interface HeaderConfig {
 export const HEADER_CONFIG_DEFAULTS: HeaderConfig = {
   showBrand: true,
   showWorkspace: true,
-  showProvider: false,
-  showModel: false,
+  showProvider: true,
+  showModel: true,
   showReasoning: false,
   showContext: false,
   showAuthStatus: false,

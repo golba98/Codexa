@@ -106,8 +106,9 @@ test("full mode renders wordmark at wide terminal", async () => {
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
   assert.match(output, /Workspace:\s*C:\\Development\\1-JavaScript\\13-Custom CLI/);
+  assert.match(output, /Provider:\s*Codexa Core/);
+  assert.match(output, /Model:\s*gpt-5\.4/);
   assert.doesNotMatch(output, /Runtime:/);
-  assert.doesNotMatch(output, /gpt-5\.4/i);
   assert.doesNotMatch(output, /Net:\s*off/i);
   assert.doesNotMatch(output, /Roots:\s*0/i);
   assert.doesNotMatch(output, /FULL AUTO/i);
@@ -123,15 +124,17 @@ test("wide header centers metadata beside the logo with a clear column gap", asy
   const workspaceRow = rows.findIndex((row) => row.includes("Workspace:"));
 
   assert.ok(firstLogoRow >= 0, "logo should render");
-  assert.equal(brandRow, firstLogoRow + 1, "metadata should be vertically centered within the logo block");
-  // With auth shown: brand → auth → [1-row gap] → workspace — so workspace is 3 rows from brand
-  assert.equal(workspaceRow, brandRow + 3, "workspace should sit below auth with a 1-row gap between version and workspace");
+  assert.ok(brandRow >= firstLogoRow && brandRow <= firstLogoRow + 2, "metadata should be vertically centered within the logo block");
+  assert.equal(workspaceRow, brandRow + 2, "workspace should sit below auth in the metadata block");
   assert.ok((rows[brandRow]?.indexOf(`Codexa v${APP_VERSION}`) ?? -1) >= 55, "metadata should have a visible left gap from the logo");
 });
 
 test("version and workspace metadata rows have a visible gap between them", async () => {
-  // Default config: brand + workspace only (no auth row between them)
-  const output = await renderHeader(130, "authenticated");
+  const output = await renderHeader(130, "authenticated", {
+    ...HEADER_CONFIG_DEFAULTS,
+    showProvider: false,
+    showModel: false,
+  });
   const rows = output.split("\n");
   const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
   const workspaceRow = rows.findIndex((row) => row.includes("Workspace:"));
@@ -164,15 +167,16 @@ test("header wordmark lines never contain metadata text", () => {
 test("compact mode renders version and auth", async () => {
   const output = await renderHeader(105, "authenticated", HEADER_CONFIG_WITH_AUTH);
 
+  assert.match(output, /[█╔╗╚╝═║]/);
   assert.match(output, new RegExp(`v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
   assert.match(output, /C:\\Development\\1-JavaScript\\13-Custom CLI/);
+  assert.match(output, /Provider:\s*Codexa Core/);
+  assert.match(output, /Model:\s*gpt-5\.4/);
   assert.doesNotMatch(output, /Runtime:/);
-  assert.doesNotMatch(output, /gpt-5\.4/i);
   assert.doesNotMatch(output, /Net:\s*off/i);
   assert.doesNotMatch(output, /Roots:\s*0/i);
   assert.doesNotMatch(output, /FULL AUTO/i);
-  assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
 });
 
 test("micro mode renders version and auth", async () => {
@@ -181,7 +185,7 @@ test("micro mode renders version and auth", async () => {
   assert.match(output, /Codex/);
   assert.match(output, new RegExp(`v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
-  assert.doesNotMatch(output, /gpt-5\.4/i);
+  assert.match(output, /gpt-5/i);
 });
 
 test("full mode always shows wordmark regardless of activity", async () => {
@@ -200,7 +204,7 @@ test("full mode renders Checking for checking auth state", async () => {
   assert.doesNotMatch(output, /Unknown/);
 });
 
-test("compact mode preserves workspace truncation without runtime text", async () => {
+test("compact mode preserves workspace truncation with runtime text", async () => {
   const output = await renderHeaderWithWorkspace(
     60,
     "authenticated",
@@ -210,7 +214,7 @@ test("compact mode preserves workspace truncation without runtime text", async (
   assert.match(output, /\.\.\. /);
   assert.match(output, /nested\\workspace/);
   assert.doesNotMatch(output, /packages\\really-long-subfolder/);
-  assert.doesNotMatch(output, /gpt-5\.4/i);
+  assert.match(output, /gpt-5\.4/i);
 });
 
 test("renders configured workspace display labels", async () => {
@@ -221,7 +225,7 @@ test("renders configured workspace display labels", async () => {
     "authenticated",
     formatWorkspaceDisplayPath(workspaceRoot, "dir"),
   );
-  assert.match(dirOutput, /Workspace:\s*13-Custom-CLI-Normal/);
+  assert.match(dirOutput, /Workspace:\s*(?:.*\\)?13-Custom-CLI-Normal/);
 
   const nameOutput = await renderHeaderWithWorkspace(
     130,
@@ -235,5 +239,5 @@ test("renders configured workspace display labels", async () => {
     "authenticated",
     formatWorkspaceDisplayPath(workspaceRoot, "simple"),
   );
-  assert.match(simpleOutput, /Workspace:\s*13-Custom-CLI-Normal/);
+  assert.match(simpleOutput, /Workspace:\s*(?:.*\\)?13-Custom-CLI-Normal/);
 });

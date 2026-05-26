@@ -4154,6 +4154,29 @@ export function App({ launchArgs }: AppProps) {
   const composerReasoningLevel = activeProviderRoute.providerId === "anthropic"
     ? ""
     : activeProviderRoute.reasoning ?? reasoningLevel;
+  const headerRuntimeSummary = useMemo(() => {
+    const contextLabel = activeContextMetadata?.contextLength != null
+      ? `${activeContextMetadata.confidence === "estimated" ? "~" : ""}${formatContextCompact(activeContextMetadata.contextLength)}`
+      : undefined;
+
+    return {
+      ...runtimeSummary,
+      providerLabel: activeRouteProvider?.displayName ?? runtimeSummary.providerLabel,
+      modelLabel: modelDisplayName,
+      contextLabel,
+    };
+  }, [
+    activeContextMetadata?.confidence,
+    activeContextMetadata?.contextLength,
+    activeRouteProvider?.displayName,
+    modelDisplayName,
+    runtimeSummary,
+  ]);
+  const effectiveHeaderConfig = useMemo<HeaderConfig>(() => ({
+    ...headerConfig,
+    showProvider: true,
+    showModel: true,
+  }), [headerConfig]);
 
   // Memoize the composer element so AppShell's memo check (prev.composer ===
   // next.composer) passes during streaming. Without this, a new JSX element is
@@ -4285,7 +4308,7 @@ export function App({ launchArgs }: AppProps) {
         authState={authStatus.state}
         workspaceLabel={workspaceLabel}
         workspaceRoot={workspaceRoot}
-        runtimeSummary={runtimeSummary}
+        runtimeSummary={headerRuntimeSummary}
         staticEvents={staticEvents}
         activeEvents={activeEvents}
         uiState={uiState}
@@ -4294,7 +4317,7 @@ export function App({ launchArgs }: AppProps) {
         onMouseActivity={resetMouseIdle}
         selectionProfile={selectionProfile}
         clearCount={sessionState.clearCount}
-        headerConfig={headerConfig}
+        headerConfig={effectiveHeaderConfig}
         panel={
           <>
             {screen === "backend-picker" && (

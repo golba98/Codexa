@@ -110,8 +110,11 @@ export interface RuntimeStatusContext {
 }
 
 export interface RuntimeSummary {
+  providerLabel: string;
   model: AvailableModel;
+  modelLabel?: string;
   reasoningLabel: string;
+  contextLabel?: string;
   modeLabel: string;
   sandboxLabel: string;
   approvalLabel: string;
@@ -439,6 +442,7 @@ export function formatPersonalityLabel(value: RuntimePersonality): string {
 
 export function buildRuntimeSummary(runtime: ResolvedRuntimeConfig): RuntimeSummary {
   return {
+    providerLabel: formatBackendLabel(runtime.provider),
     model: runtime.model,
     reasoningLabel: formatReasoningLabel(runtime.reasoningLevel),
     modeLabel: formatModeLabel(runtime.mode),
