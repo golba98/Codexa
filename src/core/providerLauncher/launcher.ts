@@ -102,6 +102,8 @@ function captureProcessExit(executable: string, args: string[]): Promise<boolean
 export async function commandExistsOnPath(executable: string): Promise<boolean> {
   const trimmed = executable.trim();
   if (!trimmed) return false;
+  // Inline guard: reject shell metacharacters so taint analysis can see sanitization at this site.
+  if (/[;&|<>`$\n\r]/.test(trimmed)) return false;
   if (executableLooksLikePath(trimmed)) {
     return existsSync(trimmed);
   }
@@ -162,6 +164,10 @@ export async function launchProviderCli(
       let child: ChildProcess;
       try {
         const spawnSpec = buildSpawnSpec(spec.executable, spec.args);
+        if (!spawnSpec.executable) {
+          resolve({ status: "spawn-error", message: "Executable path is empty after resolution." });
+          return;
+        }
         child = spawnImpl(spawnSpec.executable, spawnSpec.args, {
           cwd: spec.cwd,
           shell: false,

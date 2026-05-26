@@ -1,168 +1,110 @@
-import { existsSync, readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-import { spawn } from "child_process";
-import { BUILD_COMMIT } from "../config/buildInfo.js";
 import { APP_VERSION } from "../config/settings.js";
 
 export const CODEXA_NPM_PACKAGE = "@golba98/codexa";
+export const CODEXA_NPM_REGISTRY_URL = "https://registry.npmjs.org/@golba98%2Fcodexa";
 export const CODEXA_UPDATE_COMMAND = `npm install -g ${CODEXA_NPM_PACKAGE}`;
-
 
 export type UpdateStatus = "up-to-date" | "update-available" | "unknown" | "error";
 
+export interface NpmRegistryMetadata {
+  "dist-tags": { latest?: string };
+}
+
 export interface UpdateCheckResult {
   status: UpdateStatus;
-  localCommit: string | null;
-  remoteCommit: string | null;
-  repoPath: string | null;
+  currentVersion: string;
+  latestVersion: string | null;
   errorMessage?: string;
   checkedAt: number;
 }
 
-const GITHUB_API_URL = "https://api.github.com/repos/golba98/Codexa/git/refs/heads/main";
-const REMOTE_TIMEOUT_MS = 3000;
-const SHA_PATTERN = /^[0-9a-f]{40}$/i;
+const FETCH_TIMEOUT_MS = 5000;
 
-export function findGitRoot(startPath: string): string | null {
-  let current = startPath;
-  while (true) {
-    try {
-      if (existsSync(join(current, ".git"))) return current;
-    } catch { /* ignore permission errors */ }
-    const parent = dirname(current);
-    if (parent === current) return null;
-    current = parent;
+// Compares two semver strings numerically. Returns negative if a < b, 0 if equal, positive if a > b.
+// Pre-release versions (e.g. 1.0.2-beta.1) sort below their release counterpart (1.0.2 > 1.0.2-beta.1).
+export function compareSemver(a: string, b: string): number {
+  const parseParts = (v: string): { numeric: number[]; prerelease: string | null } => {
+    const dashIdx = v.indexOf("-");
+    const base = dashIdx === -1 ? v : v.slice(0, dashIdx);
+    const prerelease = dashIdx === -1 ? null : v.slice(dashIdx + 1);
+    const numeric = base.split(".").map((p) => parseInt(p, 10) || 0);
+    return { numeric, prerelease };
+  };
+
+  const pa = parseParts(a);
+  const pb = parseParts(b);
+  const len = Math.max(pa.numeric.length, pb.numeric.length);
+
+  for (let i = 0; i < len; i++) {
+    const diff = (pa.numeric[i] ?? 0) - (pb.numeric[i] ?? 0);
+    if (diff !== 0) return diff;
   }
+
+  // Same numeric version: no pre-release > has pre-release
+  if (pa.prerelease === null && pb.prerelease !== null) return 1;
+  if (pa.prerelease !== null && pb.prerelease === null) return -1;
+  if (pa.prerelease !== null && pb.prerelease !== null) {
+    return pa.prerelease < pb.prerelease ? -1 : pa.prerelease > pb.prerelease ? 1 : 0;
+  }
+  return 0;
 }
 
-export async function getLocalCommit(repoPath: string): Promise<string | null> {
-  try {
-    const headFile = join(repoPath, ".git", "HEAD");
-    const headContent = readFileSync(headFile, "utf-8").trim();
-
-    if (headContent.startsWith("ref: ")) {
-      const ref = headContent.slice(5).trim();
-      const refFile = join(repoPath, ".git", ref);
-      if (existsSync(refFile)) {
-        return readFileSync(refFile, "utf-8").trim();
-      }
-      // Fall back to packed-refs
-      const packedRefs = join(repoPath, ".git", "packed-refs");
-      if (existsSync(packedRefs)) {
-        for (const line of readFileSync(packedRefs, "utf-8").split("\n")) {
-          if (line.endsWith(` ${ref}`)) {
-            const sha = line.split(" ")[0];
-            if (sha && SHA_PATTERN.test(sha)) return sha;
-          }
-        }
-      }
-      return null;
-    }
-
-    if (SHA_PATTERN.test(headContent)) return headContent;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-async function spawnWithTimeout(cmd: string[], cwd: string, timeoutMs: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const [file, ...args] = cmd;
-    if (!file) { reject(new Error("empty command")); return; }
-    const proc = spawn(file, args, { cwd, stdio: ["ignore", "pipe", "ignore"] });
-    const timer = setTimeout(() => { proc.kill(); reject(new Error("timeout")); }, timeoutMs);
-    const chunks: Buffer[] = [];
-    proc.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0) { reject(new Error(`exit ${code}`)); return; }
-      resolve(Buffer.concat(chunks).toString("utf-8"));
-    });
-    proc.on("error", (err) => { clearTimeout(timer); reject(err); });
-  });
-}
-
-export async function getRemoteCommit(repoPath: string | null): Promise<string | null> {
-  if (repoPath) {
-    try {
-      const out = await spawnWithTimeout(
-        ["git", "ls-remote", "origin", "refs/heads/main"],
-        repoPath,
-        REMOTE_TIMEOUT_MS,
-      );
-      const sha = out.trim().split(/\s+/)[0];
-      if (sha && SHA_PATTERN.test(sha)) return sha;
-    } catch { /* fall through to API */ }
-  }
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REMOTE_TIMEOUT_MS);
-    try {
-      const res = await fetch(GITHUB_API_URL, {
-        signal: controller.signal,
-        headers: { "User-Agent": "Codexa-Update-Checker/1.0" },
-      });
-      if (!res.ok) return null;
-      const data = await res.json() as { object?: { sha?: unknown } };
-      const sha = data?.object?.sha;
-      return typeof sha === "string" && SHA_PATTERN.test(sha) ? sha : null;
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch {
-    return null;
-  }
+export function isNewerVersion(candidate: string, current: string): boolean {
+  return compareSemver(candidate, current) > 0;
 }
 
 export interface UpdateCheckOverrides {
-  getLocalCommitFn?: (repoPath: string) => Promise<string | null>;
-  getRemoteCommitFn?: (repoPath: string | null) => Promise<string | null>;
-  findGitRootFn?: (startPath: string) => string | null;
+  currentVersion?: string;
+  fetchNpmMetadataFn?: (url: string) => Promise<NpmRegistryMetadata>;
+}
+
+async function defaultFetchNpmMetadata(url: string): Promise<NpmRegistryMetadata> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": `${CODEXA_NPM_PACKAGE}-update-checker/1.0` },
+    });
+    if (!res.ok) throw new Error(`npm registry returned HTTP ${res.status}`);
+    return await res.json() as NpmRegistryMetadata;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function checkForUpdates(
   opts?: { enabled?: boolean },
-  _overrides?: UpdateCheckOverrides,
+  overrides?: UpdateCheckOverrides,
 ): Promise<UpdateCheckResult> {
+  const currentVersion = overrides?.currentVersion ?? APP_VERSION;
+
   if (opts?.enabled === false) {
-    return { status: "unknown", localCommit: null, remoteCommit: null, repoPath: null, checkedAt: Date.now() };
+    return { status: "unknown", currentVersion, latestVersion: null, checkedAt: Date.now() };
   }
 
   try {
-    const scriptDir = dirname(fileURLToPath(import.meta.url));
-    const findRoot = _overrides?.findGitRootFn ?? findGitRoot;
-    const repoPath = findRoot(scriptDir);
+    const fetchFn = overrides?.fetchNpmMetadataFn ?? defaultFetchNpmMetadata;
+    const metadata = await fetchFn(CODEXA_NPM_REGISTRY_URL);
+    const latestVersion = metadata["dist-tags"]?.latest;
 
-    const localFn = _overrides?.getLocalCommitFn ?? getLocalCommit;
-    const remoteFn = _overrides?.getRemoteCommitFn ?? getRemoteCommit;
-
-    const localCommit = repoPath
-      ? await localFn(repoPath)
-      : (BUILD_COMMIT as string) !== "unknown" ? BUILD_COMMIT : null;
-
-    const remoteCommit = await remoteFn(repoPath);
-
-    if (!localCommit || !remoteCommit) {
-      return { status: "unknown", localCommit, remoteCommit, repoPath, checkedAt: Date.now() };
+    if (!latestVersion) {
+      return {
+        status: "error",
+        currentVersion,
+        latestVersion: null,
+        errorMessage: "npm registry response did not include dist-tags.latest",
+        checkedAt: Date.now(),
+      };
     }
 
-    const updateAvailable = localCommit !== remoteCommit;
-    return {
-      status: updateAvailable ? "update-available" : "up-to-date",
-      localCommit,
-      remoteCommit,
-      repoPath,
-      checkedAt: Date.now(),
-    };
+    const status = isNewerVersion(latestVersion, currentVersion) ? "update-available" : "up-to-date";
+    return { status, currentVersion, latestVersion, checkedAt: Date.now() };
   } catch (err) {
     return {
       status: "error",
-      localCommit: null,
-      remoteCommit: null,
-      repoPath: null,
+      currentVersion,
+      latestVersion: null,
       errorMessage: err instanceof Error ? err.message : String(err),
       checkedAt: Date.now(),
     };
@@ -170,49 +112,31 @@ export async function checkForUpdates(
 }
 
 export function formatUpdateInstructions(result: UpdateCheckResult | null): string {
-  const local = result?.localCommit ? `${result.localCommit.slice(0, 8)} (v${APP_VERSION})` : `unknown (v${APP_VERSION})`;
-  const remote = result?.remoteCommit ? result.remoteCommit.slice(0, 8) : "unknown";
+  const current = result?.currentVersion ?? APP_VERSION;
+  const latest = result?.latestVersion ?? "unknown";
+
+  if (result?.status === "error") {
+    return [
+      `Current installed version: ${current}`,
+      `npm latest version:        ${latest}`,
+      `Error checking npm update status: ${result.errorMessage ?? "unknown error"}`,
+    ].join("\n");
+  }
 
   let statusLine: string;
-  if (result?.status === "update-available") {
-    statusLine = "Update available — remote main has newer Codexa changes.";
+  if (result?.status === "update-available" && result.latestVersion) {
+    statusLine = `Update available: Codexa ${result.latestVersion} is available. You are using ${current}.`;
   } else if (result?.status === "up-to-date") {
     statusLine = "Already up to date.";
-  } else if (result?.status === "error") {
-    statusLine = `Error checking update status: ${result.errorMessage || "unknown error"}`;
   } else {
-    statusLine = "Status unknown — could not reach origin/main.";
+    statusLine = "Status unknown — could not reach npm registry.";
   }
 
-  if (result?.repoPath) {
-    return [
-      `Current commit:  ${local}`,
-      `Remote main:     ${remote}`,
-      `Status:          ${statusLine}`,
-      "",
-      "To update Codexa:",
-      `  cd ${result.repoPath}`,
-      "  git status --short",
-      "  git pull origin main",
-      "  bun install",
-      "  bun run build",
-      "  npm install -g .",
-      "  hash -r",
-      "  codexa --version",
-    ].join("\n");
-  } else {
-    return [
-      `Current commit:  ${local}`,
-      `Remote main:     ${remote}`,
-      `Status:          ${statusLine}`,
-      "",
-      "To update Codexa:",
-      "  cd ~/Development/1-JavaScript/13-Custom-CLI-Normal",
-      "  git pull origin main",
-      "  bun install",
-      "  bun run build",
-      "  npm install -g .",
-    ].join("\n");
-  }
+  return [
+    `Current installed version: ${current}`,
+    `npm latest version:        ${latest}`,
+    `Status:          ${statusLine}`,
+    "",
+    `Run: ${CODEXA_UPDATE_COMMAND}@latest`,
+  ].join("\n");
 }
-
