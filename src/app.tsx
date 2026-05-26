@@ -4253,7 +4253,7 @@ export function App({ launchArgs }: AppProps) {
     showProvider: true,
     showModel: false,
     showReasoning: false,
-    showContext: true,
+    showContext: false,
   }), [headerConfig]);
 
   // Memoize the composer element so AppShell's memo check (prev.composer ===

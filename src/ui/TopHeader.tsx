@@ -64,17 +64,17 @@ function getHeaderVerticalMargins(layout: Layout): { topMarginRows: number; bott
   if (layout.mode !== "full") {
     return {
       topMarginRows: 0,
-      bottomMarginRows: layout.rows > 24 ? 1 : 0,
+      bottomMarginRows: 0,
     };
   }
 
   if (layout.rows <= 24) {
-    return { topMarginRows: 0, bottomMarginRows: 1 };
+    return { topMarginRows: 0, bottomMarginRows: 0 };
   }
 
   return {
     topMarginRows: 1,
-    bottomMarginRows: layout.rows >= 36 ? 2 : 1,
+    bottomMarginRows: 0,
   };
 }
 
