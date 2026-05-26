@@ -5,6 +5,9 @@ import { spawn } from "child_process";
 import { BUILD_COMMIT } from "../config/buildInfo.js";
 import { APP_VERSION } from "../config/settings.js";
 
+export const CODEXA_NPM_PACKAGE = "@golba98/codexa";
+export const CODEXA_UPDATE_COMMAND = `npm install -g ${CODEXA_NPM_PACKAGE}`;
+
 
 export type UpdateStatus = "up-to-date" | "update-available" | "unknown" | "error";
 
