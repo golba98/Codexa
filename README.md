@@ -9,20 +9,14 @@ A terminal UI (TUI) wrapper around the `codex` CLI. Built with TypeScript, Bun, 
 
 ## Installation
 
-**Global install (recommended for use):**
-
-```powershell
-npm install -g @golba98/codexa
-```
-
-Then run `codexa` from any workspace directory.
-
-**Local development install:**
+**Local source install:**
 
 ```powershell
 bun install
 npm link
 ```
+
+Then run `codexa` from the workspace directory you want to use.
 
 ## Usage
 
