@@ -1,5 +1,7 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useStdin } from "ink";
+import { useTheme } from "./theme.js";
+import type { UpdateCheckResult } from "../core/updateCheck.js";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
@@ -57,6 +59,7 @@ export interface AppShellProps {
   selectionProfile?: TerminalSelectionProfile;
   clearCount?: number;
   headerConfig?: HeaderConfig;
+  updateCheckResult?: UpdateCheckResult | null;
 }
 
 // ─── Helpers & subcomponents ─────────────────────────────────────────────────
@@ -161,7 +164,9 @@ function AppShellInner({
   selectionProfile,
   clearCount = 0,
   headerConfig = HEADER_CONFIG_DEFAULTS,
+  updateCheckResult = null,
 }: AppShellProps) {
+  const theme = useTheme();
   renderDebug.useRenderDebug("AppShell", {
     cols: layout.cols,
     rows: layout.rows,
@@ -500,6 +505,14 @@ function AppShellInner({
     ? React.cloneElement(composer as React.ReactElement<{ selectionProfile?: TerminalSelectionProfile }>, { selectionProfile })
     : composer;
 
+  const updateNotice = updateCheckResult?.status === "update-available" ? (
+    <Box paddingX={1}>
+      <Text color={theme.WARNING}>
+        {"Update available: origin/main has newer Codexa changes. Run /update for instructions."}
+      </Text>
+    </Box>
+  ) : null;
+
   if (showMainPanelFullOutput) {
     return (
       <Box flexDirection="column" width="100%">
@@ -511,6 +524,8 @@ function AppShellInner({
             runtimeSummary={runtimeSummary}
             headerConfig={headerConfig}
           />
+
+          {updateNotice}
 
           {headerToContentGapRows > 0 && (
             <Box height={headerToContentGapRows} />
@@ -541,6 +556,8 @@ function AppShellInner({
           runtimeSummary={runtimeSummary}
           headerConfig={headerConfig}
         />
+
+        {updateNotice}
 
         {headerToContentGapRows > 0 && (
           <Box height={headerToContentGapRows} />
@@ -595,6 +612,8 @@ function AppShellInner({
           runtimeSummary={runtimeSummary}
           headerConfig={headerConfig}
         />
+
+        {updateNotice}
 
         {headerToContentGapRows > 0 && (
           <Box height={headerToContentGapRows} />
@@ -692,7 +711,8 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.verboseMode     === next.verboseMode     &&
     prev.mouseCapture    === next.mouseCapture    &&
     prev.onMouseActivity === next.onMouseActivity &&
-    prev.clearCount      === next.clearCount      &&
+    prev.clearCount         === next.clearCount         &&
+    prev.updateCheckResult  === next.updateCheckResult  &&
     panelPropsEqual
   );
 });

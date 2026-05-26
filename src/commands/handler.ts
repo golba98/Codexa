@@ -97,6 +97,7 @@ export type CommandAction =
   | "runtime_personality"
   | "diagnose_github"
   | "diagnose_providers"
+  | "update"
   | "unknown";
 
 export interface CommandResult {
@@ -395,6 +396,7 @@ function buildHelpMessage(context: CommandContext): string {
     `  Current reasoning: ${formatReasoningLabel(context.runtime.reasoningLevel)}`,
     `  Current plan mode: ${context.runtime.planMode ? "Enabled" : "Disabled"}`,
     "  /copy              Copy last response to clipboard",
+    "  /update [check]    Show update status and instructions for updating Codexa",
     "  /help              Show this help",
     "",
     "Install on Windows:",
@@ -853,6 +855,9 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
 
       case "help":
         return { action: "help", message: buildHelpMessage(context) };
+
+      case "update":
+        return { action: "update", value: normalizedArg || "status" };
 
       default:
         return {

@@ -617,6 +617,7 @@ test("every command documented in help is recognized by the parser", () => {
     ["workspace relaunch .", "workspace_relaunch"],
     ["providers", "open_provider_picker"],
     ["route", "route_status"],
+    ["update check", "update"],
   ] as const;
   for (const [cmd, expectedAction] of multiWord) {
     const result = runCommand(`/${cmd}`);
@@ -641,3 +642,14 @@ test("non-command text without / or ? prefix returns null", () => {
   const result = runCommand("hello world");
   assert.equal(result, null);
 });
+
+test("parses /update and /update check commands", () => {
+  const resultStatus = runCommand("/update");
+  assert.equal(resultStatus?.action, "update");
+  assert.equal(resultStatus?.value, "status");
+
+  const resultCheck = runCommand("/update check");
+  assert.equal(resultCheck?.action, "update");
+  assert.equal(resultCheck?.value, "check");
+});
+

@@ -13,7 +13,8 @@
     "test": "bun test",
     "audit:codexa-gap": "node scripts/audit-codexa-capabilities.mjs",
     "smoke:terminal-bench": "node scripts/smoke-terminal-bench.mjs",
-    "build": "bun run typecheck",
+    "gen-build-info": "node scripts/gen-build-info.mjs",
+    "build": "bun run gen-build-info && bun run typecheck",
     "prepublishOnly": "npm run typecheck && npm test"
   },
   "dependencies": {

@@ -228,8 +228,16 @@ import {
 } from "./ui/themeFlow.js";
 import { isBusy as isUiBusy } from "./session/types.js";
 import { AppShell } from "./ui/AppShell.js";
+import { checkForUpdates, formatUpdateInstructions, type UpdateCheckResult } from "./core/updateCheck.js";
+import {
+  isCacheValid,
+  loadUpdateCheckCache,
+  saveUpdateCheckCache,
+} from "./config/updateCheckCache.js";
+import { DEFAULT_UPDATE_CHECK_SETTINGS } from "./config/persistence.js";
 
 // ─── Module Constants & Helpers ────────────────────────────────────────────────
+
 
 let nextEventId = 0;
 let nextTurnId = 0;
@@ -397,6 +405,7 @@ export function App({ launchArgs }: AppProps) {
   const [verboseMode, setVerboseMode] = useState(false);
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
   const [initialRevisionText, setInitialRevisionText] = useState("");
+  const [updateCheckResult, setUpdateCheckResult] = useState<UpdateCheckResult | null>(null);
   // Mouse reporting defaults to the persisted terminalMouseMode setting.
   // "wheel" (default) enables SGR mouse reporting so the timeline can receive
   // wheel events; native drag-select then requires Shift in Windows Terminal.
@@ -1054,6 +1063,7 @@ export function App({ launchArgs }: AppProps) {
         preference: authPreference,
       },
       header: headerConfig,
+      updateCheck: initialSettings.current.updateCheck,
     });
   }, [authPreference, customTheme, showBusyLoader, terminalMouseMode, terminalTitleMode, themeSelection.committedTheme, workspaceDisplayMode]);
 
@@ -1349,6 +1359,47 @@ export function App({ launchArgs }: AppProps) {
 
     appendSystemEvent("Launch mode", devLaunchNotice);
   }, [appendSystemEvent, launchContext]);
+
+  // Non-blocking background update check — runs once at startup.
+  useEffect(() => {
+    const ucSettings = initialSettings.current.updateCheck ?? DEFAULT_UPDATE_CHECK_SETTINGS;
+    if (!ucSettings.enabled) return;
+
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const cache = loadUpdateCheckCache();
+          if (cache && isCacheValid(cache, ucSettings.intervalHours)) {
+            if (cache.updateAvailable) {
+              setUpdateCheckResult({
+                status: "update-available",
+                localCommit: cache.localCommit,
+                remoteCommit: cache.remoteCommit,
+                repoPath: null,
+                checkedAt: cache.lastChecked,
+              });
+            }
+            return;
+          }
+          const result = await checkForUpdates({ enabled: true });
+          if (result.status !== "error") {
+            setUpdateCheckResult(result);
+            saveUpdateCheckCache({
+              lastChecked: result.checkedAt,
+              localCommit: result.localCommit,
+              remoteCommit: result.remoteCommit,
+              updateAvailable: result.status === "update-available",
+            });
+          }
+        } catch {
+          // Never crash the TUI on a failed update check.
+        }
+      })();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Track clear epoch to suppress stale command result events
   useEffect(() => {
@@ -3999,6 +4050,30 @@ export function App({ launchArgs }: AppProps) {
             appendSystemEvent("Command", commandResult.message);
           }
           return;
+        case "update": {
+          const arg = commandResult.value ?? "status";
+          void (async () => {
+            let freshResult = updateCheckResult;
+            if (arg === "check" || freshResult === null) {
+              try {
+                freshResult = await checkForUpdates({ enabled: true });
+                setUpdateCheckResult(freshResult);
+                if (freshResult.status !== "error") {
+                  saveUpdateCheckCache({
+                    lastChecked: freshResult.checkedAt,
+                    localCommit: freshResult.localCommit,
+                    remoteCommit: freshResult.remoteCommit,
+                    updateAvailable: freshResult.status === "update-available",
+                  });
+                }
+              } catch {
+                freshResult = null;
+              }
+            }
+            appendSystemEvent("Update", formatUpdateInstructions(freshResult));
+          })();
+          return;
+        }
         case "help":
         case "unknown":
           if (commandResult.message) {
@@ -4321,6 +4396,7 @@ export function App({ launchArgs }: AppProps) {
         selectionProfile={selectionProfile}
         clearCount={sessionState.clearCount}
         headerConfig={effectiveHeaderConfig}
+        updateCheckResult={updateCheckResult}
         panel={
           <>
             {screen === "backend-picker" && (
