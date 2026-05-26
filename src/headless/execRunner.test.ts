@@ -130,6 +130,7 @@ test("streams assistant deltas to stdout and progress/tool/error diagnostics to 
 
   assert.equal(result.exitCode, 0);
   assert.equal(io.stdoutText(), "Hello world");
+  assert.doesNotMatch(`${io.stdoutText()}\n${io.stderrText()}`, /██████|Codexa v|Workspace:|Provider:|Context:/);
   assert.match(io.stderrText(), /startup:/);
   assert.match(io.stderrText(), /reasoning: thinking/);
   assert.match(io.stderrText(), /tool: running: pwd/);

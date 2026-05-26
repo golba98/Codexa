@@ -86,7 +86,7 @@ test("chooses startup header mode from measured row budget", () => {
 
 test("measures the header rows for full and compact layouts", () => {
   assert.equal(measureTopHeaderRows(createLayoutSnapshot(120, 30)), 8);
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 11);
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 10);
   assert.equal(measureTopHeaderRows(createLayoutSnapshot(50, 24)), 1);
 });
 

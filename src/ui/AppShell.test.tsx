@@ -77,6 +77,13 @@ const EVENTS: TimelineEvent[] = [
   },
 ];
 
+const STARTUP_HEADER_CONFIG: HeaderConfig = {
+  ...HEADER_CONFIG_DEFAULTS,
+  showModel: false,
+  showReasoning: false,
+  showContext: true,
+};
+
 function stripAnsi(value: string): string {
   return value.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
 }
@@ -164,6 +171,7 @@ function renderShell(
           />
         }
         composerRows={composerRows}
+        headerConfig={STARTUP_HEADER_CONFIG}
       />
     </ThemeProvider>,
     {
@@ -256,6 +264,7 @@ function renderStartupShell(
           />
         }
         composerRows={composerRows}
+        headerConfig={STARTUP_HEADER_CONFIG}
       />
     </ThemeProvider>,
     {
@@ -290,7 +299,9 @@ test("startup uses stacked ASCII header at normal shorter terminal width", async
   assert.match(output, /Codexa v/);
   assert.match(output, /C:\\Development\\1-JavaScript\\13-Custom CLI/);
   assert.match(output, /Provider: Codexa Core/);
-  assert.match(output, /Model: gpt-5\.4/);
+  assert.match(output, /Context: Unknown/);
+  assert.doesNotMatch(output, /Model: gpt-5\.4/);
+  assert.doesNotMatch(output, /Reasoning:/);
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
 });
 
