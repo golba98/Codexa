@@ -141,6 +141,21 @@ test("full mode renders wordmark at wide terminal", async () => {
   assert.doesNotMatch(output, /On request/i);
 });
 
+test("local-dev channel makes header version obvious", async () => {
+  const previous = process.env.CODEXA_CHANNEL;
+  process.env.CODEXA_CHANNEL = "local-dev";
+  try {
+    const output = await renderHeader(130, "authenticated", HEADER_CONFIG_WITH_AUTH);
+    assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-dev local`));
+  } finally {
+    if (previous === undefined) {
+      delete process.env.CODEXA_CHANNEL;
+    } else {
+      process.env.CODEXA_CHANNEL = previous;
+    }
+  }
+});
+
 test("wide header centers metadata beside the logo with a clear column gap", async () => {
   const output = await renderHeader(130, "authenticated", HEADER_CONFIG_WITH_AUTH);
   const rows = output.split("\n");

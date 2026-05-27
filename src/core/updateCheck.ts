@@ -1,4 +1,5 @@
 import { APP_VERSION } from "../config/settings.js";
+import { isLocalDevChannel } from "./channel.js";
 
 export const CODEXA_NPM_PACKAGE = "@golba98/codexa";
 export const CODEXA_NPM_REGISTRY_URL = "https://registry.npmjs.org/@golba98%2Fcodexa";
@@ -19,6 +20,13 @@ export interface UpdateCheckResult {
 }
 
 const FETCH_TIMEOUT_MS = 5000;
+
+export function shouldRunStartupUpdateCheck(
+  env: NodeJS.ProcessEnv = process.env,
+  enabled = true,
+): boolean {
+  return enabled && !isLocalDevChannel(env);
+}
 
 // Compares two semver strings numerically. Returns negative if a < b, 0 if equal, positive if a > b.
 // Pre-release versions (e.g. 1.0.2-beta.1) sort below their release counterpart (1.0.2 > 1.0.2-beta.1).
@@ -138,5 +146,13 @@ export function formatUpdateInstructions(result: UpdateCheckResult | null): stri
     `Status:          ${statusLine}`,
     "",
     `Run: ${CODEXA_UPDATE_COMMAND}@latest`,
+  ].join("\n");
+}
+
+export function formatLocalDevUpdateStatus(): string {
+  return [
+    "Running local-dev Codexa.",
+    "Automatic published npm update prompts are disabled for this channel.",
+    "Run /update check to explicitly check the published npm package.",
   ].join("\n");
 }

@@ -1,6 +1,7 @@
 import React, { memo } from "react";
 import { Box, Text } from "ink";
-import { APP_VERSION, HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
+import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
+import { formatCodexaBrandLabel } from "../core/channel.js";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../core/auth/codexAuth.js";
@@ -250,8 +251,9 @@ export function TopHeader({
     : contentWidth;
   const workspaceValueWidth = Math.max(1, metadataWidth - getTextWidth("Workspace: "));
   const wsDisplay = shortenHeaderWorkspaceLabel(workspaceLabel, workspaceValueWidth);
+  const brandLabel = formatCodexaBrandLabel();
   const metadataLinesRaw = [
-    headerConfig.showBrand ? { key: "brand", text: `Codexa v${APP_VERSION}`, color: theme.TEXT, bold: true } : null,
+    headerConfig.showBrand ? { key: "brand", text: brandLabel, color: theme.TEXT, bold: true } : null,
     headerConfig.showAuthStatus ? { key: "auth", text: `Auth: ${authLabel}`, color: theme.TEXT, bold: false } : null,
     headerConfig.showWorkspace ? { key: "workspace", text: `Workspace: ${wsDisplay}`, color: theme.MUTED, bold: false } : null,
     headerConfig.showProvider && runtimeSummary?.providerLabel
@@ -360,7 +362,7 @@ export function TopHeader({
   const compactParts: React.ReactNode[] = [];
   if (headerConfig.showBrand) {
     compactParts.push(
-      <Text key="brand" color={theme.TEXT} bold>{`Codexa v${APP_VERSION}`}</Text>,
+      <Text key="brand" color={theme.TEXT} bold>{brandLabel}</Text>,
     );
   }
   if (headerConfig.showAuthStatus) {

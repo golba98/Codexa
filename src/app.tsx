@@ -229,7 +229,8 @@ import {
 } from "./ui/themeFlow.js";
 import { isBusy as isUiBusy } from "./session/types.js";
 import { AppShell } from "./ui/AppShell.js";
-import { checkForUpdates, formatUpdateInstructions, type UpdateCheckResult } from "./core/updateCheck.js";
+import { checkForUpdates, formatLocalDevUpdateStatus, formatUpdateInstructions, shouldRunStartupUpdateCheck, type UpdateCheckResult } from "./core/updateCheck.js";
+import { isLocalDevChannel } from "./core/channel.js";
 import {
   isCacheValid,
   loadUpdateCheckCache,
@@ -1367,7 +1368,7 @@ export function App({ launchArgs }: AppProps) {
   // Non-blocking background update check — runs once at startup.
   useEffect(() => {
     const ucSettings = initialSettings.current.updateCheck ?? DEFAULT_UPDATE_CHECK_SETTINGS;
-    if (!ucSettings.enabled) return;
+    if (!shouldRunStartupUpdateCheck(process.env, ucSettings.enabled)) return;
 
     const timer = setTimeout(() => {
       void (async () => {
@@ -4090,6 +4091,10 @@ export function App({ launchArgs }: AppProps) {
           return;
         case "update": {
           const arg = commandResult.value ?? "status";
+          if (isLocalDevChannel() && arg !== "check") {
+            appendSystemEvent("Update", formatLocalDevUpdateStatus());
+            return;
+          }
           void (async () => {
             let freshResult = updateCheckResult;
             if (arg === "check" || freshResult === null) {
