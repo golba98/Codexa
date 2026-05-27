@@ -67,7 +67,7 @@ test("chooses startup header mode from measured row budget", () => {
     rows: 24,
     introRows: 7,
     composerRows: 5,
-  }), "compact");
+  }), "large"); // STARTUP_FULL_MIN_COLS lowered to 100 to match LOGO_LARGE_MIN_COLS
 
   assert.equal(resolveStartupHeaderMode({
     cols: 39,
@@ -85,16 +85,21 @@ test("chooses startup header mode from measured row budget", () => {
 });
 
 test("measures the header rows for full and compact layouts", () => {
+  // 120 cols → LOGO_LARGE (6-row), medium mode, topMargin=1 → total 7
   assert.equal(measureTopHeaderRows(createLayoutSnapshot(120, 30)), 7);
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 6);
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(70, 24)), 10);
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(50, 24)), 1);
+  // 80 cols → LOGO_MEDIUM (4-row), narrow/stacked mode (< 100) → logo+gap+metadata = 4+1+3 = 8
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 8);
+  // 70 cols → LOGO_COMPACT (1-row, 48–71), narrow mode → logo+gap+metadata = 1+1+3 = 5
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(70, 24)), 5);
+  // 50 cols → LOGO_COMPACT (1-row, 48–71), narrow mode → logo+gap+metadata = 1+1+3 = 5
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(50, 24)), 5);
 });
 
 test("header hero switches across narrow, medium, and wide breakpoints", () => {
   assert.equal(getHeaderHeroLayout(createLayoutSnapshot(70, 30)).mode, "narrow");
   assert.equal(getHeaderHeroLayout(createLayoutSnapshot(100, 30)).mode, "medium");
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(120, 30)).mode, "wide");
+  // WIDE_HEADER_MIN_COLUMNS raised to 130 so the UpdateAvailableCard has room
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(130, 30)).mode, "wide");
 });
 
 test("preserves the previous layout when resize values are invalid", () => {

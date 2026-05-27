@@ -4439,6 +4439,11 @@ export function App({ launchArgs }: AppProps) {
         selectionProfile={selectionProfile}
         clearCount={sessionState.clearCount}
         headerConfig={effectiveHeaderConfig}
+        updateAvailable={
+          updateCheckResult?.status === "update-available" && updateCheckResult.latestVersion
+            ? { latestVersion: updateCheckResult.latestVersion, currentVersion: updateCheckResult.currentVersion }
+            : null
+        }
         panel={
           <>
             {screen === "backend-picker" && (

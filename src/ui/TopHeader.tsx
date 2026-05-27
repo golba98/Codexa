@@ -8,24 +8,34 @@ import * as renderDebug from "../core/perf/renderDebug.js";
 import { useTheme } from "./theme.js";
 import { clampVisualText, type Layout } from "./layout.js";
 import { getTextWidth } from "./textLayout.js";
+import { UPDATE_CARD_ROWS, UpdateAvailableCard } from "./UpdateAvailableCard.js";
+import {
+  LOGO_LARGE,
+  LOGO_COMPACT_MIN_COLS,
+  LOGO_LARGE_MIN_COLS,
+  LOGO_MEDIUM_MIN_COLS,
+  selectLogoVariant,
+  getLogoWidth,
+} from "./logoVariants.js";
 
-export const HEADER_WORDMARK_LINES = [
-  " ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗ █████╗ ",
-  "██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝██╔══██╗",
-  "██║     ██║   ██║██║  ██║█████╗   ╚███╔╝ ███████║",
-  "██║     ██║   ██║██║  ██║██╔══╝   ██╔██╗ ██╔══██║",
-  "╚██████╗╚██████╔╝██████╔╝███████╗██╔╝ ██╗██║  ██║",
-  " ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝",
-];
+// Re-exported for backward compatibility with existing tests.
+export const HEADER_WORDMARK_LINES = LOGO_LARGE;
 
 const HEADER_PADDING_COLUMNS = 2;
 const SHELL_GUTTER_COLUMNS = 1;
-const WIDE_HEADER_MIN_COLUMNS = 120;
-const MEDIUM_HEADER_MIN_COLUMNS = 80;
+// Require 130+ cols for wide side-by-side so the UpdateAvailableCard has room.
+const WIDE_HEADER_MIN_COLUMNS = 130;
+// Require 100+ cols (= LOGO_LARGE_MIN_COLS) for medium side-by-side — the large
+// logo fits cleanly at this width.
+const MEDIUM_HEADER_MIN_COLUMNS = LOGO_LARGE_MIN_COLS; // 100
 const MIN_SIDE_BY_SIDE_METADATA_WIDTH = 18;
 const STACKED_METADATA_GAP_ROWS = 1;
-const MIN_LOGO_TERMINAL_WIDTH = getWordmarkWidth() + 2;
+// Minimum row count for multi-row logos (LOGO_LARGE / LOGO_MEDIUM).
 const MIN_LOGO_TERMINAL_ROWS = 24;
+// Minimum row count for the compact single-row logo.
+const MIN_COMPACT_LOGO_TERMINAL_ROWS = 14;
+// Gap row between the UpdateAvailableCard and the metadata lines.
+const UPDATE_CARD_GAP_ROWS = 1;
 
 export type HeaderHeroMode = "wide" | "medium" | "narrow" | "compact";
 
@@ -42,16 +52,18 @@ export interface HeaderHeroLayout {
 
 type HeaderMetadataLine = { key: string; text: string; color: string; bold: boolean };
 
+export interface UpdateAvailableInfo {
+  latestVersion: string;
+  currentVersion: string;
+}
+
 interface TopHeaderProps {
   authState: CodexAuthState;
   workspaceLabel: string;
   layout: Layout;
   runtimeSummary?: RuntimeSummary | null;
   headerConfig?: HeaderConfig;
-}
-
-function getWordmarkWidth(): number {
-  return HEADER_WORDMARK_LINES.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
+  updateAvailable?: UpdateAvailableInfo | null;
 }
 
 function getHeaderContentWidth(cols: number): number {
@@ -89,11 +101,22 @@ function getHeaderVerticalMargins(layout: Layout): { topMarginRows: number; bott
 export function getHeaderHeroLayout(
   layout: Layout,
   headerConfig: HeaderConfig = HEADER_CONFIG_DEFAULTS,
+  hasUpdate = false,
 ): HeaderHeroLayout {
   const { topMarginRows, bottomMarginRows } = getHeaderVerticalMargins(layout);
   const metadataRows = getMetadataRowCount(headerConfig);
   const contentWidth = getHeaderContentWidth(layout.cols);
-  const canRenderLogo = layout.cols >= MIN_LOGO_TERMINAL_WIDTH && layout.rows >= MIN_LOGO_TERMINAL_ROWS;
+
+  const logo = selectLogoVariant(layout.cols);
+  const logoWidth = logo.length > 0 ? getLogoWidth(logo) : 0;
+  const isMultiRowLogo = logo.length > 1;
+
+  // Show logos only when the terminal has enough rows: multi-row logos need 24,
+  // the compact single-row logo needs 14. No rows guard for text-only mode.
+  const canRenderLogo = logo.length > 0
+    && (isMultiRowLogo
+      ? layout.rows >= MIN_LOGO_TERMINAL_ROWS
+      : layout.rows >= MIN_COMPACT_LOGO_TERMINAL_ROWS);
 
   if (!canRenderLogo) {
     return {
@@ -108,9 +131,9 @@ export function getHeaderHeroLayout(
     };
   }
 
-  const logoRows = HEADER_WORDMARK_LINES.length;
+  const logoRowCount = logo.length;
   const metadataGapColumns = layout.cols >= WIDE_HEADER_MIN_COLUMNS ? 4 : 2;
-  const metadataColumnWidth = contentWidth - getWordmarkWidth() - metadataGapColumns;
+  const metadataColumnWidth = contentWidth - logoWidth - metadataGapColumns;
   const canUseSideBySide = metadataRows === 0
     || metadataColumnWidth >= MIN_SIDE_BY_SIDE_METADATA_WIDTH;
   const mode: HeaderHeroMode = canUseSideBySide && layout.cols >= WIDE_HEADER_MIN_COLUMNS
@@ -119,9 +142,18 @@ export function getHeaderHeroLayout(
       ? "medium"
       : "narrow";
   const metadataGapRows = mode === "narrow" && metadataRows > 0 ? STACKED_METADATA_GAP_ROWS : 0;
-  const contentRows = mode === "wide" || mode === "medium"
-    ? logoRows
-    : logoRows + metadataGapRows + metadataRows;
+
+  const isSideBySide = mode === "wide" || mode === "medium";
+
+  // In side-by-side mode the right column grows to: update card + gap + metadata.
+  // In narrow/stacked mode, the update card is a single extra line below metadata.
+  const rightColRows = isSideBySide
+    ? (hasUpdate ? UPDATE_CARD_ROWS + UPDATE_CARD_GAP_ROWS : 0) + metadataRows
+    : 0;
+
+  const contentRows = isSideBySide
+    ? Math.max(logoRowCount, rightColRows)
+    : logoRowCount + metadataGapRows + metadataRows + (hasUpdate ? STACKED_METADATA_GAP_ROWS + 1 : 0);
 
   return {
     mode,
@@ -129,7 +161,7 @@ export function getHeaderHeroLayout(
     bottomMarginRows,
     metadataGapColumns,
     metadataGapRows,
-    logoRows,
+    logoRows: logoRowCount,
     metadataRows,
     totalRows: topMarginRows + contentRows + bottomMarginRows,
   };
@@ -138,8 +170,9 @@ export function getHeaderHeroLayout(
 export function measureTopHeaderRows(
   layout: Layout,
   headerConfig: HeaderConfig = HEADER_CONFIG_DEFAULTS,
+  hasUpdate = false,
 ): number {
-  return getHeaderHeroLayout(layout, headerConfig).totalRows;
+  return getHeaderHeroLayout(layout, headerConfig, hasUpdate).totalRows;
 }
 
 function takeVisualSuffix(text: string, maxWidth: number): string {
@@ -183,6 +216,7 @@ export function TopHeader({
   layout,
   runtimeSummary = null,
   headerConfig = HEADER_CONFIG_DEFAULTS,
+  updateAvailable = null,
 }: TopHeaderProps) {
   renderDebug.useRenderDebug("Header", {
     authState,
@@ -205,9 +239,12 @@ export function TopHeader({
     ? authLabelRaw[0]!.toUpperCase() + authLabelRaw.slice(1)
     : authLabelRaw;
 
-  const heroLayout = getHeaderHeroLayout(layout, headerConfig);
+  const heroLayout = getHeaderHeroLayout(layout, headerConfig, !!updateAvailable);
+  const selectedLogo = selectLogoVariant(layout.cols);
+  const selectedLogoWidth = selectedLogo.length > 0 ? getLogoWidth(selectedLogo) : 0;
+
   const contentWidth = getHeaderContentWidth(layout.cols);
-  const sideBySideMetadataWidth = Math.max(1, contentWidth - getWordmarkWidth() - heroLayout.metadataGapColumns);
+  const sideBySideMetadataWidth = Math.max(1, contentWidth - selectedLogoWidth - heroLayout.metadataGapColumns);
   const metadataWidth = heroLayout.mode === "wide" || heroLayout.mode === "medium"
     ? sideBySideMetadataWidth
     : contentWidth;
@@ -251,17 +288,26 @@ export function TopHeader({
     </Box>
   );
 
+  // Logo column: no `bold` — bold on Unicode block/box-drawing characters causes
+  // per-glyph spacing artifacts in common terminal fonts (Ptyxis, GNOME Terminal).
+  // wrap="truncate" keeps each row on exactly one terminal line, preventing
+  // Ink's flex layout from reflowing the fixed-width art.
   const logoColumn = (
     <Box flexDirection="column" flexShrink={0}>
-      {HEADER_WORDMARK_LINES.map((line, i) => (
-        <Text key={i} color={theme.ACCENT} bold>{line}</Text>
+      {selectedLogo.map((line, i) => (
+        <Text key={i} color={theme.ACCENT} wrap="truncate">{line}</Text>
       ))}
     </Box>
   );
 
   if (heroLayout.mode !== "compact") {
-    const metadataTopOffset = Math.max(0, Math.floor((HEADER_WORDMARK_LINES.length - metadataVisualRows) / 2));
     const isSideBySide = heroLayout.mode === "wide" || heroLayout.mode === "medium";
+
+    // In side-by-side mode only centre metadata vertically when there is no
+    // update card. With a card the right column is already ≥ logo height.
+    const metadataTopOffset = isSideBySide && !updateAvailable
+      ? Math.max(0, Math.floor((selectedLogo.length - metadataVisualRows) / 2))
+      : 0;
 
     return (
       <Box flexDirection="column" paddingX={1} width="100%">
@@ -274,6 +320,16 @@ export function TopHeader({
             {logoColumn}
             <Box width={heroLayout.metadataGapColumns} flexShrink={0} />
             <Box flexDirection="column" flexGrow={1} paddingTop={metadataTopOffset}>
+              {updateAvailable && (
+                <>
+                  <UpdateAvailableCard
+                    latestVersion={updateAvailable.latestVersion}
+                    currentVersion={updateAvailable.currentVersion}
+                    width={metadataWidth}
+                  />
+                  <Box height={UPDATE_CARD_GAP_ROWS} />
+                </>
+              )}
               {metadataColumn}
             </Box>
           </Box>
@@ -284,6 +340,9 @@ export function TopHeader({
               <Box height={heroLayout.metadataGapRows} />
             )}
             {metadataColumn}
+            {updateAvailable && (
+              <Text color={theme.WARNING} wrap="truncate">{`↑ Update: Codexa ${updateAvailable.latestVersion} is available — run: npm install -g @golba98/codexa@latest`}</Text>
+            )}
           </Box>
         )}
 
@@ -345,6 +404,13 @@ export const MemoizedTopHeader = memo(TopHeader, (prev, next) => {
     prev.layout.rows === next.layout.rows &&
     prev.layout.mode === next.layout.mode &&
     prev.runtimeSummary === next.runtimeSummary &&
-    prev.headerConfig === next.headerConfig
+    prev.headerConfig === next.headerConfig &&
+    prev.updateAvailable === next.updateAvailable
   );
 });
+
+// Minimum terminal cols to render any logo art (the compact 1-row variant).
+export const MIN_LOGO_TERMINAL_WIDTH = LOGO_COMPACT_MIN_COLS;
+
+// Re-export for consumers that reference these constants directly.
+export { LOGO_LARGE_MIN_COLS, LOGO_MEDIUM_MIN_COLS, LOGO_COMPACT_MIN_COLS };
