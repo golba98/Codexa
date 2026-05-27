@@ -30,6 +30,15 @@ function validateConfiguredExecutable(value: string, label: string, cwd: string)
   });
 }
 
+function validateResolvedExecutable(value: string, label: string, cwd: string): string {
+  return normalizeExecutableValue(value, {
+    label,
+    cwd,
+    requireExistingPath: false,
+    allowBareExecutable: true,
+  });
+}
+
 async function resolveWithWhere(
   runCommandImpl: CommandRunner,
   cwd: string,
@@ -50,7 +59,13 @@ async function resolveWithWhere(
     .map((l) => l.trim())
     .filter(Boolean);
   for (const line of lines) {
-    if (!requireResolvedFile || existsSync(line)) return line;
+    let candidate: string;
+    try {
+      candidate = validateResolvedExecutable(line, "where.exe result", cwd);
+    } catch {
+      continue;
+    }
+    if (!requireResolvedFile || existsSync(candidate)) return candidate;
   }
   return null;
 }
@@ -101,13 +116,15 @@ export async function resolveExecutable(options: ExecutableResolverOptions): Pro
     }
 
     for (const candidate of knownCandidates) {
-      if (existsSync(candidate)) return candidate;
+      const validated = validateResolvedExecutable(candidate, `${options.label} known executable`, cwd);
+      if (existsSync(validated)) return validated;
     }
   }
 
   // 5. Explicit known file fallbacks
   for (const candidate of options.knownFilePaths ?? []) {
-    if (existsSync(candidate)) return candidate;
+    const validated = validateResolvedExecutable(candidate, `${options.label} known executable`, cwd);
+    if (existsSync(validated)) return validated;
   }
 
   if (options.allowBareFallback === false) {
@@ -116,7 +133,7 @@ export async function resolveExecutable(options: ExecutableResolverOptions): Pro
 
   // 6. Bare name fallback — prefer the name without an extension (works on Unix).
   const bareName = options.commandNames.find((c) => !c.includes(".")) ?? options.commandNames[0];
-  return bareName!;
+  return validateResolvedExecutable(bareName!, `${options.label} executable`, cwd);
 }
 
 /**
@@ -127,12 +144,13 @@ export function buildSpawnSpec(
   executable: string,
   args: string[],
 ): { executable: string; args: string[] } {
+  const validatedExecutable = validateResolvedExecutable(executable, "Executable", process.cwd());
   if (process.platform === "win32") {
-    const lower = executable.toLowerCase();
+    const lower = validatedExecutable.toLowerCase();
     if (lower.endsWith(".cmd") || lower.endsWith(".bat")) {
-      validateWindowsBatchExecutableForCmd(executable, "Windows batch executable");
-      return { executable: "cmd.exe", args: ["/d", "/s", "/c", "call", executable, ...args] };
+      validateWindowsBatchExecutableForCmd(validatedExecutable, "Windows batch executable");
+      return { executable: "cmd.exe", args: ["/d", "/s", "/c", "call", validatedExecutable, ...args] };
     }
   }
-  return { executable, args };
+  return { executable: validatedExecutable, args };
 }

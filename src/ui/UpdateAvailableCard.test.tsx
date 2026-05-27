@@ -26,6 +26,10 @@ function stripAnsi(value: string): string {
   return value.replace(/\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function sleep(ms = 50): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -92,9 +96,20 @@ test("card with width clamps long lines to fit inside the box", async () => {
   // The install command is long; with width=40 the inner content width is 38.
   // clampVisualText should truncate it — the full command should not appear.
   const fullCommand = "npm install -g @golba98/codexa@latest";
-  assert.doesNotMatch(output, new RegExp(fullCommand.replace(/[@/]/g, "\\$&")), "long command should be clamped to fit card width");
+  assert.doesNotMatch(output, new RegExp(escapeRegExp(fullCommand)), "long command should be clamped to fit card width");
   // But the card content should still be present (just truncated)
   assert.match(output, /npm install/, "truncated command prefix should still appear");
+});
+
+test("regex escaping handles every special character occurrence", () => {
+  const dangerous = "codexa.+*?^${}()|[]\\ codexa.+*?^${}()|[]\\";
+  const escaped = escapeRegExp(dangerous);
+  const matcher = new RegExp(escaped);
+
+  assert.match(dangerous, matcher);
+  assert.equal((escaped.match(/\\\./g) ?? []).length, 2);
+  assert.equal((escaped.match(/\\\$/g) ?? []).length, 2);
+  assert.equal((escaped.match(/\\\\/g) ?? []).length >= 2, true);
 });
 
 test("card without width renders without truncation", async () => {

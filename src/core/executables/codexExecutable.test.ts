@@ -92,6 +92,29 @@ test("Codex resolver: rejects unsafe CODEX_EXECUTABLE values", async () => {
   });
 });
 
+test("Codex resolver: rejects malicious CODEX_EXECUTABLE candidates", async () => {
+  const unsafeExecutables = [
+    "codex; echo hacked",
+    "codex && echo hacked",
+    "codex | echo hacked",
+    "codex $(echo hacked)",
+    "codex --dangerous-extra-arg",
+    "codex.cmd & echo hacked",
+  ];
+
+  for (const executable of unsafeExecutables) {
+    await withEnv({ CODEX_EXECUTABLE: executable }, async () => {
+      await assert.rejects(
+        () => resolveCodexExecutable({
+          runCommandImpl: mockRunCommand(commandResult()),
+        }),
+        /shell metacharacters|single executable name/i,
+        executable,
+      );
+    });
+  }
+});
+
 test("Codex resolver: accepts environment executable paths with spaces", async () => {
   const tempRoot = join(tmpdir(), `codexa codex resolver ${Date.now()}`);
   const codexPath = join(tempRoot, "codex cli.exe");
@@ -209,4 +232,23 @@ test("spawnCodexProcess uses executable directly on non-Windows", () => {
   proc.kill();
 
   assert.ok(proc, "Process should have been spawned");
+});
+
+test("spawnCodexProcess rejects executable candidates with injected commands or args", () => {
+  const unsafeExecutables = [
+    "codex; echo hacked",
+    "codex && echo hacked",
+    "codex | echo hacked",
+    "codex $(echo hacked)",
+    "codex --dangerous-extra-arg",
+    "codex.cmd & echo hacked",
+  ];
+
+  for (const executable of unsafeExecutables) {
+    assert.throws(
+      () => spawnCodexProcess(executable, ["exec"], { stdio: ["ignore", "pipe", "pipe"] }),
+      /shell metacharacters|single executable name/i,
+      executable,
+    );
+  }
 });

@@ -27,6 +27,10 @@ function looksLikePath(value: string): boolean {
   return /[\\/]/.test(value) || /^[A-Za-z]:/.test(value);
 }
 
+function isWindowsAbsolutePath(value: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(value);
+}
+
 function hasWindowsBatchExtension(value: string): boolean {
   return /\.(?:cmd|bat)$/i.test(value);
 }
@@ -67,7 +71,7 @@ export function normalizeExecutableValue(
     return trimmed;
   }
 
-  const normalized = isAbsolute(trimmed) ? resolve(trimmed) : resolve(cwd, trimmed);
+  const normalized = isAbsolute(trimmed) || isWindowsAbsolutePath(trimmed) ? trimmed : resolve(cwd, trimmed);
   validateCommonExecutableSyntax(normalized, options.label);
 
   if (requireExistingPath && !existsSync(normalized)) {
