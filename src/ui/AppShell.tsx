@@ -24,7 +24,7 @@ import {
 } from "./Timeline.js";
 import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow } from "./timelineMeasure.js";
 import type { TerminalSelectionProfile } from "../core/terminal/terminalSelection.js";
-import { MemoizedTopHeader, measureTopHeaderRows } from "./TopHeader.js";
+import { MemoizedTopHeader, measureTopHeaderRows, type UpdateAvailableInfo } from "./TopHeader.js";
 
 const COMPACT_HEADER_TO_COMPOSER_GAP_ROWS = 1;
 const MEDIUM_HEADER_TO_COMPOSER_GAP_ROWS = 1;
@@ -58,6 +58,7 @@ export interface AppShellProps {
   selectionProfile?: TerminalSelectionProfile;
   clearCount?: number;
   headerConfig?: HeaderConfig;
+  updateAvailable?: UpdateAvailableInfo | null;
 }
 
 // ─── Helpers & subcomponents ─────────────────────────────────────────────────
@@ -162,6 +163,7 @@ function AppShellInner({
   selectionProfile,
   clearCount = 0,
   headerConfig = HEADER_CONFIG_DEFAULTS,
+  updateAvailable = null,
 }: AppShellProps) {
   const theme = useTheme();
   renderDebug.useRenderDebug("AppShell", {
@@ -190,7 +192,7 @@ function AppShellInner({
 
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
-  const headerRows = measureTopHeaderRows(layout, headerConfig);
+  const headerRows = measureTopHeaderRows(layout, headerConfig, !!updateAvailable);
   const headerToContentGapRows = calculateHeaderToContentGapRows(layout);
   const showComposer = screen === "main";
   const showMainPanel = screen === "main" && mainPanel !== undefined && mainPanel !== null;
@@ -512,6 +514,7 @@ function AppShellInner({
             layout={layout}
             runtimeSummary={runtimeSummary}
             headerConfig={headerConfig}
+            updateAvailable={updateAvailable}
           />
 
           {headerToContentGapRows > 0 && (
@@ -542,6 +545,7 @@ function AppShellInner({
           layout={layout}
           runtimeSummary={runtimeSummary}
           headerConfig={headerConfig}
+          updateAvailable={updateAvailable}
         />
 
         {headerToContentGapRows > 0 && (
@@ -596,6 +600,7 @@ function AppShellInner({
           layout={layout}
           runtimeSummary={runtimeSummary}
           headerConfig={headerConfig}
+          updateAvailable={updateAvailable}
         />
 
         {headerToContentGapRows > 0 && (
@@ -694,7 +699,8 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.verboseMode     === next.verboseMode     &&
     prev.mouseCapture    === next.mouseCapture    &&
     prev.onMouseActivity === next.onMouseActivity &&
-    prev.clearCount         === next.clearCount         &&
+    prev.clearCount      === next.clearCount      &&
+    prev.updateAvailable === next.updateAvailable &&
     panelPropsEqual
   );
 });

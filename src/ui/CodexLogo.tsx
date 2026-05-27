@@ -2,15 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { useTheme } from "./theme.js";
 import type { LayoutMode } from "./layout.js";
-
-// Full 4-line ASCII banner — rendered only in "full" mode.
-const BANNER = [
-  "  ____   ___  ____  _____ _  __    _    ",
-  " / ___| / _ \\|  _ \\| ____| |/ /   / \\   ",
-  "| |    | | | | | | |  _| | ' /   / _ \\  ",
-  "|_|     \\___/|_| |_|_____|_|\\_\\ /_/ \\_\\ "
-];
-
+import { LOGO_MEDIUM } from "./logoVariants.js";
 
 interface CodexLogoProps {
   /** Which layout mode we're in. Defaults to "full". */
@@ -42,10 +34,11 @@ export function CodexLogo({ layout = "full" }: CodexLogoProps) {
     );
   }
 
-  // Full mode — ASCII banner to stay stable across terminals/codepages.
+  // Full mode — use medium ASCII art. wrap="truncate" prevents Ink from
+  // reflowing the fixed-width art across terminal lines.
   return (
     <Box flexDirection="column" overflow="hidden">
-      {BANNER.map((line, index) => (
+      {LOGO_MEDIUM.map((line, index) => (
         <Text key={line} color={colorForIndex(index)} wrap="truncate">
           {line}
         </Text>

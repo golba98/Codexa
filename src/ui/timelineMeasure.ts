@@ -25,6 +25,7 @@ import { selectVisibleRunActivity } from "./runActivityView.js";
 import { getTextUnits, getTextWidth, wrapPlainText, wrapCommandText, splitTextAtColumn } from "./textLayout.js";
 import type { RenderTimelineItem } from "./Timeline.js";
 import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
+import { selectLogoVariant, LOGO_LARGE_MIN_COLS } from "./logoVariants.js";
 
 // ─── Exported types ───────────────────────────────────────────────────────────
 
@@ -95,14 +96,8 @@ const MAX_VISIBLE_PROGRESS_ENTRIES = 3;
 const COMPACT_PROCESSING_BODY_LINE_CAP = 4;
 const COMPACT_STREAMING_TAIL_CAP = 6;
 const VISIBLE_THINKING_SOURCES = new Set(["reasoning", "todo"]);
-const INTRO_WORDMARK = [
-  " ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗ █████╗ ",
-  "██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝██╔══██╗",
-  "██║     ██║   ██║██║  ██║█████╗   ╚███╔╝ ███████║",
-  "██║     ██║   ██║██║  ██║██╔══╝   ██╔██╗ ██╔══██║",
-  "╚██████╗╚██████╔╝██████╔╝███████╗██╔╝ ██╗██║  ██║",
-  " ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝",
-];
+// Logo rows for the intro item — selected dynamically from logoVariants.ts so
+// the dead-code intro path stays consistent with the live TopHeader rendering.
 
 // Matches sentence-ending punctuation followed (optionally after whitespace) by
 // a capital letter starting a new word. Requires [A-Z] to be followed by [a-z]
@@ -1562,9 +1557,10 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
   }
 
   const logoRows = startupHeaderMode === "large"
-    ? INTRO_WORDMARK
-    : ["CODEXA"];
-  const logoWidth = logoRows.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
+    ? selectLogoVariant(safeWidth)
+    : selectLogoVariant(0); // text-only fallback for compact mode
+  const effectiveLogoRows = logoRows.length > 0 ? logoRows : ["CODEXA"];
+  const logoWidth = effectiveLogoRows.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
   const workspaceName = getWorkspaceDisplayName(intro.workspaceLabel);
   const metaLines = [
     `Codexa v${intro.version}`,
@@ -1577,19 +1573,20 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
     && safeWidth >= logoWidth + gapWidth + widestMetaLine;
 
   if (canRenderSideBySide) {
-    const metaStartRow = Math.max(0, Math.floor((logoRows.length - metaLines.length) / 2));
-    const rowCount = Math.max(logoRows.length, metaStartRow + metaLines.length);
+    const metaStartRow = Math.max(0, Math.floor((effectiveLogoRows.length - metaLines.length) / 2));
+    const rowCount = Math.max(effectiveLogoRows.length, metaStartRow + metaLines.length);
     const metaWidth = Math.max(1, safeWidth - logoWidth - gapWidth);
 
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-      const logoLine = logoRows[rowIndex] ?? "";
+      const logoLine = effectiveLogoRows[rowIndex] ?? "";
       const logoPadding = Math.max(0, logoWidth - getTextWidth(logoLine));
       const metaIndex = rowIndex - metaStartRow;
       const metaLine = metaIndex >= 0 && metaIndex < metaLines.length
         ? sanitizeTerminalOutput(metaLines[metaIndex]!)
         : "";
+      // No bold on logo spans — bold on block/box-drawing chars causes spacing artifacts.
       const spans = [
-        createSpan(`${logoLine}${" ".repeat(logoPadding)}`, "accent", { bold: true }),
+        createSpan(`${logoLine}${" ".repeat(logoPadding)}`, "accent"),
         createSpan(" ".repeat(gapWidth)),
       ];
 
@@ -1604,10 +1601,10 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
       ));
     }
   } else {
-    logoRows.forEach((line, index) => {
+    effectiveLogoRows.forEach((line, index) => {
       rows.push(createRow(
         `${item.key}-logo-${index}`,
-        [createSpan(clampVisualText(line, safeWidth), "accent", { bold: true })],
+        [createSpan(clampVisualText(line, safeWidth), "accent")],
         safeWidth,
       ));
     });
@@ -2965,7 +2962,7 @@ export function buildTimelineSnapshot(
     let builtRows: TimelineRow[];
 
     if (item.type === "intro") {
-      const cacheKey = `i:${item.key}:${innerWidth}:${item.intro.version}:${item.intro.layoutMode}:${item.intro.startupHeaderMode ?? ""}:${item.intro.authLabel}:${item.intro.workspaceLabel}`;
+      const cacheKey = `i:${item.key}:${innerWidth}:${item.intro.version}:${item.intro.layoutMode}:${item.intro.startupHeaderMode ?? ""}:${item.intro.authLabel}:${item.intro.workspaceLabel}:v${LOGO_LARGE_MIN_COLS}`;
       const cached = _staticRowCache.get(cacheKey);
       if (cached) {
         renderDebug.traceEvent("timeline", "rowGeneration", {
