@@ -39,7 +39,25 @@ export function saveUpdateCheckCache(cache: UpdateCheckCache): void {
   }
 }
 
-export function isCacheValid(cache: UpdateCheckCache, intervalHours: number): boolean {
+function stripV(v: string): string {
+  return v.startsWith("v") ? v.slice(1) : v;
+}
+
+/**
+ * Returns true only when the cache is still usable:
+ * - `runningVersion` matches the version the cache was written for (version-mismatch = stale)
+ * - The cache was written within `intervalHours`
+ */
+export function isCacheValid(
+  cache: UpdateCheckCache,
+  intervalHours: number,
+  runningVersion?: string,
+): boolean {
+  if (runningVersion !== undefined) {
+    if (stripV(cache.currentVersion) !== stripV(runningVersion)) {
+      return false;
+    }
+  }
   const maxAgeMs = intervalHours * 60 * 60 * 1000;
   return Date.now() - cache.lastChecked < maxAgeMs;
 }

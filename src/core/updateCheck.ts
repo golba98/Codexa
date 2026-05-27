@@ -16,17 +16,32 @@ export interface UpdateCheckResult {
   latestVersion: string | null;
   errorMessage?: string;
   checkedAt: number;
+  source?: "npm" | "cache";
 }
 
 const FETCH_TIMEOUT_MS = 5000;
 
+/** Strip a leading "v" so "v1.0.2" and "1.0.2" are treated as equal. */
+export function normalizeVersion(v: string): string {
+  return v.startsWith("v") ? v.slice(1) : v;
+}
+
+const SEMVER_RE = /^\d+\.\d+\.\d+(-[\w.]+)?$/;
+
+/** Returns true for valid semver strings with or without a leading "v". */
+export function isValidSemver(v: string): boolean {
+  return SEMVER_RE.test(normalizeVersion(v));
+}
+
 // Compares two semver strings numerically. Returns negative if a < b, 0 if equal, positive if a > b.
 // Pre-release versions (e.g. 1.0.2-beta.1) sort below their release counterpart (1.0.2 > 1.0.2-beta.1).
+// Leading "v" is stripped before comparison.
 export function compareSemver(a: string, b: string): number {
   const parseParts = (v: string): { numeric: number[]; prerelease: string | null } => {
-    const dashIdx = v.indexOf("-");
-    const base = dashIdx === -1 ? v : v.slice(0, dashIdx);
-    const prerelease = dashIdx === -1 ? null : v.slice(dashIdx + 1);
+    const norm = normalizeVersion(v);
+    const dashIdx = norm.indexOf("-");
+    const base = dashIdx === -1 ? norm : norm.slice(0, dashIdx);
+    const prerelease = dashIdx === -1 ? null : norm.slice(dashIdx + 1);
     const numeric = base.split(".").map((p) => parseInt(p, 10) || 0);
     return { numeric, prerelease };
   };
@@ -77,29 +92,43 @@ export async function checkForUpdates(
   opts?: { enabled?: boolean },
   overrides?: UpdateCheckOverrides,
 ): Promise<UpdateCheckResult> {
-  const currentVersion = overrides?.currentVersion ?? APP_VERSION;
+  const currentVersion = normalizeVersion(overrides?.currentVersion ?? APP_VERSION);
 
   if (opts?.enabled === false) {
-    return { status: "unknown", currentVersion, latestVersion: null, checkedAt: Date.now() };
+    return { status: "unknown", currentVersion, latestVersion: null, checkedAt: Date.now(), source: "npm" };
   }
 
   try {
     const fetchFn = overrides?.fetchNpmMetadataFn ?? defaultFetchNpmMetadata;
     const metadata = await fetchFn(CODEXA_NPM_REGISTRY_URL);
-    const latestVersion = metadata["dist-tags"]?.latest;
+    const rawLatest = metadata["dist-tags"]?.latest;
 
-    if (!latestVersion) {
+    if (!rawLatest) {
       return {
         status: "error",
         currentVersion,
         latestVersion: null,
         errorMessage: "npm registry response did not include dist-tags.latest",
         checkedAt: Date.now(),
+        source: "npm",
+      };
+    }
+
+    const latestVersion = normalizeVersion(rawLatest);
+
+    if (!isValidSemver(latestVersion) || !isValidSemver(currentVersion)) {
+      return {
+        status: "unknown",
+        currentVersion,
+        latestVersion: rawLatest,
+        errorMessage: `Invalid semver — current: "${currentVersion}", latest: "${rawLatest}"`,
+        checkedAt: Date.now(),
+        source: "npm",
       };
     }
 
     const status = isNewerVersion(latestVersion, currentVersion) ? "update-available" : "up-to-date";
-    return { status, currentVersion, latestVersion, checkedAt: Date.now() };
+    return { status, currentVersion, latestVersion, checkedAt: Date.now(), source: "npm" };
   } catch (err) {
     return {
       status: "error",
@@ -107,6 +136,7 @@ export async function checkForUpdates(
       latestVersion: null,
       errorMessage: err instanceof Error ? err.message : String(err),
       checkedAt: Date.now(),
+      source: "npm",
     };
   }
 }
