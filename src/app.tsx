@@ -17,6 +17,7 @@ import {
 import type { LaunchArgs } from "./config/launchArgs.js";
 import { loadSettings, saveSettings } from "./config/persistence.js";
 import {
+  APP_VERSION,
   type AuthPreference,
   type AvailableBackend,
   type AvailableMode,
@@ -1373,7 +1374,7 @@ export function App({ launchArgs }: AppProps) {
       void (async () => {
         try {
           const cache = loadUpdateCheckCache();
-          if (cache && isCacheValid(cache, ucSettings.intervalHours)) {
+          if (cache && isCacheValid(cache, ucSettings.intervalHours, APP_VERSION)) {
             if (cache.updateAvailable && cache.latestVersion) {
               setUpdateCheckResult({
                 status: "update-available",

@@ -9,8 +9,8 @@ function smartJoin(base: string, ...parts: string[]): string {
   return isWindowsStylePath(base) ? win32.join(base, ...parts) : join(base, ...parts);
 }
 
+export { APP_VERSION } from "./buildInfo.js";
 export const APP_NAME = "Codexa";
-export const APP_VERSION = "1.0.1";
 export const DEFAULT_BACKEND = "codex-subprocess";
 export const DEFAULT_MODEL = "gpt-5.4";
 export const DEFAULT_MODE = "full-auto";
