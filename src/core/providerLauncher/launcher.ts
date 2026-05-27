@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
-import { existsSync } from "fs";
+import { accessSync, constants, existsSync } from "fs";
+import { delimiter, join } from "path";
 import { buildSpawnSpec } from "../executables/executableResolver.js";
 import { normalizeExecutableValue } from "../process/processValidation.js";
 import type { ProviderConfig, ProviderLaunchCommand } from "./types.js";
@@ -79,40 +80,50 @@ function executableLooksLikePath(executable: string): boolean {
   return /[\\/]/.test(executable) || /^[A-Za-z]:/.test(executable);
 }
 
-// Probe-spawns the executable to check if it exits cleanly — used instead of `which`/`where`
-// because path-lookup alone doesn't verify the file is actually runnable.
-function captureProcessExit(executable: string, args: string[]): Promise<boolean> {
-  return new Promise((resolve) => {
-    let child: ChildProcess;
-    try {
-      child = spawn(executable, args, {
-        stdio: "ignore",
-        shell: false,
-      });
-    } catch {
-      resolve(false);
-      return;
+function canAccessExecutable(path: string): boolean {
+  try {
+    if (process.platform === "win32") {
+      return existsSync(path);
     }
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-    child.once("error", () => resolve(false));
-    child.once("close", (exitCode) => resolve(exitCode === 0));
-  });
+function getPathExecutableCandidates(executable: string): string[] {
+  if (process.platform !== "win32" || /\.[A-Za-z0-9_-]+$/.test(executable)) {
+    return [executable];
+  }
+
+  const pathExt = process.env.PATHEXT?.split(";").filter(Boolean) ?? [".COM", ".EXE", ".BAT", ".CMD"];
+  return [executable, ...pathExt.map((ext) => `${executable}${ext.toLowerCase()}`)];
 }
 
 export async function commandExistsOnPath(executable: string): Promise<boolean> {
-  const trimmed = executable.trim();
-  if (!trimmed) return false;
-  // Inline guard: reject shell metacharacters so taint analysis can see sanitization at this site.
-  if (/[;&|<>`$\n\r]/.test(trimmed)) return false;
+  let candidate: string;
+  try {
+    candidate = normalizeExecutableValue(executable, {
+      label: "Provider launch command",
+      allowBareExecutable: true,
+    });
+  } catch {
+    return false;
+  }
+
+  const trimmed = candidate.trim();
   if (executableLooksLikePath(trimmed)) {
-    return existsSync(trimmed);
+    return canAccessExecutable(trimmed);
   }
 
-  if (process.platform === "win32") {
-    return captureProcessExit("where.exe", [trimmed]);
+  const pathEntries = process.env.PATH?.split(delimiter).filter(Boolean) ?? [];
+  for (const dir of pathEntries) {
+    for (const name of getPathExecutableCandidates(trimmed)) {
+      if (canAccessExecutable(join(dir, name))) return true;
+    }
   }
-
-  return captureProcessExit("sh", ["-c", `command -v "$1" >/dev/null 2>&1`, "sh", trimmed]);
+  return false;
 }
 
 function formatSpawnError(provider: ProviderConfig, executable: string, error: NodeJS.ErrnoException): ProviderLaunchResult {

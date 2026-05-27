@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "events";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { buildProviderLaunchSpec, launchProviderCli } from "./launcher.js";
+import { buildProviderLaunchSpec, commandExistsOnPath, launchProviderCli } from "./launcher.js";
 import type { ProviderConfig } from "./types.js";
 
 function makeProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
@@ -57,6 +60,55 @@ test("unsafe configured launch commands fail before spawning", () => {
   assert.equal("status" in result, true);
   assert.equal("status" in result ? result.status : "", "spawn-error");
   assert.match("status" in result ? result.message : "", /unsafe launch command/i);
+});
+
+test("configured launch commands reject shell injection and extra arguments", () => {
+  const unsafeExecutables = [
+    "codex; echo hacked",
+    "codex && echo hacked",
+    "codex | echo hacked",
+    "codex $(echo hacked)",
+    "codex --dangerous-extra-arg",
+    "codex.cmd & echo hacked",
+  ];
+
+  for (const executable of unsafeExecutables) {
+    const result = buildProviderLaunchSpec(makeProvider({
+      launchCommand: { executable, args: [] },
+    }), "C:\\Workspace");
+
+    assert.equal("status" in result, true, executable);
+    assert.equal("status" in result ? result.status : "", "spawn-error", executable);
+  }
+});
+
+test("commandExistsOnPath rejects unsafe executable candidates without launching a shell", async () => {
+  const unsafeExecutables = [
+    "codex; echo hacked",
+    "codex && echo hacked",
+    "codex | echo hacked",
+    "codex $(echo hacked)",
+    "codex --dangerous-extra-arg",
+    "codex.cmd & echo hacked",
+  ];
+
+  for (const executable of unsafeExecutables) {
+    assert.equal(await commandExistsOnPath(executable), false, executable);
+  }
+});
+
+test("commandExistsOnPath accepts a normal executable path", async () => {
+  const tempRoot = join(tmpdir(), `codexa-provider-launcher-${Date.now()}`);
+  const executablePath = join(tempRoot, "codexa-test-tool");
+  mkdirSync(tempRoot, { recursive: true });
+  writeFileSync(executablePath, "#!/bin/sh\nexit 0\n");
+  chmodSync(executablePath, 0o755);
+
+  try {
+    assert.equal(await commandExistsOnPath(executablePath), true);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("missing command spawn errors become friendly launch results", async () => {

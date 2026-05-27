@@ -33,6 +33,25 @@ function mockRunCommand(result: CommandResult, onCall?: (spec: Parameters<typeof
   }) as typeof runCommand;
 }
 
+async function withEnv<T>(env: Partial<NodeJS.ProcessEnv>, callback: () => Promise<T>): Promise<T> {
+  const original: Record<string, string | undefined> = {};
+  for (const key of Object.keys(env)) {
+    original[key] = process.env[key];
+    const value = env[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+
+  try {
+    return await callback();
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 test("resolver: uses configuredPath", async () => {
   const resolved = await resolveExecutable({
     commandNames: ["test"],
@@ -76,6 +95,31 @@ test("resolver: rejects environment override with shell metacharacters", async (
   }
 });
 
+test("resolver: rejects malicious environment executable candidates", async () => {
+  const unsafeExecutables = [
+    "codex; echo hacked",
+    "codex && echo hacked",
+    "codex | echo hacked",
+    "codex $(echo hacked)",
+    "codex --dangerous-extra-arg",
+    "codex.cmd & echo hacked",
+  ];
+
+  for (const executable of unsafeExecutables) {
+    await withEnv({ TEST_EXECUTABLE: executable }, async () => {
+      await assert.rejects(
+        () => resolveExecutable({
+          commandNames: ["test"],
+          label: "test",
+          envOverrides: ["TEST_EXECUTABLE"],
+        }),
+        /shell metacharacters|single executable name/i,
+        executable,
+      );
+    });
+  }
+});
+
 test("resolver: rejects configured executable values that include arguments", async () => {
   await assert.rejects(
     () => resolveExecutable({
@@ -112,6 +156,35 @@ test("resolver: falls back to bare name if not found", async () => {
     label: "test",
   });
   assert.equal(resolved, "mytest");
+});
+
+test("resolver: ignores unsafe where.exe output", async () => {
+  const resolved = await resolveExecutable({
+    runCommandImpl: mockRunCommand(commandResult({ stdout: "codex.cmd & echo hacked\n" })),
+    commandNames: ["test"],
+    label: "test",
+  });
+
+  assert.equal(resolved, "test");
+});
+
+test("buildSpawnSpec rejects unsafe executable candidates", () => {
+  const unsafeExecutables = [
+    "codex; echo hacked",
+    "codex && echo hacked",
+    "codex | echo hacked",
+    "codex $(echo hacked)",
+    "codex --dangerous-extra-arg",
+    "codex.cmd & echo hacked",
+  ];
+
+  for (const executable of unsafeExecutables) {
+    assert.throws(
+      () => buildSpawnSpec(executable, []),
+      /shell metacharacters|single executable name/i,
+      executable,
+    );
+  }
 });
 
 test("buildSpawnSpec: wraps .cmd files in cmd.exe on Windows", async () => {
