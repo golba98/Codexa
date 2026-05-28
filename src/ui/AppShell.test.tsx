@@ -81,7 +81,7 @@ const STARTUP_HEADER_CONFIG: HeaderConfig = {
   ...HEADER_CONFIG_DEFAULTS,
   showModel: false,
   showReasoning: false,
-  showContext: true,
+  showContext: false,
 };
 
 function stripAnsi(value: string): string {
@@ -197,6 +197,113 @@ test("does not render passive update notice (replaced by interactive prompt)", a
   assert.doesNotMatch(output, /Run: npm install -g @golba98\/codexa@latest/);
 });
 
+test("header omits model/context while composer status row renders active model and context", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 130;
+  stdout.rows = 40;
+  let output = "";
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const layout = createLayoutSnapshot(130, 40);
+  const uiState: UIState = { kind: "IDLE" };
+  const runtimeSummary = {
+    ...buildRuntimeSummary(TEST_RUNTIME),
+    providerLabel: "Claude Code CLI",
+    modelLabel: "Claude Code CLI / Sonnet 4.6 / reasoning: Low",
+    contextLabel: "0 / 200K",
+  };
+  const composer = (
+    <BottomComposer
+      layout={layout}
+      uiState={uiState}
+      mode="full-auto"
+      model="Claude Code CLI / Sonnet 4.6 / reasoning: Low"
+      footerModelDisplay="Claude Code CLI / Sonnet 4.6 (Low)"
+      themeName="purple"
+      reasoningLevel=""
+      contextDisplay="0 / 200K"
+      tokensUsed={0}
+      value=""
+      cursor={0}
+      onChangeInput={() => {}}
+      onSubmit={() => {}}
+      onCancel={() => {}}
+      onChangeValue={() => {}}
+      onChangeCursor={() => {}}
+      onHistoryUp={() => {}}
+      onHistoryDown={() => {}}
+      onOpenBackendPicker={() => {}}
+      onOpenProviderPicker={() => {}}
+      onOpenModelPicker={() => {}}
+      onOpenModePicker={() => {}}
+      onOpenThemePicker={() => {}}
+      onOpenAuthPanel={() => {}}
+      onTogglePlanMode={() => {}}
+      onClear={() => {}}
+      onCycleMode={() => {}}
+      onQuit={() => {}}
+    />
+  );
+
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <AppShell
+        layout={layout}
+        screen="main"
+        authState="authenticated"
+        workspaceLabel="13-Custom-CLI-Normal"
+        runtimeSummary={runtimeSummary}
+        staticEvents={[]}
+        activeEvents={[]}
+        uiState={uiState}
+        panel={null}
+        composer={composer}
+        composerRows={measureBottomComposerRows({
+          layout,
+          uiState,
+          mode: "full-auto",
+          model: "Claude Code CLI / Sonnet 4.6 / reasoning: Low",
+          reasoningLevel: "",
+          tokensUsed: 0,
+          value: "",
+          cursor: 0,
+        })}
+        headerConfig={{ ...HEADER_CONFIG_DEFAULTS, showModel: true, showContext: true }}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  const text = stripAnsi(output);
+  assert.doesNotMatch(text, /Model:\s*Claude Code CLI/);
+
+  const lines = text.split("\n");
+  const statusLineIndex = lines.findLastIndex((line) => line.includes("Claude Code CLI / Sonnet 4.6 (Low)"));
+  const promptLineIndex = lines.findLastIndex((line, index) => index < statusLineIndex && line.includes("❯") && line.includes("Ask Codexa"));
+  assert.ok(promptLineIndex >= 0, "composer prompt should render");
+  assert.equal(statusLineIndex, promptLineIndex + 2, "runtime status row should directly follow the composer input border");
+
+  const statusLine = lines[statusLineIndex] ?? "";
+  assert.match(statusLine, /Claude Code CLI \/ Sonnet 4\.6 \(Low\)/);
+  assert.match(statusLine, /Context:\s*0 \/ 200K/);
+  assert.ok(statusLine.indexOf("Context:") > statusLine.indexOf("Claude Code CLI"), "context should be on the same row to the right of model text");
+  assert.ok(statusLine.indexOf("Context:") >= 90, "context should stay right-aligned at normal widths");
+});
+
 function renderStartupShell(
   layoutCols: number,
   layoutRows: number,
@@ -305,7 +412,7 @@ test("startup uses compact side-by-side ASCII header at normal shorter terminal 
   assert.match(output, /Codexa v/);
   assert.match(output, /Workspace:\s*…\\13-Custom CLI/);
   assert.match(output, /Provider: Codexa Core/);
-  assert.match(output, /Context: Unknown/);
+  assert.match(output, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
   assert.doesNotMatch(output, /Model: gpt-5\.4/);
   assert.doesNotMatch(output, /Reasoning:/);
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
@@ -324,13 +431,13 @@ test("80x24 keeps the last timeline content visible above the composer", async (
 
   assert.match(output, /Launch mode/);
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
-  assert.doesNotMatch(output, /◎ Auto  gpt-5\.4 \(medium\)  Ctrl\+O/);
+  assert.doesNotMatch(output, /Auto\s+gpt-5\.4 \(medium\)\s+Ctrl\+O/);
 });
 
 test("larger terminals keep the composer metadata row", async () => {
   const output = await renderShell(100, 30, { kind: "IDLE" });
 
-  assert.match(output, /◎ Auto  gpt-5\.4 \(medium\)  Ctrl\+O/);
+  assert.match(output, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
   assert.match(output, /Launch mode/);
   assert.match(output, /gpt-5\.4/i);
 });
@@ -361,7 +468,7 @@ test("non-main screens center the active panel and keep the composer hidden", as
   );
 
   assert.match(output, /Theme panel/);
-  assert.doesNotMatch(output, /◎ Auto  gpt-5\.4 \(medium\)  Ctrl\+O/);
+  assert.doesNotMatch(output, /gpt-5\.4 \(medium\)/);
 });
 
 test("non-main panel content updates while the active screen is unchanged", async () => {
@@ -533,7 +640,7 @@ test("model picker renders as a compact command panel without composer", async (
   const output = stripAnsi(raw);
   assert.match(output, /Select model command panel/);
   assert.match(output, /Codexa v/);
-  assert.doesNotMatch(output, /◎ Auto  gpt-5\.4 \(medium\)  Ctrl\+O/);
+  assert.doesNotMatch(output, /gpt-5\.4 \(medium\)/);
 });
 
 test("native spacer subtracts persistent transcript rows before anchoring the composer", () => {
@@ -710,13 +817,13 @@ test("memoized composer re-renders when only the terminal height changes", async
 
   await sleep(80);
   let frame = stripAnsi(output);
-  assert.match(frame, /◎ Auto  gpt-5\.4 \(medium\)  Ctrl\+O/);
+  assert.match(frame, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
 
   output = "";
   instance.rerender(renderComposer(24));
   await sleep(80);
   frame = stripAnsi(output);
-  assert.doesNotMatch(frame, /◎ Auto  gpt-5\.4 \(medium\)  Ctrl\+O/);
+  assert.match(frame, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
 
   instance.cleanup();
   await sleep(20);

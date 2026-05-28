@@ -112,10 +112,6 @@ import {
   getShellWorkspaceGuardMessage,
 } from "./core/workspaceGuard.js";
 import {
-  type ModelSpec,
-} from "./core/models/modelSpecs.js";
-import {
-  contextMetadataToModelSpec,
   formatContextCompact,
   formatContextLength,
   resolveModelContextLength,
@@ -220,6 +216,7 @@ import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/TextEntryPanel.j
 import { ThemePicker } from "./ui/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
 import { ThemeProvider, THEMES } from "./ui/theme.js";
+import { buildActiveRuntimeDisplay, runtimeDisplayToSummary } from "./ui/runtimeDisplay.js";
 import {
   cancelThemeSelection,
   commitThemeSelection,
@@ -771,16 +768,22 @@ export function App({ launchArgs }: AppProps) {
     [planFlow],
   );
 
-  const currentModelSpec = useMemo<ModelSpec>(() => {
-    return contextMetadataToModelSpec(activeContextMetadata ?? {
-      providerId: activeProviderRoute.providerId,
-      modelId: activeProviderRoute.modelId,
-      contextLength: null,
-      source: "unknown",
-      confidence: "unknown",
-      error: "Context length unavailable for this model.",
-    });
-  }, [activeContextMetadata, activeProviderRoute.modelId, activeProviderRoute.providerId]);
+  const activeRuntimeDisplay = useMemo(() => buildActiveRuntimeDisplay({
+    route: activeProviderRoute,
+    reasoningLevel,
+    mode,
+    tokensUsed: estimateTokens(conversationChars),
+    modelCapability: currentModelCapability,
+    contextMetadata: activeContextMetadata,
+  }), [
+    activeContextMetadata,
+    activeProviderRoute,
+    conversationChars,
+    currentModelCapability,
+    mode,
+    reasoningLevel,
+  ]);
+  const currentModelSpec = activeRuntimeDisplay.modelSpec;
 
   const hasUserPrompt = useMemo(
     () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
@@ -4251,57 +4254,18 @@ export function App({ launchArgs }: AppProps) {
     workspaceRoot,
   ]);
 
-  const modelDisplayName = useMemo(() => {
-    if (activeProviderRoute.providerId === "anthropic") {
-      const modelLabel = currentModelCapability?.label ?? activeProviderRoute.modelId;
-      return `Claude Code CLI / ${modelLabel} / reasoning: ${formatReasoningLabel(activeProviderRoute.reasoning ?? reasoningLevel)}`;
-    }
-    if (activeProviderRoute.providerId === "google" && activeProviderRoute.modelSelection) {
-      if (activeProviderRoute.modelSelection.kind === "auto") {
-        return `auto ${activeProviderRoute.modelSelection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"}`;
-      }
-    }
-    if (activeProviderRoute.providerId === "local") {
-      return activeProviderRoute.modelId;
-    }
-    return model;
-  }, [
-    activeProviderRoute.modelId,
-    activeProviderRoute.modelSelection,
-    activeProviderRoute.providerId,
-    activeProviderRoute.reasoning,
-    currentModelCapability?.label,
-    model,
-    reasoningLevel,
-  ]);
-  const composerReasoningLevel = activeProviderRoute.providerId === "anthropic"
-    ? ""
-    : activeProviderRoute.reasoning ?? reasoningLevel;
-  const headerRuntimeSummary = useMemo(() => {
-    const contextLabel = activeContextMetadata?.contextLength != null
-      ? `${formatContextCompact(estimateTokens(conversationChars))} / ${activeContextMetadata.confidence === "estimated" ? "~" : ""}${formatContextCompact(activeContextMetadata.contextLength)}`
-      : "Unknown";
-
-    return {
-      ...runtimeSummary,
-      providerLabel: activeRouteProvider?.displayName ?? runtimeSummary.providerLabel,
-      modelLabel: modelDisplayName,
-      contextLabel,
-    };
-  }, [
-    activeContextMetadata?.confidence,
-    activeContextMetadata?.contextLength,
-    activeRouteProvider?.displayName,
-    conversationChars,
-    modelDisplayName,
-    runtimeSummary,
-  ]);
+  const modelDisplayName = activeRuntimeDisplay.modelDisplay;
+  const composerReasoningLevel = "";
+  const headerRuntimeSummary = useMemo(
+    () => runtimeDisplayToSummary(activeRuntimeDisplay, runtimeSummary),
+    [activeRuntimeDisplay, runtimeSummary],
+  );
   const effectiveHeaderConfig = useMemo<HeaderConfig>(() => ({
     ...headerConfig,
     showProvider: true,
-    showModel: true,
+    showModel: false,
     showReasoning: false,
-    showContext: true,
+    showContext: false,
   }), [headerConfig]);
 
   // Memoize the composer element so AppShell's memo check (prev.composer ===
@@ -4352,8 +4316,10 @@ export function App({ launchArgs }: AppProps) {
         uiState={uiState}
         mode={mode}
         model={modelDisplayName}
+        footerModelDisplay={activeRuntimeDisplay.footerModelDisplay}
         themeName={activeThemeName}
         reasoningLevel={composerReasoningLevel}
+        contextDisplay={activeRuntimeDisplay.contextDisplay}
         planMode={planMode}
         showBusyLoader={showBusyLoader}
         tokensUsed={estimateTokens(conversationChars)}
@@ -4394,6 +4360,8 @@ export function App({ launchArgs }: AppProps) {
     uiState,
     mode,
     modelDisplayName,
+    activeRuntimeDisplay.footerModelDisplay,
+    activeRuntimeDisplay.contextDisplay,
     activeThemeName,
     composerReasoningLevel,
     planMode,
@@ -4419,6 +4387,7 @@ export function App({ launchArgs }: AppProps) {
     cycleModeWithNotice,
     handleQuit,
     activeProviderRoute.providerId,
+    sessionState.externalCliStatus,
   ]);
 
   // ─── Render ──────────────────────────────────────────────────────────────────

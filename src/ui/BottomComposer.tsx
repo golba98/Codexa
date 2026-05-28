@@ -101,7 +101,9 @@ interface BottomComposerProps {
   themeName?: string;
   mode?: string;
   model?: string;
+  footerModelDisplay?: string;
   reasoningLevel?: string;
+  contextDisplay?: string;
   planMode?: boolean;
   showBusyLoader?: boolean;
   tokensUsed?: number;
@@ -236,7 +238,7 @@ export function measureBottomComposerRows({
 
   // ALWAYS reserve 1 row for the status line to prevent height shifting between idle and busy states.
   const statusLineReservedRows = 1;
-  const showMetadata = layout.mode !== "micro" && layout.rows > 24;
+  const showMetadata = layout.mode !== "micro";
   const bottomPadding = layout.mode === "micro" || layout.rows <= 24 ? 0 : 1;
   const footerGapRows = getComposerToFooterGapRows(layout);
 
@@ -344,7 +346,9 @@ export function BottomComposer({
   themeName = "purple",
   mode = "",
   model = "",
+  footerModelDisplay,
   reasoningLevel = "",
+  contextDisplay,
   planMode = false,
   showBusyLoader = true,
   tokensUsed = 0,
@@ -807,13 +811,9 @@ export function BottomComposer({
     }
   }, { isActive: isFocused });
 
-  const modeDisplay = getModeDisplaySpec(mode, theme);
   const tokenDisplay = getTokenBarDisplay(tokensUsed, modelSpec);
-  const tokenColor = tokenDisplay.percentage === null ? theme.DIM
-    : tokenDisplay.percentage >= 90 ? theme.ERROR
-    : tokenDisplay.percentage >= 70 ? theme.WARNING
-    : theme.SUCCESS;
   const reasoningSuffix = reasoningLevel ? ` (${reasoningLevel})` : "";
+  const footerRuntimeDisplay = footerModelDisplay ?? `${model}${reasoningSuffix}`;
   const isAnswerMode = persona === "answer";
   const showBusyFooter = shouldRenderBusyFooter(layout, uiState);
   const promptPrefixColor = inputLocked ? theme.DIM : theme.TEXT;
@@ -894,6 +894,30 @@ export function BottomComposer({
         </Box>
       )}
 
+      {layoutMode !== "micro" && (
+        <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
+          <Box flexGrow={1} flexShrink={1} overflow="hidden">
+            <Text color={theme.DIM} wrap="truncate">{footerRuntimeDisplay}</Text>
+          </Box>
+          <Box flexShrink={0}>
+            {contextDisplay ? (
+              <Text color={theme.DIM}>{`Context: ${contextDisplay}`}</Text>
+            ) : tokenDisplay.hasKnownLimit ? (
+              <>
+                <Text color={theme.DIM}>Context: </Text>
+                <Text color={theme.TEXT}>{tokenDisplay.usedText}</Text>
+                <Text color={theme.DIM}>
+                  {" / "}{tokenDisplay.limitText}
+                  {tokenDisplay.percentage !== null ? ` · ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%` : ""}
+                </Text>
+              </>
+            ) : (
+              <Text color={theme.DIM}>Context: Unknown</Text>
+            )}
+          </Box>
+        </Box>
+      )}
+
       {commandSuggestionState.reserveSuggestionRow && (
         <Box paddingLeft={1} marginTop={0} width="100%" overflow="hidden">
           <Text color={theme.DIM} wrap="truncate">{suggestionText || " "}</Text>
@@ -935,37 +959,6 @@ export function BottomComposer({
         )}
       </Box>
 
-      {layoutMode !== "micro" && !crampedViewport && (
-        <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
-          <Box flexGrow={1} flexShrink={1} overflow="hidden">
-            <Text
-              color={modeDisplay.ringColor}
-              backgroundColor={modeDisplay.ringFill}
-              bold={modeDisplay.ringBold}
-            >
-              {modeDisplay.ringGlyph}
-            </Text>
-            <Text color={theme.DIM}>{" "}</Text>
-            <Text color={modeDisplay.labelColor} bold={modeDisplay.labelBold}>{modeDisplay.label}</Text>
-            <Text color={theme.DIM}>{"  "}{model}{reasoningSuffix}{"  Ctrl+O Ctrl+Alt+P"}</Text>
-            {planMode && <Text color={theme.ACCENT}>{"  Plan"}</Text>}
-          </Box>
-          <Box flexShrink={0}>
-            {tokenDisplay.hasKnownLimit ? (
-              <>
-                <Text color={theme.DIM}>Context: </Text>
-                <Text color={theme.TEXT}>{tokenDisplay.usedText}</Text>
-                <Text color={theme.DIM}>
-                  {" / "}{tokenDisplay.limitText}
-                  {tokenDisplay.percentage !== null ? ` · ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%` : ""}
-                </Text>
-              </>
-            ) : (
-              <Text color={theme.DIM}>Context: Unknown</Text>
-            )}
-          </Box>
-        </Box>
-      )}
     </Box>
   );
 }
@@ -1003,7 +996,9 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   // Re-render if display props change
   if (prev.mode !== next.mode) return false;
   if (prev.model !== next.model) return false;
+  if (prev.footerModelDisplay !== next.footerModelDisplay) return false;
   if (prev.reasoningLevel !== next.reasoningLevel) return false;
+  if (prev.contextDisplay !== next.contextDisplay) return false;
   if (prev.planMode !== next.planMode) return false;
   if (prev.showBusyLoader !== next.showBusyLoader) return false;
   if (prev.tokensUsed !== next.tokensUsed) return false;

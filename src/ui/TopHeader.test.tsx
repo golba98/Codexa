@@ -130,8 +130,8 @@ test("full mode renders wordmark at wide terminal", async () => {
   assert.match(output, /Authenticated/);
   assert.match(output, /Workspace:\s*C:\\Development\\1-JavaScript\\13-Custom CLI/);
   assert.match(output, /Provider:\s*Codexa Core/);
-  assert.match(output, /Context:\s*Unknown/);
   assert.doesNotMatch(output, /Model:/);
+  assert.doesNotMatch(output, /Context:/);
   assert.doesNotMatch(output, /Reasoning:/);
   assert.doesNotMatch(output, /Runtime:/);
   assert.doesNotMatch(output, /Net:\s*off/i);
@@ -235,8 +235,8 @@ test("compact mode renders version and auth", async () => {
   assert.match(output, /Authenticated/);
   assert.match(output, /Workspace:\s*…\\13-Custom CLI/);
   assert.match(output, /Provider:\s*Codexa Core/);
-  assert.match(output, /Context:\s*Unknown/);
   assert.doesNotMatch(output, /Model:/);
+  assert.doesNotMatch(output, /Context:/);
   assert.doesNotMatch(output, /Reasoning:/);
   assert.doesNotMatch(output, /Runtime:/);
   assert.doesNotMatch(output, /Net:\s*off/i);
@@ -251,8 +251,8 @@ test("micro mode renders version and auth", async () => {
   assert.match(output, new RegExp(`v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
   assert.match(output, /Provider/);
-  assert.match(output, /Contex/);
   assert.doesNotMatch(output, /Model:/);
+  assert.doesNotMatch(output, /Context:/);
 });
 
 test("full mode always shows wordmark regardless of activity", async () => {
@@ -333,8 +333,8 @@ test("header layout changes when width changes without duplicating the component
 
   const rows = stripAnsi(output).split("\n");
   const brandRows = rows.filter((row) => row.includes(`Codexa v${APP_VERSION}`));
-  // LOGO_MEDIUM (at 80 cols) first row contains "____"
-  const firstLogoRow = rows.findIndex((row) => row.includes("____"));
+  // LOGO_LARGE (at 80 cols) first row contains block chars
+  const firstLogoRow = rows.findIndex((row) => /[█╔╗╚╝═║]/.test(row));
   const firstBrandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
 
   assert.equal(getHeaderHeroLayout(createLayoutSnapshot(80, 40), HEADER_CONFIG_WITH_AUTH).mode, "medium");
@@ -369,8 +369,8 @@ test("renders configured workspace display labels", async () => {
 
 // ─── Layout threshold tests ───────────────────────────────────────────────────
 
-test("72 cols selects medium mode (LOGO_MEDIUM at MEDIUM_HEADER_MIN_COLUMNS threshold)", () => {
-  // LOGO_MEDIUM_MIN_COLS = MEDIUM_HEADER_MIN_COLUMNS = 72 → side-by-side
+test("72 cols selects medium mode (LOGO_LARGE at MEDIUM_HEADER_MIN_COLUMNS threshold)", () => {
+  // LOGO_LARGE_MIN_COLS = MEDIUM_HEADER_MIN_COLUMNS = 72 → side-by-side with the block wordmark
   assert.equal(getHeaderHeroLayout(createLayoutSnapshot(72, 40)).mode, "medium");
 });
 
@@ -400,11 +400,9 @@ test("LOGO_LARGE rows never exceed the minimum columns needed to render them", (
 // ─── Rows-aware header degradation tests ──────────────────────────────────────
 
 test("wide-but-short terminal keeps a logo header instead of collapsing to compact", () => {
-  // 120 cols easily fits LOGO_LARGE, but 18 rows is too few for it. The header
-  // must degrade to a smaller logo (medium mode) rather than the flat compact line.
   const layout = getHeaderHeroLayout(createLayoutSnapshot(120, 18));
   assert.notEqual(layout.mode, "compact");
-  assert.ok(layout.logoRows >= 1, "a logo should still render in a wide-but-short terminal");
+  assert.equal(layout.logoRows, LOGO_LARGE.length, "normal-width terminals should keep the full wordmark");
 });
 
 test("full header is selected when both columns and rows are sufficient", () => {
@@ -413,13 +411,12 @@ test("full header is selected when both columns and rows are sufficient", () => 
 });
 
 test("compact mode only fires when the terminal is genuinely too small for any logo", () => {
-  // 120 cols, 10 rows → even the 1-row compact logo (needs 12 rows) cannot fit.
-  const layout = getHeaderHeroLayout(createLayoutSnapshot(120, 10));
+  const layout = getHeaderHeroLayout(createLayoutSnapshot(40, 40));
   assert.equal(layout.mode, "compact");
 });
 
 test("compact mode includes a recommended-size hint row and measurement matches", () => {
-  const layout = createLayoutSnapshot(120, 10);
+  const layout = createLayoutSnapshot(40, 40);
   const hero = getHeaderHeroLayout(layout);
   assert.equal(hero.mode, "compact");
   assert.equal(hero.compactHintRows, 1, "compact mode should reserve a hint row");
@@ -430,8 +427,8 @@ test("compact mode includes a recommended-size hint row and measurement matches"
 test("compact mode renders a deliberate header with accent and resize hint", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
-  stdout.columns = 120;
-  stdout.rows = 10;
+  stdout.columns = 40;
+  stdout.rows = 40;
   let output = "";
   stdout.on("data", (chunk) => { output += chunk.toString(); });
 
@@ -440,7 +437,7 @@ test("compact mode renders a deliberate header with accent and resize hint", asy
       <TopHeader
         authState="authenticated"
         workspaceLabel="C:\\Development\\1-JavaScript\\13-Custom CLI"
-        layout={createLayoutSnapshot(120, 10)}
+        layout={createLayoutSnapshot(40, 40)}
         runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
         headerConfig={HEADER_CONFIG_DEFAULTS}
         updateAvailable={null}
@@ -461,7 +458,7 @@ test("compact mode renders a deliberate header with accent and resize hint", asy
 
   const text = stripAnsi(output);
   assert.match(text, /✦/, "compact header should show the ✦ accent");
-  assert.match(text, /Resize to ≥100×24/, "compact header should show the recommended-size hint");
+  assert.match(text, /Resize to ≥72×24/, "compact header should show the recommended-size hint");
 });
 
 test("CODEXA_NO_ASCII_LOGO compact header omits the resize hint row", () => {
@@ -529,29 +526,49 @@ test("measureTopHeaderRows increases when hasUpdate is true in medium mode", () 
 
 // ─── Responsive threshold parity tests ──────────────────────────────────────
 
-test("80 cols selects medium mode and renders side-by-side with LOGO_MEDIUM", async () => {
+test("80 cols selects medium mode and renders side-by-side with LOGO_LARGE (block wordmark)", async () => {
   assert.equal(getHeaderHeroLayout(createLayoutSnapshot(80, 40)).mode, "medium");
 
   const output = await renderHeader(80, "authenticated", HEADER_CONFIG_WITH_AUTH);
   const rows = output.split("\n");
   const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
-  // LOGO_MEDIUM first row contains "____"
-  const firstLogoRow = rows.findIndex((row) => row.includes("____"));
+  // LOGO_LARGE rows contain block/box-drawing characters
+  const firstLogoRow = rows.findIndex((row) => /[█╔╗╚╝═║]/.test(row));
 
-  assert.ok(firstLogoRow >= 0, "LOGO_MEDIUM should render at 80 cols");
+  assert.ok(firstLogoRow >= 0, "LOGO_LARGE should render at 80 cols");
+  assert.doesNotMatch(output, /____/, "thin ASCII logo must not appear at 80 cols");
   assert.ok(brandRow >= firstLogoRow && brandRow <= firstLogoRow + 3, "metadata should be beside the logo, not below it");
 });
 
-test("72 cols is the minimum for LOGO_MEDIUM side-by-side", () => {
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(72, 40)).mode, "medium", "72 → medium");
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(71, 40)).mode, "narrow", "71 → narrow");
+test("72 cols is the minimum for LOGO_LARGE side-by-side (no thin ASCII)", () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(72, 40)).mode, "medium", "72 → medium with LOGO_LARGE");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(71, 40)).mode, "narrow", "71 → narrow with LOGO_COMPACT");
 });
 
 test("71 cols selects narrow mode (LOGO_COMPACT below medium threshold)", () => {
   assert.equal(getHeaderHeroLayout(createLayoutSnapshot(71, 40)).mode, "narrow");
 });
 
-test("model line renders when showModel is true and modelLabel is provided", async () => {
+// ─── Canonical wordmark regression tests ─────────────────────────────────────
+
+test("LOGO_LARGE block wordmark renders at 72 cols — thin ASCII must not appear", async () => {
+  const output = await renderHeader(72, "authenticated", HEADER_CONFIG_DEFAULTS);
+  assert.match(output, /[█╔╗╚╝═║]/, "block wordmark must appear at 72 cols");
+  assert.doesNotMatch(output, /____/, "thin ASCII replacement must not appear at 72 cols");
+});
+
+test("LOGO_LARGE block wordmark renders at 80 cols — matches Linux default terminal width", async () => {
+  const output = await renderHeader(80, "authenticated", HEADER_CONFIG_DEFAULTS);
+  assert.match(output, /[█╔╗╚╝═║]/, "block wordmark must appear at normal 80-col terminal");
+  assert.doesNotMatch(output, /____/, "thin ASCII replacement must not appear at 80 cols");
+});
+
+test("compact layout at 48 cols shows accent line — not thin ASCII art", async () => {
+  const output = await renderHeader(48, "authenticated", HEADER_CONFIG_DEFAULTS);
+  assert.doesNotMatch(output, /____/, "thin ASCII art must never appear in any header path");
+});
+
+test("model line does not render in the header even when showModel is true", async () => {
   const runtimeWithModel = {
     ...buildRuntimeSummary(TEST_RUNTIME),
     modelLabel: "qwen3-27b",
@@ -583,10 +600,12 @@ test("model line renders when showModel is true and modelLabel is provided", asy
   await new Promise((resolve) => setTimeout(resolve, 60));
   instance.cleanup();
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.match(stripAnsi(output), /Model:\s*qwen3-27b/, "Model line should appear when showModel is true and modelLabel is set");
+  const stripped = stripAnsi(output);
+  assert.match(stripped, /Provider:\s*Codexa Core/);
+  assert.doesNotMatch(stripped, /Model:/, "Model belongs below the composer, not in the header");
 });
 
-test("context line renders known value when contextLabel is provided", async () => {
+test("context line does not render in the header even when contextLabel is provided", async () => {
   const runtimeWithContext = {
     ...buildRuntimeSummary(TEST_RUNTIME),
     contextLabel: "0 / 128k",
@@ -618,10 +637,12 @@ test("context line renders known value when contextLabel is provided", async () 
   await new Promise((resolve) => setTimeout(resolve, 60));
   instance.cleanup();
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.match(stripAnsi(output), /Context:\s*0 \/ 128k/, "Context line should show the known value");
+  const stripped = stripAnsi(output);
+  assert.match(stripped, /Provider:\s*Codexa Core/);
+  assert.doesNotMatch(stripped, /Context:/, "Context belongs below the composer, not in the header");
 });
 
-test("context line shows Unknown when contextLabel is not provided", async () => {
+test("header does not render fallback unknown context", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 130;
@@ -650,7 +671,7 @@ test("context line shows Unknown when contextLabel is not provided", async () =>
   instance.cleanup();
   await new Promise((resolve) => setTimeout(resolve, 20));
   const stripped = stripAnsi(output);
-  assert.match(stripped, /Context:\s*Unknown/, "Context should show Unknown, not a fake value");
+  assert.doesNotMatch(stripped, /Context:\s*Unknown/, "Header should not render context fallback");
   assert.doesNotMatch(stripped, /Context:\s*0%/, "Context must not show fake 0% percentage");
 });
 

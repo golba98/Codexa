@@ -80,8 +80,6 @@ function getMetadataRowCount(headerConfig: HeaderConfig): number {
     headerConfig.showAuthStatus,
     headerConfig.showWorkspace,
     headerConfig.showProvider,
-    headerConfig.showModel,
-    headerConfig.showContext,
   ].filter(Boolean).length;
 }
 
@@ -264,12 +262,6 @@ export function TopHeader({
     headerConfig.showProvider && runtimeSummary?.providerLabel
       ? { key: "provider", text: `Provider: ${runtimeSummary.providerLabel}`, color: theme.TEXT, bold: false }
       : null,
-    headerConfig.showModel && runtimeSummary?.modelLabel
-      ? { key: "model", text: `Model: ${runtimeSummary.modelLabel}`, color: theme.TEXT, bold: false }
-      : null,
-    headerConfig.showContext
-      ? { key: "context", text: `Context: ${runtimeSummary?.contextLabel ?? "Unknown"}`, color: theme.MUTED, bold: false }
-      : null,
   ].filter((line): line is HeaderMetadataLine => Boolean(line));
   const metadataLines = metadataLinesRaw.map((line) => ({
     ...line,
@@ -282,8 +274,6 @@ export function TopHeader({
     && metadataLines.length <= 3
     && metadataLines.some((l) => l.key === "brand")
     && metadataLines.some((l) => l.key === "workspace");
-  const metadataVisualRows = metadataLines.length + (hasMetadataGap ? 1 : 0);
-
   const metadataColumn = (
     <Box flexDirection="column" flexGrow={1} flexShrink={1} width={metadataWidth}>
       {metadataLines.map((line) =>
@@ -298,26 +288,21 @@ export function TopHeader({
     </Box>
   );
 
-  // Logo column: no `bold` — bold on Unicode block/box-drawing characters causes
-  // per-glyph spacing artifacts in common terminal fonts (Ptyxis, GNOME Terminal).
-  // wrap="truncate" keeps each row on exactly one terminal line, preventing
-  // Ink's flex layout from reflowing the fixed-width art.
+  // Canonical CODEXA wordmark — uses per-line LOGO palette defined in each theme.
+  // No `bold`: bold on Unicode block/box-drawing characters causes per-glyph
+  // spacing artifacts in common terminal fonts (Ptyxis, GNOME Terminal).
+  // wrap="truncate" keeps each row on exactly one terminal line.
   const logoColumn = (
     <Box flexDirection="column" flexShrink={0}>
       {selectedLogo.map((line, i) => (
-        <Text key={i} color={theme.ACCENT} wrap="truncate">{line}</Text>
+        <Text key={i} color={theme.LOGO[i % theme.LOGO.length] ?? theme.ACCENT} wrap="truncate">{line}</Text>
       ))}
     </Box>
   );
 
   if (heroLayout.mode !== "compact") {
     const isSideBySide = heroLayout.mode === "wide" || heroLayout.mode === "medium";
-
-    // In side-by-side mode only centre metadata vertically when there is no
-    // update card. With a card the right column is already ≥ logo height.
-    const metadataTopOffset = isSideBySide && !updateAvailable
-      ? Math.max(0, Math.floor((selectedLogo.length - metadataVisualRows) / 2))
-      : 0;
+    const metadataTopOffset = 0;
 
     return (
       <Box flexDirection="column" paddingX={1} width="100%">
@@ -388,10 +373,6 @@ export function TopHeader({
   if (headerConfig.showProvider && runtimeSummary?.providerLabel) {
     if (compactParts.length > 0) compactParts.push(<Text key="sep-provider" color={theme.DIM}>{"  ·  "}</Text>);
     compactParts.push(<Text key="provider" color={theme.TEXT} wrap="truncate">{`Provider: ${runtimeSummary.providerLabel}`}</Text>);
-  }
-  if (headerConfig.showContext) {
-    if (compactParts.length > 0) compactParts.push(<Text key="sep-context" color={theme.DIM}>{"  ·  "}</Text>);
-    compactParts.push(<Text key="context" color={theme.MUTED} wrap="truncate">{`Context: ${runtimeSummary?.contextLabel ?? "Unknown"}`}</Text>);
   }
 
   return (
