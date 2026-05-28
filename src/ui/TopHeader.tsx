@@ -256,11 +256,11 @@ export function TopHeader({
   const wsDisplay = shortenHeaderWorkspaceLabel(workspaceLabel, workspaceValueWidth);
   const brandLabel = formatCodexaBrandLabel();
   const metadataLinesRaw = [
-    headerConfig.showBrand ? { key: "brand", text: brandLabel, color: theme.TEXT, bold: true } : null,
-    headerConfig.showAuthStatus ? { key: "auth", text: `Auth: ${authLabel}`, color: theme.TEXT, bold: false } : null,
-    headerConfig.showWorkspace ? { key: "workspace", text: `Workspace: ${wsDisplay}`, color: theme.MUTED, bold: false } : null,
+    headerConfig.showBrand ? { key: "brand", text: brandLabel, color: theme.text, bold: true } : null,
+    headerConfig.showAuthStatus ? { key: "auth", text: `Auth: ${authLabel}`, color: theme.text, bold: false } : null,
+    headerConfig.showWorkspace ? { key: "workspace", text: `Workspace: ${wsDisplay}`, color: theme.textMuted, bold: false } : null,
     headerConfig.showProvider && runtimeSummary?.providerLabel
-      ? { key: "provider", text: `Provider: ${runtimeSummary.providerLabel}`, color: theme.TEXT, bold: false }
+      ? { key: "provider", text: `Provider: ${runtimeSummary.providerLabel}`, color: theme.text, bold: false }
       : null,
   ].filter((line): line is HeaderMetadataLine => Boolean(line));
   const metadataLines = metadataLinesRaw.map((line) => ({
@@ -294,9 +294,16 @@ export function TopHeader({
   // wrap="truncate" keeps each row on exactly one terminal line.
   const logoColumn = (
     <Box flexDirection="column" flexShrink={0}>
-      {selectedLogo.map((line, i) => (
-        <Text key={i} color={theme.LOGO[i % theme.LOGO.length] ?? theme.ACCENT} wrap="truncate">{line}</Text>
-      ))}
+      {selectedLogo.map((line, i) => {
+        let lineColor = theme.logoPrimary;
+        if (selectedLogo.length === 6) {
+          if (i === 2 || i === 3) lineColor = theme.logoSecondary;
+          else if (i === 4 || i === 5) lineColor = theme.logoShadow;
+        }
+        return (
+          <Text key={i} color={lineColor} wrap="truncate">{line}</Text>
+        );
+      })}
     </Box>
   );
 
@@ -336,7 +343,7 @@ export function TopHeader({
             )}
             {metadataColumn}
             {updateAvailable && (
-              <Text color={theme.WARNING} wrap="truncate">{`↑ Update: Codexa ${updateAvailable.latestVersion} is available — run: npm install -g @golba98/codexa@latest`}</Text>
+              <Text color={theme.warning} wrap="truncate">{`↑ Update: Codexa ${updateAvailable.latestVersion} is available — run: npm install -g @golba98/codexa@latest`}</Text>
             )}
           </Box>
         )}
@@ -355,24 +362,24 @@ export function TopHeader({
   // A leading ✦ accent makes the single-line header read as a deliberate
   // compact Codexa header rather than a broken fallback.
   const compactParts: React.ReactNode[] = [
-    <Text key="accent" color={theme.ACCENT} bold>{"✦ "}</Text>,
+    <Text key="accent" color={theme.accent} bold>{"✦ "}</Text>,
   ];
   if (headerConfig.showBrand) {
     compactParts.push(
-      <Text key="brand" color={theme.TEXT} bold>{brandLabel}</Text>,
+      <Text key="brand" color={theme.text} bold>{brandLabel}</Text>,
     );
   }
   if (headerConfig.showAuthStatus) {
-    if (compactParts.length > 0) compactParts.push(<Text key="sep-auth" color={theme.DIM}>{"  ·  "}</Text>);
-    compactParts.push(<Text key="auth" color={theme.TEXT}>{authLabel}</Text>);
+    if (compactParts.length > 0) compactParts.push(<Text key="sep-auth" color={theme.textDim}>{"  ·  "}</Text>);
+    compactParts.push(<Text key="auth" color={theme.text}>{authLabel}</Text>);
   }
   if (headerConfig.showWorkspace) {
-    if (compactParts.length > 0) compactParts.push(<Text key="sep-ws" color={theme.DIM}>{"  ·  "}</Text>);
-    compactParts.push(<Text key="ws" color={theme.MUTED} wrap="truncate">{`Workspace: ${compactWorkspaceDisplay}`}</Text>);
+    if (compactParts.length > 0) compactParts.push(<Text key="sep-ws" color={theme.textDim}>{"  ·  "}</Text>);
+    compactParts.push(<Text key="ws" color={theme.textMuted} wrap="truncate">{`Workspace: ${compactWorkspaceDisplay}`}</Text>);
   }
   if (headerConfig.showProvider && runtimeSummary?.providerLabel) {
-    if (compactParts.length > 0) compactParts.push(<Text key="sep-provider" color={theme.DIM}>{"  ·  "}</Text>);
-    compactParts.push(<Text key="provider" color={theme.TEXT} wrap="truncate">{`Provider: ${runtimeSummary.providerLabel}`}</Text>);
+    if (compactParts.length > 0) compactParts.push(<Text key="sep-provider" color={theme.textDim}>{"  ·  "}</Text>);
+    compactParts.push(<Text key="provider" color={theme.text} wrap="truncate">{`Provider: ${runtimeSummary.providerLabel}`}</Text>);
   }
 
   return (
@@ -384,7 +391,7 @@ export function TopHeader({
         {compactParts}
       </Box>
       {heroLayout.compactHintRows > 0 && (
-        <Text color={theme.DIM} wrap="truncate">{clampMetadataText(RECOMMENDED_FULL_HEADER_HINT, compactMetadataWidth)}</Text>
+        <Text color={theme.textDim} wrap="truncate">{clampMetadataText(RECOMMENDED_FULL_HEADER_HINT, compactMetadataWidth)}</Text>
       )}
       {heroLayout.bottomMarginRows > 0 && (
         <Box height={heroLayout.bottomMarginRows} />

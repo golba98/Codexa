@@ -115,30 +115,30 @@ export function UpdatePromptPanel({
     <Box flexDirection="column" width="100%" marginTop={1}>
       <Box
         borderStyle="round"
-        borderColor={theme.BORDER_SUBTLE}
+        borderColor={theme.border}
         paddingX={2}
         paddingY={1}
         width="100%"
         flexDirection="column"
       >
         <Box>
-          <Text color={theme.ACCENT} bold>Update available  </Text>
-          <Text color={theme.MUTED}>{hintText}</Text>
+          <Text color={theme.accent} bold>Update available  </Text>
+          <Text color={theme.textMuted}>{hintText}</Text>
         </Box>
         <Box marginTop={1}>
-          <Text color={theme.TEXT}>{`✨ ${currentVersion} -> ${latestVersion}`}</Text>
+          <Text color={theme.text}>{`✨ ${currentVersion} -> ${latestVersion}`}</Text>
         </Box>
         <Box>
-          <Text color={theme.MUTED}>{`Package: ${CODEXA_NPM_PACKAGE}`}</Text>
+          <Text color={theme.textMuted}>{`Package: ${CODEXA_NPM_PACKAGE}`}</Text>
         </Box>
         <Box>
-          <Text color={theme.MUTED}>{`Run: ${CODEXA_UPDATE_COMMAND}`}</Text>
+          <Text color={theme.textMuted}>{`Run: ${CODEXA_UPDATE_COMMAND}`}</Text>
         </Box>
       </Box>
 
       <Box
         borderStyle="round"
-        borderColor={theme.BORDER_ACTIVE}
+        borderColor={theme.borderFocused}
         paddingX={2}
         paddingY={1}
         marginTop={1}
@@ -149,11 +149,11 @@ export function UpdatePromptPanel({
           <>
             {MENU_ITEMS.map((item, index) => (
               <Box key={item.label}>
-                <Text color={index === selectedIndex ? theme.ACCENT : theme.MUTED}>
+                <Text color={index === selectedIndex ? theme.accent : theme.textMuted}>
                   {index === selectedIndex ? "› " : "  "}
                 </Text>
                 <Text
-                  color={index === selectedIndex ? theme.TEXT : theme.MUTED}
+                  color={index === selectedIndex ? theme.text : theme.textMuted}
                   bold={index === selectedIndex}
                 >
                   {`${index + 1}. ${item.label}`}
@@ -161,39 +161,39 @@ export function UpdatePromptPanel({
               </Box>
             ))}
             <Box marginTop={1}>
-              <Text color={theme.DIM}>Press enter to continue</Text>
+              <Text color={theme.textDim}>Press enter to continue</Text>
             </Box>
           </>
         )}
 
         {phase === "running" && (
           <>
-            <Text color={theme.TEXT}>{`Installing Codexa ${latestVersion}...`}</Text>
+            <Text color={theme.text}>{`Installing Codexa ${latestVersion}...`}</Text>
             {outputLines.map((line, i) => (
-              <Text key={i} color={theme.MUTED}>{line}</Text>
+              <Text key={i} color={theme.textMuted}>{line}</Text>
             ))}
           </>
         )}
 
         {phase === "done" && (
           <>
-            <Text color={theme.SUCCESS}>{"Codexa was updated successfully."}</Text>
-            <Text color={theme.MUTED}>{"Restart Codexa to use the new version."}</Text>
+            <Text color={theme.success}>{"Codexa was updated successfully."}</Text>
+            <Text color={theme.textMuted}>{"Restart Codexa to use the new version."}</Text>
             <Box marginTop={1}>
-              <Text color={theme.DIM}>Press Enter to close</Text>
+              <Text color={theme.textDim}>Press Enter to close</Text>
             </Box>
           </>
         )}
 
         {phase === "error" && (
           <>
-            <Text color={theme.ERROR}>{"Update failed."}</Text>
-            {errorMessage != null && <Text color={theme.MUTED}>{errorMessage}</Text>}
+            <Text color={theme.error}>{"Update failed."}</Text>
+            {errorMessage != null && <Text color={theme.textMuted}>{errorMessage}</Text>}
             {outputLines.slice(-5).map((line, i) => (
-              <Text key={i} color={theme.DIM}>{line}</Text>
+              <Text key={i} color={theme.textDim}>{line}</Text>
             ))}
             <Box marginTop={1}>
-              <Text color={theme.DIM}>Press Enter to close</Text>
+              <Text color={theme.textDim}>Press Enter to close</Text>
             </Box>
           </>
         )}

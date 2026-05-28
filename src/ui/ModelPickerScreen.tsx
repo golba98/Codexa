@@ -297,28 +297,28 @@ export function ModelPickerScreen({
     <Box flexDirection="column" width={panelWidth}>
       <Box
         borderStyle="round"
-        borderColor={theme.PROMPT}
+        borderColor={theme.prompt}
         paddingX={1}
         paddingY={0}
         width={panelWidth}
         flexDirection="column"
       >
         <Box width="100%" overflow="hidden">
-          <Text color={theme.ACCENT} bold>{title}</Text>
+          <Text color={theme.accent} bold>{title}</Text>
         </Box>
         <Box width="100%" overflow="hidden">
-          <Text color={theme.MUTED}>
+          <Text color={theme.textMuted}>
             {clampVisualText(routeText, innerWidth)}
           </Text>
         </Box>
         <Box width="100%" overflow="hidden">
-          <Text color={reasoningUnavailable ? theme.DIM : theme.MUTED}>
+          <Text color={reasoningUnavailable ? theme.textDim : theme.textMuted}>
             {clampVisualText(reasoningText, innerWidth)}
           </Text>
         </Box>
         {sourceMarker && (
           <Box width="100%" overflow="hidden">
-            <Text color={theme.DIM}>
+            <Text color={theme.textDim}>
               {clampVisualText(sourceMarker, innerWidth)}
             </Text>
           </Box>
@@ -326,7 +326,7 @@ export function ModelPickerScreen({
 
         <Box flexDirection="column" marginTop={0} width="100%">
           {models.length === 0 ? (
-            <Text color={theme.MUTED}>
+            <Text color={theme.textMuted}>
               {isLoading ? "Discovering models from the Codex runtime..." : (emptyMessage ?? "No models available.")}
             </Text>
           ) : (
@@ -389,15 +389,15 @@ function ModelPickerRow({
   return (
     <Box width="100%" overflow="hidden">
       <Box width={markerWidth} flexShrink={0}>
-        <Text color={isHighlighted ? theme.ACCENT : theme.DIM}>{isHighlighted ? ">" : " "}</Text>
+        <Text color={isHighlighted ? theme.accent : theme.textDim}>{isHighlighted ? ">" : " "}</Text>
       </Box>
       <Box width={nameWidth} flexShrink={0} overflow="hidden">
-        <Text color={isHighlighted ? theme.TEXT : theme.MUTED} bold={isHighlighted}>
+        <Text color={isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted}>
           {name}
         </Text>
       </Box>
       <Box width={checkWidth} flexShrink={0}>
-        <Text color={theme.DIM}>{isCurrent ? "✓" : " "}</Text>
+        <Text color={theme.textDim}>{isCurrent ? "✓" : " "}</Text>
       </Box>
       {pillWidth > 0 && (
         <>
@@ -405,7 +405,7 @@ function ModelPickerRow({
             <Text>  </Text>
           </Box>
           <Box width={pillWidth} flexShrink={0} overflow="hidden">
-            <Text color={theme.ACCENT} bold>
+            <Text color={theme.accent} bold>
               {pillText}
             </Text>
           </Box>

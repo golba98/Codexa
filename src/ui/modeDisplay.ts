@@ -18,10 +18,10 @@ export function getModeDisplaySpec(mode: string, theme: Theme): ModeDisplaySpec 
       return {
         label: formatModeLabel(mode),
         ringGlyph: "◉",
-        ringColor: theme.WARNING,
-        ringFill: theme.BORDER_SUBTLE,
-        iconColor: theme.WARNING,
-        labelColor: theme.TEXT,
+        ringColor: theme.warning,
+        ringFill: theme.border,
+        iconColor: theme.warning,
+        labelColor: theme.text,
         labelBold: true,
         ringBold: true,
       };
@@ -29,10 +29,10 @@ export function getModeDisplaySpec(mode: string, theme: Theme): ModeDisplaySpec 
       return {
         label: formatModeLabel(mode),
         ringGlyph: "◎",
-        ringColor: theme.BORDER_ACTIVE,
-        ringFill: theme.PANEL_ALT,
-        iconColor: theme.PROMPT,
-        labelColor: theme.TEXT,
+        ringColor: theme.borderFocused,
+        ringFill: theme.surfaceMuted,
+        iconColor: theme.prompt,
+        labelColor: theme.text,
         labelBold: true,
         ringBold: false,
       };
@@ -41,10 +41,10 @@ export function getModeDisplaySpec(mode: string, theme: Theme): ModeDisplaySpec 
       return {
         label: formatModeLabel(mode),
         ringGlyph: "○",
-        ringColor: theme.SUCCESS,
-        ringFill: theme.PANEL_SOFT,
-        iconColor: theme.SUCCESS,
-        labelColor: theme.MUTED,
+        ringColor: theme.success,
+        ringFill: theme.surfaceMuted,
+        iconColor: theme.success,
+        labelColor: theme.textMuted,
         labelBold: false,
         ringBold: false,
       };

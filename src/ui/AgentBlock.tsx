@@ -49,7 +49,7 @@ const StreamingCursor = memo(function StreamingCursor() {
   const theme = useTheme();
   return (
     <Box width="100%" paddingLeft={2}>
-      <Text color={theme.ACCENT}>{"▌"}</Text>
+      <Text color={theme.accent}>{"▌"}</Text>
     </Box>
   );
 });
@@ -93,14 +93,14 @@ export function AgentBlock({
     : runStatus;
   const heading = run?.runtime.model ? run.runtime.model.toUpperCase().replace(/-/g, " ") : "Codex";
 
-  const borderColor = dim ? theme.BORDER_SUBTLE : (runPhase === "streaming" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE);
+  const borderColor = dim ? theme.border : (runPhase === "streaming" ? theme.borderFocused : theme.border);
 
   return (
     <DashCard cols={cols} title={heading} rightBadge={rightBadge} borderColor={borderColor}>
       {!streaming && failureMessage && (
         <Box flexDirection="column" width="100%">
           {wrapPlainText(failureMessage, contentWidth).map((row, index) => (
-            <Text key={index} color={theme.ERROR}>{index === 0 ? `✕ ${row || " "}` : row || " "}</Text>
+            <Text key={index} color={theme.error}>{index === 0 ? `✕ ${row || " "}` : row || " "}</Text>
           ))}
         </Box>
       )}
@@ -116,12 +116,12 @@ export function AgentBlock({
       {!streaming && run && run.status !== "running" && (
         <Box flexDirection="column" width="100%">
           {run.status === "canceled" && cancelMessage ? (
-            <Text color={theme.WARNING}>{cancelMessage}</Text>
+            <Text color={theme.warning}>{cancelMessage}</Text>
           ) : run.status === "completed" && pipelineState.length === 0 ? (
-            <Text color={theme.DIM}>{"(no output)"}</Text>
+            <Text color={theme.textDim}>{"(no output)"}</Text>
           ) : null}
           {run.truncatedOutput && (
-            <Text color={theme.DIM}>{RUN_OUTPUT_TRUNCATION_NOTICE}</Text>
+            <Text color={theme.textDim}>{RUN_OUTPUT_TRUNCATION_NOTICE}</Text>
           )}
         </Box>
       )}

@@ -18,7 +18,7 @@ interface WaveBarProps {
 
 export function WaveBar({ tick, color }: WaveBarProps) {
   const theme = useTheme();
-  const activeColor = color ?? theme.ACCENT;
+  const activeColor = color ?? theme.accent;
 
   let str = "";
   for (let c = 0; c < WAVE_COLS; c++) {
@@ -48,8 +48,8 @@ interface PulseBarProps {
 
 export function PulseBar({ tick, color, dimColor }: PulseBarProps) {
   const theme = useTheme();
-  const activeColor = color ?? theme.ACCENT;
-  const inactiveColor = dimColor ?? theme.DIM;
+  const activeColor = color ?? theme.accent;
+  const inactiveColor = dimColor ?? theme.textDim;
 
   const raw = Math.floor(tick / PULSE_SPEED) % PULSE_PERIOD;
   const pos = raw < PULSE_MAX_POS ? raw : PULSE_PERIOD - raw;

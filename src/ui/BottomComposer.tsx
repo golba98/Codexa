@@ -340,6 +340,44 @@ function getPlaceholder(persona: ComposerPersona): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+function renderFooterRuntime(displayStr: string, theme: any) {
+  // e.g. "Claude Code CLI / Sonnet 4.6 (Low)"
+  const slashIndex = displayStr.indexOf("/");
+  if (slashIndex === -1) {
+    return <Text color={theme.model} wrap="truncate">{displayStr}</Text>;
+  }
+  const providerPart = displayStr.substring(0, slashIndex).trim();
+  let remaining = displayStr.substring(slashIndex + 1).trim();
+
+  const parenIndex = remaining.indexOf("(");
+  if (parenIndex === -1) {
+    return (
+      <Box flexDirection="row" overflow="hidden">
+        <Text color={theme.provider}>{providerPart}</Text>
+        <Text color={theme.textMuted}>{" / "}</Text>
+        <Text color={theme.model}>{remaining}</Text>
+      </Box>
+    );
+  }
+
+  const modelPart = remaining.substring(0, parenIndex).trim();
+  let reasoningPart = remaining.substring(parenIndex + 1).trim();
+  if (reasoningPart.endsWith(")")) {
+    reasoningPart = reasoningPart.substring(0, reasoningPart.length - 1).trim();
+  }
+
+  return (
+    <Box flexDirection="row" overflow="hidden">
+      <Text color={theme.provider}>{providerPart}</Text>
+      <Text color={theme.textMuted}>{" / "}</Text>
+      <Text color={theme.model}>{modelPart}</Text>
+      <Text color={theme.textMuted}>{" ("}</Text>
+      <Text color={theme.accentMuted}>{reasoningPart}</Text>
+      <Text color={theme.textMuted}>{")"}</Text>
+    </Box>
+  );
+}
+
 export function BottomComposer({
   layout,
   uiState,
@@ -816,7 +854,7 @@ export function BottomComposer({
   const footerRuntimeDisplay = footerModelDisplay ?? `${model}${reasoningSuffix}`;
   const isAnswerMode = persona === "answer";
   const showBusyFooter = shouldRenderBusyFooter(layout, uiState);
-  const promptPrefixColor = inputLocked ? theme.DIM : theme.TEXT;
+  const promptPrefixColor = inputLocked ? theme.textDim : theme.text;
   const lockedInputText = promptViewport.visibleRows[0]?.text ?? " ";
 
   // The prompt line is shared between bordered and non-bordered layouts.
@@ -826,12 +864,12 @@ export function BottomComposer({
       <Box flexDirection="column" flexGrow={1}>
         {value.length === 0 && !inputLocked ? (
           <Box width="100%" overflow="hidden">
-            <Text backgroundColor={cursorVisible ? theme.TEXT : undefined} color={cursorVisible ? theme.PANEL : undefined}>{" "}</Text>
-            <Text color={theme.DIM}>{placeholderText}</Text>
+            <Text backgroundColor={cursorVisible ? theme.text : undefined} color={cursorVisible ? theme.surface : undefined}>{" "}</Text>
+            <Text color={theme.textDim}>{placeholderText}</Text>
           </Box>
         ) : inputLocked ? (
           <Box key="busy-locked-input" width="100%" overflow="hidden">
-            <Text color={theme.DIM}>{lockedInputText || " "}</Text>
+            <Text color={theme.textDim}>{lockedInputText || " "}</Text>
           </Box>
         ) : (
           promptViewport.visibleRows.map((row, index) => {
@@ -845,14 +883,14 @@ export function BottomComposer({
               <Box key={`${row.start}-${row.end}-${index}`} width="100%" overflow="hidden">
                 {isCursorRow && segments ? (
                   <>
-                    <Text color={theme.TEXT}>{segments.before}</Text>
-                    <Text backgroundColor={cursorVisible ? theme.TEXT : undefined} color={cursorVisible ? theme.PANEL : undefined}>
+                    <Text color={theme.text}>{segments.before}</Text>
+                    <Text backgroundColor={cursorVisible ? theme.text : undefined} color={cursorVisible ? theme.surface : undefined}>
                       {segments.current || " "}
                     </Text>
-                    <Text color={theme.TEXT}>{segments.after}</Text>
+                    <Text color={theme.text}>{segments.after}</Text>
                   </>
                 ) : (
-                  <Text color={theme.TEXT}>{row.text || " "}</Text>
+                  <Text color={theme.text}>{row.text || " "}</Text>
                 )}
               </Box>
             );
@@ -876,7 +914,7 @@ export function BottomComposer({
           paddingX={1}
           paddingY={0}
           borderStyle="round"
-          borderColor={theme.WARNING}
+          borderColor={theme.warning}
         >
           {promptLine}
         </Box>
@@ -888,7 +926,7 @@ export function BottomComposer({
           paddingX={1}
           paddingY={0}
           borderStyle="round"
-          borderColor={theme.BORDER_SUBTLE}
+          borderColor={theme.border}
         >
           {promptLine}
         </Box>
@@ -897,22 +935,28 @@ export function BottomComposer({
       {layoutMode !== "micro" && (
         <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
           <Box flexGrow={1} flexShrink={1} overflow="hidden">
-            <Text color={theme.DIM} wrap="truncate">{footerRuntimeDisplay}</Text>
+            {renderFooterRuntime(footerRuntimeDisplay, theme)}
           </Box>
           <Box flexShrink={0}>
             {contextDisplay ? (
-              <Text color={theme.DIM}>{`Context: ${contextDisplay}`}</Text>
+              <Box flexDirection="row">
+                <Text color={theme.textMuted}>Context: </Text>
+                <Text color={theme.context}>{contextDisplay}</Text>
+              </Box>
             ) : tokenDisplay.hasKnownLimit ? (
-              <>
-                <Text color={theme.DIM}>Context: </Text>
-                <Text color={theme.TEXT}>{tokenDisplay.usedText}</Text>
-                <Text color={theme.DIM}>
+              <Box flexDirection="row">
+                <Text color={theme.textMuted}>Context: </Text>
+                <Text color={theme.context}>{tokenDisplay.usedText}</Text>
+                <Text color={theme.textDim}>
                   {" / "}{tokenDisplay.limitText}
                   {tokenDisplay.percentage !== null ? ` · ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%` : ""}
                 </Text>
-              </>
+              </Box>
             ) : (
-              <Text color={theme.DIM}>Context: Unknown</Text>
+              <Box flexDirection="row">
+                <Text color={theme.textMuted}>Context: </Text>
+                <Text color={theme.textDim}>Unknown</Text>
+              </Box>
             )}
           </Box>
         </Box>
@@ -920,7 +964,7 @@ export function BottomComposer({
 
       {commandSuggestionState.reserveSuggestionRow && (
         <Box paddingLeft={1} marginTop={0} width="100%" overflow="hidden">
-          <Text color={theme.DIM} wrap="truncate">{suggestionText || " "}</Text>
+          <Text color={theme.textDim} wrap="truncate">{suggestionText || " "}</Text>
         </Box>
       )}
 
@@ -935,7 +979,7 @@ export function BottomComposer({
             <Box flexShrink={1} flexGrow={1} overflow="hidden" flexDirection="row">
               {!!getExternalCliLabel(activeProviderId ?? "") && uiState.kind === "THINKING" && (
                 <>
-                  <Spinner color={theme.ACCENT} />
+                  <Spinner color={theme.accent} />
                   <Text>{" "}</Text>
                 </>
               )}
@@ -947,12 +991,12 @@ export function BottomComposer({
             </Box>
             {inputLocked && (
               <Box flexShrink={0}>
-                <Text color={theme.DIM}>Esc cancel  Ctrl+C quit</Text>
+                <Text color={theme.textDim}>Esc cancel  Ctrl+C quit</Text>
               </Box>
             )}
             {!inputLocked && selectionProfile && (
               <Box flexShrink={0}>
-                <Text color={theme.DIM}>{selectionProfile.shortHint}</Text>
+                <Text color={theme.textDim}>{selectionProfile.shortHint}</Text>
               </Box>
             )}
           </>

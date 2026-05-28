@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getModeDisplaySpec } from "./modeDisplay.js";
-import { THEMES, theme } from "./theme.js";
+import { THEMES, DARK_THEME as theme } from "./theme.js";
 
 test("maps internal modes to Codex-aligned display labels", () => {
   assert.equal(getModeDisplaySpec("suggest", theme).label, "Read-only");
@@ -15,16 +15,16 @@ test("uses distinct ring glyphs and theme tokens for each mode", () => {
   const fullAccess = getModeDisplaySpec("full-auto", theme);
 
   assert.equal(readOnly.ringGlyph, "○");
-  assert.equal(readOnly.ringColor, theme.SUCCESS);
-  assert.equal(readOnly.ringFill, theme.PANEL_SOFT);
+  assert.equal(readOnly.ringColor, theme.success);
+  assert.equal(readOnly.ringFill, theme.surfaceMuted);
 
   assert.equal(auto.ringGlyph, "◎");
-  assert.equal(auto.ringColor, theme.BORDER_ACTIVE);
-  assert.equal(auto.ringFill, theme.PANEL_ALT);
+  assert.equal(auto.ringColor, theme.borderFocused);
+  assert.equal(auto.ringFill, theme.surfaceMuted);
 
   assert.equal(fullAccess.ringGlyph, "◉");
-  assert.equal(fullAccess.ringColor, theme.WARNING);
-  assert.equal(fullAccess.ringFill, theme.BORDER_SUBTLE);
+  assert.equal(fullAccess.ringColor, theme.warning);
+  assert.equal(fullAccess.ringFill, theme.border);
 });
 
 test("keeps the mode ring meaningful across every built-in theme", () => {

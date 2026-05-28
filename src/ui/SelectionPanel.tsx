@@ -36,19 +36,19 @@ export function SelectionPanel({
       {/* Block 1: title + instructions */}
       <Box
         borderStyle="round"
-        borderColor={theme.BORDER_SUBTLE}
+        borderColor={theme.border}
         paddingX={2}
         paddingY={1}
         width="100%"
       >
-        <Text color={theme.ACCENT} bold>{title}  </Text>
-        <Text color={theme.MUTED}>{subtitle}</Text>
+        <Text color={theme.accent} bold>{title}  </Text>
+        <Text color={theme.textMuted}>{subtitle}</Text>
       </Box>
 
       {/* Block 2: selection list */}
       <Box
         borderStyle="round"
-        borderColor={theme.BORDER_ACTIVE}
+        borderColor={theme.borderFocused}
         paddingX={2}
         paddingY={1}
         marginTop={1}

@@ -53,21 +53,21 @@ export function ThinkingBlock({ cols, run }: ThinkingBlockProps) {
       cols={cols}
       title="Processing"
       rightBadge={rightBadge}
-      borderColor={run.status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE}
+      borderColor={run.status === "running" ? theme.borderFocused : theme.border}
     >
       {blocks.length === 0 ? (
-        <Text color={theme.DIM}>No processing updates</Text>
+        <Text color={theme.textDim}>No processing updates</Text>
       ) : (
         <Box flexDirection="column" width="100%">
           {currentText && run.status === "running" && (
             <Box width="100%">
-              <Text color={theme.INFO} bold>Current: </Text>
-              <Text color={theme.TEXT}>{currentText}</Text>
+              <Text color={theme.info} bold>Current: </Text>
+              <Text color={theme.text}>{currentText}</Text>
             </Box>
           )}
           {hiddenCount > 0 && (
             <Box marginTop={currentText && run.status === "running" ? 1 : 0}>
-              <Text color={theme.DIM}>{`... ${hiddenCount} earlier update${hiddenCount === 1 ? "" : "s"}`}</Text>
+              <Text color={theme.textDim}>{`... ${hiddenCount} earlier update${hiddenCount === 1 ? "" : "s"}`}</Text>
             </Box>
           )}
           {blocks.map((block, blockIndex) => {
@@ -79,16 +79,16 @@ export function ThinkingBlock({ cols, run }: ThinkingBlockProps) {
                 width="100%"
                 marginTop={blockIndex === 0 && hiddenCount === 0 && !(currentText && run.status === "running") ? 0 : 1}
               >
-                <Text color={isLive ? theme.ACCENT : theme.INFO} bold={isLive}>
+                <Text color={isLive ? theme.accent : theme.info} bold={isLive}>
                   {`${getBlockMarker(isLive)} ${isLive ? "Live" : block.label}`}
                 </Text>
                 {formatProgressBlockBodyLines(block.text, contentWidth).map((line, lineIndex) => (
-                  <Text key={`${block.key}-${lineIndex}`} color={theme.MUTED}>
+                  <Text key={`${block.key}-${lineIndex}`} color={theme.textMuted}>
                     {line ? `${isLive ? "  | " : "    "}${line}` : " "}
                   </Text>
                 ))}
                 {isLive && (
-                  <Text color={theme.ACCENT}>  | ▌</Text>
+                  <Text color={theme.accent}>  | ▌</Text>
                 )}
               </Box>
             );

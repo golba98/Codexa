@@ -869,18 +869,21 @@ export function buildIntroRenderItem(params: {
 
 function getToneColor(theme: ReturnType<typeof useTheme>, tone: TimelineTone | undefined): string | undefined {
   switch (tone) {
-    case "text": return theme.TEXT;
-    case "dim": return theme.DIM;
-    case "muted": return theme.MUTED;
-    case "accent": return theme.ACCENT;
-    case "info": return theme.INFO;
-    case "error": return theme.ERROR;
-    case "warning": return theme.WARNING;
-    case "success": return theme.SUCCESS;
-    case "borderSubtle": return theme.BORDER_SUBTLE;
-    case "borderActive": return theme.BORDER_ACTIVE;
-    case "panel": return theme.PANEL;
-    case "star": return theme.STAR;
+    case "text": return theme.text;
+    case "dim": return theme.textDim;
+    case "muted": return theme.textMuted;
+    case "accent": return theme.accent;
+    case "info": return theme.info;
+    case "error": return theme.error;
+    case "warning": return theme.warning;
+    case "success": return theme.success;
+    case "borderSubtle": return theme.border;
+    case "borderActive": return theme.borderFocused;
+    case "panel": return theme.surface;
+    case "star": return theme.warning;
+    case "logoPrimary": return theme.logoPrimary;
+    case "logoSecondary": return theme.logoSecondary;
+    case "logoShadow": return theme.logoShadow;
     default: return undefined;
   }
 }
@@ -960,8 +963,8 @@ const JumpToBottomBar = memo(function JumpToBottomBar({
   const hint = mouseCapture ? "wheel↓/End to bottom" : "PgDn/End to bottom";
   return (
     <Box width="100%" paddingX={1}>
-      <Text color={theme.INFO}>{label}</Text>
-      <Text color={theme.DIM}>{`  ·  ${hint}`}</Text>
+      <Text color={theme.info}>{label}</Text>
+      <Text color={theme.textDim}>{`  ·  ${hint}`}</Text>
     </Box>
   );
 });

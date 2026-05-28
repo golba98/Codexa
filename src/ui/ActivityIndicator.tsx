@@ -32,26 +32,26 @@ export function ActivityIndicator({ uiState, externalCliStatus = "idle" }: Activ
   }, [isAnimated]);
 
   let glyph = "?";
-  let color = theme.DIM;
+  let color = theme.textDim;
   let bold = false;
 
   if (isError) {
     glyph = "×";
-    color = theme.ERROR;
+    color = theme.error;
     bold = true;
   } else if (isAction) {
     glyph = "?";
-    color = theme.WARNING;
+    color = theme.warning;
     bold = true;
   } else if (isStarting || isThinking) {
     glyph = SPINNER_FRAMES[frameIndex % SPINNER_FRAMES.length]!;
-    color = theme.TEXT;
+    color = theme.text;
   } else if (isStreaming) {
     glyph = STREAMING_FRAMES[frameIndex % STREAMING_FRAMES.length]!;
-    color = theme.SUCCESS;
+    color = theme.success;
   } else {
     glyph = "?";
-    color = theme.DIM;
+    color = theme.textDim;
   }
 
   return <Text color={color} bold={bold}>{glyph}</Text>;

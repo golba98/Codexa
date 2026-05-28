@@ -69,14 +69,14 @@ function UserInputCard({
   dim: boolean;
 }) {
   const theme = useTheme();
-  const borderColor = theme.BORDER_SUBTLE;
+  const borderColor = theme.border;
   const contentWidth = Math.max(1, cols - 7);
   const lines = wrapPlainText(sanitizeTerminalOutput(prompt), contentWidth);
 
   return (
     <DashCard cols={cols} title="PROMPT" borderColor={borderColor}>
       {lines.map((line, i) => (
-        <Text key={i} color={dim ? theme.DIM : theme.TEXT}>
+        <Text key={i} color={dim ? theme.textDim : theme.text}>
           {i === 0 ? "❯ " : "  "}{line}
         </Text>
       ))}
@@ -122,38 +122,38 @@ function ImpactSummary({
 
   const opColor = (op: string) => {
     switch (op) {
-      case "created": return theme.SUCCESS;
-      case "deleted": return theme.ERROR;
-      default: return theme.INFO;
+      case "created": return theme.success;
+      case "deleted": return theme.error;
+      default: return theme.info;
     }
   };
 
   return (
     <Box flexDirection="column" width="100%" paddingX={1} marginTop={0}>
       {hasDeletes && (
-        <Text color={theme.WARNING}>{"⚠ Destructive changes detected:"}</Text>
+        <Text color={theme.warning}>{"⚠ Destructive changes detected:"}</Text>
       )}
       {hasFiles && (
         <>
-          <Text color={theme.DIM}>{"  Changes:"}</Text>
+          <Text color={theme.textDim}>{"  Changes:"}</Text>
           {recentFiles.map((file: RunFileActivity, i: number) => {
             const diffInfo = file.addedLines != null || file.removedLines != null
               ? ` (+${file.addedLines ?? 0} -${file.removedLines ?? 0})`
               : "";
             return (
               <Text key={i}>
-                <Text color={theme.DIM}>{"    "}</Text>
+                <Text color={theme.textDim}>{"    "}</Text>
                 <Text color={opColor(file.operation)}>{opLabel(file.operation)}</Text>
-                <Text color={theme.TEXT}>{" "}{file.path}</Text>
-                <Text color={theme.DIM}>{diffInfo}</Text>
+                <Text color={theme.text}>{" "}{file.path}</Text>
+                <Text color={theme.textDim}>{diffInfo}</Text>
               </Text>
             );
           })}
         </>
       )}
-      <Text color={theme.DIM}>
+      <Text color={theme.textDim}>
         {"  "}
-        <Text color={theme.SUCCESS}>{"✔ "}</Text>
+        <Text color={theme.success}>{"✔ "}</Text>
         {run.touchedFileCount > 0 && `${run.touchedFileCount} file${run.touchedFileCount === 1 ? "" : "s"}`}
         {hasTools && `${hasFiles ? " • " : ""}${run.toolActivities.length} action${run.toolActivities.length === 1 ? "" : "s"}`}
         {run.durationMs != null && ` • ${formatDuration(run.durationMs)}`}
@@ -172,11 +172,11 @@ function FileScanCard({ run, cols }: { run: RunEvent; cols: number }) {
   return (
     <DashCard cols={cols} title="Scanning workspace ..." rightBadge={badge}>
       {hiddenCount > 0 && (
-        <Text color={theme.DIM}>{`... ${hiddenCount} more`}</Text>
+        <Text color={theme.textDim}>{`... ${hiddenCount} more`}</Text>
       )}
       {visible.map((file, i) => (
-        <Text key={i} color={theme.SUCCESS}>
-          {"● "}<Text color={theme.TEXT}>{file.path}</Text>
+        <Text key={i} color={theme.success}>
+          {"● "}<Text color={theme.text}>{file.path}</Text>
         </Text>
       ))}
     </DashCard>
@@ -307,9 +307,9 @@ function PlanPanel({
       cols={cols}
       title="Plan"
       rightBadge={approved ? "approved" : undefined}
-      borderColor={theme.ACCENT}
-      titleColor={theme.TEXT}
-      badgeColor={theme.SUCCESS}
+      borderColor={theme.accent}
+      titleColor={theme.text}
+      badgeColor={theme.success}
     >
       <MemoizedRenderMessage segments={formatted} width={contentWidth} brightHeadings />
     </DashCard>
@@ -337,12 +337,12 @@ function ActionEventCard({
   const actionLabel = getFriendlyActionLabel(actionNormalized);
 
   const statusIcon = tool.status === "failed" ? "✕" : tool.status === "completed" ? "✔" : "▸";
-  const statusColor = tool.status === "failed" ? theme.ERROR : tool.status === "completed" ? theme.SUCCESS : theme.INFO;
-  const borderColor = dim ? theme.BORDER_SUBTLE : tool.status === "running" ? theme.BORDER_ACTIVE : theme.BORDER_SUBTLE;
+  const statusColor = tool.status === "failed" ? theme.error : tool.status === "completed" ? theme.success : theme.info;
+  const borderColor = dim ? theme.border : tool.status === "running" ? theme.borderFocused : theme.border;
   const detailText = isLiveCursorTarget && tool.status === "running"
     ? "▌"
     : tool.summary?.trim() ? tool.summary : " ";
-  const detailColor = isLiveCursorTarget && tool.status === "running" ? theme.ACCENT : theme.MUTED;
+  const detailColor = isLiveCursorTarget && tool.status === "running" ? theme.accent : theme.textMuted;
   const duration = tool.completedAt != null
     ? formatDuration(tool.completedAt - tool.startedAt)
     : null;
@@ -356,10 +356,10 @@ function ActionEventCard({
         <>
           <Box>
             <Text color={statusColor}>{statusIcon + " "}</Text>
-            <Text color={dim ? theme.DIM : theme.TEXT}>{actionLabel}</Text>
+            <Text color={dim ? theme.textDim : theme.text}>{actionLabel}</Text>
           </Box>
           {commandLines.map((line, i) => (
-            <Text key={i} color={theme.MUTED}>{"  "}{line || " "}</Text>
+            <Text key={i} color={theme.textMuted}>{"  "}{line || " "}</Text>
           ))}
         </>
       ) : (
@@ -367,10 +367,10 @@ function ActionEventCard({
           {commandLines.map((line, i) => (
             <Box key={i}>
               <Text color={i === 0 ? statusColor : undefined}>{i === 0 ? statusIcon + " " : "  "}</Text>
-              <Text color={dim ? theme.DIM : theme.TEXT}>{line || " "}</Text>
+              <Text color={dim ? theme.textDim : theme.text}>{line || " "}</Text>
             </Box>
           ))}
-          <Text color={theme.MUTED}>{"   "}</Text>
+          <Text color={theme.textMuted}>{"   "}</Text>
         </>
       )}
       <Text color={detailColor}>{"  "}{detailText}</Text>
@@ -405,14 +405,14 @@ function CodexThinkingBlock({
 
   return (
     <Box flexDirection="column" width="100%" paddingLeft={transcriptContentIndent} paddingRight={1}>
-      <Text color={theme.MUTED} bold>Codexa</Text>
+      <Text color={theme.textMuted} bold>Codexa</Text>
       {formatProgressBlockBodyLines(block.text, contentWidth)
         .slice(0, verboseMode ? undefined : COMPACT_PROCESSING_BODY_LINE_CAP)
         .map((line, i) => (
-          <Text key={i} color={theme.DIM}>{line || " "}</Text>
+          <Text key={i} color={theme.textDim}>{line || " "}</Text>
         ))}
       {isLiveCursorTarget && block.status === "active" && (
-        <Text color={theme.ACCENT}>▌</Text>
+        <Text color={theme.accent}>▌</Text>
       )}
     </Box>
   );
@@ -453,11 +453,11 @@ function CodexResponseBlock({
 
   return (
     <Box flexDirection="column" width="100%" paddingLeft={transcriptContentIndent} paddingRight={1}>
-      <Text color={theme.MUTED} bold>Codexa</Text>
+      <Text color={theme.textMuted} bold>Codexa</Text>
       {run.status === "failed" && !streaming && isLast && (
         <Box flexDirection="column">
           {wrapPlainText(sanitizeTerminalOutput(run.errorMessage ?? run.summary), contentWidth).map((row, i) => (
-            <Text key={i} color={theme.ERROR}>{i === 0 ? `✕ ${row}` : `  ${row}`}</Text>
+            <Text key={i} color={theme.error}>{i === 0 ? `✕ ${row}` : `  ${row}`}</Text>
           ))}
         </Box>
       )}
@@ -466,7 +466,7 @@ function CodexResponseBlock({
         width={contentWidth}
       />
       {isLiveCursorTarget && segmentStreaming && (
-        <Text color={theme.ACCENT}>▌</Text>
+        <Text color={theme.accent}>▌</Text>
       )}
     </Box>
   );

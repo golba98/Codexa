@@ -91,26 +91,26 @@ export function SettingsPanel<TKey extends string>({
     <Box flexDirection="column" width="100%" marginTop={1}>
       <Box
         borderStyle="round"
-        borderColor={theme.BORDER_SUBTLE}
+        borderColor={theme.border}
         paddingX={2}
         paddingY={1}
         width="100%"
         flexDirection="column"
       >
         <Box>
-          <Text color={theme.ACCENT} bold>{title}  </Text>
-          <Text color={theme.MUTED}>{subtitle.split("\n")[0]}</Text>
+          <Text color={theme.accent} bold>{title}  </Text>
+          <Text color={theme.textMuted}>{subtitle.split("\n")[0]}</Text>
         </Box>
         {activeSetting?.description && (
           <Box marginTop={1}>
-            <Text color={theme.DIM}>{activeSetting.description}</Text>
+            <Text color={theme.textDim}>{activeSetting.description}</Text>
           </Box>
         )}
       </Box>
 
       <Box
         borderStyle="round"
-        borderColor={theme.BORDER_ACTIVE}
+        borderColor={theme.borderFocused}
         paddingX={2}
         paddingY={1}
         marginTop={1}
@@ -124,10 +124,10 @@ export function SettingsPanel<TKey extends string>({
           return (
             <Box key={setting.key} flexDirection="row" width="100%">
               <Box width={3}>
-                <Text color={isSelectedRow ? theme.ACCENT : theme.DIM}>{isSelectedRow ? "▸ " : "  "}</Text>
+                <Text color={isSelectedRow ? theme.accent : theme.textDim}>{isSelectedRow ? "▸ " : "  "}</Text>
               </Box>
               <Box width={20}>
-                <Text color={isSelectedRow ? theme.TEXT : theme.MUTED} bold={isSelectedRow}>
+                <Text color={isSelectedRow ? theme.text : theme.textMuted} bold={isSelectedRow}>
                   {setting.label}
                 </Text>
               </Box>
@@ -138,7 +138,7 @@ export function SettingsPanel<TKey extends string>({
                   return (
                     <Text
                       key={option.value}
-                      color={isActiveOption ? (isSelectedRow ? theme.ACCENT : theme.TEXT) : theme.DIM}
+                      color={isActiveOption ? (isSelectedRow ? theme.accent : theme.text) : theme.textDim}
                       bold={isActiveOption}
                     >
                       {optionIndex > 0 ? "  " : ""}

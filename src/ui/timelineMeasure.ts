@@ -41,7 +41,10 @@ export type TimelineTone =
   | "borderSubtle"
   | "borderActive"
   | "panel"
-  | "star";
+  | "star"
+  | "logoPrimary"
+  | "logoSecondary"
+  | "logoShadow";
 
 export interface TimelineRowSpan {
   text: string;
@@ -1584,9 +1587,14 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
       const metaLine = metaIndex >= 0 && metaIndex < metaLines.length
         ? sanitizeTerminalOutput(metaLines[metaIndex]!)
         : "";
+      let logoTone: TimelineTone = "logoPrimary";
+      if (effectiveLogoRows.length === 6) {
+        if (rowIndex === 2 || rowIndex === 3) logoTone = "logoSecondary";
+        else if (rowIndex === 4 || rowIndex === 5) logoTone = "logoShadow";
+      }
       // No bold on logo spans — bold on block/box-drawing chars causes spacing artifacts.
       const spans = [
-        createSpan(`${logoLine}${" ".repeat(logoPadding)}`, "accent"),
+        createSpan(`${logoLine}${" ".repeat(logoPadding)}`, logoTone),
         createSpan(" ".repeat(gapWidth)),
       ];
 
@@ -1602,9 +1610,14 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
     }
   } else {
     effectiveLogoRows.forEach((line, index) => {
+      let logoTone: TimelineTone = "logoPrimary";
+      if (effectiveLogoRows.length === 6) {
+        if (index === 2 || index === 3) logoTone = "logoSecondary";
+        else if (index === 4 || index === 5) logoTone = "logoShadow";
+      }
       rows.push(createRow(
         `${item.key}-logo-${index}`,
-        [createSpan(clampVisualText(line, safeWidth), "accent")],
+        [createSpan(clampVisualText(line, safeWidth), logoTone)],
         safeWidth,
       ));
     });
