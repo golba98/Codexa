@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   selectLogoVariant,
+  selectLogoVariantForViewport,
   getLogoWidth,
   LOGO_LARGE,
   LOGO_MEDIUM,
@@ -9,6 +10,9 @@ import {
   LOGO_LARGE_MIN_COLS,
   LOGO_MEDIUM_MIN_COLS,
   LOGO_COMPACT_MIN_COLS,
+  LOGO_LARGE_MIN_ROWS,
+  LOGO_MEDIUM_MIN_ROWS,
+  LOGO_COMPACT_MIN_ROWS,
 } from "./logoVariants.js";
 
 test("selectLogoVariant returns LOGO_LARGE at the large threshold", () => {
@@ -52,6 +56,54 @@ test("CODEXA_COMPACT_LOGO=1 forces compact logo at any width", () => {
   try {
     assert.equal(selectLogoVariant(200), LOGO_COMPACT);
     assert.equal(selectLogoVariant(LOGO_LARGE_MIN_COLS), LOGO_COMPACT);
+  } finally {
+    delete process.env["CODEXA_COMPACT_LOGO"];
+  }
+});
+
+// ─── selectLogoVariantForViewport (rows-aware degradation) ────────────────────
+
+test("selectLogoVariantForViewport returns LOGO_LARGE when cols and rows are ample", () => {
+  assert.equal(selectLogoVariantForViewport(130, 40), LOGO_LARGE);
+  assert.equal(selectLogoVariantForViewport(LOGO_LARGE_MIN_COLS, LOGO_LARGE_MIN_ROWS), LOGO_LARGE);
+});
+
+test("wide-but-short terminal degrades LOGO_LARGE to LOGO_MEDIUM instead of collapsing", () => {
+  // 120 cols easily fits LOGO_LARGE, but 18 rows < LOGO_LARGE_MIN_ROWS (24).
+  assert.equal(selectLogoVariantForViewport(120, 18), LOGO_MEDIUM);
+});
+
+test("wide-but-shorter terminal degrades to LOGO_COMPACT instead of collapsing", () => {
+  // 120 cols, 14 rows < LOGO_MEDIUM_MIN_ROWS (16) but ≥ LOGO_COMPACT_MIN_ROWS (12).
+  assert.equal(selectLogoVariantForViewport(120, 14), LOGO_COMPACT);
+});
+
+test("selectLogoVariantForViewport returns empty only when even compact cannot fit", () => {
+  assert.deepStrictEqual(selectLogoVariantForViewport(120, 10), []);
+  assert.deepStrictEqual(selectLogoVariantForViewport(LOGO_COMPACT_MIN_COLS - 1, 40), []);
+});
+
+test("selectLogoVariantForViewport respects medium row minimum at the medium col threshold", () => {
+  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS), LOGO_MEDIUM);
+  // Same width, one row too short → degrade to compact.
+  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS - 1), LOGO_COMPACT);
+});
+
+test("CODEXA_NO_ASCII_LOGO=1 suppresses logo in viewport selector at any size", () => {
+  process.env["CODEXA_NO_ASCII_LOGO"] = "1";
+  try {
+    assert.deepStrictEqual(selectLogoVariantForViewport(200, 60), []);
+  } finally {
+    delete process.env["CODEXA_NO_ASCII_LOGO"];
+  }
+});
+
+test("CODEXA_COMPACT_LOGO=1 forces compact logo in viewport selector when rows allow", () => {
+  process.env["CODEXA_COMPACT_LOGO"] = "1";
+  try {
+    assert.equal(selectLogoVariantForViewport(200, 60), LOGO_COMPACT);
+    // Too short for even the compact logo → empty.
+    assert.deepStrictEqual(selectLogoVariantForViewport(200, LOGO_COMPACT_MIN_ROWS - 1), []);
   } finally {
     delete process.env["CODEXA_COMPACT_LOGO"];
   }

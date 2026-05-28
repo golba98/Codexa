@@ -164,14 +164,31 @@ Dev launches lock the workspace to the directory Bun was invoked from. For the n
 bun run install:dev-bin
 ```
 
-This installs a `codexa-dev` shim into your npm global bin directory. The published `codexa` command is not modified — both coexist. Run from any workspace:
+This installs two shims into your npm global bin directory — `codexa-dev` and the
+short alias `cxd` — both pointing at the local repo (`scripts/run-local-dev.mjs`,
+channel `local-dev`). The published `codexa` command is not modified — they coexist.
+Run from any workspace:
 
 ```
 cd <your-workspace>
-codexa-dev
+codexa-dev        # or: cxd
 ```
 
-Uninstall by removing the shim from your npm global bin directory (`npm prefix -g`).
+Both run the local TypeScript source directly via Bun (there is no compiled
+`dist/`), so there is no stale build to worry about — the header/logo you see is
+the one in the repo. The brand line shows `Codexa vX.Y.Z-dev local` so you can
+tell the dev build apart from the published one. To confirm exactly which file is
+executing, run `CODEXA_DEBUG_LAUNCH=1 codexa-dev` (or `cxd`).
+
+Uninstall by removing the `codexa-dev` and `cxd` shims from your npm global bin
+directory (`npm prefix -g`).
+
+**Refresh the published global `codexa` from this checkout** (so the plain
+`codexa` command also serves the current header without publishing to npm):
+
+```
+npm install -g .
+```
 
 **Option B — Redirect the global `codexa` command to the repo:**
 

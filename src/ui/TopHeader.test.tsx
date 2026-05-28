@@ -397,6 +397,85 @@ test("LOGO_LARGE rows never exceed the minimum columns needed to render them", (
   }
 });
 
+// ─── Rows-aware header degradation tests ──────────────────────────────────────
+
+test("wide-but-short terminal keeps a logo header instead of collapsing to compact", () => {
+  // 120 cols easily fits LOGO_LARGE, but 18 rows is too few for it. The header
+  // must degrade to a smaller logo (medium mode) rather than the flat compact line.
+  const layout = getHeaderHeroLayout(createLayoutSnapshot(120, 18));
+  assert.notEqual(layout.mode, "compact");
+  assert.ok(layout.logoRows >= 1, "a logo should still render in a wide-but-short terminal");
+});
+
+test("full header is selected when both columns and rows are sufficient", () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(130, 40)).mode, "wide");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(120, 30)).mode, "medium");
+});
+
+test("compact mode only fires when the terminal is genuinely too small for any logo", () => {
+  // 120 cols, 10 rows → even the 1-row compact logo (needs 12 rows) cannot fit.
+  const layout = getHeaderHeroLayout(createLayoutSnapshot(120, 10));
+  assert.equal(layout.mode, "compact");
+});
+
+test("compact mode includes a recommended-size hint row and measurement matches", () => {
+  const layout = createLayoutSnapshot(120, 10);
+  const hero = getHeaderHeroLayout(layout);
+  assert.equal(hero.mode, "compact");
+  assert.equal(hero.compactHintRows, 1, "compact mode should reserve a hint row");
+  // measureTopHeaderRows must account for the hint row exactly.
+  assert.equal(measureTopHeaderRows(layout), hero.totalRows);
+});
+
+test("compact mode renders a deliberate header with accent and resize hint", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 120;
+  stdout.rows = 10;
+  let output = "";
+  stdout.on("data", (chunk) => { output += chunk.toString(); });
+
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <TopHeader
+        authState="authenticated"
+        workspaceLabel="C:\\Development\\1-JavaScript\\13-Custom CLI"
+        layout={createLayoutSnapshot(120, 10)}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+        headerConfig={HEADER_CONFIG_DEFAULTS}
+        updateAvailable={null}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+  await sleep(60);
+  instance.cleanup();
+  await sleep(20);
+
+  const text = stripAnsi(output);
+  assert.match(text, /✦/, "compact header should show the ✦ accent");
+  assert.match(text, /Resize to ≥100×24/, "compact header should show the recommended-size hint");
+});
+
+test("CODEXA_NO_ASCII_LOGO compact header omits the resize hint row", () => {
+  process.env["CODEXA_NO_ASCII_LOGO"] = "1";
+  try {
+    // With ASCII art disabled, compact is intentional at any size — no nag hint.
+    const hero = getHeaderHeroLayout(createLayoutSnapshot(120, 40));
+    assert.equal(hero.mode, "compact");
+    assert.equal(hero.compactHintRows, 0);
+  } finally {
+    delete process.env["CODEXA_NO_ASCII_LOGO"];
+  }
+});
+
 // ─── Update card tests ────────────────────────────────────────────────────────
 
 test("wide mode with update available renders update card in right column", async () => {
