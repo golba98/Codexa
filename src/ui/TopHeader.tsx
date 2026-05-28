@@ -1,6 +1,7 @@
 import React, { memo } from "react";
 import { Box, Text } from "ink";
-import { APP_VERSION, HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
+import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
+import { formatCodexaBrandLabel } from "../core/channel.js";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../core/auth/codexAuth.js";
@@ -25,9 +26,9 @@ const HEADER_PADDING_COLUMNS = 2;
 const SHELL_GUTTER_COLUMNS = 1;
 // Require 130+ cols for wide side-by-side so the UpdateAvailableCard has room.
 const WIDE_HEADER_MIN_COLUMNS = 130;
-// Require 100+ cols (= LOGO_LARGE_MIN_COLS) for medium side-by-side — the large
-// logo fits cleanly at this width.
-const MEDIUM_HEADER_MIN_COLUMNS = LOGO_LARGE_MIN_COLS; // 100
+// Require 72+ cols (= LOGO_MEDIUM_MIN_COLS) for medium side-by-side — both
+// LOGO_LARGE (≥100) and LOGO_MEDIUM (72–99) fit cleanly in side-by-side layout.
+const MEDIUM_HEADER_MIN_COLUMNS = LOGO_MEDIUM_MIN_COLS; // 72
 const MIN_SIDE_BY_SIDE_METADATA_WIDTH = 18;
 const STACKED_METADATA_GAP_ROWS = 1;
 // Minimum row count for multi-row logos (LOGO_LARGE / LOGO_MEDIUM).
@@ -76,6 +77,7 @@ function getMetadataRowCount(headerConfig: HeaderConfig): number {
     headerConfig.showAuthStatus,
     headerConfig.showWorkspace,
     headerConfig.showProvider,
+    headerConfig.showModel,
     headerConfig.showContext,
   ].filter(Boolean).length;
 }
@@ -250,12 +252,16 @@ export function TopHeader({
     : contentWidth;
   const workspaceValueWidth = Math.max(1, metadataWidth - getTextWidth("Workspace: "));
   const wsDisplay = shortenHeaderWorkspaceLabel(workspaceLabel, workspaceValueWidth);
+  const brandLabel = formatCodexaBrandLabel();
   const metadataLinesRaw = [
-    headerConfig.showBrand ? { key: "brand", text: `Codexa v${APP_VERSION}`, color: theme.TEXT, bold: true } : null,
+    headerConfig.showBrand ? { key: "brand", text: brandLabel, color: theme.TEXT, bold: true } : null,
     headerConfig.showAuthStatus ? { key: "auth", text: `Auth: ${authLabel}`, color: theme.TEXT, bold: false } : null,
     headerConfig.showWorkspace ? { key: "workspace", text: `Workspace: ${wsDisplay}`, color: theme.MUTED, bold: false } : null,
     headerConfig.showProvider && runtimeSummary?.providerLabel
       ? { key: "provider", text: `Provider: ${runtimeSummary.providerLabel}`, color: theme.TEXT, bold: false }
+      : null,
+    headerConfig.showModel && runtimeSummary?.modelLabel
+      ? { key: "model", text: `Model: ${runtimeSummary.modelLabel}`, color: theme.TEXT, bold: false }
       : null,
     headerConfig.showContext
       ? { key: "context", text: `Context: ${runtimeSummary?.contextLabel ?? "Unknown"}`, color: theme.MUTED, bold: false }
@@ -360,7 +366,7 @@ export function TopHeader({
   const compactParts: React.ReactNode[] = [];
   if (headerConfig.showBrand) {
     compactParts.push(
-      <Text key="brand" color={theme.TEXT} bold>{`Codexa v${APP_VERSION}`}</Text>,
+      <Text key="brand" color={theme.TEXT} bold>{brandLabel}</Text>,
     );
   }
   if (headerConfig.showAuthStatus) {

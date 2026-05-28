@@ -141,6 +141,21 @@ test("full mode renders wordmark at wide terminal", async () => {
   assert.doesNotMatch(output, /On request/i);
 });
 
+test("local-dev channel makes header version obvious", async () => {
+  const previous = process.env.CODEXA_CHANNEL;
+  process.env.CODEXA_CHANNEL = "local-dev";
+  try {
+    const output = await renderHeader(130, "authenticated", HEADER_CONFIG_WITH_AUTH);
+    assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-dev local`));
+  } finally {
+    if (previous === undefined) {
+      delete process.env.CODEXA_CHANNEL;
+    } else {
+      process.env.CODEXA_CHANNEL = previous;
+    }
+  }
+});
+
 test("wide header centers metadata beside the logo with a clear column gap", async () => {
   const output = await renderHeader(130, "authenticated", HEADER_CONFIG_WITH_AUTH);
   const rows = output.split("\n");
@@ -189,19 +204,19 @@ test("medium header keeps metadata beside the logo with compact truncation", asy
 });
 
 test("narrow header stacks metadata below the logo instead of overflowing", async () => {
-  // 80 cols → LOGO_MEDIUM (72–99 range) → mode = "narrow" (< MEDIUM threshold of 100)
-  const output = await renderHeader(80, "authenticated", HEADER_CONFIG_WITH_AUTH);
+  // 65 cols → LOGO_COMPACT (48–71 range) → mode = "narrow" (< MEDIUM threshold of 72)
+  const output = await renderHeader(65, "authenticated", HEADER_CONFIG_WITH_AUTH);
   const rows = output.split("\n");
   const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
-  // LOGO_MEDIUM rows contain "____" (first row) and "/ ___| " etc.
-  const firstLogoRow = rows.findIndex((row) => row.includes("____"));
+  // LOGO_COMPACT row contains "CODEXA"
+  const firstLogoRow = rows.findIndex((row) => row.includes("CODEXA") && !row.includes("Codexa v"));
   const visibleRows = rows.filter((row) => row.length > 0);
 
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(80, 40)).mode, "narrow");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(65, 40)).mode, "narrow");
   assert.ok(firstLogoRow >= 0, "logo should render");
   assert.ok(brandRow > firstLogoRow, "metadata should render below the logo when narrow");
-  assert.doesNotMatch(rows[brandRow] ?? "", /____/, "narrow metadata row should not contain logo glyphs");
-  assert.ok(visibleRows.every((row) => row.length <= 80), "narrow rows should not overflow the terminal width");
+  assert.doesNotMatch(rows[brandRow] ?? "", /✦/, "narrow metadata row should not contain logo glyphs");
+  assert.ok(visibleRows.every((row) => row.length <= 65), "narrow rows should not overflow the terminal width");
 });
 
 test("header wordmark lines never contain metadata text", () => {
@@ -322,8 +337,8 @@ test("header layout changes when width changes without duplicating the component
   const firstLogoRow = rows.findIndex((row) => row.includes("____"));
   const firstBrandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
 
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(80, 40), HEADER_CONFIG_WITH_AUTH).mode, "narrow");
-  assert.ok(firstBrandRow > firstLogoRow, "rerendered narrow header should stack metadata below the logo");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(80, 40), HEADER_CONFIG_WITH_AUTH).mode, "medium");
+  assert.ok(firstBrandRow >= firstLogoRow, "rerendered medium header should show metadata beside or aligned with logo");
   assert.ok(brandRows.length <= 2, "rerender should not duplicate unbounded header instances");
 });
 
@@ -354,9 +369,9 @@ test("renders configured workspace display labels", async () => {
 
 // ─── Layout threshold tests ───────────────────────────────────────────────────
 
-test("72 cols selects narrow mode (LOGO_MEDIUM threshold)", () => {
-  // LOGO_MEDIUM_MIN_COLS = 72; below MEDIUM_HEADER_MIN_COLUMNS = 100
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(72, 40)).mode, "narrow");
+test("72 cols selects medium mode (LOGO_MEDIUM at MEDIUM_HEADER_MIN_COLUMNS threshold)", () => {
+  // LOGO_MEDIUM_MIN_COLS = MEDIUM_HEADER_MIN_COLUMNS = 72 → side-by-side
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(72, 40)).mode, "medium");
 });
 
 test("60 cols selects compact mode (LOGO_COMPACT, single-line)", () => {
@@ -403,8 +418,8 @@ test("medium mode with update available renders update card in right column", as
 });
 
 test("narrow mode with update available renders compact one-liner instead of card", async () => {
-  // 80 cols → narrow → one-line notice, no card border
-  const output = await renderHeaderWithUpdate(80, MOCK_UPDATE);
+  // 65 cols → narrow (< MEDIUM threshold of 72) → one-line notice, no card border
+  const output = await renderHeaderWithUpdate(65, MOCK_UPDATE);
 
   assert.doesNotMatch(output, /[╭╰]/, "no card border in narrow mode");
   assert.match(output, /1\.0\.3/, "latest version should appear in one-liner");
@@ -431,4 +446,139 @@ test("measureTopHeaderRows increases when hasUpdate is true in medium mode", () 
   const withUpdate = measureTopHeaderRows(layout, HEADER_CONFIG_DEFAULTS, true);
 
   assert.ok(withUpdate > withoutUpdate, `totalRows with update (${withUpdate}) should exceed without (${withoutUpdate}) in medium mode`);
+});
+
+// ─── Responsive threshold parity tests ──────────────────────────────────────
+
+test("80 cols selects medium mode and renders side-by-side with LOGO_MEDIUM", async () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(80, 40)).mode, "medium");
+
+  const output = await renderHeader(80, "authenticated", HEADER_CONFIG_WITH_AUTH);
+  const rows = output.split("\n");
+  const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
+  // LOGO_MEDIUM first row contains "____"
+  const firstLogoRow = rows.findIndex((row) => row.includes("____"));
+
+  assert.ok(firstLogoRow >= 0, "LOGO_MEDIUM should render at 80 cols");
+  assert.ok(brandRow >= firstLogoRow && brandRow <= firstLogoRow + 3, "metadata should be beside the logo, not below it");
+});
+
+test("72 cols is the minimum for LOGO_MEDIUM side-by-side", () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(72, 40)).mode, "medium", "72 → medium");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(71, 40)).mode, "narrow", "71 → narrow");
+});
+
+test("71 cols selects narrow mode (LOGO_COMPACT below medium threshold)", () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(71, 40)).mode, "narrow");
+});
+
+test("model line renders when showModel is true and modelLabel is provided", async () => {
+  const runtimeWithModel = {
+    ...buildRuntimeSummary(TEST_RUNTIME),
+    modelLabel: "qwen3-27b",
+  };
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 130;
+  let output = "";
+  stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <TopHeader
+        authState="authenticated"
+        workspaceLabel="test-workspace"
+        layout={createLayoutSnapshot(130, 40)}
+        runtimeSummary={runtimeWithModel}
+        headerConfig={{ ...HEADER_CONFIG_DEFAULTS, showModel: true }}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  instance.cleanup();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(stripAnsi(output), /Model:\s*qwen3-27b/, "Model line should appear when showModel is true and modelLabel is set");
+});
+
+test("context line renders known value when contextLabel is provided", async () => {
+  const runtimeWithContext = {
+    ...buildRuntimeSummary(TEST_RUNTIME),
+    contextLabel: "0 / 128k",
+  };
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 130;
+  let output = "";
+  stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <TopHeader
+        authState="authenticated"
+        workspaceLabel="test-workspace"
+        layout={createLayoutSnapshot(130, 40)}
+        runtimeSummary={runtimeWithContext}
+        headerConfig={{ ...HEADER_CONFIG_DEFAULTS, showContext: true }}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  instance.cleanup();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(stripAnsi(output), /Context:\s*0 \/ 128k/, "Context line should show the known value");
+});
+
+test("context line shows Unknown when contextLabel is not provided", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 130;
+  let output = "";
+  stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <TopHeader
+        authState="authenticated"
+        workspaceLabel="test-workspace"
+        layout={createLayoutSnapshot(130, 40)}
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+        headerConfig={{ ...HEADER_CONFIG_DEFAULTS, showContext: true }}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  instance.cleanup();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const stripped = stripAnsi(output);
+  assert.match(stripped, /Context:\s*Unknown/, "Context should show Unknown, not a fake value");
+  assert.doesNotMatch(stripped, /Context:\s*0%/, "Context must not show fake 0% percentage");
+});
+
+test("update notice at 80 cols (medium mode) renders card in right column", async () => {
+  const output = await renderHeaderWithUpdate(80, MOCK_UPDATE);
+
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(80, 40)).mode, "medium");
+  assert.match(output, /[╭╰]/, "update card border should appear in medium mode at 80 cols");
+  assert.match(output, /1\.0\.3/, "latest version should appear in card");
 });
