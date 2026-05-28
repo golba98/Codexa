@@ -3,6 +3,7 @@ import { basename, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { resolveWorkspacePath } from "./workspaceGuard.js";
 import { normalizeWorkspaceRoot } from "./workspaceRoot.js";
+import { CODEXA_CHANNEL_ENV, LOCAL_DEV_CHANNEL, isLocalDevChannel } from "./channel.js";
 
 export type LaunchKind = "installed-bin" | "dev-run";
 
@@ -155,13 +156,12 @@ export function buildWorkspaceStatusMessage(launchContext: LaunchContext): strin
 
   if (launchContext.launchKind === "dev-run") {
     lines.push(
-      "This session was started from a repo/dev launch, so the locked workspace follows that launch directory.",
-      "Recommended Windows setup:",
-      `  cd ${launchContext.packageRoot}`,
-      "  npm link",
-      "  where codexa",
+      "This session was started from a local dev launch.",
+      "Recommended setup:",
+      "  npm run install:dev-bin",
+      "  which codexa-dev",
       "  cd <target-folder>",
-      "  codexa",
+      "  codexa-dev",
       "",
       "Quick recovery from here:",
       "  /workspace relaunch <path>",
@@ -182,13 +182,12 @@ export function buildDevLaunchNotice(launchContext: LaunchContext): string | nul
   }
 
   return [
-    "This session was started from a repo/dev launch, so the locked workspace follows that launch directory.",
-    "Normal Windows flow:",
-    `  cd ${launchContext.packageRoot}`,
-    "  npm link",
-    "  where codexa",
+    "This session was started from local-dev Codexa.",
+    "Normal flow:",
+    "  npm run install:dev-bin",
+    "  which codexa-dev",
     "  cd <target-folder>",
-    "  codexa",
+    "  codexa-dev",
     "",
     "Recovery from this session:",
     "  /workspace relaunch <path>",
@@ -219,6 +218,7 @@ function buildRelaunchEnv(
     [ENV_KEYS.launcherScript]: launchContext.launcherScriptPath ?? "",
     [ENV_KEYS.relaunchExecutable]: launchContext.relaunchExecutable,
     [ENV_KEYS.relaunchArgs]: JSON.stringify(launchContext.relaunchArgs),
+    [CODEXA_CHANNEL_ENV]: isLocalDevChannel(baseEnv) ? LOCAL_DEV_CHANNEL : baseEnv[CODEXA_CHANNEL_ENV],
   };
 }
 

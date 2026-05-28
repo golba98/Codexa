@@ -9,6 +9,7 @@ import {
   isNewerVersion,
   isValidSemver,
   normalizeVersion,
+  shouldRunStartupUpdateCheck,
   type NpmRegistryMetadata,
 } from "./updateCheck.js";
 import { isCacheValid, type UpdateCheckCache } from "../config/updateCheckCache.js";
@@ -151,6 +152,29 @@ test("checkForUpdates returns unknown immediately when enabled=false", async () 
 
   assert.equal(result.status, "unknown");
   assert.equal(called, false, "should not call npm when disabled");
+});
+
+test("startup update check is disabled for local-dev channel", () => {
+  assert.equal(shouldRunStartupUpdateCheck({ CODEXA_CHANNEL: "local-dev" }, true), false);
+  assert.equal(shouldRunStartupUpdateCheck({ CODEXA_CHANNEL: "published" }, true), true);
+  assert.equal(shouldRunStartupUpdateCheck({ CODEXA_CHANNEL: "local-dev" }, false), false);
+});
+
+test("explicit update checks still work for local-dev callers", async () => {
+  let calls = 0;
+  const result = await checkForUpdates(
+    { enabled: true },
+    {
+      currentVersion: "1.0.1",
+      fetchNpmMetadataFn: async () => {
+        calls += 1;
+        return metadata("1.0.2");
+      },
+    },
+  );
+
+  assert.equal(calls, 1);
+  assert.equal(result.status, "update-available");
 });
 
 test("semver comparison handles numeric and prerelease ordering", () => {

@@ -12,6 +12,7 @@ import {
   type UserPromptEvent,
 } from "../session/types.js";
 import { APP_VERSION } from "../config/settings.js";
+import { formatCodexaVersionLabel } from "../core/channel.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../core/auth/codexAuth.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
@@ -855,7 +856,7 @@ export function buildIntroRenderItem(params: {
     type: "intro",
     padded: true,
     intro: {
-      version: APP_VERSION,
+      version: formatCodexaVersionLabel(APP_VERSION),
       layoutMode: params.layout.mode,
       startupHeaderMode: params.startupHeaderMode,
       authLabel: formatAuthLabel(params.authState),

@@ -9,6 +9,8 @@
   "scripts": {
     "start": "bun run --silent src/index.tsx",
     "dev": "bun --watch --silent src/index.tsx",
+    "dev:run": "node scripts/run-local-dev.mjs",
+    "install:dev-bin": "node scripts/install-local-dev-bin.mjs",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "audit:codexa-gap": "node scripts/audit-codexa-capabilities.mjs",

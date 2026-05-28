@@ -87,12 +87,12 @@ test("chooses startup header mode from measured row budget", () => {
 test("measures the header rows for full and compact layouts", () => {
   // 120 cols → LOGO_LARGE (6-row), medium mode, topMargin=1 → total 7
   assert.equal(measureTopHeaderRows(createLayoutSnapshot(120, 30)), 7);
-  // 80 cols → LOGO_MEDIUM (4-row), narrow/stacked mode (< 100) → logo+gap+metadata = 4+1+3 = 8
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 8);
-  // 70 cols → LOGO_COMPACT (1-row, 48–71), narrow mode → logo+gap+metadata = 1+1+3 = 5
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(70, 24)), 5);
-  // 50 cols → LOGO_COMPACT (1-row, 48–71), narrow mode → logo+gap+metadata = 1+1+3 = 5
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(50, 24)), 5);
+  // 80 cols → LOGO_MEDIUM (4-row), medium/side-by-side mode (≥72) → max(logo=4, meta=4) = 4
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 4);
+  // 70 cols → LOGO_COMPACT (1-row, 48–71), narrow mode (< 72) → logo+gap+metadata = 1+1+4 = 6
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(70, 24)), 6);
+  // 50 cols → LOGO_COMPACT (1-row, 48–71), narrow mode (< 72) → logo+gap+metadata = 1+1+4 = 6
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(50, 24)), 6);
 });
 
 test("header hero switches across narrow, medium, and wide breakpoints", () => {
