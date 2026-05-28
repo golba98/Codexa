@@ -87,8 +87,8 @@ test("chooses startup header mode from measured row budget", () => {
 test("measures the header rows for full and compact layouts", () => {
   // 120 cols → LOGO_LARGE (6-row), medium mode, topMargin=1 → total 7
   assert.equal(measureTopHeaderRows(createLayoutSnapshot(120, 30)), 7);
-  // 80 cols → LOGO_MEDIUM (4-row), medium/side-by-side mode (≥72) → max(logo=4, meta=4) = 4
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 4);
+  // 80 cols → LOGO_LARGE (6-row), medium/side-by-side mode (≥72) → max(logo=6, meta=4) = 6
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 6);
   // 70 cols → LOGO_COMPACT (1-row, 48–71), narrow mode (< 72) → logo+gap+metadata = 1+1+4 = 6
   assert.equal(measureTopHeaderRows(createLayoutSnapshot(70, 24)), 6);
   // 50 cols → LOGO_COMPACT (1-row, 48–71), narrow mode (< 72) → logo+gap+metadata = 1+1+4 = 6

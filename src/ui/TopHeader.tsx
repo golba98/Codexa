@@ -298,14 +298,14 @@ export function TopHeader({
     </Box>
   );
 
-  // Logo column: no `bold` — bold on Unicode block/box-drawing characters causes
-  // per-glyph spacing artifacts in common terminal fonts (Ptyxis, GNOME Terminal).
-  // wrap="truncate" keeps each row on exactly one terminal line, preventing
-  // Ink's flex layout from reflowing the fixed-width art.
+  // Canonical CODEXA wordmark — uses per-line LOGO palette defined in each theme.
+  // No `bold`: bold on Unicode block/box-drawing characters causes per-glyph
+  // spacing artifacts in common terminal fonts (Ptyxis, GNOME Terminal).
+  // wrap="truncate" keeps each row on exactly one terminal line.
   const logoColumn = (
     <Box flexDirection="column" flexShrink={0}>
       {selectedLogo.map((line, i) => (
-        <Text key={i} color={theme.ACCENT} wrap="truncate">{line}</Text>
+        <Text key={i} color={theme.LOGO[i % theme.LOGO.length] ?? theme.ACCENT} wrap="truncate">{line}</Text>
       ))}
     </Box>
   );
