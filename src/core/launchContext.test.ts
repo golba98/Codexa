@@ -151,7 +151,8 @@ test("describes dev launch mode with install guidance", () => {
   }));
 
   assert.match(message, /Launch mode: dev\/repo launch/i);
-  assert.match(message, /npm link/i);
-  assert.match(message, /where codexa/i);
+  assert.match(message, /npm run install:dev-bin/i);
+  assert.match(message, /codexa-dev/i);
+  assert.doesNotMatch(message, /npm link/i);
   assert.match(message, /\/workspace relaunch <path>/i);
 });
