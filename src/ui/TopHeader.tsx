@@ -14,8 +14,9 @@ import {
   LOGO_LARGE,
   LOGO_COMPACT_MIN_COLS,
   LOGO_LARGE_MIN_COLS,
+  LOGO_LARGE_MIN_ROWS,
   LOGO_MEDIUM_MIN_COLS,
-  selectLogoVariant,
+  selectLogoVariantForViewport,
   getLogoWidth,
 } from "./logoVariants.js";
 
@@ -31,12 +32,11 @@ const WIDE_HEADER_MIN_COLUMNS = 130;
 const MEDIUM_HEADER_MIN_COLUMNS = LOGO_MEDIUM_MIN_COLS; // 72
 const MIN_SIDE_BY_SIDE_METADATA_WIDTH = 18;
 const STACKED_METADATA_GAP_ROWS = 1;
-// Minimum row count for multi-row logos (LOGO_LARGE / LOGO_MEDIUM).
-const MIN_LOGO_TERMINAL_ROWS = 24;
-// Minimum row count for the compact single-row logo.
-const MIN_COMPACT_LOGO_TERMINAL_ROWS = 14;
 // Gap row between the UpdateAvailableCard and the metadata lines.
 const UPDATE_CARD_GAP_ROWS = 1;
+// Recommended terminal size shown in the compact-mode hint when the viewport is
+// too small to render any logo art.
+const RECOMMENDED_FULL_HEADER_HINT = `Resize to ≥${LOGO_LARGE_MIN_COLS}×${LOGO_LARGE_MIN_ROWS} for the full Codexa header`;
 
 export type HeaderHeroMode = "wide" | "medium" | "narrow" | "compact";
 
@@ -48,6 +48,9 @@ export interface HeaderHeroLayout {
   metadataGapRows: number;
   logoRows: number;
   metadataRows: number;
+  // Extra rows used by the compact-mode recommended-size hint (0 in non-compact
+  // modes). Threaded through so measureTopHeaderRows matches what renders.
+  compactHintRows: number;
   totalRows: number;
 }
 
@@ -109,18 +112,17 @@ export function getHeaderHeroLayout(
   const metadataRows = getMetadataRowCount(headerConfig);
   const contentWidth = getHeaderContentWidth(layout.cols);
 
-  const logo = selectLogoVariant(layout.cols);
+  // Pick the largest logo that fits both the columns AND the rows. This degrades
+  // large → medium → compact on a short terminal instead of collapsing straight
+  // to the flat text-only header.
+  const logo = selectLogoVariantForViewport(layout.cols, layout.rows);
   const logoWidth = logo.length > 0 ? getLogoWidth(logo) : 0;
-  const isMultiRowLogo = logo.length > 1;
-
-  // Show logos only when the terminal has enough rows: multi-row logos need 24,
-  // the compact single-row logo needs 14. No rows guard for text-only mode.
-  const canRenderLogo = logo.length > 0
-    && (isMultiRowLogo
-      ? layout.rows >= MIN_LOGO_TERMINAL_ROWS
-      : layout.rows >= MIN_COMPACT_LOGO_TERMINAL_ROWS);
+  const canRenderLogo = logo.length > 0;
 
   if (!canRenderLogo) {
+    // Compact / text-only header. Show a recommended-size hint when the logo was
+    // dropped purely for size (not because the user disabled ASCII art).
+    const sizeHintRows = process.env["CODEXA_NO_ASCII_LOGO"] === "1" ? 0 : 1;
     return {
       mode: "compact",
       topMarginRows,
@@ -129,7 +131,8 @@ export function getHeaderHeroLayout(
       metadataGapRows: 0,
       logoRows: 1,
       metadataRows: 0,
-      totalRows: topMarginRows + 1 + bottomMarginRows,
+      compactHintRows: sizeHintRows,
+      totalRows: topMarginRows + 1 + sizeHintRows + bottomMarginRows,
     };
   }
 
@@ -165,6 +168,7 @@ export function getHeaderHeroLayout(
     metadataGapRows,
     logoRows: logoRowCount,
     metadataRows,
+    compactHintRows: 0,
     totalRows: topMarginRows + contentRows + bottomMarginRows,
   };
 }
@@ -242,7 +246,7 @@ export function TopHeader({
     : authLabelRaw;
 
   const heroLayout = getHeaderHeroLayout(layout, headerConfig, !!updateAvailable);
-  const selectedLogo = selectLogoVariant(layout.cols);
+  const selectedLogo = selectLogoVariantForViewport(layout.cols, layout.rows);
   const selectedLogoWidth = selectedLogo.length > 0 ? getLogoWidth(selectedLogo) : 0;
 
   const contentWidth = getHeaderContentWidth(layout.cols);
@@ -363,7 +367,11 @@ export function TopHeader({
   const compactMetadataWidth = contentWidth;
   const compactWorkspaceValueWidth = Math.max(1, compactMetadataWidth - getTextWidth("Workspace: "));
   const compactWorkspaceDisplay = shortenHeaderWorkspaceLabel(workspaceLabel, compactWorkspaceValueWidth);
-  const compactParts: React.ReactNode[] = [];
+  // A leading ✦ accent makes the single-line header read as a deliberate
+  // compact Codexa header rather than a broken fallback.
+  const compactParts: React.ReactNode[] = [
+    <Text key="accent" color={theme.ACCENT} bold>{"✦ "}</Text>,
+  ];
   if (headerConfig.showBrand) {
     compactParts.push(
       <Text key="brand" color={theme.TEXT} bold>{brandLabel}</Text>,
@@ -394,6 +402,9 @@ export function TopHeader({
       <Box flexDirection="row" width="100%">
         {compactParts}
       </Box>
+      {heroLayout.compactHintRows > 0 && (
+        <Text color={theme.DIM} wrap="truncate">{clampMetadataText(RECOMMENDED_FULL_HEADER_HINT, compactMetadataWidth)}</Text>
+      )}
       {heroLayout.bottomMarginRows > 0 && (
         <Box height={heroLayout.bottomMarginRows} />
       )}

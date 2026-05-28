@@ -10,6 +10,10 @@ const currentFile = fileURLToPath(import.meta.url);
 const repoRoot = dirname(dirname(currentFile));
 const launcherPath = join(repoRoot, "scripts", "run-local-dev.mjs");
 
+// Both shim names launch the same local-repo dev launcher. `cxd` is the short
+// alias for `codexa-dev`.
+export const SHIM_NAMES = ["codexa-dev", "cxd"];
+
 export function resolveInstallBinDir(env = process.env) {
   const override = env.CODEXA_DEV_BIN_DIR?.trim();
   if (override) return override;
@@ -31,24 +35,31 @@ export function resolveInstallBinDir(env = process.env) {
 
 export function createCodexaDevShim(options = {}) {
   const binDir = options.binDir ?? resolveInstallBinDir(options.env ?? process.env);
-  const shimPath = join(binDir, process.platform === "win32" ? "codexa-dev.cmd" : "codexa-dev");
   const quotedLauncher = JSON.stringify(launcherPath);
   const contents = process.platform === "win32"
     ? `@echo off\r\nnode ${quotedLauncher} %*\r\n`
     : `#!/usr/bin/env sh\nexec node ${quotedLauncher} "$@"\n`;
 
   mkdirSync(binDir, { recursive: true });
-  writeFileSync(shimPath, contents, "utf8");
-  if (process.platform !== "win32") {
-    chmodSync(shimPath, 0o755);
-  }
 
-  return { binDir, shimPath, launcherPath };
+  const shimPaths = SHIM_NAMES.map((name) => {
+    const shimPath = join(binDir, process.platform === "win32" ? `${name}.cmd` : name);
+    writeFileSync(shimPath, contents, "utf8");
+    if (process.platform !== "win32") {
+      chmodSync(shimPath, 0o755);
+    }
+    return shimPath;
+  });
+
+  // shimPath kept for backward compatibility (the primary codexa-dev shim).
+  return { binDir, shimPath: shimPaths[0], shimPaths, launcherPath };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const result = createCodexaDevShim();
-  console.log(`Installed codexa-dev -> ${result.launcherPath}`);
-  console.log(`Shim: ${result.shimPath}`);
+  console.log(`Installed ${SHIM_NAMES.join(", ")} -> ${result.launcherPath}`);
+  for (const shimPath of result.shimPaths) {
+    console.log(`Shim: ${shimPath}`);
+  }
   console.log("The published codexa command was not modified.");
 }
