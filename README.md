@@ -2,21 +2,184 @@
 
 A terminal UI (TUI) wrapper around the `codex` CLI. Built with TypeScript, Bun, and Ink (React for terminal rendering). Codexa gives `codex` a richer interactive shell with scrollable conversation history, workspace locking, layered TOML config, themes, and in-app slash commands.
 
-## Prerequisites
+## Quick Start
 
-- **Bun** — required to run locally from source
-- **codex CLI** — the underlying agent that Codexa wraps. Must be available on `PATH` or pointed to via `CODEX_EXECUTABLE`
+Fastest path for normal users:
 
-## Installation
+1. **Install Codex CLI** — see [Installing OpenAI Codex CLI](#installing-openai-codex-cli)
+2. **Authenticate** — run `codex` once and sign in with ChatGPT when prompted
+3. **Install Codexa** — `npm install -g @golba98/codexa`
+4. **Run Codexa** — `cd <your-workspace> && codexa`
 
-**Local source install:**
+Verify both tools are ready:
+
+```
+codex --version
+codexa --version
+```
+
+## Installing OpenAI Codex CLI
+
+**Standalone (macOS/Linux):**
+
+```bash
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```
+
+**Standalone (Windows):**
 
 ```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
+```
+
+**npm (all platforms):**
+
+```
+npm install -g @openai/codex
+```
+
+**Homebrew (macOS):**
+
+```
+brew install --cask codex
+```
+
+After installing, run `codex` once and sign in with ChatGPT when prompted, or configure an API key if using API key auth.
+
+> Codexa does not manage Codex authentication. The Codex provider route requires an already-authenticated Codex CLI.
+
+## Updating OpenAI Codex CLI
+
+**Preferred (self-update, when supported):**
+
+```
+codex update
+```
+
+**Fallbacks by install method:**
+
+| Install method | Update command |
+|----------------|----------------|
+| Standalone macOS/Linux | Rerun the `curl` installer |
+| Standalone Windows | Rerun the PowerShell installer |
+| npm | `npm install -g @openai/codex@latest` |
+| Homebrew | `brew upgrade --cask codex` |
+
+If `codex --version` still shows the old version after updating, check which binary is active:
+
+```powershell
+# Windows
+Get-Command codex
+
+# Linux/macOS
+which codex
+```
+
+## Installing Published Codexa
+
+```
+npm install -g @golba98/codexa
+```
+
+Verify:
+
+```
+codexa --version
+```
+
+Update:
+
+```
+npm install -g @golba98/codexa@latest
+```
+
+If `codexa --version` still shows the old version, check which binary is active:
+
+```powershell
+# Windows
+Get-Command codexa
+
+# Linux/macOS
+which codexa
+```
+
+## Codex Provider Requirements
+
+Codexa can route to multiple providers including Codex, Anthropic, Google Gemini, and Local (LM Studio). The **Codex route** requires the OpenAI Codex CLI to be installed and authenticated separately. See [Installing OpenAI Codex CLI](#installing-openai-codex-cli).
+
+Codexa and Codex CLI are independent tools with separate version numbers. Updating one does not update the other.
+
+| Tool | Purpose | Version check | Update |
+|------|---------|---------------|--------|
+| Codex CLI | OpenAI coding agent | `codex --version` | `codex update` or reinstall |
+| Codexa | TUI wrapper / workspace experience | `codexa --version` | `npm install -g @golba98/codexa@latest` |
+
+## Published vs Local Codexa
+
+**Published Codexa** (`npm install -g @golba98/codexa`):
+- Installed globally; available as `codexa` anywhere
+- Stable release; updates on demand via npm
+- Use this for daily work
+
+**Local Codexa** (`bun run dev` from the repo):
+- Runs directly from the working tree
+- Reflects uncommitted changes immediately (with `--watch`)
+- Use this for testing new features or contributing
+
+> **Gotcha:** When testing local changes, confirm you are running the local build and not the global one. Use `Get-Command codexa` (Windows) or `which codexa` (Linux/macOS) to check. If it points to the global install, use `bun run dev` from the repo, or install `codexa-dev` as described in [Running Local Codexa](#running-local-codexa-development).
+
+## Running Local Codexa (Development)
+
+**Requirement:** [Bun](https://bun.sh) installed.
+
+```powershell
+# Windows PowerShell
+cd C:\Development\1-JavaScript\13-Custom-CLI-Normal
 bun install
+
+bun run typecheck    # Type-check without emit
+bun test             # Run all tests
+bun run dev          # Start with file watching (development)
+bun run start        # Single run without watching
+bun run build        # Generate build info + typecheck
+```
+
+```bash
+# Linux/macOS
+cd /path/to/13-Custom-CLI-Normal
+bun install
+
+bun run typecheck
+bun test
+bun run dev
+bun run start
+bun run build
+```
+
+Dev launches lock the workspace to the directory Bun was invoked from. For the normal end-user flow, install `codexa-dev` globally or use `npm link`, then run from the intended workspace.
+
+**Option A — Install a separate `codexa-dev` command (recommended for contributors):**
+
+```
+bun run install:dev-bin
+```
+
+This installs a `codexa-dev` shim into your npm global bin directory. The published `codexa` command is not modified — both coexist. Run from any workspace:
+
+```
+cd <your-workspace>
+codexa-dev
+```
+
+Uninstall by removing the shim from your npm global bin directory (`npm prefix -g`).
+
+**Option B — Redirect the global `codexa` command to the repo:**
+
+```
 npm link
 ```
 
-Then run `codexa` from the workspace directory you want to use.
+This replaces the global `codexa` with a symlink to the repo. Undo with `npm unlink -g @golba98/codexa`.
 
 ## Usage
 
@@ -290,17 +453,6 @@ UI-only preferences are stored in `~/.codexa-settings.json` (separate from runti
 | Busy loader | `/setting busy-loader <bool>` | `true` · `false` |
 | Mouse mode | `/mouse` | wheel scroll · native selection |
 
-## Development
-
-```powershell
-bun install          # Install dependencies
-bun run dev          # Start with file watching
-bun run start        # Single run without watching
-bun run typecheck    # TypeScript type-check (no emit)
-```
-
-Dev launches lock the workspace to the directory Bun was invoked from. For the normal end-user flow, use `npm link` and run `codexa` from the intended workspace instead.
-
 ## Testing
 
 ```powershell
@@ -309,6 +461,17 @@ bun test src/ui/layout.test.ts        # Run a specific file or pattern
 ```
 
 Tests are colocated with source files (`*.test.ts` / `*.test.tsx`).
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `codex: command not found` | Install Codex CLI (see [Installing OpenAI Codex CLI](#installing-openai-codex-cli)) and restart the terminal |
+| `codexa: command not found` | Run `npm install -g @golba98/codexa`, or use `bun run dev` from the repo |
+| Codexa still shows an old version after update | Run `Get-Command codexa` / `which codexa` to check which binary is active; the wrong binary may be earlier on PATH |
+| Codex updated but Codexa did not | They are independent tools — update Codexa separately: `npm install -g @golba98/codexa@latest` |
+| Codexa updated but Codex did not | They are independent tools — update Codex separately: `codex update` |
+| Local changes are not reflected when running `codexa` | You may be running the global binary. Use `bun run dev` from the repo, or run `bun run install:dev-bin` to install `codexa-dev` that always points at the repo. |
 
 ## Repo Hygiene
 
