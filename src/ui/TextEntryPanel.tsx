@@ -97,18 +97,18 @@ export function TextEntryPanel({
     <Box flexDirection="column" width="100%" marginTop={1}>
       <Box
         borderStyle="round"
-        borderColor={theme.BORDER_SUBTLE}
+        borderColor={theme.border}
         paddingX={2}
         paddingY={1}
         width="100%"
       >
-        <Text color={theme.ACCENT} bold>{title}  </Text>
-        <Text color={theme.MUTED}>{subtitle}</Text>
+        <Text color={theme.accent} bold>{title}  </Text>
+        <Text color={theme.textMuted}>{subtitle}</Text>
       </Box>
 
       <Box
         borderStyle="round"
-        borderColor={theme.BORDER_ACTIVE}
+        borderColor={theme.borderFocused}
         paddingX={2}
         paddingY={1}
         marginTop={1}
@@ -116,18 +116,18 @@ export function TextEntryPanel({
         flexDirection="column"
       >
         <Box>
-          <Text color={theme.TEXT}>{inputLabel}: </Text>
-          <Text color={display.isPlaceholder ? theme.DIM : theme.TEXT}>{display.before}</Text>
+          <Text color={theme.text}>{inputLabel}: </Text>
+          <Text color={display.isPlaceholder ? theme.textDim : theme.text}>{display.before}</Text>
           <Text
-            backgroundColor={theme.TEXT}
-            color={theme.PANEL}
+            backgroundColor={theme.text}
+            color={theme.surface}
           >
             {display.current}
           </Text>
-          <Text color={display.isPlaceholder ? theme.DIM : theme.TEXT}>{display.after}</Text>
+          <Text color={display.isPlaceholder ? theme.textDim : theme.text}>{display.after}</Text>
         </Box>
         <Box marginTop={1}>
-          <Text color={theme.DIM}>{footerHint}</Text>
+          <Text color={theme.textDim}>{footerHint}</Text>
         </Box>
       </Box>
     </Box>

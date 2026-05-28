@@ -13,8 +13,8 @@ interface PanelProps {
 
 export function Panel({ cols, title, rightTitle, borderColor, titleColor, children }: PanelProps) {
   const theme = useTheme();
-  const cBorder = borderColor || theme.BORDER_ACTIVE;
-  const cTitle = titleColor || theme.TEXT;
+  const cBorder = borderColor || theme.borderFocused;
+  const cTitle = titleColor || theme.text;
 
   const leftLabel = ` ${title} `;
   const rightLabel = rightTitle ? ` ${rightTitle} ` : "";
@@ -32,7 +32,7 @@ export function Panel({ cols, title, rightTitle, borderColor, titleColor, childr
         {"╭─"}
         <Text color={cTitle}>{leftLabel}</Text>
         {"─".repeat(dashCount)}
-        {rightTitle && <Text color={theme.DIM}>{rightLabel}</Text>}
+        {rightTitle && <Text color={theme.textDim}>{rightLabel}</Text>}
         {"╮"}
       </Text>
       <Box

@@ -16,7 +16,7 @@ export const DEFAULT_MODEL = "gpt-5.4";
 export const DEFAULT_MODE = "full-auto";
 export const DEFAULT_REASONING_LEVEL = "high";
 export const DEFAULT_LAYOUT_STYLE = "gemini-shell";
-export const DEFAULT_THEME = "mono";
+export const DEFAULT_THEME = "dark";
 export const DEFAULT_WORKSPACE_DISPLAY_MODE = "dir";
 export const DEFAULT_TERMINAL_TITLE_MODE = "dir";
 export const DEFAULT_SHOW_BUSY_LOADER = true;
@@ -264,21 +264,14 @@ export function formatReasoningLabel(reasoning: string): string {
 }
 
 export const AVAILABLE_THEMES = [
+  { id: "dark", label: "Codexa Dark" },
   { id: "purple", label: "Midnight Purple" },
   { id: "mono", label: "Black & White" },
-  { id: "dark", label: "Modern Dark" },
   { id: "black", label: "Codex the Black" },
-  { id: "emerald", label: "Emerald Night" },
-  { id: "solar", label: "Solar Flare" },
-  { id: "cyber", label: "Cyberpunk Neon" },
-  { id: "ocean", label: "Deep Oceanic" },
   { id: "nordic", label: "Nordic Frost" },
-  { id: "green", label: "Terminal Green" },
-  { id: "amber", label: "Terminal Amber" },
-  { id: "vaporwave", label: "Vaporwave Dream" },
   { id: "dracula", label: "Dracula Night" },
   { id: "gruvbox", label: "Gruvbox Hard" },
-  { id: "synthwave", label: "Synthwave '84" },
+  { id: "ocean", label: "Deep Oceanic" },
   { id: "custom", label: "Customize..." },
 ] as const;
 

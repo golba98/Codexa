@@ -31,7 +31,7 @@ test("keeps UI and auth settings separate from runtime persistence", () => {
       terminalTitleMode: "name" as const,
       showBusyLoader: false,
       terminalMouseMode: "selection" as const,
-      customTheme: { TEXT: "#fff" },
+      customTheme: { text: "#fff" },
     },
     auth: {
       preference: "runner-managed" as const,

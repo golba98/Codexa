@@ -150,14 +150,14 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
       const inCodexaAvailable = selectedProvider.routeMode === "in-codexa";
       const isConfigured = inCodexaAvailable && !selectedProvider.routeUnavailableReason;
       const inCodexaStatusText = !inCodexaAvailable ? "Unavailable" : isConfigured ? "Available" : "Needs configuration";
-      const inCodexaStatusColor = !inCodexaAvailable ? theme.ERROR : isConfigured ? theme.SUCCESS : theme.WARNING;
+      const inCodexaStatusColor = !inCodexaAvailable ? theme.error : isConfigured ? theme.success : theme.warning;
 
       return (
         <Box flexDirection="column">
           <Box marginBottom={1} flexDirection="column" paddingX={2}>
-            <Text color={theme.DIM}>Status: <Text color={theme.TEXT}>{selectedProvider.routeUnavailableReason ?? "Ready"}</Text></Text>
-            <Text color={theme.DIM}>Backend: <Text color={theme.TEXT}>{selectedProvider.backendType}</Text></Text>
-            <Text color={theme.DIM}>Use in Codexa: <Text color={inCodexaStatusColor}>{inCodexaStatusText}</Text></Text>
+            <Text color={theme.textDim}>Status: <Text color={theme.text}>{selectedProvider.routeUnavailableReason ?? "Ready"}</Text></Text>
+            <Text color={theme.textDim}>Backend: <Text color={theme.text}>{selectedProvider.backendType}</Text></Text>
+            <Text color={theme.textDim}>Use in Codexa: <Text color={inCodexaStatusColor}>{inCodexaStatusText}</Text></Text>
           </Box>
           {actions.map((action, index) => (
             <ActionRow
@@ -186,21 +186,21 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
     <Box flexDirection="column" width={panelWidth}>
       <Box
         borderStyle="round"
-        borderColor={theme.PROMPT}
+        borderColor={theme.prompt}
         paddingX={1}
         paddingY={0}
         width={panelWidth}
         flexDirection="column"
       >
         <Box width="100%" overflow="hidden">
-          <Text color={theme.ACCENT} bold>
+          <Text color={theme.accent} bold>
             {clampVisualText(`${title}   ${helpText}`, innerWidth)}
           </Text>
         </Box>
 
         {mode === "providers" && (
           <Box width="100%" overflow="hidden">
-            <Text color={theme.DIM}>
+            <Text color={theme.textDim}>
               {"  "}
               {clampVisualText("Provider", providerNameWidth)}
               {" "}
@@ -251,10 +251,10 @@ function ProviderRow({
 }) {
   const theme = useTheme();
   const statusColor = provider.isActiveRoute
-    ? theme.SUCCESS
+    ? theme.success
     : provider.enabled && !provider.routeUnavailableReason
-      ? theme.SUCCESS
-      : theme.WARNING;
+      ? theme.success
+      : theme.warning;
   const marker = isHighlighted ? ">" : " ";
   const defaultMark = provider.isActiveRoute ? "@" : provider.isDefault ? "*" : " ";
   const statusText = provider.isActiveRoute ? "Active" : provider.statusLabel;
@@ -262,28 +262,28 @@ function ProviderRow({
   return (
     <Box width="100%" overflow="hidden">
       <Box width={2} flexShrink={0}>
-        <Text color={isHighlighted ? theme.ACCENT : theme.DIM}>{marker}{defaultMark}</Text>
+        <Text color={isHighlighted ? theme.accent : theme.textDim}>{marker}{defaultMark}</Text>
       </Box>
       <Box width={widths.providerNameWidth} flexShrink={0} overflow="hidden">
-        <Text color={isHighlighted ? theme.TEXT : theme.MUTED} bold={isHighlighted}>
+        <Text color={isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted}>
           {clampVisualText(provider.displayName, widths.providerNameWidth)}
         </Text>
       </Box>
       <Text> </Text>
       <Box width={widths.modelWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.MUTED}>{clampVisualText(provider.currentModel, widths.modelWidth)}</Text>
+        <Text color={theme.textMuted}>{clampVisualText(provider.currentModel, widths.modelWidth)}</Text>
       </Box>
       <Text> </Text>
       <Box width={widths.contextWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.MUTED}>{clampVisualText(provider.contextLengthLabel ?? "Unknown", widths.contextWidth)}</Text>
+        <Text color={theme.textMuted}>{clampVisualText(provider.contextLengthLabel ?? "Unknown", widths.contextWidth)}</Text>
       </Box>
       <Text> </Text>
       <Box width={widths.toolsWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.MUTED}>{clampVisualText(capabilityFlag(provider.capabilityProfile?.supportsToolCalls), widths.toolsWidth)}</Text>
+        <Text color={theme.textMuted}>{clampVisualText(capabilityFlag(provider.capabilityProfile?.supportsToolCalls), widths.toolsWidth)}</Text>
       </Box>
       <Text> </Text>
       <Box width={widths.streamWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.MUTED}>{clampVisualText(capabilityFlag(provider.capabilityProfile?.supportsStreaming), widths.streamWidth)}</Text>
+        <Text color={theme.textMuted}>{clampVisualText(capabilityFlag(provider.capabilityProfile?.supportsStreaming), widths.streamWidth)}</Text>
       </Box>
       <Text> </Text>
       <Box width={widths.statusWidth} flexShrink={0} overflow="hidden">
@@ -309,10 +309,10 @@ function ActionRow({
   return (
     <Box width="100%" overflow="hidden">
       <Box width={2} flexShrink={0}>
-        <Text color={isHighlighted ? theme.ACCENT : theme.DIM}>{isHighlighted ? ">" : " "}</Text>
+        <Text color={isHighlighted ? theme.accent : theme.textDim}>{isHighlighted ? ">" : " "}</Text>
       </Box>
       <Box width={Math.max(10, width - 2)} flexShrink={0} overflow="hidden">
-        <Text color={disabledReason ? theme.DIM : isHighlighted ? theme.TEXT : theme.MUTED} bold={isHighlighted && !disabledReason}>
+        <Text color={disabledReason ? theme.textDim : isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted && !disabledReason}>
           {clampVisualText(text, Math.max(10, width - 2))}
         </Text>
       </Box>

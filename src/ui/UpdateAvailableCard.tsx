@@ -27,15 +27,15 @@ export function UpdateAvailableCard({ latestVersion, currentVersion, width }: Up
   return (
     <Box
       borderStyle="round"
-      borderColor={theme.ACCENT}
+      borderColor={theme.accent}
       flexDirection="column"
       width={width}
       flexShrink={0}
     >
-      <Text color={theme.TEXT} bold>{clamp("Update available")}</Text>
-      <Text color={theme.MUTED}>{clamp(`Codexa ${latestVersion} is available`)}</Text>
-      <Text color={theme.MUTED}>{clamp(`You are using ${currentVersion}`)}</Text>
-      <Text color={theme.DIM}>{clamp(command)}</Text>
+      <Text color={theme.text} bold>{clamp("Update available")}</Text>
+      <Text color={theme.textMuted}>{clamp(`Codexa ${latestVersion} is available`)}</Text>
+      <Text color={theme.textMuted}>{clamp(`You are using ${currentVersion}`)}</Text>
+      <Text color={theme.textDim}>{clamp(command)}</Text>
     </Box>
   );
 }

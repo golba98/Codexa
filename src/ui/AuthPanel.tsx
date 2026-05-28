@@ -49,10 +49,10 @@ export function AuthPanel({
   const authStateLabel = getAuthStateLabel(authStatus.state);
   const authStateColor =
     authStatus.state === "authenticated"
-      ? theme.SUCCESS
+      ? theme.success
       : authStatus.state === "unauthenticated"
-        ? theme.ERROR
-        : theme.WARNING;
+        ? theme.error
+        : theme.warning;
   const checkedAtLabel = authStatus.checkedAt > 0
     ? new Date(authStatus.checkedAt).toLocaleTimeString()
     : "not checked yet";
@@ -60,52 +60,52 @@ export function AuthPanel({
   return (
     <Box
       borderStyle="round"
-      borderColor={theme.BORDER_ACTIVE}
+      borderColor={theme.borderFocused}
       flexDirection="column"
       paddingX={2}
       paddingY={1}
       marginTop={1}
       width="100%"
     >
-      <Text color={theme.ACCENT} bold>
+      <Text color={theme.accent} bold>
         Auth and subscription guidance
       </Text>
-      <Text color={theme.MUTED}>Current backend: {provider.label}</Text>
-      <Text color={theme.MUTED}>Current preference: {formatAuthPreferenceLabel(authPreference)}</Text>
-      <Text color={theme.INFO}>Backend auth: {provider.authLabel}</Text>
+      <Text color={theme.textMuted}>Current backend: {provider.label}</Text>
+      <Text color={theme.textMuted}>Current preference: {formatAuthPreferenceLabel(authPreference)}</Text>
+      <Text color={theme.info}>Backend auth: {provider.authLabel}</Text>
       <Text color={authStateColor}>Runtime auth state: {authStateLabel}</Text>
-      <Text color={theme.DIM}>Last checked: {checkedAtLabel}</Text>
-      <Text color={theme.DIM}>Probe summary: {authStatus.rawSummary || "No probe output yet"}</Text>
-      <Text color={theme.TEXT}>
+      <Text color={theme.textDim}>Last checked: {checkedAtLabel}</Text>
+      <Text color={theme.textDim}>Probe summary: {authStatus.rawSummary || "No probe output yet"}</Text>
+      <Text color={theme.text}>
         This UI securely bridges to the Codexa neural network. It does not collect or store your ChatGPT credentials.
       </Text>
-      <Text color={theme.TEXT}>{provider.statusMessage}</Text>
+      <Text color={theme.text}>{provider.statusMessage}</Text>
       <Box flexDirection="column" marginTop={1}>
-        <Text color={theme.INFO}>Commands:</Text>
-        <Text color={theme.TEXT}>  /login        guided ChatGPT sign-in steps</Text>
-        <Text color={theme.TEXT}>  /logout       guided sign-out steps</Text>
-        <Text color={theme.TEXT}>  /auth status  refresh Codexa authentication</Text>
+        <Text color={theme.info}>Commands:</Text>
+        <Text color={theme.text}>  /login        guided ChatGPT sign-in steps</Text>
+        <Text color={theme.text}>  /logout       guided sign-out steps</Text>
+        <Text color={theme.text}>  /auth status  refresh Codexa authentication</Text>
       </Box>
       <Box flexDirection="column" marginTop={1}>
         {AUTH_PREFERENCES.map((item, index) => (
-          <Text key={item.id} color={item.id === authPreference ? theme.SUCCESS : theme.TEXT}>
+          <Text key={item.id} color={item.id === authPreference ? theme.success : theme.text}>
             {index + 1}. {item.label} {item.id === authPreference ? "✓" : ""}
           </Text>
         ))}
       </Box>
       <Box marginTop={1}>
-        <Text color={theme.DIM}>
+        <Text color={theme.textDim}>
           Press 1-{AUTH_PREFERENCES.length} to change preference, R to refresh status, Esc to close.
         </Text>
       </Box>
       {authStatusBusy && (
         <Box marginTop={1}>
-          <Text color={theme.WARNING}>Checking auth status...</Text>
+          <Text color={theme.warning}>Checking auth status...</Text>
         </Box>
       )}
       {authStatus.recommendedAction && (
         <Box marginTop={1}>
-          <Text color={theme.DIM}>Next step: {authStatus.recommendedAction}</Text>
+          <Text color={theme.textDim}>Next step: {authStatus.recommendedAction}</Text>
         </Box>
       )}
     </Box>

@@ -4276,7 +4276,7 @@ export function App({ launchArgs }: AppProps) {
     if (planFlow.kind === "awaiting_action") {
       if (!hasVisibleTranscriptPlan) {
         return (
-          <Text color={activeTheme.MUTED}>
+          <Text color={activeTheme.textMuted}>
             Plan could not be displayed. Please ask Codexa to regenerate the plan.
           </Text>
         );
@@ -4354,7 +4354,7 @@ export function App({ launchArgs }: AppProps) {
     handleCancel,
     handlePlanFeedbackSubmit,
     hasVisibleTranscriptPlan,
-    activeTheme.MUTED,
+    activeTheme.textMuted,
     composerInstanceKey,
     terminalLayout,
     uiState,
@@ -4684,7 +4684,7 @@ export function App({ launchArgs }: AppProps) {
         composerRows={composerRows}
         panelHint={screen !== "main" && screen !== "model-picker" ? (
           <Box marginTop={1} paddingX={1}>
-            <Text color={activeTheme.DIM}>Close the active panel with Esc to return to the composer.</Text>
+            <Text color={activeTheme.textDim}>Close the active panel with Esc to return to the composer.</Text>
           </Box>
         ) : null}
       />

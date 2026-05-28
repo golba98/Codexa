@@ -290,18 +290,18 @@ function LoadingPickerView({
     <Box flexDirection="column" width="100%">
       <Box
         borderStyle="round"
-        borderColor={theme.BORDER_SUBTLE}
+        borderColor={theme.border}
         paddingX={2}
         paddingY={0}
         width="100%"
       >
         <Box flexDirection="column" width="100%">
           <Box>
-            <Text color={theme.ACCENT} bold>Select model  </Text>
-            <Text color={theme.MUTED}>Esc cancel</Text>
+            <Text color={theme.accent} bold>Select model  </Text>
+            <Text color={theme.textMuted}>Esc cancel</Text>
           </Box>
           <Box marginTop={0}>
-            <Text color={theme.DIM}>
+            <Text color={theme.textDim}>
               {isLoading
                 ? "Discovering models from the Codex runtime…"
                 : "No models available yet."}
@@ -353,18 +353,18 @@ function InteractivePickerView({
   return (
     <Box
       borderStyle="round"
-      borderColor={theme.BORDER_ACTIVE}
+      borderColor={theme.borderFocused}
       paddingX={2}
       paddingY={0}
       width="100%"
       flexDirection="column"
     >
       <Box>
-        <Text color={theme.ACCENT} bold>Select model  </Text>
-        <Text color={theme.MUTED}>{subtitle}</Text>
+        <Text color={theme.accent} bold>Select model  </Text>
+        <Text color={theme.textMuted}>{subtitle}</Text>
       </Box>
       <Box marginTop={0}>
-        <Text color={theme.DIM}>{reasoningHint}</Text>
+        <Text color={theme.textDim}>{reasoningHint}</Text>
       </Box>
 
       <Box
@@ -415,7 +415,7 @@ function ModelRow({
   theme,
 }: ModelRowProps) {
   const cursorGlyph = isHighlighted ? "▸ " : "  ";
-  const nameColor = isHighlighted ? theme.TEXT : theme.MUTED;
+  const nameColor = isHighlighted ? theme.text : theme.textMuted;
   const commitMark = isCommitted ? "  ✓" : "";
   const selectedIndex = availableLevels.findIndex((level) => level.id === selectedReasoning);
   const name = model.label === model.model ? model.model : `${model.label} (${model.model})`;
@@ -423,10 +423,10 @@ function ModelRow({
   const bars = availableLevels.map((level, i) => {
     const isActive = i === selectedIndex;
     const color = !interactive
-      ? theme.DIM
+      ? theme.textDim
       : isActive
-        ? isHighlighted ? theme.ACCENT : theme.TEXT
-        : theme.DIM;
+        ? isHighlighted ? theme.accent : theme.text
+        : theme.textDim;
 
     return (
       <Text key={level.id} color={color} bold={isActive && isHighlighted && interactive}>
@@ -438,7 +438,7 @@ function ModelRow({
   return (
     <Box flexDirection="row" width="100%">
       <Box width={3} flexShrink={0}>
-        <Text color={isHighlighted ? theme.ACCENT : theme.DIM}>{cursorGlyph}</Text>
+        <Text color={isHighlighted ? theme.accent : theme.textDim}>{cursorGlyph}</Text>
       </Box>
       <Box flexGrow={1} flexDirection="row" paddingRight={1}>
         <Box flexShrink={1}>
@@ -447,7 +447,7 @@ function ModelRow({
           </Text>
         </Box>
         <Box flexShrink={0} paddingLeft={1}>
-          <Text color={theme.DIM}>{commitMark}</Text>
+          <Text color={theme.textDim}>{commitMark}</Text>
         </Box>
       </Box>
       <Box flexDirection="row" gap={1} flexShrink={0}>

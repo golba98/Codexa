@@ -24,9 +24,9 @@ export function DashCard({
   children,
 }: DashCardProps) {
   const theme = useTheme();
-  const border = borderColor ?? theme.BORDER_SUBTLE;
-  const tColor = titleColor ?? theme.MUTED;
-  const bColor = badgeColor ?? theme.DIM;
+  const border = borderColor ?? theme.border;
+  const tColor = titleColor ?? theme.textMuted;
+  const bColor = badgeColor ?? theme.textDim;
 
   // Account for AppShell gutter (-1) and Timeline paddingX={1} (-2)
   const w = cols - 3;

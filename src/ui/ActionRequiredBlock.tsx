@@ -22,15 +22,15 @@ export function ActionRequiredBlock({ cols, turnIndex, question }: ActionRequire
     });
 
   return (
-    <Box borderStyle="single" borderColor={theme.BORDER_ACTIVE} flexDirection="column" marginBottom={1} width="100%">
+    <Box borderStyle="single" borderColor={theme.borderFocused} flexDirection="column" marginBottom={1} width="100%">
       <Box width="100%" justifyContent="space-between" overflow="hidden" paddingX={1}>
-        <Text color={theme.TEXT} bold>{`[${turnIndex}] ACTION REQUIRED`}</Text>
-        <Text color={theme.TEXT} bold>{"⚡"}</Text>
+        <Text color={theme.text} bold>{`[${turnIndex}] ACTION REQUIRED`}</Text>
+        <Text color={theme.text} bold>{"⚡"}</Text>
       </Box>
       <Box flexDirection="column" paddingX={2} marginTop={1} marginBottom={1} width="100%">
-        <Text color={theme.TEXT} bold>{"Verification Question"}</Text>
+        <Text color={theme.text} bold>{"Verification Question"}</Text>
         {wrappedContent.map((row, index) => (
-          <Text key={`content-${index}`} color={theme.TEXT}>{row || " "}</Text>
+          <Text key={`content-${index}`} color={theme.text}>{row || " "}</Text>
         ))}
       </Box>
     </Box>

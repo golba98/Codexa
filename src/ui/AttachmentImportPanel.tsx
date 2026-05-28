@@ -52,20 +52,20 @@ export function AttachmentImportPanel({
     <Box flexDirection="column" width="100%" marginTop={1}>
       <Box
         borderStyle="round"
-        borderColor={theme.BORDER_SUBTLE}
+        borderColor={theme.border}
         paddingX={2}
         paddingY={1}
         width="100%"
       >
-        <Text color={theme.ACCENT} bold>IMPORT FILE  </Text>
-        <Text color={theme.MUTED}>
+        <Text color={theme.accent} bold>IMPORT FILE  </Text>
+        <Text color={theme.textMuted}>
           Copy {files.length} outside-workspace {fileLabel} into .codexa/attachments?
         </Text>
       </Box>
 
       <Box
         borderStyle="round"
-        borderColor={theme.BORDER_ACTIVE}
+        borderColor={theme.borderFocused}
         paddingX={2}
         paddingY={1}
         marginTop={1}
@@ -74,8 +74,8 @@ export function AttachmentImportPanel({
       >
         {files.map((file, i) => (
           <Box key={i} flexDirection="column" marginBottom={i < files.length - 1 ? 1 : 0}>
-            <Text color={theme.TEXT}>{path.basename(file.srcPath)}</Text>
-            <Text color={theme.DIM}>
+            <Text color={theme.text}>{path.basename(file.srcPath)}</Text>
+            <Text color={theme.textDim}>
               {"→ "}{relativeAttachmentsDir}/{file.destFilename}
             </Text>
           </Box>
@@ -83,14 +83,14 @@ export function AttachmentImportPanel({
 
         {showVisionWarning && (
           <Box marginTop={1}>
-            <Text color={theme.WARNING}>
+            <Text color={theme.warning}>
               Note: active model may not support images.
             </Text>
           </Box>
         )}
 
         <Box marginTop={1}>
-          <Text color={theme.DIM}>Enter copy and continue  Esc cancel</Text>
+          <Text color={theme.textDim}>Enter copy and continue  Esc cancel</Text>
         </Box>
       </Box>
     </Box>

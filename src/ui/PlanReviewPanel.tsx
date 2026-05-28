@@ -192,21 +192,21 @@ export function PlanReviewPanel({
   return (
     <Box width="100%" flexDirection="column" paddingX={2}>
       <Text wrap="truncate">
-        <Text color={theme.BORDER_SUBTLE}>{"╭─ "}</Text>
-        <Text color={theme.TEXT} bold>{topBorder.title}</Text>
-        <Text color={theme.BORDER_SUBTLE}>{topBorder.fill}</Text>
-        <Text color={theme.BORDER_SUBTLE}>{"╮"}</Text>
+        <Text color={theme.border}>{"╭─ "}</Text>
+        <Text color={theme.text} bold>{topBorder.title}</Text>
+        <Text color={theme.border}>{topBorder.fill}</Text>
+        <Text color={theme.border}>{"╮"}</Text>
       </Text>
       {displayRows.map((row, index) => (
         <Text key={index} wrap="truncate">
-          <Text color={theme.BORDER_SUBTLE}>{"│ "}</Text>
-          <Text color={row.tone === "muted" ? theme.MUTED : theme.TEXT} bold={row.bold}>
+          <Text color={theme.border}>{"│ "}</Text>
+          <Text color={row.tone === "muted" ? theme.textMuted : theme.text} bold={row.bold}>
             {padVisual(row.text, contentWidth)}
           </Text>
-          <Text color={theme.BORDER_SUBTLE}>{" │"}</Text>
+          <Text color={theme.border}>{" │"}</Text>
         </Text>
       ))}
-      <Text wrap="truncate" color={theme.BORDER_SUBTLE}>{`╰${"─".repeat(Math.max(1, panelCols - 2))}╯`}</Text>
+      <Text wrap="truncate" color={theme.border}>{`╰${"─".repeat(Math.max(1, panelCols - 2))}╯`}</Text>
     </Box>
   );
 }

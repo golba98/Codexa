@@ -62,7 +62,7 @@ export function AnimatedStatusText({ baseText, isActive, isError = false, animat
   const suffix = isActive ? animationFrame ?? localFrame : "";
 
   return (
-    <Text color={isError ? theme.ERROR : theme.INFO} wrap="truncate">
+    <Text color={isError ? theme.error : theme.info} wrap="truncate">
       {renderedText}{suffix}
     </Text>
   );

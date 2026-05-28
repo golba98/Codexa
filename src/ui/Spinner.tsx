@@ -7,7 +7,7 @@ const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "
 export function Spinner({ color }: { color?: string }) {
   const theme = useTheme();
   const [frame, setFrame] = useState(0);
-  const activeColor = color ?? theme.DIM;
+  const activeColor = color ?? theme.textDim;
 
   useEffect(() => {
     const timer = setInterval(() => {

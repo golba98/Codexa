@@ -85,10 +85,10 @@ export function PlanActionPicker({
     const selected = index === selectedIndex;
     return (
       <Text key={row.value}>
-        <Text color={selected ? theme.ACCENT : theme.DIM}>
+        <Text color={selected ? theme.accent : theme.textDim}>
           {selected ? "› " : vertical ? "  " : ""}
         </Text>
-        <Text color={selected ? theme.TEXT : theme.MUTED}>
+        <Text color={selected ? theme.text : theme.textMuted}>
           {`[${row.key}] ${row.label}`}
         </Text>
       </Text>
@@ -98,7 +98,7 @@ export function PlanActionPicker({
   if (vertical) {
     return (
       <Box flexDirection="column">
-        <Text color={isFocused ? theme.TEXT : theme.MUTED} bold={isFocused}>Plan ready</Text>
+        <Text color={isFocused ? theme.text : theme.textMuted} bold={isFocused}>Plan ready</Text>
         {ACTION_ROWS.map(renderAction)}
       </Box>
     );
@@ -106,12 +106,12 @@ export function PlanActionPicker({
 
   return (
     <Text>
-      <Text color={isFocused ? theme.TEXT : theme.MUTED} bold={isFocused}>Plan ready</Text>
-      <Text color={theme.DIM}>{"  "}</Text>
+      <Text color={isFocused ? theme.text : theme.textMuted} bold={isFocused}>Plan ready</Text>
+      <Text color={theme.textDim}>{"  "}</Text>
       {ACTION_ROWS.map((row, index) => (
         <React.Fragment key={row.value}>
           {renderAction(row, index)}
-          {index < ACTION_ROWS.length - 1 && <Text color={theme.DIM}>{"   "}</Text>}
+          {index < ACTION_ROWS.length - 1 && <Text color={theme.textDim}>{"   "}</Text>}
         </React.Fragment>
       ))}
     </Text>

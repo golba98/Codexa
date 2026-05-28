@@ -131,7 +131,7 @@ function InlineText({ parts, color }: { parts: InlinePart[]; color: string }) {
   return (
     <Text color={color} wrap="wrap">
       {parts.map((part, index) => {
-        if (part.kind === "code") return <Text key={index} color={theme.INFO}>{part.text}</Text>;
+        if (part.kind === "code") return <Text key={index} color={theme.info}>{part.text}</Text>;
         if (part.kind === "bold") return <Text key={index} bold>{part.text}</Text>;
         return <Text key={index}>{part.text}</Text>;
       })}
@@ -148,7 +148,7 @@ function renderTreeLabel(label: string, theme: ReturnType<typeof useTheme>) {
 
   if (isDirectory) {
     return (
-      <Text color={theme.TEXT} bold>
+      <Text color={theme.text} bold>
         {base}
         {slash}
       </Text>
@@ -156,9 +156,9 @@ function renderTreeLabel(label: string, theme: ReturnType<typeof useTheme>) {
   }
 
   return (
-    <Text color={theme.TEXT}>
+    <Text color={theme.text}>
       {base.slice(0, lastDot)}
-      <Text color={theme.DIM}>{base.slice(lastDot)}</Text>
+      <Text color={theme.textDim}>{base.slice(lastDot)}</Text>
     </Text>
   );
 }
@@ -171,7 +171,7 @@ function TreeLine({ line }: { line: string }) {
 
   return (
     <Box width="100%">
-      <Text color={theme.DIM}>{prefix}</Text>
+      <Text color={theme.textDim}>{prefix}</Text>
       {renderTreeLabel(label, theme)}
     </Box>
   );
@@ -184,17 +184,17 @@ function isTreeLine(line: string): boolean {
 function getDiffColor(kind: DiffRenderLineType, theme: ReturnType<typeof useTheme>): string {
   switch (kind) {
     case "add":
-      return theme.SUCCESS;
+      return theme.success;
     case "remove":
-      return theme.ERROR;
+      return theme.error;
     case "hunk":
-      return theme.ACCENT;
+      return theme.accent;
     case "file":
     case "meta":
-      return theme.INFO;
+      return theme.info;
     case "context":
     default:
-      return theme.MUTED;
+      return theme.textMuted;
   }
 }
 
@@ -245,9 +245,9 @@ export function RenderMessage({ segments, width, brightHeadings = false }: { seg
                     ) : (
                       <Box key={lineIndex}>
                         <Box width={3} flexShrink={0} marginRight={1} justifyContent="flex-end">
-                          <Text color={theme.DIM}>{lineIndex + 1}</Text>
+                          <Text color={theme.textDim}>{lineIndex + 1}</Text>
                         </Box>
-                        <Text color={theme.MUTED} wrap="wrap">{line || " "}</Text>
+                        <Text color={theme.textMuted} wrap="wrap">{line || " "}</Text>
                       </Box>
                     )
                   ))}
@@ -257,10 +257,10 @@ export function RenderMessage({ segments, width, brightHeadings = false }: { seg
         }
 
         if (segment.type === "header") {
-          const color = segment.level === 1 ? theme.ACCENT : segment.level === 2 ? theme.TEXT : (brightHeadings ? theme.TEXT : theme.MUTED);
+          const color = segment.level === 1 ? theme.accent : segment.level === 2 ? theme.text : (brightHeadings ? theme.text : theme.textMuted);
           return (
             <Box key={index} flexDirection="column" marginTop={marginTop}>
-              {segment.level <= 2 && <Text color={theme.BORDER_SUBTLE}>{"───"}</Text>}
+              {segment.level <= 2 && <Text color={theme.border}>{"───"}</Text>}
               <Box>
                 <Text color={color}>{segment.level <= 2 ? "✧ " : "• "}</Text>
                 <InlineText parts={segment.parts} color={color} />
@@ -274,9 +274,9 @@ export function RenderMessage({ segments, width, brightHeadings = false }: { seg
             <Box key={index} flexDirection="column" marginTop={marginTop}>
               {segment.items.map((item, itemIndex) => (
                 <Box key={itemIndex}>
-                  <Text color={theme.ACCENT}>{segment.ordered ? `${item.num}. ` : "• "}</Text>
+                  <Text color={theme.accent}>{segment.ordered ? `${item.num}. ` : "• "}</Text>
                   <Box flexGrow={1} flexShrink={1}>
-                    <InlineText parts={item.parts} color={theme.TEXT} />
+                    <InlineText parts={item.parts} color={theme.text} />
                   </Box>
                 </Box>
               ))}
@@ -295,7 +295,7 @@ export function RenderMessage({ segments, width, brightHeadings = false }: { seg
               if (parts.length === 1 && parts[0]!.kind === "text" && !parts[0]!.text.trim()) {
                 return null;
               }
-              return <InlineText key={lineIndex} parts={parts} color={theme.TEXT} />;
+              return <InlineText key={lineIndex} parts={parts} color={theme.text} />;
             })}
           </Box>
         );
