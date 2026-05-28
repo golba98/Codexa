@@ -45,7 +45,7 @@ test("adds a measured footer gap only when the viewport has room", () => {
   assert.equal(getComposerToFooterGapRows(createLayoutSnapshot(39, 30)), 0);
 });
 
-test("uses the run footer row budget in cramped busy viewports", () => {
+test("keeps the composer status row visible in normal 24-row terminals", () => {
   const rows = measureBottomComposerRows({
     layout: createLayoutSnapshot(80, 24),
     uiState: { kind: "THINKING", turnId: 1 },
@@ -53,7 +53,7 @@ test("uses the run footer row budget in cramped busy viewports", () => {
     cursor: 0,
   });
 
-  assert.equal(rows, 4);
+  assert.equal(rows, 5);
 });
 
 test("does not render an exact slash command draft as a suggestion row", () => {

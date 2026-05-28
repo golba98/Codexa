@@ -12,15 +12,17 @@ import { getTextWidth } from "./textLayout.js";
 
 // Canonical Codexa brand wordmark — the ██ block art is the authoritative logo.
 // Always shown on any normal-width terminal (≥ LOGO_LARGE_MIN_COLS cols).
-/** 6-row ANSI Shadow block-char logo. Requires cols ≥ LOGO_LARGE_MIN_COLS. */
-export const LOGO_LARGE: readonly string[] = [
+export const CODEXA_WORDMARK = [
   " ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗ █████╗ ",
   "██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝██╔══██╗",
   "██║     ██║   ██║██║  ██║█████╗   ╚███╔╝ ███████║",
   "██║     ██║   ██║██║  ██║██╔══╝   ██╔██╗ ██╔══██║",
   "╚██████╗╚██████╔╝██████╔╝███████╗██╔╝ ██╗██║  ██║",
   " ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝",
-];
+].join("\n");
+
+/** 6-row ANSI Shadow block-char logo. Requires cols ≥ LOGO_LARGE_MIN_COLS. */
+export const LOGO_LARGE: readonly string[] = CODEXA_WORDMARK.split("\n");
 
 /** 4-row pure-ASCII art logo. Requires cols ≥ LOGO_MEDIUM_MIN_COLS. */
 export const LOGO_MEDIUM: readonly string[] = [
@@ -90,6 +92,7 @@ export function selectLogoVariantForViewport(cols: number, rows: number): readon
   if (process.env["CODEXA_COMPACT_LOGO"] === "1") {
     return rows >= LOGO_COMPACT_MIN_ROWS ? LOGO_COMPACT : [];
   }
+  if (cols >= LOGO_LARGE_MIN_COLS) return LOGO_LARGE;
   for (const variant of LOGO_VARIANTS) {
     if (cols >= variant.minCols && rows >= variant.minRows) {
       return variant.logo;

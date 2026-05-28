@@ -89,32 +89,22 @@ test("selectLogoVariantForViewport returns LOGO_LARGE when cols and rows are amp
   assert.equal(selectLogoVariantForViewport(LOGO_LARGE_MIN_COLS, LOGO_LARGE_MIN_ROWS), LOGO_LARGE);
 });
 
-// LOGO_MEDIUM is removed from LOGO_VARIANTS; a wide-but-short terminal degrades
-// directly from LOGO_LARGE → LOGO_COMPACT.
-test("wide-but-short terminal degrades LOGO_LARGE to LOGO_COMPACT (no thin ASCII)", () => {
-  // 120 cols fits LOGO_LARGE, but 18 rows < LOGO_LARGE_MIN_ROWS (24).
-  // LOGO_COMPACT_MIN_ROWS (12) ≤ 18, so LOGO_COMPACT is chosen.
-  assert.equal(selectLogoVariantForViewport(120, 18), LOGO_COMPACT);
+test("wide-but-short terminal keeps LOGO_LARGE at normal width", () => {
+  assert.equal(selectLogoVariantForViewport(120, 18), LOGO_LARGE);
 });
 
-test("wide-but-shorter terminal degrades to LOGO_COMPACT instead of collapsing", () => {
-  // 120 cols, 14 rows < LOGO_LARGE_MIN_ROWS (24) but ≥ LOGO_COMPACT_MIN_ROWS (12).
-  assert.equal(selectLogoVariantForViewport(120, 14), LOGO_COMPACT);
+test("wide-but-shorter terminal keeps LOGO_LARGE instead of showing compact label", () => {
+  assert.equal(selectLogoVariantForViewport(120, 14), LOGO_LARGE);
 });
 
 test("selectLogoVariantForViewport returns empty only when even compact cannot fit", () => {
-  assert.deepStrictEqual(selectLogoVariantForViewport(120, 10), []);
+  assert.equal(selectLogoVariantForViewport(120, 10), LOGO_LARGE);
   assert.deepStrictEqual(selectLogoVariantForViewport(LOGO_COMPACT_MIN_COLS - 1, 40), []);
 });
 
-// With LOGO_MEDIUM removed from LOGO_VARIANTS, the medium row threshold is no
-// longer a degradation step — only LOGO_LARGE and LOGO_COMPACT are in the chain.
-test("selectLogoVariantForViewport at medium col + medium rows → LOGO_COMPACT (LOGO_MEDIUM not in chain)", () => {
-  // LOGO_MEDIUM_MIN_COLS = 72 cols, LOGO_MEDIUM_MIN_ROWS = 16 rows.
-  // 72 >= LOGO_LARGE_MIN_COLS (72) but 16 < LOGO_LARGE_MIN_ROWS (24) → skip LOGO_LARGE.
-  // 72 >= LOGO_COMPACT_MIN_COLS (48) and 16 >= LOGO_COMPACT_MIN_ROWS (12) → LOGO_COMPACT.
-  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS), LOGO_COMPACT);
-  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS - 1), LOGO_COMPACT);
+test("selectLogoVariantForViewport at medium cols keeps LOGO_LARGE despite short rows", () => {
+  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS), LOGO_LARGE);
+  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS - 1), LOGO_LARGE);
 });
 
 test("CODEXA_NO_ASCII_LOGO=1 suppresses logo in viewport selector at any size", () => {
