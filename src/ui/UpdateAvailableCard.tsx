@@ -16,7 +16,7 @@ export interface UpdateAvailableCardProps {
 
 export function UpdateAvailableCard({ latestVersion, currentVersion, width }: UpdateAvailableCardProps) {
   const theme = useTheme();
-  const command = `Run: ${CODEXA_UPDATE_COMMAND}@latest`;
+  const command = `Run: ${CODEXA_UPDATE_COMMAND}`;
   // Inner content width = boxWidth - 2 (left/right border cols)
   const innerWidth = width !== undefined ? Math.max(8, width - 2) : undefined;
 
