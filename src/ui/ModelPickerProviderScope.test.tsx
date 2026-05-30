@@ -19,6 +19,7 @@ import { geminiRuntime } from "../core/providerRuntime/gemini.js";
 import { getSelectableModelCapabilities } from "../core/models/codexModelCapabilities.js";
 import { ProviderPicker } from "./ProviderPicker.js";
 import type { ProviderConfig } from "../core/providerLauncher/types.js";
+import type { ProviderModel } from "../core/providerRuntime/types.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -66,6 +67,9 @@ test("ANTHROPIC_FALLBACK_MODELS contains the expected models", () => {
   assert.ok(ids.includes("opus"), "Missing opus");
   assert.ok(ids.includes("sonnet"), "Missing sonnet");
   assert.ok(ids.includes("haiku"), "Missing haiku");
+  for (const model of ANTHROPIC_FALLBACK_MODELS) {
+    assert.match(model.label, /version unknown/i, "Fallback labels must honestly mark unknown Claude versions");
+  }
 });
 
 test("ANTHROPIC_FALLBACK_MODELS does not contain OpenAI model IDs", () => {
@@ -329,11 +333,66 @@ test("model picker Claude list does not contain OpenAI models", async () => {
     const stripped = stripAnsi(output);
     // OpenAI model names must not appear in the rendered output
     assert.ok(!stripped.includes("gpt-5"), "Claude picker must not display OpenAI models");
-    // Claude model aliases must appear — labels are now generic (no version numbers)
+    // Claude model aliases must appear and must not be vague family names only.
     assert.ok(
       stripped.includes("Claude Opus") || stripped.includes("Claude Sonnet") || stripped.includes("Claude Haiku"),
       "Claude picker must display Claude model names",
     );
+    assert.ok(stripped.includes("version unknown"), "Fallback picker labels must mark unknown versions");
+  } finally {
+    cleanup();
+  }
+});
+
+test("model picker shows alias-resolved Claude package source and versioned labels", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+  stdout.on("data", (chunk) => { output += chunk.toString(); });
+
+  const packageModels: ProviderModel[] = [
+    {
+      id: "opus",
+      modelId: "opus",
+      label: "Claude Opus 4.8",
+      description: "Resolved from Claude Code package metadata",
+      defaultReasoningLevel: "xhigh",
+      supportedReasoningLevels: ANTHROPIC_FALLBACK_MODELS[0].supportedReasoningLevels,
+      source: "claude-code-package",
+      canonicalId: "claude-opus-4-8",
+      family: "opus",
+      version: "4.8",
+      isFallback: false,
+      discoveryKind: "aliases",
+    },
+  ];
+
+  const claudeModels = getSelectableModelCapabilities(
+    providerModelsToCodexCapabilities(packageModels, "opus"),
+  );
+
+  const { cleanup } = render(
+    <ThemeProvider theme="mono">
+      <ModelPickerScreen
+        layout={createLayoutSnapshot(120, 40)}
+        models={claudeModels}
+        currentModel="opus"
+        currentReasoning="xhigh"
+        activeProviderLabel="Claude"
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+    { stdin: stdin as any, stdout: stdout as any, debug: true },
+  );
+
+  try {
+    await sleep(100);
+    const stripped = stripAnsi(output);
+    assert.ok(stripped.includes("Claude Opus 4.8 (opus)"));
+    assert.ok(stripped.includes("Claude Code aliases resolved from installed package metadata"));
+    assert.ok(!stripped.includes("version unknown"));
+    assert.ok(!stripped.includes("Claude Code model discovery unavailable"));
   } finally {
     cleanup();
   }

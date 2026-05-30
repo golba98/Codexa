@@ -167,6 +167,17 @@ export function resolveActiveProviderRoute(options: {
       route.modelId = resolveGeminiModelId(route.modelSelection);
     } else if (route.providerId === "google") {
       route.modelId = normalizeGeminiModelId(route.modelId);
+    } else if (route.providerId === "anthropic") {
+      const discovery = discoverProviderModels("anthropic");
+      const stillAvailable = discovery.models.some((model) =>
+        model.modelId === route.modelId ||
+        model.id === route.modelId ||
+        model.canonicalId === route.modelId
+      );
+      const hasNonFallbackModels = discovery.models.some((model) => model.source !== "fallback");
+      if (discovery.status === "ready" && hasNonFallbackModels && discovery.models.length > 0 && !stillAvailable) {
+        route.modelId = discovery.models[0]!.modelId;
+      }
     } else if (route.providerId === "local") {
       const discovery = discoverProviderModels("local");
       const selectedModel = typeof discovery.diagnostics?.selectedModel === "string"
@@ -194,7 +205,7 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
     if (discovered.status === "ready" && discovered.models.length > 0) {
       return discovered.models[0].modelId;
     }
-    return ANTHROPIC_FALLBACK_MODELS[0]?.modelId ?? "claude-sonnet-4-20250514";
+    return ANTHROPIC_FALLBACK_MODELS[0]?.modelId ?? "sonnet";
   }
   if (providerId === "google") {
     return GEMINI_FALLBACK_MODELS[0]?.modelId ?? GEMINI_DEFAULT_MODEL_ID;

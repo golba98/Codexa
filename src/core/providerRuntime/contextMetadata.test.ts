@@ -279,39 +279,39 @@ test("gemini-3.1-flash-lite-preview resolves 1,048,576 from known registry", asy
 
 // ─── Anthropic alias normalization ────────────────────────────────────────────
 
-test("anthropic alias 'sonnet' resolves 200,000 via registry normalization", async () => {
+test("anthropic alias 'sonnet' remains unknown without discovered version metadata", async () => {
   clearModelContextMetadataCache();
   const metadata = await resolveModelContextLength({
     providerId: "anthropic",
     modelId: "sonnet",
   });
-  assert.equal(metadata.contextLength, 200_000);
-  assert.equal(metadata.source, "known-registry");
-  assert.equal(metadata.confidence, "known");
+  assert.equal(metadata.contextLength, null);
+  assert.equal(metadata.source, "unknown");
+  assert.equal(metadata.confidence, "unknown");
   assert.equal(metadata.modelId, "sonnet");
 });
 
-test("anthropic alias 'opus' resolves 200,000 via registry normalization", async () => {
+test("anthropic alias 'opus' remains unknown without discovered version metadata", async () => {
   clearModelContextMetadataCache();
   const metadata = await resolveModelContextLength({
     providerId: "anthropic",
     modelId: "opus",
   });
-  assert.equal(metadata.contextLength, 200_000);
-  assert.equal(metadata.source, "known-registry");
-  assert.equal(metadata.confidence, "known");
+  assert.equal(metadata.contextLength, null);
+  assert.equal(metadata.source, "unknown");
+  assert.equal(metadata.confidence, "unknown");
   assert.equal(metadata.modelId, "opus");
 });
 
-test("anthropic alias 'haiku' resolves 200,000 via registry normalization", async () => {
+test("anthropic alias 'haiku' remains unknown without discovered version metadata", async () => {
   clearModelContextMetadataCache();
   const metadata = await resolveModelContextLength({
     providerId: "anthropic",
     modelId: "haiku",
   });
-  assert.equal(metadata.contextLength, 200_000);
-  assert.equal(metadata.source, "known-registry");
-  assert.equal(metadata.confidence, "known");
+  assert.equal(metadata.contextLength, null);
+  assert.equal(metadata.source, "unknown");
+  assert.equal(metadata.confidence, "unknown");
   assert.equal(metadata.modelId, "haiku");
 });
 

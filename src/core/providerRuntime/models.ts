@@ -73,16 +73,20 @@ export const GEMINI_FALLBACK_MODELS: readonly ProviderModel[] = [
   },
 ] as const;
 
+function fallbackModelDescription(family: string): string {
+  return `Claude ${family} alias — version unknown because model discovery is unavailable`;
+}
+
 export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
   {
     id: "opus",
     modelId: "opus",
-    label: "Claude Opus",
-    description: "Claude Opus — latest via alias (model discovery unavailable)",
+    label: "Claude Opus (version unknown)",
+    description: fallbackModelDescription("Opus"),
     defaultReasoningLevel: "xhigh",
     supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high", "xhigh", "max"]),
     source: "fallback",
-    canonicalId: "claude-opus-4-7",
+    canonicalId: "opus",
     family: "opus",
     effortSource: "fallback",
     effortVerified: false,
@@ -90,12 +94,12 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
   {
     id: "sonnet",
     modelId: "sonnet",
-    label: "Claude Sonnet",
-    description: "Claude Sonnet — latest via alias (model discovery unavailable)",
+    label: "Claude Sonnet (version unknown)",
+    description: fallbackModelDescription("Sonnet"),
     defaultReasoningLevel: "high",
     supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high", "max"]),
     source: "fallback",
-    canonicalId: "claude-sonnet-4-6",
+    canonicalId: "sonnet",
     family: "sonnet",
     effortSource: "fallback",
     effortVerified: false,
@@ -103,20 +107,27 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
   {
     id: "haiku",
     modelId: "haiku",
-    label: "Claude Haiku",
-    description: "Claude Haiku — latest via alias (model discovery unavailable)",
+    label: "Claude Haiku (version unknown)",
+    description: fallbackModelDescription("Haiku"),
     defaultReasoningLevel: "medium",
     supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high"]),
     source: "fallback",
-    canonicalId: "claude-haiku-4-5",
+    canonicalId: "haiku",
     family: "haiku",
     effortSource: "fallback",
     effortVerified: false,
   },
-] as const;
+];
 
 function isRuntimeSource(source: ProviderModel["source"]): boolean {
-  return source === "discovered" || source === "claude-code" || source === "settings" || source === "config";
+  return source === "discovered"
+    || source === "claude-code"
+    || source === "claude-code-command"
+    || source === "claude-code-package"
+    || source === "claude-code-cache"
+    || source === "claude-code-config"
+    || source === "settings"
+    || source === "config";
 }
 
 export function providerModelsToCodexCapabilities(

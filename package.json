@@ -11,6 +11,7 @@
     "dev": "bun --watch --silent src/index.tsx",
     "dev:run": "node scripts/run-local-dev.mjs",
     "install:dev-bin": "node scripts/install-local-dev-bin.mjs",
+    "debug:claude-models": "bun run --silent src/core/providerRuntime/claudeCodeDiscoveryDebug.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "audit:codexa-gap": "node scripts/audit-codexa-capabilities.mjs",

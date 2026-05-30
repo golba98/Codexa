@@ -336,3 +336,39 @@ test("getDefaultRouteModel with discovered models: prefers discovered anthropic 
 
   resetAnthropicRouteValidationCacheForTests();
 });
+
+test("resolveActiveProviderRoute selects first discovered Anthropic model when saved alias is stale", async () => {
+  resetAnthropicRouteValidationCacheForTests();
+
+  const mockImpl = mockRunCommand((executable, args) => {
+    if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "claude\n" });
+    if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+    if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
+      return commandResult({ exitCode: 0, stdout: JSON.stringify([
+        { value: "claude-opus-4-8", label: "Claude Opus 4.8", family: "opus", effortLevels: ["low"], defaultEffort: "low" },
+        { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", family: "sonnet", effortLevels: ["low"], defaultEffort: "low" },
+      ]) });
+    }
+    return commandResult({ exitCode: 1 });
+  });
+
+  await validateAnthropicRoute({
+    cwd: process.cwd(),
+    runCommandImpl: mockImpl,
+  });
+
+  const route = resolveActiveProviderRoute({
+    workspaceConfigActiveRoute: {
+      providerId: "anthropic",
+      modelId: "opus",
+      backendKind: "claude-code-auth",
+      reasoning: "high",
+    },
+    currentModel: "gpt-5.4",
+    currentReasoning: "medium",
+  });
+
+  assert.equal(route.modelId, "claude-opus-4-8");
+
+  resetAnthropicRouteValidationCacheForTests();
+});

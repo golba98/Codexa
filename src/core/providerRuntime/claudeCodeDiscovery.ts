@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync, realpathSync } from "fs";
+import { dirname, join } from "path";
 import { buildClaudeSpawnSpec, resolveClaudeExecutable } from "../executables/claudeExecutable.js";
 import { runCommand } from "../process/CommandRunner.js";
 import type { CommandResult } from "../process/CommandRunner.js";
@@ -9,7 +9,23 @@ import { CLAUDE_CODE_EFFORT_IDS, getClaudeCodeEffortLevels } from "./reasoning.j
 import type { ProviderModel } from "./types.js";
 
 type CommandRunner = typeof runCommand;
-export type ClaudeCodeModelSource = "claude-code" | "config" | "settings" | "fallback";
+
+const CLAUDE_MODEL_FAMILIES = ["opus", "sonnet", "haiku"] as const;
+type ClaudeModelFamily = (typeof CLAUDE_MODEL_FAMILIES)[number];
+const CLAUDE_FAMILIES_ALT = CLAUDE_MODEL_FAMILIES.join("|");
+// Pre-compiled from CLAUDE_MODEL_FAMILIES — update that constant when new families are added.
+const RE_VERSIONED_ID = new RegExp(`\\bclaude-(?:${CLAUDE_FAMILIES_ALT})-(\\d+)(?:-(\\d+))?\\b`);
+const RE_VAGUE_LABEL = new RegExp(`^(?:claude\\s+)?(?:${CLAUDE_FAMILIES_ALT})$`, "i");
+
+export type ClaudeCodeModelSource =
+  | "claude-code"
+  | "claude-code-command"
+  | "claude-code-package"
+  | "claude-code-cache"
+  | "claude-code-config"
+  | "config"
+  | "settings"
+  | "fallback";
 
 export interface ClaudeCodeAuthInfo {
   loggedIn: boolean;
@@ -24,6 +40,9 @@ export interface ClaudeCodeModel {
   value: string;
   canonicalId: string;
   source: ClaudeCodeModelSource;
+  version?: string;
+  isFallback: boolean;
+  discoveryKind?: "models" | "aliases";
   effortLevels: readonly string[];
   defaultEffort: string;
   effortSource: ClaudeCodeModelSource;
@@ -55,6 +74,7 @@ export interface DiscoverClaudeCodeCapabilitiesOptions {
   settingsPath?: string | null;
   now?: () => Date;
   timeoutMs?: number;
+  metadataPaths?: readonly string[];
 }
 
 interface ClaudeSettingsInfo {
@@ -94,7 +114,7 @@ export function parseClaudeAuthStatus(stdout: string): ClaudeCodeAuthInfo | null
   }
 }
 
-function modelFamilyFromValue(value: string): string {
+function modelFamilyFromValue(value: string): ClaudeModelFamily {
   const normalized = value.toLowerCase();
   if (normalized.includes("opus")) return "opus";
   if (normalized.includes("haiku")) return "haiku";
@@ -114,11 +134,55 @@ function fallbackDefaultEffort(family: string): string {
   return fallbackModelByFamily(family)?.defaultReasoningLevel ?? "medium";
 }
 
-function labelFromModelValue(value: string, fallbackLabel?: string): string {
-  if (fallbackLabel) return fallbackLabel;
+function titleCaseFamily(family: string): string {
+  if (family === "opus") return "Opus";
+  if (family === "haiku") return "Haiku";
+  return "Sonnet";
+}
+
+function versionFromModelText(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  const idMatch = normalized.match(RE_VERSIONED_ID);
+  if (idMatch) return idMatch[2] ? `${idMatch[1]}.${idMatch[2]}` : idMatch[1] ?? null;
+  const labelMatch = normalized.match(/^(?:claude\s+)?(?:opus|sonnet|haiku)\s+(\d+(?:\.\d+)?)\b/);
+  return labelMatch?.[1] ?? null;
+}
+
+function compareVersionStrings(left: string | null | undefined, right: string | null | undefined): number {
+  const leftParts = (left ?? "").split(".").map((part) => Number.parseInt(part, 10));
+  const rightParts = (right ?? "").split(".").map((part) => Number.parseInt(part, 10));
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < maxLength; index += 1) {
+    const l = Number.isFinite(leftParts[index]) ? leftParts[index] : 0;
+    const r = Number.isFinite(rightParts[index]) ? rightParts[index] : 0;
+    if (l !== r) return l - r;
+  }
+  return 0;
+}
+
+function isVagueClaudeFamilyLabel(value: string): boolean {
+  return RE_VAGUE_LABEL.test(value.trim());
+}
+
+function normalizeClaudeDisplayLabel(value: string, rawLabel?: string): string {
   const family = modelFamilyFromValue(value);
-  const fallback = fallbackModelByFamily(family);
-  return fallback?.label ?? value;
+  const familyLabel = titleCaseFamily(family);
+  const raw = rawLabel?.trim();
+  const valueVersion = versionFromModelText(value);
+
+  if (raw) {
+    const rawVersion = versionFromModelText(raw);
+    if (rawVersion) {
+      const prefixed = /^claude\b/i.test(raw) ? raw : `Claude ${raw}`;
+      return prefixed.replace(/\b(opus|sonnet|haiku)\b/i, familyLabel);
+    }
+    if (!isVagueClaudeFamilyLabel(raw) && !valueVersion) {
+      return raw;
+    }
+  }
+
+  if (valueVersion) return `Claude ${familyLabel} ${valueVersion}`;
+  return `Claude ${familyLabel} (version unknown)`;
 }
 
 function normalizeEffortIds(value: unknown, fallbackFamily: string): string[] {
@@ -132,13 +196,15 @@ function normalizeClaudeCodeModel(raw: unknown, source: ClaudeCodeModelSource): 
     const value = raw.trim();
     if (!value) return null;
     const family = modelFamilyFromValue(value);
-    const fallback = fallbackModelByFamily(family);
+    const version = versionFromModelText(value) ?? undefined;
     return {
-      label: labelFromModelValue(value, fallback?.label),
+      label: normalizeClaudeDisplayLabel(value),
       family,
-      value: fallback?.modelId ?? value,
-      canonicalId: fallback?.canonicalId ?? value,
+      value,
+      canonicalId: value,
       source,
+      ...(version ? { version } : {}),
+      isFallback: source === "fallback",
       effortLevels: fallbackEffortIds(family),
       defaultEffort: fallbackDefaultEffort(family),
       effortSource: "fallback",
@@ -151,7 +217,6 @@ function normalizeClaudeCodeModel(raw: unknown, source: ClaudeCodeModelSource): 
   const value = readString(raw.value ?? raw.model ?? raw.modelId ?? raw.id ?? raw.name);
   if (!value) return null;
   const family = readString(raw.family) ?? modelFamilyFromValue(value);
-  const fallback = fallbackModelByFamily(family);
   // Accept both camelCase and snake_case effort field names for compatibility.
   const rawEffortArray = raw.effortLevels ?? raw.effort_levels ?? raw.supportedEfforts ?? raw.supported_efforts;
   const effortLevels = normalizeEffortIds(rawEffortArray, family);
@@ -159,16 +224,21 @@ function normalizeClaudeCodeModel(raw: unknown, source: ClaudeCodeModelSource): 
     ?? fallbackDefaultEffort(family);
   const hasRawEffortArray = Array.isArray(rawEffortArray);
 
+  const version = versionFromModelText(value) ?? versionFromModelText(readString(raw.label ?? raw.displayName ?? raw.display_name) ?? "");
+
   return {
-    label: readString(raw.label ?? raw.displayName ?? raw.display_name) ?? labelFromModelValue(value, fallback?.label),
+    label: normalizeClaudeDisplayLabel(value, readString(raw.label ?? raw.displayName ?? raw.display_name)),
     family,
-    value: value === fallback?.canonicalId ? fallback.modelId : value,
-    canonicalId: readString(raw.canonicalId ?? raw.canonical_id) ?? fallback?.canonicalId ?? value,
+    value,
+    canonicalId: readString(raw.canonicalId ?? raw.canonical_id) ?? value,
     source,
+    ...(version ? { version } : {}),
+    isFallback: source === "fallback",
+    discoveryKind: readString(raw.discoveryKind ?? raw.discovery_kind) === "aliases" ? "aliases" : "models",
     effortLevels,
     defaultEffort: effortLevels.includes(defaultEffort) ? defaultEffort : effortLevels[0] ?? "medium",
     effortSource: hasRawEffortArray ? source : "fallback",
-    effortVerified: source === "claude-code" && hasRawEffortArray,
+    effortVerified: (source === "claude-code" || source === "claude-code-command" || source === "claude-code-package") && hasRawEffortArray,
     description: readString(raw.description),
   };
 }
@@ -192,6 +262,8 @@ function fallbackClaudeModels(): ClaudeCodeModel[] {
     value: model.modelId,
     canonicalId: model.canonicalId ?? model.modelId,
     source: "fallback",
+    isFallback: true,
+    discoveryKind: "aliases",
     effortLevels: model.supportedReasoningLevels?.map((level) => level.id) ?? [],
     defaultEffort: model.defaultReasoningLevel ?? "medium",
     effortSource: "fallback",
@@ -278,9 +350,143 @@ function parseModelsFromJsonOutput(stdout: string): ClaudeCodeModel[] {
         : [];
   return dedupeModels(
     rawModels
-      .map((raw) => normalizeClaudeCodeModel(raw, "claude-code"))
+      .map((raw) => normalizeClaudeCodeModel(raw, "claude-code-command"))
       .filter((model): model is ClaudeCodeModel => Boolean(model)),
   );
+}
+
+interface ClaudeCodePackageMetadataDiscovery {
+  sourcePath: string;
+  rawModelIds: string[];
+  models: ClaudeCodeModel[];
+}
+
+function uniqueStrings(values: Iterable<string>): string[] {
+  return Array.from(new Set(Array.from(values).filter(Boolean)));
+}
+
+function executablePathCandidates(command: string): string[] {
+  if (command.includes("/") || command.includes("\\")) return [command];
+  const pathValue = process.env.PATH ?? "";
+  const extensions = process.platform === "win32"
+    ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").filter(Boolean)
+    : [""];
+  const candidates: string[] = [];
+  for (const directory of pathValue.split(process.platform === "win32" ? ";" : ":")) {
+    if (!directory) continue;
+    for (const extension of extensions) {
+      candidates.push(join(directory, `${command}${extension}`));
+    }
+  }
+  return candidates;
+}
+
+function defaultClaudeMetadataPaths(resolvedCommand: string): string[] {
+  const candidates: string[] = [];
+  for (const executablePath of executablePathCandidates(resolvedCommand)) {
+    candidates.push(executablePath);
+    try {
+      const realPath = realpathSync.native(executablePath);
+      candidates.push(realPath);
+      candidates.push(join(dirname(dirname(realPath)), "package.json"));
+    } catch {
+      // Best effort only: package metadata discovery must never block CLI probing.
+    }
+  }
+  return uniqueStrings(candidates);
+}
+
+function extractClaudeModelIdsFromMetadata(raw: Buffer): string[] {
+  const text = raw.toString("latin1");
+  const ids = new Set<string>();
+  // Fresh regex per call — /g flag requires a clean lastIndex on each invocation.
+  const pattern = new RegExp(`\\bclaude-(${CLAUDE_FAMILIES_ALT})-(\\d+)-(\\d{1,2})\\b`, "g");
+  for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
+    ids.add(match[0]);
+  }
+  return Array.from(ids);
+}
+
+function latestModelIdByFamily(modelIds: readonly string[]): Map<string, { id: string; version: string }> {
+  const result = new Map<string, { id: string; version: string }>();
+  for (const id of modelIds) {
+    const family = modelFamilyFromValue(id);
+    const version = versionFromModelText(id);
+    if (!version) continue;
+    const existing = result.get(family);
+    if (!existing || compareVersionStrings(version, existing.version) > 0) {
+      result.set(family, { id, version });
+    }
+  }
+  return result;
+}
+
+function aliasResolvedModel(family: string, canonicalId: string, version: string): ClaudeCodeModel {
+  const alias = family;
+  return {
+    label: normalizeClaudeDisplayLabel(canonicalId),
+    family,
+    value: alias,
+    canonicalId,
+    source: "claude-code-package",
+    version,
+    isFallback: false,
+    discoveryKind: "aliases",
+    effortLevels: fallbackEffortIds(family),
+    defaultEffort: fallbackDefaultEffort(family),
+    effortSource: "fallback",
+    effortVerified: false,
+    description: `Claude Code alias resolved to ${canonicalId} from installed package metadata`,
+  };
+}
+
+function resolveAliasModelsWithPackageMetadata(
+  models: readonly ClaudeCodeModel[],
+  packageMetadata: ClaudeCodePackageMetadataDiscovery | null,
+): ClaudeCodeModel[] {
+  if (!packageMetadata) return [...models];
+  const byFamily = new Map(packageMetadata.models.map((model) => [model.family, model]));
+  return models.map((model) => {
+    if (!isVagueClaudeFamilyLabel(model.value) || model.version) return model;
+    return byFamily.get(model.family) ?? model;
+  });
+}
+
+function allModelsHaveKnownVersions(models: readonly ClaudeCodeModel[]): boolean {
+  return models.length > 0 && models.every((model) => Boolean(model.version));
+}
+
+export function discoverModelsFromClaudePackageMetadata(
+  resolvedCommand: string,
+  metadataPaths?: readonly string[],
+): ClaudeCodePackageMetadataDiscovery | null {
+  const paths = metadataPaths
+    ? uniqueStrings(metadataPaths)
+    : defaultClaudeMetadataPaths(resolvedCommand);
+
+  for (const path of paths) {
+    if (!existsSync(path)) continue;
+    try {
+      const rawModelIds = extractClaudeModelIdsFromMetadata(readFileSync(path));
+      const latestByFamily = latestModelIdByFamily(rawModelIds);
+      const models = CLAUDE_MODEL_FAMILIES
+        .map((family) => {
+          const latest = latestByFamily.get(family);
+          return latest ? aliasResolvedModel(family, latest.id, latest.version) : null;
+        })
+        .filter((model): model is ClaudeCodeModel => Boolean(model));
+      if (models.length > 0) {
+        return {
+          sourcePath: path,
+          rawModelIds,
+          models,
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }
 
 // Claude Code CLI does not consistently advertise JSON model listing in its help text,
@@ -356,13 +562,18 @@ export function claudeCodeModelsToProviderModels(models: readonly ClaudeCodeMode
     description: model.description ?? (
       model.source === "fallback"
         ? `${model.label} - Fallback defaults${model.effortVerified ? "" : "; effort metadata unverified"}`
-        : `${model.label} - ${model.source === "claude-code" ? "Discovered from Claude Code" : "From Claude settings"}`
+        : model.source === "settings" || model.source === "config" || model.source === "claude-code-config"
+          ? `${model.label} - From Claude settings`
+          : `${model.label} - ${model.discoveryKind === "aliases" ? "Claude Code alias resolved" : "Discovered from Claude Code"} (${model.source})`
     ),
     defaultReasoningLevel: model.defaultEffort,
     supportedReasoningLevels: getClaudeCodeEffortLevels(model.effortLevels),
     source: model.source,
     canonicalId: model.canonicalId,
     family: model.family,
+    version: model.version,
+    isFallback: model.isFallback,
+    discoveryKind: model.discoveryKind,
     effortSource: model.effortSource,
     effortVerified: model.effortVerified,
   }));
@@ -389,13 +600,20 @@ export async function discoverClaudeCodeCapabilities(
 
   const settings = readClaudeSettings(options.settingsPath);
   const discoveredModels = await discoverModelsFromClaudeHelp(resolvedCommand, options.cwd, runCommandImpl, timeoutMs);
+  const packageMetadata = discoverModelsFromClaudePackageMetadata(resolvedCommand, options.metadataPaths);
 
   let modelSource: ClaudeCodeModelSource = "fallback";
   let models: ClaudeCodeModel[] = fallbackClaudeModels();
 
   if (discoveredModels.length > 0) {
-    modelSource = "claude-code";
-    models = discoveredModels;
+    const resolvedModels = resolveAliasModelsWithPackageMetadata(discoveredModels, packageMetadata);
+    modelSource = allModelsHaveKnownVersions(resolvedModels) && resolvedModels.some((model) => model.source === "claude-code-package")
+      ? "claude-code-package"
+      : "claude-code-command";
+    models = resolvedModels;
+  } else if (packageMetadata?.models && packageMetadata.models.length > 0) {
+    modelSource = "claude-code-package";
+    models = packageMetadata.models;
   } else if (settings?.models && settings.models.length > 0) {
     modelSource = "settings";
     models = [...settings.models];
@@ -441,6 +659,9 @@ export async function discoverClaudeCodeCapabilities(
       loggedIn: auth.loggedIn,
       modelSource,
       settingsPath: settings?.path ?? null,
+      packageMetadataPath: packageMetadata?.sourcePath ?? null,
+      packageMetadataModelCount: packageMetadata?.rawModelIds.length ?? 0,
+      rawPackageModelIds: packageMetadata?.rawModelIds.slice(0, 12).join(",") ?? null,
     },
   };
 }
