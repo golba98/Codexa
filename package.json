@@ -1,6 +1,6 @@
 {
   "name": "@golba98/codexa",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Terminal UI for Codexa — TypeScript + Bun + Ink",
   "type": "module",
   "bin": {
@@ -17,7 +17,7 @@
     "smoke:terminal-bench": "node scripts/smoke-terminal-bench.mjs",
     "gen-build-info": "node scripts/gen-build-info.mjs",
     "build": "bun run gen-build-info && bun run typecheck",
-    "prepublishOnly": "npm run typecheck && npm test"
+    "prepublishOnly": "npm run gen-build-info && npm run typecheck && npm test"
   },
   "dependencies": {
     "ink": "^7.0.0",
