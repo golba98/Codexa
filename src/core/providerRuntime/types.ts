@@ -23,10 +23,13 @@ export interface ProviderModel {
   description: string | null;
   defaultReasoningLevel: string | null;
   supportedReasoningLevels: readonly ReasoningEffortCapability[] | null;
-  source?: "discovered" | "claude-code" | "settings" | "config" | "fallback";
+  source?: "discovered" | "claude-code" | "claude-code-command" | "claude-code-package" | "claude-code-cache" | "claude-code-config" | "settings" | "config" | "fallback";
   canonicalId?: string;
   family?: string;
-  effortSource?: "claude-code" | "settings" | "config" | "fallback";
+  version?: string;
+  isFallback?: boolean;
+  discoveryKind?: "models" | "aliases";
+  effortSource?: "claude-code" | "claude-code-command" | "claude-code-package" | "claude-code-cache" | "claude-code-config" | "settings" | "config" | "fallback";
   effortVerified?: boolean;
   raw?: unknown;
 }

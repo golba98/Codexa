@@ -67,11 +67,6 @@ const KNOWN_CONTEXT_REGISTRY: Record<string, KnownContextRegistryEntry> = {
   // Exact documented Anthropic model IDs only. Provider aliases such as
   // "haiku" remain unknown unless configured or discovered by CLI metadata.
   // Source: https://docs.anthropic.com/en/docs/about-claude/models
-  "anthropic:claude-opus-4-7": {
-    contextLength: 200_000,
-    sourceUrl: "https://docs.anthropic.com/en/docs/about-claude/models",
-    note: "Anthropic documented context window for this exact model ID.",
-  },
   "anthropic:claude-sonnet-4-6": {
     contextLength: 200_000,
     sourceUrl: "https://docs.anthropic.com/en/docs/about-claude/models",
@@ -147,13 +142,6 @@ const KNOWN_CONTEXT_REGISTRY: Record<string, KnownContextRegistryEntry> = {
     sourceUrl: "https://platform.openai.com/docs/models",
     note: "Estimated — Codex mini variant.",
   },
-};
-
-// Short alias IDs used by ANTHROPIC_FALLBACK_MODELS → canonical versioned IDs in the registry.
-const ANTHROPIC_MODEL_ALIAS_MAP: Record<string, string> = {
-  opus:   "claude-opus-4-7",
-  sonnet: "claude-sonnet-4-6",
-  haiku:  "claude-haiku-4-5",
 };
 
 // Normalise OpenAI/Codex model IDs to lowercase-dashed form before registry lookup.
@@ -335,7 +323,7 @@ function resolveFromConfig(
 
 function resolveFromKnownRegistry(providerId: ProviderId, modelId: string): ModelContextMetadata | null {
   const lookupId = providerId === "anthropic"
-    ? (ANTHROPIC_MODEL_ALIAS_MAP[modelId] ?? modelId)
+    ? modelId
     : providerId === "openai"
       ? normalizeOpenAIModelId(modelId)
       : modelId;

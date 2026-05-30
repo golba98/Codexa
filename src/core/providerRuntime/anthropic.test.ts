@@ -935,9 +935,9 @@ test("discoverModels uses Claude Code model-list result when available", async (
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
         return commandResult({ exitCode: 0, stdout: JSON.stringify({
           models: [
-            { value: "sonnet", label: "Sonnet 4.6", family: "sonnet", canonicalId: "claude-sonnet-4-6", effortLevels: ["low", "medium", "high", "max"], defaultEffort: "high" },
-            { value: "opus", label: "Opus 4.7", family: "opus", canonicalId: "claude-opus-4-7", effortLevels: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "xhigh" },
-            { value: "haiku", label: "Haiku 4.5", family: "haiku", canonicalId: "claude-haiku-4-5", effortLevels: ["low", "medium", "high"], defaultEffort: "medium" },
+            { value: "claude-sonnet-4-6", label: "Sonnet 4.6", family: "sonnet", canonicalId: "claude-sonnet-4-6", effortLevels: ["low", "medium", "high", "max"], defaultEffort: "high" },
+            { value: "claude-opus-4-8", label: "Opus 4.8", family: "opus", canonicalId: "claude-opus-4-8", effortLevels: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "xhigh" },
+            { value: "claude-haiku-4-5", label: "Haiku 4.5", family: "haiku", canonicalId: "claude-haiku-4-5", effortLevels: ["low", "medium", "high"], defaultEffort: "medium" },
           ],
         }) });
       }
@@ -949,20 +949,21 @@ test("discoverModels uses Claude Code model-list result when available", async (
     assert.equal(result.status, "ready");
     assert.ok(result.models.length === 3, "Should have 3 discovered models");
 
-    const sonnet = result.models.find((m) => m.modelId === "sonnet");
-    const opus = result.models.find((m) => m.modelId === "opus");
-    const haiku = result.models.find((m) => m.modelId === "haiku");
+    const sonnet = result.models.find((m) => m.modelId === "claude-sonnet-4-6");
+    const opus = result.models.find((m) => m.modelId === "claude-opus-4-8");
+    const haiku = result.models.find((m) => m.modelId === "claude-haiku-4-5");
     assert.ok(sonnet, "Should include sonnet");
     assert.ok(opus, "Should include opus");
     assert.ok(haiku, "Should include haiku");
 
-    assert.equal(sonnet?.source, "claude-code", "Sonnet should be marked as Claude Code discovered");
-    assert.equal(opus?.source, "claude-code", "Opus should be marked as Claude Code discovered");
-    assert.equal(haiku?.source, "claude-code", "Haiku should be marked as Claude Code discovered");
+    assert.equal(sonnet?.source, "claude-code-command", "Sonnet should be marked as Claude Code command discovered");
+    assert.equal(opus?.source, "claude-code-command", "Opus should be marked as Claude Code command discovered");
+    assert.equal(haiku?.source, "claude-code-command", "Haiku should be marked as Claude Code command discovered");
 
-    assert.equal(sonnet?.label, "Sonnet 4.6");
-    assert.equal(opus?.label, "Opus 4.7");
-    assert.equal(haiku?.label, "Haiku 4.5");
+    assert.equal(sonnet?.label, "Claude Sonnet 4.6");
+    assert.equal(opus?.label, "Claude Opus 4.8");
+    assert.equal(haiku?.label, "Claude Haiku 4.5");
+    assert.ok(!result.models.some((model) => /Claude\s+Opus\s+4\.7|Opus\s+4\.7/.test(model.label)));
   });
 });
 
@@ -1014,7 +1015,7 @@ test("discoverModels returns fallback-source models when version check fails", a
   });
 });
 
-test("refreshModels returns correct structure with sonnet/opus/haiku aliases", async () => {
+test("refreshModels returns correct structure with Claude model labels", async () => {
   // refreshModels uses the real claude executable; just verify structural correctness.
   if (!anthropicRuntime.refreshModels) {
     assert.fail("anthropicRuntime.refreshModels should be defined");
@@ -1022,16 +1023,27 @@ test("refreshModels returns correct structure with sonnet/opus/haiku aliases", a
   const result = await anthropicRuntime.refreshModels({ cwd: process.cwd() });
   assert.equal(result.status, "ready");
   assert.equal(result.providerId, "anthropic");
-  assert.ok(result.models.length === 3, "Should return exactly 3 Claude models");
+  assert.ok(result.models.length > 0, "Should return Claude models");
 
   const ids = result.models.map((m) => m.modelId);
-  assert.ok(ids.includes("sonnet"), "Must include sonnet alias");
-  assert.ok(ids.includes("opus"), "Must include opus alias");
-  assert.ok(ids.includes("haiku"), "Must include haiku alias");
+  assert.ok(ids.every((id) => !id.startsWith("gpt-")), "Must not include OpenAI models");
 
   // Source must be explicit and provider-owned.
   for (const m of result.models) {
-    assert.ok(["claude-code", "settings", "config", "fallback"].includes(m.source ?? ""), `Unexpected source: ${m.source}`);
+    assert.ok(
+      [
+        "claude-code-command",
+        "claude-code-package",
+        "claude-code-cache",
+        "claude-code-config",
+        "settings",
+        "config",
+        "fallback",
+      ].includes(m.source ?? ""),
+      `Unexpected source: ${m.source}`,
+    );
+    assert.match(m.label, /^Claude /);
+    assert.match(m.label, /version unknown|\d+(?:\.\d+)?/i);
   }
 });
 
@@ -1054,13 +1066,13 @@ test("refreshModels keeps previous good capability data on failure", async () =>
     });
 
     const before = anthropicRuntime.discoverModels();
-    assert.ok(before.models.some((model) => model.source === "claude-code"));
+    assert.ok(before.models.some((model) => model.source === "claude-code-command"));
     process.env.CLAUDE_EXECUTABLE = "C:\\definitely-missing\\claude.exe";
 
     const refreshed = await anthropicRuntime.refreshModels?.({ cwd: process.cwd() });
     assert.equal(refreshed?.status, "ready");
     assert.match(refreshed?.message ?? "", /keeping previous Claude capability data/i);
-    assert.ok(refreshed?.models.some((model) => model.source === "claude-code"));
+    assert.ok(refreshed?.models.some((model) => model.source === "claude-code-command"));
     assert.equal(refreshed?.diagnostics?.["refreshFailed"], true);
   });
 });

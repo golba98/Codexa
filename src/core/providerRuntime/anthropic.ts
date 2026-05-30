@@ -19,6 +19,7 @@ const ANTHROPIC_MAX_TOKENS = 1024;
 const ANTHROPIC_TIMEOUT_MS = 120_000;
 const ANTHROPIC_AUTH_CHECK_TIMEOUT_MS = 10_000;
 const ANTHROPIC_ROUTE_VALIDATION_TIMEOUT_MS = 15_000;
+const DISCOVERY_FAILURE_MESSAGE = "Claude Code model version discovery failed; using fallback aliases with unknown versions.";
 export const ANTHROPIC_ROUTE_SETUP_MESSAGE = "Anthropic/Claude is not configured for in-Codexa routing.\nSign in with Claude Code or set ANTHROPIC_API_KEY.";
 export { parseClaudeAuthStatus } from "./claudeCodeDiscovery.js";
 
@@ -498,6 +499,9 @@ export const anthropicRuntime: ProviderRuntime = {
     providerId: "anthropic",
     backendKind: getAnthropicRuntimeBackendKind(),
     models: getActiveAnthropicModels(),
+    message: (claudeCapabilityDiscovery?.modelSource ?? "fallback") === "fallback"
+      ? DISCOVERY_FAILURE_MESSAGE
+      : undefined,
     diagnostics: claudeCapabilityDiscovery ? {
       resolvedCommand: claudeCapabilityDiscovery.resolvedCommand,
       modelSource: claudeCapabilityDiscovery.modelSource,
@@ -534,7 +538,9 @@ export const anthropicRuntime: ProviderRuntime = {
       providerId: "anthropic",
       backendKind: getAnthropicRuntimeBackendKind(),
       models: discoveredAnthropicModels,
-      message: `Refreshed Claude capabilities (${discovery.modelSource}).`,
+      message: discovery.modelSource === "fallback"
+        ? DISCOVERY_FAILURE_MESSAGE
+        : `Refreshed Claude capabilities (${discovery.modelSource}).`,
       diagnostics: {
         resolvedCommand: discovery.resolvedCommand,
         modelSource: discovery.modelSource,

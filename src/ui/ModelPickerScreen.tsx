@@ -50,10 +50,25 @@ function getReasoningLevels(model: CodexModelCapability | undefined): readonly R
 
 function getModelSourceMarker(models: readonly CodexModelCapability[], activeProviderLabel: string): string | null {
   if (activeProviderLabel !== "Claude" || models.length === 0) return null;
-  const source = (models[0]?.raw as { source?: string } | null | undefined)?.source;
-  if (source === "claude-code" || source === "discovered") return "Discovered from Claude Code";
-  if (source === "settings" || source === "config") return "From Claude settings";
-  return "Fallback defaults";
+  const raw = models[0]?.raw as { source?: string; discoveryKind?: string } | null | undefined;
+  const source = raw?.source;
+  const sourceLabel = source === "claude-code-package"
+    ? "installed package metadata"
+    : source === "claude-code-command"
+      ? "Claude Code command"
+      : source === "claude-code-cache"
+        ? "Claude Code cache"
+        : source === "claude-code-config" || source === "settings" || source === "config"
+          ? "Claude settings"
+          : "Claude Code";
+  if (source === "claude-code-package" || source === "claude-code-command" || source === "claude-code-cache" || source === "claude-code-config" || source === "claude-code" || source === "discovered") {
+    return raw?.discoveryKind === "aliases"
+      ? `Claude Code aliases resolved from ${sourceLabel}`
+      : `Claude Code models discovered from ${sourceLabel}`;
+  }
+  if (source === "settings" || source === "config") return "Claude Code models discovered from Claude settings";
+  if (source === "fallback") return "Claude Code discovery failed; using fallback aliases";
+  return null;
 }
 
 function normalizeDraftReasoning(
