@@ -507,7 +507,11 @@ npm view @golba98/codexa versions --json
 npm view @golba98/codexa dist-tags --json
 ```
 
-If `dist-tags.latest` points to an older version, v1.0.3 may not have been published yet, or the `latest` tag may need to be updated. Until v1.0.3 is published to npm, `@latest` will resolve to the highest published version.
+If `dist-tags.latest` points to an older version, the registry may be slow to propagate. Wait a few minutes and retry, or install a specific version explicitly:
+
+```bash
+npm install -g @golba98/codexa@1.0.3
+```
 
 ### `codexa --version` still shows an old version after updating
 
@@ -605,13 +609,5 @@ v1.0.3 is a package correctness and release-process fix:
 - Semantic color-token system (`logoPrimary`, `text`, `textMuted`, etc.)
 - Responsive ASCII logo with three fallback sizes
 
-> Once v1.0.3 is published to npm, users on v1.0.2 will see the in-app update notice within 6 hours (cache TTL). To trigger it immediately: delete `~/.codexa-update-check.json` and restart Codexa.
+> Users on v1.0.2 will see the in-app update notice on next startup (within 6 hours — the cache TTL). To trigger it immediately: delete `~/.codexa-update-check.json` and restart Codexa.
 
-## Repo Hygiene
-
-Local-only files kept out of version control:
-
-- `node_modules/`
-- `.claude/`
-- `.env` and other local secret files
-- Editor, OS, and cache files

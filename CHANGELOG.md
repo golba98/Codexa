@@ -20,27 +20,12 @@
 
 - Dev and production share the same UI renderer. The installed `codexa` command shows `Codexa v1.0.3`; the dev launchers (`codexa-dev` / `cxd`) show `Codexa v1.0.3-dev local`.
 - This release does not include new features. It is a package correctness and release-process fix.
-- Do not publish until the tarball install smoke test confirms the full UI renders from outside the repo.
 
 ### Update checker behavior (for users on v1.0.2)
 
 Once v1.0.3 is published to npm, users on v1.0.2 will see the in-app update notice on next startup (within 6 hours — the cache TTL). To see it immediately: delete `~/.codexa-update-check.json` and restart Codexa, or run `/update check` in-app.
 
 The update checker fetches `dist-tags.latest` from `https://registry.npmjs.org/@golba98%2Fcodexa` and compares it against the running version. Update checks are disabled for local dev builds.
-
-### Release steps (v1.0.3)
-
-```bash
-npm pack --dry-run          # confirm tarball contents
-npm pack                    # generate golba98-codexa-1.0.3.tgz
-npm publish                 # publishes and sets latest tag
-
-# verify
-npm view @golba98/codexa dist-tags --json   # should show {"latest": "1.0.3"}
-
-# if latest tag did not update automatically:
-npm dist-tag add @golba98/codexa@1.0.3 latest
-```
 
 ---
 
