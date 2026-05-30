@@ -1,24 +1,85 @@
 # Codexa
 
-A terminal UI (TUI) wrapper around the `codex` CLI. Built with TypeScript, Bun, and Ink (React for terminal rendering). Codexa gives `codex` a richer interactive shell with scrollable conversation history, workspace locking, layered TOML config, themes, and in-app slash commands.
+A terminal UI (TUI) wrapper for coding agents. Built with TypeScript, Bun, and Ink (React for terminal rendering). Codexa routes to OpenAI Codex, Anthropic Claude Code, Google Gemini, and local models — giving each a richer interactive shell with scrollable history, workspace locking, layered TOML config, themes, and in-app slash commands.
 
 ## Quick Start
 
-Fastest path for normal users:
+Fastest path for normal users (OpenAI Codex route):
 
 1. **Install Codex CLI** — see [Installing OpenAI Codex CLI](#installing-openai-codex-cli)
-2. **Authenticate** — run `codex` once and sign in with ChatGPT when prompted
-3. **Install Codexa** — `npm install -g @golba98/codexa`
+2. **Authenticate Codex** — run `codex` once and sign in with ChatGPT when prompted
+3. **Install Codexa** — `npm install -g @golba98/codexa@latest`
 4. **Run Codexa** — `cd <your-workspace> && codexa`
 
-Verify both tools are ready:
+Verify both are ready:
 
 ```
 codex --version
 codexa --version
 ```
 
-## Installing OpenAI Codex CLI
+## Requirements
+
+| For... | Requires |
+|--------|----------|
+| Global install (`codexa` command) | Node.js + npm |
+| Local dev / running from source | [Bun](https://bun.sh) |
+| Codex/OpenAI route | Codex CLI installed and authenticated |
+| Claude/Anthropic route | Claude Code CLI installed and authenticated |
+| Gemini/Google route | Gemini CLI installed and authenticated |
+| Local route | LM Studio (or any OpenAI-compatible server) |
+
+## Installing Codexa
+
+```
+npm install -g @golba98/codexa@latest
+```
+
+Verify:
+
+```
+codexa --version
+```
+
+## Updating Codexa
+
+```
+npm install -g @golba98/codexa@latest
+```
+
+After updating, confirm the version:
+
+```
+codexa --version
+```
+
+If it still shows the old version, check which binary is active:
+
+```bash
+# Linux/macOS
+which -a codexa
+
+# Windows PowerShell
+Get-Command codexa
+```
+
+If the wrong binary is active, see [Troubleshooting](#troubleshooting).
+
+## Tool Overview
+
+Codexa and provider CLIs are independent tools with separate version numbers. Updating one does not update the others.
+
+| Tool | Purpose | Version check | Update |
+|------|---------|---------------|--------|
+| Codex CLI | OpenAI coding agent | `codex --version` | `codex update` or reinstall |
+| Claude Code CLI | Anthropic coding agent | `claude --version` | `npm install -g @anthropic-ai/claude-code@latest` |
+| Codexa | TUI wrapper / workspace experience | `codexa --version` | `npm install -g @golba98/codexa@latest` |
+
+## Provider CLI Setup
+
+Codexa can route to multiple providers. Each provider CLI must be installed and authenticated separately — Codexa does not manage provider authentication.
+
+### Installing OpenAI Codex CLI
 
 **Standalone (macOS/Linux):**
 
@@ -44,19 +105,11 @@ npm install -g @openai/codex
 brew install --cask codex
 ```
 
-After installing, run `codex` once and sign in with ChatGPT when prompted, or configure an API key if using API key auth.
+After installing, run `codex` once and sign in with ChatGPT when prompted, or configure an API key for API key auth.
 
-> Codexa does not manage Codex authentication. The Codex provider route requires an already-authenticated Codex CLI.
+> Codexa does not manage Codex authentication. The Codex route requires an already-authenticated Codex CLI.
 
-## Updating OpenAI Codex CLI
-
-**Preferred (self-update, when supported):**
-
-```
-codex update
-```
-
-**Fallbacks by install method:**
+**Updating Codex CLI:**
 
 | Install method | Update command |
 |----------------|----------------|
@@ -65,147 +118,97 @@ codex update
 | npm | `npm install -g @openai/codex@latest` |
 | Homebrew | `brew upgrade --cask codex` |
 
-If `codex --version` still shows the old version after updating, check which binary is active:
+Preferred self-update (when supported): `codex update`
 
-```powershell
-# Windows
-Get-Command codex
-
-# Linux/macOS
-which codex
-```
-
-## Installing Published Codexa
+### Installing Claude Code CLI
 
 ```
-npm install -g @golba98/codexa
+npm install -g @anthropic-ai/claude-code
 ```
 
 Verify:
 
 ```
-codexa --version
+claude --version
 ```
 
-Update:
+Authenticate — run `claude` once and sign in when prompted:
 
 ```
-npm install -g @golba98/codexa@latest
+claude
 ```
 
-If `codexa --version` still shows the old version, check which binary is active:
+> Codexa does not manage Claude authentication. The Claude route requires an already-authenticated Claude Code CLI. Codexa routes to the `claude` executable — make sure it is on your PATH and working before switching to the Anthropic provider in Codexa.
 
-```powershell
-# Windows
-Get-Command codexa
+**Updating Claude Code CLI:**
 
-# Linux/macOS
-which codexa
+```
+npm install -g @anthropic-ai/claude-code@latest
 ```
 
-## Codex Provider Requirements
+### Installing Gemini CLI
 
-Codexa can route to multiple providers including Codex, Anthropic, Google Gemini, and Local (LM Studio). The **Codex route** requires the OpenAI Codex CLI to be installed and authenticated separately. See [Installing OpenAI Codex CLI](#installing-openai-codex-cli).
+Codexa routes to the `gemini` executable. Install the Gemini CLI separately and authenticate per Google's instructions. Once installed and authenticated, Codexa can use it without additional configuration.
 
-Codexa and Codex CLI are independent tools with separate version numbers. Updating one does not update the other.
-
-| Tool | Purpose | Version check | Update |
-|------|---------|---------------|--------|
-| Codex CLI | OpenAI coding agent | `codex --version` | `codex update` or reinstall |
-| Codexa | TUI wrapper / workspace experience | `codexa --version` | `npm install -g @golba98/codexa@latest` |
-
-## Published vs Local Codexa
-
-**Published Codexa** (`npm install -g @golba98/codexa`):
-- Installed globally; available as `codexa` anywhere
-- Stable release; updates on demand via npm
-- Use this for daily work
-
-**Local Codexa** (`bun run dev` from the repo):
-- Runs directly from the working tree
-- Reflects uncommitted changes immediately (with `--watch`)
-- Use this for testing new features or contributing
-
-> **Gotcha:** When testing local changes, confirm you are running the local build and not the global one. Use `Get-Command codexa` (Windows) or `which codexa` (Linux/macOS) to check. If it points to the global install, use `bun run dev` from the repo, or install `codexa-dev` as described in [Running Local Codexa](#running-local-codexa-development).
-
-## Running Local Codexa (Development)
-
-**Requirement:** [Bun](https://bun.sh) installed.
-
-```powershell
-# Windows PowerShell
-cd C:\Development\1-JavaScript\13-Custom-CLI-Normal
-bun install
-
-bun run typecheck    # Type-check without emit
-bun test             # Run all tests
-bun run dev          # Start with file watching (development)
-bun run start        # Single run without watching
-bun run build        # Generate build info + typecheck
-```
+If the Gemini executable is not on PATH or has a non-standard name, specify it explicitly:
 
 ```bash
-# Linux/macOS
-cd /path/to/13-Custom-CLI-Normal
-bun install
+# Environment variable
+export GEMINI_EXECUTABLE="/path/to/gemini"
 
-bun run typecheck
-bun test
-bun run dev
-bun run start
-bun run build
+# or in .codex/config.toml
+gemini_command_path = "/path/to/gemini"
 ```
 
-Dev launches lock the workspace to the directory Bun was invoked from. For the normal end-user flow, install `codexa-dev` globally or use `npm link`, then run from the intended workspace.
+### Using Local Models (LM Studio)
 
-**Option A — Install a separate `codexa-dev` command (recommended for contributors):**
+Codexa can route the Local provider through any OpenAI-compatible server.
 
-```
-bun run install:dev-bin
-```
+1. Start LM Studio and load a model.
+2. Enable the LM Studio local server.
+3. Confirm the endpoint is `http://localhost:1234/v1`.
+4. Open Codexa's provider picker with `/providers`.
+5. Select `Local`, refresh models if needed, then choose `Use in Codexa`.
 
-This installs two shims into your npm global bin directory — `codexa-dev` and the
-short alias `cxd` — both pointing at the local repo (`scripts/run-local-dev.mjs`,
-channel `local-dev`). The published `codexa` command is not modified — they coexist.
-Run from any workspace:
+Environment variable configuration:
 
-```
-cd <your-workspace>
-codexa-dev        # or: cxd
-```
-
-Both run the local TypeScript source directly via Bun (there is no compiled
-`dist/`), so there is no stale build to worry about — the header/logo you see is
-the one in the repo. The brand line shows `Codexa vX.Y.Z-dev local` so you can
-tell the dev build apart from the published one. To confirm exactly which file is
-executing, run `CODEXA_DEBUG_LAUNCH=1 codexa-dev` (or `cxd`).
-
-Uninstall by removing the `codexa-dev` and `cxd` shims from your npm global bin
-directory (`npm prefix -g`).
-
-**Refresh the published global `codexa` from this checkout** (so the plain
-`codexa` command also serves the current header without publishing to npm):
-
-```
-npm install -g .
+```bash
+export CODEXA_LOCAL_BASE_URL="http://localhost:1234/v1"
+export CODEXA_LOCAL_API_KEY="lm-studio"
+export CODEXA_LOCAL_MODEL="google/gemma-4-26b-a4b"
 ```
 
-**Option B — Redirect the global `codexa` command to the repo:**
+Workspace provider config in `.codexa/providers.json`:
 
+```json
+{
+  "providers": {
+    "local": {
+      "enabled": true,
+      "type": "openai-compatible",
+      "base_url": "http://localhost:1234/v1",
+      "api_key": "lm-studio",
+      "default_model": "google/gemma-4-26b-a4b",
+      "models": {
+        "google/gemma-4-26b-a4b": {
+          "contextLength": 8192
+        }
+      }
+    }
+  }
+}
 ```
-npm link
-```
 
-This replaces the global `codexa` with a symlink to the repo. Undo with `npm unlink -g @golba98/codexa`.
+`OPENAI_BASE_URL`, `OPENAI_API_BASE`, and `OPENAI_API_KEY` are also accepted for the Local provider only. They do not redirect other routes.
 
-## Usage
+## Running Codexa
 
 ### Interactive mode
 
-Launch from the directory you want to use as the workspace:
+Launch from the directory you want as the workspace:
 
-```powershell
-cd "<path-to-your-workspace>"
+```bash
+cd <your-workspace>
 codexa
 ```
 
@@ -223,7 +226,7 @@ The session is locked to the directory Codexa was launched from.
 
 Non-flag arguments are sent as an initial prompt on startup:
 
-```powershell
+```bash
 codexa "explain this codebase"
 codexa --profile review --model gpt-5.4 "review src/app.tsx"
 ```
@@ -232,7 +235,7 @@ codexa --profile review --model gpt-5.4 "review src/app.tsx"
 
 Run a single prompt non-interactively and exit:
 
-```powershell
+```bash
 codexa exec "refactor src/utils.ts to use async/await"
 codexa exec --model gpt-5.4-mini --reasoning low "summarize changes in HEAD"
 codexa exec --timing "run the test suite and fix failures"
@@ -297,6 +300,7 @@ Type `/` in the composer to access in-app commands. Key commands:
 | `/workspace` | Show locked workspace path |
 | `/workspace relaunch <path>` | Restart TUI in another directory |
 | `/auth` · `/auth status` | Auth panel or status probe |
+| `/update check` | Check npm registry for a newer Codexa version |
 | `/mouse` | Toggle mouse mode (wheel scroll vs. native selection) |
 | `/verbose` | Toggle verbose output |
 | `/copy` | Copy last response to clipboard |
@@ -333,7 +337,7 @@ writable_roots = ["/path/to/dir"]
 
 # Codexa-specific
 [codexa]
-backend = "codex-subprocess"       # codex-subprocess (only active backend in v1)
+backend = "codex-subprocess"       # codex-subprocess (default)
 mode = "full-auto"                 # suggest | auto-edit | full-auto
 
 # Gemini CLI path (if using Gemini)
@@ -355,77 +359,15 @@ sandbox_mode = "read-only"
 
 **Example with CLI overrides:**
 
-```powershell
+```bash
 codexa --profile review --config model="gpt-5.4" --config codexa.mode="suggest"
 ```
 
-### Gemini CLI Executable
-
-Codexa resolves the Gemini executable directly by path rather than through shell aliases or wrappers. To specify the Gemini CLI location:
-
-```powershell
-$env:GEMINI_EXECUTABLE = "C:\Users\you\AppData\Roaming\npm\gemini.cmd"
-```
-
-or in `config.toml`:
-
-```toml
-gemini_command_path = "C:\\Users\\you\\AppData\\Roaming\\npm\\gemini.cmd"
-```
-
-### Using local models with LM Studio
-
-Codexa can route the Local provider through OpenAI-compatible local servers such as LM Studio.
-
-1. Start LM Studio.
-2. Load a model.
-3. Enable the LM Studio local server.
-4. Confirm the endpoint is `http://localhost:1234/v1`.
-5. Open Codexa's provider picker with `/providers`.
-6. Select `Local`, refresh models if needed, then choose `Use in Codexa`.
-
-Codexa checks `GET http://localhost:1234/v1/models` and uses the returned model IDs in the Local model picker. If LM Studio returns `google/gemma-4-26b-a4b`, that model appears as a selectable Local model.
-
-Context length is detected separately from model discovery. Codexa first looks for context metadata returned by the provider, then CLI metadata, then an explicit workspace config override, then exact known registry entries. If no trusted source provides a limit, Codexa shows `Context: Unknown` and does not calculate a context percentage.
-
-Environment variable configuration:
-
-```powershell
-$env:CODEXA_LOCAL_BASE_URL = "http://localhost:1234/v1"
-$env:CODEXA_LOCAL_API_KEY = "lm-studio"
-$env:CODEXA_LOCAL_MODEL = "google/gemma-4-26b-a4b"
-```
-
-Workspace provider configuration in `.codexa/providers.json`:
-
-```json
-{
-  "providers": {
-    "local": {
-      "enabled": true,
-      "type": "openai-compatible",
-      "base_url": "http://localhost:1234/v1",
-      "api_key": "lm-studio",
-      "default_model": "google/gemma-4-26b-a4b",
-      "models": {
-        "google/gemma-4-26b-a4b": {
-          "contextLength": 8192
-        }
-      }
-    }
-  }
-}
-```
-
-`OPENAI_BASE_URL`, `OPENAI_API_BASE`, and `OPENAI_API_KEY` are also accepted for the Local provider only. They do not redirect OpenAI/Codex, Gemini, or Claude routes.
-
-Use the `models.<modelId>.contextLength` override only when you know the loaded model/server limit. Values must be positive integers; zero, negative, and non-numeric values are ignored.
-
 ### Project Trust
 
-Project config (`.codex/config.toml`) is only applied when the detected project root is explicitly trusted. Manage trust with:
+Project config (`.codex/config.toml`) is only applied when the detected project root is explicitly trusted:
 
-```text
+```
 /config trust status
 /config trust on
 /config trust off
@@ -435,21 +377,19 @@ Untrusted project config is detected but blocked, and shown visibly in `/config`
 
 ## Workspace Management
 
-Codexa locks the session to the directory it was launched from. To start in the correct workspace:
+Codexa locks the session to the directory it was launched from:
 
-```powershell
-cd "<path-to-your-workspace>"
+```bash
+cd <your-workspace>
 codexa
 ```
 
 To recover from the wrong workspace without restarting manually:
 
-```text
+```
 /workspace relaunch .
 /workspace relaunch <workspace-path>
 ```
-
-`/workspace relaunch` restarts the TUI process in the target directory. It does not hot-swap the workspace in the running process.
 
 ## Themes
 
@@ -470,9 +410,85 @@ UI-only preferences are stored in `~/.codexa-settings.json` (separate from runti
 | Busy loader | `/setting busy-loader <bool>` | `true` · `false` |
 | Mouse mode | `/mouse` | wheel scroll · native selection |
 
-## Testing
+## Published vs Local Codexa
+
+**Published Codexa** (`npm install -g @golba98/codexa@latest`):
+- Installed globally; available as `codexa` anywhere
+- Stable release; updates on demand via npm
+- Use this for daily work
+
+**Local Codexa** (`bun run dev` from the repo):
+- Runs directly from the working tree
+- Reflects uncommitted changes immediately (with `--watch`)
+- Header shows `Codexa vX.Y.Z-dev local` so you can tell it apart from the published build
+- Use this for testing new features or contributing
+
+> **Gotcha:** When testing local changes, confirm you are running the local build and not the global one. Use `Get-Command codexa` (Windows) or `which -a codexa` (Linux/macOS) to check.
+
+## Local Development
+
+**Requirement:** [Bun](https://bun.sh) installed.
+
+```bash
+# Linux/macOS
+cd /path/to/13-Custom-CLI-Normal
+bun install
+
+bun run typecheck    # Type-check without emit
+bun test             # Run all tests
+bun run dev          # Start with file watching (development)
+bun run start        # Single run without watching
+bun run build        # Generate build info + typecheck
+```
 
 ```powershell
+# Windows PowerShell
+cd C:\Development\1-JavaScript\13-Custom-CLI-Normal
+bun install
+
+bun run typecheck
+bun test
+bun run dev
+bun run start
+bun run build
+```
+
+Dev launches lock the workspace to the directory Bun was invoked from.
+
+**Option A — Install a separate `codexa-dev` command (recommended for contributors):**
+
+```
+bun run install:dev-bin
+```
+
+This installs two shims into your npm global bin directory — `codexa-dev` and the short alias `cxd` — both pointing at the local repo. The published `codexa` command is not modified — they coexist.
+
+```bash
+cd <your-workspace>
+codexa-dev    # or: cxd
+```
+
+To confirm exactly which file is executing: `CODEXA_DEBUG_LAUNCH=1 codexa-dev`
+
+Uninstall by removing the `codexa-dev` and `cxd` shims from your npm global bin directory (`npm prefix -g`).
+
+**Option B — Redirect the global `codexa` command to the repo:**
+
+```
+npm link
+```
+
+This replaces the global `codexa` with a symlink to the repo. Undo with `npm unlink -g @golba98/codexa`.
+
+**Refresh the global `codexa` from this checkout** (without publishing to npm):
+
+```
+npm install -g .
+```
+
+## Testing
+
+```bash
 bun test                              # Run all tests
 bun test src/ui/layout.test.ts        # Run a specific file or pattern
 ```
@@ -481,14 +497,115 @@ Tests are colocated with source files (`*.test.ts` / `*.test.tsx`).
 
 ## Troubleshooting
 
+### `npm install -g @golba98/codexa@latest` installs an older version
+
+Run these diagnostics to understand the npm registry state:
+
+```bash
+npm view @golba98/codexa version
+npm view @golba98/codexa versions --json
+npm view @golba98/codexa dist-tags --json
+```
+
+If `dist-tags.latest` points to an older version, v1.0.3 may not have been published yet, or the `latest` tag may need to be updated. Until v1.0.3 is published to npm, `@latest` will resolve to the highest published version.
+
+### `codexa --version` still shows an old version after updating
+
+Check which binary is active and what version is installed globally:
+
+```bash
+# Linux/macOS
+which -a codexa
+
+# Windows PowerShell
+Get-Command codexa
+
+# Check globally installed version
+npm list -g --depth=0 @golba98/codexa
+```
+
+Multiple `codexa` entries from `which -a` means more than one binary exists on PATH. The first one wins. If a local dev build (`codexa-dev` or `npm link`) is ahead of the published binary on PATH, it will shadow the global install.
+
+### Multiple `codexa` binaries on PATH
+
+Run `which -a codexa` to see all of them. The first one in the list is what runs. Reorder PATH, or uninstall/unlink the unwanted binary:
+
+```bash
+npm unlink -g @golba98/codexa    # remove npm link
+npm uninstall -g @golba98/codexa # remove global install
+```
+
+Then reinstall: `npm install -g @golba98/codexa@latest`
+
+### Installed from a local tarball
+
+If you installed from a `.tgz` file rather than from the npm registry, `npm list -g` shows the version from that tarball. To switch to the registry version:
+
+```bash
+npm uninstall -g @golba98/codexa
+npm install -g @golba98/codexa@latest
+```
+
+### npm global prefix not on PATH
+
+Find where npm installs global binaries:
+
+```bash
+npm prefix -g       # e.g. /home/you/.local/share/npm
+```
+
+The `bin/` subdirectory of that path must be on your PATH. Add it to `~/.bashrc` or `~/.zshrc`:
+
+```bash
+export PATH="$(npm prefix -g)/bin:$PATH"
+```
+
+Then restart your terminal.
+
+### Local linked build running instead of published package
+
+If you ran `npm link` from the repo, `codexa` points at the local source. The header shows `Codexa vX.Y.Z-dev local` in that case. To go back to the published version:
+
+```bash
+npm unlink -g @golba98/codexa
+npm install -g @golba98/codexa@latest
+```
+
+### Update notice does not appear
+
+Codexa checks for updates on startup and caches the result for 6 hours (stored in `~/.codexa-update-check.json`). The update notice only appears when the npm registry `latest` version is newer than the running version.
+
+If you expect a notice but don't see one:
+
+1. Check the current registry state: `npm view @golba98/codexa dist-tags --json`
+2. Clear the cache to force a fresh check: delete `~/.codexa-update-check.json`, then restart Codexa
+3. Force an explicit check in-app: `/update check`
+4. Update checks are disabled for local dev builds (`codexa-dev` / `cxd`)
+
 | Symptom | Fix |
 |---------|-----|
-| `codex: command not found` | Install Codex CLI (see [Installing OpenAI Codex CLI](#installing-openai-codex-cli)) and restart the terminal |
-| `codexa: command not found` | Run `npm install -g @golba98/codexa`, or use `bun run dev` from the repo |
-| Codexa still shows an old version after update | Run `Get-Command codexa` / `which codexa` to check which binary is active; the wrong binary may be earlier on PATH |
-| Codex updated but Codexa did not | They are independent tools — update Codexa separately: `npm install -g @golba98/codexa@latest` |
-| Codexa updated but Codex did not | They are independent tools — update Codex separately: `codex update` |
-| Local changes are not reflected when running `codexa` | You may be running the global binary. Use `bun run dev` from the repo, or run `bun run install:dev-bin` to install `codexa-dev` that always points at the repo. |
+| `codex: command not found` | Install Codex CLI and restart the terminal |
+| `claude: command not found` | Install Claude Code CLI: `npm install -g @anthropic-ai/claude-code` |
+| `codexa: command not found` | Run `npm install -g @golba98/codexa@latest`, or use `bun run dev` from the repo |
+| Codexa still shows old version after update | Check `which -a codexa` — a different binary may be earlier on PATH |
+| Codex updated but Codexa did not | Independent tools — update Codexa: `npm install -g @golba98/codexa@latest` |
+| Codexa updated but Codex did not | Independent tools — update Codex: `codex update` |
+| Local changes not reflected when running `codexa` | You may be running the global binary — use `bun run dev` or `codexa-dev` from the repo |
+
+## Versions
+
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.
+
+**Current release: v1.0.3**
+
+v1.0.3 is a package correctness and release-process fix:
+- The installed `npm` package now shows the full Codexa UI (logo, header, workspace, provider)
+- `APP_VERSION` in the package is guaranteed to match `package.json` at publish time
+- Test files are excluded from the published tarball
+- Semantic color-token system (`logoPrimary`, `text`, `textMuted`, etc.)
+- Responsive ASCII logo with three fallback sizes
+
+> Once v1.0.3 is published to npm, users on v1.0.2 will see the in-app update notice within 6 hours (cache TTL). To trigger it immediately: delete `~/.codexa-update-check.json` and restart Codexa.
 
 ## Repo Hygiene
 

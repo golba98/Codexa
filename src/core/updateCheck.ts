@@ -3,7 +3,7 @@ import { isLocalDevChannel } from "./channel.js";
 
 export const CODEXA_NPM_PACKAGE = "@golba98/codexa";
 export const CODEXA_NPM_REGISTRY_URL = "https://registry.npmjs.org/@golba98%2Fcodexa";
-export const CODEXA_UPDATE_COMMAND = `npm install -g ${CODEXA_NPM_PACKAGE}`;
+export const CODEXA_UPDATE_COMMAND = `npm install -g ${CODEXA_NPM_PACKAGE}@latest`;
 
 export type UpdateStatus = "up-to-date" | "update-available" | "unknown" | "error";
 
@@ -175,7 +175,7 @@ export function formatUpdateInstructions(result: UpdateCheckResult | null): stri
     `npm latest version:        ${latest}`,
     `Status:          ${statusLine}`,
     "",
-    `Run: ${CODEXA_UPDATE_COMMAND}@latest`,
+    `Run: ${CODEXA_UPDATE_COMMAND}`,
   ].join("\n");
 }
 
