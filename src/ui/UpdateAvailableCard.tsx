@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { CODEXA_UPDATE_COMMAND } from "../core/updateCheck.js";
+import { CODEXA_UPDATE_COMMAND, formatVersionLabel } from "../core/updateCheck.js";
 import { clampVisualText } from "./layout.js";
 import { useTheme } from "./theme.js";
 
@@ -33,8 +33,8 @@ export function UpdateAvailableCard({ latestVersion, currentVersion, width }: Up
       flexShrink={0}
     >
       <Text color={theme.text} bold>{clamp("Update available")}</Text>
-      <Text color={theme.textMuted}>{clamp(`Codexa ${latestVersion} is available`)}</Text>
-      <Text color={theme.textMuted}>{clamp(`You are using ${currentVersion}`)}</Text>
+      <Text color={theme.textMuted}>{clamp(`Codexa ${formatVersionLabel(latestVersion)}`)}</Text>
+      <Text color={theme.textMuted}>{clamp(`Using ${formatVersionLabel(currentVersion)}`)}</Text>
       <Text color={theme.textDim}>{clamp(command)}</Text>
     </Box>
   );

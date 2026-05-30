@@ -579,6 +579,12 @@ npm install -g @golba98/codexa@latest
 
 Codexa checks for updates on startup and caches the result for 6 hours (stored in `~/.codexa-update-check.json`). The update notice only appears when the npm registry `latest` version is newer than the running version.
 
+Published npm versions are immutable. Versions before the fixed update checker may not show update notices even when a newer package exists. If in doubt, update directly:
+
+```bash
+npm install -g @golba98/codexa@latest
+```
+
 If you expect a notice but don't see one:
 
 1. Check the current registry state: `npm view @golba98/codexa dist-tags --json`
@@ -600,14 +606,11 @@ If you expect a notice but don't see one:
 
 See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
-**Current release: v1.0.3**
+**Current release: v1.0.4**
 
-v1.0.3 is a package correctness and release-process fix:
-- The installed `npm` package now shows the full Codexa UI (logo, header, workspace, provider)
-- `APP_VERSION` in the package is guaranteed to match `package.json` at publish time
-- Test files are excluded from the published tarball
-- Semantic color-token system (`logoPrimary`, `text`, `textMuted`, etc.)
-- Responsive ASCII logo with three fallback sizes
+v1.0.4 is an update-notice reliability fix:
+- Older installed versions can detect when npm `latest` is newer
+- `/update check` bypasses stale cache and reports a useful status
+- Failed registry lookups do not get cached as “up to date”
 
-> Users on v1.0.2 will see the in-app update notice on next startup (within 6 hours — the cache TTL). To trigger it immediately: delete `~/.codexa-update-check.json` and restart Codexa.
-
+> Versions before the fixed update checker may not show update notices. Update directly with `npm install -g @golba98/codexa@latest`.

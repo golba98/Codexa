@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
 import { spawn } from "child_process";
 import { useTheme } from "./theme.js";
-import { CODEXA_NPM_PACKAGE, CODEXA_UPDATE_COMMAND } from "../core/updateCheck.js";
+import { CODEXA_NPM_PACKAGE, CODEXA_UPDATE_COMMAND, formatVersionLabel } from "../core/updateCheck.js";
 
 type Phase = "menu" | "running" | "done" | "error";
 
@@ -122,11 +122,11 @@ export function UpdatePromptPanel({
         flexDirection="column"
       >
         <Box>
-          <Text color={theme.accent} bold>Update available  </Text>
+          <Text color={theme.accent} bold>{`Update available: Codexa ${formatVersionLabel(latestVersion)}  `}</Text>
           <Text color={theme.textMuted}>{hintText}</Text>
         </Box>
         <Box marginTop={1}>
-          <Text color={theme.text}>{`✨ ${currentVersion} -> ${latestVersion}`}</Text>
+          <Text color={theme.text}>{`${formatVersionLabel(currentVersion)} -> ${formatVersionLabel(latestVersion)}`}</Text>
         </Box>
         <Box>
           <Text color={theme.textMuted}>{`Package: ${CODEXA_NPM_PACKAGE}`}</Text>

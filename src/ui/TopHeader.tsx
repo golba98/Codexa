@@ -2,6 +2,7 @@ import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
 import { formatCodexaBrandLabel } from "../core/channel.js";
+import { formatVersionLabel } from "../core/updateCheck.js";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../core/auth/codexAuth.js";
@@ -343,7 +344,7 @@ export function TopHeader({
             )}
             {metadataColumn}
             {updateAvailable && (
-              <Text color={theme.warning} wrap="truncate">{`↑ Update: Codexa ${updateAvailable.latestVersion} is available — run: npm install -g @golba98/codexa@latest`}</Text>
+              <Text color={theme.warning} wrap="truncate">{`Update available: Codexa ${formatVersionLabel(updateAvailable.latestVersion)} — Run: npm install -g @golba98/codexa@latest`}</Text>
             )}
           </Box>
         )}
