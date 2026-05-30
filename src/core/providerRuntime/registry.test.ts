@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { ChildProcess } from "node:child_process";
+import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 import {
   discoverProviderModels,
   getProviderRouteSetupMessage,
   getProviderRuntime,
   isProviderRouteConfigured,
   resolveActiveProviderRoute,
+  getDefaultRouteModel,
 } from "./registry.js";
 import { resetGeminiRouteValidationCacheForTests } from "./gemini.js";
-import { resetAnthropicRouteValidationCacheForTests } from "./anthropic.js";
+import { resetAnthropicRouteValidationCacheForTests, validateAnthropicRoute } from "./anthropic.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "./local.js";
 
 test("google runtime exposes configured Gemini models for in-Codexa routing", () => {
@@ -230,4 +233,106 @@ test("local route configuration is gated by endpoint model discovery", async () 
 
   assert.equal(isProviderRouteConfigured("local"), true);
   resetLocalProviderStateForTests();
+});
+
+function commandResult(overrides: Partial<CommandResult>): CommandResult {
+  return {
+    status: "completed",
+    exitCode: 0,
+    signal: null,
+    stdout: "",
+    stderr: "",
+    startedAt: 0,
+    endedAt: 0,
+    durationMs: 0,
+    userMessage: "Command completed.",
+    ...overrides,
+  };
+}
+
+function mockRunCommand(
+  resultOrMap: CommandResult | ((executable: string, args: string[]) => CommandResult),
+): typeof runCommand {
+  return ((spec) => {
+    const result = typeof resultOrMap === "function"
+      ? resultOrMap(spec.executable, spec.args)
+      : resultOrMap;
+    return {
+      child: null as unknown as ChildProcess,
+      result: Promise.resolve(result),
+      cancel: () => undefined,
+    };
+  }) as typeof runCommand;
+}
+
+test("Provider isolation: discoverProviderModels('openai') returns empty models array regardless of anthropic discovery state", async () => {
+  resetAnthropicRouteValidationCacheForTests();
+
+  // Initially openai is empty
+  const initialOpenai = discoverProviderModels("openai");
+  assert.deepEqual(initialOpenai.models, []);
+
+  // Mock-validate anthropic to populate cache
+  const mockImpl = mockRunCommand((executable, args) => {
+    if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "claude\n" });
+    if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+    if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json\n" });
+    if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json\n" });
+    if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
+      return commandResult({ exitCode: 0, stdout: JSON.stringify([
+        { value: "custom-discovered-model", label: "Custom Discovered Model", family: "sonnet", canonicalId: "claude-sonnet-4-6", effortLevels: ["low"], defaultEffort: "low" }
+      ]) });
+    }
+    return commandResult({ exitCode: 0 });
+  });
+
+  await validateAnthropicRoute({
+    cwd: process.cwd(),
+    runCommandImpl: mockImpl,
+  });
+
+  // Verify anthropic has discovered model
+  const anthropicDiscovery = discoverProviderModels("anthropic");
+  assert.equal(anthropicDiscovery.status, "ready");
+  assert.ok(anthropicDiscovery.models.length > 0);
+  assert.equal(anthropicDiscovery.models[0].modelId, "custom-discovered-model");
+
+  // Verify openai is still empty (isolated!)
+  const postOpenai = discoverProviderModels("openai");
+  assert.deepEqual(postOpenai.models, []);
+
+  resetAnthropicRouteValidationCacheForTests();
+});
+
+test("getDefaultRouteModel with discovered models: prefers discovered anthropic models when cache is populated", async () => {
+  resetAnthropicRouteValidationCacheForTests();
+
+  // Cold cache: should return hardcoded default
+  const coldDefault = getDefaultRouteModel("anthropic", "gpt-5.4");
+  assert.equal(coldDefault, "opus"); // ANTHROPIC_FALLBACK_MODELS[0]?.modelId is "opus"
+
+  // Mock-validate anthropic to populate cache
+  const mockImpl = mockRunCommand((executable, args) => {
+    if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "claude\n" });
+    if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+    if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json\n" });
+    if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json\n" });
+    if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
+      return commandResult({ exitCode: 0, stdout: JSON.stringify([
+        { value: "custom-discovered-model-2", label: "Custom Discovered Model 2", family: "sonnet", canonicalId: "claude-sonnet-4-6", effortLevels: ["low"], defaultEffort: "low" }
+      ]) });
+    }
+    return commandResult({ exitCode: 0 });
+  });
+
+  await validateAnthropicRoute({
+    cwd: process.cwd(),
+    runCommandImpl: mockImpl,
+  });
+
+  // Warm cache: should return the first discovered model
+  const warmDefault = getDefaultRouteModel("anthropic", "gpt-5.4");
+  assert.equal(warmDefault, "custom-discovered-model-2");
+
+  resetAnthropicRouteValidationCacheForTests();
 });

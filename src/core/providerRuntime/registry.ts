@@ -190,6 +190,10 @@ export function resolveActiveProviderRoute(options: {
 
 export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel: string): string {
   if (providerId === "anthropic") {
+    const discovered = discoverProviderModels("anthropic");
+    if (discovered.status === "ready" && discovered.models.length > 0) {
+      return discovered.models[0].modelId;
+    }
     return ANTHROPIC_FALLBACK_MODELS[0]?.modelId ?? "claude-sonnet-4-20250514";
   }
   if (providerId === "google") {
