@@ -45,7 +45,7 @@
   "files": [
     "bin/",
     "src/",
-    "scripts/",
-    "config.toml"
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx"
   ]
 }
