@@ -8,7 +8,7 @@ export const CODEXA_UPDATE_COMMAND = `npm install -g ${CODEXA_NPM_PACKAGE}@lates
 export type UpdateStatus = "up-to-date" | "update-available" | "unknown" | "error";
 
 export interface NpmRegistryMetadata {
-  "dist-tags": { latest?: string };
+  "dist-tags"?: { latest?: unknown };
 }
 
 export interface UpdateCheckResult {
@@ -25,6 +25,11 @@ const FETCH_TIMEOUT_MS = 5000;
 /** Strip a leading "v" so "v1.0.2" and "1.0.2" are treated as equal. */
 export function normalizeVersion(v: string): string {
   return v.startsWith("v") ? v.slice(1) : v;
+}
+
+export function formatVersionLabel(version: string): string {
+  const normalized = normalizeVersion(version.trim());
+  return normalized ? `v${normalized}` : version;
 }
 
 const SEMVER_RE = /^\d+\.\d+\.\d+(-[\w.]+)?$/;
@@ -111,7 +116,7 @@ export async function checkForUpdates(
     const metadata = await fetchFn(CODEXA_NPM_REGISTRY_URL);
     const rawLatest = metadata["dist-tags"]?.latest;
 
-    if (!rawLatest) {
+    if (typeof rawLatest !== "string" || !rawLatest.trim()) {
       return {
         status: "error",
         currentVersion,
@@ -122,7 +127,7 @@ export async function checkForUpdates(
       };
     }
 
-    const latestVersion = normalizeVersion(rawLatest);
+    const latestVersion = normalizeVersion(rawLatest.trim());
 
     if (!isValidSemver(latestVersion) || !isValidSemver(currentVersion)) {
       return {
@@ -163,7 +168,7 @@ export function formatUpdateInstructions(result: UpdateCheckResult | null): stri
 
   let statusLine: string;
   if (result?.status === "update-available" && result.latestVersion) {
-    statusLine = `Update available: Codexa ${result.latestVersion} is available. You are using ${current}.`;
+    statusLine = `Update available: Codexa ${formatVersionLabel(result.latestVersion)}`;
   } else if (result?.status === "up-to-date") {
     statusLine = "Already up to date.";
   } else {

@@ -6,6 +6,7 @@ import {
   checkForUpdates,
   compareSemver,
   formatUpdateInstructions,
+  formatVersionLabel,
   isNewerVersion,
   isValidSemver,
   normalizeVersion,
@@ -22,25 +23,25 @@ test("checkForUpdates returns update-available when installed version is lower t
   const result = await checkForUpdates(
     {},
     {
-      currentVersion: "1.0.1",
+      currentVersion: "1.0.2",
       fetchNpmMetadataFn: async (url) => {
         assert.equal(url, CODEXA_NPM_REGISTRY_URL);
-        return metadata("1.0.2");
+        return metadata("1.0.3");
       },
     },
   );
 
   assert.equal(result.status, "update-available");
-  assert.equal(result.currentVersion, "1.0.1");
-  assert.equal(result.latestVersion, "1.0.2");
+  assert.equal(result.currentVersion, "1.0.2");
+  assert.equal(result.latestVersion, "1.0.3");
 });
 
 test("checkForUpdates returns up-to-date when installed version equals npm latest", async () => {
   const result = await checkForUpdates(
     {},
     {
-      currentVersion: "1.0.2",
-      fetchNpmMetadataFn: async () => metadata("1.0.2"),
+      currentVersion: "1.0.3",
+      fetchNpmMetadataFn: async () => metadata("1.0.3"),
     },
   );
 
@@ -76,8 +77,8 @@ test("checkForUpdates does not show update available when installed version is h
   const result = await checkForUpdates(
     {},
     {
-      currentVersion: "1.0.3",
-      fetchNpmMetadataFn: async () => metadata("1.0.2"),
+      currentVersion: "1.0.4",
+      fetchNpmMetadataFn: async () => metadata("1.0.3"),
     },
   );
 
@@ -105,6 +106,19 @@ test("checkForUpdates returns error when npm latest is missing", async () => {
     {
       currentVersion: "1.0.1",
       fetchNpmMetadataFn: async () => ({ "dist-tags": {} }),
+    },
+  );
+
+  assert.equal(result.status, "error");
+  assert.match(result.errorMessage ?? "", /dist-tags\.latest/);
+});
+
+test("checkForUpdates returns error when npm latest has a malformed type", async () => {
+  const result = await checkForUpdates(
+    {},
+    {
+      currentVersion: "1.0.2",
+      fetchNpmMetadataFn: async () => ({ "dist-tags": { latest: 103 } }),
     },
   );
 
@@ -191,6 +205,11 @@ test("normalizeVersion strips leading v", () => {
   assert.equal(normalizeVersion("v0.0.1-beta.1"), "0.0.1-beta.1");
 });
 
+test("formatVersionLabel adds a single v-prefix", () => {
+  assert.equal(formatVersionLabel("1.0.3"), "v1.0.3");
+  assert.equal(formatVersionLabel("v1.0.3"), "v1.0.3");
+});
+
 test("isValidSemver accepts valid semver strings with and without v-prefix", () => {
   assert.equal(isValidSemver("1.0.2"), true);
   assert.equal(isValidSemver("v1.0.2"), true);
@@ -262,7 +281,7 @@ test("formatUpdateInstructions formats update-available npm status", () => {
 
   assert.match(result, /Current installed version: 1\.0\.1/);
   assert.match(result, /npm latest version:\s+1\.0\.2/);
-  assert.match(result, /Update available: Codexa 1\.0\.2 is available\. You are using 1\.0\.1\./);
+  assert.match(result, /Update available: Codexa v1\.0\.2/);
   assert.match(result, new RegExp(`Run: ${CODEXA_UPDATE_COMMAND.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 });
 

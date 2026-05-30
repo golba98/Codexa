@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.4] — 2026-05-30 — Update Notice Reliability
+
+### Fixed
+
+- **Update notices now use the npm `latest` tag reliably** — Codexa compares the running version against `dist-tags.latest` for `@golba98/codexa` and shows a clear prompt when the installed version is older.
+- **Manual `/update check` bypasses stale cache** — explicit checks fetch fresh npm metadata and report update available, already up to date, or a short failure reason.
+- **Failed update checks are not cached as success** — startup still fails silently on network or malformed-registry errors, but those failures no longer hide future updates.
+
+### Notes
+
+- Published npm versions are immutable. v1.0.2 contains update-check code, but any runtime prompt defects in that published package cannot be patched retroactively. Users on older versions should run `npm install -g @golba98/codexa@latest`.
+
+---
+
 ## [1.0.3] — 2026-05-30 — Package-Ready Release
 
 **This is the package-ready release.** The installed/downloaded Codexa package now includes the full startup UI and matches the working dev/local version.
@@ -23,7 +37,7 @@
 
 ### Update checker behavior (for users on v1.0.2)
 
-Once v1.0.3 is published to npm, users on v1.0.2 will see the in-app update notice on next startup (within 6 hours — the cache TTL). To see it immediately: delete `~/.codexa-update-check.json` and restart Codexa, or run `/update check` in-app.
+v1.0.2 contains update-check code, but any prompt defects in the published v1.0.2 package cannot be patched retroactively. If the notice does not appear, run `npm install -g @golba98/codexa@latest`.
 
 The update checker fetches `dist-tags.latest` from `https://registry.npmjs.org/@golba98%2Fcodexa` and compares it against the running version. Update checks are disabled for local dev builds.
 

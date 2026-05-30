@@ -78,8 +78,8 @@ test("card renders all four content lines", async () => {
   const output = await renderCard("1.0.3", "1.0.2");
 
   assert.match(output, /Update available/);
-  assert.match(output, /Codexa 1\.0\.3 is available/);
-  assert.match(output, /You are using 1\.0\.2/);
+  assert.match(output, /Codexa v1\.0\.3/);
+  assert.match(output, /Using v1\.0\.2/);
   assert.match(output, /npm install -g/);
 });
 

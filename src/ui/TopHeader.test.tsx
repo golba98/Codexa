@@ -481,8 +481,8 @@ test("wide mode with update available renders update card in right column", asyn
   // Round-border box uses ╭ and ╰
   assert.match(output, /[╭╰]/, "update card border should appear");
   assert.match(output, /Update available/, "card title should appear");
-  assert.match(output, /1\.0\.3 is available/, "latest version should appear");
-  assert.match(output, /You are using 1\.0\.2/, "current version should appear");
+  assert.match(output, /Codexa v1\.0\.3/, "latest version should appear");
+  assert.match(output, /Using v1\.0\.2/, "current version should appear");
 });
 
 test("medium mode with update available renders update card in right column", async () => {
@@ -490,7 +490,7 @@ test("medium mode with update available renders update card in right column", as
 
   assert.match(output, /[╭╰]/, "update card border should appear at 100 cols");
   assert.match(output, /Update available/);
-  assert.match(output, /1\.0\.3 is available/);
+  assert.match(output, /Codexa v1\.0\.3/);
 });
 
 test("narrow mode with update available renders compact one-liner instead of card", async () => {
@@ -498,7 +498,7 @@ test("narrow mode with update available renders compact one-liner instead of car
   const output = await renderHeaderWithUpdate(65, MOCK_UPDATE);
 
   assert.doesNotMatch(output, /[╭╰]/, "no card border in narrow mode");
-  assert.match(output, /1\.0\.3/, "latest version should appear in one-liner");
+  assert.match(output, /Codexa v1\.0\.3/, "latest version should appear in one-liner");
 });
 
 test("wide mode without update shows no update notice", async () => {
