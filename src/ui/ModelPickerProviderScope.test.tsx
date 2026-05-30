@@ -329,9 +329,9 @@ test("model picker Claude list does not contain OpenAI models", async () => {
     const stripped = stripAnsi(output);
     // OpenAI model names must not appear in the rendered output
     assert.ok(!stripped.includes("gpt-5"), "Claude picker must not display OpenAI models");
-    // Claude models must appear (new labels: "Sonnet 4.6", "Opus 4.7", "Haiku 4.5")
+    // Claude model aliases must appear — labels are now generic (no version numbers)
     assert.ok(
-      stripped.includes("Sonnet 4.6") || stripped.includes("Opus 4.7") || stripped.includes("Haiku 4.5"),
+      stripped.includes("Claude Opus") || stripped.includes("Claude Sonnet") || stripped.includes("Claude Haiku"),
       "Claude picker must display Claude model names",
     );
   } finally {

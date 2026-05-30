@@ -420,3 +420,87 @@ test("discoverClaudeCodeCapabilities: complete fallback when CLI fails and no se
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Regression: direct-probe discovery — the root cause of codexa-dev showing
+// hardcoded fallback models. The Claude Code CLI (v2.x) does not mention
+// "model list --json" in its help text, so the old help-text-gated approach
+// never generated any probe candidates and always fell through to fallback.
+// The fix probes model-list commands directly before checking help text.
+// ---------------------------------------------------------------------------
+
+test("direct-probe regression: discovery succeeds when help text has NO matching pattern", async () => {
+  // Simulate Claude Code CLI that supports 'model list --json' but whose help text
+  // does NOT contain "model list" + "--json" together (the old regex would produce 0 candidates).
+  const discovery = await discoverClaudeCodeCapabilities({
+    cwd: process.cwd(),
+    runCommandImpl: mockRunCommand((executable, args) => {
+      if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+      // Help text deliberately contains NO matching "model list --json" substring.
+      if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Usage: claude [options]\n  --model <m>  Set model\n" });
+      if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "Usage: claude model\n  list  List models\n" });
+      // But the direct probe for 'model list --json' succeeds.
+      if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
+        return commandResult({ exitCode: 0, stdout: JSON.stringify({
+          models: [
+            { value: "claude-opus-4-8", label: "Claude Opus 4.8", family: "opus", effortLevels: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "xhigh" },
+            { value: "claude-sonnet-4-7", label: "Claude Sonnet 4.7", family: "sonnet", effortLevels: ["low", "medium", "high", "max"], defaultEffort: "high" },
+          ],
+        }) });
+      }
+      return commandResult({ exitCode: 1 }); // everything else fails
+    }),
+  });
+
+  assert.equal(discovery.modelSource, "claude-code", "Must discover via direct probe, not fall back");
+  assert.equal(discovery.models.length, 2);
+  assert.equal(discovery.models[0]?.source, "claude-code");
+  // Must NOT contain any fallback model aliases
+  assert.ok(!discovery.models.some((m) => m.value === "opus" || m.value === "sonnet" || m.value === "haiku"),
+    "Direct-probe results must not be replaced by static fallback aliases");
+});
+
+test("direct-probe regression: normalises model objects using 'name' field when 'value'/'id' absent", async () => {
+  const discovery = await discoverClaudeCodeCapabilities({
+    cwd: process.cwd(),
+    runCommandImpl: mockRunCommand((executable, args) => {
+      if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: false }) });
+      if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
+      if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
+      if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
+        // CLI returns objects using 'name' rather than 'value'/'id'
+        return commandResult({ exitCode: 0, stdout: JSON.stringify([
+          { name: "claude-sonnet-4-7", label: "Claude Sonnet 4.7", family: "sonnet" },
+        ]) });
+      }
+      return commandResult({ exitCode: 1 });
+    }),
+  });
+
+  assert.equal(discovery.modelSource, "claude-code");
+  assert.equal(discovery.models.length, 1);
+  // 'name' field should be used as the model value
+  assert.ok(
+    discovery.models[0]?.value === "sonnet" || discovery.models[0]?.value === "claude-sonnet-4-7",
+    `Model value should derive from 'name' field, got: ${discovery.models[0]?.value}`,
+  );
+});
+
+test("ANTHROPIC_FALLBACK_MODELS labels contain no version-specific numbers", () => {
+  for (const model of ANTHROPIC_FALLBACK_MODELS) {
+    assert.ok(
+      !/\d+\.\d+/.test(model.label),
+      `Fallback label "${model.label}" must not contain a version number — use generic names so the label stays accurate as Claude Code updates`,
+    );
+  }
+});
+
+test("ANTHROPIC_FALLBACK_MODELS uses short aliases as modelId, not versioned canonical IDs", () => {
+  const validAliases = new Set(["opus", "sonnet", "haiku"]);
+  for (const model of ANTHROPIC_FALLBACK_MODELS) {
+    assert.ok(
+      validAliases.has(model.modelId),
+      `Fallback modelId "${model.modelId}" should be a short alias accepted by Claude Code CLI`,
+    );
+  }
+});

@@ -148,7 +148,7 @@ function normalizeClaudeCodeModel(raw: unknown, source: ClaudeCodeModelSource): 
   }
 
   if (!isRecord(raw)) return null;
-  const value = readString(raw.value ?? raw.model ?? raw.modelId ?? raw.id);
+  const value = readString(raw.value ?? raw.model ?? raw.modelId ?? raw.id ?? raw.name);
   if (!value) return null;
   const family = readString(raw.family) ?? modelFamilyFromValue(value);
   const fallback = fallbackModelByFamily(family);
@@ -283,6 +283,15 @@ function parseModelsFromJsonOutput(stdout: string): ClaudeCodeModel[] {
   );
 }
 
+// Claude Code CLI does not consistently advertise JSON model listing in its help text,
+// so we probe these well-known command shapes directly first, before falling back to
+// help-text analysis. Each probe fails fast (non-zero exit) if unsupported.
+const PROBE_MODEL_LIST_ARGS: string[][] = [
+  ["model", "list", "--json"],
+  ["models", "--json"],
+  ["models", "list", "--json"],
+];
+
 function candidateModelListArgs(helpOutput: string): string[][] {
   const text = helpOutput.toLowerCase();
   const candidates: string[][] = [];
@@ -304,6 +313,21 @@ async function discoverModelsFromClaudeHelp(
   runCommandImpl: CommandRunner,
   timeoutMs: number,
 ): Promise<ClaudeCodeModel[]> {
+  // Step 1: try well-known command shapes directly, without requiring the help text
+  // to advertise them. Claude Code CLI versions vary in whether (and how) they expose
+  // a model list command — probing directly is more reliable than help-text detection.
+  const triedArgKeys = new Set<string>();
+  for (const args of PROBE_MODEL_LIST_ARGS) {
+    triedArgKeys.add(args.join("\0"));
+    const result = await runClaudeCommand(executable, args, cwd, runCommandImpl, timeoutMs);
+    if (result.status === "completed" && result.exitCode === 0) {
+      const models = parseModelsFromJsonOutput(result.stdout);
+      if (models.length > 0) return models;
+    }
+  }
+
+  // Step 2: fall through to help-text-based detection as a supplementary strategy
+  // for future Claude Code versions that advertise additional model-list commands.
   const helpResults = await Promise.all([
     runClaudeCommand(executable, ["--help"], cwd, runCommandImpl, timeoutMs),
     runClaudeCommand(executable, ["model", "--help"], cwd, runCommandImpl, timeoutMs),
@@ -315,6 +339,7 @@ async function discoverModelsFromClaudeHelp(
   );
 
   for (const args of candidates) {
+    if (triedArgKeys.has(args.join("\0"))) continue; // skip already-probed commands
     const result = await runClaudeCommand(executable, args, cwd, runCommandImpl, timeoutMs);
     if (result.status !== "completed" || result.exitCode !== 0) continue;
     const models = parseModelsFromJsonOutput(result.stdout);

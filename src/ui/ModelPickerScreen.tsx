@@ -53,7 +53,8 @@ function getModelSourceMarker(models: readonly CodexModelCapability[], activePro
   const source = (models[0]?.raw as { source?: string } | null | undefined)?.source;
   if (source === "claude-code" || source === "discovered") return "Discovered from Claude Code";
   if (source === "settings" || source === "config") return "From Claude settings";
-  return "Fallback defaults";
+  if (source === "fallback") return "Default model aliases — Claude Code model discovery unavailable";
+  return null;
 }
 
 function normalizeDraftReasoning(

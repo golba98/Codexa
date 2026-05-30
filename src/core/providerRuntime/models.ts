@@ -77,8 +77,8 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
   {
     id: "opus",
     modelId: "opus",
-    label: "Opus 4.7",
-    description: "Claude Opus 4.7 - Fallback defaults",
+    label: "Claude Opus",
+    description: "Claude Opus — latest via alias (model discovery unavailable)",
     defaultReasoningLevel: "xhigh",
     supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high", "xhigh", "max"]),
     source: "fallback",
@@ -90,8 +90,8 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
   {
     id: "sonnet",
     modelId: "sonnet",
-    label: "Sonnet 4.6",
-    description: "Claude Sonnet 4.6 - Fallback defaults",
+    label: "Claude Sonnet",
+    description: "Claude Sonnet — latest via alias (model discovery unavailable)",
     defaultReasoningLevel: "high",
     supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high", "max"]),
     source: "fallback",
@@ -103,8 +103,8 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
   {
     id: "haiku",
     modelId: "haiku",
-    label: "Haiku 4.5",
-    description: "Claude Haiku 4.5 - Fallback defaults; effort metadata unverified",
+    label: "Claude Haiku",
+    description: "Claude Haiku — latest via alias (model discovery unavailable)",
     defaultReasoningLevel: "medium",
     supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high"]),
     source: "fallback",
