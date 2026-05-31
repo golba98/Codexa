@@ -19,8 +19,11 @@ function configureFromEnv(env: DebugEnv = process.env): void {
   renderTraceEnabled = env["CODEXA_DEBUG_RENDER_TRACE"] === "1";
   // Both CODEXA_RENDER_DEBUG and CODEXA_DEBUG_RENDER activate render debugging —
   // two names exist for historical reasons; either one is sufficient.
+  // CODEXA_TERMINAL_TRACE is a focused alias for diagnosing terminal/clear/resize
+  // render-state issues; it lights up the same `terminal` trace channel.
   enabled = env["CODEXA_RENDER_DEBUG"] === "1"
     || env["CODEXA_DEBUG_RENDER"] === "1"
+    || env["CODEXA_TERMINAL_TRACE"] === "1"
     || renderTraceEnabled;
   lifecycleEnabled = env["CODEXA_DEBUG_LIFECYCLE"] === "1";
   flickerEnabled = env["CODEXA_DEBUG_FLICKER"] === "1";

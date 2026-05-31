@@ -8,6 +8,8 @@ const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ap
 const appShellSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "AppShell.tsx"), "utf8");
 const composerSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "BottomComposer.tsx"), "utf8");
 const launcherSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "codexa.js"), "utf8");
+const indexSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "index.tsx"), "utf8");
+const layoutSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "layout.ts"), "utf8");
 
 test("App starts a terminal title guard during busy rendering", () => {
   assert.match(appSource, /refreshTerminalTitle\(\{[\s\S]*?debugEventName: "busy-guard"/);
@@ -128,4 +130,54 @@ test("Installed launcher asserts a safe title before Bun lifecycle boundaries", 
   assert.match(launcherSource, /child\.on\("close"[\s\S]*writeIntendedTitle\("bun-close"\)/);
   assert.match(launcherSource, /\/\^\[a-zA-Z\]:\[\\\\\/\]\//);
   assert.doesNotMatch(launcherSource, /intendedTerminalTitle\s*=\s*workspaceRoot/);
+});
+
+test("/clear resolves the live Ink instance behind stdout and memoizes it", () => {
+  assert.match(appSource, /const inkInstance = useMemo\(\(\) => resolveInkRenderInstance\(stdout\), \[stdout\]\)/);
+  assert.match(appSource, /import \{ resolveInkRenderInstance, resetInkOutputForFreshFrame \} from "\.\/core\/terminal\/inkRenderReset\.js"/);
+});
+
+test("/clear resets Ink render caches AFTER physically clearing the terminal", () => {
+  // The fresh-frame reset must run after clearTranscript so the post-clear
+  // frame (scheduled by CLEAR_TRANSCRIPT) is authoritative, like cold startup.
+  const handleClearMatch = appSource.match(/const handleClear = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[/);
+  assert.ok(handleClearMatch, "handleClear callback should exist");
+  const body = handleClearMatch[1] ?? "";
+  const clearIndex = body.indexOf('terminalControl.clearTranscript("src/app.tsx:handleClear")');
+  const resetIndex = body.indexOf("resetInkOutputForFreshFrame({ instance: inkInstance");
+  assert.ok(clearIndex >= 0, "handleClear should physically clear the transcript");
+  assert.ok(resetIndex >= 0, "handleClear should reset Ink's render caches");
+  assert.ok(clearIndex < resetIndex, "Ink cache reset must run after the physical transcript clear");
+});
+
+test("Ink render-cache reset runs only on the /clear boundary, never on resize", () => {
+  // The fix must not become another per-resize repaint. resetInkOutputForFreshFrame
+  // appears exactly once in app.tsx (handleClear) and is not referenced from the
+  // resize-driven code paths in index.tsx or ui/layout.ts.
+  const appResetCalls = appSource.match(/resetInkOutputForFreshFrame\(/g) ?? [];
+  assert.equal(appResetCalls.length, 1, "reset is called exactly once (handleClear only)");
+  assert.doesNotMatch(indexSource, /resetInkOutputForFreshFrame/);
+  assert.doesNotMatch(layoutSource, /resetInkOutputForFreshFrame/);
+});
+
+test("Startup keeps a single resize listener and disables Ink's competing handler", () => {
+  const resizeRegistrations = indexSource.match(/stdout\.on\("resize"/g) ?? [];
+  assert.equal(resizeRegistrations.length, 1, "exactly one resize listener is registered");
+  assert.match(indexSource, /inkInstance\?\.unsubscribeResize/);
+  // onResize stays imperative-free: it must not force Ink renders or clears.
+  const onResizeMatch = indexSource.match(/const onResize = \(\) => \{([\s\S]*?)\n  \};/);
+  assert.ok(onResizeMatch, "onResize handler should exist");
+  assert.doesNotMatch(onResizeMatch[1] ?? "", /clearTranscript|clearViewport|resetInkOutputForFreshFrame|\.clear\(\)/);
+});
+
+test("Fix does not introduce alternate-screen mode or a second Ink root", () => {
+  // index.tsx intentionally documents in a comment that it does NOT use the
+  // alternate screen buffer (\x1b[?1049h); assert the enabling mechanisms are
+  // absent rather than the escape itself (which appears in that comment).
+  assert.doesNotMatch(indexSource, /alternateScreen/);
+  assert.doesNotMatch(indexSource, /enterAlternativeScreen/);
+  assert.doesNotMatch(appSource, /\\x1b\[\?1049h/);
+  assert.doesNotMatch(appSource, /alternateScreen|enterAlternativeScreen/);
+  const renderRoots = indexSource.match(/renderApp\(<App /g) ?? [];
+  assert.equal(renderRoots.length, 1, "exactly one Ink root is mounted");
 });

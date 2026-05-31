@@ -154,6 +154,7 @@ import {
 } from "./core/providerLauncher/workspaceConfig.js";
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminal/terminalSanitize.js";
 import { createTerminalModeController, setTerminalControlUIState } from "./core/terminal/terminalControl.js";
+import { resolveInkRenderInstance, resetInkOutputForFreshFrame } from "./core/terminal/inkRenderReset.js";
 import {
   acquireTerminalTitleGuard,
   beginColdStartSequence,
@@ -386,6 +387,9 @@ export function App({ launchArgs }: AppProps) {
   const { stdout } = useStdout();
   const { stdin } = useStdin();
   const terminalControl = useMemo(() => createTerminalModeController((chunk) => stdout.write(chunk)), [stdout]);
+  // Live Ink instance behind this stdout, used to reset Ink's frame caches on
+  // the /clear boundary so the next frame is authoritative (see handleClear).
+  const inkInstance = useMemo(() => resolveInkRenderInstance(stdout), [stdout]);
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [isMouseIdle, setIsMouseIdle] = useState(false);
   const mouseIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2895,12 +2899,19 @@ export function App({ launchArgs }: AppProps) {
     setScreen("main");
     resetComposer();
     terminalControl.clearTranscript("src/app.tsx:handleClear");
+    // Mirror the cold-startup render boundary: after physically clearing the
+    // terminal, reset Ink's frame caches so the post-clear frame (already
+    // scheduled by CLEAR_TRANSCRIPT above) is written authoritatively from a
+    // clean baseline instead of diffed against pre-clear output. Without this,
+    // a later maximize/restore diffs against stale lastOutputHeight and the UI
+    // duplicates. Resize behavior is untouched — this runs only on /clear.
+    resetInkOutputForFreshFrame({ instance: inkInstance, columns: stdout.columns });
     refreshTerminalTitle({
       terminalTitleMode,
       workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
       force: true,
     });
-  }, [cancelActiveRun, dispatchSession, resetComposer, terminalControl, terminalTitleMode, workspaceRoot, writeCurrentTerminalTitleBeforeStateChange]);
+  }, [cancelActiveRun, dispatchSession, inkInstance, resetComposer, stdout, terminalControl, terminalTitleMode, workspaceRoot, writeCurrentTerminalTitleBeforeStateChange]);
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();
