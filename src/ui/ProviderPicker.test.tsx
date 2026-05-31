@@ -113,7 +113,7 @@ test("provider picker renders compact aligned provider rows", async () => {
     assert.match(output, /Anthropic/);
     assert.match(output, /Google/);
     assert.match(output, /Local/);
-    assert.doesNotMatch(output, /Antigravity/);
+    assert.match(output, /Antigravity/);
     assert.match(output, /Context/);
     assert.match(output, /Tool/);
     assert.match(output, /Strm/);
