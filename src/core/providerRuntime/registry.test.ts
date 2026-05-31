@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChildProcess } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 import {
   discoverProviderModels,
@@ -13,6 +16,7 @@ import {
 import { resetGeminiRouteValidationCacheForTests } from "./gemini.js";
 import { resetAnthropicRouteValidationCacheForTests, validateAnthropicRoute } from "./anthropic.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "./local.js";
+import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "./antigravity.js";
 
 test("google runtime exposes configured Gemini models for in-Codexa routing", () => {
   const runtime = getProviderRuntime("google");
@@ -185,6 +189,74 @@ test("CLI model override preserves provider from providers.json activeRoute", ()
   assert.equal(route.reasoning, "low", "Reasoning from providers.json must be preserved");
 });
 
+test("antigravity runtime has routeAvailable and correct backendKind", () => {
+  const runtime = getProviderRuntime("antigravity");
+  const discovery = discoverProviderModels("antigravity");
+
+  assert.equal(runtime.routeAvailable, true);
+  assert.equal(runtime.backendKind, "antigravity-cli-auth");
+  assert.equal(discovery.status, "ready");
+  assert.equal(discovery.models.length, 5);
+  assert.equal(discovery.providerId, "antigravity");
+});
+
+test("getDefaultRouteModel returns the Antigravity default model", () => {
+  const model = getDefaultRouteModel("antigravity", "gpt-5.4");
+
+  assert.equal(model, ANTIGRAVITY_DEFAULT_MODEL_ID);
+  assert.equal(model, "gemini-3.5-flash");
+});
+
+test("active route resolution preserves routable antigravity routes with reasoning", () => {
+  const route = resolveActiveProviderRoute({
+    workspaceConfigActiveRoute: {
+      providerId: "antigravity",
+      modelId: "gemini-3.5-flash",
+      backendKind: "antigravity-cli-auth",
+      reasoning: "medium",
+    },
+    currentModel: "gpt-5.4",
+    currentReasoning: "high",
+  });
+
+  assert.deepEqual(route, {
+    providerId: "antigravity",
+    modelId: "gemini-3.5-flash",
+    backendKind: "antigravity-cli-auth",
+    reasoning: "medium",
+  });
+});
+
+test("active route resolution migrates legacy compound antigravity model IDs", () => {
+  const route = resolveActiveProviderRoute({
+    workspaceConfigActiveRoute: {
+      providerId: "antigravity",
+      modelId: "gemini-3.5-flash-high",
+      backendKind: "antigravity-cli-auth",
+    },
+    currentModel: "gpt-5.4",
+    currentReasoning: "high",
+  });
+
+  assert.equal(route.modelId, "gemini-3.5-flash");
+  assert.equal(route.reasoning, "high");
+});
+
+test("active route resolution migrates legacy gemini-3.1-pro-low to family and reasoning", () => {
+  const route = resolveActiveProviderRoute({
+    workspaceConfigActiveRoute: {
+      providerId: "antigravity",
+      modelId: "gemini-3.1-pro-low",
+      backendKind: "antigravity-cli-auth",
+    },
+    currentModel: "gpt-5.4",
+    currentReasoning: "high",
+  });
+
+  assert.equal(route.modelId, "gemini-3.1-pro");
+  assert.equal(route.reasoning, "low");
+});
+
 // ─── Authentication and setup gates ──────────────────────────────────────────
 
 test("anthropic route configuration is gated by ANTHROPIC_API_KEY or Claude Code", () => {
@@ -265,7 +337,26 @@ function mockRunCommand(
   }) as typeof runCommand;
 }
 
+async function withEmptyClaudeSettingsHome(run: () => Promise<void>): Promise<void> {
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  const tempHome = mkdtempSync(join(tmpdir(), "codexa-claude-empty-"));
+
+  try {
+    process.env.HOME = tempHome;
+    delete process.env.USERPROFILE;
+    await run();
+  } finally {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+
+    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserProfile;
+  }
+}
+
 test("Provider isolation: discoverProviderModels('openai') returns empty models array regardless of anthropic discovery state", async () => {
+  await withEmptyClaudeSettingsHome(async () => {
   resetAnthropicRouteValidationCacheForTests();
 
   // Initially openai is empty
@@ -274,14 +365,16 @@ test("Provider isolation: discoverProviderModels('openai') returns empty models 
 
   // Mock-validate anthropic to populate cache
   const mockImpl = mockRunCommand((executable, args) => {
-    if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "claude\n" });
+    if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
     if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
     if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json\n" });
     if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json\n" });
     if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
-      return commandResult({ exitCode: 0, stdout: JSON.stringify([
-        { value: "custom-discovered-model", label: "Custom Discovered Model", family: "sonnet", canonicalId: "claude-sonnet-4-6", effortLevels: ["low"], defaultEffort: "low" }
-      ]) });
+      return commandResult({ exitCode: 0, stdout: JSON.stringify({
+        models: [
+          { value: "claude-sonnet-4-98", label: "Claude Sonnet 4.98", family: "sonnet", canonicalId: "claude-sonnet-4-98", effortLevels: ["low"], defaultEffort: "low" },
+        ],
+      }) });
     }
     return commandResult({ exitCode: 0 });
   });
@@ -295,16 +388,18 @@ test("Provider isolation: discoverProviderModels('openai') returns empty models 
   const anthropicDiscovery = discoverProviderModels("anthropic");
   assert.equal(anthropicDiscovery.status, "ready");
   assert.ok(anthropicDiscovery.models.length > 0);
-  assert.equal(anthropicDiscovery.models[0].modelId, "custom-discovered-model");
+  assert.equal(anthropicDiscovery.models[0].modelId, "claude-sonnet-4-98");
 
   // Verify openai is still empty (isolated!)
   const postOpenai = discoverProviderModels("openai");
   assert.deepEqual(postOpenai.models, []);
 
   resetAnthropicRouteValidationCacheForTests();
+  });
 });
 
 test("getDefaultRouteModel with discovered models: prefers discovered anthropic models when cache is populated", async () => {
+  await withEmptyClaudeSettingsHome(async () => {
   resetAnthropicRouteValidationCacheForTests();
 
   // Cold cache: should return hardcoded default
@@ -313,14 +408,16 @@ test("getDefaultRouteModel with discovered models: prefers discovered anthropic 
 
   // Mock-validate anthropic to populate cache
   const mockImpl = mockRunCommand((executable, args) => {
-    if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "claude\n" });
+    if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
     if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
     if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json\n" });
     if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json\n" });
     if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
-      return commandResult({ exitCode: 0, stdout: JSON.stringify([
-        { value: "custom-discovered-model-2", label: "Custom Discovered Model 2", family: "sonnet", canonicalId: "claude-sonnet-4-6", effortLevels: ["low"], defaultEffort: "low" }
-      ]) });
+      return commandResult({ exitCode: 0, stdout: JSON.stringify({
+        models: [
+          { value: "claude-sonnet-4-99", label: "Claude Sonnet 4.99", family: "sonnet", canonicalId: "claude-sonnet-4-99", effortLevels: ["low"], defaultEffort: "low" },
+        ],
+      }) });
     }
     return commandResult({ exitCode: 0 });
   });
@@ -332,16 +429,17 @@ test("getDefaultRouteModel with discovered models: prefers discovered anthropic 
 
   // Warm cache: should return the first discovered model
   const warmDefault = getDefaultRouteModel("anthropic", "gpt-5.4");
-  assert.equal(warmDefault, "custom-discovered-model-2");
+  assert.equal(warmDefault, "claude-sonnet-4-99");
 
   resetAnthropicRouteValidationCacheForTests();
+  });
 });
 
 test("resolveActiveProviderRoute selects first discovered Anthropic model when saved alias is stale", async () => {
   resetAnthropicRouteValidationCacheForTests();
 
   const mockImpl = mockRunCommand((executable, args) => {
-    if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "claude\n" });
+    if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
     if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
     if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
       return commandResult({ exitCode: 0, stdout: JSON.stringify([

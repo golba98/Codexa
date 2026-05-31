@@ -1,9 +1,10 @@
-export type ProviderId = "openai" | "anthropic" | "google" | "local";
+export type ProviderId = "openai" | "anthropic" | "google" | "local" | "antigravity";
 
 export type ProviderBackendType =
   | "codex-cli-auth"
   | "gemini-cli-auth"
   | "claude-code-auth"
+  | "antigravity-cli-auth"
   | "openai-api-key"
   | "gemini-api-key"
   | "anthropic-api-key"
@@ -72,6 +73,7 @@ export interface ProviderWorkspaceOverride {
   claudeCommandPath?: string;
   geminiCommandPath?: string;
   codexCommandPath?: string;
+  antigravityCommandPath?: string;
 }
 
 export interface ProviderModelWorkspaceOverride {

@@ -15,11 +15,12 @@ import {
   isProviderRouteConfigured,
 } from "../providerRuntime/registry.js";
 import { normalizeGeminiModelId } from "../providerRuntime/models.js";
+import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "../providerRuntime/antigravity.js";
 import { setLocalProviderConfig } from "../providerRuntime/local.js";
 import { formatContextLength, resolveModelContextLengthCached } from "../providerRuntime/contextMetadata.js";
 import { resolveModelCapabilityProfileCached } from "../providerRuntime/capabilityProfile.js";
 
-const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "google", "local"];
+const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "google", "local", "antigravity"];
 
 const DEFAULT_PROVIDER_ID: ProviderId = "openai";
 
@@ -73,6 +74,17 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
     launchCommand: null,
     isActiveRoute: false,
     routeUnavailableReason: "Local provider unavailable. Start LM Studio, load a model, and enable the local server.",
+  },
+  antigravity: {
+    id: "antigravity",
+    displayName: "Antigravity",
+    currentModel: () => ANTIGRAVITY_DEFAULT_MODEL_ID,
+    backendType: "antigravity-cli-auth",
+    routeMode: "in-codexa",
+    enabled: true,
+    launchCommand: { executable: "agy", args: [] },
+    isActiveRoute: false,
+    routeUnavailableReason: null,
   },
 };
 

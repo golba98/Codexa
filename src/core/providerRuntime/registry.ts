@@ -4,6 +4,7 @@ import type { ProviderId, ProviderActiveRoute, ProviderWorkspaceOverride } from 
 import { anthropicRuntime } from "./anthropic.js";
 import { geminiRuntime } from "./gemini.js";
 import { localRuntime } from "./local.js";
+import { antigravityRuntime, ANTIGRAVITY_DEFAULT_MODEL_ID, migrateAntigravityLegacyModelId } from "./antigravity.js";
 import {
   ANTHROPIC_FALLBACK_MODELS,
   GEMINI_DEFAULT_MODEL_ID,
@@ -74,6 +75,7 @@ const PROVIDER_RUNTIMES: Record<ProviderId, ProviderRuntime> = {
   anthropic: anthropicRuntime,
   google: geminiRuntime,
   local: localRuntime,
+  antigravity: antigravityRuntime,
 };
 
 export function getProviderRuntime(providerId: ProviderId): ProviderRuntime {
@@ -103,6 +105,7 @@ export async function validateProviderRouteActivation(options: {
   workspaceRoot: string;
   geminiCommandPath?: string | null;
   claudeCommandPath?: string | null;
+  antigravityCommandPath?: string | null;
   localConfig?: ProviderWorkspaceOverride | null;
 }): Promise<ProviderRouteValidationResult> {
   const runtime = getProviderRuntime(options.route.providerId);
@@ -186,6 +189,12 @@ export function resolveActiveProviderRoute(options: {
       if (discovery.status === "ready" && selectedModel) {
         route.modelId = selectedModel;
       }
+    } else if (route.providerId === "antigravity") {
+      const migrated = migrateAntigravityLegacyModelId(route.modelId);
+      route.modelId = migrated.modelId;
+      if (!route.reasoning && migrated.reasoning) {
+        route.reasoning = migrated.reasoning;
+      }
     }
 
     return route;
@@ -213,6 +222,9 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
   if (providerId === "local") {
     const discovery = discoverProviderModels("local");
     return discovery.models[0]?.modelId ?? "Local default";
+  }
+  if (providerId === "antigravity") {
+    return ANTIGRAVITY_DEFAULT_MODEL_ID;
   }
   return currentOpenAiModel;
 }

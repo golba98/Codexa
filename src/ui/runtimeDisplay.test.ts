@@ -122,3 +122,78 @@ test("Header and footer display values share the same context string", () => {
   assert.ok(display.modelDisplay.includes("Gemini CLI / gemini-2.5-flash"));
   assert.ok(display.footerModelDisplay.includes("Gemini CLI / gemini-2.5-flash"));
 });
+
+test("Antigravity route display uses Antigravity CLI label and human-readable model label", () => {
+  const route: ActiveProviderRoute = {
+    providerId: "antigravity",
+    modelId: "gemini-3.5-flash",
+    backendKind: "antigravity-cli-auth",
+    reasoning: "high",
+  };
+  const display = buildActiveRuntimeDisplay({
+    route,
+    reasoningLevel: "low",
+    mode: "full-auto",
+    tokensUsed: 0,
+    contextMetadata: context(route, null),
+  });
+
+  assert.equal(display.providerLabel, "Antigravity CLI");
+  assert.equal(display.modelDisplay, "Antigravity CLI / Gemini 3.5 Flash / reasoning: High");
+  assert.equal(display.footerModelDisplay, "Antigravity CLI / Gemini 3.5 Flash (High)");
+});
+
+test("Antigravity route footer reflects reasoning separately from model label", () => {
+  const route: ActiveProviderRoute = {
+    providerId: "antigravity",
+    modelId: "gemini-3.1-pro",
+    backendKind: "antigravity-cli-auth",
+    reasoning: "low",
+  };
+  const display = buildActiveRuntimeDisplay({
+    route,
+    reasoningLevel: "medium",
+    mode: "full-auto",
+    tokensUsed: 0,
+    contextMetadata: context(route, null),
+  });
+
+  assert.equal(display.modelDisplay, "Antigravity CLI / Gemini 3.1 Pro / reasoning: Low");
+  assert.equal(display.footerModelDisplay, "Antigravity CLI / Gemini 3.1 Pro (Low)");
+});
+
+test("Antigravity route displays correct label for Thinking profiles", () => {
+  const route: ActiveProviderRoute = {
+    providerId: "antigravity",
+    modelId: "claude-sonnet-4-6-think",
+    backendKind: "antigravity-cli-auth",
+  };
+  const display = buildActiveRuntimeDisplay({
+    route,
+    reasoningLevel: "high",
+    mode: "full-auto",
+    tokensUsed: 0,
+    contextMetadata: context(route, null),
+  });
+
+  assert.equal(display.modelDisplay, "Antigravity CLI / Claude Sonnet 4.6 (Thinking)");
+  assert.equal(display.footerModelDisplay, "Antigravity CLI / Claude Sonnet 4.6 (Thinking)");
+});
+
+test("Antigravity GPT-OSS 120B displays label without effort suffix", () => {
+  const route: ActiveProviderRoute = {
+    providerId: "antigravity",
+    modelId: "gpt-oss-120b",
+    backendKind: "antigravity-cli-auth",
+  };
+  const display = buildActiveRuntimeDisplay({
+    route,
+    reasoningLevel: "medium",
+    mode: "full-auto",
+    tokensUsed: 0,
+    contextMetadata: context(route, null),
+  });
+
+  assert.equal(display.modelDisplay, "Antigravity CLI / GPT-OSS 120B");
+  assert.equal(display.footerModelDisplay, "Antigravity CLI / GPT-OSS 120B");
+});

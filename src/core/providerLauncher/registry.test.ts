@@ -6,11 +6,12 @@ import { resetGeminiRouteValidationCacheForTests } from "../providerRuntime/gemi
 import { resetGeminiExecutableCacheForTests } from "../executables/geminiExecutable.js";
 import { setProviderActiveRoute } from "./workspaceConfig.js";
 import { resolveActiveProviderRoute } from "../providerRuntime/registry.js";
+import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "../providerRuntime/antigravity.js";
 
 test("provider registry exposes the default launcher providers", () => {
   const providers = buildProviderRegistry({ activeModel: "gpt-5.4" });
 
-  assert.deepEqual(providers.map((provider) => provider.id), ["openai", "anthropic", "google", "local"]);
+  assert.deepEqual(providers.map((provider) => provider.id), ["openai", "anthropic", "google", "local", "antigravity"]);
   assert.equal(providers[0]?.displayName, "OpenAI");
   assert.equal(providers[0]?.currentModel, "gpt-5.4");
   assert.deepEqual(providers[0]?.launchCommand, { executable: "codex", args: [] });
@@ -18,6 +19,18 @@ test("provider registry exposes the default launcher providers", () => {
   assert.deepEqual(providers[2]?.launchCommand, { executable: "gemini", args: [] });
   assert.equal(providers[3]?.enabled, false);
   assert.equal(providers[3]?.launchCommand, null);
+});
+
+test("antigravity appears in the provider registry with correct defaults", () => {
+  const providers = buildProviderRegistry({ activeModel: "gpt-5.4" });
+  const antigravity = providers.find((p) => p.id === "antigravity");
+
+  assert.ok(antigravity, "antigravity provider not found");
+  assert.equal(antigravity!.displayName, "Antigravity");
+  assert.equal(antigravity!.currentModel, ANTIGRAVITY_DEFAULT_MODEL_ID);
+  assert.deepEqual(antigravity!.launchCommand, { executable: "agy", args: [] });
+  assert.equal(antigravity!.backendType, "antigravity-cli-auth");
+  assert.equal(antigravity!.enabled, true);
 });
 
 test("workspace config can set the default provider", () => {

@@ -10,6 +10,7 @@ export type ProviderBackendKind =
   | "codex-cli-auth"
   | "gemini-cli-auth"
   | "claude-code-auth"
+  | "antigravity-cli-auth"
   | "openai-api-key"
   | "gemini-api-key"
   | "anthropic-api-key"
@@ -64,6 +65,7 @@ export interface ProviderRouteValidationRequest {
   workspaceRoot: string;
   geminiCommandPath?: string | null;
   claudeCommandPath?: string | null;
+  antigravityCommandPath?: string | null;
   localConfig?: ProviderWorkspaceOverride | null;
 }
 
