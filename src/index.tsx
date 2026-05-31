@@ -20,42 +20,13 @@ import {
   writeTerminalControl,
 } from "./core/terminal/terminalControl.js";
 import { performStartupClear } from "./core/terminal/startupClear.js";
+import { resolveInkRenderInstance, type InkRenderInstance } from "./core/terminal/inkRenderReset.js";
 
 type RenderHandle = Pick<Instance, "clear" | "cleanup" | "waitUntilExit">;
 const KITTY_KEYBOARD_OPTIONS: RenderOptions["kittyKeyboard"] = {
   mode: "auto",
   flags: ["disambiguateEscapeCodes"],
 };
-
-/**
- * Typed subset of the internal Ink class instance we access to disable Ink's
- * built-in resize listener. Post-startup repainting is driven by React layout
- * state, not by forcing Ink's private render buffers.
- */
-interface InkInstance {
-  unsubscribeResize?: () => void;
-}
-
-/**
- * Resolve the real Ink class instance via Ink's internal WeakMap<stdout, Ink>.
- * Returns null if resolution fails (e.g. different Ink version, test mocks).
- */
-function resolveInkInstance(stdout: AppStdout): InkInstance | null {
-  try {
-    // Bun doesn't resolve bare subpath imports like "ink/build/instances.js"
-    // so we resolve ink's main entry first, then derive the sibling path.
-    const { createRequire } = require("node:module");
-    const req = createRequire(import.meta.url);
-    const inkMain = req.resolve("ink");
-    const instancesPath = inkMain.replace(/index\.js$/, "instances.js");
-    const instances = req(instancesPath);
-    const weakMap: WeakMap<object, InkInstance> =
-      instances.default ?? instances;
-    return weakMap.get(stdout as object) ?? null;
-  } catch {
-    return null;
-  }
-}
 
 export interface AppStdout {
   isTTY: boolean;
@@ -74,7 +45,7 @@ export interface StartAppDependencies {
   platform: NodeJS.Platform;
   argv: string[];
   renderApp: (node: React.ReactElement, options?: RenderOptions) => RenderHandle;
-  resolveInkInstanceForStdout: (stdout: AppStdout) => InkInstance | null;
+  resolveInkInstanceForStdout: (stdout: AppStdout) => InkRenderInstance | null;
   registerExitHandler: (handler: () => void) => void;
 }
 
@@ -112,7 +83,7 @@ export function startApp({
   platform = process.platform,
   argv = process.argv.slice(2),
   renderApp = render,
-  resolveInkInstanceForStdout = resolveInkInstance,
+  resolveInkInstanceForStdout = resolveInkRenderInstance,
   registerExitHandler = (handler) => {
     process.on("exit", handler);
   },
@@ -205,7 +176,7 @@ export function startApp({
   let cleanupDone = false;
   let repaintArmed = false;
   let renderHandle: RenderHandle | null = null;
-  let inkInstance: InkInstance | null = null;
+  let inkInstance: InkRenderInstance | null = null;
 
   const onResize = () => {
     renderDebug.traceEvent("terminal", "resize", {
