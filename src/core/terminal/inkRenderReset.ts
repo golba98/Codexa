@@ -15,6 +15,7 @@ import * as renderDebug from "../perf/renderDebug.js";
  */
 export interface InkRenderInstance {
   unsubscribeResize?: () => void;
+  renderInteractiveFrame?: (output: string, outputHeight: number, staticOutput: string) => void;
   lastOutput?: string;
   lastOutputToRender?: string;
   lastOutputHeight?: number;

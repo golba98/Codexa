@@ -177,13 +177,19 @@ export function startApp({
   let repaintArmed = false;
   let renderHandle: RenderHandle | null = null;
   let inkInstance: InkRenderInstance | null = null;
+  let previousResizeCols = stdout.columns;
+  let previousResizeRows = stdout.rows;
 
   const onResize = () => {
     renderDebug.traceEvent("terminal", "resize", {
+      previousCols: previousResizeCols,
+      previousRows: previousResizeRows,
       cols: stdout.columns,
       rows: stdout.rows,
       invalid: hasInvalidRestoreDimensions(stdout),
     });
+    previousResizeCols = stdout.columns;
+    previousResizeRows = stdout.rows;
 
     if (hasInvalidRestoreDimensions(stdout)) {
       // Transient invalid dimensions (e.g. during maximize/restore on
