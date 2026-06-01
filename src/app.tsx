@@ -155,6 +155,7 @@ import {
 import { sanitizeTerminalInput, sanitizeTerminalLines, sanitizeTerminalOutput } from "./core/terminal/terminalSanitize.js";
 import { createTerminalModeController, setTerminalControlUIState } from "./core/terminal/terminalControl.js";
 import { resolveInkRenderInstance, resetInkOutputForFreshFrame } from "./core/terminal/inkRenderReset.js";
+import { createClearFrameBoundaryController } from "./core/terminal/clearFrameBoundary.js";
 import {
   acquireTerminalTitleGuard,
   beginColdStartSequence,
@@ -376,6 +377,9 @@ export function App({ launchArgs }: AppProps) {
   const screenRef = useRef<Screen>("main");
   screenRef.current = screen;
   const [composerInstanceKey, setComposerInstanceKey] = useState(0);
+  // Bumped purely to force one extra React commit when the /clear boundary needs
+  // the authoritative post-clear frame flushed (see the syncRenderState effect).
+  const [, bumpPostClearRepaint] = useState(0);
   const { state: sessionState, dispatch: dispatchSession } = useAppSessionState();
   const [authStatus, setAuthStatus] = useState<CodexAuthProbeResult>(createInitialAuthStatus());
   const [authStatusBusy, setAuthStatusBusy] = useState(false);
@@ -390,6 +394,15 @@ export function App({ launchArgs }: AppProps) {
   // Live Ink instance behind this stdout, used to reset Ink's frame caches on
   // the /clear boundary so the next frame is authoritative (see handleClear).
   const inkInstance = useMemo(() => resolveInkRenderInstance(stdout), [stdout]);
+  const clearFrameBoundaryController = useMemo(
+    () => createClearFrameBoundaryController({
+      instance: inkInstance,
+      terminalControl,
+      stdout,
+      source: "src/app.tsx:clearBoundary",
+    }),
+    [inkInstance, stdout, terminalControl],
+  );
   const [mouseOverride, setMouseOverride] = useState<boolean | null>(null);
   const [isMouseIdle, setIsMouseIdle] = useState(false);
   const mouseIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -424,6 +437,32 @@ export function App({ launchArgs }: AppProps) {
   const mouseCapture = (mouseOverride ?? (terminalMouseMode === "wheel")) && !isMouseIdle;
 
   // ─── Effects & Handlers ──────────────────────────────────────────────────────
+
+  useEffect(() => {
+    return () => {
+      clearFrameBoundaryController?.dispose();
+    };
+  }, [clearFrameBoundaryController]);
+
+  useEffect(() => {
+    if (!clearFrameBoundaryController) return;
+    const postClearRepaintPending = clearFrameBoundaryController.syncRenderState({
+      generation: sessionState.clearEpoch,
+      staticEventsLength: sessionState.staticEvents.length,
+      activeEventsLength: sessionState.activeEvents.length,
+      transcriptCleared: sessionState.staticEvents.length === 0 && sessionState.activeEvents.length === 0,
+      uiStateKind: sessionState.uiState.kind,
+    });
+    if (postClearRepaintPending) {
+      // Ink already wrote (and suppressed) the cleared frame during the commit
+      // that preceded this passive effect, so the boundary's gate only became
+      // satisfiable just now. Force one more commit to deterministically flush
+      // the authoritative post-clear frame instead of waiting on an incidental
+      // later render. `bumpPostClearRepaint` is not an effect dependency, so this
+      // re-render does not re-run the effect (no loop).
+      bumpPostClearRepaint((tick) => tick + 1);
+    }
+  }, [clearFrameBoundaryController, sessionState]);
 
   useEffect(() => {
     // Default path writes the disable sequences defensively, preserving native
@@ -2888,30 +2927,42 @@ export function App({ launchArgs }: AppProps) {
   }, [dispatchSession]);
 
   const handleClear = useCallback(() => {
+    const clearGeneration = sessionState.clearEpoch + 1;
+    const clearBoundaryArmed = clearFrameBoundaryController?.beginClearGeneration(clearGeneration) ?? false;
+    renderDebug.traceEvent("terminal", "clearCommandReceived", {
+      clearGeneration,
+      clearPending: clearBoundaryArmed,
+      liveInkInstanceResolved: Boolean(inkInstance),
+    });
     writeCurrentTerminalTitleBeforeStateChange("before-clear");
     cancelActiveRun(false);
     activeTurnIdRef.current = null;
     activeRunLifecycleRef.current = null;
     activeRunTimingRef.current = null;
     setPlanFlow(resetPlanFlow());
+    renderDebug.traceEvent("terminal", "clearReactStateRequested", {
+      clearGeneration,
+      clearPending: clearBoundaryArmed,
+    });
     dispatchSession({ type: "CLEAR_TRANSCRIPT" });
     setConversationChars(0);
     setScreen("main");
     resetComposer();
-    terminalControl.clearTranscript("src/app.tsx:handleClear");
-    // Mirror the cold-startup render boundary: after physically clearing the
-    // terminal, reset Ink's frame caches so the post-clear frame (already
-    // scheduled by CLEAR_TRANSCRIPT above) is written authoritatively from a
-    // clean baseline instead of diffed against pre-clear output. Without this,
-    // a later maximize/restore diffs against stale lastOutputHeight and the UI
-    // duplicates. Resize behavior is untouched — this runs only on /clear.
-    resetInkOutputForFreshFrame({ instance: inkInstance, columns: stdout.columns });
+    if (!clearBoundaryArmed) {
+      // Fallback path (unexpected Ink mismatch): preserve /clear semantics.
+      terminalControl.clearTranscript("src/app.tsx:handleClear:fallback");
+      resetInkOutputForFreshFrame({ instance: inkInstance, columns: stdout.columns });
+      renderDebug.traceEvent("terminal", "clearBoundaryFallback", {
+        clearGeneration,
+        liveInkInstanceResolved: Boolean(inkInstance),
+      });
+    }
     refreshTerminalTitle({
       terminalTitleMode,
       workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
       force: true,
     });
-  }, [cancelActiveRun, dispatchSession, inkInstance, resetComposer, stdout, terminalControl, terminalTitleMode, workspaceRoot, writeCurrentTerminalTitleBeforeStateChange]);
+  }, [cancelActiveRun, clearFrameBoundaryController, dispatchSession, inkInstance, resetComposer, sessionState.clearEpoch, stdout.columns, terminalControl, terminalTitleMode, workspaceRoot, writeCurrentTerminalTitleBeforeStateChange]);
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();

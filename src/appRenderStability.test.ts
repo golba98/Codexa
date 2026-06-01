@@ -10,6 +10,7 @@ const composerSource = readFileSync(join(dirname(fileURLToPath(import.meta.url))
 const launcherSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "codexa.js"), "utf8");
 const indexSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "index.tsx"), "utf8");
 const layoutSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "layout.ts"), "utf8");
+const clearBoundarySource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "core", "terminal", "clearFrameBoundary.ts"), "utf8");
 
 test("App starts a terminal title guard during busy rendering", () => {
   assert.match(appSource, /refreshTerminalTitle\(\{[\s\S]*?debugEventName: "busy-guard"/);
@@ -135,29 +136,62 @@ test("Installed launcher asserts a safe title before Bun lifecycle boundaries", 
 test("/clear resolves the live Ink instance behind stdout and memoizes it", () => {
   assert.match(appSource, /const inkInstance = useMemo\(\(\) => resolveInkRenderInstance\(stdout\), \[stdout\]\)/);
   assert.match(appSource, /import \{ resolveInkRenderInstance, resetInkOutputForFreshFrame \} from "\.\/core\/terminal\/inkRenderReset\.js"/);
+  assert.match(appSource, /import \{ createClearFrameBoundaryController \} from "\.\/core\/terminal\/clearFrameBoundary\.js"/);
 });
 
-test("/clear resets Ink render caches AFTER physically clearing the terminal", () => {
-  // The fresh-frame reset must run after clearTranscript so the post-clear
-  // frame (scheduled by CLEAR_TRANSCRIPT) is authoritative, like cold startup.
+test("/clear arms a fresh render generation before transcript reset", () => {
   const handleClearMatch = appSource.match(/const handleClear = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[/);
   assert.ok(handleClearMatch, "handleClear callback should exist");
   const body = handleClearMatch[1] ?? "";
-  const clearIndex = body.indexOf('terminalControl.clearTranscript("src/app.tsx:handleClear")');
-  const resetIndex = body.indexOf("resetInkOutputForFreshFrame({ instance: inkInstance");
-  assert.ok(clearIndex >= 0, "handleClear should physically clear the transcript");
-  assert.ok(resetIndex >= 0, "handleClear should reset Ink's render caches");
-  assert.ok(clearIndex < resetIndex, "Ink cache reset must run after the physical transcript clear");
+  const armBoundaryIndex = body.indexOf("beginClearGeneration(clearGeneration)");
+  const clearDispatchIndex = body.indexOf('dispatchSession({ type: "CLEAR_TRANSCRIPT" })');
+  assert.ok(armBoundaryIndex >= 0, "handleClear should arm clear-generation boundary");
+  assert.ok(clearDispatchIndex >= 0, "handleClear should clear transcript state");
+  assert.ok(armBoundaryIndex < clearDispatchIndex, "clear generation should be armed before transcript reset");
 });
 
-test("Ink render-cache reset runs only on the /clear boundary, never on resize", () => {
-  // The fix must not become another per-resize repaint. resetInkOutputForFreshFrame
-  // appears exactly once in app.tsx (handleClear) and is not referenced from the
-  // resize-driven code paths in index.tsx or ui/layout.ts.
+test("Ink render-cache reset is owned by the render path, never wired into out-of-band resize handlers", () => {
+  // The repaint authority is clearFrameBoundary's wrapped renderInteractiveFrame:
+  // it resets caches both on the /clear boundary AND on width-changing resizes,
+  // atomically with the very frame it writes (no transient blank). It must NOT be
+  // called from the out-of-band resize paths (index.tsx onResize / ui/layout.ts),
+  // where a clear/reset would blank the screen until the next React commit.
+  assert.match(clearBoundarySource, /resetInkOutputForFreshFrame/, "render-path wrapper owns the cache reset");
+  // app.tsx only references it in the /clear fallback (when the boundary can't arm).
   const appResetCalls = appSource.match(/resetInkOutputForFreshFrame\(/g) ?? [];
-  assert.equal(appResetCalls.length, 1, "reset is called exactly once (handleClear only)");
+  assert.equal(appResetCalls.length, 1, "app.tsx references reset once (handleClear fallback only)");
   assert.doesNotMatch(indexSource, /resetInkOutputForFreshFrame/);
   assert.doesNotMatch(layoutSource, /resetInkOutputForFreshFrame/);
+});
+
+test("Resize repaint uses the scrollback-inclusive transcript clear, not a viewport-only clear", () => {
+  // A width grow re-exposes the pre-resize frame from scrollback; the resize repaint
+  // must erase scrollback too (transcriptClear / \x1b[3J), matching the /clear path.
+  // Otherwise the old frame stacks behind the new one on GNOME Terminal.
+  assert.match(clearBoundarySource, /clearTranscript\(`\$\{source\}:resizeRefresh`\)/, "resize repaint clears the transcript (scrollback-inclusive)");
+  assert.doesNotMatch(clearBoundarySource, /clearViewport\(`\$\{source\}/, "resize repaint must not use a viewport-only clear");
+});
+
+test("/clear fallback preserves clear-then-reset ordering when boundary cannot arm", () => {
+  const handleClearMatch = appSource.match(/const handleClear = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[/);
+  assert.ok(handleClearMatch, "handleClear callback should exist");
+  const body = handleClearMatch[1] ?? "";
+  const fallbackIndex = body.indexOf("if (!clearBoundaryArmed) {");
+  const clearIndex = body.indexOf('terminalControl.clearTranscript("src/app.tsx:handleClear:fallback")');
+  const resetIndex = body.indexOf("resetInkOutputForFreshFrame({ instance: inkInstance");
+  assert.ok(fallbackIndex >= 0, "fallback block should exist for unresolved Ink boundary");
+  assert.ok(clearIndex > fallbackIndex, "fallback should physically clear the terminal");
+  assert.ok(resetIndex > clearIndex, "fallback should reset Ink caches after physical clear");
+});
+
+test("/clear forces a deterministic post-clear repaint when the boundary signals readiness", () => {
+  // Ink writes a frame during the React commit (resetAfterCommit), before passive
+  // effects run, so the cleared frame is suppressed against the boundary's stale
+  // gate. The syncRenderState effect must consume the boundary's readiness signal
+  // and force exactly one more commit so the authoritative post-clear frame is
+  // flushed deterministically instead of waiting on an incidental later render.
+  assert.match(appSource, /const postClearRepaintPending = clearFrameBoundaryController\.syncRenderState\(/);
+  assert.match(appSource, /if \(postClearRepaintPending\) \{[\s\S]*?bumpPostClearRepaint\(/);
 });
 
 test("Startup keeps a single resize listener and disables Ink's competing handler", () => {
