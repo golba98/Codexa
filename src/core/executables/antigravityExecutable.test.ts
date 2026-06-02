@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChildProcess } from "node:child_process";
-import { buildAgySpawnSpec, resetAgyExecutableCacheForTests, resolveAgyExecutable } from "./antigravityExecutable.js";
+import { resetAgyExecutableCacheForTests, resolveAgyExecutable } from "./antigravityExecutable.js";
 import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 
 function commandResult(overrides: Partial<CommandResult>): CommandResult {
@@ -91,10 +91,4 @@ test("agy resolver: configuredPath bypasses cache", async () => {
     assert.equal(first, "agy");
     assert.equal(second, "agy-override");
   });
-});
-
-test("agy spawn spec returns executable and args unchanged", () => {
-  const spec = buildAgySpawnSpec("agy", ["-p", "say hello"]);
-  assert.equal(spec.executable, "agy");
-  assert.deepEqual(spec.args, ["-p", "say hello"]);
 });

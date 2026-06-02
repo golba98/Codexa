@@ -12,9 +12,9 @@ import type {
 } from "./types.js";
 import {
   resolveAgyExecutable,
-  buildAgySpawnSpec,
   resetAgyExecutableCacheForTests,
 } from "../executables/antigravityExecutable.js";
+import { buildSpawnSpec } from "../executables/executableResolver.js";
 
 export { resetAgyExecutableCacheForTests };
 
@@ -168,6 +168,7 @@ export async function validateAntigravityRoute(options: {
   cwd?: string;
   configuredPath?: string | null;
   runCommandImpl?: typeof runCommand;
+  platform?: NodeJS.Platform;
 }): Promise<ProviderRouteValidationResult> {
   let resolved: string;
   try {
@@ -187,11 +188,14 @@ export async function validateAntigravityRoute(options: {
   }
 
   // Probe the binary to confirm it's actually installed. Running --help has no
-  // auth side effects and exits 0 when agy is present.
+  // auth side effects and exits 0 when agy is present. buildSpawnSpec wraps
+  // .cmd/.bat shims in `cmd.exe /d /s /c call` on Windows (no-op elsewhere) so
+  // the probe can actually launch the resolved executable.
   const runCommandImpl = options.runCommandImpl ?? runCommand;
+  const probeSpec = buildSpawnSpec(resolved, ["--help"], options.platform ?? process.platform);
   const probe = runCommandImpl({
-    executable: resolved,
-    args: ["--help"],
+    executable: probeSpec.executable,
+    args: probeSpec.args,
     cwd: options.cwd ?? process.cwd(),
     timeoutMs: ANTIGRAVITY_VALIDATION_TIMEOUT_MS,
   });
@@ -228,8 +232,9 @@ export function runAntigravityWithRunner(
   handlers: BackendRunHandlers,
   runCommandImpl: typeof runCommand = runCommand,
   executable: string = resolvedAgyExecutable,
+  platform: NodeJS.Platform = process.platform,
 ): () => void {
-  const spawnSpec = buildAgySpawnSpec(executable, ["-p", request.prompt]);
+  const spawnSpec = buildSpawnSpec(executable, ["-p", request.prompt], platform);
   const env = buildAgyEnv(request.route.modelId, request.route.reasoning);
 
   const runner = runCommandImpl(
@@ -286,7 +291,7 @@ export const antigravityRuntime: ProviderRuntime = {
   discoverModels: (): ProviderModelDiscoveryResult => ({
     status: "ready",
     providerId: "antigravity",
-    backendKind: agyRouteValidated ? "antigravity-cli-auth" : "antigravity-cli-auth",
+    backendKind: "antigravity-cli-auth",
     models: ANTIGRAVITY_MODELS,
   }),
   run: (request: ProviderChatRequest, handlers: BackendRunHandlers) => {

@@ -187,16 +187,35 @@ test("buildSpawnSpec rejects unsafe executable candidates", () => {
   }
 });
 
-test("buildSpawnSpec: wraps .cmd files in cmd.exe on Windows", async () => {
-  if (process.platform !== "win32") return;
-  const spec = buildSpawnSpec("test.cmd", ["arg1"]);
+// The Windows wrapping branch is driven by an injected platform so it runs on any OS.
+test("buildSpawnSpec: wraps .cmd files in cmd.exe on Windows", () => {
+  const spec = buildSpawnSpec("test.cmd", ["arg1"], "win32");
   assert.equal(spec.executable, "cmd.exe");
   assert.deepEqual(spec.args, ["/d", "/s", "/c", "call", "test.cmd", "arg1"]);
 });
 
-test("buildSpawnSpec: does not wrap .exe files", async () => {
-  if (process.platform !== "win32") return;
-  const spec = buildSpawnSpec("test.exe", ["arg1"]);
+test("buildSpawnSpec: wraps .bat files in cmd.exe on Windows", () => {
+  const spec = buildSpawnSpec("test.bat", ["arg1"], "win32");
+  assert.equal(spec.executable, "cmd.exe");
+  assert.deepEqual(spec.args, ["/d", "/s", "/c", "call", "test.bat", "arg1"]);
+});
+
+test("buildSpawnSpec: does not wrap .exe files on Windows", () => {
+  const spec = buildSpawnSpec("test.exe", ["arg1"], "win32");
   assert.equal(spec.executable, "test.exe");
   assert.deepEqual(spec.args, ["arg1"]);
+});
+
+test("buildSpawnSpec: passes .cmd through unwrapped on non-Windows", () => {
+  const spec = buildSpawnSpec("test.cmd", ["arg1"], "linux");
+  assert.equal(spec.executable, "test.cmd");
+  assert.deepEqual(spec.args, ["arg1"]);
+});
+
+test("buildSpawnSpec: rejects a .cmd path containing a batch metacharacter on Windows", () => {
+  // Path form bypasses the bare-name check, reaching validateWindowsBatchExecutableForCmd.
+  assert.throws(
+    () => buildSpawnSpec("./bad%name.cmd", ["arg1"], "win32"),
+    /unsafe for cmd\.exe batch launch/i,
+  );
 });

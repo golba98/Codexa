@@ -238,6 +238,44 @@ test("runAntigravityWithRunner: spawns agy with -p flag and the prompt", async (
   assert.deepEqual((capturedSpec as CommandSpec).args, ["-p", "say hello back"]);
 });
 
+test("runAntigravityWithRunner: wraps a .cmd executable in cmd.exe on Windows, keeping the prompt as one arg", async () => {
+  let capturedSpec: CommandSpec | null = null;
+  const runner = mockRunCommand(commandResult({}), (spec) => { capturedSpec = spec; });
+
+  await new Promise<void>((resolve) => {
+    runAntigravityWithRunner(
+      buildRequest({ prompt: "say hello back" }),
+      { onResponse: () => resolve(), onError: (msg) => { throw new Error(msg); } },
+      runner,
+      "agy.cmd",
+      "win32",
+    );
+  });
+
+  assert.ok(capturedSpec !== null, "runCommand was not called");
+  assert.equal((capturedSpec as CommandSpec).executable, "cmd.exe");
+  assert.deepEqual((capturedSpec as CommandSpec).args, ["/d", "/s", "/c", "call", "agy.cmd", "-p", "say hello back"]);
+});
+
+test("runAntigravityWithRunner: passes a .cmd executable through unchanged on non-Windows", async () => {
+  let capturedSpec: CommandSpec | null = null;
+  const runner = mockRunCommand(commandResult({}), (spec) => { capturedSpec = spec; });
+
+  await new Promise<void>((resolve) => {
+    runAntigravityWithRunner(
+      buildRequest({ prompt: "say hello back" }),
+      { onResponse: () => resolve(), onError: (msg) => { throw new Error(msg); } },
+      runner,
+      "agy.cmd",
+      "linux",
+    );
+  });
+
+  assert.ok(capturedSpec !== null, "runCommand was not called");
+  assert.equal((capturedSpec as CommandSpec).executable, "agy.cmd");
+  assert.deepEqual((capturedSpec as CommandSpec).args, ["-p", "say hello back"]);
+});
+
 test("runAntigravityWithRunner: sets AGY_MODEL=gemini-3.5-flash for default profile", async () => {
   let capturedEnv: NodeJS.ProcessEnv | null | undefined;
   const runner = mockRunCommand(commandResult({}), (spec) => { capturedEnv = spec.env; });
@@ -321,6 +359,25 @@ test("validateAntigravityRoute: returns ready when agy --help succeeds", async (
 
   assert.equal(result.status, "ready");
   assert.equal(result.backendKind, "antigravity-cli-auth");
+});
+
+test("validateAntigravityRoute: wraps a .cmd executable probe in cmd.exe on Windows", async () => {
+  resetAntigravityRouteValidationCacheForTests();
+  let capturedSpec: CommandSpec | null = null;
+  const result = await validateAntigravityRoute({
+    cwd: "/tmp",
+    configuredPath: "agy.cmd",
+    platform: "win32",
+    runCommandImpl: mockRunCommand(
+      commandResult({ status: "completed", exitCode: 0, stdout: "Usage of agy..." }),
+      (spec) => { capturedSpec = spec; },
+    ),
+  });
+
+  assert.equal(result.status, "ready");
+  assert.ok(capturedSpec !== null, "probe runCommand was not called");
+  assert.equal((capturedSpec as CommandSpec).executable, "cmd.exe");
+  assert.deepEqual((capturedSpec as CommandSpec).args, ["/d", "/s", "/c", "call", "agy.cmd", "--help"]);
 });
 
 // ---------------------------------------------------------------------------
