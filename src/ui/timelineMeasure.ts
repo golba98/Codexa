@@ -1694,7 +1694,7 @@ function applyTurnOpacity(rows: TimelineRow[], opacity: "active" | "recent" | "d
 // ─── Stream event types ───────────────────────────────────────────────────────
 
 export type StreamEvent =
-  | { kind: "thinking"; streamSeq: number; block: RunProgressBlock; isActive: boolean }
+  | { kind: "thinking"; streamSeq: number; block: RunProgressBlock }
   | { kind: "response"; streamSeq: number; segment: RunResponseSegment }
   | { kind: "action"; streamSeq: number; tool: RunToolActivity }
   | { kind: "actionSummary"; streamSeq: number; id: string; label: string; count: number }
@@ -1711,8 +1711,24 @@ function getCompactableActionLabel(event: StreamEvent): string | null {
   return label === "Read file" || label === "List files" ? label : null;
 }
 
-function compactActionBursts(events: StreamEvent[], verbose: boolean): StreamEvent[] {
-  if (verbose) return events;
+/**
+ * Collapse bursts of same-label completed action cards into a single summary
+ * line. This is a *height-reducing* transform, so it must only run for a
+ * FINISHED turn: applying it while the run is still live shrinks the turn's
+ * total height mid-stream, and the bottom-anchored viewport then re-reveals
+ * earlier (already-scrolled-off) content — the "old states come back" glitch.
+ *
+ * Callers pass `finalized = run.status !== "running"`. We deliberately key off
+ * `run.status` rather than the render phase: `resolveTurnRunPhase` reports
+ * "final" during the ANSWER_VISIBLE window while the run is still running, so a
+ * phase-based gate would compact during that intermediate, still-active frame.
+ */
+export function compactActionBursts(
+  events: StreamEvent[],
+  verbose: boolean,
+  finalized: boolean,
+): StreamEvent[] {
+  if (verbose || !finalized) return events;
 
   const compacted: StreamEvent[] = [];
   for (let index = 0; index < events.length;) {
@@ -1774,13 +1790,11 @@ function buildCodexThinkingRows(params: {
   keyPrefix: string;
   width: number;
   event: Extract<StreamEvent, { kind: "thinking" }>;
-  isLive: boolean;
   verbose: boolean;
 }): TimelineRow[] {
   renderDebug.traceRender("ThinkingBlock", params.event.block.status, {
     keyPrefix: params.keyPrefix,
     streamSeq: params.event.streamSeq,
-    isLive: params.isLive,
     textLength: params.event.block.text.length,
   });
 
@@ -1794,8 +1808,6 @@ function buildCodexThinkingRows(params: {
     textCacheToken(block.text),
     params.width,
     params.verbose,
-    params.isLive,
-    params.event.isActive,
   ]);
 
   return getCachedStreamingBlockRows(cacheKey, () => {
@@ -1814,10 +1826,6 @@ function buildCodexThinkingRows(params: {
       contentRows.push([
         createSpan(`… (${overflowCount} more line${overflowCount === 1 ? "" : "s"})`, "dim"),
       ]);
-    }
-
-    if (params.isLive && params.event.isActive) {
-      contentRows.push([createSpan("▌", "accent")]);
     }
 
     return buildCodexPlainRows(params.keyPrefix, params.width, contentRows);
@@ -2178,13 +2186,11 @@ function buildApprovedPlanRows(params: {
 
 function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn" }>, width: number, options: { verbose?: boolean; workspaceRoot?: string | null }): TimelineRow[] {
   const run = item.item.run!;
-  const assistant = item.item.assistant;
   const streaming = item.renderState.runPhase === "streaming";
-  const dim = item.renderState.opacity !== "active";
-  const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
   const actionBorderTone = item.renderState.opacity === "dim" ? "borderSubtle" : "borderActive";
   const verbose = options.verbose ?? false;
-  const events = compactActionBursts(collectStreamEvents(item, streaming), verbose);
+  const finalized = run.status !== "running";
+  const events = compactActionBursts(collectStreamEvents(item), verbose, finalized);
 
   const rows: TimelineRow[] = [];
 
@@ -2193,7 +2199,9 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
     const isLive = run.status === "running" && isLastEvent; // The cursor is on the last event
 
     if (index > 0) {
-      rows.push(createBlankRow(`${item.key}-stream-gap-${index}`, width));
+      // Key the gap by the stable creation-order streamSeq, not the array
+      // index, so gaps don't remount/reorder when the event set changes.
+      rows.push(createBlankRow(`${item.key}-stream-gap-${event.streamSeq}`, width));
     }
 
     if (event.kind === "thinking") {
@@ -2201,7 +2209,6 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
         keyPrefix: `${item.key}-codex-thinking-${event.streamSeq}`,
         width,
         event,
-        isLive,
         verbose,
       }));
     } else if (event.kind === "action") {
@@ -2242,7 +2249,7 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
     }
   });
 
-  if (!streaming && run.status !== "running") {
+  if (!streaming && finalized) {
     if (run.status === "canceled") {
       rows.push(createBlankRow(`${item.key}-cancel-gap`, width));
       rows.push(...buildCodexPlainRows(
@@ -2281,12 +2288,10 @@ function buildUnifiedStreamRows(item: Extract<RenderTimelineItem, { type: "turn"
   return rows;
 }
 
-function collectStreamEvents(
-  item: Extract<RenderTimelineItem, { type: "turn" }>,
-  streaming: boolean,
-): StreamEvent[] {
+function collectStreamEvents(item: Extract<RenderTimelineItem, { type: "turn" }>): StreamEvent[] {
   const run = item.item.run!;
   const assistant = item.item.assistant;
+  const streaming = item.renderState.runPhase === "streaming";
   const blocksById = new Map<string, RunProgressBlock>();
   for (const entry of run.progressEntries ?? []) {
     for (const block of entry.blocks) blocksById.set(block.id, block);
@@ -2298,14 +2303,23 @@ function collectStreamEvents(
   const sortedItems = (run.streamItems ?? []).slice().sort((a, b) => a.streamSeq - b.streamSeq);
   for (const it of sortedItems) {
     if (it.kind === "thinking") {
-      const block = blocksById.get(it.refId);
-      if (block && block.text.trim().length > 0 && !(run.status === "running" && block.status === "active")) {
-        events.push({
-          kind: "thinking",
-          streamSeq: it.streamSeq,
-          block,
-          isActive: run.status === "running" && block.status === "active",
-        });
+      // Active-turn topology stability: while the run is live we never surface
+      // reasoning blocks. A thinking block is assigned its streamSeq early (when
+      // its reasoning first streams) but only *completes* later — revealing it
+      // mid-stream slots it in at that early streamSeq, ABOVE answer/action
+      // blocks that have already streamed at higher streamSeqs. That late
+      // insert-above is what reorders the live turn. Defer all reasoning to
+      // finalize, where the full streamSeq order (reasoning included) reflows
+      // atomically. (Height grows when it appears — never shrinks mid-stream.)
+      if (run.status !== "running") {
+        const block = blocksById.get(it.refId);
+        if (block && block.text.trim().length > 0) {
+          events.push({
+            kind: "thinking",
+            streamSeq: it.streamSeq,
+            block,
+          });
+        }
       }
     } else if (it.kind === "action") {
       const tool = toolsById.get(it.refId);
@@ -2336,13 +2350,15 @@ function collectStreamEvents(
       if (!VISIBLE_THINKING_SOURCES.has(entry.source)) continue;
       for (const block of entry.blocks) {
         if (!block.text.trim()) continue;
-        if (run.status === "running" && block.status === "active") continue;
+        // Same active-turn topology rule as the streamItems path: defer all
+        // reasoning while the run is live so it cannot insert above already
+        // streamed answer/action blocks. Reveal only once finalized.
+        if (run.status === "running") continue;
         legacySeq += 1;
         events.push({
           kind: "thinking",
           streamSeq: legacySeq,
           block,
-          isActive: run.status === "running" && block.status === "active",
         });
       }
     }
@@ -2552,10 +2568,9 @@ function buildStableActiveTurnGroups(
   }
 
   const streaming = item.renderState.runPhase === "streaming";
-  const dim = item.renderState.opacity !== "active";
-  const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
   const actionBorderTone = item.renderState.opacity === "dim" ? "borderSubtle" : "borderActive";
-  const events = compactActionBursts(collectStreamEvents(item, streaming), verbose);
+  const finalized = run.status !== "running";
+  const events = compactActionBursts(collectStreamEvents(item), verbose, finalized);
   let orderedRows = [...getCachedFrozenRows(rowCacheKey([
     "stable-active-user",
     item.key,
@@ -2571,7 +2586,9 @@ function buildStableActiveTurnGroups(
     const isLastEvent = index === events.length - 1;
 
     if (index > 0) {
-      targetRows.push(createBlankRow(`${item.key}-stream-gap-${index}`, innerWidth));
+      // Stable creation-order key (streamSeq), not array index — matches the
+      // native path and avoids index-based remount when events change.
+      targetRows.push(createBlankRow(`${item.key}-stream-gap-${event.streamSeq}`, innerWidth));
     }
 
     if (event.kind === "thinking") {
@@ -2579,7 +2596,6 @@ function buildStableActiveTurnGroups(
         keyPrefix: `${item.key}-codex-thinking-${event.streamSeq}`,
         width: innerWidth,
         event,
-        isLive: liveEvent,
         verbose,
       });
       targetRows.push(...(liveEvent ? build() : getCachedFrozenRows(rowCacheKey([
@@ -2708,7 +2724,6 @@ function buildNativeStreamEventRows(params: {
       keyPrefix: `${item.key}-codex-thinking-${event.streamSeq}`,
       width: innerWidth,
       event,
-      isLive: !params.forceStable && isNativeLiveStreamEvent(event, run),
       verbose,
     }));
   } else if (event.kind === "action") {
@@ -2795,8 +2810,9 @@ function appendNativeTurnParts(
   if (!run) return;
 
   const events = compactActionBursts(
-    collectStreamEvents(item, item.renderState.runPhase === "streaming"),
+    collectStreamEvents(item),
     verbose,
+    run.status !== "running",
   );
 
   events.forEach((event, eventIndex) => {

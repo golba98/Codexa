@@ -577,7 +577,7 @@ test("default timeline omits active processing text while a run is streaming", (
   assert.doesNotMatch(joined, /^\s*thinking\b/m);
 });
 
-test("streaming omits active processing text while completed processing stays stable", () => {
+test("streaming defers all processing text (active and completed) until finalize", () => {
   const items = buildTimelineItems([
     {
       id: 1,
@@ -629,7 +629,12 @@ test("streaming omits active processing text while completed processing stays st
     .map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
-  assert.match(joined, /I inspected the renderer/);
+  // Active-turn topology stability: reasoning/processing text is DEFERRED while
+  // the run is live — both the completed and the active block stay hidden so a
+  // late-completing reasoning block can't insert above already-streamed content.
+  // It reflows in at finalize (covered by the "completed runs keep progress
+  // updates as separate readable blocks" test below).
+  assert.doesNotMatch(joined, /I inspected the renderer/);
   assert.doesNotMatch(joined, /Next I am separating/);
   assert.match(joined, /Codex/);
   assert.doesNotMatch(joined, /▌/);
