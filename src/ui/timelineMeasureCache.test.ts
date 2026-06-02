@@ -295,7 +295,14 @@ function makeStreamingResponseRenderItem(text: string): RenderTimelineItem {
   };
 }
 
-function makeActionSequenceRenderItem(tools: RunToolActivity[]): RenderTimelineItem {
+function makeActionSequenceRenderItem(
+  tools: RunToolActivity[],
+  options: { finalized?: boolean } = {},
+): RenderTimelineItem {
+  // Action-burst compaction is a height-reducing transform and only runs for a
+  // FINISHED turn (run.status !== "running"). Default to a live/streaming run;
+  // callers exercising compaction must opt in via { finalized: true }.
+  const finalized = options.finalized ?? false;
   const user: UserPromptEvent = {
     id: 20,
     type: "user",
@@ -308,14 +315,14 @@ function makeActionSequenceRenderItem(tools: RunToolActivity[]): RenderTimelineI
     type: "run",
     createdAt: 1,
     startedAt: 1,
-    durationMs: null,
+    durationMs: finalized ? 100 : null,
     backendId: "codex-subprocess",
     backendLabel: "Codexa",
     runtime: TEST_RUNTIME,
     prompt: "Inspect files",
     progressEntries: [],
-    status: "running",
-    summary: "running...",
+    status: finalized ? "completed" : "running",
+    summary: finalized ? "completed" : "running...",
     truncatedOutput: false,
     toolActivities: tools,
     activity: [],
@@ -347,7 +354,7 @@ function makeActionSequenceRenderItem(tools: RunToolActivity[]): RenderTimelineI
     renderState: {
       opacity: "active",
       question: null,
-      runPhase: "streaming",
+      runPhase: finalized ? "none" : "streaming",
     },
   };
 }
@@ -416,9 +423,9 @@ function snapshotText(rows: Array<{ spans: Array<{ text: string }> }>): string {
   return rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 }
 
-function stableRowsForTools(tools: RunToolActivity[]) {
+function stableRowsForTools(tools: RunToolActivity[], options: { finalized?: boolean } = {}) {
   return buildStableTimelineSnapshot(
-    [makeActionSequenceRenderItem(tools)],
+    [makeActionSequenceRenderItem(tools, options)],
     { totalWidth: 72, debugLabel: "action-sequence" },
   ).snapshot.rows;
 }
@@ -509,7 +516,7 @@ test("stable active action rows keep stream order when a later action completes 
   assert.ok(actionTopIndex(rows, 1) < actionTopIndex(rows, 2));
 });
 
-test("default stable timeline summarizes long repeated read action bursts", () => {
+test("default stable timeline summarizes long repeated read action bursts once finalized", () => {
   __clearTimelineMeasureCachesForTests();
 
   const tools = Array.from({ length: 7 }, (_, index) => makeTool({
@@ -521,7 +528,8 @@ test("default stable timeline summarizes long repeated read action bursts", () =
     streamSeq: index + 1,
   }));
 
-  const rows = stableRowsForTools(tools);
+  // Compaction is height-reducing, so it only applies after the run finalizes.
+  const rows = stableRowsForTools(tools, { finalized: true });
   const text = snapshotText(rows);
 
   assert.match(text, /3 repeated read activity summarized/);
@@ -682,7 +690,7 @@ test("native transcript parts keep streaming response out of static rows", () =>
 
 // ── Placement fix: running runs keep all events in liveRows ──────────────────
 
-test("running run keeps all stream events in liveRows — no <Static> growth mid-generation", () => {
+test("running run keeps append-only stream events in liveRows and defers reasoning — no <Static> growth mid-generation", () => {
   __clearTimelineMeasureCachesForTests();
 
   const completedTool = makeTool({
@@ -734,9 +742,12 @@ test("running run keeps all stream events in liveRows — no <Static> growth mid
   const staticKeys = parts.staticItems.flatMap((si) => si.rows.map((r) => r.key));
   assert.ok(staticKeys.some((k) => k.includes("-user-")), "user row should be in staticItems");
 
-  // All stream events (thinking + completed action + running action) must be in liveRows —
-  // not in staticItems — while the run is active. This prevents <Static> from growing
-  // and causing viewport jumps during generation.
+  // Append-only stream events (actions, responses) must be in liveRows — not in
+  // staticItems — while the run is active, so <Static> doesn't grow and shift the
+  // viewport mid-generation. Reasoning is the exception: it is DEFERRED while
+  // running (revealing a completed reasoning block at its early streamSeq would
+  // insert it above already-streamed blocks, reordering the live turn) and reflows
+  // in atomically at finalize — so here it is in neither liveRows nor staticItems.
   assert.equal(
     parts.staticItems.filter((si) => si.key.includes("-stream-")).length,
     0,
@@ -746,7 +757,10 @@ test("running run keeps all stream events in liveRows — no <Static> growth mid
   const liveKeys = parts.liveRows.map((r) => r.key);
   assert.ok(liveKeys.some((k) => k.includes("-action-1-")), "completed action should be in liveRows");
   assert.ok(liveKeys.some((k) => k.includes("-action-2-")), "running action should be in liveRows");
-  assert.ok(liveKeys.some((k) => k.includes("-codex-thinking-")), "thinking block should be in liveRows");
+  assert.ok(
+    !liveKeys.some((k) => k.includes("-codex-thinking-")),
+    "reasoning must be deferred while running — not surfaced in liveRows",
+  );
 });
 
 test("completed run moves all stream events to staticItems — one atomic commit after generation", () => {
