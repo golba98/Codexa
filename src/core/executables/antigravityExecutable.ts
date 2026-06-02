@@ -46,13 +46,3 @@ export async function resolveAgyExecutable(options?: {
   }
   return result;
 }
-
-/**
- * Builds the spawn spec for a resolved Antigravity executable.
- */
-export function buildAgySpawnSpec(
-  executable: string,
-  args: string[],
-): { executable: string; args: string[] } {
-  return { executable, args };
-}

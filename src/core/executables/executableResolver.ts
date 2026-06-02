@@ -139,13 +139,17 @@ export async function resolveExecutable(options: ExecutableResolverOptions): Pro
 /**
  * Builds the spawn spec for a resolved executable.
  * .cmd and .bat files must be invoked via `cmd.exe /d /s /c` on Windows.
+ *
+ * `platform` defaults to the host platform; it is injectable so the Windows
+ * wrapping branch can be unit-tested from any OS.
  */
 export function buildSpawnSpec(
   executable: string,
   args: string[],
+  platform: NodeJS.Platform = process.platform,
 ): { executable: string; args: string[] } {
   const validatedExecutable = validateResolvedExecutable(executable, "Executable", process.cwd());
-  if (process.platform === "win32") {
+  if (platform === "win32") {
     const lower = validatedExecutable.toLowerCase();
     if (lower.endsWith(".cmd") || lower.endsWith(".bat")) {
       validateWindowsBatchExecutableForCmd(validatedExecutable, "Windows batch executable");
