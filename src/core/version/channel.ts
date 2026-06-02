@@ -1,4 +1,4 @@
-import { APP_VERSION } from "../config/settings.js";
+import { APP_VERSION } from "../../config/settings.js";
 
 export const CODEXA_CHANNEL_ENV = "CODEXA_CHANNEL";
 export const LOCAL_DEV_CHANNEL = "local-dev";

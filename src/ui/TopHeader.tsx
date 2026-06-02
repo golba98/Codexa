@@ -1,8 +1,8 @@
 import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
-import { formatCodexaBrandLabel } from "../core/channel.js";
-import { formatVersionLabel } from "../core/updateCheck.js";
+import { formatCodexaBrandLabel } from "../core/version/channel.js";
+import { formatVersionLabel } from "../core/version/updateCheck.js";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../core/auth/codexAuth.js";

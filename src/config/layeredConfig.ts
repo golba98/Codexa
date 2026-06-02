@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
-import { normalizeWorkspaceRoot } from "../core/workspaceRoot.js";
+import { normalizeWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
 import {
   formatApprovalPolicyLabel,
   formatNetworkAccessLabel,

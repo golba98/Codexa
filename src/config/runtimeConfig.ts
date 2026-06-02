@@ -106,7 +106,7 @@ export interface ResolvedRuntimeConfig {
 export interface RuntimeStatusContext {
   workspaceRoot: string;
   tokensUsed?: number | null;
-  projectInstructions?: import("../core/projectInstructions.js").ProjectInstructionsLoadResult | null;
+  projectInstructions?: import("../core/workspace/projectInstructions.js").ProjectInstructionsLoadResult | null;
 }
 
 export interface RuntimeSummary {

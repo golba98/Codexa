@@ -3,7 +3,7 @@ import { basename, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { resolveWorkspacePath } from "./workspaceGuard.js";
 import { normalizeWorkspaceRoot } from "./workspaceRoot.js";
-import { CODEXA_CHANNEL_ENV, LOCAL_DEV_CHANNEL, isLocalDevChannel } from "./channel.js";
+import { CODEXA_CHANNEL_ENV, LOCAL_DEV_CHANNEL, isLocalDevChannel } from "../version/channel.js";
 
 export type LaunchKind = "installed-bin" | "dev-run";
 

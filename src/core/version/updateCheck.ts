@@ -1,4 +1,4 @@
-import { APP_VERSION } from "../config/settings.js";
+import { APP_VERSION } from "../../config/settings.js";
 import { isLocalDevChannel } from "./channel.js";
 
 export const CODEXA_NPM_PACKAGE = "@golba98/codexa";

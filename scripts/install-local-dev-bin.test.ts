@@ -6,9 +6,9 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 // @ts-expect-error JavaScript utility script exports are exercised directly.
-import { createCodexaDevShim, resolveInstallBinDir } from "../../scripts/install-local-dev-bin.mjs";
+import { createCodexaDevShim, resolveInstallBinDir } from "./install-local-dev-bin.mjs";
 
-const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 test("resolveInstallBinDir honors explicit codexa dev bin override", () => {
   assert.equal(resolveInstallBinDir({ CODEXA_DEV_BIN_DIR: "/tmp/codexa-dev-bin" }), "/tmp/codexa-dev-bin");

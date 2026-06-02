@@ -13,7 +13,7 @@ import {
   shouldRunStartupUpdateCheck,
   type NpmRegistryMetadata,
 } from "./updateCheck.js";
-import { isCacheValid, type UpdateCheckCache } from "../config/updateCheckCache.js";
+import { isCacheValid, type UpdateCheckCache } from "../../config/updateCheckCache.js";
 
 function metadata(version: string): NpmRegistryMetadata {
   return { "dist-tags": { latest: version } };

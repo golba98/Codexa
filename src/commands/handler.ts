@@ -36,7 +36,7 @@ import {
   type WorkspaceDisplayMode,
 } from "../config/settings.js";
 
-import type { WorkspaceCommandContext } from "../core/launchContext.js";
+import type { WorkspaceCommandContext } from "../core/workspace/launchContext.js";
 import {
   findModelCapability,
   formatModelCapabilitiesList,
@@ -120,7 +120,7 @@ export interface CommandContext {
   modelCapabilities?: CodexModelCapabilities | null;
   routeStatusMessage?: string;
   activeRouteProviderLabel?: string;
-  projectInstructions?: import("../core/projectInstructions.js").ProjectInstructionsLoadResult | null;
+  projectInstructions?: import("../core/workspace/projectInstructions.js").ProjectInstructionsLoadResult | null;
 }
 
 // Mirrors AVAILABLE_APPROVAL_POLICIES[].id from runtimeConfig.ts

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { RunEvent } from "../session/types.js";
-import { summarizeRunActivity } from "../core/workspaceActivity.js";
+import { summarizeRunActivity } from "../core/workspace/workspaceActivity.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import {
   formatRunActivityStats,

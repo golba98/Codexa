@@ -23,7 +23,7 @@ import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { getTextWidth, splitTextAtColumn } from "./textLayout.js";
 import { useThrottledValue } from "./useThrottledValue.js";
 import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
-import { getStdinDebugState, traceInputDebug } from "../core/inputDebug.js";
+import { getStdinDebugState, traceInputDebug } from "../core/debug/inputDebug.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
 import { isAnimatedBusyState } from "./busyStatusAnimation.js";

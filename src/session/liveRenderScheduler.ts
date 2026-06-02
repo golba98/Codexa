@@ -1,5 +1,5 @@
 import type { BackendProgressUpdate } from "../core/providers/types.js";
-import type { RunFileActivity } from "../core/workspaceActivity.js";
+import type { RunFileActivity } from "../core/workspace/workspaceActivity.js";
 import type { RunToolActivity } from "./types.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 

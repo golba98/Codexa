@@ -1,8 +1,8 @@
 import { spawn } from "child_process";
 import { formatCodexLaunchError, spawnCodexProcess } from "../executables/codexExecutable.js";
-import { prepareCodexExecLaunch } from "../codexLaunch.js";
+import { prepareCodexExecLaunch } from "../codex/codexLaunch.js";
 import * as perf from "../perf/profiler.js";
-import { buildCodexPrompt } from "../codexPrompt.js";
+import { buildCodexPrompt } from "../codex/codexPrompt.js";
 import { createTerminalTitleSequenceStripper } from "../terminal/terminalTitle.js";
 import { createCodexJsonStreamParser } from "./codexJsonStream.js";
 import {
