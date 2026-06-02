@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
 import type { ProviderConfig, ProviderId, ProviderPickerAction } from "../core/providerLauncher/types.js";
-import { traceInputDebug } from "../core/inputDebug.js";
+import { traceInputDebug } from "../core/debug/inputDebug.js";
 import { FOCUS_IDS } from "./focus.js";
 import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
 import { useTheme } from "./theme.js";

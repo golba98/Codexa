@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { formatCodexaBrandLabel, formatCodexaVersionLabel, isLocalDevChannel } from "./channel.js";
-import { APP_VERSION } from "../config/settings.js";
+import { APP_VERSION } from "../../config/settings.js";
 
 test("local-dev channel formats an obvious dev version label", () => {
   const env = { CODEXA_CHANNEL: "local-dev" };

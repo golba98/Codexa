@@ -2,7 +2,7 @@ import { MAX_CHAT_LINES } from "../config/settings.js";
 import type { AvailableBackend } from "../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
-import { summarizeRunActivity, type RunFileActivity } from "../core/workspaceActivity.js";
+import { summarizeRunActivity, type RunFileActivity } from "../core/workspace/workspaceActivity.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import type {
   RunEvent,

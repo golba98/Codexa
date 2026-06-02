@@ -12,7 +12,7 @@ import {
   setIntendedTerminalTitle,
   startTerminalTitleStartupGuard,
 } from "./core/terminal/terminalTitle.js";
-import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
+import { resolveWorkspaceRoot } from "./core/workspace/workspaceRoot.js";
 import {
   createTerminalModeController,
   TERMINAL_SEQUENCES,

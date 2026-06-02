@@ -18,7 +18,7 @@ import { useTheme } from "./theme.js";
 import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { wrapPlainText, wrapCommandText } from "./textLayout.js";
 import { selectVisibleRunActivity } from "./runActivityView.js";
-import type { RunFileActivity } from "../core/workspaceActivity.js";
+import type { RunFileActivity } from "../core/workspace/workspaceActivity.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../session/chatLifecycle.js";
 import { formatProgressBlockBodyLines } from "./progressEntries.js";
 import { getUsableShellWidth, transcriptContentIndent } from "./layout.js";
@@ -32,7 +32,7 @@ import {
 } from "./outputPipeline.js";
 import { normalizeCommand, getFriendlyActionLabel } from "./commandNormalize.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
-import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
+import { normalizePlanReviewMarkdown } from "../core/workspace/planStorage.js";
 
 export type TurnOpacity = "active" | "recent" | "dim";
 

@@ -1,6 +1,6 @@
-import type { AvailableMode } from "../config/settings.js";
-import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
-import type { ProjectInstructions } from "./projectInstructions.js";
+import type { AvailableMode } from "../../config/settings.js";
+import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
+import type { ProjectInstructions } from "../workspace/projectInstructions.js";
 
 // ─── Write-intent detection ───────────────────────────────────────────────────
 

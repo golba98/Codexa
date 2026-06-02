@@ -4,7 +4,7 @@ import React from "react";
 import { PassThrough } from "node:stream";
 import { Box, Text, render } from "ink";
 import { PlanActionPicker } from "./PlanActionPicker.js";
-import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
+import { normalizePlanReviewMarkdown } from "../core/workspace/planStorage.js";
 import {
   buildPlanReviewDisplayRows,
   buildPlanReviewRows,

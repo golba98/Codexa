@@ -8,12 +8,12 @@ import {
   resolveRuntimeConfig,
   type ResolvedRuntimeConfig,
 } from "../config/runtimeConfig.js";
-import { loadProjectInstructions, type ProjectInstructionsLoadResult } from "../core/projectInstructions.js";
+import { loadProjectInstructions, type ProjectInstructionsLoadResult } from "../core/workspace/projectInstructions.js";
 import { getBackendProvider } from "../core/providers/registry.js";
 import type { BackendProvider } from "../core/providers/types.js";
 import { isNoiseLine } from "../core/providers/codexTranscript.js";
 import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
-import { resolveWorkspaceRoot } from "../core/workspaceRoot.js";
+import { resolveWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
 import type { RunToolActivity } from "../session/types.js";
 
 // ─── Types & constants ────────────────────────────────────────────────────────

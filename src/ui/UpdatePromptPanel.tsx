@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
 import { spawn } from "child_process";
 import { useTheme } from "./theme.js";
-import { CODEXA_NPM_PACKAGE, CODEXA_UPDATE_COMMAND, formatVersionLabel } from "../core/updateCheck.js";
+import { CODEXA_NPM_PACKAGE, CODEXA_UPDATE_COMMAND, formatVersionLabel } from "../core/version/updateCheck.js";
 
 type Phase = "menu" | "running" | "done" | "error";
 

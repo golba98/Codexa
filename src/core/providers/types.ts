@@ -1,6 +1,6 @@
 import type { AvailableBackend } from "../../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
-import type { ProjectInstructions } from "../projectInstructions.js";
+import type { ProjectInstructions } from "../workspace/projectInstructions.js";
 import type { RunProgressSource, RunToolActivity } from "../../session/types.js";
 
 export interface BackendProgressUpdate {

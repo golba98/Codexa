@@ -77,9 +77,9 @@ import {
   probeCodexAuthStatus,
 } from "./core/auth/codexAuth.js";
 import { getTerminalSelectionProfile } from "./core/terminal/terminalSelection.js";
-import { copyToClipboard } from "./core/clipboard.js";
-import { normalizePlanReviewMarkdown, savePlan, readPlan } from "./core/planStorage.js";
-import { getBlockedCleanupFailure } from "./core/cleanupFastFail.js";
+import { copyToClipboard } from "./core/shared/clipboard.js";
+import { normalizePlanReviewMarkdown, savePlan, readPlan } from "./core/workspace/planStorage.js";
+import { getBlockedCleanupFailure } from "./core/shared/cleanupFastFail.js";
 import { runShellCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
 import {
   buildPlanExecutionPrompt,
@@ -87,8 +87,8 @@ import {
   detectHollowResponse,
   isClearlySafeGeneratedCleanupRequest,
   resolveExecutionMode,
-} from "./core/codexPrompt.js";
-import { formatHollowResponse } from "./core/hollowResponseFormat.js";
+} from "./core/codex/codexPrompt.js";
+import { formatHollowResponse } from "./core/shared/hollowResponseFormat.js";
 import {
   createFallbackModelCapabilities,
   findModelCapability,
@@ -105,26 +105,26 @@ import {
   createWorkspaceRelaunchPlan,
   guardWorkspaceRelaunch,
   resolveLaunchContext,
-} from "./core/launchContext.js";
+} from "./core/workspace/launchContext.js";
 import {
   findOutsideWorkspacePaths,
   getPromptWorkspaceGuardMessage,
   getShellWorkspaceGuardMessage,
-} from "./core/workspaceGuard.js";
+} from "./core/workspace/workspaceGuard.js";
 import {
   formatContextCompact,
   formatContextLength,
   resolveModelContextLength,
   type ModelContextMetadata,
 } from "./core/providerRuntime/contextMetadata.js";
-import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots } from "./core/workspaceActivity.js";
-import { resolveWorkspaceRoot } from "./core/workspaceRoot.js";
+import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots } from "./core/workspace/workspaceActivity.js";
+import { resolveWorkspaceRoot } from "./core/workspace/workspaceRoot.js";
 import {
   importExternalFile,
   isImageFile,
   rewritePromptWithImportedPaths,
-} from "./core/attachments.js";
-import { loadProjectInstructions } from "./core/projectInstructions.js";
+} from "./core/shared/attachments.js";
+import { loadProjectInstructions } from "./core/workspace/projectInstructions.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
@@ -165,7 +165,7 @@ import {
   setTerminalTitleLifecycleState,
   setIntendedTerminalTitle,
 } from "./core/terminal/terminalTitle.js";
-import { getStdinDebugState, traceInputDebug } from "./core/inputDebug.js";
+import { getStdinDebugState, traceInputDebug } from "./core/debug/inputDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
 import {
@@ -176,7 +176,7 @@ import {
   getLocalGitRemoteUrl,
   parseRepoIdentity,
   type DiagnosticResult,
-} from "./core/githubDiagnostics.js";
+} from "./core/shared/githubDiagnostics.js";
 import type { RunEvent, Screen, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./session/types.js";
 import {
   buildFollowUpPrompt,
@@ -229,8 +229,8 @@ import {
 } from "./ui/themeFlow.js";
 import { isBusy as isUiBusy } from "./session/types.js";
 import { AppShell } from "./ui/AppShell.js";
-import { checkForUpdates, formatLocalDevUpdateStatus, formatUpdateInstructions, shouldRunStartupUpdateCheck, type UpdateCheckResult } from "./core/updateCheck.js";
-import { isLocalDevChannel } from "./core/channel.js";
+import { checkForUpdates, formatLocalDevUpdateStatus, formatUpdateInstructions, shouldRunStartupUpdateCheck, type UpdateCheckResult } from "./core/version/updateCheck.js";
+import { isLocalDevChannel } from "./core/version/channel.js";
 import {
   isCacheValid,
   loadUpdateCheckCache,

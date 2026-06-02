@@ -1,5 +1,5 @@
 import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
-import type { ProjectInstructions } from "../projectInstructions.js";
+import type { ProjectInstructions } from "../workspace/projectInstructions.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
 export type { ResolvedRuntimeConfig };

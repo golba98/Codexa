@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Box, Text } from "ink";
-import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
+import { normalizePlanReviewMarkdown } from "../core/workspace/planStorage.js";
 import { getUsableShellWidth } from "./layout.js";
 import { parseMarkdown } from "./Markdown.js";
 import { getTextWidth } from "./textLayout.js";

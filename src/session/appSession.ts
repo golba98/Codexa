@@ -18,7 +18,7 @@ import {
   upsertRunToolActivity,
   type UIStateAction,
 } from "./chatLifecycle.js";
-import type { RunFileActivity } from "../core/workspaceActivity.js";
+import type { RunFileActivity } from "../core/workspace/workspaceActivity.js";
 import type { RunToolActivity } from "./types.js";
 import type { LiveRenderUpdate } from "./liveRenderScheduler.js";
 import * as renderDebug from "../core/perf/renderDebug.js";

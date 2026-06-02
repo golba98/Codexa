@@ -24,7 +24,7 @@ import {
 import { selectVisibleRunActivity } from "./runActivityView.js";
 import { getTextUnits, getTextWidth, wrapPlainText, wrapCommandText, splitTextAtColumn } from "./textLayout.js";
 import type { RenderTimelineItem } from "./Timeline.js";
-import { normalizePlanReviewMarkdown } from "../core/planStorage.js";
+import { normalizePlanReviewMarkdown } from "../core/workspace/planStorage.js";
 import { selectLogoVariant, LOGO_LARGE_MIN_COLS } from "./logoVariants.js";
 
 // ─── Exported types ───────────────────────────────────────────────────────────

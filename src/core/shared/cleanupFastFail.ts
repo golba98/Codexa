@@ -1,4 +1,4 @@
-import type { RunToolActivity } from "../session/types.js";
+import type { RunToolActivity } from "../../session/types.js";
 
 const DELETE_COMMAND_PATTERN =
   /(?:^|[\s;&|])(?:remove-item|rm|rmdir|del|erase|unlink)\b/i;

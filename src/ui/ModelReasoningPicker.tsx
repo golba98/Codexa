@@ -6,7 +6,7 @@ import {
   normalizeReasoningForModelCapabilities,
 } from "../core/models/codexModelCapabilities.js";
 import { formatReasoningLabel } from "../config/settings.js";
-import { traceInputDebug } from "../core/inputDebug.js";
+import { traceInputDebug } from "../core/debug/inputDebug.js";
 import { FOCUS_IDS } from "./focus.js";
 import { useTheme } from "./theme.js";
 

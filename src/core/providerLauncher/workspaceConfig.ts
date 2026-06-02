@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { DEFAULT_MODEL } from "../../config/settings.js";
-import { normalizeWorkspaceRoot } from "../workspaceRoot.js";
+import { normalizeWorkspaceRoot } from "../workspace/workspaceRoot.js";
 import { isKnownProviderId } from "./registry.js";
 import { getDefaultRouteModel, getProviderRuntime, isProviderRouteConfigured, isProviderRoutableInCodexa } from "../providerRuntime/registry.js";
 import { normalizeGeminiModelId } from "../providerRuntime/models.js";

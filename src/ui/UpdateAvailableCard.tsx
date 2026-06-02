@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { CODEXA_UPDATE_COMMAND, formatVersionLabel } from "../core/updateCheck.js";
+import { CODEXA_UPDATE_COMMAND, formatVersionLabel } from "../core/version/updateCheck.js";
 import { clampVisualText } from "./layout.js";
 import { useTheme } from "./theme.js";
 

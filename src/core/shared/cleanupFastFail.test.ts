@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { RunToolActivity } from "../session/types.js";
+import type { RunToolActivity } from "../../session/types.js";
 import { getBlockedCleanupFailure } from "./cleanupFastFail.js";
 
 function activity(overrides: Partial<RunToolActivity>): RunToolActivity {

@@ -1,4 +1,4 @@
-import type { HollowResponseResult } from "./codexPrompt.js";
+import type { HollowResponseResult } from "../codex/codexPrompt.js";
 
 const MESSAGES: Record<string, [string, string]> = {
   greeting: [

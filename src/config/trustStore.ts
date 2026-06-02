@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
 import { getCodexaTrustStoreFile } from "./settings.js";
-import { normalizeWorkspaceRoot } from "../core/workspaceRoot.js";
+import { normalizeWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
 
 interface TrustStoreData {
   trustedProjectRoots: string[];

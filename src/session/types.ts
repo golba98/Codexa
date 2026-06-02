@@ -3,7 +3,7 @@ import type {
   AvailableBackend,
 } from "../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
-import type { RunActivitySummary, RunFileActivity } from "../core/workspaceActivity.js";
+import type { RunActivitySummary, RunFileActivity } from "../core/workspace/workspaceActivity.js";
 
 // ─── Screen routing ──────────────────────────────────────────────────────────
 
