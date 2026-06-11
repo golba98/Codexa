@@ -3,6 +3,21 @@ import { normalizeWorkspaceRoot } from "./workspaceRoot.js";
 
 type PathStyle = "windows" | "posix";
 
+export function normalizeDiagnosticPath(filePath: string): string {
+  let pathPart = filePath;
+  let drivePrefix = "";
+
+  if (/^[A-Za-z]:[\\/]/.test(filePath)) {
+    drivePrefix = filePath.slice(0, 2);
+    pathPart = filePath.slice(2);
+  }
+
+  const diagnosticSuffixRegex = /:(\d+)(?::(\d+))?$/;
+  pathPart = pathPart.replace(diagnosticSuffixRegex, "");
+
+  return drivePrefix + pathPart;
+}
+
 export interface WorkspacePathViolation {
   rawPath: string;
   normalizedPath: string;
@@ -191,14 +206,15 @@ export function findOutsideWorkspacePaths(
   const workspaceStyle = detectPathStyle(workspaceRoot) ?? "windows";
 
   for (const rawPath of extractExplicitPathReferences(text)) {
-    if (isPathInsideAllowedRoots(rawPath, workspaceRoot, allowedRoots)) {
+    const cleanPath = normalizeDiagnosticPath(rawPath);
+    if (isPathInsideAllowedRoots(cleanPath, workspaceRoot, allowedRoots)) {
       continue;
     }
 
-    const explicitStyle = detectPathStyle(rawPath) ?? workspaceStyle;
-    const normalizedPath = detectPathStyle(rawPath)
-      ? normalizeAbsolutePath(rawPath, explicitStyle)
-      : resolveWorkspacePath(rawPath, workspaceRoot);
+    const explicitStyle = detectPathStyle(cleanPath) ?? workspaceStyle;
+    const normalizedPath = detectPathStyle(cleanPath)
+      ? normalizeAbsolutePath(cleanPath, explicitStyle)
+      : resolveWorkspacePath(cleanPath, workspaceRoot);
     const comparisonKey = explicitStyle === "windows" ? normalizedPath.toLowerCase() : normalizedPath;
 
     if (seen.has(comparisonKey)) {

@@ -101,7 +101,7 @@ export const TERMINAL_MOUSE_MODES = ["wheel", "selection"] as const;
 
 export type TerminalMouseMode = (typeof TERMINAL_MOUSE_MODES)[number];
 
-export const DEFAULT_TERMINAL_MOUSE_MODE: TerminalMouseMode = "selection";
+export const DEFAULT_TERMINAL_MOUSE_MODE: TerminalMouseMode = "wheel";
 
 export interface SettingOption<TValue extends string> {
   value: TValue;

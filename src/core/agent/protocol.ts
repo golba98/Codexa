@@ -173,9 +173,39 @@ export function parseAgentToolCall(text: string): AgentToolParseResult {
   return parseToolCallPayload(raw);
 }
 
+function scalar(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+}
+
+function blockField(name: string, value: unknown): string[] {
+  return [`${name}:`, scalar(value)];
+}
+
 export function serializeToolResult(result: unknown): string {
-  return [
-    "Tool result:",
-    JSON.stringify(result, null, 2),
-  ].join("\n");
+  const record = isRecord(result) ? result : {};
+  const tool = typeof record.tool === "string" ? record.tool : "unknown";
+  const lines: string[] = [`<tool_result name="${tool}">`];
+
+  lines.push(`success: ${scalar(record.success)}`);
+  if (record.command !== undefined) lines.push(`command: ${scalar(record.command)}`);
+  if (record.path !== undefined) lines.push(`path: ${scalar(record.path)}`);
+  if (record.paths !== undefined) lines.push(`paths: ${Array.isArray(record.paths) ? record.paths.join(", ") : scalar(record.paths)}`);
+  if (record.exitCode !== undefined) lines.push(`exit_code: ${scalar(record.exitCode)}`);
+  if (record.durationMs !== undefined) lines.push(`duration_ms: ${scalar(record.durationMs)}`);
+  if (record.summary !== undefined) lines.push(...blockField("summary", record.summary));
+  if (record.error !== undefined) lines.push(...blockField("error", record.error));
+
+  if (tool === "run_shell") {
+    lines.push(...blockField("stdout", record.stdout ?? record.output ?? ""));
+    lines.push(...blockField("stderr", record.stderr ?? ""));
+  } else if (record.output !== undefined) {
+    lines.push(...blockField("output", record.output));
+  }
+
+  if (record.raw !== undefined) lines.push(...blockField("raw", record.raw));
+  lines.push("</tool_result>");
+  return lines.join("\n");
 }

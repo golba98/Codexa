@@ -1,5 +1,7 @@
-import { access, copyFile, mkdir } from "node:fs/promises";
+import { access, copyFile, mkdir, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
+import { normalizeDiagnosticPath } from "../workspace/workspaceGuard.js";
 
 export const IMAGE_EXTENSIONS = new Set([
   ".png",
@@ -44,10 +46,28 @@ export async function resolveAttachmentDestPath(
 export async function importExternalFile(
   srcPath: string,
   attachmentsDir: string,
-): Promise<string> {
+): Promise<string | null> {
+  const normalized = normalizeDiagnosticPath(srcPath);
+
+  try {
+    if (!existsSync(normalized)) {
+      return null;
+    }
+    const s = await stat(normalized);
+    if (!s.isFile()) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  if (normalized.includes(".cargo/registry") || normalized.includes(".cargo" + path.sep + "registry")) {
+    return null;
+  }
+
   await mkdir(attachmentsDir, { recursive: true });
-  const destPath = await resolveAttachmentDestPath(srcPath, attachmentsDir);
-  await copyFile(srcPath, destPath);
+  const destPath = await resolveAttachmentDestPath(normalized, attachmentsDir);
+  await copyFile(normalized, destPath);
   return destPath;
 }
 

@@ -39,7 +39,7 @@ export function SettingsPanel<TKey extends string>({
 
   const activeSetting = settings[selectedIndex] ?? settings[0];
   const subtitle = useMemo(() => {
-    const instructions = "↑↓ setting  ←→ option  Enter save  Esc cancel";
+    const instructions = "↑↓ setting  ←→ option  Esc to close · Enter to confirm";
     if (!activeSetting?.description) {
       return instructions;
     }

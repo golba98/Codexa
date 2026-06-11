@@ -126,18 +126,51 @@ test("structured provider tool calls are executed before final text", async () =
   });
 });
 
-test("loop stops at 10 tool calls with a clear failure", async () => {
+test("loop synthesizes a useful final answer after max tool calls", async () => {
   await withTempWorkspace(async (workspaceRoot) => {
-    await assert.rejects(
-      runAgentLoop({
-        request: request(workspaceRoot, "keep listing"),
-        handlers: handlers().handlers,
-        includeSystemPrompt: true,
-        sendMessages: async () => ({
-          text: '<tool_call>{"name":"list_files","arguments":{"path":"."}}</tool_call>',
-        }),
+    const text = await runAgentLoop({
+      request: request(workspaceRoot, "keep listing"),
+      handlers: handlers().handlers,
+      includeSystemPrompt: true,
+      maxToolCalls: 1,
+      sendMessages: async (_messages: readonly AgentChatMessage[], index) => ({
+        text: index <= 1
+          ? '<tool_call>{"name":"list_files","arguments":{"path":"."}}</tool_call>'
+          : "",
       }),
-      /10 tool calls/i,
-    );
+    });
+
+    assert.match(text, /repeated the same list_files tool call|reached 1 tool calls/i);
+    assert.match(text, /Files changed:/);
+    assert.match(text, /Commands run:/);
+    assert.match(text, /Next command:/);
+  });
+});
+
+test("duplicate identical tool call asks for final answer instead of executing again", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    let chatCalls = 0;
+    const bodies: AgentChatMessage[][] = [];
+    const text = await runAgentLoop({
+      request: request(workspaceRoot, "write main"),
+      handlers: handlers().handlers,
+      includeSystemPrompt: true,
+      sendMessages: async (messages: readonly AgentChatMessage[]) => {
+        bodies.push([...messages]);
+        chatCalls += 1;
+        if (chatCalls === 1) {
+          return { text: '<tool_call>{"name":"write_file","arguments":{"path":"main.rs","content":"fn main() {}\\n"}}</tool_call>' };
+        }
+        if (chatCalls === 2) {
+          return { text: '<tool_call>{"name":"write_file","arguments":{"path":"main.rs","content":"fn main() {}\\n"}}</tool_call>' };
+        }
+        return { text: "Finalized after the write." };
+      },
+    });
+
+    assert.equal(text, "Finalized after the write.");
+    assert.equal(chatCalls, 3);
+    assert.match(bodies.at(-1)?.at(-1)?.content ?? "", /repeated the same write_file tool call/i);
+    assert.equal(await readFile(path.join(workspaceRoot, "main.rs"), "utf8"), "fn main() {}\n");
   });
 });

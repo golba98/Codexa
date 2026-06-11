@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { ProviderChatRequest } from "../providerRuntime/types.js";
 import { executeAgentTool, type AgentToolResult } from "./tools.js";
@@ -25,11 +27,15 @@ export interface RunAgentLoopOptions {
 const DEFAULT_MAX_TOOL_CALLS = 10;
 
 function localAgentSystemPrompt(request: ProviderChatRequest): string {
+  const hasCargoToml = existsSync(path.join(request.workspaceRoot, "Cargo.toml"));
   return [
     `You are an autonomous coding assistant running inside this workspace: ${request.workspaceRoot}`,
     "You must inspect files with tools before claiming you cannot see them.",
     "Use tools to create, edit, build, and test when the user asks for workspace changes.",
     "Do not ask vague clarification questions when the user's intent has an obvious safe implementation.",
+    hasCargoToml
+      ? "Rust workspace note: Cargo.toml exists. Prefer src/main.rs for simple binaries, use cargo check for validation, use cargo run for running, and do not use rustc main.rs unless main.rs is truly at the workspace root."
+      : null,
     "Use exactly one tool call at a time in this format:",
     '<tool_call>{"name":"read_file","arguments":{"path":"src/index.tsx"}}</tool_call>',
     "Available tools: list_files, read_file, write_file, apply_patch, run_shell, get_workspace_info.",
@@ -61,10 +67,105 @@ function toolActivityCommand(result: Pick<AgentToolResult, "tool" | "path" | "pa
   return result.tool;
 }
 
+interface ExecutedCommand {
+  command: string;
+  success: boolean;
+  exitCode?: number | null;
+  durationMs?: number;
+}
+
+interface AgentLoopSummary {
+  changedFiles: Set<string>;
+  commands: ExecutedCommand[];
+  toolResults: AgentToolResult[];
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function toolCallSignature(call: Pick<NormalizedAgentToolCall, "name" | "arguments">): string {
+  return `${call.name}:${stableJson(call.arguments)}`;
+}
+
+function recordToolResult(summary: AgentLoopSummary, result: AgentToolResult): void {
+  for (const file of result.paths ?? []) {
+    if (file) summary.changedFiles.add(file);
+  }
+  if (result.path && (result.tool === "write_file" || result.tool === "apply_patch")) {
+    summary.changedFiles.add(result.path);
+  }
+  if (result.command) {
+    summary.commands.push({
+      command: result.command,
+      success: result.success,
+      exitCode: result.exitCode,
+      durationMs: result.durationMs,
+    });
+  }
+  summary.toolResults.push(result);
+}
+
+function commandStatus(command: ExecutedCommand): string {
+  const status = command.success ? "succeeded" : "failed";
+  const exitCode = command.exitCode === undefined ? "" : `, exit ${command.exitCode ?? "n/a"}`;
+  return `- ${command.command}: ${status}${exitCode}`;
+}
+
+function nextCommand(request: ProviderChatRequest, summary: AgentLoopSummary): string {
+  if (existsSync(path.join(request.workspaceRoot, "Cargo.toml"))) return "cargo run";
+  const lastValidation = [...summary.commands].reverse().find((item) =>
+    /\b(?:cargo check|cargo run|bun test|npm test|bun run typecheck|tsc)\b/.test(item.command)
+  );
+  if (lastValidation) return lastValidation.command;
+  return "bun test";
+}
+
+function synthesizeFinalMessage(request: ProviderChatRequest, summary: AgentLoopSummary, reason: string): string {
+  const files = [...summary.changedFiles].sort();
+  const commandLines = summary.commands.map(commandStatus);
+  return [
+    reason,
+    "",
+    "Files changed:",
+    files.length > 0 ? files.map((file) => `- ${file}`).join("\n") : "- None detected",
+    "",
+    "Commands run:",
+    commandLines.length > 0 ? commandLines.join("\n") : "- None",
+    "",
+    `Next command: ${nextCommand(request, summary)}`,
+  ].join("\n").trim();
+}
+
+async function requestFinalAnswer(options: RunAgentLoopOptions, messages: AgentChatMessage[], toolCallCount: number, reason: string): Promise<string | null> {
+  messages.push({
+    role: "user",
+    content: [
+      reason,
+      "Stop calling tools now. Write the final answer using the tool results already provided.",
+      "Include files changed, commands run, whether they succeeded, and the next command the user can run.",
+    ].join("\n"),
+  });
+  const response = await options.sendMessages(messages, toolCallCount);
+  const parsed = parseAgentToolCall(response.text);
+  return parsed.kind === "final" && parsed.text.trim() ? parsed.text.trim() : null;
+}
+
 export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string> {
   const maxToolCalls = options.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS;
   const messages = buildInitialMessages(options.request, options.includeSystemPrompt);
   let toolCallCount = 0;
+  let previousToolSignature: string | null = null;
+  const summary: AgentLoopSummary = {
+    changedFiles: new Set(),
+    commands: [],
+    toolResults: [],
+  };
 
   while (true) {
     if (options.signal?.aborted) {
@@ -81,13 +182,14 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
       return parsed.text.trim();
     }
 
-    messages.push({ role: "assistant", content: response.text });
-
     if (toolCallCount >= maxToolCalls) {
-      throw new Error(`Local agent stopped after ${maxToolCalls} tool calls without a final answer.`);
+      const reason = `Local agent reached ${maxToolCalls} tool calls without a final answer.`;
+      const final = await requestFinalAnswer(options, messages, toolCallCount, reason);
+      return final ?? synthesizeFinalMessage(options.request, summary, reason);
     }
 
     if (parsed.kind === "malformed_tool_call") {
+      messages.push({ role: "assistant", content: response.text });
       toolCallCount += 1;
       messages.push({
         role: "user",
@@ -100,6 +202,15 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
       continue;
     }
 
+    const signature = toolCallSignature(parsed);
+    if (signature === previousToolSignature) {
+      const reason = `Local agent repeated the same ${parsed.name} tool call with identical arguments.`;
+      const final = await requestFinalAnswer(options, messages, toolCallCount, reason);
+      return final ?? synthesizeFinalMessage(options.request, summary, reason);
+    }
+
+    messages.push({ role: "assistant", content: response.text || parsed.raw });
+    previousToolSignature = signature;
     toolCallCount += 1;
     const activityId = `local-agent-${toolCallCount}-${parsed.name}`;
     const startedAt = Date.now();
@@ -129,6 +240,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
       completedAt: Date.now(),
       summary: result.summary ?? result.error ?? null,
     });
+    recordToolResult(summary, result);
 
     messages.push({
       role: "user",

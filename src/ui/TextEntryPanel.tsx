@@ -27,7 +27,7 @@ export function TextEntryPanel({
   placeholder = "",
   initialValue = "",
   inputLabel = "Input",
-  footerHint = "Enter submit  Esc cancel  Backspace delete",
+  footerHint = "Esc to close · Enter to confirm",
   onSubmit,
   onCancel,
 }: TextEntryPanelProps) {

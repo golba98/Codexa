@@ -458,7 +458,7 @@ test("cramped streaming state avoids response-labelled footer text", async () =>
   assert.doesNotMatch(output, /Streaming response/i);
 });
 
-test("non-main screens center the active panel and keep the composer hidden", async () => {
+test("non-main screens center the active panel and keep the composer visible", async () => {
   const output = await renderShell(
     100,
     30,
@@ -468,7 +468,7 @@ test("non-main screens center the active panel and keep the composer hidden", as
   );
 
   assert.match(output, /Theme panel/);
-  assert.doesNotMatch(output, /gpt-5\.4 \(medium\)/);
+  assert.match(output, /gpt-5\.4 \(medium\)/);
 });
 
 test("non-main panel content updates while the active screen is unchanged", async () => {
@@ -592,7 +592,7 @@ test("startup intro workspace label updates when the intro component rerenders",
   }
 });
 
-test("model picker renders as a compact command panel without composer", async () => {
+test("model picker renders as a compact command panel with composer", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 120;
@@ -640,7 +640,7 @@ test("model picker renders as a compact command panel without composer", async (
   const output = stripAnsi(raw);
   assert.match(output, /Select model command panel/);
   assert.match(output, /Codexa v/);
-  assert.doesNotMatch(output, /gpt-5\.4 \(medium\)/);
+  assert.match(output, /gpt-5\.4 \(medium\)/);
 });
 
 test("native spacer subtracts persistent transcript rows before anchoring the composer", () => {

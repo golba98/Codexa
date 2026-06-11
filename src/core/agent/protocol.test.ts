@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseAgentToolCall, parseOpenAiToolCalls } from "./protocol.js";
+import { parseAgentToolCall, parseOpenAiToolCalls, serializeToolResult } from "./protocol.js";
 
 test("parses a valid single tool call block", () => {
   const result = parseAgentToolCall('<tool_call>{"name":"read_file","arguments":{"path":"src/app.tsx"}}</tool_call>');
@@ -81,4 +81,24 @@ test("assistant text without a tool call is final", () => {
   const result = parseAgentToolCall("Done. I changed the file.");
 
   assert.deepEqual(result, { kind: "final", text: "Done. I changed the file." });
+});
+
+test("serializes run_shell result in local-model-friendly XML format", () => {
+  const result = serializeToolResult({
+    success: true,
+    tool: "run_shell",
+    command: "cargo run",
+    exitCode: 0,
+    durationMs: 421,
+    stdout: "ok",
+    stderr: "",
+  });
+
+  assert.match(result, /^<tool_result name="run_shell">/);
+  assert.match(result, /command: cargo run/);
+  assert.match(result, /exit_code: 0/);
+  assert.match(result, /duration_ms: 421/);
+  assert.match(result, /stdout:\nok/);
+  assert.match(result, /stderr:\n/);
+  assert.match(result, /<\/tool_result>$/);
 });

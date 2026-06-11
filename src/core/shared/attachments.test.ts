@@ -95,6 +95,7 @@ test("importExternalFile creates attachments dir if missing and copies file", as
   await writeFile(srcPath, "image-content");
   try {
     const destPath = await importExternalFile(srcPath, destDir);
+    assert.ok(destPath);
     assert.equal(path.basename(destPath), "test.png");
     // Verify the file was copied
     const { readFile } = await import("node:fs/promises");
