@@ -39,21 +39,6 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function streamResponse(chunks: readonly string[]): Response {
-  const encoder = new TextEncoder();
-  return new Response(new ReadableStream({
-    start(controller) {
-      for (const chunk of chunks) {
-        controller.enqueue(encoder.encode(chunk));
-      }
-      controller.close();
-    },
-  }), {
-    status: 200,
-    headers: { "Content-Type": "text/event-stream" },
-  });
-}
-
 function buildRequest(overrides: Partial<ProviderChatRequest> = {}): ProviderChatRequest {
   return {
     prompt: "hi",
@@ -325,11 +310,7 @@ test("Local provider sends prompt to configured OpenAI-compatible base URL", asy
       if (String(input).endsWith("/models")) {
         return jsonResponse({ data: [{ id: "google/gemma-4-26b-a4b" }] });
       }
-      return streamResponse([
-        "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"content\":\" there\"}}]}\n\n",
-        "data: [DONE]\n\n",
-      ]);
+      return jsonResponse({ choices: [{ message: { content: "Hello there" } }] });
     }) as typeof fetch;
 
     await checkLocalProvider({
@@ -349,12 +330,12 @@ test("Local provider sends prompt to configured OpenAI-compatible base URL", asy
 
     assert.equal(text, "Hello there");
     assert.equal(calls[1]?.url, "http://lmstudio.test/v1/chat/completions");
-    assert.deepEqual(calls[1]?.body, {
-      model: "google/gemma-4-26b-a4b",
-      messages: [{ role: "user", content: "hi" }],
-      stream: true,
-    });
-    assert.deepEqual(deltas, ["Hello", " there"]);
+    const body = calls[1]?.body as { model?: string; messages?: Array<{ role: string; content: string }>; stream?: boolean };
+    assert.equal(body.model, "google/gemma-4-26b-a4b");
+    assert.equal(body.stream, false);
+    assert.deepEqual(body.messages?.map((message) => message.role), ["system", "user"]);
+    assert.equal(body.messages?.at(-1)?.content, "hi");
+    assert.deepEqual(deltas, ["Hello there"]);
   });
 });
 
@@ -401,15 +382,12 @@ test("Local request payload uses refreshed LM Studio active loaded model", async
   });
 });
 
-test("Local provider falls back to non-streaming chat completion", async () => {
+test("Local provider uses non-streaming agent chat completion", async () => {
   await withLocalEnv({}, async () => {
     const streamValues: boolean[] = [];
     const fetchImpl = (async (_input, init) => {
       const body = init?.body ? JSON.parse(String(init.body)) as { stream?: boolean } : {};
       streamValues.push(Boolean(body.stream));
-      if (body.stream) {
-        return new Response("stream unavailable", { status: 400 });
-      }
       return jsonResponse({ choices: [{ message: { content: "Fallback response" } }] });
     }) as typeof fetch;
 
@@ -423,7 +401,7 @@ test("Local provider falls back to non-streaming chat completion", async () => {
     );
 
     assert.equal(text, "Fallback response");
-    assert.deepEqual(streamValues, [true, false]);
+    assert.deepEqual(streamValues, [false]);
   });
 });
 
@@ -489,10 +467,7 @@ test("Local provider omits system prompt when supports_system_prompt: false in A
         return jsonResponse({ data: [{ id: "no-sys-model", supports_system_prompt: false }] });
       }
       calls.push({ body: init?.body ? JSON.parse(String(init.body)) as unknown : null });
-      return streamResponse([
-        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
-        "data: [DONE]\n\n",
-      ]);
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
     }) as typeof fetch;
 
     await checkLocalProvider({ fetchImpl });
@@ -522,10 +497,7 @@ test("Local provider includes system prompt when supportsSystemPrompt is unknown
         return jsonResponse({ data: [{ id: "unknown-caps-model" }] });
       }
       calls.push({ body: init?.body ? JSON.parse(String(init.body)) as unknown : null });
-      return streamResponse([
-        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
-        "data: [DONE]\n\n",
-      ]);
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
     }) as typeof fetch;
 
     await checkLocalProvider({ fetchImpl });
@@ -544,7 +516,7 @@ test("Local provider includes system prompt when supportsSystemPrompt is unknown
   });
 });
 
-test("Local provider skips streaming when supports_streaming: false in API metadata", async () => {
+test("Local provider keeps agent chat completion non-streaming when supports_streaming is false", async () => {
   await withLocalEnv({}, async () => {
     const streamValues: boolean[] = [];
     const fetchImpl = (async (input, init) => {
@@ -579,10 +551,7 @@ test("Local config override supportsSystemPrompt: false omits system prompt with
     const calls: Array<{ body: unknown }> = [];
     const fetchImpl = (async (_input, init) => {
       calls.push({ body: init?.body ? JSON.parse(String(init.body)) as unknown : null });
-      return streamResponse([
-        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
-        "data: [DONE]\n\n",
-      ]);
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
     }) as typeof fetch;
 
     await runLocalOpenAiCompatible(
@@ -658,10 +627,7 @@ test("resetLocalProviderStateForTests clears capability profile cache for test i
       }
       const body = init?.body ? JSON.parse(String(init.body)) as { stream?: boolean } : {};
       calls.push(Boolean(body.stream));
-      return streamResponse([
-        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
-        "data: [DONE]\n\n",
-      ]);
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
     }) as typeof fetch;
 
     await checkLocalProvider({ fetchImpl });
@@ -670,7 +636,7 @@ test("resetLocalProviderStateForTests clears capability profile cache for test i
       { onResponse: () => undefined, onError: assert.fail },
       { fetchImpl },
     );
-    assert.equal(calls[0], true, "streaming should be attempted after cache was cleared (unknown defaults to try)");
+    assert.equal(calls[0], false, "agent loop uses non-streaming completions so tool calls stay hidden");
   });
 });
 
