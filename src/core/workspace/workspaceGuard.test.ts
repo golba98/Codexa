@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   containsDirectoryNavigationCommand,
+  extractExplicitPathReferences,
   findOutsideWorkspacePaths,
   getPromptWorkspaceGuardMessage,
   getShellWorkspaceGuardMessage,
+  isSkippedExternalDependencyPath,
   isPathInsideAllowedRoots,
   isPathInsideWorkspace,
   resolveWorkspacePath,
@@ -172,4 +174,84 @@ test("normalizes diagnostic file paths correctly", () => {
     normalizeDiagnosticPath("C:\\Users\\me\\project\\src\\main.rs:12:5"),
     "C:\\Users\\me\\project\\src\\main.rs"
   );
+});
+
+test("accepts Rust relative diagnostic paths inside the workspace", () => {
+  const rustWorkspace = normalizeWorkspaceRoot("/home/user/project");
+  const violations = findOutsideWorkspacePaths(
+    "error[E0308]\n  --> src/main.rs:49:22",
+    rustWorkspace,
+  );
+
+  assert.equal(normalizeDiagnosticPath("src/main.rs:49:22"), "src/main.rs");
+  assert.deepEqual(violations, []);
+});
+
+test("accepts Rust absolute diagnostic paths inside the workspace", () => {
+  const rustWorkspace = normalizeWorkspaceRoot("/home/user/project");
+  const violations = findOutsideWorkspacePaths(
+    "error[E0308]\n  --> /home/user/project/src/main.rs:49:22",
+    rustWorkspace,
+  );
+
+  assert.equal(
+    normalizeDiagnosticPath("/home/user/project/src/main.rs:49:22"),
+    "/home/user/project/src/main.rs",
+  );
+  assert.deepEqual(violations, []);
+});
+
+test("skips Cargo registry diagnostic paths", () => {
+  const dependencyPath = "/home/user/.cargo/registry/src/index.crates.io-123/iced_widget/src/container.rs:109:12";
+
+  assert.equal(
+    normalizeDiagnosticPath(dependencyPath),
+    "/home/user/.cargo/registry/src/index.crates.io-123/iced_widget/src/container.rs",
+  );
+  assert.equal(isSkippedExternalDependencyPath(dependencyPath), true);
+  assert.deepEqual(findOutsideWorkspacePaths(dependencyPath, "/home/user/project"), []);
+});
+
+test("skips Cargo git checkout diagnostic paths", () => {
+  const dependencyPath = "/home/user/.cargo/git/checkouts/example-123/src/lib.rs:10:5";
+
+  assert.equal(
+    normalizeDiagnosticPath(dependencyPath),
+    "/home/user/.cargo/git/checkouts/example-123/src/lib.rs",
+  );
+  assert.equal(isSkippedExternalDependencyPath(dependencyPath), true);
+  assert.deepEqual(findOutsideWorkspacePaths(dependencyPath, "/home/user/project"), []);
+});
+
+test("skips target generated diagnostic paths by default", () => {
+  const generatedPath = "target/debug/build/example/out/generated.rs:10:5";
+
+  assert.equal(isSkippedExternalDependencyPath(generatedPath), true);
+  assert.deepEqual(findOutsideWorkspacePaths(generatedPath, "/home/user/project"), []);
+});
+
+test("skips common package manager and cache paths", () => {
+  for (const externalPath of [
+    "/home/user/project/node_modules/pkg/index.js:1:1",
+    "/home/user/.pnpm-store/v3/files/pkg/index.js:1:1",
+    "/home/user/.npm/_cacache/tmp/file.js:1:1",
+    "/home/user/.cache/tool/generated.rs:1:1",
+  ]) {
+    assert.equal(isSkippedExternalDependencyPath(externalPath), true);
+    assert.deepEqual(findOutsideWorkspacePaths(externalPath, "/home/user/project"), []);
+  }
+});
+
+test("skips dependency paths while preserving project-local Rust diagnostics", () => {
+  const rustWorkspace = normalizeWorkspaceRoot("/home/user/project");
+  const diagnostic = [
+    "/home/user/.cargo/registry/src/index.crates.io-123/iced_widget/src/container.rs:109:12",
+    "  --> src/main.rs:49:22",
+  ].join("\n");
+
+  assert.deepEqual(findOutsideWorkspacePaths(diagnostic, rustWorkspace), []);
+  assert.deepEqual(extractExplicitPathReferences(diagnostic), [
+    "/home/user/.cargo/registry/src/index.crates.io-123/iced_widget/src/container.rs:109:12",
+    "src/main.rs:49:22",
+  ]);
 });

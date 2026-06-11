@@ -106,6 +106,32 @@ test("importExternalFile creates attachments dir if missing and copies file", as
   }
 });
 
+test("importExternalFile skips Cargo registry files without copying", async () => {
+  const baseDir = path.join(tmpdir(), `codexa-import-test-${Date.now()}`);
+  const srcDir = path.join(baseDir, ".cargo", "registry", "src", "index.crates.io-123", "iced_widget", "src");
+  const destDir = path.join(baseDir, "attachments");
+  await mkdir(srcDir, { recursive: true });
+  const srcPath = path.join(srcDir, "container.rs");
+  await writeFile(srcPath, "dependency source");
+  try {
+    const destPath = await importExternalFile(`${srcPath}:109:12`, destDir);
+    assert.equal(destPath, null);
+  } finally {
+    await rm(baseDir, { recursive: true, force: true });
+  }
+});
+
+test("importExternalFile skips non-existent diagnostic paths without throwing", async () => {
+  const baseDir = path.join(tmpdir(), `codexa-import-test-${Date.now()}`);
+  const destDir = path.join(baseDir, "attachments");
+  try {
+    const destPath = await importExternalFile(path.join(baseDir, "missing.rs") + ":10:5", destDir);
+    assert.equal(destPath, null);
+  } finally {
+    await rm(baseDir, { recursive: true, force: true });
+  }
+});
+
 // ─── rewritePromptWithImportedPaths ──────────────────────────────────────────
 
 test("rewritePromptWithImportedPaths rewrites quoted path with spaces", () => {

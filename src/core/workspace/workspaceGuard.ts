@@ -31,6 +31,8 @@ const WINDOWS_UNC_PATH_PATTERN =
   /(?:^|[\s([{\],;=])(\\\\[^\\/\s"'`<>|]+[\\/][^\\/\s"'`<>|]+(?:[\\/][^\s"'`<>|]+)*)/g;
 const POSIX_ABSOLUTE_PATH_PATTERN = /(?:^|[\s([{\],;=])(\/(?:[^\/\s"'`<>|]+\/)+[^\s"'`<>|]+)/g;
 const RELATIVE_PATH_PATTERN = /(?:^|[\s([{\],;=])((?:\.\.?[\\/])(?:[^\s"'`<>|]+(?:[\\/][^\s"'`<>|]+)*))/g;
+const RUST_RELATIVE_DIAGNOSTIC_PATH_PATTERN =
+  /(?:^|[\s([{\],;=])((?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+\.rs(?::\d+(?::\d+)?)?)/g;
 const TRAILING_PUNCTUATION_PATTERN = /[),.;:\]}]+$/;
 const DIRECTORY_NAVIGATION_PATTERN = /(?:^|[;&\n]|&&|\|\|)\s*(cd|pushd|set-location)\b/i;
 
@@ -60,6 +62,42 @@ function stripTrailingPunctuation(text: string): string {
 
 function isExplicitRelativePath(pathValue: string): boolean {
   return /^(?:\.\.?[\\/])/.test(pathValue);
+}
+
+function hasRustRelativeDiagnosticShape(pathValue: string): boolean {
+  return /^(?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+\.rs(?::\d+(?::\d+)?)?$/.test(pathValue);
+}
+
+function normalizedPathSegments(pathValue: string): string[] {
+  return normalizeDiagnosticPath(pathValue)
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => segment.toLowerCase());
+}
+
+export function isSkippedExternalDependencyPath(pathValue: string): boolean {
+  const segments = normalizedPathSegments(pathValue);
+
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    const next = segments[i + 1];
+    const afterNext = segments[i + 2];
+
+    if (segment === ".cargo" && next === "registry") return true;
+    if (segment === ".cargo" && next === "git" && afterNext === "checkouts") return true;
+    if (
+      segment === "target" ||
+      segment === "node_modules" ||
+      segment === ".pnpm-store" ||
+      segment === ".npm" ||
+      segment === ".cache"
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function normalizeAbsolutePath(pathValue: string, style: PathStyle): string {
@@ -164,7 +202,7 @@ export function extractExplicitPathReferences(text: string): string[] {
 
   const addMatch = (candidate: string) => {
     const cleaned = stripTrailingPunctuation(stripWrappingQuotes(candidate.trim()));
-    if (!cleaned || (!detectPathStyle(cleaned) && !isExplicitRelativePath(cleaned))) {
+    if (!cleaned || (!detectPathStyle(cleaned) && !isExplicitRelativePath(cleaned) && !hasRustRelativeDiagnosticShape(cleaned))) {
       return;
     }
 
@@ -184,6 +222,7 @@ export function extractExplicitPathReferences(text: string): string[] {
     WINDOWS_UNC_PATH_PATTERN,
     POSIX_ABSOLUTE_PATH_PATTERN,
     RELATIVE_PATH_PATTERN,
+    RUST_RELATIVE_DIAGNOSTIC_PATH_PATTERN,
   ]) {
     pattern.lastIndex = 0;
     let match = pattern.exec(text);
@@ -207,6 +246,10 @@ export function findOutsideWorkspacePaths(
 
   for (const rawPath of extractExplicitPathReferences(text)) {
     const cleanPath = normalizeDiagnosticPath(rawPath);
+    if (isSkippedExternalDependencyPath(cleanPath)) {
+      continue;
+    }
+
     if (isPathInsideAllowedRoots(cleanPath, workspaceRoot, allowedRoots)) {
       continue;
     }
@@ -215,6 +258,10 @@ export function findOutsideWorkspacePaths(
     const normalizedPath = detectPathStyle(cleanPath)
       ? normalizeAbsolutePath(cleanPath, explicitStyle)
       : resolveWorkspacePath(cleanPath, workspaceRoot);
+    if (isSkippedExternalDependencyPath(normalizedPath)) {
+      continue;
+    }
+
     const comparisonKey = explicitStyle === "windows" ? normalizedPath.toLowerCase() : normalizedPath;
 
     if (seen.has(comparisonKey)) {

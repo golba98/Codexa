@@ -1,7 +1,10 @@
 import { access, copyFile, mkdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { normalizeDiagnosticPath } from "../workspace/workspaceGuard.js";
+import {
+  isSkippedExternalDependencyPath,
+  normalizeDiagnosticPath,
+} from "../workspace/workspaceGuard.js";
 
 export const IMAGE_EXTENSIONS = new Set([
   ".png",
@@ -49,6 +52,10 @@ export async function importExternalFile(
 ): Promise<string | null> {
   const normalized = normalizeDiagnosticPath(srcPath);
 
+  if (isSkippedExternalDependencyPath(normalized)) {
+    return null;
+  }
+
   try {
     if (!existsSync(normalized)) {
       return null;
@@ -58,10 +65,6 @@ export async function importExternalFile(
       return null;
     }
   } catch {
-    return null;
-  }
-
-  if (normalized.includes(".cargo/registry") || normalized.includes(".cargo" + path.sep + "registry")) {
     return null;
   }
 
