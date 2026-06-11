@@ -104,6 +104,28 @@ test("run it performs run_shell", async () => {
   });
 });
 
+test("structured provider tool calls are executed before final text", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const text = await runAgentLoop({
+      request: request(workspaceRoot, "write a rust file"),
+      handlers: handlers().handlers,
+      includeSystemPrompt: true,
+      sendMessages: async (_messages: readonly AgentChatMessage[], index) => ({
+        text: index === 0 ? "" : "Created main.rs.",
+        toolCalls: index === 0
+          ? [{
+            name: "write_file",
+            arguments: { path: "main.rs", content: "fn main() { println!(\"hi\"); }\n" },
+          }]
+          : undefined,
+      }),
+    });
+
+    assert.equal(text, "Created main.rs.");
+    assert.equal(await readFile(path.join(workspaceRoot, "main.rs"), "utf8"), "fn main() { println!(\"hi\"); }\n");
+  });
+});
+
 test("loop stops at 10 tool calls with a clear failure", async () => {
   await withTempWorkspace(async (workspaceRoot) => {
     await assert.rejects(
