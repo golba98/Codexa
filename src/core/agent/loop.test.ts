@@ -1,0 +1,121 @@
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
+import type { ProviderChatRequest } from "../providerRuntime/types.js";
+import { runAgentLoop, type AgentChatMessage } from "./loop.js";
+
+function request(workspaceRoot: string, prompt: string): ProviderChatRequest {
+  return {
+    prompt,
+    workspaceRoot,
+    runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
+      policy: { sandboxMode: "danger-full-access" },
+    })),
+    route: {
+      providerId: "local",
+      modelId: "test-model",
+      backendKind: "local-openai-compatible",
+    },
+  };
+}
+
+async function withTempWorkspace<T>(callback: (workspaceRoot: string) => Promise<T>): Promise<T> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "codexa-agent-loop-"));
+  try {
+    return await callback(root);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+function handlers() {
+  const tools: string[] = [];
+  return {
+    tools,
+    handlers: {
+      onResponse: () => undefined,
+      onError: assert.fail,
+      onToolActivity: (activity: { status: string; command: string }) => {
+        if (activity.status !== "running") tools.push(activity.command);
+      },
+    },
+  };
+}
+
+test("create a rust hello world project leads to write_file and final summary", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const observed = handlers();
+    const replies = [
+      '<tool_call>{"name":"write_file","arguments":{"path":"Cargo.toml","content":"[package]\\nname = \\"hello\\"\\nversion = \\"0.1.0\\"\\nedition = \\"2021\\"\\n"}}</tool_call>',
+      "Created Cargo.toml.",
+    ];
+
+    const text = await runAgentLoop({
+      request: request(workspaceRoot, "create a rust hello world project here"),
+      handlers: observed.handlers,
+      includeSystemPrompt: true,
+      sendMessages: async () => ({ text: replies.shift() ?? "done" }),
+    });
+
+    assert.equal(text, "Created Cargo.toml.");
+    assert.match(await readFile(path.join(workspaceRoot, "Cargo.toml"), "utf8"), /name = "hello"/);
+    assert.deepEqual(observed.tools, ["write_file: Cargo.toml"]);
+  });
+});
+
+test("open the main file and fix the bug performs read then write", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    await writeFile(path.join(workspaceRoot, "main.ts"), "const value = false;\n", "utf8");
+    const replies = [
+      '<tool_call>{"name":"read_file","arguments":{"path":"main.ts"}}</tool_call>',
+      '<tool_call>{"name":"write_file","arguments":{"path":"main.ts","content":"const value = true;\\n"}}</tool_call>',
+      "Fixed main.ts.",
+    ];
+
+    const text = await runAgentLoop({
+      request: request(workspaceRoot, "open the main file and fix the bug"),
+      handlers: handlers().handlers,
+      includeSystemPrompt: true,
+      sendMessages: async () => ({ text: replies.shift() ?? "done" }),
+    });
+
+    assert.equal(text, "Fixed main.ts.");
+    assert.equal(await readFile(path.join(workspaceRoot, "main.ts"), "utf8"), "const value = true;\n");
+  });
+});
+
+test("run it performs run_shell", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const text = await runAgentLoop({
+      request: request(workspaceRoot, "run it"),
+      handlers: handlers().handlers,
+      includeSystemPrompt: true,
+      sendMessages: async (_messages: readonly AgentChatMessage[], index) => ({
+        text: index === 0
+          ? '<tool_call>{"name":"run_shell","arguments":{"command":"printf ok"}}</tool_call>'
+          : "It prints ok.",
+      }),
+    });
+
+    assert.equal(text, "It prints ok.");
+  });
+});
+
+test("loop stops at 10 tool calls with a clear failure", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    await assert.rejects(
+      runAgentLoop({
+        request: request(workspaceRoot, "keep listing"),
+        handlers: handlers().handlers,
+        includeSystemPrompt: true,
+        sendMessages: async () => ({
+          text: '<tool_call>{"name":"list_files","arguments":{"path":"."}}</tool_call>',
+        }),
+      }),
+      /10 tool calls/i,
+    );
+  });
+});
