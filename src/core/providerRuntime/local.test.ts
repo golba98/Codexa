@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
 import {
@@ -36,21 +39,6 @@ function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
-  });
-}
-
-function streamResponse(chunks: readonly string[]): Response {
-  const encoder = new TextEncoder();
-  return new Response(new ReadableStream({
-    start(controller) {
-      for (const chunk of chunks) {
-        controller.enqueue(encoder.encode(chunk));
-      }
-      controller.close();
-    },
-  }), {
-    status: 200,
-    headers: { "Content-Type": "text/event-stream" },
   });
 }
 
@@ -100,6 +88,15 @@ async function withLocalEnv<T>(
       }
     }
     resetLocalProviderStateForTests();
+  }
+}
+
+async function withTempWorkspace<T>(callback: (workspaceRoot: string) => T | Promise<T>): Promise<T> {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "codexa-local-agent-"));
+  try {
+    return await callback(workspaceRoot);
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
   }
 }
 
@@ -325,11 +322,7 @@ test("Local provider sends prompt to configured OpenAI-compatible base URL", asy
       if (String(input).endsWith("/models")) {
         return jsonResponse({ data: [{ id: "google/gemma-4-26b-a4b" }] });
       }
-      return streamResponse([
-        "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"content\":\" there\"}}]}\n\n",
-        "data: [DONE]\n\n",
-      ]);
+      return jsonResponse({ choices: [{ message: { content: "Hello there" } }] });
     }) as typeof fetch;
 
     await checkLocalProvider({
@@ -349,12 +342,12 @@ test("Local provider sends prompt to configured OpenAI-compatible base URL", asy
 
     assert.equal(text, "Hello there");
     assert.equal(calls[1]?.url, "http://lmstudio.test/v1/chat/completions");
-    assert.deepEqual(calls[1]?.body, {
-      model: "google/gemma-4-26b-a4b",
-      messages: [{ role: "user", content: "hi" }],
-      stream: true,
-    });
-    assert.deepEqual(deltas, ["Hello", " there"]);
+    const body = calls[1]?.body as { model?: string; messages?: Array<{ role: string; content: string }>; stream?: boolean };
+    assert.equal(body.model, "google/gemma-4-26b-a4b");
+    assert.equal(body.stream, false);
+    assert.deepEqual(body.messages?.map((message) => message.role), ["system", "user"]);
+    assert.equal(body.messages?.at(-1)?.content, "hi");
+    assert.deepEqual(deltas, ["Hello there"]);
   });
 });
 
@@ -401,15 +394,12 @@ test("Local request payload uses refreshed LM Studio active loaded model", async
   });
 });
 
-test("Local provider falls back to non-streaming chat completion", async () => {
+test("Local provider uses non-streaming agent chat completion", async () => {
   await withLocalEnv({}, async () => {
     const streamValues: boolean[] = [];
     const fetchImpl = (async (_input, init) => {
       const body = init?.body ? JSON.parse(String(init.body)) as { stream?: boolean } : {};
       streamValues.push(Boolean(body.stream));
-      if (body.stream) {
-        return new Response("stream unavailable", { status: 400 });
-      }
       return jsonResponse({ choices: [{ message: { content: "Fallback response" } }] });
     }) as typeof fetch;
 
@@ -423,7 +413,94 @@ test("Local provider falls back to non-streaming chat completion", async () => {
     );
 
     assert.equal(text, "Fallback response");
-    assert.deepEqual(streamValues, [true, false]);
+    assert.deepEqual(streamValues, [false]);
+  });
+});
+
+test("Local provider executes unterminated text tool calls before final answer", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const assistantDeltas: string[] = [];
+    const bodies: Array<{ messages?: Array<{ role: string; content: string }> }> = [];
+    let chatCount = 0;
+    const fetchImpl = (async (_input, init) => {
+      const body = init?.body ? JSON.parse(String(init.body)) as { messages?: Array<{ role: string; content: string }> } : {};
+      bodies.push(body);
+      chatCount += 1;
+      if (chatCount === 1) {
+        return jsonResponse({ choices: [{ message: { content: '<tool_call>{"name":"list_files","arguments":{"path":"."}}' } }] });
+      }
+      return jsonResponse({ choices: [{ message: { content: "Listed the workspace." } }] });
+    }) as typeof fetch;
+
+    const text = await runLocalOpenAiCompatible(
+      buildRequest({
+        workspaceRoot,
+        runtime: resolveRuntimeConfig(normalizeRuntimeConfig({ policy: { sandboxMode: "danger-full-access" } })),
+        localConfig: { baseUrl: "http://local.test/v1" },
+      }),
+      {
+        onResponse: () => undefined,
+        onError: assert.fail,
+        onAssistantDelta: (chunk) => assistantDeltas.push(chunk),
+      },
+      { fetchImpl },
+    );
+
+    assert.equal(text, "Listed the workspace.");
+    assert.deepEqual(assistantDeltas, ["Listed the workspace."]);
+    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /Tool result/);
+    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /list_files/);
+  });
+});
+
+test("Local provider executes OpenAI-style tool_calls before final answer", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const assistantDeltas: string[] = [];
+    const bodies: Array<{ messages?: Array<{ role: string; content: string }> }> = [];
+    let chatCount = 0;
+    const fetchImpl = (async (_input, init) => {
+      const body = init?.body ? JSON.parse(String(init.body)) as { messages?: Array<{ role: string; content: string }> } : {};
+      bodies.push(body);
+      chatCount += 1;
+      if (chatCount === 1) {
+        return jsonResponse({
+          choices: [{
+            message: {
+              content: null,
+              tool_calls: [{
+                id: "call_1",
+                type: "function",
+                function: {
+                  name: "write_file",
+                  arguments: "{\"path\":\"main.rs\",\"content\":\"fn main() { println!(\\\"hi\\\"); }\\n\"}",
+                },
+              }],
+            },
+          }],
+        });
+      }
+      return jsonResponse({ choices: [{ message: { content: "Created main.rs." } }] });
+    }) as typeof fetch;
+
+    const text = await runLocalOpenAiCompatible(
+      buildRequest({
+        workspaceRoot,
+        runtime: resolveRuntimeConfig(normalizeRuntimeConfig({ policy: { sandboxMode: "danger-full-access" } })),
+        localConfig: { baseUrl: "http://local.test/v1" },
+      }),
+      {
+        onResponse: () => undefined,
+        onError: assert.fail,
+        onAssistantDelta: (chunk) => assistantDeltas.push(chunk),
+      },
+      { fetchImpl },
+    );
+
+    assert.equal(text, "Created main.rs.");
+    assert.equal(await readFile(path.join(workspaceRoot, "main.rs"), "utf8"), "fn main() { println!(\"hi\"); }\n");
+    assert.deepEqual(assistantDeltas, ["Created main.rs."]);
+    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /Tool result/);
+    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /main\.rs/);
   });
 });
 
@@ -489,10 +566,7 @@ test("Local provider omits system prompt when supports_system_prompt: false in A
         return jsonResponse({ data: [{ id: "no-sys-model", supports_system_prompt: false }] });
       }
       calls.push({ body: init?.body ? JSON.parse(String(init.body)) as unknown : null });
-      return streamResponse([
-        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
-        "data: [DONE]\n\n",
-      ]);
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
     }) as typeof fetch;
 
     await checkLocalProvider({ fetchImpl });
@@ -522,10 +596,7 @@ test("Local provider includes system prompt when supportsSystemPrompt is unknown
         return jsonResponse({ data: [{ id: "unknown-caps-model" }] });
       }
       calls.push({ body: init?.body ? JSON.parse(String(init.body)) as unknown : null });
-      return streamResponse([
-        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
-        "data: [DONE]\n\n",
-      ]);
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
     }) as typeof fetch;
 
     await checkLocalProvider({ fetchImpl });
@@ -544,7 +615,7 @@ test("Local provider includes system prompt when supportsSystemPrompt is unknown
   });
 });
 
-test("Local provider skips streaming when supports_streaming: false in API metadata", async () => {
+test("Local provider keeps agent chat completion non-streaming when supports_streaming is false", async () => {
   await withLocalEnv({}, async () => {
     const streamValues: boolean[] = [];
     const fetchImpl = (async (input, init) => {
@@ -579,10 +650,7 @@ test("Local config override supportsSystemPrompt: false omits system prompt with
     const calls: Array<{ body: unknown }> = [];
     const fetchImpl = (async (_input, init) => {
       calls.push({ body: init?.body ? JSON.parse(String(init.body)) as unknown : null });
-      return streamResponse([
-        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
-        "data: [DONE]\n\n",
-      ]);
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
     }) as typeof fetch;
 
     await runLocalOpenAiCompatible(
@@ -658,10 +726,7 @@ test("resetLocalProviderStateForTests clears capability profile cache for test i
       }
       const body = init?.body ? JSON.parse(String(init.body)) as { stream?: boolean } : {};
       calls.push(Boolean(body.stream));
-      return streamResponse([
-        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
-        "data: [DONE]\n\n",
-      ]);
+      return jsonResponse({ choices: [{ message: { content: "ok" } }] });
     }) as typeof fetch;
 
     await checkLocalProvider({ fetchImpl });
@@ -670,7 +735,7 @@ test("resetLocalProviderStateForTests clears capability profile cache for test i
       { onResponse: () => undefined, onError: assert.fail },
       { fetchImpl },
     );
-    assert.equal(calls[0], true, "streaming should be attempted after cache was cleared (unknown defaults to try)");
+    assert.equal(calls[0], false, "agent loop uses non-streaming completions so tool calls stay hidden");
   });
 });
 

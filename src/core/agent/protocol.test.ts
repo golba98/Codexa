@@ -1,0 +1,84 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { parseAgentToolCall, parseOpenAiToolCalls } from "./protocol.js";
+
+test("parses a valid single tool call block", () => {
+  const result = parseAgentToolCall('<tool_call>{"name":"read_file","arguments":{"path":"src/app.tsx"}}</tool_call>');
+
+  assert.equal(result.kind, "tool_call");
+  if (result.kind !== "tool_call") return;
+  assert.equal(result.name, "read_file");
+  assert.deepEqual(result.arguments, { path: "src/app.tsx" });
+});
+
+test("parses tool and args aliases without a closing tag", () => {
+  const result = parseAgentToolCall('<tool_call>{"tool":"list_files","args":{"path":"."}}');
+
+  assert.equal(result.kind, "tool_call");
+  if (result.kind !== "tool_call") return;
+  assert.equal(result.name, "list_files");
+  assert.deepEqual(result.arguments, { path: "." });
+});
+
+test("parses nested function format", () => {
+  const result = parseAgentToolCall('<tool_call>{"function":{"name":"read_file","arguments":{"path":"main.rs"}}}</tool_call>');
+
+  assert.equal(result.kind, "tool_call");
+  if (result.kind !== "tool_call") return;
+  assert.equal(result.name, "read_file");
+  assert.deepEqual(result.arguments, { path: "main.rs" });
+});
+
+test("recovers from one extra trailing brace", () => {
+  const result = parseAgentToolCall('<tool_call>{"name":"list_files","arguments":{"path":"."}}}');
+
+  assert.equal(result.kind, "tool_call");
+  if (result.kind !== "tool_call") return;
+  assert.equal(result.name, "list_files");
+  assert.deepEqual(result.arguments, { path: "." });
+});
+
+test("parses OpenAI-style tool_calls", () => {
+  const result = parseOpenAiToolCalls([{
+    id: "call_1",
+    type: "function",
+    function: {
+      name: "write_file",
+      arguments: "{\"path\":\"main.rs\",\"content\":\"fn main() {}\\n\"}",
+    },
+  }]);
+
+  assert.deepEqual(result, [{
+    name: "write_file",
+    arguments: { path: "main.rs", content: "fn main() {}\n" },
+  }]);
+});
+
+test("parses tool_calls embedded inside a tool_call block", () => {
+  const result = parseAgentToolCall('<tool_call>{"tool_calls":[{"function":{"name":"list_files","arguments":"{\\"path\\":\\".\\"}"}}]}</tool_call>');
+
+  assert.equal(result.kind, "tool_call");
+  if (result.kind !== "tool_call") return;
+  assert.equal(result.name, "list_files");
+  assert.deepEqual(result.arguments, { path: "." });
+});
+
+test("malformed JSON becomes a tool error parse result", () => {
+  const result = parseAgentToolCall('<tool_call>{"name":"read_file",</tool_call>');
+
+  assert.equal(result.kind, "malformed_tool_call");
+  if (result.kind !== "malformed_tool_call") return;
+  assert.match(result.error, /JSON|Expected|position/i);
+});
+
+test("unterminated malformed tool call is not final assistant text", () => {
+  const result = parseAgentToolCall('<tool_call>{"name":"read_file",');
+
+  assert.equal(result.kind, "malformed_tool_call");
+});
+
+test("assistant text without a tool call is final", () => {
+  const result = parseAgentToolCall("Done. I changed the file.");
+
+  assert.deepEqual(result, { kind: "final", text: "Done. I changed the file." });
+});

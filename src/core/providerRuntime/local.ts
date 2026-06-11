@@ -1,4 +1,6 @@
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
+import { runAgentLoop, type AgentChatMessage, type AgentChatResponse } from "../agent/loop.js";
+import { parseOpenAiToolCalls } from "../agent/protocol.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { ProviderWorkspaceOverride } from "../providerLauncher/types.js";
 import type {
@@ -456,11 +458,17 @@ function getCachedSelectedModel(config: LocalProviderConfig, routeModel: string)
   return selectFallbackLocalModel(config, discoveredIds) ?? routeModel;
 }
 
-function extractNonStreamingText(body: unknown): string {
-  if (typeof body !== "object" || body === null) return "";
+function extractNonStreamingResponse(body: unknown): AgentChatResponse {
+  if (typeof body !== "object" || body === null) return { text: "" };
   const choices = (body as { choices?: unknown }).choices;
-  if (!Array.isArray(choices)) return "";
-  return choices
+  if (!Array.isArray(choices)) return { text: "" };
+  const toolCalls = choices.flatMap((choice) => {
+    if (typeof choice !== "object" || choice === null) return [];
+    const message = (choice as { message?: unknown }).message;
+    if (typeof message !== "object" || message === null) return [];
+    return parseOpenAiToolCalls((message as { tool_calls?: unknown }).tool_calls);
+  });
+  const text = choices
     .map((choice) => {
       if (typeof choice !== "object" || choice === null) return "";
       const message = (choice as { message?: { content?: unknown }; text?: unknown }).message;
@@ -470,6 +478,10 @@ function extractNonStreamingText(body: unknown): string {
     })
     .join("")
     .trim();
+  return {
+    text,
+    ...(toolCalls.length > 0 ? { toolCalls } : {}),
+  };
 }
 
 function parseStreamDelta(line: string): string | null {
@@ -521,18 +533,19 @@ async function postLocalChatCompletion(options: {
   request: ProviderChatRequest;
   config: LocalProviderConfig;
   stream: boolean;
+  messages?: readonly AgentChatMessage[];
   fetchImpl: FetchImpl;
   signal?: AbortSignal;
   handlers: BackendRunHandlers;
   capProfile: import("./capabilityProfile.js").ModelCapabilityProfile;
-}): Promise<string> {
+}): Promise<AgentChatResponse> {
   const model = getCachedSelectedModel(options.config, options.request.route.modelId);
   const includeSystemPrompt = options.capProfile.supportsSystemPrompt !== false;
-  const messages = [
+  const messages: readonly AgentChatMessage[] = options.messages ?? [
     ...(includeSystemPrompt && options.request.projectInstructions?.content
-      ? [{ role: "system", content: options.request.projectInstructions.content }]
+      ? [{ role: "system" as const, content: options.request.projectInstructions.content }]
       : []),
-    { role: "user", content: options.request.prompt },
+    { role: "user" as const, content: options.request.prompt },
   ];
   const response = await options.fetchImpl(`${options.config.baseUrl}/chat/completions`, {
     method: "POST",
@@ -560,11 +573,11 @@ async function postLocalChatCompletion(options: {
   }
 
   if (options.stream) {
-    return readStreamingResponse(response, options.handlers);
+    return { text: await readStreamingResponse(response, options.handlers) };
   }
 
   const parsed = JSON.parse(await response.text()) as unknown;
-  return extractNonStreamingText(parsed);
+  return extractNonStreamingResponse(parsed);
 }
 
 function isModelNotLoadedError(status: number, body: string): boolean {
@@ -589,38 +602,22 @@ export async function runLocalOpenAiCompatible(
     providerConfig: request.localConfig ?? configuredOverride,
     rawMetadata: rawMeta,
   });
-  const streamingSupported = capProfile.supportsStreaming !== false;
-
-  if (streamingSupported) {
-    try {
-      const streamed = await postLocalChatCompletion({
+  const text = await runAgentLoop({
+    request,
+    handlers,
+    includeSystemPrompt: capProfile.supportsSystemPrompt !== false,
+    signal: options.signal,
+    sendMessages: async (messages) =>
+      postLocalChatCompletion({
         request,
         config,
-        stream: true,
+        messages,
+        stream: false,
         fetchImpl,
         signal: options.signal,
         handlers,
         capProfile,
-      });
-      if (streamed) return streamed;
-    } catch (error) {
-      if (options.signal?.aborted) throw error;
-      handlers.onProgress?.({
-        id: "local-stream-fallback",
-        source: "stderr",
-        text: "Local streaming request failed; retrying without streaming.",
-      });
-    }
-  }
-
-  const text = await postLocalChatCompletion({
-    request,
-    config,
-    stream: false,
-    fetchImpl,
-    signal: options.signal,
-    handlers,
-    capProfile,
+      }),
   });
   if (!text) {
     throw new Error("Local OpenAI-compatible API returned no assistant text.");
