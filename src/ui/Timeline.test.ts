@@ -573,7 +573,7 @@ test("default timeline omits active processing text while a run is streaming", (
   assert.doesNotMatch(joined, /Todo 1\/2/);
   assert.match(joined, /python -m pytest/);
   assert.doesNotMatch(joined, /Hello_World\.py/);
-  assert.match(joined, /action/);
+  assert.match(joined, /python -m pytest/);
   assert.doesNotMatch(joined, /^\s*thinking\b/m);
 });
 
@@ -1203,8 +1203,8 @@ test("unified stream renders generated final plan after action blocks", () => {
   assert.match(joined, /╭── Plan/);
   assert.match(joined, /│ 1\. Inspect the current app structure/);
   assert.match(joined, /╰/);
-  assert.match(joined, /╭── action/);
-  assert.ok(joined.indexOf("action") < joined.indexOf("Plan"));
+  assert.match(joined, /✓ Read file/);
+  assert.ok(joined.indexOf("Read file") < joined.indexOf("Plan"));
   assert.ok(joined.indexOf("Read file") < joined.indexOf("Render the generated plan visibly"));
 });
 
@@ -1354,7 +1354,7 @@ test("unified stream renders action before response by stream sequence", () => {
     lastStreamSeq: 2,
   }), 300);
 
-  assert.ok(joined.indexOf("action") < joined.indexOf("Purpose"));
+  assert.ok(joined.indexOf("List files") < joined.indexOf("Purpose"));
   assert.match(joined, /List files/);
   assert.match(joined, /Codex/);
   assert.doesNotMatch(joined, /^\s*response\b/m);
@@ -1403,8 +1403,8 @@ test("unified stream preserves thinking action response ordering", () => {
     lastStreamSeq: 3,
   }), 301);
 
-  assert.ok(joined.indexOf("I need to inspect") < joined.indexOf("action"));
-  assert.ok(joined.indexOf("action") < joined.indexOf("Purpose"));
+  assert.ok(joined.indexOf("I need to inspect") < joined.indexOf("Read file"));
+  assert.ok(joined.indexOf("Read file") < joined.indexOf("Purpose"));
   assert.match(joined, /Codex/);
   assert.doesNotMatch(joined, /^\s*response\b/m);
 });
@@ -1443,12 +1443,12 @@ test("unified stream preserves response action response interleaving", () => {
     lastStreamSeq: 3,
   }), 302);
 
-  assert.ok(joined.indexOf("First segment") < joined.indexOf("action"));
-  assert.ok(joined.indexOf("action") < joined.indexOf("Second segment"));
+  assert.ok(joined.indexOf("First segment") < joined.indexOf("Read file"));
+  assert.ok(joined.indexOf("Read file") < joined.indexOf("Second segment"));
   assert.doesNotMatch(joined, /^\s*response\b/m);
 });
 
-test("stream renders Codex text outside bordered action cards", () => {
+test("stream renders Codex text outside compact action rows", () => {
   const joined = renderJoinedTurn(makeChronologicalTurnEvents(305, {
     toolActivities: [{
       id: "tool-1",
@@ -1486,14 +1486,13 @@ test("stream renders Codex text outside bordered action cards", () => {
   const actionLine = joined.split("\n").find((line) => line.includes("Read file"));
 
   assert.match(joined, /Codex/);
-  assert.match(joined, /╭── action/);
   assert.match(joined, /Read file/);
   assert.ok(codexLine && !codexLine.includes("│"), "Codex narration should not be inside a bordered row");
-  assert.ok(actionLine && actionLine.includes("│"), "action execution should keep the bordered card visual");
+  assert.ok(actionLine && actionLine.includes("✓"), "action execution should keep the compact row visual");
   assert.doesNotMatch(joined, /^\s*response\b/m);
 });
 
-test("consecutive actions render as separate bordered action cards", () => {
+test("consecutive actions render as separate compact action rows", () => {
   const joined = renderJoinedTurn(makeChronologicalTurnEvents(306, {
     toolActivities: [
       {
@@ -1520,8 +1519,7 @@ test("consecutive actions render as separate bordered action cards", () => {
     lastStreamSeq: 2,
   }), 306);
 
-  assert.equal((joined.match(/╭── action/g) ?? []).length, 2);
-  assert.equal((joined.match(/│ ✓/g) ?? []).length, 2);
+  assert.equal((joined.match(/✓ /g) ?? []).length, 2);
   assert.match(joined, /List files/);
   assert.match(joined, /Read file/);
 });
@@ -1588,8 +1586,7 @@ test("completed action/read-file rows remain before the final response", () => {
     lastStreamSeq: 3,
   }), 307);
 
-  assert.equal((joined.match(/╭── action/g) ?? []).length, 2);
-  assert.equal((joined.match(/│ ✓/g) ?? []).length, 2);
+  assert.equal((joined.match(/✓ Read file/g) ?? []).length, 2);
   assert.ok(joined.indexOf("Read file") < joined.indexOf("Final answer"));
 });
 
@@ -1702,8 +1699,7 @@ test("finalize continuity viewport shows construction plus the beginning of the 
 
   assert.equal(continuity.followTail, false);
   assert.notEqual(continuity.anchorRow, finalSnapshot.totalRows - 1);
-  assert.match(visible, /╭── action/);
-  assert.match(visible, /│ ✓/);
+  assert.match(visible, /✓ Read file/);
   assert.match(visible, /Read file/);
   assert.match(visible, /Final answer line 1/);
   assert.doesNotMatch(visible, /Final answer line 10/);
@@ -1804,11 +1800,11 @@ test("action event remains inside the unified assistant turn (no separate Proces
   // All content should be in a single turn item, not a separate Processing card
   assert.equal(snapshot.items.length, 1, "should produce exactly one timeline item (the turn)");
   const joined = snapshot.rows.map((row) => row.spans.map((s) => s.text).join("")).join("\n");
-  assert.match(joined, /action/);
+  assert.match(joined, /List files/);
   assert.doesNotMatch(joined, /Processing/, "should not render a separate Processing card");
 });
 
-test("long command is wrapped within the bordered action card", () => {
+test("long command is clipped within the compact action row", () => {
   const longCmd = `pwsh.exe -Command 'Write-Host "A very long command that goes on and on and on and would overflow if not wrapped properly within the card border"'`;
   const items = buildTimelineItems(makeCompletedRunWithTool(206, longCmd));
   const renderItems = buildStaticRenderItems(items, [206], null, null, null);
@@ -1818,20 +1814,20 @@ test("long command is wrapped within the bordered action card", () => {
   const actionRows = snapshot.rows.filter((row) =>
     row.spans.some((s) => s.text.includes("Write-Host")),
   );
-  assert.ok(actionRows.length >= 1, "long command should render inside the action card");
+  assert.ok(actionRows.length >= 1, "long command should render inside the action row");
 
   for (const row of actionRows) {
     const actionText = row.spans.map((span) => span.text).join("");
     assert.doesNotMatch(actionText, /would overflow if not wrapped properly within the card border/);
+    assert.ok(getVisualWidth(actionText) <= totalWidth);
   }
-  assert.match(snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /╭── action/);
+  assert.doesNotMatch(snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /╭── action/);
 });
 
-// ── Action card layout: long commands, borders, narrow widths, timing ────────
+// ── Compact action layout: long commands, narrow widths, timing ──────────────
 //
-// These guard the bordered action/tool card against the long-command breakage:
-// the head row used to append the timing label past the inner width, so the
-// over-wide row spilled the right border `│` onto the next terminal line.
+// These guard the compact action/tool row against long-command overflow and
+// stale row-cache reuse after clear.
 
 const LONG_ACTION_COMMAND =
   `/usr/bin/zsh -lc 'pwd && rg -n "13-Custom-CLI-Normal|codexa|purpose|description" -S README* package.json docs src bin . 2>/dev/null'`;
@@ -1846,125 +1842,90 @@ function actionCardSnapshot(command: string, totalWidth: number): TimelineSnapsh
   return buildTimelineSnapshot(renderItems, { totalWidth });
 }
 
-function extractActionCard(snapshot: TimelineSnapshot): TimelineRow[] {
-  const start = snapshot.rows.findIndex((row) => rowText(row).startsWith("╭── action"));
-  assert.ok(start >= 0, "expected an action card top border");
-  const rest = snapshot.rows.slice(start);
-  const endOffset = rest.findIndex((row) => /^╰─*╯$/.test(rowText(row)));
-  assert.ok(endOffset >= 0, "expected an action card bottom border");
-  return rest.slice(0, endOffset + 1);
+function extractCompactActionRows(snapshot: TimelineSnapshot): TimelineRow[] {
+  const rows = snapshot.rows.filter((row) => row.key.includes("-action-"));
+  assert.ok(rows.length > 0, "expected a compact action row");
+  return rows;
 }
 
-function assertCardIntegrity(card: TimelineRow[], totalWidth: number): void {
-  assert.ok(card.length >= 3, "card must have a top, content, and bottom row");
-  const widths = card.map((row) => getVisualWidth(rowText(row)));
-  const cardWidth = widths[0];
-  assert.ok(cardWidth <= totalWidth, `card width ${cardWidth} must not exceed terminal width ${totalWidth}`);
+function assertCompactActionIntegrity(rows: TimelineRow[], totalWidth: number): void {
+  const widths = rows.map((row) => getVisualWidth(rowText(row)));
   widths.forEach((width, index) => {
-    assert.equal(width, cardWidth, `row ${index} width ${width} must match card width ${cardWidth}: "${rowText(card[index])}"`);
+    assert.ok(width <= totalWidth, `row ${index} width ${width} must not exceed terminal width ${totalWidth}: "${rowText(rows[index])}"`);
   });
-  const top = rowText(card[0]);
-  const bottom = rowText(card[card.length - 1]);
-  assert.ok(top.startsWith("╭") && top.endsWith("╮"), `top border must be complete: "${top}"`);
-  assert.ok(bottom.startsWith("╰") && bottom.endsWith("╯"), `bottom border must be complete: "${bottom}"`);
-  for (const row of card.slice(1, -1)) {
-    const text = rowText(row);
-    assert.ok(text.startsWith("│ ") && text.endsWith(" │"), `content must stay inside the side borders: "${text}"`);
-  }
+  assert.ok(/^[✓✕•] /.test(rowText(rows[0] ?? { key: "", spans: [] })), "first compact row starts with a status glyph");
 }
 
-test("long action command stays inside a complete bordered card (no clipping)", () => {
+test("long action command stays inside a compact row", () => {
   const totalWidth = 80;
-  const card = extractActionCard(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
-  assertCardIntegrity(card, totalWidth);
-
-  // The card grows vertically and the full command survives across the rows.
-  assert.ok(card.length > 3, "a long command must wrap onto extra rows");
-  const cardBody = card.map(rowText).join("");
-  for (const fragment of ["/usr/bin/zsh", "13-Custom-CLI-Normal", "codexa", "2>/dev/null"]) {
-    assert.ok(cardBody.includes(fragment), `command fragment "${fragment}" must remain visible`);
-  }
+  const rows = extractCompactActionRows(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
+  assertCompactActionIntegrity(rows, totalWidth);
+  assert.match(rowText(rows[0]!), /\/usr\/bin\/zsh/);
 });
 
-test("very narrow terminal still renders a complete action card", () => {
+test("very narrow terminal still renders a compact action row", () => {
   const totalWidth = 30;
-  const card = extractActionCard(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
-  assertCardIntegrity(card, totalWidth);
+  const rows = extractCompactActionRows(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
+  assertCompactActionIntegrity(rows, totalWidth);
 });
 
-test("reflowing an action card from wide to narrow keeps borders complete", () => {
+test("reflowing an action row from wide to narrow keeps it bounded", () => {
   for (const totalWidth of [100, 40]) {
-    const card = extractActionCard(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
-    assertCardIntegrity(card, totalWidth);
+    const rows = extractCompactActionRows(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
+    assertCompactActionIntegrity(rows, totalWidth);
   }
 });
 
-test("ANSI-styled command does not break the action card width", () => {
+test("ANSI-styled command does not break the action row width", () => {
   const totalWidth = 70;
   const command = `echo \u001b[31mred-text-that-is-quite-long-and-should-wrap-cleanly\u001b[0m && ls -la /tmp`;
-  const card = extractActionCard(actionCardSnapshot(command, totalWidth));
-  assertCardIntegrity(card, totalWidth);
-  for (const row of card) {
-    assert.ok(!rowText(row).includes("\u001b"), "no escape bytes should reach the rendered card");
+  const rows = extractCompactActionRows(actionCardSnapshot(command, totalWidth));
+  assertCompactActionIntegrity(rows, totalWidth);
+  for (const row of rows) {
+    assert.ok(!rowText(row).includes("\u001b"), "no escape bytes should reach the rendered row");
   }
 });
 
-test("timing label sits on the first content row and never collides with wrapped command", () => {
+test("timing label sits on the compact action row without overflowing", () => {
   const totalWidth = 60;
-  const card = extractActionCard(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
-  assertCardIntegrity(card, totalWidth);
+  const rows = extractCompactActionRows(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
+  assertCompactActionIntegrity(rows, totalWidth);
 
-  const durationRows = card.filter((row) => rowText(row).includes("1ms"));
+  const durationRows = rows.filter((row) => rowText(row).includes("1ms"));
   assert.equal(durationRows.length, 1, "the timing label must appear exactly once");
-
-  const head = rowText(card[1]);
-  assert.ok(head.includes("1ms"), "the timing label belongs on the first content row");
-  assert.match(head, /1ms\s*│$/, "the timing label is right-aligned against the border");
-
-  // Continuation rows carry only command text, indented under the command —
-  // never the timing label, never flush against the border.
-  for (const row of card.slice(2, -1)) {
-    const text = rowText(row);
-    assert.ok(!text.includes("1ms"), "continuation rows must not repeat the timing label");
-    assert.ok(text.startsWith("│   "), `continuation rows align under the command: "${text}"`);
-  }
+  assert.ok(rowText(rows[0]!).includes("1ms"), "the timing label belongs on the compact row");
 });
 
-// ── /clear then a fresh action card: no clipped, duplicated, or ghosted card ──
+// ── /clear then a fresh action row: no clipped, duplicated, or ghosted row ───
 //
 // /clear physically wipes the transcript at the render boundary; the measured
 // timeline then rebuilds from only the post-clear turn (which gets a fresh
 // turnId, as every post-clear prompt does). This guards the measurement layer's
-// side of that flow: the next action card must be a single, fully bordered card
-// — measured complete (top/body/bottom), never clipped to a bare top border —
-// and the per-turn caches must key by turn identity so a stale pre-clear card is
-// never served in its place.
+// side of that flow: the next action row must be a single, bounded compact row
+// and the per-turn caches must key by turn identity so stale pre-clear content
+// is never served in its place.
 function actionCardSnapshotForTurn(turnId: number, command: string, totalWidth: number): TimelineSnapshot {
   const items = buildTimelineItems(makeCompletedRunWithTool(turnId, command));
   const renderItems = buildStaticRenderItems(items, [turnId], null, null, null);
   return buildTimelineSnapshot(renderItems, { totalWidth });
 }
 
-test("/clear followed by a new action card renders one complete, unclipped card", () => {
+test("/clear followed by a new action row renders one bounded row", () => {
   const totalWidth = 72;
 
-  // 1) A pre-clear turn whose action card populates the row/measure caches.
+  // 1) A pre-clear turn whose action row populates the row/measure caches.
   const preClear = actionCardSnapshotForTurn(920, "cat OLD-pre-clear-file.txt", totalWidth);
-  assertCardIntegrity(extractActionCard(preClear), totalWidth);
+  assertCompactActionIntegrity(extractCompactActionRows(preClear), totalWidth);
 
   // 2) After /clear the next turn arrives with a fresh turnId. Build its snapshot
   //    WITHOUT resetting caches, so a stale pre-clear card would surface here if
   //    the turn cache ignored turn identity.
   const postClear = actionCardSnapshotForTurn(921, LONG_ACTION_COMMAND, totalWidth);
-  const card = extractActionCard(postClear);
+  const rows = extractCompactActionRows(postClear);
+  assertCompactActionIntegrity(rows, totalWidth);
 
-  // Complete borders — top, body, bottom — never a lone top-border fragment.
-  assertCardIntegrity(card, totalWidth);
-  assert.ok(card.length > 3, "the post-clear command wraps onto extra rows");
-
-  // Exactly one action card — no ghosted/duplicated card from before the clear.
-  const topBorders = postClear.rows.filter((row) => rowText(row).startsWith("╭── action"));
-  assert.equal(topBorders.length, 1, "exactly one action card after /clear (no ghost/dupe)");
+  // Exactly one action row — no ghosted/duplicated row from before the clear.
+  assert.equal(rows.length, 1, "exactly one action row after /clear (no ghost/dupe)");
 
   // The rendered card is the post-clear command, with no pre-clear text leaking in.
   const postText = postClear.rows.map(rowText).join("\n");
@@ -2214,4 +2175,11 @@ test("response completion does not jump to top when user is scrolled mid-transcr
   assert.equal(afterFinalize.anchorRow, 20, "anchor must remain at row 20");
   // Unseen rows should reflect new content
   assert.equal(afterFinalize.unseenRows, 30, "unseen rows = 80 - 50");
+});
+
+test("parseTimelineNavigationInput parses modifier keys correctly", () => {
+  assert.deepEqual(parseTimelineNavigationInput("\u001b[5;2~"), ["pageUp"]);
+  assert.deepEqual(parseTimelineNavigationInput("\u001b[6;2~"), ["pageDown"]);
+  assert.deepEqual(parseTimelineNavigationInput("\u001b[1;5H"), ["home"]);
+  assert.deepEqual(parseTimelineNavigationInput("\u001b[1;5F"), ["end"]);
 });

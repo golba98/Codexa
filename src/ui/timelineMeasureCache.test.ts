@@ -41,7 +41,7 @@ function buildRows(tool: RunToolActivity, overrides: Partial<Parameters<typeof b
     width: 80,
     event: makeActionEvent(tool),
     borderTone: "borderActive",
-    verbose: true,
+    verbose: false,
     isLive: false,
     ...overrides,
   });
@@ -57,14 +57,14 @@ test("buildActionEventRows reuses row array for stable tool inputs", () => {
   assert.strictEqual(second, first);
 });
 
-test("buildActionEventRows preserves bordered action card shape when summary changes", () => {
+test("buildActionEventRows preserves compact action row shape when summary changes", () => {
   __clearTimelineMeasureCachesForTests();
   const first = buildRows(makeTool({ summary: "Read 12 lines" }));
   const second = buildRows(makeTool({ summary: "Read 14 lines" }));
 
   assert.equal(second.length, first.length);
   assert.deepEqual(second.map((row) => row.key), first.map((row) => row.key));
-  assert.match(first.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /╭── action/);
+  assert.match(first.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /^✓ Read file/);
 });
 
 test("completed action rows ignore live-target changes that do not render", () => {
@@ -108,7 +108,7 @@ test("running to completed action update keeps row count and keys stable", () =>
   assert.deepEqual(completed.map((row) => row.key), running.map((row) => row.key));
 });
 
-test("action summary updates do not resize bordered action cards", () => {
+test("action summary updates do not resize compact action rows", () => {
   __clearTimelineMeasureCachesForTests();
 
   const first = buildRows(makeTool({ summary: null }));
@@ -118,7 +118,7 @@ test("action summary updates do not resize bordered action cards", () => {
   assert.deepEqual(second.map((row) => row.key), first.map((row) => row.key));
 });
 
-test("bordered action cards show duration only after completion", () => {
+test("compact action rows show duration only after completion", () => {
   __clearTimelineMeasureCachesForTests();
 
   const running = buildRows(makeTool({ status: "running", completedAt: null }), { isLive: true });
@@ -127,10 +127,9 @@ test("bordered action cards show duration only after completion", () => {
   const completedText = completed.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 
   assert.equal(running.length, completed.length);
-  assert.match(runningText, /╭── action/);
   assert.match(runningText, /Read file/);
   assert.doesNotMatch(runningText, /ms|s/);
-  assert.match(completedText, /Read file\s+32ms/);
+  assert.match(completedText, /Read file .*32ms/);
 });
 
 test("completed action rows ignore invisible timestamp changes when duration is unchanged", () => {
@@ -437,7 +436,7 @@ function actionRows(rows: Array<{ key: string }>, streamSeq: number): string[] {
 }
 
 function actionTopIndex(rows: Array<{ key: string }>, streamSeq: number): number {
-  return rows.findIndex((row) => row.key.includes(`-action-${streamSeq}-top`));
+  return rows.findIndex((row) => row.key.includes(`-action-${streamSeq}-plain`));
 }
 
 test("completed action wrapped rows stay stable when earlier thinking grows", () => {

@@ -448,7 +448,7 @@ test("Local provider executes unterminated text tool calls before final answer",
 
     assert.equal(text, "Listed the workspace.");
     assert.deepEqual(assistantDeltas, ["Listed the workspace."]);
-    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /Tool result/);
+    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /<tool_result name="list_files">/);
     assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /list_files/);
   });
 });
@@ -499,7 +499,7 @@ test("Local provider executes OpenAI-style tool_calls before final answer", asyn
     assert.equal(text, "Created main.rs.");
     assert.equal(await readFile(path.join(workspaceRoot, "main.rs"), "utf8"), "fn main() { println!(\"hi\"); }\n");
     assert.deepEqual(assistantDeltas, ["Created main.rs."]);
-    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /Tool result/);
+    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /<tool_result name="write_file">/);
     assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /main\.rs/);
   });
 });

@@ -97,10 +97,10 @@ const WHEEL_SCROLL_STEP = 3;
 // Re-enter follow-tail mode when the user scrolls within this many rows of the
 // tail, preventing a "stuck just above bottom" state after a near-end wheel scroll.
 const NEAR_BOTTOM_THRESHOLD = 3;
-const PAGE_UP_KEY_INPUTS = new Set(["\u001b[5~", "\u001b[[5~"]);
-const PAGE_DOWN_KEY_INPUTS = new Set(["\u001b[6~", "\u001b[[6~"]);
-const HOME_KEY_INPUTS = new Set(["\u001b[H", "\u001b[1~", "\u001bOH"]);
-const END_KEY_INPUTS = new Set(["\u001b[F", "\u001b[4~", "\u001bOF"]);
+const PAGE_UP_KEY_INPUTS = new Set(["\u001b[5~", "\u001b[[5~", "\u001b[5;2~", "\u001b[5;5~"]);
+const PAGE_DOWN_KEY_INPUTS = new Set(["\u001b[6~", "\u001b[[6~", "\u001b[6;2~", "\u001b[6;5~"]);
+const HOME_KEY_INPUTS = new Set(["\u001b[H", "\u001b[1~", "\u001bOH", "\u001b[1;5H", "\u001b[1;2H"]);
+const END_KEY_INPUTS = new Set(["\u001b[F", "\u001b[4~", "\u001bOF", "\u001b[1;5F", "\u001b[1;2F"]);
 const CTRL_HOME_KEY_INPUTS = new Set(["\u001b[1;5H", "\u001b[H"]);
 const CTRL_END_KEY_INPUTS = new Set(["\u001b[1;5F", "\u001b[F"]);
 const SGR_WHEEL_EVENT_PATTERN = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
@@ -1039,6 +1039,8 @@ export const Timeline = memo(function Timeline({
     workspaceRoot,
   });
 
+  const theme = useTheme();
+
   const staticItems = useMemo(() => buildTimelineItems(staticEvents), [staticEvents]);
   const activeItems = useMemo(() => buildTimelineItems(activeEvents), [activeEvents]);
   const activeTurnId = getActiveTurnId(uiState);
@@ -1089,7 +1091,7 @@ export const Timeline = memo(function Timeline({
   // run header — don't change during streaming) and "streaming" (assistant
   // content — changes every frame).  This gives us three cached tiers so only
   // the streaming assistant item is rebuilt each frame.
-  const snapshotWidth = getShellWidth(layout.cols);
+  const snapshotWidth = Math.max(10, getShellWidth(layout.cols) - 1);
   const staticSnapshot = useMemo(
     () => buildTimelineSnapshot(staticRenderItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "static", workspaceRoot }),
     [snapshotWidth, staticRenderItems, verboseMode, workspaceRoot],
@@ -1329,6 +1331,19 @@ export const Timeline = memo(function Timeline({
     };
   }, [finalizedTurnIds, runningTurnIds, uiState]);
 
+  const userPromptCount = useMemo(() => {
+    return staticEvents.filter((e) => e.type === "user").length;
+  }, [staticEvents]);
+
+  const prevUserPromptCountRef = useRef(userPromptCount);
+
+  useEffect(() => {
+    if (userPromptCount > prevUserPromptCountRef.current) {
+      setViewport(createFollowTailViewport(snapshotForViewport.totalRows));
+    }
+    prevUserPromptCountRef.current = userPromptCount;
+  }, [userPromptCount, snapshotForViewport.totalRows]);
+
   useInput((input, key) => {
     const currentSnapshot = liveSnapshotRef.current;
     if (currentSnapshot.totalRows === 0) return;
@@ -1365,7 +1380,7 @@ export const Timeline = memo(function Timeline({
     }
   });
 
-  const { visibleRows } = useMemo(() => {
+  const { visibleRows, window: sourceWindow, sourceSnapshot } = useMemo(() => {
     const selection = selectTimelineRows(snapshotForViewport, viewport, viewportRows);
     renderDebug.traceEvent("viewport", "slice", {
       providerState: uiState.kind,
@@ -1441,6 +1456,47 @@ export const Timeline = memo(function Timeline({
     return <Box flexDirection="column" width="100%" height={contentSized ? undefined : Math.max(1, viewportRows)} />;
   }
 
+  const renderScrollbar = () => {
+    const scrollbarHeight = rowsForDisplay.length;
+    if (scrollbarHeight <= 0) return null;
+
+    const total = sourceSnapshot.totalRows;
+    const start = sourceWindow.startRow;
+
+    let thumbHeight = scrollbarHeight;
+    let thumbStart = 0;
+
+    if (total > scrollbarHeight) {
+      thumbHeight = Math.max(1, Math.round((scrollbarHeight / total) * scrollbarHeight));
+      const maxStartRow = total - scrollbarHeight;
+      const maxThumbStart = scrollbarHeight - thumbHeight;
+      thumbStart = maxStartRow > 0 ? Math.round((start / maxStartRow) * maxThumbStart) : 0;
+      thumbStart = Math.max(0, Math.min(maxThumbStart, thumbStart));
+    }
+
+    const scrollbarRows: string[] = [];
+    for (let i = 0; i < scrollbarHeight; i++) {
+      if (i >= thumbStart && i < thumbStart + thumbHeight) {
+        scrollbarRows.push("┃");
+      } else {
+        scrollbarRows.push("│");
+      }
+    }
+
+    return (
+      <Box flexDirection="column" width={1}>
+        {scrollbarRows.map((char, index) => {
+          const isThumb = char === "┃";
+          return (
+            <Text key={index} color={isThumb ? theme.borderFocused : theme.border}>
+              {char}
+            </Text>
+          );
+        })}
+      </Box>
+    );
+  };
+
   return (
     <Box
       flexDirection="column"
@@ -1448,7 +1504,12 @@ export const Timeline = memo(function Timeline({
       height={contentSized ? undefined : Math.max(1, viewportRows)}
       overflow="hidden"
     >
-      <TimelineRowsView rows={rowsForDisplay} />
+      <Box flexDirection="row" width="100%" height="100%">
+        <Box flexDirection="column" flexGrow={1}>
+          <TimelineRowsView rows={rowsForDisplay} />
+        </Box>
+        {!contentSized && renderScrollbar()}
+      </Box>
       {showJumpToBottom && (
         <JumpToBottomBar unseenItems={viewport.unseenItems} mouseCapture={mouseCapture} />
       )}

@@ -644,7 +644,7 @@ test("THINKING -> RESPONDING -> FINALIZE_RUN preserves action rows and renders r
       
     assert.deepEqual(unmounts, [], "Action rows should not unmount during response and finalize");
     assert.match(frame, /Final response text/i, "Answer text should appear");
-    assert.match(frame, /action/i, "Action card should remain");
+    assert.match(frame, /Read file/i, "Action row should remain");
     
   } finally {
     instance.unmount();

@@ -8,6 +8,7 @@ import {
   isPathInsideAllowedRoots,
   isPathInsideWorkspace,
   resolveWorkspacePath,
+  normalizeDiagnosticPath,
 } from "./workspaceGuard.js";
 import { normalizeWorkspaceRoot } from "./workspaceRoot.js";
 
@@ -148,4 +149,27 @@ test("blocks shell commands that reference escaping relative paths", () => {
 
   assert(message);
   assert.match(message, /Outside path references:/i);
+});
+
+test("normalizes diagnostic file paths correctly", () => {
+  assert.equal(
+    normalizeDiagnosticPath("/home/user/project/src/main.rs:10:5"),
+    "/home/user/project/src/main.rs"
+  );
+  assert.equal(
+    normalizeDiagnosticPath("/home/user/project/src/main.rs:10"),
+    "/home/user/project/src/main.rs"
+  );
+  assert.equal(
+    normalizeDiagnosticPath("/home/user/project/src/main.rs"),
+    "/home/user/project/src/main.rs"
+  );
+  assert.equal(
+    normalizeDiagnosticPath("src/main.rs:22:9"),
+    "src/main.rs"
+  );
+  assert.equal(
+    normalizeDiagnosticPath("C:\\Users\\me\\project\\src\\main.rs:12:5"),
+    "C:\\Users\\me\\project\\src\\main.rs"
+  );
 });

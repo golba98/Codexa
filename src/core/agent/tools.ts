@@ -24,12 +24,17 @@ export interface AgentToolResult {
   command?: string;
   paths?: string[];
   output?: string;
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number | null;
+  durationMs?: number;
   summary?: string;
   error?: string;
 }
 
 const MAX_FILE_BYTES = 128 * 1024;
 const MAX_OUTPUT_CHARS = 4_000;
+const MAX_OUTPUT_LINES = 80;
 const SHELL_TIMEOUT_MS = 30_000;
 
 const DANGEROUS_SHELL_PATTERNS: RegExp[] = [
@@ -51,6 +56,19 @@ function preview(text: string, maxChars = MAX_OUTPUT_CHARS): string {
   return sanitized.length > maxChars ? `${sanitized.slice(0, maxChars)}\n...[truncated]` : sanitized;
 }
 
+function trimOutputLines(text: string, preferTail: boolean): string {
+  const sanitized = sanitizeTerminalOutput(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = sanitized.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  if (lines.length <= MAX_OUTPUT_LINES) return sanitized;
+  const visible = preferTail ? lines.slice(-MAX_OUTPUT_LINES) : lines.slice(0, MAX_OUTPUT_LINES);
+  const hidden = lines.length - visible.length;
+  const marker = `[...${hidden} line${hidden === 1 ? "" : "s"} truncated; showing ${preferTail ? "last" : "first"} ${MAX_OUTPUT_LINES} lines...]`;
+  return preferTail
+    ? [marker, ...visible].join("\n")
+    : [...visible, marker].join("\n");
+}
+
 function stringArg(args: Record<string, unknown>, key: string): string | null {
   const value = args[key];
   return typeof value === "string" && value.trim() ? value : null;
@@ -68,6 +86,24 @@ function canWrite(runtime: ResolvedRuntimeConfig): boolean {
 function relativeDisplay(workspaceRoot: string, absolutePath: string): string {
   const relative = path.relative(workspaceRoot, absolutePath).split(path.sep).join("/");
   return relative || ".";
+}
+
+function hasCargoManifest(workspaceRoot: string): boolean {
+  return existsSync(path.join(workspaceRoot, "Cargo.toml"));
+}
+
+function rustCommandGuard(command: string, context: AgentToolContext): string | null {
+  if (!hasCargoManifest(context.workspaceRoot)) return null;
+  const normalized = command.trim().replace(/\s+/g, " ");
+  const rustcMatch = /^rustc(?:\s+--?[^\s]+)*\s+([^\s]+\.rs)\b/.exec(normalized);
+  if (!rustcMatch) return null;
+  const target = rustcMatch[1]!;
+  const resolved = path.resolve(context.workspaceRoot, target);
+  const rootMain = path.join(context.workspaceRoot, "main.rs");
+  if (resolved !== rootMain || !existsSync(rootMain)) {
+    return "This workspace has Cargo.toml. Use `cargo check` to validate or `cargo run` to run instead of compiling a Rust source file directly with rustc.";
+  }
+  return null;
 }
 
 function resolveAllowedPath(rawPath: string, context: AgentToolContext): { ok: true; absolutePath: string; relativePath: string } | { ok: false; error: string } {
@@ -295,6 +331,10 @@ async function runShellTool(args: Record<string, unknown>, context: AgentToolCon
   if (DANGEROUS_SHELL_PATTERNS.some((pattern) => pattern.test(command))) {
     return { success: false, tool: "run_shell", command, error: "Shell command blocked as dangerous." };
   }
+  const rustGuard = rustCommandGuard(command, context);
+  if (rustGuard) {
+    return { success: false, tool: "run_shell", command, exitCode: null, durationMs: 0, stdout: "", stderr: "", error: rustGuard };
+  }
   const workspaceGuard = getShellWorkspaceGuardMessage(command, context.workspaceRoot, context.runtime.policy.writableRoots);
   if (workspaceGuard) {
     return { success: false, tool: "run_shell", command, error: workspaceGuard };
@@ -308,14 +348,21 @@ async function runShellTool(args: Record<string, unknown>, context: AgentToolCon
   context.signal?.addEventListener("abort", cancel, { once: true });
   try {
     const result = await runner.result;
-    const output = preview([result.stdout, result.stderr].filter(Boolean).join("\n"));
+    const success = result.status === "completed" && result.exitCode === 0;
+    const stdout = trimOutputLines(result.stdout, !success);
+    const stderr = trimOutputLines(result.stderr, !success);
+    const output = preview([stdout, stderr].filter(Boolean).join("\n"));
     return {
-      success: result.status === "completed" && result.exitCode === 0,
+      success,
       tool: "run_shell",
       command,
+      exitCode: result.exitCode,
+      durationMs: result.durationMs,
+      stdout,
+      stderr,
       output,
       summary: summarizeCommandResult(command, result),
-      error: result.status === "completed" && result.exitCode === 0 ? undefined : result.userMessage,
+      error: success ? undefined : result.userMessage,
     };
   } finally {
     context.signal?.removeEventListener("abort", cancel);

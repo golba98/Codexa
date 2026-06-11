@@ -38,6 +38,10 @@ export function UpdatePromptPanel({
   const spawnStartedRef = useRef(false);
 
   useInput((input, key) => {
+    if (key.escape) {
+      onSkip();
+      return;
+    }
     if (phase === "menu") {
       if (key.upArrow || input === "k") {
         setSelectedIndex((i) => Math.max(0, i - 1));
@@ -57,12 +61,8 @@ export function UpdatePromptPanel({
         }
         return;
       }
-      if (key.escape) {
-        onSkip();
-        return;
-      }
     } else if (phase === "done" || phase === "error") {
-      if (key.return || key.escape) {
+      if (key.return) {
         onSkip();
       }
     }
@@ -107,9 +107,9 @@ export function UpdatePromptPanel({
     };
   }, [phase]);
 
-  const hintText = phase === "menu"
-    ? "↑↓/jk select  Enter confirm  Esc skip"
-    : "Press Enter to close";
+  const footerText = phase === "menu"
+    ? "Esc to close · Enter to confirm"
+    : "Esc to close";
 
   return (
     <Box flexDirection="column" width="100%" marginTop={1}>
@@ -122,8 +122,7 @@ export function UpdatePromptPanel({
         flexDirection="column"
       >
         <Box>
-          <Text color={theme.accent} bold>{`Update available: Codexa ${formatVersionLabel(latestVersion)}  `}</Text>
-          <Text color={theme.textMuted}>{hintText}</Text>
+          <Text color={theme.accent} bold>{`Update available: Codexa ${formatVersionLabel(latestVersion)}`}</Text>
         </Box>
         <Box marginTop={1}>
           <Text color={theme.text}>{`${formatVersionLabel(currentVersion)} -> ${formatVersionLabel(latestVersion)}`}</Text>
@@ -138,7 +137,7 @@ export function UpdatePromptPanel({
 
       <Box
         borderStyle="round"
-        borderColor={theme.borderFocused}
+        borderColor={phase === "menu" ? theme.borderFocused : theme.border}
         paddingX={2}
         paddingY={1}
         marginTop={1}
@@ -160,9 +159,6 @@ export function UpdatePromptPanel({
                 </Text>
               </Box>
             ))}
-            <Box marginTop={1}>
-              <Text color={theme.textDim}>Press enter to continue</Text>
-            </Box>
           </>
         )}
 
@@ -179,9 +175,6 @@ export function UpdatePromptPanel({
           <>
             <Text color={theme.success}>{"Codexa was updated successfully."}</Text>
             <Text color={theme.textMuted}>{"Restart Codexa to use the new version."}</Text>
-            <Box marginTop={1}>
-              <Text color={theme.textDim}>Press Enter to close</Text>
-            </Box>
           </>
         )}
 
@@ -192,11 +185,12 @@ export function UpdatePromptPanel({
             {outputLines.slice(-5).map((line, i) => (
               <Text key={i} color={theme.textDim}>{line}</Text>
             ))}
-            <Box marginTop={1}>
-              <Text color={theme.textDim}>Press Enter to close</Text>
-            </Box>
           </>
         )}
+
+        <Box marginTop={1}>
+          <Text color={theme.textDim}>{footerText}</Text>
+        </Box>
       </Box>
     </Box>
   );

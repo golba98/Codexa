@@ -1950,6 +1950,52 @@ function buildPlainActionDebugRows(params: {
   ];
 }
 
+function compactActionText(descriptor: ActionDisplayDescriptor): string {
+  const command = descriptor.command.replace(/^([a-z][a-z0-9_]*):\s+/i, "$1 ");
+  return descriptor.label && command === descriptor.command
+    ? `${descriptor.label} ${command}`
+    : command;
+}
+
+function buildCompactActionRows(params: {
+  keyPrefix: string;
+  width: number;
+  descriptor: ActionDisplayDescriptor;
+}): TimelineRow[] {
+  const durationSuffix = params.descriptor.duration ? `  ${params.descriptor.duration}` : "";
+  const liveSuffix = params.descriptor.showLiveCursor ? "  ▌" : "";
+  const availableWidth = Math.max(1, params.width - getTextWidth(params.descriptor.icon) - 1 - getTextWidth(durationSuffix) - getTextWidth(liveSuffix));
+  const text = clampVisualText(compactActionText(params.descriptor), availableWidth);
+  const rows: TimelineRow[] = [
+    createRow(
+      `${params.keyPrefix}-plain`,
+      [
+        createSpan(`${params.descriptor.icon} `, params.descriptor.iconTone),
+        createSpan(text || " ", "text"),
+        ...(durationSuffix ? [createSpan(durationSuffix, "dim")] : []),
+        ...(liveSuffix ? [createSpan(liveSuffix, "accent")] : []),
+      ],
+      params.width,
+    ),
+  ];
+
+  if (params.descriptor.verbose) {
+    const detail = params.descriptor.showLiveCursor
+      ? "running"
+      : params.descriptor.summary.trim() || "completed";
+    rows.push(createRow(
+      `${params.keyPrefix}-detail`,
+      [
+        createSpan("  "),
+        createSpan(clampVisualText(detail, Math.max(1, params.width - 2)), "muted"),
+      ],
+      params.width,
+    ));
+  }
+
+  return rows;
+}
+
 export function buildActionEventRows(params: {
   keyPrefix: string;
   width: number;
@@ -2021,75 +2067,11 @@ export function buildActionEventRows(params: {
     });
   }
 
-  const buildActionRows = () => {
-    const contentWidth = Math.max(1, params.width - 4);
-    const commandWidth = Math.max(1, contentWidth - 2);
-    const durationWidth = descriptor.duration ? getTextWidth(descriptor.duration) : 0;
-    // Only inline the duration when there is room for it plus a 1-col gap;
-    // otherwise (pathologically narrow widths) drop it rather than clip the box.
-    const canInlineDuration = durationWidth > 0 && durationWidth + 1 < commandWidth;
-    const detailText = descriptor.showLiveCursor
-      ? "▌"
-      : descriptor.summary.trim()
-        ? descriptor.summary
-        : " ";
-    const contentRows: TimelineRowSpan[][] = [];
-
-    // Append the duration right-aligned to the inner content edge so it never
-    // collides with — or overflows past — the head-row text. The gap absorbs the
-    // slack; padding/clamping in buildDashCardRows keeps the row exactly inner-width.
-    const withDuration = (spans: TimelineRowSpan[]): TimelineRowSpan[] => {
-      if (!canInlineDuration) return spans;
-      const gap = Math.max(1, contentWidth - getSpansWidth(spans) - durationWidth);
-      return [...spans, createSpan(" ".repeat(gap)), createSpan(descriptor.duration, "dim")];
-    };
-
-    if (descriptor.label) {
-      contentRows.push(withDuration([
-        createSpan(`${descriptor.icon} `, descriptor.iconTone),
-        createSpan(descriptor.label, "text"),
-      ]));
-      wrapPlainText(descriptor.command, commandWidth).forEach((row) => {
-        contentRows.push([
-          createSpan("  "),
-          createSpan(row || " ", "muted"),
-        ]);
-      });
-    } else {
-      // Reserve room on the first line for the right-aligned duration so the
-      // command wraps before it would collide with the timing label.
-      const firstLineWidth = canInlineDuration
-        ? Math.max(1, commandWidth - durationWidth - 1)
-        : commandWidth;
-      const headRows = wrapPlainText(descriptor.command, commandWidth, firstLineWidth);
-      headRows.forEach((row, rowIndex) => {
-        const lineSpans = [
-          createSpan(rowIndex === 0 ? `${descriptor.icon} ` : "  ", rowIndex === 0 ? descriptor.iconTone : undefined),
-          createSpan(row || " ", "text"),
-        ];
-        contentRows.push(rowIndex === 0 ? withDuration(lineSpans) : lineSpans);
-      });
-    }
-
-    if (!descriptor.label) {
-      contentRows.push([
-        createSpan("  "),
-        createSpan(" ", "muted"),
-      ]);
-    }
-    contentRows.push([
-      createSpan("  "),
-      createSpan(detailText, descriptor.showLiveCursor ? "accent" : "muted"),
-    ]);
-
-    return buildDashCardRows({
-      keyPrefix: params.keyPrefix,
-      width: params.width,
-      title: "action",
-      borderTone: descriptor.borderTone,
-      contentRows: contentRows.length > 0 ? contentRows : [[createSpan(" ")]],
-    });
-  };
+  const buildActionRows = () => buildCompactActionRows({
+    keyPrefix: params.keyPrefix,
+    width: params.width,
+    descriptor,
+  });
 
   if (isCompleted) {
     const rows = buildActionRows();

@@ -53,6 +53,7 @@ export function SelectionPanel({
         paddingY={1}
         marginTop={1}
         width="100%"
+        flexDirection="column"
       >
         <SelectInput
           items={items}
@@ -61,6 +62,9 @@ export function SelectionPanel({
           onSelect={(item) => onSelect(item.value)}
           onHighlight={(item) => onHighlight?.(item.value)}
         />
+        <Box marginTop={1}>
+          <Text color={theme.textDim}>Esc to close · Enter to confirm</Text>
+        </Box>
       </Box>
     </Box>
   );

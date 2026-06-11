@@ -65,7 +65,7 @@ export function AttachmentImportPanel({
 
       <Box
         borderStyle="round"
-        borderColor={theme.borderFocused}
+        borderColor={theme.border}
         paddingX={2}
         paddingY={1}
         marginTop={1}
@@ -90,7 +90,7 @@ export function AttachmentImportPanel({
         )}
 
         <Box marginTop={1}>
-          <Text color={theme.textDim}>Enter copy and continue  Esc cancel</Text>
+          <Text color={theme.textDim}>Esc to close · Enter to confirm</Text>
         </Box>
       </Box>
     </Box>

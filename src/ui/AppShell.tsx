@@ -194,7 +194,7 @@ function AppShellInner({
   const shellHeight = getShellHeight(layout.rows);
   const headerRows = measureTopHeaderRows(layout, headerConfig, !!updateAvailable);
   const headerToContentGapRows = calculateHeaderToContentGapRows(layout);
-  const showComposer = screen === "main";
+  const showComposer = true;
   const showMainPanel = screen === "main" && mainPanel !== undefined && mainPanel !== null;
   const showMainPanelFullOutput = showMainPanel && mainPanelMode === "full-output";
   const showTimeline = screen === "main" && !showMainPanel;
@@ -593,7 +593,7 @@ function AppShellInner({
 
   return (
     <Box flexDirection="column" width="100%" height={finalShellHeight}>
-      <Box flexDirection="column" width={finalShellWidth}>
+      <Box flexDirection="column" width={finalShellWidth} height="100%">
         <MemoizedTopHeader
           authState={authState}
           workspaceLabel={workspaceLabel}

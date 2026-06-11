@@ -412,9 +412,14 @@ export function App({ launchArgs }: AppProps) {
     if (mouseIdleTimerRef.current) {
       clearTimeout(mouseIdleTimerRef.current);
     }
+    // We disable the idle timeout to ensure reliable trackpad/mouse-wheel scrolling
+    // in the pop-out window. Otherwise, after 1.5 seconds of inactivity, mouse capture
+    // turns off, and scrolling stops working entirely.
+    /*
     mouseIdleTimerRef.current = setTimeout(() => {
       setIsMouseIdle(true);
     }, 1500);
+    */
   }, []);
 
   useInput(() => {
@@ -435,6 +440,7 @@ export function App({ launchArgs }: AppProps) {
   // We apply an idle-timeout: if no wheel events or keypresses occur for 1.5s,
   // we disable mouse reporting so native drag-selection works unmodified.
   const mouseCapture = (mouseOverride ?? (terminalMouseMode === "wheel")) && !isMouseIdle;
+  const effectiveMouseCapture = screen === "main" ? mouseCapture : false;
 
   // ─── Effects & Handlers ──────────────────────────────────────────────────────
 
@@ -467,11 +473,11 @@ export function App({ launchArgs }: AppProps) {
   useEffect(() => {
     // Default path writes the disable sequences defensively, preserving native
     // terminal selection unless the user explicitly opts into /mouse capture.
-    terminalControl.setMouseReporting(mouseCapture, mouseCapture ? "src/app.tsx:mouseCapture.enable" : "src/app.tsx:mouseCapture.disable");
+    terminalControl.setMouseReporting(effectiveMouseCapture, effectiveMouseCapture ? "src/app.tsx:mouseCapture.enable" : "src/app.tsx:mouseCapture.disable");
     return () => {
       terminalControl.setMouseReporting(false, "src/app.tsx:mouseCapture.cleanup");
     };
-  }, [mouseCapture, terminalControl]);
+  }, [effectiveMouseCapture, terminalControl]);
 
   const cleanupRef = useRef<(() => void) | null>(null);
   const activeRunLifecycleRef = useRef<PromptRunLifecycle | null>(null);
@@ -850,6 +856,15 @@ export function App({ launchArgs }: AppProps) {
   const busy = isUiBusy(uiState);
   const busyRef = useRef(busy);
   busyRef.current = busy;
+
+  const prevBusyRef = useRef(busy);
+  useEffect(() => {
+    if (!busy && prevBusyRef.current && screen === "main") {
+      intendedFocusTargetRef.current = FOCUS_IDS.composer;
+      focusManager.focus(FOCUS_IDS.composer);
+    }
+    prevBusyRef.current = busy;
+  }, [busy, screen, focusManager]);
 
   const forceRefreshCurrentTerminalTitle = useCallback((debugEventName: string, busyState = busyRef.current) => {
     refreshTerminalTitle({
@@ -2396,7 +2411,7 @@ export function App({ launchArgs }: AppProps) {
         stdout.write("\n");
       },
       afterLaunch: () => {
-        terminalControl.setMouseReporting(mouseCapture, "src/app.tsx:providerLaunch.restoreMouse");
+        terminalControl.setMouseReporting(effectiveMouseCapture, "src/app.tsx:providerLaunch.restoreMouse");
         forceRefreshCurrentTerminalTitle("provider_launch_return", false);
       },
     }).then((result) => {
@@ -2412,7 +2427,7 @@ export function App({ launchArgs }: AppProps) {
     appendErrorEvent,
     appendSystemEvent,
     forceRefreshCurrentTerminalTitle,
-    mouseCapture,
+    effectiveMouseCapture,
     providerRegistry,
     providerWorkspaceConfig.providers,
     modelCapabilities,
@@ -3612,15 +3627,21 @@ export function App({ launchArgs }: AppProps) {
     if (!pendingImport) return;
     const replacements: Array<{ rawPath: string; workspaceRelativePath: string }> = [];
     for (const file of pendingImport.files) {
-      const destPath = await importExternalFile(file.srcPath, pendingImport.attachmentsDir);
-      const relPath = path.relative(workspaceRoot, destPath).replace(/\\/g, "/");
-      replacements.push({ rawPath: file.rawPath, workspaceRelativePath: relPath });
+      try {
+        const destPath = await importExternalFile(file.srcPath, pendingImport.attachmentsDir);
+        if (destPath) {
+          const relPath = path.relative(workspaceRoot, destPath).replace(/\\/g, "/");
+          replacements.push({ rawPath: file.rawPath, workspaceRelativePath: relPath });
+        }
+      } catch (err: any) {
+        appendErrorEvent("Import failed", `Could not import ${path.basename(file.srcPath)}: ${err.message}`);
+      }
     }
     const rewrittenPrompt = rewritePromptWithImportedPaths(pendingImport.prompt, replacements);
     setPendingImport(null);
     setScreen("main");
     startPromptRun(rewrittenPrompt, rewrittenPrompt, { submitTiming: createPromptRunTiming(), commitPrompt: true });
-  }, [pendingImport, workspaceRoot, startPromptRun]);
+  }, [pendingImport, workspaceRoot, startPromptRun, appendErrorEvent]);
 
   const handleImportCancel = useCallback(() => {
     if (!pendingImport) return;
@@ -4361,7 +4382,7 @@ export function App({ launchArgs }: AppProps) {
           placeholder={planFlow.mode === "revise"
             ? "e.g. keep it to one file and add tests"
             : "e.g. keep it minimal and avoid touching other files"}
-          footerHint="Enter regenerate  Esc back  Backspace delete"
+          footerHint="Esc to close · Enter to confirm"
           initialValue={initialRevisionText}
           onSubmit={(value) => {
             setInitialRevisionText("");
@@ -4470,7 +4491,7 @@ export function App({ launchArgs }: AppProps) {
         activeEvents={activeEvents}
         uiState={uiState}
         verboseMode={verboseMode}
-        mouseCapture={mouseCapture}
+        mouseCapture={effectiveMouseCapture}
         onMouseActivity={resetMouseIdle}
         selectionProfile={selectionProfile}
         clearCount={sessionState.clearCount}
@@ -4641,7 +4662,7 @@ export function App({ launchArgs }: AppProps) {
                 subtitle="Enter an absolute path or a path relative to the locked workspace."
                 placeholder="relative\\or\\absolute\\path"
                 inputLabel="Path"
-                footerHint="Enter save  Esc cancel  Backspace delete"
+                footerHint="Esc to close · Enter to confirm"
                 onSubmit={(value) => {
                   if (!value.trim()) {
                     appendSystemEvent("Runtime policy", "Writable root path cannot be empty.");
