@@ -172,6 +172,37 @@ function padSpansToWidth(spans: TimelineRowSpan[], width: number): TimelineRowSp
   return next;
 }
 
+/**
+ * Truncates a span list to at most `width` display columns, cutting the
+ * overflowing span on a grapheme/display-width boundary. Used as a safety net so
+ * a too-wide content row can never push a card border past its declared width.
+ */
+function clampSpansToWidth(spans: TimelineRowSpan[], width: number): TimelineRowSpan[] {
+  const safeWidth = Math.max(0, width);
+  const result: TimelineRowSpan[] = [];
+  let used = 0;
+  for (const span of spans) {
+    if (used >= safeWidth) break;
+    const spanWidth = getTextWidth(span.text);
+    if (used + spanWidth <= safeWidth) {
+      result.push({ ...span });
+      used += spanWidth;
+      continue;
+    }
+    const fitted = splitTextAtColumn(span.text, safeWidth - used).before;
+    if (fitted) {
+      result.push(cloneSpan(span, fitted));
+    }
+    break;
+  }
+  return result;
+}
+
+/** Clamp a row to `width` then pad it back out so it occupies exactly `width`. */
+function fitSpansToWidth(spans: TimelineRowSpan[], width: number): TimelineRowSpan[] {
+  return padSpansToWidth(clampSpansToWidth(spans, width), width);
+}
+
 const ROW_CONTENT_CACHE_LIMIT = 2500;
 const _rowContentCache = new Map<string, TimelineRow>();
 
@@ -432,14 +463,14 @@ function buildDashCardRows(params: {
     return { ...span, tone: borderTone };
   });
 
-  const rows: TimelineRow[] = [createRow(`${params.keyPrefix}-top`, topRow, width)];
+  const rows: TimelineRow[] = [createRow(`${params.keyPrefix}-top`, fitSpansToWidth(topRow, width), width)];
 
   params.contentRows.forEach((row, index) => {
     rows.push(createRow(
       `${params.keyPrefix}-content-${index}`,
       [
         createSpan("│ ", borderTone),
-        ...padSpansToWidth(row, contentWidth),
+        ...fitSpansToWidth(row, contentWidth),
         createSpan(" │", borderTone),
       ],
       width,
@@ -486,7 +517,7 @@ function buildPanelRows(params: {
       `${params.keyPrefix}-content-${index}`,
       [
         createSpan("│ ", "borderActive"),
-        ...padSpansToWidth(row, contentWidth),
+        ...fitSpansToWidth(row, contentWidth),
         createSpan(" │", "borderActive"),
       ],
       width,
@@ -1857,10 +1888,15 @@ function getActionDisplayDescriptor(params: {
   isLive: boolean;
   borderTone: TimelineTone;
 }): ActionDisplayDescriptor {
-  const command = normalizeCommand(params.tool.command);
+  // Strip ANSI/control sequences before measuring or wrapping: string-width only
+  // collapses *complete* escape sequences, so leftover bytes would otherwise be
+  // counted (and wrapped) character-by-character and corrupt the card width.
+  const command = normalizeCommand(sanitizeTerminalOutput(params.tool.command));
   const label = getFriendlyActionLabel(command);
+  // Bare label (no leading gap) — the head-row builder right-aligns it and owns
+  // the spacing, so the gap can never get baked into a width calculation.
   const duration = params.tool.completedAt != null
-    ? `  ${formatDuration(params.tool.completedAt - params.tool.startedAt)}`
+    ? formatDuration(params.tool.completedAt - params.tool.startedAt)
     : "";
   const summary = params.verbose ? params.tool.summary ?? "" : "";
   const showLiveCursor = params.isLive && params.tool.status === "running";
@@ -1895,7 +1931,7 @@ function buildPlainActionDebugRows(params: {
   const statusText = params.descriptor.label
     ? `${params.descriptor.label}: ${params.descriptor.command}`
     : params.descriptor.command;
-  const suffix = params.descriptor.duration ? params.descriptor.duration : "";
+  const suffix = params.descriptor.duration ? `  ${params.descriptor.duration}` : "";
   const text = clampVisualText(`${params.descriptor.icon} ${statusText}${suffix}`, Math.max(1, params.width - 1));
   renderDebug.traceEvent("action", "plainActionRow", {
     actionId: params.descriptor.id,
@@ -1988,6 +2024,10 @@ export function buildActionEventRows(params: {
   const buildActionRows = () => {
     const contentWidth = Math.max(1, params.width - 4);
     const commandWidth = Math.max(1, contentWidth - 2);
+    const durationWidth = descriptor.duration ? getTextWidth(descriptor.duration) : 0;
+    // Only inline the duration when there is room for it plus a 1-col gap;
+    // otherwise (pathologically narrow widths) drop it rather than clip the box.
+    const canInlineDuration = durationWidth > 0 && durationWidth + 1 < commandWidth;
     const detailText = descriptor.showLiveCursor
       ? "▌"
       : descriptor.summary.trim()
@@ -1995,12 +2035,20 @@ export function buildActionEventRows(params: {
         : " ";
     const contentRows: TimelineRowSpan[][] = [];
 
+    // Append the duration right-aligned to the inner content edge so it never
+    // collides with — or overflows past — the head-row text. The gap absorbs the
+    // slack; padding/clamping in buildDashCardRows keeps the row exactly inner-width.
+    const withDuration = (spans: TimelineRowSpan[]): TimelineRowSpan[] => {
+      if (!canInlineDuration) return spans;
+      const gap = Math.max(1, contentWidth - getSpansWidth(spans) - durationWidth);
+      return [...spans, createSpan(" ".repeat(gap)), createSpan(descriptor.duration, "dim")];
+    };
+
     if (descriptor.label) {
-      contentRows.push([
+      contentRows.push(withDuration([
         createSpan(`${descriptor.icon} `, descriptor.iconTone),
         createSpan(descriptor.label, "text"),
-        ...(descriptor.duration ? [createSpan(descriptor.duration, "dim")] : []),
-      ]);
+      ]));
       wrapPlainText(descriptor.command, commandWidth).forEach((row) => {
         contentRows.push([
           createSpan("  "),
@@ -2008,13 +2056,18 @@ export function buildActionEventRows(params: {
         ]);
       });
     } else {
-      const headRows = wrapPlainText(descriptor.command, commandWidth);
+      // Reserve room on the first line for the right-aligned duration so the
+      // command wraps before it would collide with the timing label.
+      const firstLineWidth = canInlineDuration
+        ? Math.max(1, commandWidth - durationWidth - 1)
+        : commandWidth;
+      const headRows = wrapPlainText(descriptor.command, commandWidth, firstLineWidth);
       headRows.forEach((row, rowIndex) => {
-        contentRows.push([
+        const lineSpans = [
           createSpan(rowIndex === 0 ? `${descriptor.icon} ` : "  ", rowIndex === 0 ? descriptor.iconTone : undefined),
           createSpan(row || " ", "text"),
-          ...(rowIndex === 0 && descriptor.duration ? [createSpan(descriptor.duration, "dim")] : []),
-        ]);
+        ];
+        contentRows.push(rowIndex === 0 ? withDuration(lineSpans) : lineSpans);
       });
     }
 

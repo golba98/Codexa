@@ -198,9 +198,14 @@ export function splitTextAtColumn(text: string, column: number): { before: strin
 
 // ─── Text wrapping ────────────────────────────────────────────────────────────
 
-export function wrapTextRows(text: string, maxWidth: number): WrappedTextRow[] {
+export function wrapTextRows(
+  text: string,
+  maxWidth: number,
+  firstLineWidth: number = maxWidth,
+): WrappedTextRow[] {
   const normalized = normalizeLineBreaks(text);
   const safeWidth = Math.max(1, maxWidth);
+  const safeFirstWidth = Math.max(1, firstLineWidth);
   const rows: WrappedTextRow[] = [];
   let rowStart = 0;
   let rowText = "";
@@ -220,7 +225,9 @@ export function wrapTextRows(text: string, maxWidth: number): WrappedTextRow[] {
       continue;
     }
 
-    if (rowText.length > 0 && rowWidth + unit.width > safeWidth) {
+    // Only the first emitted row honors firstLineWidth; later rows use maxWidth.
+    const limit = rows.length === 0 ? safeFirstWidth : safeWidth;
+    if (rowText.length > 0 && rowWidth + unit.width > limit) {
       rows.push({
         text: rowText,
         start: rowStart,
@@ -252,8 +259,12 @@ export function wrapTextRows(text: string, maxWidth: number): WrappedTextRow[] {
   }];
 }
 
-export function wrapPlainText(text: string, maxWidth: number): string[] {
-  return wrapTextRows(text, maxWidth).map((row) => row.text);
+export function wrapPlainText(
+  text: string,
+  maxWidth: number,
+  firstLineWidth: number = maxWidth,
+): string[] {
+  return wrapTextRows(text, maxWidth, firstLineWidth).map((row) => row.text);
 }
 
 export function wrapCommandText(text: string, maxWidth: number): string[] {

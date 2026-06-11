@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { RunProgressEntry, TimelineEvent } from "../session/types.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
-import { getShellWidth } from "./layout.js";
+import { getShellWidth, getVisualWidth } from "./layout.js";
 import { buildStaticIntroRows } from "./StaticIntroItem.js";
 import type { TimelineRow, TimelineSnapshot } from "./timelineMeasure.js";
 import { buildTimelineSnapshot } from "./timelineMeasure.js";
@@ -1825,6 +1825,151 @@ test("long command is wrapped within the bordered action card", () => {
     assert.doesNotMatch(actionText, /would overflow if not wrapped properly within the card border/);
   }
   assert.match(snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /╭── action/);
+});
+
+// ── Action card layout: long commands, borders, narrow widths, timing ────────
+//
+// These guard the bordered action/tool card against the long-command breakage:
+// the head row used to append the timing label past the inner width, so the
+// over-wide row spilled the right border `│` onto the next terminal line.
+
+const LONG_ACTION_COMMAND =
+  `/usr/bin/zsh -lc 'pwd && rg -n "13-Custom-CLI-Normal|codexa|purpose|description" -S README* package.json docs src bin . 2>/dev/null'`;
+
+function rowText(row: TimelineRow): string {
+  return row.spans.map((span) => span.text).join("");
+}
+
+function actionCardSnapshot(command: string, totalWidth: number): TimelineSnapshot {
+  const items = buildTimelineItems(makeCompletedRunWithTool(900, command));
+  const renderItems = buildStaticRenderItems(items, [900], null, null, null);
+  return buildTimelineSnapshot(renderItems, { totalWidth });
+}
+
+function extractActionCard(snapshot: TimelineSnapshot): TimelineRow[] {
+  const start = snapshot.rows.findIndex((row) => rowText(row).startsWith("╭── action"));
+  assert.ok(start >= 0, "expected an action card top border");
+  const rest = snapshot.rows.slice(start);
+  const endOffset = rest.findIndex((row) => /^╰─*╯$/.test(rowText(row)));
+  assert.ok(endOffset >= 0, "expected an action card bottom border");
+  return rest.slice(0, endOffset + 1);
+}
+
+function assertCardIntegrity(card: TimelineRow[], totalWidth: number): void {
+  assert.ok(card.length >= 3, "card must have a top, content, and bottom row");
+  const widths = card.map((row) => getVisualWidth(rowText(row)));
+  const cardWidth = widths[0];
+  assert.ok(cardWidth <= totalWidth, `card width ${cardWidth} must not exceed terminal width ${totalWidth}`);
+  widths.forEach((width, index) => {
+    assert.equal(width, cardWidth, `row ${index} width ${width} must match card width ${cardWidth}: "${rowText(card[index])}"`);
+  });
+  const top = rowText(card[0]);
+  const bottom = rowText(card[card.length - 1]);
+  assert.ok(top.startsWith("╭") && top.endsWith("╮"), `top border must be complete: "${top}"`);
+  assert.ok(bottom.startsWith("╰") && bottom.endsWith("╯"), `bottom border must be complete: "${bottom}"`);
+  for (const row of card.slice(1, -1)) {
+    const text = rowText(row);
+    assert.ok(text.startsWith("│ ") && text.endsWith(" │"), `content must stay inside the side borders: "${text}"`);
+  }
+}
+
+test("long action command stays inside a complete bordered card (no clipping)", () => {
+  const totalWidth = 80;
+  const card = extractActionCard(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
+  assertCardIntegrity(card, totalWidth);
+
+  // The card grows vertically and the full command survives across the rows.
+  assert.ok(card.length > 3, "a long command must wrap onto extra rows");
+  const cardBody = card.map(rowText).join("");
+  for (const fragment of ["/usr/bin/zsh", "13-Custom-CLI-Normal", "codexa", "2>/dev/null"]) {
+    assert.ok(cardBody.includes(fragment), `command fragment "${fragment}" must remain visible`);
+  }
+});
+
+test("very narrow terminal still renders a complete action card", () => {
+  const totalWidth = 30;
+  const card = extractActionCard(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
+  assertCardIntegrity(card, totalWidth);
+});
+
+test("reflowing an action card from wide to narrow keeps borders complete", () => {
+  for (const totalWidth of [100, 40]) {
+    const card = extractActionCard(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
+    assertCardIntegrity(card, totalWidth);
+  }
+});
+
+test("ANSI-styled command does not break the action card width", () => {
+  const totalWidth = 70;
+  const command = `echo \u001b[31mred-text-that-is-quite-long-and-should-wrap-cleanly\u001b[0m && ls -la /tmp`;
+  const card = extractActionCard(actionCardSnapshot(command, totalWidth));
+  assertCardIntegrity(card, totalWidth);
+  for (const row of card) {
+    assert.ok(!rowText(row).includes("\u001b"), "no escape bytes should reach the rendered card");
+  }
+});
+
+test("timing label sits on the first content row and never collides with wrapped command", () => {
+  const totalWidth = 60;
+  const card = extractActionCard(actionCardSnapshot(LONG_ACTION_COMMAND, totalWidth));
+  assertCardIntegrity(card, totalWidth);
+
+  const durationRows = card.filter((row) => rowText(row).includes("1ms"));
+  assert.equal(durationRows.length, 1, "the timing label must appear exactly once");
+
+  const head = rowText(card[1]);
+  assert.ok(head.includes("1ms"), "the timing label belongs on the first content row");
+  assert.match(head, /1ms\s*│$/, "the timing label is right-aligned against the border");
+
+  // Continuation rows carry only command text, indented under the command —
+  // never the timing label, never flush against the border.
+  for (const row of card.slice(2, -1)) {
+    const text = rowText(row);
+    assert.ok(!text.includes("1ms"), "continuation rows must not repeat the timing label");
+    assert.ok(text.startsWith("│   "), `continuation rows align under the command: "${text}"`);
+  }
+});
+
+// ── /clear then a fresh action card: no clipped, duplicated, or ghosted card ──
+//
+// /clear physically wipes the transcript at the render boundary; the measured
+// timeline then rebuilds from only the post-clear turn (which gets a fresh
+// turnId, as every post-clear prompt does). This guards the measurement layer's
+// side of that flow: the next action card must be a single, fully bordered card
+// — measured complete (top/body/bottom), never clipped to a bare top border —
+// and the per-turn caches must key by turn identity so a stale pre-clear card is
+// never served in its place.
+function actionCardSnapshotForTurn(turnId: number, command: string, totalWidth: number): TimelineSnapshot {
+  const items = buildTimelineItems(makeCompletedRunWithTool(turnId, command));
+  const renderItems = buildStaticRenderItems(items, [turnId], null, null, null);
+  return buildTimelineSnapshot(renderItems, { totalWidth });
+}
+
+test("/clear followed by a new action card renders one complete, unclipped card", () => {
+  const totalWidth = 72;
+
+  // 1) A pre-clear turn whose action card populates the row/measure caches.
+  const preClear = actionCardSnapshotForTurn(920, "cat OLD-pre-clear-file.txt", totalWidth);
+  assertCardIntegrity(extractActionCard(preClear), totalWidth);
+
+  // 2) After /clear the next turn arrives with a fresh turnId. Build its snapshot
+  //    WITHOUT resetting caches, so a stale pre-clear card would surface here if
+  //    the turn cache ignored turn identity.
+  const postClear = actionCardSnapshotForTurn(921, LONG_ACTION_COMMAND, totalWidth);
+  const card = extractActionCard(postClear);
+
+  // Complete borders — top, body, bottom — never a lone top-border fragment.
+  assertCardIntegrity(card, totalWidth);
+  assert.ok(card.length > 3, "the post-clear command wraps onto extra rows");
+
+  // Exactly one action card — no ghosted/duplicated card from before the clear.
+  const topBorders = postClear.rows.filter((row) => rowText(row).startsWith("╭── action"));
+  assert.equal(topBorders.length, 1, "exactly one action card after /clear (no ghost/dupe)");
+
+  // The rendered card is the post-clear command, with no pre-clear text leaking in.
+  const postText = postClear.rows.map(rowText).join("\n");
+  assert.doesNotMatch(postText, /OLD-pre-clear-file/, "pre-clear card content must not leak in");
+  assert.match(postText, /usr\/bin\/zsh/, "the post-clear command is the one rendered");
 });
 
 // ── Smooth scrolling / render-loop regression tests ──────────────────────────
