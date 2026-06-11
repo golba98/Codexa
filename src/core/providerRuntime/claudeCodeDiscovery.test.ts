@@ -206,6 +206,7 @@ test("discoverClaudeCodeCapabilities: auth info parsed from claude auth status o
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
     metadataPaths: [],
+    settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
       if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "claude\n" });
       if (args[0] === "auth") {
@@ -233,6 +234,7 @@ test("discoverClaudeCodeCapabilities: full success with model list --json as arr
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
     metadataPaths: [],
+    settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
       if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json" });
@@ -267,6 +269,7 @@ test("discoverClaudeCodeCapabilities: full success with model list --json as arr
 test("discoverClaudeCodeCapabilities: full success with model list --json returning JSON object with .models key", async () => {
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
+    settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
       if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json" });
@@ -301,6 +304,7 @@ test("discoverClaudeCodeCapabilities: full success with model list --json return
 test("discoverClaudeCodeCapabilities: full success with model list --json returning plain string model IDs", async () => {
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
+    settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
       if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json" });
@@ -324,6 +328,7 @@ test("discoverClaudeCodeCapabilities: full success with model list --json return
 test("discoverClaudeCodeCapabilities: normalizes versioned Claude Code IDs into clear labels", async () => {
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
+    settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
       if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
@@ -355,6 +360,7 @@ test("discoverClaudeCodeCapabilities: aliases are marked version unknown when Cl
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
     metadataPaths: [],
+    settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
       if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
@@ -393,6 +399,7 @@ test("discoverClaudeCodeCapabilities: resolves alias-only command output using i
     const discovery = await discoverClaudeCodeCapabilities({
       cwd: process.cwd(),
       metadataPaths: [metadataPath],
+      settingsPath: null,
       runCommandImpl: mockRunCommand((executable, args) => {
         if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
         if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
@@ -438,6 +445,7 @@ test("discoverClaudeCodeCapabilities: uses package metadata before fallback when
     const discovery = await discoverClaudeCodeCapabilities({
       cwd: process.cwd(),
       metadataPaths: [metadataPath],
+      settingsPath: null,
       runCommandImpl: mockRunCommand((executable, args) => {
         if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
         return commandResult({ exitCode: 1 });
@@ -579,6 +587,7 @@ test("direct-probe regression: discovery succeeds when help text has NO matching
   // does NOT contain "model list" + "--json" together (the old regex would produce 0 candidates).
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
+    settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
       if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       // Help text deliberately contains NO matching "model list --json" substring.
@@ -608,6 +617,7 @@ test("direct-probe regression: discovery succeeds when help text has NO matching
 test("direct-probe regression: normalises model objects using 'name' field when 'value'/'id' absent", async () => {
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
+    settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
       if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: false }) });
       if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
