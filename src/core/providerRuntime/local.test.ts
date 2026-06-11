@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
 import {
@@ -85,6 +88,15 @@ async function withLocalEnv<T>(
       }
     }
     resetLocalProviderStateForTests();
+  }
+}
+
+async function withTempWorkspace<T>(callback: (workspaceRoot: string) => T | Promise<T>): Promise<T> {
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "codexa-local-agent-"));
+  try {
+    return await callback(workspaceRoot);
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
   }
 }
 
@@ -402,6 +414,93 @@ test("Local provider uses non-streaming agent chat completion", async () => {
 
     assert.equal(text, "Fallback response");
     assert.deepEqual(streamValues, [false]);
+  });
+});
+
+test("Local provider executes unterminated text tool calls before final answer", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const assistantDeltas: string[] = [];
+    const bodies: Array<{ messages?: Array<{ role: string; content: string }> }> = [];
+    let chatCount = 0;
+    const fetchImpl = (async (_input, init) => {
+      const body = init?.body ? JSON.parse(String(init.body)) as { messages?: Array<{ role: string; content: string }> } : {};
+      bodies.push(body);
+      chatCount += 1;
+      if (chatCount === 1) {
+        return jsonResponse({ choices: [{ message: { content: '<tool_call>{"name":"list_files","arguments":{"path":"."}}' } }] });
+      }
+      return jsonResponse({ choices: [{ message: { content: "Listed the workspace." } }] });
+    }) as typeof fetch;
+
+    const text = await runLocalOpenAiCompatible(
+      buildRequest({
+        workspaceRoot,
+        runtime: resolveRuntimeConfig(normalizeRuntimeConfig({ policy: { sandboxMode: "danger-full-access" } })),
+        localConfig: { baseUrl: "http://local.test/v1" },
+      }),
+      {
+        onResponse: () => undefined,
+        onError: assert.fail,
+        onAssistantDelta: (chunk) => assistantDeltas.push(chunk),
+      },
+      { fetchImpl },
+    );
+
+    assert.equal(text, "Listed the workspace.");
+    assert.deepEqual(assistantDeltas, ["Listed the workspace."]);
+    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /Tool result/);
+    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /list_files/);
+  });
+});
+
+test("Local provider executes OpenAI-style tool_calls before final answer", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const assistantDeltas: string[] = [];
+    const bodies: Array<{ messages?: Array<{ role: string; content: string }> }> = [];
+    let chatCount = 0;
+    const fetchImpl = (async (_input, init) => {
+      const body = init?.body ? JSON.parse(String(init.body)) as { messages?: Array<{ role: string; content: string }> } : {};
+      bodies.push(body);
+      chatCount += 1;
+      if (chatCount === 1) {
+        return jsonResponse({
+          choices: [{
+            message: {
+              content: null,
+              tool_calls: [{
+                id: "call_1",
+                type: "function",
+                function: {
+                  name: "write_file",
+                  arguments: "{\"path\":\"main.rs\",\"content\":\"fn main() { println!(\\\"hi\\\"); }\\n\"}",
+                },
+              }],
+            },
+          }],
+        });
+      }
+      return jsonResponse({ choices: [{ message: { content: "Created main.rs." } }] });
+    }) as typeof fetch;
+
+    const text = await runLocalOpenAiCompatible(
+      buildRequest({
+        workspaceRoot,
+        runtime: resolveRuntimeConfig(normalizeRuntimeConfig({ policy: { sandboxMode: "danger-full-access" } })),
+        localConfig: { baseUrl: "http://local.test/v1" },
+      }),
+      {
+        onResponse: () => undefined,
+        onError: assert.fail,
+        onAssistantDelta: (chunk) => assistantDeltas.push(chunk),
+      },
+      { fetchImpl },
+    );
+
+    assert.equal(text, "Created main.rs.");
+    assert.equal(await readFile(path.join(workspaceRoot, "main.rs"), "utf8"), "fn main() { println!(\"hi\"); }\n");
+    assert.deepEqual(assistantDeltas, ["Created main.rs."]);
+    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /Tool result/);
+    assert.match(bodies[1]?.messages?.at(-1)?.content ?? "", /main\.rs/);
   });
 });
 

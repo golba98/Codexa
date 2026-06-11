@@ -1,7 +1,7 @@
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { ProviderChatRequest } from "../providerRuntime/types.js";
 import { executeAgentTool, type AgentToolResult } from "./tools.js";
-import { parseAgentToolCall, serializeToolResult } from "./protocol.js";
+import { parseAgentToolCall, serializeToolResult, type NormalizedAgentToolCall } from "./protocol.js";
 
 export interface AgentChatMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -10,6 +10,7 @@ export interface AgentChatMessage {
 
 export interface AgentChatResponse {
   text: string;
+  toolCalls?: readonly NormalizedAgentToolCall[];
 }
 
 export interface RunAgentLoopOptions {
@@ -63,14 +64,18 @@ function toolActivityCommand(result: Pick<AgentToolResult, "tool" | "path" | "pa
 export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string> {
   const maxToolCalls = options.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS;
   const messages = buildInitialMessages(options.request, options.includeSystemPrompt);
+  let toolCallCount = 0;
 
-  for (let index = 0; index <= maxToolCalls; index += 1) {
+  while (true) {
     if (options.signal?.aborted) {
       throw new Error("Local agent run was canceled.");
     }
 
-    const response = await options.sendMessages(messages, index);
-    const parsed = parseAgentToolCall(response.text);
+    const response = await options.sendMessages(messages, toolCallCount);
+    const structuredToolCall = response.toolCalls?.[0] ?? null;
+    const parsed = structuredToolCall
+      ? { kind: "tool_call" as const, ...structuredToolCall, raw: JSON.stringify(structuredToolCall) }
+      : parseAgentToolCall(response.text);
 
     if (parsed.kind === "final") {
       return parsed.text.trim();
@@ -78,11 +83,12 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
 
     messages.push({ role: "assistant", content: response.text });
 
-    if (index >= maxToolCalls) {
+    if (toolCallCount >= maxToolCalls) {
       throw new Error(`Local agent stopped after ${maxToolCalls} tool calls without a final answer.`);
     }
 
     if (parsed.kind === "malformed_tool_call") {
+      toolCallCount += 1;
       messages.push({
         role: "user",
         content: serializeToolResult({
@@ -94,7 +100,8 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
       continue;
     }
 
-    const activityId = `local-agent-${index}-${parsed.name}`;
+    toolCallCount += 1;
+    const activityId = `local-agent-${toolCallCount}-${parsed.name}`;
     const startedAt = Date.now();
     const runningCommand = toolActivityCommand({
       tool: parsed.name,
