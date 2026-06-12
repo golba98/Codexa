@@ -12,6 +12,11 @@ export function normalizeDiagnosticPath(filePath: string): string {
     pathPart = filePath.slice(2);
   }
 
+  // Robustly strip trailing colon-separated line/column numbers.
+  // Handles:
+  //   path/to/file.rs:109:12
+  //   path/to/file.rs:109
+  //   C:\path\to\file.rs:12:5
   const diagnosticSuffixRegex = /:(\d+)(?::(\d+))?$/;
   pathPart = pathPart.replace(diagnosticSuffixRegex, "");
 
@@ -24,12 +29,12 @@ export interface WorkspacePathViolation {
 }
 
 const QUOTED_ABSOLUTE_PATH_PATTERN =
-  /(["'`])((?:[A-Za-z]:[\\/]|\\\\[^\\/\r\n]+[\\/][^\\/\r\n]+[\\/]|\/)[^"'`\r\n]+?)\1/g;
+  /(["'`])((?:[A-Za-z]:[\\/]|\\\\[^\\/\r\n]+[\\/][^\\/\r\n]+[\\/]|\/|~\/)[^"'`\r\n]+?)\1/g;
 const QUOTED_RELATIVE_PATH_PATTERN = /(["'`])((?:\.\.?[\\/])[^"'`\r\n]+?)\1/g;
 const WINDOWS_DRIVE_PATH_PATTERN = /(?:^|[\s([{\],;=])([A-Za-z]:[\\/][^\s"'`<>|]+)/g;
 const WINDOWS_UNC_PATH_PATTERN =
   /(?:^|[\s([{\],;=])(\\\\[^\\/\s"'`<>|]+[\\/][^\\/\s"'`<>|]+(?:[\\/][^\s"'`<>|]+)*)/g;
-const POSIX_ABSOLUTE_PATH_PATTERN = /(?:^|[\s([{\],;=])(\/(?:[^\/\s"'`<>|]+\/)+[^\s"'`<>|]+)/g;
+const POSIX_ABSOLUTE_PATH_PATTERN = /(?:^|[\s([{\],;=])((?:\/|~\/)(?:[^\/\s"'`<>|]+\/)+[^\s"'`<>|]+)/g;
 const RELATIVE_PATH_PATTERN = /(?:^|[\s([{\],;=])((?:\.\.?[\\/])(?:[^\s"'`<>|]+(?:[\\/][^\s"'`<>|]+)*))/g;
 const RUST_RELATIVE_DIAGNOSTIC_PATH_PATTERN =
   /(?:^|[\s([{\],;=])((?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+\.rs(?::\d+(?::\d+)?)?)/g;
@@ -41,7 +46,7 @@ function detectPathStyle(pathValue: string): PathStyle | null {
     return "windows";
   }
 
-  if (pathValue.startsWith("/")) {
+  if (pathValue.startsWith("/") || pathValue.startsWith("~/")) {
     return "posix";
   }
 
@@ -235,18 +240,33 @@ export function extractExplicitPathReferences(text: string): string[] {
   return matches;
 }
 
+export function formatSkippedDependencyPath(pathValue: string): string {
+  const parts = pathValue.replace(/\\/g, "/").split("/");
+  const registryIndex = parts.indexOf("registry");
+  if (registryIndex !== -1 && parts[registryIndex + 1] === "src" && parts[registryIndex + 2]?.includes("index.crates.io")) {
+    return parts.slice(registryIndex + 3).join("/");
+  }
+  const gitIndex = parts.indexOf("git");
+  if (gitIndex !== -1 && parts[gitIndex + 1] === "checkouts") {
+    return parts.slice(gitIndex + 2).join("/");
+  }
+  return parts[parts.length - 1] ?? pathValue;
+}
+
 export function findOutsideWorkspacePaths(
   text: string,
   workspaceRoot: string,
   allowedRoots: readonly string[] = [],
-): WorkspacePathViolation[] {
+): { violations: WorkspacePathViolation[]; skippedExternalPaths: string[] } {
   const violations: WorkspacePathViolation[] = [];
+  const skippedExternalPaths: string[] = [];
   const seen = new Set<string>();
   const workspaceStyle = detectPathStyle(workspaceRoot) ?? "windows";
 
   for (const rawPath of extractExplicitPathReferences(text)) {
     const cleanPath = normalizeDiagnosticPath(rawPath);
     if (isSkippedExternalDependencyPath(cleanPath)) {
+      skippedExternalPaths.push(cleanPath);
       continue;
     }
 
@@ -259,6 +279,7 @@ export function findOutsideWorkspacePaths(
       ? normalizeAbsolutePath(cleanPath, explicitStyle)
       : resolveWorkspacePath(cleanPath, workspaceRoot);
     if (isSkippedExternalDependencyPath(normalizedPath)) {
+      skippedExternalPaths.push(normalizedPath);
       continue;
     }
 
@@ -272,7 +293,7 @@ export function findOutsideWorkspacePaths(
     violations.push({ rawPath, normalizedPath });
   }
 
-  return violations;
+  return { violations, skippedExternalPaths };
 }
 
 export function containsDirectoryNavigationCommand(command: string): boolean {
@@ -311,7 +332,7 @@ export function getPromptWorkspaceGuardMessage(
   workspaceRoot: string,
   allowedRoots: readonly string[] = [],
 ): string | null {
-  const violations = findOutsideWorkspacePaths(prompt, workspaceRoot, allowedRoots);
+  const { violations } = findOutsideWorkspacePaths(prompt, workspaceRoot, allowedRoots);
   if (violations.length === 0) {
     return null;
   }
@@ -337,7 +358,7 @@ export function getShellWorkspaceGuardMessage(
     ].join("\n");
   }
 
-  const violations = findOutsideWorkspacePaths(command, workspaceRoot, allowedRoots);
+  const { violations } = findOutsideWorkspacePaths(command, workspaceRoot, allowedRoots);
   if (violations.length === 0) {
     return null;
   }

@@ -11,13 +11,14 @@ import {
   isPathInsideWorkspace,
   resolveWorkspacePath,
   normalizeDiagnosticPath,
+  formatSkippedDependencyPath,
 } from "./workspaceGuard.js";
 import { normalizeWorkspaceRoot } from "./workspaceRoot.js";
 
 const workspaceRoot = normalizeWorkspaceRoot("C:/Users/Example/OneDrive/Desktop/3-Python/Programs/2-Personal/20-Tester");
 
 test("allows absolute paths inside the locked workspace", () => {
-  const violations = findOutsideWorkspacePaths(
+  const { violations } = findOutsideWorkspacePaths(
     "Please update C:\\Users\\Example\\OneDrive\\Desktop\\3-Python\\Programs\\2-Personal\\20-Tester\\src\\main.py",
     workspaceRoot,
   );
@@ -26,7 +27,7 @@ test("allows absolute paths inside the locked workspace", () => {
 });
 
 test("blocks absolute paths outside the locked workspace", () => {
-  const violations = findOutsideWorkspacePaths(
+  const { violations } = findOutsideWorkspacePaths(
     "Please edit C:\\Users\\Example\\Desktop\\Other\\notes.txt",
     workspaceRoot,
   );
@@ -39,7 +40,7 @@ test("blocks absolute paths outside the locked workspace", () => {
 });
 
 test("parses quoted windows paths with spaces", () => {
-  const violations = findOutsideWorkspacePaths(
+  const { violations } = findOutsideWorkspacePaths(
     "Use \"C:\\Users\\Example\\Desktop\\Other Folder\\notes file.txt\" instead",
     workspaceRoot,
   );
@@ -60,7 +61,7 @@ test("resolves relative paths inside the workspace", () => {
 });
 
 test("blocks explicit relative paths that escape the workspace", () => {
-  const violations = findOutsideWorkspacePaths("Edit ..\\outside.txt", workspaceRoot);
+  const { violations } = findOutsideWorkspacePaths("Edit ..\\outside.txt", workspaceRoot);
 
   assert.equal(violations.length, 1);
   assert.equal(
@@ -178,7 +179,7 @@ test("normalizes diagnostic file paths correctly", () => {
 
 test("accepts Rust relative diagnostic paths inside the workspace", () => {
   const rustWorkspace = normalizeWorkspaceRoot("/home/user/project");
-  const violations = findOutsideWorkspacePaths(
+  const { violations } = findOutsideWorkspacePaths(
     "error[E0308]\n  --> src/main.rs:49:22",
     rustWorkspace,
   );
@@ -189,7 +190,7 @@ test("accepts Rust relative diagnostic paths inside the workspace", () => {
 
 test("accepts Rust absolute diagnostic paths inside the workspace", () => {
   const rustWorkspace = normalizeWorkspaceRoot("/home/user/project");
-  const violations = findOutsideWorkspacePaths(
+  const { violations } = findOutsideWorkspacePaths(
     "error[E0308]\n  --> /home/user/project/src/main.rs:49:22",
     rustWorkspace,
   );
@@ -209,7 +210,9 @@ test("skips Cargo registry diagnostic paths", () => {
     "/home/user/.cargo/registry/src/index.crates.io-123/iced_widget/src/container.rs",
   );
   assert.equal(isSkippedExternalDependencyPath(dependencyPath), true);
-  assert.deepEqual(findOutsideWorkspacePaths(dependencyPath, "/home/user/project"), []);
+  const { violations, skippedExternalPaths } = findOutsideWorkspacePaths(dependencyPath, "/home/user/project");
+  assert.deepEqual(violations, []);
+  assert.equal(skippedExternalPaths.length, 1);
 });
 
 test("skips Cargo git checkout diagnostic paths", () => {
@@ -220,14 +223,18 @@ test("skips Cargo git checkout diagnostic paths", () => {
     "/home/user/.cargo/git/checkouts/example-123/src/lib.rs",
   );
   assert.equal(isSkippedExternalDependencyPath(dependencyPath), true);
-  assert.deepEqual(findOutsideWorkspacePaths(dependencyPath, "/home/user/project"), []);
+  const { violations, skippedExternalPaths } = findOutsideWorkspacePaths(dependencyPath, "/home/user/project");
+  assert.deepEqual(violations, []);
+  assert.equal(skippedExternalPaths.length, 1);
 });
 
 test("skips target generated diagnostic paths by default", () => {
   const generatedPath = "target/debug/build/example/out/generated.rs:10:5";
 
   assert.equal(isSkippedExternalDependencyPath(generatedPath), true);
-  assert.deepEqual(findOutsideWorkspacePaths(generatedPath, "/home/user/project"), []);
+  const { violations, skippedExternalPaths } = findOutsideWorkspacePaths(generatedPath, "/home/user/project");
+  assert.deepEqual(violations, []);
+  assert.equal(skippedExternalPaths.length, 1);
 });
 
 test("skips common package manager and cache paths", () => {
@@ -238,7 +245,9 @@ test("skips common package manager and cache paths", () => {
     "/home/user/.cache/tool/generated.rs:1:1",
   ]) {
     assert.equal(isSkippedExternalDependencyPath(externalPath), true);
-    assert.deepEqual(findOutsideWorkspacePaths(externalPath, "/home/user/project"), []);
+    const { violations, skippedExternalPaths } = findOutsideWorkspacePaths(externalPath, "/home/user/project");
+    assert.deepEqual(violations, []);
+    assert.equal(skippedExternalPaths.length, 1);
   }
 });
 
@@ -249,9 +258,26 @@ test("skips dependency paths while preserving project-local Rust diagnostics", (
     "  --> src/main.rs:49:22",
   ].join("\n");
 
-  assert.deepEqual(findOutsideWorkspacePaths(diagnostic, rustWorkspace), []);
+  const { violations, skippedExternalPaths } = findOutsideWorkspacePaths(diagnostic, rustWorkspace);
+  assert.deepEqual(violations, []);
+  assert.equal(skippedExternalPaths.length, 1);
   assert.deepEqual(extractExplicitPathReferences(diagnostic), [
     "/home/user/.cargo/registry/src/index.crates.io-123/iced_widget/src/container.rs:109:12",
     "src/main.rs:49:22",
   ]);
+});
+
+test("formats skipped dependency paths cleanly", () => {
+  assert.equal(
+    formatSkippedDependencyPath("/home/user/.cargo/registry/src/index.crates.io-123/iced_widget/src/container.rs"),
+    "iced_widget/src/container.rs"
+  );
+  assert.equal(
+    formatSkippedDependencyPath("/home/user/.cargo/git/checkouts/example-123/src/lib.rs"),
+    "example-123/src/lib.rs"
+  );
+  assert.equal(
+    formatSkippedDependencyPath("/home/user/project/node_modules/pkg/index.js"),
+    "index.js"
+  );
 });
