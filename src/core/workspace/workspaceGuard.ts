@@ -12,6 +12,11 @@ export function normalizeDiagnosticPath(filePath: string): string {
     pathPart = filePath.slice(2);
   }
 
+  // Robustly strip trailing colon-separated line/column numbers.
+  // Handles:
+  //   path/to/file.rs:109:12
+  //   path/to/file.rs:109
+  //   C:\path\to\file.rs:12:5
   const diagnosticSuffixRegex = /:(\d+)(?::(\d+))?$/;
   pathPart = pathPart.replace(diagnosticSuffixRegex, "");
 
@@ -24,12 +29,12 @@ export interface WorkspacePathViolation {
 }
 
 const QUOTED_ABSOLUTE_PATH_PATTERN =
-  /(["'`])((?:[A-Za-z]:[\\/]|\\\\[^\\/\r\n]+[\\/][^\\/\r\n]+[\\/]|\/)[^"'`\r\n]+?)\1/g;
+  /(["'`])((?:[A-Za-z]:[\\/]|\\\\[^\\/\r\n]+[\\/][^\\/\r\n]+[\\/]|\/|~\/)[^"'`\r\n]+?)\1/g;
 const QUOTED_RELATIVE_PATH_PATTERN = /(["'`])((?:\.\.?[\\/])[^"'`\r\n]+?)\1/g;
 const WINDOWS_DRIVE_PATH_PATTERN = /(?:^|[\s([{\],;=])([A-Za-z]:[\\/][^\s"'`<>|]+)/g;
 const WINDOWS_UNC_PATH_PATTERN =
   /(?:^|[\s([{\],;=])(\\\\[^\\/\s"'`<>|]+[\\/][^\\/\s"'`<>|]+(?:[\\/][^\s"'`<>|]+)*)/g;
-const POSIX_ABSOLUTE_PATH_PATTERN = /(?:^|[\s([{\],;=])(\/(?:[^\/\s"'`<>|]+\/)+[^\s"'`<>|]+)/g;
+const POSIX_ABSOLUTE_PATH_PATTERN = /(?:^|[\s([{\],;=])((?:\/|~\/)(?:[^\/\s"'`<>|]+\/)+[^\s"'`<>|]+)/g;
 const RELATIVE_PATH_PATTERN = /(?:^|[\s([{\],;=])((?:\.\.?[\\/])(?:[^\s"'`<>|]+(?:[\\/][^\s"'`<>|]+)*))/g;
 const RUST_RELATIVE_DIAGNOSTIC_PATH_PATTERN =
   /(?:^|[\s([{\],;=])((?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+\.rs(?::\d+(?::\d+)?)?)/g;
@@ -41,7 +46,7 @@ function detectPathStyle(pathValue: string): PathStyle | null {
     return "windows";
   }
 
-  if (pathValue.startsWith("/")) {
+  if (pathValue.startsWith("/") || pathValue.startsWith("~/")) {
     return "posix";
   }
 

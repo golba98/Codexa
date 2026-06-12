@@ -549,6 +549,63 @@ export function pageDownTimelineViewport(
   };
 }
 
+export function halfPageUpTimelineViewport(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+  viewportRows: number,
+): TimelineViewportState {
+  if (liveSnapshot.totalRows === 0) {
+    return createFollowTailViewport(0);
+  }
+
+  const frozenSnapshot = getFrozenSnapshot(viewport, liveSnapshot);
+  const tailRow = Math.max(0, frozenSnapshot.totalRows - 1);
+  const currentAnchor = viewport.followTail
+    ? tailRow
+    : clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
+  const halfPage = Math.max(1, Math.floor(viewportRows / 2));
+  const nextAnchor = Math.max(getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows), currentAnchor - halfPage);
+
+  return {
+    anchorRow: nextAnchor,
+    followTail: false,
+    unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
+    unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
+    frozenSnapshot,
+  };
+}
+
+export function halfPageDownTimelineViewport(
+  viewport: TimelineViewportState,
+  liveSnapshot: TimelineSnapshot,
+  viewportRows: number,
+): TimelineViewportState {
+  if (liveSnapshot.totalRows === 0 || viewport.followTail) {
+    return viewport;
+  }
+
+  const frozenSnapshot = viewport.frozenSnapshot ?? liveSnapshot;
+  const tailRow = Math.max(0, frozenSnapshot.totalRows - 1);
+  const currentAnchor = clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
+  if (currentAnchor >= tailRow) {
+    return createFollowTailViewport(liveSnapshot.totalRows);
+  }
+
+  const halfPage = Math.max(1, Math.floor(viewportRows / 2));
+  const nextAnchor = Math.min(tailRow, currentAnchor + halfPage);
+  if (nextAnchor >= tailRow) {
+    return createFollowTailViewport(liveSnapshot.totalRows);
+  }
+
+  return {
+    anchorRow: nextAnchor,
+    followTail: false,
+    unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
+    unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
+    frozenSnapshot,
+  };
+}
+
 export function stepUpTimelineViewport(
   viewport: TimelineViewportState,
   liveSnapshot: TimelineSnapshot,
@@ -955,16 +1012,14 @@ const TimelineRowsView = memo(function TimelineRowsView({ rows }: { rows: Timeli
 const JumpToBottomBar = memo(function JumpToBottomBar({
   unseenItems,
   mouseCapture,
-}: { unseenItems: number; mouseCapture: boolean }) {
+  scrollPercent,
+}: { unseenItems: number; mouseCapture: boolean; scrollPercent: number }) {
   const theme = useTheme();
-  const label = unseenItems > 0
-    ? `↑  Scrolled up · ${unseenItems} new item${unseenItems === 1 ? "" : "s"} below`
-    : "↑  Scrolled up";
-  const hint = mouseCapture ? "wheel↓/End to bottom" : "PgDn/End to bottom";
+  const unseenText = unseenItems > 0 ? ` (${unseenItems} new)` : "";
+  const hintText = mouseCapture ? "wheel↓/End to bottom" : "PageUp/PageDown | End: latest";
   return (
     <Box width="100%" paddingX={1}>
-      <Text color={theme.info}>{label}</Text>
-      <Text color={theme.textDim}>{`  ·  ${hint}`}</Text>
+      <Text color={theme.info}>{`History ${scrollPercent}%${unseenText} | ${hintText}`}</Text>
     </Box>
   );
 });
@@ -1208,7 +1263,7 @@ export const Timeline = memo(function Timeline({
   // bytes directly — the same approach BottomComposer uses to detect mouse
   // events. Only wheel button codes (64/65) are acted upon; clicks are ignored.
   useEffect(() => {
-    if (!mouseCapture || !stdin) return;
+    if (!stdin) return;
 
     function handleRawWheel(chunk: Buffer | string) {
       const raw = typeof chunk === "string" ? chunk : chunk.toString("utf8");
@@ -1227,7 +1282,7 @@ export const Timeline = memo(function Timeline({
 
     stdin.on("data", handleRawWheel);
     return () => { stdin.off("data", handleRawWheel); };
-  }, [mouseCapture, stdin]);
+  }, [stdin]);
 
   useEffect(() => {
     const widthChanged = snapshotWidthRef.current !== snapshotWidth;
@@ -1370,6 +1425,26 @@ export const Timeline = memo(function Timeline({
       return;
     }
 
+    if (key.ctrl && input === "u") {
+      setViewport((current) => halfPageUpTimelineViewport(current, currentSnapshot, viewportRows));
+      return;
+    }
+
+    if (key.ctrl && input === "d") {
+      setViewport((current) => halfPageDownTimelineViewport(current, currentSnapshot, viewportRows));
+      return;
+    }
+
+    if ((key.meta && key.upArrow) || input === "\u001b\u001b[A" || input === "\u001b[1;3A") {
+      setViewport((current) => stepUpTimelineViewport(current, currentSnapshot, viewportRows));
+      return;
+    }
+
+    if ((key.meta && key.downArrow) || input === "\u001b\u001b[B" || input === "\u001b[1;3B") {
+      setViewport((current) => stepDownTimelineViewport(current, currentSnapshot, viewportRows));
+      return;
+    }
+
     if (key.home || isHomeInput(input)) {
       setViewport((current) => homeTimelineViewport(current, currentSnapshot, viewportRows));
       return;
@@ -1428,6 +1503,12 @@ export const Timeline = memo(function Timeline({
   const rowsForDisplay = showJumpToBottom
     ? preservedVisibleRows.slice(0, Math.max(0, viewportRows - 1))
     : preservedVisibleRows;
+
+  const totalRows = sourceSnapshot.totalRows;
+  const maxScroll = totalRows - viewportRows;
+  const scrollPercent = maxScroll > 0
+    ? Math.min(100, Math.max(0, Math.round((sourceWindow.startRow / maxScroll) * 100)))
+    : 100;
 
   if (visibleRows.length === 0) {
     renderDebug.traceBlankFrame("Timeline", {
@@ -1511,7 +1592,11 @@ export const Timeline = memo(function Timeline({
         {!contentSized && renderScrollbar()}
       </Box>
       {showJumpToBottom && (
-        <JumpToBottomBar unseenItems={viewport.unseenItems} mouseCapture={mouseCapture} />
+        <JumpToBottomBar
+          unseenItems={viewport.unseenItems}
+          mouseCapture={mouseCapture}
+          scrollPercent={scrollPercent}
+        />
       )}
     </Box>
   );
