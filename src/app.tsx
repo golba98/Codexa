@@ -7,6 +7,37 @@ import path from "node:path";
 function appDiagLog(msg: string): void {
   void msg;
 }
+
+function normalizeRuntimeAvailability(value: unknown): RuntimeAvailability {
+  if (value === "checking" || value === "reconnecting") return value;
+  if (value === "available") return "available";
+  if (value === "unavailable" || value === "no-models") return "unavailable";
+  return "unknown";
+}
+
+function formatRuntimeProviderLabel(providerId: ProviderId): string {
+  if (providerId === "local") return "Local";
+  if (providerId === "google") return "Google";
+  if (providerId === "anthropic") return "Anthropic";
+  return "OpenAI";
+}
+
+function readDiagnosticString(
+  diagnostics: Record<string, string | number | boolean | null> | undefined,
+  keys: string[],
+): string | null {
+  if (!diagnostics) return null;
+  for (const key of keys) {
+    const value = diagnostics[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+  return null;
+}
 import { Box, Text, useApp, useFocusManager, useInput, useStdin, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
 import {
@@ -158,15 +189,10 @@ import { createTerminalModeController, setTerminalControlUIState } from "./core/
 import { resolveInkRenderInstance, resetInkOutputForFreshFrame } from "./core/terminal/inkRenderReset.js";
 import { createClearFrameBoundaryController } from "./core/terminal/clearFrameBoundary.js";
 import {
-  acquireTerminalTitleGuard,
-  beginColdStartSequence,
-  deriveTerminalTitle,
-  reassertIntendedTerminalTitle,
-  refreshTerminalTitle,
   setTerminalTitleLifecycleState,
-  setIntendedTerminalTitle,
 } from "./core/terminal/terminalTitle.js";
 import { getStdinDebugState, traceInputDebug } from "./core/debug/inputDebug.js";
+import { traceModelStateDebug } from "./core/debug/modelStateDebug.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
 import {
@@ -230,6 +256,7 @@ import {
 } from "./ui/themeFlow.js";
 import { isBusy as isUiBusy } from "./session/types.js";
 import { AppShell } from "./ui/AppShell.js";
+import { RuntimeStatusBar, measureRuntimeStatusBarRows, type RuntimeAvailability } from "./ui/RuntimeStatusBar.js";
 import { checkForUpdates, formatLocalDevUpdateStatus, formatUpdateInstructions, shouldRunStartupUpdateCheck, type UpdateCheckResult } from "./core/version/updateCheck.js";
 import { isLocalDevChannel } from "./core/version/channel.js";
 import {
@@ -553,6 +580,31 @@ export function App({ launchArgs }: AppProps) {
     [providerRegistry],
   );
   const activeRouteProviderId = activeProviderRoute.providerId;
+  const markProviderAvailability = useCallback((
+    providerId: ProviderId,
+    availability: RuntimeAvailability,
+    reason: string,
+  ) => {
+    const previous = providerDiagnosticsRef.current[providerId] ?? {};
+    const selectedModel = typeof previous.selectedModel === "string" && previous.selectedModel.trim()
+      ? previous.selectedModel.trim()
+      : providerId === activeProviderRoute.providerId
+        ? activeProviderRoute.modelId
+        : null;
+    providerDiagnosticsRef.current[providerId] = {
+      ...previous,
+      selectedModel,
+      availabilityStatus: availability,
+      endpointCheckResult: availability,
+    };
+    traceModelStateDebug("provider_availability_marked", {
+      providerId,
+      selectedModel,
+      availability,
+      reason,
+    });
+    setRegistryNonce((current) => current + 1);
+  }, [activeProviderRoute.modelId, activeProviderRoute.providerId]);
 
   // Reset provider readiness when the user switches to a different provider.
   useEffect(() => {
@@ -786,17 +838,6 @@ export function App({ launchArgs }: AppProps) {
     () => formatWorkspaceDisplayPath(workspaceRoot, workspaceDisplayMode),
     [workspaceDisplayMode, workspaceRoot],
   );
-  const terminalTitleLabel = useMemo(
-    () => deriveTerminalTitle(workspaceRoot, terminalTitleMode),
-    [terminalTitleMode, workspaceRoot],
-  );
-  const latestTerminalTitleRef = useRef(terminalTitleLabel);
-  latestTerminalTitleRef.current = terminalTitleLabel;
-
-  // Cold-start: write title immediately on mount, then retry to outlast Windows Terminal shell integration.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => beginColdStartSequence(latestTerminalTitleRef.current), []);
-
   const { staticEvents, activeEvents, uiState, inputValue, cursor } = sessionState;
 
   const currentUserSettings = useMemo<UserSettingValues>(() => ({
@@ -834,6 +875,57 @@ export function App({ launchArgs }: AppProps) {
     reasoningLevel,
   ]);
   const currentModelSpec = activeRuntimeDisplay.modelSpec;
+  const activeRuntimeAvailability = useMemo<RuntimeAvailability>(() => {
+    if (activeProviderRoute.providerId !== "local") {
+      return "available";
+    }
+    const diagnostics = providerDiagnosticsRef.current.local;
+    return normalizeRuntimeAvailability(diagnostics?.availabilityStatus ?? diagnostics?.endpointCheckResult);
+  // registryNonce intentionally re-reads providerDiagnosticsRef.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProviderRoute.providerId, registryNonce]);
+  const visibleRuntimeModelState = useMemo(() => {
+    const diagnostics = providerDiagnosticsRef.current[activeProviderRoute.providerId];
+    const providerLabel = activeRouteProvider?.displayName
+      ?? formatRuntimeProviderLabel(activeProviderRoute.providerId);
+    const diagnosticModel = readDiagnosticString(diagnostics, [
+      "selectedModel",
+      "modelId",
+      "currentModel",
+      "defaultModel",
+    ]);
+    const routeModel = activeProviderRoute.modelId?.trim();
+    const modelLabel = routeModel
+      || diagnosticModel
+      || (activeRuntimeAvailability === "checking" || activeRuntimeAvailability === "reconnecting"
+        ? "Detecting..."
+        : "Unknown");
+    const modelDisplay = activeRuntimeDisplay.footerModelDisplay?.trim()
+      || `${providerLabel} / ${modelLabel}`;
+    const diagnosticContext = readDiagnosticString(diagnostics, ["contextDisplay", "contextLength"]);
+    const contextDisplay = activeRuntimeDisplay.contextDisplay?.trim()
+      || diagnosticContext
+      || "Unknown";
+    const nextState = {
+      selectedProvider: activeProviderRoute.providerId,
+      selectedModel: modelLabel,
+      modelDisplay,
+      contextDisplay,
+      availability: activeRuntimeAvailability,
+    };
+    traceModelStateDebug("runtime_model_display_derived", nextState);
+    return nextState;
+  // registryNonce intentionally re-reads providerDiagnosticsRef.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeProviderRoute.modelId,
+    activeProviderRoute.providerId,
+    activeRuntimeAvailability,
+    activeRuntimeDisplay.contextDisplay,
+    activeRuntimeDisplay.footerModelDisplay,
+    activeRouteProvider?.displayName,
+    registryNonce,
+  ]);
 
   const hasUserPrompt = useMemo(
     () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
@@ -867,63 +959,6 @@ export function App({ launchArgs }: AppProps) {
     prevBusyRef.current = busy;
   }, [busy, screen, focusManager]);
 
-  const forceRefreshCurrentTerminalTitle = useCallback((debugEventName: string, busyState = busyRef.current) => {
-    refreshTerminalTitle({
-      terminalTitleMode,
-      workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
-      force: true,
-      debugEventName,
-      busyState,
-    });
-  }, [terminalTitleMode, workspaceRoot]);
-
-  const writeCurrentTerminalTitleBeforeStateChange = useCallback((reason: string) => {
-    setIntendedTerminalTitle(deriveTerminalTitle(workspaceRoot, terminalTitleMode), {
-      force: true,
-      reason,
-    });
-  }, [terminalTitleMode, workspaceRoot]);
-
-  // Re-assert terminal title whenever the app transitions between busy states,
-  // starts/stops streaming, or executes tools to recover from external overwrites.
-  useEffect(() => {
-    if (!busy) {
-      refreshTerminalTitle({
-        terminalTitleMode,
-        workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
-        force: true,
-        debugEventName: "busy-end",
-        busyState: false,
-      });
-      return;
-    }
-
-    refreshTerminalTitle({
-      terminalTitleMode,
-      workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
-      force: true,
-      debugEventName: "busy-start",
-      busyState: true,
-    });
-
-    const timer = setInterval(() => {
-      refreshTerminalTitle({
-        terminalTitleMode,
-        workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
-        force: true,
-        debugEventName: "busy-guard",
-        busyState: true,
-      });
-    }, 250);
-
-    return () => {
-      clearInterval(timer);
-    };
-  }, [uiState.kind, busy, terminalTitleMode, workspaceRoot]);
-
-  useEffect(() => {
-    setIntendedTerminalTitle(terminalTitleLabel, { force: true, reason: "terminal-title-label-change" });
-  }, [terminalTitleLabel]);
   const modelCapabilitiesBusyRef = useRef(modelCapabilitiesBusy);
   modelCapabilitiesBusyRef.current = modelCapabilitiesBusy;
   const composerRows = useMemo(() => {
@@ -1402,6 +1437,7 @@ export function App({ launchArgs }: AppProps) {
   useEffect(() => {
     void (async () => {
       try {
+        markProviderAvailability("local", "checking", "startup-probe");
         const result = await checkLocalProvider({ override: providerWorkspaceConfig.providers?.local });
         if (result.diagnostics) {
           providerDiagnosticsRef.current["local"] = result.diagnostics as Record<string, string | number | boolean | null>;
@@ -1678,11 +1714,6 @@ export function App({ launchArgs }: AppProps) {
     }
     setScreen("main");
     appendSystemEvent("Reasoning updated", `Reasoning level is now ${formatReasoningLabel(nextReasoningLevel)}.`);
-    refreshTerminalTitle({
-      terminalTitleMode,
-      workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
-      force: true,
-    });
   }, [
     activeProviderRoute.backendKind,
     activeProviderRoute.modelId,
@@ -1697,9 +1728,7 @@ export function App({ launchArgs }: AppProps) {
     persistActiveRoute,
     persistProviderDefaultModelAndReasoning,
     providerWorkspaceConfig.activeRoute,
-    terminalTitleMode,
     updateRuntimeConfig,
-    workspaceRoot,
   ]);
 
   const setPlanModeWithNotice = useCallback((nextEnabled: boolean) => {
@@ -1777,11 +1806,6 @@ export function App({ launchArgs }: AppProps) {
         "Model updated",
         `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(normalizedReasoning)}.`,
       );
-      refreshTerminalTitle({
-        terminalTitleMode,
-        workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
-        force: true,
-      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       traceInputDebug("model_selection_app_failure", getInputDebugSnapshot({
@@ -1838,11 +1862,11 @@ export function App({ launchArgs }: AppProps) {
 
     try {
       const normalizedReasoning = normalizeReasoningForModelCapabilities(nextModel, nextReasoning, routeCapabilities);
-      const releaseTitleGuard = acquireTerminalTitleGuard(500, () => {
-        forceRefreshCurrentTerminalTitle("provider_validation_active", true);
-      });
       let validation;
       try {
+        if (providerId === "local") {
+          markProviderAvailability("local", "checking", "provider-validation");
+        }
         validation = await validateProviderRouteActivation({
           route: {
             providerId,
@@ -1861,8 +1885,7 @@ export function App({ launchArgs }: AppProps) {
         }
         setRegistryNonce((n) => n + 1);
       } finally {
-        releaseTitleGuard();
-        forceRefreshCurrentTerminalTitle("after_provider_validation", false);
+        // Runtime status is rendered from provider diagnostics; no title guard is active here.
       }
       if (validation.status !== "ready") {
         traceInputDebug("model_selection_app_failure", getInputDebugSnapshot({
@@ -1909,11 +1932,6 @@ export function App({ launchArgs }: AppProps) {
       }));
 
       // Route changes are reflected reactively in the BottomComposer metadata row.
-      refreshTerminalTitle({
-        terminalTitleMode,
-        workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
-        force: true,
-      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       traceInputDebug("model_selection_app_failure", getInputDebugSnapshot({
@@ -1923,12 +1941,11 @@ export function App({ launchArgs }: AppProps) {
         error: message,
       }));
       appendErrorEvent("Model selection failed", message);
-      forceRefreshCurrentTerminalTitle("model_selection_failed", false);
     } finally {
       modelSelectionInFlightRef.current = false;
       returnToChatMode("selection");
     }
-  }, [activeProviderRoute.modelId, activeProviderRoute.providerId, activeRouteProvider, appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, modelCapabilities, persistActiveRoute, providerWorkspaceConfig.providers, returnToChatMode, runtimeConfig.geminiCommandPath, updateRuntimeConfig, workspaceRoot]);
+  }, [activeProviderRoute.modelId, activeProviderRoute.providerId, activeRouteProvider, appendErrorEvent, appendSystemEvent, busy, getInputDebugSnapshot, markProviderAvailability, modelCapabilities, persistActiveRoute, providerWorkspaceConfig.providers, returnToChatMode, runtimeConfig.geminiCommandPath, updateRuntimeConfig, workspaceRoot]);
 
   const setAuthPreferenceWithNotice = useCallback((nextPreference: AuthPreference) => {
     setAuthPreference(nextPreference);
@@ -1957,11 +1974,6 @@ export function App({ launchArgs }: AppProps) {
     }
     if (nextSettings.terminalTitleMode !== terminalTitleMode) {
       setTerminalTitleMode(nextSettings.terminalTitleMode);
-      refreshTerminalTitle({
-        terminalTitleMode: nextSettings.terminalTitleMode,
-        workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
-        force: true,
-      });
     }
     const nextShowBusyLoader = parseBusyLoaderSettingValue(nextSettings.showBusyLoader);
     if (nextShowBusyLoader !== showBusyLoader) {
@@ -2126,6 +2138,7 @@ export function App({ launchArgs }: AppProps) {
     }
 
     setScreen("provider-picker");
+    markProviderAvailability("local", "checking", "provider-picker-open");
     void checkLocalProvider({ override: providerWorkspaceConfig.providers?.local }).then((result) => {
       if (!isMountedRef.current) return;
       if (result.diagnostics) {
@@ -2138,7 +2151,7 @@ export function App({ launchArgs }: AppProps) {
       }
       setRegistryNonce((n) => n + 1);
     }).catch(() => undefined);
-  }, [appendSystemEvent, busy, providerWorkspaceConfig.providers]);
+  }, [appendSystemEvent, busy, markProviderAvailability, providerWorkspaceConfig.providers]);
 
   const setWorkspaceDefaultProviderWithNotice = useCallback((providerId: ProviderId) => {
     const provider = findProvider(providerRegistry, providerId);
@@ -2197,6 +2210,7 @@ export function App({ launchArgs }: AppProps) {
 
       if (providerId === "local") {
         appendSystemEvent("Model discovery", "Refreshing LM Studio metadata...");
+        markProviderAvailability("local", "checking", "use-in-codexa");
         void checkLocalProvider({ override: providerWorkspaceConfig.providers?.local }).then((validation) => {
           if (!isMountedRef.current) return;
           if (validation.diagnostics) {
@@ -2306,6 +2320,9 @@ export function App({ launchArgs }: AppProps) {
           appendSystemEvent("Model discovery", providerId === "anthropic"
             ? "Refreshing Claude capabilities..."
             : `Refreshing models for ${provider.displayName}...`);
+          if (providerId === "local") {
+            markProviderAvailability("local", "checking", "refresh-models");
+          }
           void runtime.refreshModels({
             cwd: workspaceRoot,
             localConfig: providerId === "local" ? providerWorkspaceConfig.providers?.local : undefined,
@@ -2413,7 +2430,6 @@ export function App({ launchArgs }: AppProps) {
       },
       afterLaunch: () => {
         terminalControl.setMouseReporting(effectiveMouseCapture, "src/app.tsx:providerLaunch.restoreMouse");
-        forceRefreshCurrentTerminalTitle("provider_launch_return", false);
       },
     }).then((result) => {
       if (!isMountedRef.current) return;
@@ -2427,10 +2443,10 @@ export function App({ launchArgs }: AppProps) {
     activeProviderRoute,
     appendErrorEvent,
     appendSystemEvent,
-    forceRefreshCurrentTerminalTitle,
     effectiveMouseCapture,
     providerRegistry,
     providerWorkspaceConfig.providers,
+    markProviderAvailability,
     modelCapabilities,
     reasoningLevel,
     refreshModelCapabilities,
@@ -2950,7 +2966,6 @@ export function App({ launchArgs }: AppProps) {
       clearPending: clearBoundaryArmed,
       liveInkInstanceResolved: Boolean(inkInstance),
     });
-    writeCurrentTerminalTitleBeforeStateChange("before-clear");
     cancelActiveRun(false);
     activeTurnIdRef.current = null;
     activeRunLifecycleRef.current = null;
@@ -2973,12 +2988,7 @@ export function App({ launchArgs }: AppProps) {
         liveInkInstanceResolved: Boolean(inkInstance),
       });
     }
-    refreshTerminalTitle({
-      terminalTitleMode,
-      workspaceName: deriveTerminalTitle(workspaceRoot, "dir"),
-      force: true,
-    });
-  }, [cancelActiveRun, clearFrameBoundaryController, dispatchSession, inkInstance, resetComposer, sessionState.clearEpoch, stdout.columns, terminalControl, terminalTitleMode, workspaceRoot, writeCurrentTerminalTitleBeforeStateChange]);
+  }, [cancelActiveRun, clearFrameBoundaryController, dispatchSession, inkInstance, resetComposer, sessionState.clearEpoch, stdout.columns, terminalControl]);
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();
@@ -2990,7 +3000,6 @@ export function App({ launchArgs }: AppProps) {
 
     const shellId = createEventId();
     const startTime = Date.now();
-    writeCurrentTerminalTitleBeforeStateChange("before-shell-start");
 
     const initialEvent: ShellEvent = {
       id: shellId,
@@ -3053,9 +3062,6 @@ export function App({ launchArgs }: AppProps) {
       safeCommand,
       { cwd: workspaceRoot },
       {
-        onProcessLifecycle: (event) => {
-          reassertIntendedTerminalTitle({ reason: `shell-process-${event}` });
-        },
         onStdout: (text) => {
           const lines = sanitizeTerminalLines(text.split(/\r?\n/));
           if (lines.length > 0) {
@@ -3099,9 +3105,8 @@ export function App({ launchArgs }: AppProps) {
       };
 
       dispatchSession({ type: "FINALIZE_SHELL", shellId, finalEvent });
-      forceRefreshCurrentTerminalTitle("shell_output_complete", false);
     });
-  }, [allowedWritableRoots, appendErrorEvent, dispatchSession, focusManager, forceRefreshCurrentTerminalTitle, workspaceRoot, writeCurrentTerminalTitleBeforeStateChange]);
+  }, [allowedWritableRoots, appendErrorEvent, dispatchSession, focusManager, workspaceRoot]);
 
   const handleWorkspaceRelaunch = useCallback((targetPath: string) => {
     const gate = guardWorkspaceRelaunch(busy);
@@ -3234,7 +3239,6 @@ export function App({ launchArgs }: AppProps) {
     setConversationChars((count) => count + safeProviderPrompt.length);
 
     const runId = createEventId();
-    writeCurrentTerminalTitleBeforeStateChange("before-prompt-run-start");
     perf.startSession(String(runId));
     perf.mark("dispatch_start");
     perf.setMeta("fast_cleanup", fastCleanupRun);
@@ -3361,9 +3365,6 @@ export function App({ launchArgs }: AppProps) {
           safeProviderPrompt,
           { runtime: runtimeForTurn, workspaceRoot, projectInstructions },
           {
-        onProcessLifecycle: (event) => {
-          reassertIntendedTerminalTitle({ reason: `codex-process-${event}` });
-        },
         onAssistantDelta: (chunk) => {
           const geminiBoundary = activeProviderRoute.providerId === "google";
           appDiagLog(`onAssistantDelta: provider=${activeProviderRoute.providerId} chunk.length=${chunk?.length ?? 0} isEmpty=${!chunk}`);
@@ -3426,7 +3427,6 @@ export function App({ launchArgs }: AppProps) {
           if (activity.status === "running") {
             return;
           }
-          forceRefreshCurrentTerminalTitle("tool_activity_complete", true);
           if (fastCleanupRun && !blockedCleanupFailureSurfaced) {
             const blockedCleanupFailure = getBlockedCleanupFailure(activity);
             if (blockedCleanupFailure) {
@@ -3486,7 +3486,6 @@ export function App({ launchArgs }: AppProps) {
                 const formatted = formatHollowResponse(hollow, safeResponse);
                 traceLiveRunDiagnostics("completed");
                 void finalizePromptRun(runId, turnId, "completed", undefined, formatted);
-                forceRefreshCurrentTerminalTitle("prompt_run_completed", false);
                 return;
               }
             }
@@ -3524,7 +3523,6 @@ export function App({ launchArgs }: AppProps) {
             }
             traceLiveRunDiagnostics("completed");
             void finalizePromptRun(runId, turnId, "completed", undefined, finalResponse);
-            forceRefreshCurrentTerminalTitle("prompt_run_completed", false);
           };
 
           if (flushedLiveUpdates) {
@@ -3557,7 +3555,6 @@ export function App({ launchArgs }: AppProps) {
 
             traceLiveRunDiagnostics("failed");
             void finalizePromptRun(runId, turnId, "failed", errorMessage);
-            forceRefreshCurrentTerminalTitle("prompt_run_failed", false);
           };
 
           if (flushedLiveUpdates) {
@@ -3613,8 +3610,6 @@ export function App({ launchArgs }: AppProps) {
     appendSystemEvent,
     authStatus.state,
     finalizePromptRun,
-    forceRefreshCurrentTerminalTitle,
-    writeCurrentTerminalTitleBeforeStateChange,
     mode,
     provider,
     projectInstructions,
@@ -4347,6 +4342,19 @@ export function App({ launchArgs }: AppProps) {
 
   const modelDisplayName = activeRuntimeDisplay.modelDisplay;
   const composerReasoningLevel = "";
+  const runtimeStatusElement = useMemo(() => (
+    <RuntimeStatusBar
+      layout={terminalLayout}
+      modelDisplay={visibleRuntimeModelState.modelDisplay}
+      contextDisplay={visibleRuntimeModelState.contextDisplay}
+      availability={visibleRuntimeModelState.availability}
+    />
+  ), [
+    terminalLayout,
+    visibleRuntimeModelState.availability,
+    visibleRuntimeModelState.contextDisplay,
+    visibleRuntimeModelState.modelDisplay,
+  ]);
   const headerRuntimeSummary = useMemo(
     () => runtimeDisplayToSummary(activeRuntimeDisplay, runtimeSummary),
     [activeRuntimeDisplay, runtimeSummary],
@@ -4771,6 +4779,8 @@ export function App({ launchArgs }: AppProps) {
         }
         mainPanel={null}
         mainPanelMode="viewport"
+        runtimeStatusBar={runtimeStatusElement}
+        runtimeStatusRows={measureRuntimeStatusBarRows()}
         composer={composerElement}
         composerRows={composerRows}
         panelHint={screen !== "main" && screen !== "model-picker" ? (

@@ -12,12 +12,16 @@ import { useEffect, useRef, useState } from "react";
 import { useStdout } from "ink";
 import stringWidth from "string-width";
 import * as renderDebug from "../core/perf/renderDebug.js";
+import { setTerminalResizing, isTerminalResizing } from "../core/terminal/terminalControl.js";
 
 export const BREAKPOINT_FULL    = 110; // ≥ this → full
 export const BREAKPOINT_COMPACT =  60; // ≥ this → compact; below → micro
+export const MAX_CONTENT_WIDTH = 120;
+export const MIN_TERMINAL_COLS = 20;
+export const MIN_TERMINAL_ROWS = 10;
 export const MIN_VIEWPORT_COLS = 20;
 export const MIN_VIEWPORT_ROWS = 10;
-export const RESTORE_SETTLE_MS = 100;
+export const RESTORE_SETTLE_MS = process.env.NODE_ENV === "test" ? 0 : 100;
 export const STARTUP_TINY_MIN_COLS = 40;
 export const STARTUP_TINY_MIN_ROWS = 14;
 export const STARTUP_FULL_MIN_COLS = 100; // matches LOGO_LARGE_MIN_COLS in logoVariants.ts
@@ -41,8 +45,11 @@ export interface Layout {
 export interface TerminalViewport extends Layout {
   rawCols?: number;
   rawRows?: number;
+  contentWidth: number;
+  isCramped: boolean;
   unstable: boolean;
   layoutEpoch: number;
+  isResizing: boolean;
 }
 
 // ─── Dimension helpers ────────────────────────────────────────────────────────
@@ -67,12 +74,27 @@ export function isRenderableViewport(cols: number | undefined, rows: number | un
     && Math.floor(rows) >= MIN_VIEWPORT_ROWS;
 }
 
+/** Returns true if the terminal is below the minimum supported size for a full UI. */
+export function isCrampedTerminal(cols: number | undefined, rows: number | undefined): boolean {
+  const safeCols = normalizeDimension(cols, DEFAULT_COLUMNS);
+  const safeRows = normalizeDimension(rows, DEFAULT_ROWS);
+  return safeCols < MIN_TERMINAL_COLS || safeRows < MIN_TERMINAL_ROWS;
+}
+
 /**
  * Leave a 1-column gutter so box-drawing borders never land exactly on the
  * terminal edge, which can trigger a horizontal scrollbar in some Windows hosts.
  */
 export function getShellWidth(cols: number | undefined): number {
   return Math.max(20, (cols ?? 120) - 1);
+}
+
+/**
+ * Returns the width of the main content area, capped at MAX_CONTENT_WIDTH.
+ * This is used to center the UI in large terminals.
+ */
+export function getContentWidth(cols: number | undefined): number {
+  return Math.min(getShellWidth(cols), MAX_CONTENT_WIDTH);
 }
 
 export function getUsableShellWidth(cols: number | undefined, reservedColumns = 0): number {
@@ -156,14 +178,26 @@ export function createLayoutSnapshot(
     rows: DEFAULT_ROWS,
     mode: computeMode(DEFAULT_COLUMNS),
   },
-): Layout {
+): TerminalViewport {
   const nextCols = normalizeDimension(cols, fallback.cols);
   const nextRows = normalizeDimension(rows, fallback.rows);
 
-  return {
+  const stableLayout = {
     cols: nextCols,
     rows: nextRows,
     mode: computeMode(nextCols),
+  };
+
+  const isCramped = isCrampedTerminal(nextCols, nextRows);
+  const contentWidth = getContentWidth(nextCols);
+
+  return {
+    ...stableLayout,
+    contentWidth,
+    isCramped,
+    unstable: false,
+    layoutEpoch: 0,
+    isResizing: false,
   };
 }
 
@@ -175,6 +209,7 @@ export function createTerminalViewport(
   cols: number | undefined,
   rows: number | undefined,
   fallback?: TerminalViewport,
+  isResizing = false,
 ): TerminalViewport {
   const fallbackLayout = fallback
     ? { cols: fallback.cols, rows: fallback.rows, mode: fallback.mode }
@@ -184,12 +219,18 @@ export function createTerminalViewport(
     ? fallbackLayout
     : createLayoutSnapshot(cols, rows, fallbackLayout);
 
+  const isCramped = isCrampedTerminal(cols, rows);
+  const contentWidth = getContentWidth(stableLayout.cols);
+
   return {
     ...stableLayout,
     rawCols: cols,
     rawRows: rows,
+    contentWidth,
+    isCramped,
     unstable,
     layoutEpoch: fallback?.layoutEpoch ?? 0,
+    isResizing,
   };
 }
 
@@ -197,8 +238,21 @@ export function advanceTerminalViewport(
   current: TerminalViewport,
   cols: number | undefined,
   rows: number | undefined,
+  isResizing = false,
 ): TerminalViewport {
-  const next = createTerminalViewport(cols, rows, current);
+  const next = createTerminalViewport(cols, rows, current, isResizing);
+  
+  if (process.env.CODEXA_LAYOUT_DEBUG === "1") {
+    renderDebug.traceEvent("layout", "advanceViewport", {
+      cols: next.cols,
+      rows: next.rows,
+      contentWidth: next.contentWidth,
+      isCramped: next.isCramped,
+      isResizing: next.isResizing,
+      mode: next.mode,
+    });
+  }
+
   if (!next.unstable && current.unstable) {
     return {
       ...next,
@@ -221,9 +275,9 @@ export function useTerminalViewport(): TerminalViewport {
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const commit = () => {
+    const commit = (isResizing = false) => {
       setViewport((current) => {
-        const nextViewport = advanceTerminalViewport(current, stdout.columns, stdout.rows);
+        const nextViewport = advanceTerminalViewport(current, stdout.columns, stdout.rows, isResizing);
         if (
           current.cols === nextViewport.cols &&
           current.rows === nextViewport.rows &&
@@ -231,7 +285,8 @@ export function useTerminalViewport(): TerminalViewport {
           current.unstable === nextViewport.unstable &&
           current.layoutEpoch === nextViewport.layoutEpoch &&
           current.rawCols === nextViewport.rawCols &&
-          current.rawRows === nextViewport.rawRows
+          current.rawRows === nextViewport.rawRows &&
+          current.isResizing === nextViewport.isResizing
         ) {
           renderDebug.traceFlickerEvent("measurementUpdate", {
             result: "skipped",
@@ -239,6 +294,7 @@ export function useTerminalViewport(): TerminalViewport {
             rows: nextViewport.rows,
             mode: nextViewport.mode,
             unstable: nextViewport.unstable,
+            isResizing: nextViewport.isResizing,
           });
           return current;
         }
@@ -249,6 +305,7 @@ export function useTerminalViewport(): TerminalViewport {
           rows: nextViewport.rows,
           mode: nextViewport.mode,
           unstable: nextViewport.unstable,
+          isResizing: nextViewport.isResizing,
         });
         return nextViewport;
       });
@@ -264,13 +321,22 @@ export function useTerminalViewport(): TerminalViewport {
         rawCols: stdout.columns,
         rawRows: stdout.rows,
       });
-      commit();
+
+      // Leading edge: immediately enter isResizing state but do NOT commit
+      // new dimensions yet. This freezes the layout to prevent tearing while
+      // dragging, and signals animations to pause.
+      setTerminalResizing(true);
+      setViewport((current) => ({ ...current, isResizing: true }));
+
       if (settleTimerRef.current) {
         clearTimeout(settleTimerRef.current);
       }
+
       settleTimerRef.current = setTimeout(() => {
         settleTimerRef.current = null;
-        commit();
+        setTerminalResizing(false);
+        // Trailing edge: commit final dimensions and exit isResizing state.
+        commit(false);
       }, RESTORE_SETTLE_MS);
     };
 

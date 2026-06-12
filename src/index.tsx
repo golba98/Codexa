@@ -8,9 +8,7 @@ import { getTerminalCapability } from "./core/terminal/terminalCapabilities.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
 import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 import {
-  reassertIntendedTerminalTitle,
   setIntendedTerminalTitle,
-  startTerminalTitleStartupGuard,
 } from "./core/terminal/terminalTitle.js";
 import { resolveWorkspaceRoot } from "./core/workspace/workspaceRoot.js";
 import {
@@ -21,6 +19,7 @@ import {
 } from "./core/terminal/terminalControl.js";
 import { performStartupClear } from "./core/terminal/startupClear.js";
 import { resolveInkRenderInstance, type InkRenderInstance } from "./core/terminal/inkRenderReset.js";
+import { wrapStdoutWithFrameLock } from "./core/terminal/frameLock.js";
 
 type RenderHandle = Pick<Instance, "clear" | "cleanup" | "waitUntilExit">;
 const KITTY_KEYBOARD_OPTIONS: RenderOptions["kittyKeyboard"] = {
@@ -94,7 +93,11 @@ export function startApp({
     return { started: true, exitCode: 0 };
   }
 
-  const terminal = createTerminalModeController((chunk) => stdout.write(chunk));
+  // Wrap stdout to implement frame locking, deduplication, and width-safe row
+  // padding via \x1b[K injection across the entire TUI.
+  const wrappedStdout = wrapStdoutWithFrameLock({ stdout, env });
+
+  const terminal = createTerminalModeController((chunk) => wrappedStdout.write(chunk));
   const writeStdout = (chunk: string, source: string): boolean => terminal.write(chunk, source);
 
   const writeStderr = (chunk: string, source: string): boolean => {
@@ -134,18 +137,6 @@ export function startApp({
     return { started: false, exitCode: 1 };
   }
   const launchArgs: LaunchArgs = parsedLaunchArgs.value;
-  setIntendedTerminalTitle(env.CODEXA_INITIAL_TERMINAL_TITLE ?? APP_NAME, {
-    force: true,
-    reason: "index-safe-fallback-title",
-    write: (chunk) => writeStdout(chunk, "src/index.tsx:title.fallback"),
-  });
-  const stopStartupTitleGuard = startTerminalTitleStartupGuard({
-    write: (chunk) => writeStdout(chunk, "src/index.tsx:title.startupGuard"),
-    reason: "index-startup-guard",
-    intervalMs: 150,
-    durationMs: 3500,
-  });
-
   // Clear the screen (viewport + scrollback) and move cursor home before Ink
   // renders the first frame.  This removes any previous terminal content so
   // the app opens into a clean screen.  We stay in the normal screen buffer
@@ -167,11 +158,8 @@ export function startApp({
     reason: "startup-title",
     write: (chunk) => writeStdout(chunk, "src/index.tsx:startup.title"),
   });
-  reassertIntendedTerminalTitle({
-    write: (chunk) => writeStdout(chunk, "src/index.tsx:startup.titleReady"),
-    reason: "startup-title-ready",
-  });
   terminal.setBracketedPaste(true, "src/index.tsx:startup.bracketedPaste");
+  terminal.setAlternateScreen(true, "src/index.tsx:startup.alternateScreen");
 
   let cleanupDone = false;
   let repaintArmed = false;
@@ -211,12 +199,12 @@ export function startApp({
   const cleanup = () => {
     if (cleanupDone) return;
     cleanupDone = true;
-    stopStartupTitleGuard();
     stdout.off("resize", onResize);
     renderHandle?.cleanup();
     // Restore terminal state: disable mouse reporting and bracketed paste.
     terminal.setMouseReporting(false, "src/index.tsx:cleanup.mouse");
     terminal.setBracketedPaste(false, "src/index.tsx:cleanup.bracketedPaste");
+    terminal.setAlternateScreen(false, "src/index.tsx:cleanup.alternateScreen");
     terminal.resetModes();
     activeRoot = null;
   };
@@ -248,11 +236,12 @@ export function startApp({
 
   renderHandle = renderApp(<App launchArgs={launchArgs} />, {
     kittyKeyboard: KITTY_KEYBOARD_OPTIONS,
+    stdout: wrappedStdout as any,
   });
 
   // Resolve the real Ink class instance to get access to lastOutput,
   // onRender, calculateLayout, etc.  Gracefully degrades to null in tests.
-  inkInstance = resolveInkInstanceForStdout(stdout);
+  inkInstance = resolveInkInstanceForStdout(wrappedStdout);
 
   // Remove Ink's own resize handler so the app is the sole resize handler.
   // This eliminates the race where Ink's resized() fires alongside our

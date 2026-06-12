@@ -1,6 +1,7 @@
 import { APP_NAME, type TerminalTitleMode, formatTerminalTitlePath } from "../../config/settings.js";
 import { appendFileSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
+import * as renderDebug from "../perf/renderDebug.js";
 
 export const DEFAULT_TERMINAL_TITLE = APP_NAME;
 
@@ -50,13 +51,14 @@ function findIncompleteOscTitleStart(text: string): number {
 }
 
 const TERMINAL_TITLE_DEBUG_LOG_PATH = process.env["CODEXA_TERMINAL_TITLE_DEBUG_FILE"]?.trim()
-  || join(process.cwd(), ".codexa-debug", "terminal-title-debug.log");
+  || process.env["CODEXA_RENDER_DEBUG_FILE"]?.trim()
+  || join(process.cwd(), ".codexa", "debug", "render-status.log");
 
 let terminalTitleLifecycleState = "unknown";
 
 function debugLog(msg: string): void {
   if (DEBUG_TERMINAL_TITLE) {
-    process.stderr.write(`[codexa:terminal-title] ${msg}\n`);
+    writeTerminalTitleDebugRecord({ event: "debug", message: msg });
   }
 }
 
@@ -145,6 +147,7 @@ export function writeCodexaTerminalTitle(title: string, options?: TerminalTitleO
   lastWrittenTerminalTitle = cleanTitle;
 
   const sequence = buildTerminalTitleSequence(cleanTitle);
+  renderDebug.traceTerminalWrite("stdout", `terminalTitle:${options?.reason ?? "unknown"}`, sequence);
   writeTerminalTitleDebugRecord({
     event: "codexaTitleWrite",
     title: cleanTitle,
@@ -353,75 +356,6 @@ export function writeGuardedTerminalOutput(
   return write(safeText) !== false;
 }
 
-// ─── Startup guard ────────────────────────────────────────────────────────────
-
-/**
- * Schedules a sequence of title assertions to outlast Windows Terminal's
- * shell integration, which overwrites the process title at unpredictable
- * points during startup (shell prompt init, profile scripts, etc.).
- * The retries at 50/250/500/1000ms are intentional: no single delay is
- * reliable across all terminal configurations, so we assert multiple times.
- */
-export function beginColdStartSequence(title: string, options?: { write?: (chunk: string) => void }) {
-  setIntendedTerminalTitle(title, { force: true, write: options?.write, reason: "cold-start-immediate" });
-
-  const timers: ReturnType<typeof setTimeout>[] = [];
-  let cancelled = false;
-
-  const scheduleRetry = (delayMs: number) => {
-    const id = setTimeout(() => {
-      if (!cancelled) {
-        debugLog(`cold-start retry t=${delayMs}ms fired`);
-        reassertIntendedTerminalTitle({ write: options?.write, reason: `cold-start-retry-${delayMs}ms` });
-      }
-    }, delayMs);
-    timers.push(id);
-  };
-
-  scheduleRetry(50);
-  scheduleRetry(250);
-  scheduleRetry(500);
-  scheduleRetry(1000);
-
-  return () => {
-    cancelled = true;
-    timers.forEach(clearTimeout);
-    debugLog("cold-start sequence cancelled");
-  };
-}
-
-export function startTerminalTitleStartupGuard(options?: {
-  write?: (chunk: string) => void;
-  intervalMs?: number;
-  durationMs?: number;
-  reason?: string;
-}): () => void {
-  const intervalMs = options?.intervalMs ?? 150;
-  const durationMs = options?.durationMs ?? 3500;
-  const reason = options?.reason ?? "startup-guard";
-  let stopped = false;
-  const startedAt = Date.now();
-
-  reassertIntendedTerminalTitle({ write: options?.write, reason: `${reason}-start` });
-  const interval = setInterval(() => {
-    if (stopped) return;
-    if (Date.now() - startedAt >= durationMs) {
-      stopped = true;
-      clearInterval(interval);
-      reassertIntendedTerminalTitle({ write: options?.write, reason: `${reason}-end` });
-      return;
-    }
-    reassertIntendedTerminalTitle({ write: options?.write, reason });
-  }, intervalMs);
-  interval.unref?.();
-
-  return () => {
-    if (stopped) return;
-    stopped = true;
-    clearInterval(interval);
-  };
-}
-
 export function sanitizeTerminalTitle(title: string): string {
   return title
     .replace(/[\u0000-\u001f\u007f]/g, " ")
@@ -461,23 +395,3 @@ export function reassertTerminalTitle(
   write(buildTerminalTitleSequence(title));
 }
 
-/**
- * Acquire a run-scoped title guard that immediately asserts the title,
- * reasserts it periodically while work is active, and emits one final
- * assertion when released.
- */
-export function acquireTerminalTitleGuard(
-  intervalMs = 250,
-  reassert: () => void = () => reassertTerminalTitle(),
-): () => void {
-  let released = false;
-  reassert();
-  const timer = setInterval(reassert, intervalMs);
-  timer.unref?.();
-  return () => {
-    if (released) return;
-    released = true;
-    clearInterval(timer);
-    reassert();
-  };
-}

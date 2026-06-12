@@ -13,9 +13,6 @@ const forwardArgs = process.argv.slice(2);
 const workspaceRoot = process.cwd();
 const launcherStartTimeMs = Number(process.env.CODEXA_EXEC_TIMING_EPOCH_MS) || Date.now();
 let launcherPreviousElapsedMs = 0;
-const titleSequencePattern = /\x1b\](?:0|2);[^\x07]*(?:\x07|\x1b\\)/g;
-const titleSequenceDetectPattern = /\x1b\]([02]);([\s\S]*?)(?:\x07|\x1b\\)/g;
-const incompleteTitleSequencePattern = /\x1b\](?:0|2);[^\x07]*$/;
 let intendedTerminalTitle = "Codexa";
 
 function writeRenderDebugRecord(kind, fields) {
@@ -24,10 +21,10 @@ function writeRenderDebugRecord(kind, fields) {
   }
 
   try {
-    const debugDir = join(workspaceRoot, ".codexa-debug");
+    const debugDir = join(workspaceRoot, ".codexa", "debug");
     mkdirSync(debugDir, { recursive: true });
     appendFileSync(
-      join(debugDir, "render-debug.log"),
+      process.env.CODEXA_RENDER_DEBUG_FILE?.trim() || join(debugDir, "render-status.log"),
       JSON.stringify({
         ts: Date.now(),
         pid: process.pid,
@@ -59,10 +56,12 @@ function writeTerminalTitleDebugRecord(fields) {
   }
 
   try {
-    const debugDir = join(workspaceRoot, ".codexa-debug");
+    const debugDir = join(workspaceRoot, ".codexa", "debug");
     mkdirSync(debugDir, { recursive: true });
     appendFileSync(
-      process.env.CODEXA_TERMINAL_TITLE_DEBUG_FILE?.trim() || join(debugDir, "terminal-title-debug.log"),
+      process.env.CODEXA_TERMINAL_TITLE_DEBUG_FILE?.trim()
+        || process.env.CODEXA_RENDER_DEBUG_FILE?.trim()
+        || join(debugDir, "render-status.log"),
       JSON.stringify({
         ts: Date.now(),
         pid: process.pid,
@@ -74,25 +73,6 @@ function writeTerminalTitleDebugRecord(fields) {
   } catch {
     // Debug logging must never disturb launcher startup.
   }
-}
-
-function traceTitleSequences(text, fields) {
-  if (!text) return false;
-  let found = false;
-  titleSequenceDetectPattern.lastIndex = 0;
-  for (let match = titleSequenceDetectPattern.exec(text); match; match = titleSequenceDetectPattern.exec(text)) {
-    found = true;
-    const title = match[2] || "";
-    writeTerminalTitleDebugRecord({
-      event: "terminalTitleSequence",
-      osc: match[1] === "2" ? "OSC 2" : "OSC 0",
-      title,
-      containsWindowsSystem: title.toLowerCase().includes("c:\\windows\\system"),
-      bytes: Buffer.byteLength(match[0] || ""),
-      ...fields,
-    });
-  }
-  return found;
 }
 
 function sanitizeTerminalTitle(title) {
@@ -110,62 +90,21 @@ function normalizeTerminalTitle(title) {
   return cleanTitle;
 }
 
-function buildTitleSequence(title) {
-  const safeTitle = normalizeTerminalTitle(title);
-  return `\x1b]0;${safeTitle}\x07\x1b]2;${safeTitle}\x07`;
-}
-
-function writeIntendedTitle(reason, force = true) {
-  const sequence = buildTitleSequence(intendedTerminalTitle);
-  writeRenderDebugRecord("stdout", {
-    event: "directWrite",
-    source: `bin/codexa.js:${reason}`,
-    bytes: Buffer.byteLength(sequence),
-    containsViewportClear: false,
-    containsScrollbackClear: false,
-    containsCursorHome: false,
-    containsTerminalReset: false,
-    containsTitleSequence: true,
-  });
-  process.stdout.write(sequence);
+function recordIntendedTitle(reason, force = true) {
   writeTerminalTitleDebugRecord({
-    event: "codexaTitleWrite",
+    event: "codexaTitleSkipped",
     source: `bin/codexa.js:${reason}`,
     title: intendedTerminalTitle,
     reason,
     force,
-    bytes: Buffer.byteLength(sequence),
   });
-}
-
-function startLauncherTitleGuard() {
-  const startedAt = Date.now();
-  const interval = setInterval(() => {
-    if (Date.now() - startedAt >= 2500) {
-      clearInterval(interval);
-      writeIntendedTitle("launcher-title-guard-end");
-      return;
-    }
-    writeIntendedTitle("launcher-title-guard");
-  }, 150);
-  interval.unref?.();
-  return () => clearInterval(interval);
-}
-
-function createTitleStripper(fields) {
-  let carryover = "";
-  return (chunk) => {
-    const input = carryover + Buffer.from(chunk).toString("utf8");
-    carryover = "";
-    const incomplete = incompleteTitleSequencePattern.exec(input);
-    const processable = incomplete?.index != null ? input.slice(0, incomplete.index) : input;
-    if (incomplete?.index != null) {
-      carryover = input.slice(incomplete.index);
-    }
-    return traceTitleSequences(processable, fields)
-      ? processable.replace(titleSequencePattern, "")
-      : processable;
-  };
+  writeRenderDebugRecord("title", {
+    event: "launcherTitleSkipped",
+    source: `bin/codexa.js:${reason}`,
+    title: intendedTerminalTitle,
+    reason,
+    force,
+  });
 }
 
 function hasFlag(args, longFlag, shortFlag) {
@@ -251,11 +190,9 @@ function markExecTiming(phase, fields = {}) {
 
 markExecTiming("launcher_start", { pid: process.pid });
 
-let stopLauncherTitleGuard = null;
 if (!isHeadlessMode && parentHasTTY) {
   intendedTerminalTitle = normalizeTerminalTitle(process.env.CODEXA_INITIAL_TERMINAL_TITLE || "Codexa");
-  writeIntendedTitle("launcher-startup-title");
-  stopLauncherTitleGuard = startLauncherTitleGuard();
+  recordIntendedTitle("launcher-startup-title-disabled");
 }
 
 if (!isHeadlessMode && hasFlag(forwardArgs, "--help", "-h")) {
@@ -336,7 +273,7 @@ debugLaunch("resolved launch mode", {
 
 markExecTiming("bun_spawn_start", { executable: bunExecutable });
 if (!isHeadlessMode && parentHasTTY) {
-  writeIntendedTitle("before-bun-spawn");
+  recordIntendedTitle("before-bun-spawn-disabled");
 }
 
 const child = spawn(
@@ -363,9 +300,7 @@ const child = spawn(
 
 child.once("spawn", () => {
   if (!isHeadlessMode && parentHasTTY) {
-    writeIntendedTitle("after-bun-spawn");
-    stopLauncherTitleGuard?.();
-    stopLauncherTitleGuard = null;
+    recordIntendedTitle("after-bun-spawn-disabled");
   }
 });
 
@@ -396,32 +331,17 @@ if (!isHeadlessMode && !parentHasTTY) {
 }
 
 if (!isHeadlessMode) {
-  const stripStdoutTitle = createTitleStripper({
-    source: "bin/codexa.js:bun.stdout",
-    stream: "stdout",
-    origin: "child",
-    action: "stripped",
-  });
-  const stripStderrTitle = createTitleStripper({
-    source: "bin/codexa.js:bun.stderr",
-    stream: "stderr",
-    origin: "child",
-    action: "stripped",
-  });
-
   child.stdout?.on("data", (chunk) => {
-    const safeChunk = stripStdoutTitle(chunk);
-    if (safeChunk) process.stdout.write(safeChunk);
+    process.stdout.write(chunk);
   });
   child.stderr?.on("data", (chunk) => {
-    const safeChunk = stripStderrTitle(chunk);
-    if (safeChunk) process.stderr.write(safeChunk);
+    process.stderr.write(chunk);
   });
 }
 
 child.on("error", (error) => {
   if (!isHeadlessMode && parentHasTTY) {
-    writeIntendedTitle("bun-spawn-error");
+    recordIntendedTitle("bun-spawn-error-disabled");
   }
   markExecTiming("bun_spawn_error", { message: error.message });
   console.error(`Failed to launch Bun: ${error.message}`);
@@ -431,9 +351,7 @@ child.on("error", (error) => {
 
 child.on("close", (code, signal) => {
   if (!isHeadlessMode && parentHasTTY) {
-    writeIntendedTitle("bun-close");
-    stopLauncherTitleGuard?.();
-    stopLauncherTitleGuard = null;
+    recordIntendedTitle("bun-close-disabled");
   }
   markExecTiming("launcher_exit", { exit_code: code ?? 0, signal: signal ?? null });
   if (signal) {

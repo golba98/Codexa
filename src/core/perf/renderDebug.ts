@@ -11,7 +11,7 @@ let renderTraceEnabled = false;
 let lifecycleEnabled = false;
 let flickerEnabled = false;
 let plainActionsEnabled = false;
-let logPath = join(process.cwd(), ".codexa-debug", "render-debug.log");
+let logPath = join(process.cwd(), ".codexa", "debug", "render-status.log");
 let sessionId = `${Date.now()}-${process.pid}`;
 const counters = new Map<string, number>();
 
@@ -22,13 +22,14 @@ function configureFromEnv(env: DebugEnv = process.env): void {
   // CODEXA_TERMINAL_TRACE is a focused alias for diagnosing terminal/clear/resize
   // render-state issues; it lights up the same `terminal` trace channel.
   enabled = env["CODEXA_RENDER_DEBUG"] === "1"
+    || env["CODEXA_DEBUG_MODEL_STATE"] === "1"
     || env["CODEXA_DEBUG_RENDER"] === "1"
     || env["CODEXA_TERMINAL_TRACE"] === "1"
     || renderTraceEnabled;
   lifecycleEnabled = env["CODEXA_DEBUG_LIFECYCLE"] === "1";
   flickerEnabled = env["CODEXA_DEBUG_FLICKER"] === "1";
   plainActionsEnabled = env["CODEXA_DEBUG_PLAIN_ACTIONS"] === "1";
-  logPath = env["CODEXA_RENDER_DEBUG_FILE"]?.trim() || join(process.cwd(), ".codexa-debug", "render-debug.log");
+  logPath = env["CODEXA_RENDER_DEBUG_FILE"]?.trim() || join(process.cwd(), ".codexa", "debug", "render-status.log");
   sessionId = `${Date.now()}-${process.pid}`;
   configured = true;
 }

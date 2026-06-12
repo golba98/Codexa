@@ -8,10 +8,15 @@ import * as renderDebug from "../core/perf/renderDebug.js";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
 import { isBusy } from "../session/types.js";
 import {
+  getContentWidth,
   getShellHeight,
   getShellWidth,
+  isCrampedTerminal,
   type Layout,
   type LayoutMode,
+  MIN_TERMINAL_COLS,
+  MIN_TERMINAL_ROWS,
+  type TerminalViewport,
 } from "./layout.js";
 import {
   buildActiveRenderItems,
@@ -32,7 +37,7 @@ const TALL_HEADER_TO_COMPOSER_GAP_ROWS = 1;
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
-type AppShellLayout = Layout & { layoutEpoch?: number };
+type AppShellLayout = TerminalViewport;
 type NativeStaticItem =
   { type: "rows" } & NativeTranscriptRowItem;
 
@@ -49,6 +54,8 @@ export interface AppShellProps {
   panel: React.ReactNode;
   mainPanel?: React.ReactNode;
   mainPanelMode?: "viewport" | "full-output";
+  runtimeStatusBar?: React.ReactNode;
+  runtimeStatusRows?: number;
   composer: React.ReactNode;
   composerRows: number;
   panelHint?: React.ReactNode;
@@ -139,6 +146,30 @@ function NativePauseBar({ unseenRows }: { unseenRows: number }) {
   );
 }
 
+function CrampedView({ layout }: { layout: Layout }) {
+  const theme = useTheme();
+  return (
+    <Box
+      flexDirection="column"
+      width="100%"
+      height={getShellHeight(layout.rows)}
+      alignItems="center"
+      justifyContent="center"
+    >
+      <Box borderStyle="round" borderColor={theme.error} paddingX={2} paddingY={1}>
+        <Text color={theme.error} bold>
+          Terminal too small — resize to at least {MIN_TERMINAL_COLS} x {MIN_TERMINAL_ROWS}
+        </Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>
+          Current: {layout.cols} x {layout.rows}
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 function AppShellInner({
@@ -154,6 +185,8 @@ function AppShellInner({
   panel,
   mainPanel,
   mainPanelMode = "viewport",
+  runtimeStatusBar,
+  runtimeStatusRows = 0,
   composer,
   composerRows,
   panelHint,
@@ -190,6 +223,10 @@ function AppShellInner({
     mode: layout.mode,
   });
 
+  if (layout.isCramped && !mouseCapture) {
+    return <CrampedView layout={layout} />;
+  }
+
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
   const headerRows = measureTopHeaderRows(layout, headerConfig, !!updateAvailable);
@@ -220,47 +257,50 @@ function AppShellInner({
   const { stdin } = useStdin();
 
   useEffect(() => {
-    if (mouseCapture) return;
-    if (!isBusy(uiState) && nativePausedRef.current) {
-      setNativePaused(false);
-      nativePausedRef.current = false;
-    }
-  }, [mouseCapture, uiState]);
+    nativePausedRef.current = nativePaused;
+  }, [nativePaused]);
 
   useEffect(() => {
-    if (mouseCapture || !stdin) return;
-
-    function handleScrollKeys(chunk: Buffer | string) {
-      const raw = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    const handleRawInput = (chunk: Buffer | string) => {
+      if (!showTimeline || !isBusy(uiState)) return;
+      const raw = typeof chunk === "string" ? chunk : chunk.toString();
       const actions = parseTimelineNavigationInput(raw);
       if (actions.length === 0) return;
 
-      const wantsUp = actions.includes("pageUp") || actions.includes("home");
-      const wantsDown = actions.includes("pageDown") || actions.includes("end");
-
-      if (wantsDown && nativePausedRef.current) {
-        setNativePaused(false);
-        nativePausedRef.current = false;
-      } else if (wantsUp && !nativePausedRef.current && isBusy(uiState)) {
+      if (actions.some((action) => action === "pageUp" || action === "home" || action === "wheelUp")) {
         setNativePaused(true);
-        nativePausedRef.current = true;
+      } else if (actions.some((action) => action === "pageDown" || action === "end" || action === "wheelDown")) {
+        setNativePaused(false);
       }
-    }
+    };
 
-    stdin.on("data", handleScrollKeys);
-    return () => { stdin.off("data", handleScrollKeys); };
-  }, [mouseCapture, stdin, uiState]);
+    if (stdin.isTTY) {
+      stdin.on("data", handleRawInput);
+      return () => {
+        stdin.off("data", handleRawInput);
+      };
+    }
+  }, [stdin, uiState, showTimeline]);
+
+  // Auto-unpause when busy state ends.
+  useEffect(() => {
+    if (!isBusy(uiState) && nativePaused) {
+      setNativePaused(false);
+    }
+  }, [uiState, nativePaused]);
+
   // ── End native mode scroll-pause state ────────────────────────────────────
 
   const effectiveShowComposer = showComposer;
   const effectiveComposerRows = effectiveShowComposer ? composerRows : 0;
+  const effectiveRuntimeStatusRows = runtimeStatusBar ? runtimeStatusRows : 0;
   const panelHintRows = showPanelStage && panelHint ? 2 : 0;
   const canUseColdStartGap = effectiveShowComposer && !hasUserPrompt && screen === "main" && !showMainPanel;
 
   // Timeline/panel owns all vertical space between the live header and fixed composer.
   const coldStartAvailableRows = Math.max(
     0,
-    shellHeight - headerRows - headerToContentGapRows - effectiveComposerRows - panelHintRows - 2,
+    shellHeight - headerRows - headerToContentGapRows - effectiveRuntimeStatusRows - effectiveComposerRows - panelHintRows - 2,
   );
   const coldStartComposerGapRows = canUseColdStartGap
     ? calculateColdStartSpacerRows({
@@ -275,6 +315,7 @@ function AppShellInner({
   const calculatedTimelineRowsRaw = shellHeight
     - headerRows
     - headerToContentGapRows
+    - effectiveRuntimeStatusRows
     - effectiveComposerRows
     - panelHintRows
     - fixedComposerLeadGapRows;
@@ -302,16 +343,6 @@ function AppShellInner({
         finalShellWidth: prev.shellWidth,
         finalTimelineRows: prev.timelineRows,
       };
-    }
-
-    if (!isValid) {
-      renderDebug.traceEvent("layout", "measurementFallback", {
-        reason: "invalid-initial-shell-or-timeline-rows",
-        shellHeight,
-        shellWidth,
-        calculatedTimelineRowsRaw,
-        clampedTimelineRows: calculatedTimelineRows,
-      });
     }
 
     return {
@@ -345,10 +376,6 @@ function AppShellInner({
       },
     );
 
-    // If we're not supposed to show the timeline yet (e.g. during early mount
-    // or when in a full-panel mode), we still calculate the static parts
-    // but hide the live rows. This keeps the committed row array stable,
-    // preventing unnecessary re-renders.
     if (!showTimeline) {
       return { ...parts, liveRows: [] };
     }
@@ -356,10 +383,6 @@ function AppShellInner({
     return parts;
   }, [activeEvents, finalShellWidth, mouseCapture, showTimeline, staticEvents, uiState, verboseMode, workspaceRoot]);
 
-  // In native mode the root box is content-sized (no fixed height), so without an
-  // explicit spacer the composer appears immediately after the intro instead of being
-  // anchored near the terminal bottom.  The spacer fills the gap between whatever
-  // live content exists and where the composer should sit.
   const nativeStaticTranscriptRows = useMemo(
     () => nativeTranscriptParts.staticItems.reduce((total, item) => total + item.rows.length, 0),
     [nativeTranscriptParts.staticItems],
@@ -369,30 +392,22 @@ function AppShellInner({
     const rows = calculateNativeSpacerRows({
       shellRows: finalShellHeight,
       introRows: headerRows + headerToContentGapRows,
-      composerRows: effectiveComposerRows,
+      composerRows: effectiveComposerRows + effectiveRuntimeStatusRows,
       staticRows: nativeStaticTranscriptRows,
       liveRows: nativeTranscriptParts.liveRows.length,
     });
-    // Before the user sends their first prompt, keep a small fixed gap so the
-    // composer sits near the logo without a large blank area in between.
-    // This cap persists across model/auth system events so the layout stays
-    // stable after config changes on cold start.
     if (!hasUserPrompt) {
       return calculateColdStartSpacerRows({
         shellRows: finalShellHeight,
         headerRows,
-        composerRows: effectiveComposerRows,
+        composerRows: effectiveComposerRows + effectiveRuntimeStatusRows,
         layoutMode: layout.mode,
         availableRows: rows,
       });
     }
     return rows;
-  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, headerRows, headerToContentGapRows, effectiveComposerRows, layout.mode, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
+  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, headerRows, headerToContentGapRows, effectiveComposerRows, effectiveRuntimeStatusRows, layout.mode, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
 
-  // In native mode (no SGR capture), committed rows still render inside the
-  // body below the live header. Do not use Ink's static output component here
-  // because it permanently prepends static output above live output, which
-  // would place transcript content before the header regardless of JSX order.
   const nativeStaticAllItems = useMemo<NativeStaticItem[]>(
     () => {
       if (mouseCapture) return [];
@@ -400,73 +415,35 @@ function AppShellInner({
     },
     [mouseCapture, clearCount, nativeTranscriptParts.staticItems],
   );
+
   const nativeAllRows = useMemo<TimelineRow[]>(
     () => {
       if (mouseCapture) return [];
 
-      // When the user has paused auto-follow (pressed Page Up while busy),
-      // return the frozen snapshot so Ink's lastOutputHeight stays constant
-      // and the terminal stops auto-scrolling to the cursor on each frame.
+      const allStaticRows = nativeStaticAllItems.flatMap((item) => item.rows);
+      const maxStaticRows = finalShellHeight > 0 ? finalShellHeight * 2 : allStaticRows.length;
+      const trimmedStaticRows = allStaticRows.slice(Math.max(0, allStaticRows.length - maxStaticRows));
+
+      const liveRows = showTimeline ? nativeTranscriptParts.liveRows : [];
+
       if (nativePaused) {
         return frozenNativeRowsRef.current;
       }
 
-      const allStaticRows = nativeStaticAllItems.flatMap((item) => item.rows);
-      // Trim old static rows so lastOutputHeight stays bounded to ~2 terminal heights.
-      // Rows that fall off the top are already in terminal scrollback.
-      const maxStaticRows = finalShellHeight > 0 ? finalShellHeight * 2 : allStaticRows.length;
-      const trimmedStaticRows = allStaticRows.slice(Math.max(0, allStaticRows.length - maxStaticRows));
-
       const rows = [
         ...trimmedStaticRows,
-        ...(showTimeline ? nativeTranscriptParts.liveRows : []),
+        ...liveRows,
       ];
-      frozenLiveRowCountRef.current = showTimeline ? nativeTranscriptParts.liveRows.length : 0;
+      frozenLiveRowCountRef.current = liveRows.length;
       frozenNativeRowsRef.current = rows;
       return rows;
     },
     [mouseCapture, nativePaused, nativeStaticAllItems, nativeTranscriptParts.liveRows, showTimeline, finalShellHeight],
   );
 
-  // When paused, count how many live rows have arrived since the freeze point.
   const nativeUnseenRows = nativePaused
     ? Math.max(0, (showTimeline ? nativeTranscriptParts.liveRows.length : 0) - frozenLiveRowCountRef.current)
     : 0;
-
-  renderDebug.traceEvent("layout", "nativeTranscript", {
-    nativeMode: !mouseCapture,
-    mouseCapture,
-    showTimeline,
-    activeEvents: activeEvents.length,
-    staticEvents: staticEvents.length,
-    staticItems: nativeStaticAllItems.length,
-    liveRows: nativeTranscriptParts.liveRows.length,
-    contentSized: true,
-    finalTimelineRows,
-    composerRows: effectiveComposerRows,
-    headerRows,
-  });
-
-  renderDebug.traceLayoutValidity("AppShell", {
-    cols: layout.cols,
-    rows: layout.rows,
-    shellWidth,
-    shellHeight,
-    timelineRows: finalTimelineRows,
-    calculatedTimelineRowsRaw,
-    composerRows: effectiveComposerRows,
-  });
-  if (!Number.isFinite(calculatedTimelineRowsRaw) || calculatedTimelineRowsRaw <= 0) {
-    renderDebug.traceBlankFrame("AppShell", {
-      reason: "invalid-available-timeline-rows",
-      availableTimelineRows: calculatedTimelineRowsRaw,
-      finalTimelineRows,
-      composerRows: effectiveComposerRows,
-      shellHeight: finalShellHeight,
-      screen,
-      uiStateKind: uiState.kind,
-    });
-  }
 
   useEffect(() => {
     const previous = previousMeasurements.current;
@@ -498,47 +475,90 @@ function AppShellInner({
       shellHeight: finalShellHeight,
       shellWidth: finalShellWidth,
     };
-  }, [calculatedTimelineRowsRaw, effectiveComposerRows, finalShellHeight, finalShellWidth, showComposer, showMainPanelFullOutput, showTimeline, finalTimelineRows]);
+  }, [calculatedTimelineRowsRaw, effectiveComposerRows, effectiveRuntimeStatusRows, finalShellHeight, finalShellWidth, showComposer, showMainPanelFullOutput, showTimeline, finalTimelineRows]);
 
   const clonedComposer = React.isValidElement(composer)
     ? React.cloneElement(composer as React.ReactElement<{ selectionProfile?: TerminalSelectionProfile }>, { selectionProfile })
     : composer;
 
-  if (showMainPanelFullOutput) {
-    return (
-      <Box flexDirection="column" width="100%">
-        <Box flexDirection="column" width={finalShellWidth}>
-          <MemoizedTopHeader
-            authState={authState}
-            workspaceLabel={workspaceLabel}
-            layout={layout}
-            runtimeSummary={runtimeSummary}
-            headerConfig={headerConfig}
-            updateAvailable={updateAvailable}
-          />
+  const contentWidth = layout.contentWidth;
 
-          {headerToContentGapRows > 0 && (
-            <Box height={headerToContentGapRows} />
-          )}
+  const mainContent = (
+    <Box flexDirection="column" width={contentWidth} height="100%">
+      <MemoizedTopHeader
+        authState={authState}
+        workspaceLabel={workspaceLabel}
+        layout={layout}
+        runtimeSummary={runtimeSummary}
+        headerConfig={headerConfig}
+        updateAvailable={updateAvailable}
+      />
 
-          {mainPanel}
+      {headerToContentGapRows > 0 && (
+        <Box height={headerToContentGapRows} />
+      )}
 
-          {showComposer && (
-            <Box flexDirection="column" flexShrink={0}>
-              {composer}
-            </Box>
-          )}
-        </Box>
+      <Box
+        flexDirection="column"
+        height={finalTimelineRows}
+        overflow="hidden"
+        display={showTimeline ? "flex" : "none"}
+      >
+        <Timeline
+          key={`timeline-${clearCount}`}
+          staticEvents={staticEvents}
+          activeEvents={activeEvents}
+          layout={layout}
+          uiState={uiState}
+          viewportRows={finalTimelineRows}
+          verboseMode={verboseMode}
+          authState={authState}
+          workspaceLabel={workspaceLabel}
+          workspaceRoot={workspaceRoot}
+          mouseCapture={mouseCapture}
+          onMouseActivity={onMouseActivity}
+          contentSized
+        />
       </Box>
-    );
-  }
 
-  // Native mode: no fixed shell height — content-sized so Ink's lastOutputHeight stays small.
-  // All visible content remains in one live tree so the header is always the
-  // first physical output region.
-  if (!mouseCapture) {
-    return (
-      <Box flexDirection="column" width={finalShellWidth}>
+      {showMainPanel && (
+        <Box flexDirection="column" height={finalTimelineRows} overflow="hidden" justifyContent="center">
+          {mainPanel}
+        </Box>
+      )}
+
+      {showPanelStage && (
+        <Box flexDirection="column" flexGrow={1} overflow="hidden" paddingY={1}>
+          {panel}
+        </Box>
+      )}
+
+      {fixedComposerLeadGapRows > 0 && (
+        <Box height={fixedComposerLeadGapRows} />
+      )}
+
+      {showPanelStage && panelHint}
+
+      {runtimeStatusBar && (
+        <Box flexDirection="column" flexShrink={0} height={effectiveRuntimeStatusRows}>
+          {runtimeStatusBar}
+        </Box>
+      )}
+
+      {effectiveShowComposer && (
+        <Box flexDirection="column" flexShrink={0}>
+          {nativePaused && (
+            <NativePauseBar unseenRows={nativeUnseenRows} />
+          )}
+          {clonedComposer}
+        </Box>
+      )}
+    </Box>
+  );
+
+  if (showMainPanelFullOutput) {
+    const fullOutputContent = (
+      <Box flexDirection="column" width={contentWidth}>
         <MemoizedTopHeader
           authState={authState}
           workspaceLabel={workspaceLabel}
@@ -552,128 +572,47 @@ function AppShellInner({
           <Box height={headerToContentGapRows} />
         )}
 
-        {nativeAllRows.length > 0 && (
-          <NativeRowsItem rows={nativeAllRows} />
-        )}
+        {mainPanel}
 
-        {nativePaused && isBusy(uiState) && (
-          <NativePauseBar unseenRows={nativeUnseenRows} />
-        )}
-
-        {showMainPanel && (
-          <Box flexDirection="column" paddingY={1} justifyContent="center">
-            {mainPanel}
+        {runtimeStatusBar && (
+          <Box flexDirection="column" flexShrink={0} height={effectiveRuntimeStatusRows}>
+            {runtimeStatusBar}
           </Box>
         )}
 
-        {showPanelStage && (
-          <Box
-            flexDirection="column"
-            overflow="hidden"
-            paddingY={1}
-          >
-            {panel}
-          </Box>
-        )}
-
-        {nativeSpacerRows > 0 && (
-          <Box height={nativeSpacerRows} />
-        )}
-
-        {effectiveShowComposer && (
+        {showComposer && (
           <Box flexDirection="column" flexShrink={0}>
             {composer}
           </Box>
         )}
+      </Box>
+    );
 
-        {showPanelStage && panelHint}
+    if (shellWidth > contentWidth) {
+      return (
+        <Box flexDirection="column" width="100%" alignItems="center">
+          {fullOutputContent}
+        </Box>
+      );
+    }
+    return fullOutputContent;
+  }
+
+  if (shellWidth > contentWidth) {
+    return (
+      <Box flexDirection="column" width="100%" height={finalShellHeight} alignItems="center">
+        {mainContent}
       </Box>
     );
   }
 
   return (
     <Box flexDirection="column" width="100%" height={finalShellHeight}>
-      <Box flexDirection="column" width={finalShellWidth} height="100%">
-        <MemoizedTopHeader
-          authState={authState}
-          workspaceLabel={workspaceLabel}
-          layout={layout}
-          runtimeSummary={runtimeSummary}
-          headerConfig={headerConfig}
-          updateAvailable={updateAvailable}
-        />
-
-        {headerToContentGapRows > 0 && (
-          <Box height={headerToContentGapRows} />
-        )}
-
-        {/* Keep Timeline always mounted so its viewport scroll state survives panel open/close.
-            display="none" removes it from yoga layout (0 height) without unmounting. */}
-        <Box
-          flexDirection="column"
-          height={finalTimelineRows}
-          overflow="hidden"
-          display={showTimeline ? "flex" : "none"}
-        >
-          <Timeline
-            key={`timeline-${clearCount}`}
-            staticEvents={staticEvents}
-            activeEvents={activeEvents}
-            layout={layout}
-            uiState={uiState}
-            viewportRows={finalTimelineRows}
-            verboseMode={verboseMode}
-            authState={authState}
-            workspaceLabel={workspaceLabel}
-            workspaceRoot={workspaceRoot}
-            mouseCapture={mouseCapture}
-            onMouseActivity={onMouseActivity}
-            contentSized
-          />
-        </Box>
-
-        {showMainPanel && (
-          <Box flexDirection="column" height={finalTimelineRows} overflow="hidden" justifyContent="center">
-            {mainPanel}
-          </Box>
-        )}
-
-        {showPanelStage && (
-          <Box flexDirection="column" flexGrow={1} overflow="hidden" paddingY={1}>
-            {panel}
-          </Box>
-        )}
-
-        {fixedComposerLeadGapRows > 0 && (
-          <Box height={fixedComposerLeadGapRows} />
-        )}
-
-        {effectiveShowComposer && (
-          <Box flexDirection="column" flexShrink={0}>
-            {clonedComposer}
-          </Box>
-        )}
-
-        {showPanelStage && panelHint}
-      </Box>
+      {mainContent}
     </Box>
   );
 }
 
-/**
- * Memoized AppShell — prevents re-renders when irrelevant App state changes.
- *
- * The App component re-renders on every streaming delta (via dispatchSession),
- * cursor move, and conversationChars update.  AppShell itself only needs to
- * re-render when the layout, screen, event lists, uiState, or composer
- * layout rows actually change.
- *
- * `composer` must remain in the comparator because MemoizedBottomComposer
- * receives value/cursor updates through this prop; without it the composer
- * would display stale input. Non-main panels are compared so picker content can
- * refresh while the active screen stays unchanged, such as model discovery
- * replacing the loading model picker with the interactive picker.
- */
 export const AppShell = memo(AppShellInner, (prev, next) => {
   const panelPropsEqual = next.screen === "main"
     ? prev.mainPanel === next.mainPanel
@@ -693,6 +632,8 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.activeEvents    === next.activeEvents    &&
     prev.uiState         === next.uiState         &&
     prev.composerRows    === next.composerRows    &&
+    prev.runtimeStatusBar === next.runtimeStatusBar &&
+    prev.runtimeStatusRows === next.runtimeStatusRows &&
     prev.composer        === next.composer        &&
     prev.mainPanel       === next.mainPanel       &&
     prev.mainPanelMode   === next.mainPanelMode   &&

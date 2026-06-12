@@ -57,7 +57,29 @@ test("render debug writes JSONL only when explicitly enabled", () => {
 
 test("render debug defaults to the repo-local diagnostic log path", () => {
   configureRenderDebug({});
-  assert.equal(getRenderDebugLogPath(), join(process.cwd(), ".codexa-debug", "render-debug.log"));
+  assert.equal(getRenderDebugLogPath(), join(process.cwd(), ".codexa", "debug", "render-status.log"));
+});
+
+test("model state debug alias enables the render status log", () => {
+  const logPath = join(tmpdir(), `codexa-model-state-render-debug-${process.pid}.jsonl`);
+  clean(logPath);
+
+  try {
+    configureRenderDebug({
+      CODEXA_DEBUG_MODEL_STATE: "1",
+      CODEXA_RENDER_DEBUG_FILE: logPath,
+    });
+    traceEvent("model", "alias");
+
+    assert.equal(getRenderDebugLogPath(), logPath);
+    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(records[0]?.kind, "session");
+    assert.equal(records[1]?.kind, "model");
+    assert.equal(records[1]?.event, "alias");
+  } finally {
+    configureRenderDebug({});
+    clean(logPath);
+  }
 });
 
 test("render debug creates missing log directories", () => {
