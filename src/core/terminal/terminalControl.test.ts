@@ -73,3 +73,20 @@ test("transcript clear is allowed while streaming state is active", () => {
 
   assert.equal(writes, TERMINAL_SEQUENCES.transcriptClear);
 });
+
+test("alternate screen mode writes correct sequences and manages state", () => {
+  let writes = "";
+  const controller = createTerminalModeController((chunk) => {
+    writes += chunk;
+  });
+
+  controller.setAlternateScreen(true, "test-enable");
+  assert.equal(writes, TERMINAL_SEQUENCES.alternateScreenEnable);
+
+  writes = "";
+  controller.setAlternateScreen(true, "test-enable-noop");
+  assert.equal(writes, ""); // noop
+
+  controller.setAlternateScreen(false, "test-disable");
+  assert.equal(writes, TERMINAL_SEQUENCES.alternateScreenDisable);
+});

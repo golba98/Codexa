@@ -12,8 +12,10 @@ const indexSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "
 const layoutSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "layout.ts"), "utf8");
 const clearBoundarySource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "core", "terminal", "clearFrameBoundary.ts"), "utf8");
 
-test("App starts a terminal title guard during busy rendering", () => {
-  assert.match(appSource, /refreshTerminalTitle\(\{[\s\S]*?debugEventName: "busy-guard"/);
+test("App does not start terminal title guards during busy rendering", () => {
+  assert.doesNotMatch(appSource, /debugEventName: "busy-guard"/);
+  assert.doesNotMatch(appSource, /acquireTerminalTitleGuard/);
+  assert.doesNotMatch(appSource, /setInterval\(\(\) => \{[\s\S]*?refreshTerminalTitle/);
 });
 
 test("App does not write terminal title OSC sequences while Ink is active", () => {
@@ -55,56 +57,48 @@ test("Settings panel workspace display save path does not append Settings transc
   assert.doesNotMatch(match[1] ?? "", /appendSystemEvent\("Settings"/);
 });
 
-test("Settings panel terminal title save path still updates terminal title state", () => {
+test("Settings panel terminal title save path updates only persisted title state", () => {
   assert.match(appSource, /if \(nextSettings\.terminalTitleMode !== terminalTitleMode\) \{\s*setTerminalTitleMode\(nextSettings\.terminalTitleMode\);/);
-  assert.match(appSource, /setIntendedTerminalTitle\(terminalTitleLabel/);
+  assert.doesNotMatch(appSource, /setIntendedTerminalTitle\(terminalTitleLabel/);
+  assert.doesNotMatch(appSource, /refreshTerminalTitle\(/);
 });
 
-test("Terminal title re-assertion effect is keyed by uiState and busy to recover from external overwrites", () => {
-  const match = appSource.match(/useEffect\(\(\) => \{[\s\S]*?debugEventName: "busy-start"[\s\S]*?\}, \[([^\]]+)\]\);/);
-  assert.ok(match, "terminal title re-assertion effect should exist");
-  const deps = match[1] ?? "";
-  assert.match(deps, /uiState\.kind/);
-  assert.match(deps, /busy/);
-  assert.match(deps, /terminalTitleMode/);
-  assert.match(deps, /workspaceRoot/);
+test("App does not reassert terminal titles from live UI state", () => {
+  assert.doesNotMatch(appSource, /debugEventName: "busy-start"/);
+  assert.doesNotMatch(appSource, /debugEventName: "busy-end"/);
+  assert.doesNotMatch(appSource, /terminal-title-label-change/);
 });
 
-test("Terminal title update effect is keyed by terminal title label", () => {
-  const match = appSource.match(/useEffect\(\(\) => \{\s*setIntendedTerminalTitle\(terminalTitleLabel[\s\S]*?\);\s*\}, \[([^\]]+)\]\);/);
-  assert.ok(match, "terminal title update effect should exist");
-  const deps = match[1] ?? "";
-  assert.match(deps, /terminalTitleLabel/);
+test("Index owns a single startup terminal title write before Ink renders", () => {
+  const writes = indexSource.match(/setIntendedTerminalTitle\(/g) ?? [];
+  assert.equal(writes.length, 1);
+  assert.match(indexSource, /reason: "startup-title"/);
+  assert.doesNotMatch(indexSource, /startTerminalTitleStartupGuard/);
+  assert.doesNotMatch(indexSource, /reassertIntendedTerminalTitle/);
 });
 
-test("Prompt and shell busy paths force title before busy state dispatch", () => {
-  const promptStart = appSource.indexOf('writeCurrentTerminalTitleBeforeStateChange("before-prompt-run-start")');
-  const promptBusy = appSource.indexOf('type: "SUBMIT_PROMPT_RUN"');
-  const shellStart = appSource.indexOf('writeCurrentTerminalTitleBeforeStateChange("before-shell-start")');
-  const shellBusy = appSource.indexOf('dispatchSession({ type: "UI_ACTION", action: { type: "SHELL_STARTED"');
-
-  assert.ok(promptStart >= 0, "prompt path should force title before busy");
-  assert.ok(shellStart >= 0, "shell path should force title before busy");
-  assert.ok(promptStart < promptBusy, "prompt title write must happen before busy dispatch");
-  assert.ok(shellStart < shellBusy, "shell title write must happen before busy dispatch");
+test("Prompt and shell busy paths do not write titles before state dispatch", () => {
+  assert.doesNotMatch(appSource, /writeCurrentTerminalTitleBeforeStateChange/);
+  assert.match(appSource, /type: "SUBMIT_PROMPT_RUN"/);
+  assert.match(appSource, /dispatchSession\(\{ type: "UI_ACTION", action: \{ type: "SHELL_STARTED"/);
 });
 
-test("Terminal title cold-start sequence fires immediately on mount and retries at 50ms and 250ms", () => {
-  assert.match(appSource, /beginColdStartSequence/);
+test("Terminal title cold-start retries are not mounted inside App", () => {
+  assert.doesNotMatch(appSource, /beginColdStartSequence/);
   assert.doesNotMatch(appSource, /postMountTerminalTitleRefreshRef/);
   assert.doesNotMatch(appSource, /retryDelaysMs/);
 });
 
-test("Terminal title writes are centralized through the title helpers", () => {
+test("App has no live terminal title write helper calls", () => {
   assert.doesNotMatch(appSource, /reassertTerminalTitle/);
-  assert.match(appSource, /setIntendedTerminalTitle/);
-  assert.match(appSource, /reassertIntendedTerminalTitle/);
-  assert.match(appSource, /deriveTerminalTitle\(workspaceRoot, terminalTitleMode\)/);
+  assert.doesNotMatch(appSource, /setIntendedTerminalTitle/);
+  assert.doesNotMatch(appSource, /reassertIntendedTerminalTitle/);
+  assert.doesNotMatch(appSource, /deriveTerminalTitle\(workspaceRoot, terminalTitleMode\)/);
 });
 
-test("App reasserts intended terminal title around child process lifecycle events", () => {
-  assert.match(appSource, /onProcessLifecycle: \(event\) => \{\s*reassertIntendedTerminalTitle\(\{\s*reason: `codex-process-\$\{event\}`/);
-  assert.match(appSource, /onProcessLifecycle: \(event\) => \{\s*reassertIntendedTerminalTitle\(\{\s*reason: `shell-process-\$\{event\}`/);
+test("App does not reassert titles around child process lifecycle events", () => {
+  assert.doesNotMatch(appSource, /codex-process-\$\{event\}/);
+  assert.doesNotMatch(appSource, /shell-process-\$\{event\}/);
 });
 
 test("Installed launcher preserves inherited stdio for interactive TTY launches", () => {
@@ -114,21 +108,18 @@ test("Installed launcher preserves inherited stdio for interactive TTY launches"
   assert.match(launcherSource, /CODEXA_DEBUG_LAUNCH/);
 });
 
-test("Installed launcher asserts a safe title before Bun lifecycle boundaries", () => {
+test("Installed launcher does not own terminal titles for interactive TTY launches", () => {
   const launchStartIndex = launcherSource.indexOf('markExecTiming("launcher_start"');
-  const startupTitleIndex = launcherSource.indexOf('writeIntendedTitle("launcher-startup-title")');
   const helpIndex = launcherSource.indexOf('hasFlag(forwardArgs, "--help", "-h")');
-  const beforeSpawnIndex = launcherSource.indexOf('writeIntendedTitle("before-bun-spawn")');
-  const spawnIndex = launcherSource.indexOf("const child = spawn(");
 
   assert.ok(launchStartIndex >= 0);
-  assert.ok(startupTitleIndex > launchStartIndex);
-  assert.ok(startupTitleIndex < helpIndex, "launcher title should be asserted before help/version parsing can exit");
-  assert.ok(beforeSpawnIndex >= 0 && spawnIndex > beforeSpawnIndex, "launcher title should be asserted before Bun spawn");
+  assert.ok(helpIndex > launchStartIndex);
   assert.match(launcherSource, /CODEXA_INITIAL_TERMINAL_TITLE: intendedTerminalTitle/);
-  assert.match(launcherSource, /child\.once\("spawn"[\s\S]*writeIntendedTitle\("after-bun-spawn"\)/);
-  assert.match(launcherSource, /child\.on\("error"[\s\S]*writeIntendedTitle\("bun-spawn-error"\)/);
-  assert.match(launcherSource, /child\.on\("close"[\s\S]*writeIntendedTitle\("bun-close"\)/);
+  assert.doesNotMatch(launcherSource, /writeIntendedTitle/);
+  assert.doesNotMatch(launcherSource, /startLauncherTitleGuard/);
+  assert.doesNotMatch(launcherSource, /createTitleStripper/);
+  assert.match(launcherSource, /process\.stdout\.write\(chunk\)/);
+  assert.match(launcherSource, /process\.stderr\.write\(chunk\)/);
   assert.match(launcherSource, /\/\^\[a-zA-Z\]:\[\\\\\/\]\//);
   assert.doesNotMatch(launcherSource, /intendedTerminalTitle\s*=\s*workspaceRoot/);
 });
@@ -204,12 +195,11 @@ test("Startup keeps a single resize listener and disables Ink's competing handle
   assert.doesNotMatch(onResizeMatch[1] ?? "", /clearTranscript|clearViewport|resetInkOutputForFreshFrame|\.clear\(\)/);
 });
 
-test("Fix does not introduce alternate-screen mode or a second Ink root", () => {
-  // index.tsx intentionally documents in a comment that it does NOT use the
-  // alternate screen buffer (\x1b[?1049h); assert the enabling mechanisms are
-  // absent rather than the escape itself (which appears in that comment).
-  assert.doesNotMatch(indexSource, /alternateScreen/);
-  assert.doesNotMatch(indexSource, /enterAlternativeScreen/);
+test("Fix uses alternate-screen mode stably and has exactly one Ink root", () => {
+  // index.tsx uses alternateScreen to enter alternate screen once on startup
+  // and exit on cleanup.
+  assert.match(indexSource, /setAlternateScreen/);
+  // app.tsx must not bounce or use alternate screen mode
   assert.doesNotMatch(appSource, /\\x1b\[\?1049h/);
   assert.doesNotMatch(appSource, /alternateScreen|enterAlternativeScreen/);
   const renderRoots = indexSource.match(/renderApp\(<App /g) ?? [];

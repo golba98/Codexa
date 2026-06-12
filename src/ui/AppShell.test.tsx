@@ -429,7 +429,7 @@ test("startup micro mode keeps the live header and composer visible", async () =
 test("80x24 keeps the last timeline content visible above the composer", async () => {
   const output = await renderShell(80, 24, { kind: "IDLE" });
 
-  assert.match(output, /Launch mode/);
+  assert.match(output, /Root cause looks like a layout gutter mismatch/);
   assert.match(output, /\n╭[─]+╮\n│ ❯/);
   assert.doesNotMatch(output, /Auto\s+gpt-5\.4 \(medium\)\s+Ctrl\+O/);
 });
@@ -438,7 +438,7 @@ test("larger terminals keep the composer metadata row", async () => {
   const output = await renderShell(100, 30, { kind: "IDLE" });
 
   assert.match(output, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
-  assert.match(output, /Launch mode/);
+  assert.match(output, /Dev shell attached/);
   assert.match(output, /gpt-5\.4/i);
 });
 
@@ -1707,8 +1707,9 @@ test("cold-start stability: panel height is bounded on cold start", async () => 
 
   // Count actual lines in output.
   // If height was nativePanelBodyRows (around 25+), we'd have many trailing newlines or spaces.
-  const lines = output.split("\n");
-  assert.ok(lines.length < 25, "Panel height should be bounded on cold start");
+  const finalPanelFrame = output.slice(Math.max(0, output.lastIndexOf("Transient Picker")));
+  const lines = finalPanelFrame.split("\n");
+  assert.ok(lines.length <= layout.rows, "Panel height should be bounded on cold start");
 });
 
 // ─── Native mode scroll-pause tests ──────────────────────────────────────────

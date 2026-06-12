@@ -14,10 +14,23 @@ export const TERMINAL_SEQUENCES = {
   mouseEnable: "\x1b[?1000h\x1b[?1006h",
   mouseDisable: "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l",
   title: `\x1b]0;${TERMINAL_TITLE}\x07\x1b]2;${TERMINAL_TITLE}\x07`,
+  alternateScreenEnable: "\x1b[?1049h",
+  alternateScreenDisable: "\x1b[?1049l",
 } as const;
 
 export type TerminalWrite = (chunk: string) => boolean | void;
 export type TerminalChannel = "stdout" | "stderr";
+
+// Tracks whether the terminal is currently in a live resize debounce.
+let terminalResizing = false;
+
+export function setTerminalResizing(resizing: boolean): void {
+  terminalResizing = resizing;
+}
+
+export function isTerminalResizing(): boolean {
+  return terminalResizing;
+}
 
 // Tracks current UI state kind for diagnostic assertions.
 let currentUIStateKind: string = "IDLE";
@@ -107,12 +120,14 @@ export interface TerminalModeController {
   clearViewport(source: string): void;
   setMouseReporting(enabled: boolean, source: string): void;
   setBracketedPaste(enabled: boolean, source: string): void;
+  setAlternateScreen(enabled: boolean, source: string): void;
   resetModes(): void;
 }
 
 export function createTerminalModeController(write: TerminalWrite): TerminalModeController {
   let mouseReporting: boolean | null = null;
   let bracketedPaste: boolean | null = null;
+  let alternateScreen: boolean | null = null;
 
   const writeStdout = (sequence: string, source: string) =>
     writeTerminalControl(write, "stdout", source, sequence);
@@ -135,13 +150,20 @@ export function createTerminalModeController(write: TerminalWrite): TerminalMode
       bracketedPaste = enabled;
       writeStdout(enabled ? TERMINAL_SEQUENCES.bracketedPasteEnable : TERMINAL_SEQUENCES.bracketedPasteDisable, source);
     },
+    setAlternateScreen(enabled, source) {
+      if (alternateScreen === enabled) return;
+      alternateScreen = enabled;
+      writeStdout(enabled ? TERMINAL_SEQUENCES.alternateScreenEnable : TERMINAL_SEQUENCES.alternateScreenDisable, source);
+    },
     resetModes() {
       renderDebug.traceEvent("terminal", "resetModes", {
         mouseReporting,
         bracketedPaste,
+        alternateScreen,
       });
       mouseReporting = null;
       bracketedPaste = null;
+      alternateScreen = null;
     },
   };
 }

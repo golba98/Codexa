@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  acquireTerminalTitleGuard,
   buildTerminalTitleSequence,
   computeTerminalTitle,
   deriveTerminalTitle,
@@ -13,8 +12,6 @@ import {
   sanitizeTerminalTitle,
   setIntendedTerminalTitle,
   setTerminalTitle,
-  startTerminalTitleStartupGuard,
-  beginColdStartSequence,
   createTerminalTitleSequenceStripper,
   stripTerminalTitleSequences,
   stripTerminalTitleSequencesFromChunk,
@@ -23,10 +20,6 @@ import {
   writeGuardedTerminalOutput,
   __resetTerminalTitleCache,
 } from "./terminalTitle.js";
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 test("buildTerminalTitleSequence emits OSC 0 and OSC 2 with sanitized title text", () => {
   const sequence = buildTerminalTitleSequence("Codexa\u0007!");
@@ -140,36 +133,6 @@ test("reassertTerminalTitle writes both title sequences without mutating process
   }
 });
 
-test("acquireTerminalTitleGuard asserts immediately, ticks while active, and reasserts on release", async () => {
-  let calls = 0;
-  const release = acquireTerminalTitleGuard(10, () => {
-    calls += 1;
-  });
-
-  await sleep(35);
-  release();
-
-  const callsAfterRelease = calls;
-  await sleep(20);
-
-  assert.ok(callsAfterRelease >= 3, `expected at least 3 title assertions, got ${callsAfterRelease}`);
-  assert.equal(calls, callsAfterRelease);
-});
-
-test("acquireTerminalTitleGuard release is idempotent", () => {
-  let calls = 0;
-  const release = acquireTerminalTitleGuard(50, () => {
-    calls += 1;
-  });
-
-  release();
-  const callsAfterFirstRelease = calls;
-  release();
-
-  assert.equal(callsAfterFirstRelease, 2);
-  assert.equal(calls, callsAfterFirstRelease);
-});
-
 test("setTerminalTitle deduplicates identical title writes", () => {
   const writes: string[] = [];
   __resetTerminalTitleCache();
@@ -257,46 +220,6 @@ test("setTerminalTitle force option bypasses dedup", () => {
 
   assert.equal(writes.length, 3);
   writes.forEach((w) => assert.equal(w, buildTerminalTitleSequence("Codexa")));
-});
-
-test("beginColdStartSequence writes immediately then retries", async () => {
-  const writes: string[] = [];
-  __resetTerminalTitleCache();
-
-  const cancel = beginColdStartSequence("Codexa", { write: (chunk) => writes.push(chunk) });
-  
-  assert.equal(writes.length, 1, "should write immediately");
-  
-  await sleep(60);
-  assert.equal(writes.length, 2, "should have retried at 50ms");
-  
-  cancel();
-  await sleep(300);
-  assert.equal(writes.length, 2, "should not have retried further after cancel");
-});
-
-test("startup guard reasserts intended title until cancelled", async () => {
-  const writes: string[] = [];
-  __resetTerminalTitleCache();
-
-  setIntendedTerminalTitle("13-Custom-CLI-Normal", {
-    force: true,
-    write: (chunk) => writes.push(chunk),
-  });
-  const cancel = startTerminalTitleStartupGuard({
-    intervalMs: 10,
-    durationMs: 100,
-    write: (chunk) => writes.push(chunk),
-  });
-
-  await sleep(25);
-  cancel();
-  const writesAfterCancel = writes.length;
-  await sleep(25);
-
-  assert.ok(writesAfterCancel >= 3, `expected guard to reassert title, got ${writesAfterCancel} writes`);
-  assert.equal(writes.length, writesAfterCancel);
-  assert.ok(writes.every((chunk) => chunk === buildTerminalTitleSequence("13-Custom-CLI-Normal")));
 });
 
 test("stripTerminalTitleSequences handles very long unterminated OSC without hanging", () => {
