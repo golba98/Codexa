@@ -3,13 +3,15 @@ import { Box, Text, useFocus, useInput } from "ink";
 import type { ProviderConfig, ProviderId, ProviderPickerAction } from "../core/providerLauncher/types.js";
 import { traceInputDebug } from "../core/debug/inputDebug.js";
 import { FOCUS_IDS } from "./focus.js";
-import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
-import { useTheme } from "./theme.js";
+import { clampVisualText, getShellWidth, getVisualWidth, type TerminalViewport } from "./layout.js";
+import { useTheme, type Theme } from "./theme.js";
+import fs from "fs";
+import path from "path";
 
 // ─── Types & helpers ─────────────────────────────────────────────────────────
 
 interface ProviderPickerProps {
-  layout: Layout;
+  layout: TerminalViewport;
   providers: readonly ProviderConfig[];
   onAction: (providerId: ProviderId, action: ProviderPickerAction) => void;
   onCancel: () => void;
@@ -28,6 +30,221 @@ function clampIndex(index: number, length: number): number {
   return Math.max(0, Math.min(length - 1, index));
 }
 
+function capabilityFlag(value: boolean | null | undefined): string {
+  if (value === true) return "Y";
+  if (value === false) return "N";
+  return "?";
+}
+
+export interface TableColumns {
+  markerSelected: number;
+  markerDefault: number;
+  markerCurrent: number;
+  provider: number;
+  model: number;
+  context: number;
+  tool: number;
+  stream: number;
+  status: number;
+  showContext: boolean;
+  showTool: boolean;
+  showStream: boolean;
+}
+
+export function getTableLayout(innerWidth: number): TableColumns {
+  const markerSelected = 1;
+  const markerDefault = 1;
+  const markerCurrent = 1;
+
+  let showStream = false;
+  let showTool = false;
+  let showContext = false;
+
+  // Priority logic for optional columns
+  if (innerWidth >= 63) {
+    showStream = true;
+    showTool = true;
+    showContext = true;
+  } else if (innerWidth >= 58) {
+    showTool = true;
+    showContext = true;
+  } else if (innerWidth >= 53) {
+    showContext = true;
+  }
+
+  const streamWidth = showStream ? 4 : 0;
+  const toolWidth = showTool ? 4 : 0;
+  const contextWidth = showContext ? 12 : 0;
+  const statusWidthDefault = 8;
+  const providerWidthDefault = 14;
+
+  const markerGaps = 2; // gaps between markers
+  const dataGaps = 3 + (showContext ? 1 : 0) + (showTool ? 1 : 0) + (showStream ? 1 : 0);
+  const totalGaps = markerGaps + dataGaps;
+
+  const fixedWidthWithoutModel = 3 + totalGaps + providerWidthDefault + contextWidth + toolWidth + streamWidth + statusWidthDefault;
+
+  let provider = providerWidthDefault;
+  let status = statusWidthDefault;
+  let model = 10;
+
+  if (innerWidth >= fixedWidthWithoutModel + 10) {
+    model = innerWidth - fixedWidthWithoutModel;
+  } else {
+    // Narrow terminal distribution logic
+    const available = innerWidth - 8; // 3 markers + 5 gaps (no optional columns)
+    if (available >= 20) {
+      status = 8;
+      const remaining = available - status;
+      provider = Math.max(8, Math.min(14, Math.floor(remaining * 0.45)));
+      model = remaining - provider;
+    } else {
+      status = Math.max(6, Math.floor(available * 0.25));
+      provider = Math.max(8, Math.floor(available * 0.35));
+      model = Math.max(6, available - status - provider);
+    }
+  }
+
+  return {
+    markerSelected,
+    markerDefault,
+    markerCurrent,
+    provider,
+    model,
+    context: contextWidth,
+    tool: toolWidth,
+    stream: streamWidth,
+    status,
+    showContext,
+    showTool,
+    showStream,
+  };
+}
+
+export function padVisualText(text: string, width: number): string {
+  const clamped = clampVisualText(text, width);
+  const visualLen = getVisualWidth(clamped);
+  const diff = width - visualLen;
+  if (diff > 0) {
+    return clamped + " ".repeat(diff);
+  }
+  return clamped;
+}
+
+export function centerVisualText(text: string, width: number): string {
+  const clamped = clampVisualText(text, width);
+  const visualLen = getVisualWidth(clamped);
+  const diff = width - visualLen;
+  if (diff > 0) {
+    const leftPad = Math.floor(diff / 2);
+    const rightPad = diff - leftPad;
+    return " ".repeat(leftPad) + clamped + " ".repeat(rightPad);
+  }
+  return clamped;
+}
+
+function logDebug(message: string) {
+  if (process.env.CODEXA_TABLE_DEBUG === "1") {
+    try {
+      const logPath = path.join(process.cwd(), "codexa_table_debug.log");
+      fs.appendFileSync(logPath, message + "\n", "utf8");
+    } catch (e) {
+      // ignore log errors
+    }
+  }
+}
+
+function wrapInBorders(content: React.ReactNode, innerWidth: number, themeBorderColor: string, key?: string | number) {
+  return (
+    <Box key={key} flexDirection="row" width={innerWidth + 4} height={1} overflow="hidden">
+      <Text color={themeBorderColor}>│</Text>
+      <Box width={innerWidth + 2} paddingX={1} flexShrink={0} overflow="hidden" height={1}>
+        {content}
+      </Box>
+      <Text color={themeBorderColor}>│</Text>
+    </Box>
+  );
+}
+
+function renderProviderRow(
+  provider: ProviderConfig,
+  isHighlighted: boolean,
+  cols: TableColumns,
+  theme: Theme,
+  innerWidth: number
+) {
+  const statusColor = provider.isActiveRoute
+    ? theme.success
+    : provider.enabled && !provider.routeUnavailableReason
+      ? theme.success
+      : theme.warning;
+  const marker = isHighlighted ? ">" : " ";
+  const defaultMark = provider.isDefault ? "*" : " ";
+  const currentMark = provider.isActiveRoute ? "@" : " ";
+  const statusText = provider.isActiveRoute ? "Active" : provider.statusLabel;
+
+  const row = (
+    <Box flexDirection="row" width={innerWidth}>
+      <Text color={isHighlighted ? theme.accent : theme.textDim}>{padVisualText(marker, cols.markerSelected)}</Text>
+      <Text> </Text>
+      <Text color={theme.textDim}>{padVisualText(defaultMark, cols.markerDefault)}</Text>
+      <Text> </Text>
+      <Text color={theme.textDim}>{padVisualText(currentMark, cols.markerCurrent)}</Text>
+      <Text> </Text>
+      <Text color={isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted}>
+        {padVisualText(provider.displayName, cols.provider)}
+      </Text>
+      <Text> </Text>
+      <Text color={theme.textMuted}>{padVisualText(provider.currentModel, cols.model)}</Text>
+      {cols.showContext && (
+        <Box flexDirection="row">
+          <Text> </Text>
+          <Text color={theme.textMuted}>{padVisualText(provider.contextLengthLabel ?? "Unknown", cols.context)}</Text>
+        </Box>
+      )}
+      {cols.showTool && (
+        <Box flexDirection="row">
+          <Text> </Text>
+          <Text color={theme.textMuted}>{padVisualText(capabilityFlag(provider.capabilityProfile?.supportsToolCalls), cols.tool)}</Text>
+        </Box>
+      )}
+      {cols.showStream && (
+        <Box flexDirection="row">
+          <Text> </Text>
+          <Text color={theme.textMuted}>{padVisualText(capabilityFlag(provider.capabilityProfile?.supportsStreaming), cols.stream)}</Text>
+        </Box>
+      )}
+      <Text> </Text>
+      <Text color={statusColor}>{padVisualText(statusText, cols.status)}</Text>
+    </Box>
+  );
+
+  return wrapInBorders(row, innerWidth, theme.prompt, `provider-${provider.id}`);
+}
+
+function renderActionRow(
+  label: string,
+  disabledReason: string | null | undefined,
+  isHighlighted: boolean,
+  innerWidth: number,
+  theme: Theme
+) {
+  const text = disabledReason ? `${label} unavailable` : label;
+  const marker = isHighlighted ? ">" : " ";
+
+  return wrapInBorders(
+    <Box flexDirection="row" width={innerWidth}>
+      <Text color={isHighlighted ? theme.accent : theme.textDim}>{padVisualText(marker, 2)}</Text>
+      <Text color={disabledReason ? theme.textDim : isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted && !disabledReason}>
+        {padVisualText(text, innerWidth - 2)}
+      </Text>
+    </Box>,
+    innerWidth,
+    theme.prompt,
+    `action-${label}`
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ProviderPicker({ layout, providers, onAction, onCancel, initialProviderId }: ProviderPickerProps) {
@@ -43,18 +260,20 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
   const [actionIndex, setActionIndex] = useState(0);
 
   const selectedProvider = providers[clampIndex(providerIndex, providers.length)];
-  const shellWidth = getShellWidth(layout.cols);
-  const panelWidth = Math.max(42, Math.min(shellWidth - 2, layout.mode === "full" ? 86 : 72));
+
+  // Cap the table width in large terminals
+  const maxTableWidth = 100;
+  const panelWidth = Math.min(layout.contentWidth, getShellWidth(layout.cols) - 2, maxTableWidth);
   const innerWidth = Math.max(30, panelWidth - 4);
-  const markerWidth = 2;
-  const columnGaps = 4;
-  const columnWidthBudget = Math.max(26, innerWidth - markerWidth - columnGaps);
-  const statusWidth = Math.min(8, Math.max(6, columnWidthBudget - 20));
-  const toolsWidth = 4;
-  const streamWidth = 4;
-  const contextWidth = Math.min(11, Math.max(7, columnWidthBudget - statusWidth - toolsWidth - streamWidth - 16));
-  const providerNameWidth = Math.min(layout.mode === "micro" ? 10 : 14, Math.max(8, columnWidthBudget - statusWidth - toolsWidth - streamWidth - contextWidth - 8));
-  const modelWidth = Math.max(5, columnWidthBudget - providerNameWidth - contextWidth - toolsWidth - streamWidth - statusWidth);
+
+  const cols = useMemo(() => getTableLayout(innerWidth), [innerWidth]);
+
+  // Debug logging
+  if (process.env.CODEXA_TABLE_DEBUG === "1") {
+    logDebug(
+      `[DEBUG ${new Date().toISOString()}] Terminal Cols: ${layout.cols} | Panel Width: ${panelWidth} | Inner Width: ${innerWidth} | Columns: ${JSON.stringify(cols)}`
+    );
+  }
 
   const helpText = layout.mode === "micro"
     ? "Enter select  U use  S default  Esc"
@@ -79,6 +298,50 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
       { value: "cancel", label: "Cancel" },
     ];
   }, [selectedProvider]);
+
+  // Scroll / pagination logic
+  const maxBodyHeight = Math.max(3, layout.rows - 11);
+  let startIdx = 0;
+  let endIdx = providers.length;
+  let showScrollIndicator = false;
+
+  if (mode === "providers" && providers.length > maxBodyHeight) {
+    showScrollIndicator = true;
+    const visibleListHeight = maxBodyHeight - 1;
+    const half = Math.floor(visibleListHeight / 2);
+    startIdx = providerIndex - half;
+    if (startIdx < 0) {
+      startIdx = 0;
+    }
+    if (startIdx + visibleListHeight > providers.length) {
+      startIdx = providers.length - visibleListHeight;
+    }
+    endIdx = startIdx + visibleListHeight;
+  }
+
+  const visibleProviders = providers.slice(startIdx, endIdx);
+
+  // Actions scroll / pagination logic
+  const maxActionBodyHeight = Math.max(3, layout.rows - 14);
+  let actionStartIdx = 0;
+  let actionEndIdx = actions.length;
+  let showActionScrollIndicator = false;
+
+  if (mode === "actions" && actions.length > maxActionBodyHeight) {
+    showActionScrollIndicator = true;
+    const visibleListHeight = maxActionBodyHeight - 1;
+    const half = Math.floor(visibleListHeight / 2);
+    actionStartIdx = actionIndex - half;
+    if (actionStartIdx < 0) {
+      actionStartIdx = 0;
+    }
+    if (actionStartIdx + visibleListHeight > actions.length) {
+      actionStartIdx = actions.length - visibleListHeight;
+    }
+    actionEndIdx = actionStartIdx + visibleListHeight;
+  }
+
+  const visibleActions = actions.slice(actionStartIdx, actionEndIdx);
 
   useInput((input, key) => {
     traceInputDebug("provider_picker_input", {
@@ -145,176 +408,175 @@ export function ProviderPicker({ layout, providers, onAction, onCancel, initialP
     }
   }, { isActive: isFocused });
 
-  const body = useMemo(() => {
-    if (mode === "actions" && selectedProvider) {
-      const inCodexaAvailable = selectedProvider.routeMode === "in-codexa";
-      const isConfigured = inCodexaAvailable && !selectedProvider.routeUnavailableReason;
-      const inCodexaStatusText = !inCodexaAvailable ? "Unavailable" : isConfigured ? "Available" : "Needs configuration";
-      const inCodexaStatusColor = !inCodexaAvailable ? theme.error : isConfigured ? theme.success : theme.warning;
+  // Compile the full frame representation first
+  const lines: React.ReactNode[] = [];
 
-      return (
-        <Box flexDirection="column">
-          <Box marginBottom={1} flexDirection="column" paddingX={2}>
-            <Text color={theme.textDim}>Status: <Text color={theme.text}>{selectedProvider.routeUnavailableReason ?? "Ready"}</Text></Text>
-            <Text color={theme.textDim}>Backend: <Text color={theme.text}>{selectedProvider.backendType}</Text></Text>
-            <Text color={theme.textDim}>Use in Codexa: <Text color={inCodexaStatusColor}>{inCodexaStatusText}</Text></Text>
-          </Box>
-          {actions.map((action, index) => (
-            <ActionRow
-              key={action.value}
-              label={action.label}
-              disabledReason={action.disabledReason}
-              isHighlighted={index === actionIndex}
-              width={innerWidth}
-            />
-          ))}
-        </Box>
+  // Top border row
+  lines.push(
+    <Box key="top" flexDirection="row" width={panelWidth} height={1} overflow="hidden">
+      <Text color={theme.prompt}>┌{"─".repeat(panelWidth - 2)}┐</Text>
+    </Box>
+  );
+
+  // Title / help row
+  const titleText = padVisualText(`${title}   ${helpText}`, innerWidth);
+  lines.push(
+    wrapInBorders(
+      <Text color={theme.accent} bold>
+        {titleText}
+      </Text>,
+      innerWidth,
+      theme.prompt,
+      "title"
+    )
+  );
+
+  if (mode === "providers") {
+    // Header row
+    lines.push(
+      wrapInBorders(
+        <Text color={theme.textDim}>
+          {padVisualText("", cols.markerSelected)}
+          {" "}
+          {padVisualText("", cols.markerDefault)}
+          {" "}
+          {padVisualText("", cols.markerCurrent)}
+          {" "}
+          {padVisualText("Provider", cols.provider)}
+          {" "}
+          {padVisualText("Model", cols.model)}
+          {cols.showContext && (
+            <>
+              {" "}
+              {padVisualText("Context", cols.context)}
+            </>
+          )}
+          {cols.showTool && (
+            <>
+              {" "}
+              {padVisualText("Tool", cols.tool)}
+            </>
+          )}
+          {cols.showStream && (
+            <>
+              {" "}
+              {padVisualText("Strm", cols.stream)}
+            </>
+          )}
+          {" "}
+          {padVisualText("Status", cols.status)}
+        </Text>,
+        innerWidth,
+        theme.prompt,
+        "header"
+      )
+    );
+
+    // Provider data rows
+    visibleProviders.forEach((provider, idx) => {
+      const realIdx = startIdx + idx;
+      if (process.env.CODEXA_TABLE_DEBUG === "1") {
+        logDebug(`  Row: ${provider.id} | model: ${provider.currentModel} | expected_len: ${innerWidth}`);
+      }
+      lines.push(
+        renderProviderRow(
+          provider,
+          realIdx === providerIndex,
+          cols,
+          theme,
+          innerWidth
+        )
+      );
+    });
+
+    // Scroll indicator row
+    if (showScrollIndicator) {
+      const scrollText = centerVisualText(`--- ${endIdx - startIdx}/${providers.length} providers shown ---`, innerWidth);
+      lines.push(
+        wrapInBorders(
+          <Text color={theme.textDim}>
+            {scrollText}
+          </Text>,
+          innerWidth,
+          theme.prompt,
+          "scroll-indicator"
+        )
       );
     }
+  } else if (mode === "actions" && selectedProvider) {
+    const inCodexaAvailable = selectedProvider.routeMode === "in-codexa";
+    const isConfigured = inCodexaAvailable && !selectedProvider.routeUnavailableReason;
+    const inCodexaStatusText = !inCodexaAvailable ? "Unavailable" : isConfigured ? "Available" : "Needs configuration";
+    const inCodexaStatusColor = !inCodexaAvailable ? theme.error : isConfigured ? theme.success : theme.warning;
 
-    return providers.map((provider, index) => (
-      <ProviderRow
-        key={provider.id}
-        provider={provider}
-        isHighlighted={index === providerIndex}
-        widths={{ providerNameWidth, modelWidth, contextWidth, toolsWidth, streamWidth, statusWidth }}
-      />
-    ));
-  }, [actionIndex, actions, contextWidth, innerWidth, mode, modelWidth, providerIndex, providerNameWidth, providers, streamWidth, toolsWidth, statusWidth]);
+    // Status line
+    const statusValText = padVisualText(`Status: ${selectedProvider.routeUnavailableReason ?? "Ready"}`, innerWidth);
+    lines.push(wrapInBorders(<Text color={theme.textDim}>{statusValText}</Text>, innerWidth, theme.prompt, "action-status"));
 
-  return (
-    <Box flexDirection="column" width={panelWidth}>
-      <Box
-        borderStyle="round"
-        borderColor={theme.prompt}
-        paddingX={1}
-        paddingY={0}
-        width={panelWidth}
-        flexDirection="column"
-      >
-        <Box width="100%" overflow="hidden">
-          <Text color={theme.accent} bold>
-            {clampVisualText(`${title}   ${helpText}`, innerWidth)}
-          </Text>
-        </Box>
+    // Backend line
+    const backendValText = padVisualText(`Backend: ${selectedProvider.backendType}`, innerWidth);
+    lines.push(wrapInBorders(<Text color={theme.textDim}>{backendValText}</Text>, innerWidth, theme.prompt, "action-backend"));
 
-        {mode === "providers" && (
-          <Box width="100%" overflow="hidden">
-            <Text color={theme.textDim}>
-              {"  "}
-              {clampVisualText("Provider", providerNameWidth)}
-              {" "}
-              {clampVisualText("Model", modelWidth)}
-              {" "}
-              {clampVisualText("Context", contextWidth)}
-              {" "}
-              {clampVisualText("Tool", toolsWidth)}
-              {" "}
-              {clampVisualText("Strm", streamWidth)}
-              {" "}
-              {clampVisualText("Status", statusWidth)}
-            </Text>
-          </Box>
-        )}
+    // Use in Codexa line
+    const useInCodexaPrefix = "Use in Codexa: ";
+    const useInCodexaVal = padVisualText(inCodexaStatusText, innerWidth - useInCodexaPrefix.length);
+    lines.push(
+      wrapInBorders(
+        <Box flexDirection="row" width={innerWidth}>
+          <Text color={theme.textDim}>{useInCodexaPrefix}</Text>
+          <Text color={inCodexaStatusColor}>{useInCodexaVal}</Text>
+        </Box>,
+        innerWidth,
+        theme.prompt,
+        "action-use-in-codexa"
+      )
+    );
 
-        <Box flexDirection="column" marginTop={0} width="100%">
-          {body}
-        </Box>
-      </Box>
+    // Empty line spacer
+    const emptySpacedText = padVisualText("", innerWidth);
+    lines.push(wrapInBorders(<Text>{emptySpacedText}</Text>, innerWidth, theme.prompt, "action-spacer"));
+
+    // Action data rows
+    visibleActions.forEach((action, idx) => {
+      const realIdx = actionStartIdx + idx;
+      lines.push(
+        renderActionRow(
+          action.label,
+          action.disabledReason,
+          realIdx === actionIndex,
+          innerWidth,
+          theme
+        )
+      );
+    });
+
+    // Actions scroll indicator row
+    if (showActionScrollIndicator) {
+      const scrollText = centerVisualText(`--- ${actionEndIdx - actionStartIdx}/${actions.length} actions shown ---`, innerWidth);
+      lines.push(
+        wrapInBorders(
+          <Text color={theme.textDim}>
+            {scrollText}
+          </Text>,
+          innerWidth,
+          theme.prompt,
+          "actions-scroll-indicator"
+        )
+      );
+    }
+  }
+
+  // Bottom border row
+  lines.push(
+    <Box key="bottom" flexDirection="row" width={panelWidth} height={1} overflow="hidden">
+      <Text color={theme.prompt}>└{"─".repeat(panelWidth - 2)}┘</Text>
     </Box>
   );
-}
-
-// ─── Subcomponents ───────────────────────────────────────────────────────────
-
-function capabilityFlag(value: boolean | null | undefined): string {
-  if (value === true) return "Y";
-  if (value === false) return "N";
-  return "?";
-}
-
-function ProviderRow({
-  provider,
-  isHighlighted,
-  widths,
-}: {
-  provider: ProviderConfig;
-  isHighlighted: boolean;
-  widths: {
-    providerNameWidth: number;
-    modelWidth: number;
-    contextWidth: number;
-    toolsWidth: number;
-    streamWidth: number;
-    statusWidth: number;
-  };
-}) {
-  const theme = useTheme();
-  const statusColor = provider.isActiveRoute
-    ? theme.success
-    : provider.enabled && !provider.routeUnavailableReason
-      ? theme.success
-      : theme.warning;
-  const marker = isHighlighted ? ">" : " ";
-  const defaultMark = provider.isActiveRoute ? "@" : provider.isDefault ? "*" : " ";
-  const statusText = provider.isActiveRoute ? "Active" : provider.statusLabel;
 
   return (
-    <Box width="100%" overflow="hidden">
-      <Box width={2} flexShrink={0}>
-        <Text color={isHighlighted ? theme.accent : theme.textDim}>{marker}{defaultMark}</Text>
-      </Box>
-      <Box width={widths.providerNameWidth} flexShrink={0} overflow="hidden">
-        <Text color={isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted}>
-          {clampVisualText(provider.displayName, widths.providerNameWidth)}
-        </Text>
-      </Box>
-      <Text> </Text>
-      <Box width={widths.modelWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.textMuted}>{clampVisualText(provider.currentModel, widths.modelWidth)}</Text>
-      </Box>
-      <Text> </Text>
-      <Box width={widths.contextWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.textMuted}>{clampVisualText(provider.contextLengthLabel ?? "Unknown", widths.contextWidth)}</Text>
-      </Box>
-      <Text> </Text>
-      <Box width={widths.toolsWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.textMuted}>{clampVisualText(capabilityFlag(provider.capabilityProfile?.supportsToolCalls), widths.toolsWidth)}</Text>
-      </Box>
-      <Text> </Text>
-      <Box width={widths.streamWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.textMuted}>{clampVisualText(capabilityFlag(provider.capabilityProfile?.supportsStreaming), widths.streamWidth)}</Text>
-      </Box>
-      <Text> </Text>
-      <Box width={widths.statusWidth} flexShrink={0} overflow="hidden">
-        <Text color={statusColor}>{clampVisualText(statusText, widths.statusWidth)}</Text>
-      </Box>
-    </Box>
-  );
-}
-
-function ActionRow({
-  label,
-  disabledReason,
-  isHighlighted,
-  width,
-}: {
-  label: string;
-  disabledReason?: string | null;
-  isHighlighted: boolean;
-  width: number;
-}) {
-  const theme = useTheme();
-  const text = disabledReason ? `${label} unavailable` : label;
-  return (
-    <Box width="100%" overflow="hidden">
-      <Box width={2} flexShrink={0}>
-        <Text color={isHighlighted ? theme.accent : theme.textDim}>{isHighlighted ? ">" : " "}</Text>
-      </Box>
-      <Box width={Math.max(10, width - 2)} flexShrink={0} overflow="hidden">
-        <Text color={disabledReason ? theme.textDim : isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted && !disabledReason}>
-          {clampVisualText(text, Math.max(10, width - 2))}
-        </Text>
+    <Box flexDirection="column" width="100%" alignItems="center">
+      <Box flexDirection="column" width={panelWidth}>
+        {lines}
       </Box>
     </Box>
   );

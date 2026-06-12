@@ -1,10 +1,12 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import React from "react";
 import { Box, Text, render } from "ink";
 import { buildProviderRegistry } from "../core/providerLauncher/registry.js";
-import type { ProviderId, ProviderPickerAction } from "../core/providerLauncher/types.js";
+import type { ProviderConfig, ProviderId, ProviderPickerAction } from "../core/providerLauncher/types.js";
+import fs from "fs";
+import path from "path";
 import { createLayoutSnapshot } from "./layout.js";
 import { ProviderPicker } from "./ProviderPicker.js";
 import { ThemeProvider } from "./theme.js";
@@ -287,3 +289,263 @@ test('pressing U after navigating down fires use-in-codexa for the selected prov
   }
 });
 
+
+
+// ─── Table Rendering Layout Tests ────────────────────────────────────────────
+
+function buildMockProvider(override: Partial<ProviderConfig>): ProviderConfig {
+  return {
+    id: "openai",
+    displayName: "OpenAI",
+    currentModel: "gpt-5.4-mini",
+    backendType: "openai-api-key",
+    routeMode: "in-codexa",
+    enabled: true,
+    statusLabel: "Enabled",
+    launchCommand: null,
+    isDefault: false,
+    isActiveRoute: false,
+    routeUnavailableReason: null,
+    ...override,
+  };
+}
+
+test("provider picker table rendering - normal width", async () => {
+  const providers = [
+    buildMockProvider({ id: "openai", displayName: "OpenAI", currentModel: "gpt-5.4-mini" }),
+    buildMockProvider({ id: "anthropic", displayName: "Anthropic", currentModel: "claude-3-opus" }),
+  ];
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ProviderPicker
+        layout={createLayoutSnapshot(80, 24)}
+        providers={providers}
+        onAction={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    // Headers and rows should not contain merged text
+    assert.match(output, /Provider/);
+    assert.match(output, /Model/);
+    assert.match(output, /Status/);
+    assert.match(output, /OpenAI/);
+    assert.match(output, /gpt-5.4-mini/);
+    assert.doesNotMatch(output, /OpenAIer Model/);
+    assert.doesNotMatch(output, /Strm Status inside a data row/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("provider picker table rendering - max width and centering", async () => {
+  const providers = [
+    buildMockProvider({ id: "openai", displayName: "OpenAI" }),
+  ];
+  // Width 150 > maxTableWidth (100)
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ProviderPicker
+        layout={createLayoutSnapshot(150, 24)}
+        providers={providers}
+        onAction={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    // Verify that the table is centered (starts with leading spaces in the rendered buffer)
+    // The panelWidth should be 100, which is centered in 150 cols, so there should be around 25 leading spaces.
+    assert.match(output, /^\s{10,}/); 
+    assert.match(output, /OpenAI/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("provider picker table rendering - narrow width (dropped columns)", async () => {
+  const providers = [
+    buildMockProvider({ id: "openai", displayName: "OpenAI" }),
+  ];
+  // Width 60: drops stream & tool, keeps context
+  const harness60 = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ProviderPicker
+        layout={createLayoutSnapshot(60, 24)}
+        providers={providers}
+        onAction={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>
+  );
+
+  try {
+    await sleep(80);
+    const output60 = harness60.getOutput();
+    assert.match(output60, /Context/);
+    assert.doesNotMatch(output60, /Tool/);
+    assert.doesNotMatch(output60, /Strm/);
+  } finally {
+    await harness60.cleanup();
+  }
+
+  // Width 40: drops all optional columns
+  const harness40 = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ProviderPicker
+        layout={createLayoutSnapshot(40, 24)}
+        providers={providers}
+        onAction={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>
+  );
+
+  try {
+    await sleep(80);
+    const output40 = harness40.getOutput();
+    assert.doesNotMatch(output40, /Context/);
+    assert.doesNotMatch(output40, /Tool/);
+    assert.doesNotMatch(output40, /Strm/);
+  } finally {
+    await harness40.cleanup();
+  }
+});
+
+test("provider picker table rendering - long names and truncation", async () => {
+  const providers = [
+    buildMockProvider({
+      id: "openai",
+      displayName: "VeryLongProviderNameThatWillTruncate",
+      currentModel: "very-long-model-name-that-exceeds-bounds",
+      statusLabel: "ExtremelyLongStatusLabelHere",
+    }),
+  ];
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ProviderPicker
+        layout={createLayoutSnapshot(80, 24)}
+        providers={providers}
+        onAction={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    // Long provider name is truncated in its column (width 14) -> "VeryLongProvi…"
+    assert.match(output, /VeryLongProvi…/);
+    // Long model name is truncated
+    assert.match(output, /…/);
+    // Long status label is truncated
+    assert.match(output, /Extreme…/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("provider picker table rendering - individual markers", async () => {
+  const providers = [
+    buildMockProvider({
+      id: "openai",
+      displayName: "OpenAI",
+      isDefault: true,
+      isActiveRoute: true,
+    }),
+  ];
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ProviderPicker
+        layout={createLayoutSnapshot(80, 24)}
+        providers={providers}
+        onAction={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    // Should have selected marker (isHighlighted), default marker '*', and active marker '@'
+    // in separate columns: "> * @ OpenAI"
+    assert.match(output, /> \* @ OpenAI/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("provider picker table rendering - debug logging mode", async () => {
+  const logPath = "/home/k9-vortex/Development/1-JavaScript_TypeScript/13-Custom-CLI-Normal/codexa_table_debug.log";
+  if (fs.existsSync(logPath)) {
+    fs.unlinkSync(logPath);
+  }
+
+  process.env.CODEXA_TABLE_DEBUG = "1";
+
+  const providers = [buildMockProvider({ id: "openai", displayName: "OpenAI" })];
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ProviderPicker
+        layout={createLayoutSnapshot(80, 24)}
+        providers={providers}
+        onAction={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>
+  );
+
+  try {
+    await sleep(80);
+    assert.strictEqual(fs.existsSync(logPath), true, "Debug log file should be created");
+    const logContent = fs.readFileSync(logPath, "utf8");
+    assert.match(logContent, /DEBUG/);
+    assert.match(logContent, /Terminal Cols:/);
+    assert.match(logContent, /Panel Width:/);
+    assert.match(logContent, /Columns:/);
+  } finally {
+    delete process.env.CODEXA_TABLE_DEBUG;
+    if (fs.existsSync(logPath)) {
+      fs.unlinkSync(logPath);
+    }
+    await harness.cleanup();
+  }
+});
+
+test("provider picker table rendering - scroll vertical clipping", async () => {
+  const providers = [
+    buildMockProvider({ id: "openai", displayName: "OpenAI" }),
+    buildMockProvider({ id: "anthropic", displayName: "Anthropic" }),
+    buildMockProvider({ id: "google", displayName: "Google" }),
+    buildMockProvider({ id: "local", displayName: "Local" }),
+    buildMockProvider({ id: "antigravity", displayName: "Antigravity" }),
+  ];
+  // Height 13 -> maxBodyHeight = Math.max(3, 13 - 11) = 3 -> shows scroll indicator
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ProviderPicker
+        layout={createLayoutSnapshot(80, 13)}
+        providers={providers}
+        onAction={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    assert.match(output, /providers shown/);
+  } finally {
+    await harness.cleanup();
+  }
+});
