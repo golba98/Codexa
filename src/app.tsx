@@ -108,6 +108,7 @@ import {
 } from "./core/workspace/launchContext.js";
 import {
   findOutsideWorkspacePaths,
+  formatSkippedDependencyPath,
   getPromptWorkspaceGuardMessage,
   getShellWorkspaceGuardMessage,
 } from "./core/workspace/workspaceGuard.js";
@@ -4247,7 +4248,14 @@ export function App({ launchArgs }: AppProps) {
     }
 
     // Validate workspace access for normal prompts
-    const outsideViolations = findOutsideWorkspacePaths(value, workspaceRoot, allowedWritableRoots);
+    const { violations: outsideViolations, skippedExternalPaths } = findOutsideWorkspacePaths(value, workspaceRoot, allowedWritableRoots);
+
+    if (skippedExternalPaths.length > 0) {
+      for (const skipped of skippedExternalPaths) {
+        appendSystemEvent("Dependency skipped", `Skipped external dependency source: ${formatSkippedDependencyPath(skipped)}`);
+      }
+    }
+
     if (outsideViolations.length > 0) {
       if (runtimeConfig.policy.allowExternalFileImport) {
         const attachmentsDir = path.isAbsolute(runtimeConfig.policy.attachmentDir)

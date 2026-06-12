@@ -235,18 +235,33 @@ export function extractExplicitPathReferences(text: string): string[] {
   return matches;
 }
 
+export function formatSkippedDependencyPath(pathValue: string): string {
+  const parts = pathValue.replace(/\\/g, "/").split("/");
+  const registryIndex = parts.indexOf("registry");
+  if (registryIndex !== -1 && parts[registryIndex + 1] === "src" && parts[registryIndex + 2]?.includes("index.crates.io")) {
+    return parts.slice(registryIndex + 3).join("/");
+  }
+  const gitIndex = parts.indexOf("git");
+  if (gitIndex !== -1 && parts[gitIndex + 1] === "checkouts") {
+    return parts.slice(gitIndex + 2).join("/");
+  }
+  return parts[parts.length - 1] ?? pathValue;
+}
+
 export function findOutsideWorkspacePaths(
   text: string,
   workspaceRoot: string,
   allowedRoots: readonly string[] = [],
-): WorkspacePathViolation[] {
+): { violations: WorkspacePathViolation[]; skippedExternalPaths: string[] } {
   const violations: WorkspacePathViolation[] = [];
+  const skippedExternalPaths: string[] = [];
   const seen = new Set<string>();
   const workspaceStyle = detectPathStyle(workspaceRoot) ?? "windows";
 
   for (const rawPath of extractExplicitPathReferences(text)) {
     const cleanPath = normalizeDiagnosticPath(rawPath);
     if (isSkippedExternalDependencyPath(cleanPath)) {
+      skippedExternalPaths.push(cleanPath);
       continue;
     }
 
@@ -259,6 +274,7 @@ export function findOutsideWorkspacePaths(
       ? normalizeAbsolutePath(cleanPath, explicitStyle)
       : resolveWorkspacePath(cleanPath, workspaceRoot);
     if (isSkippedExternalDependencyPath(normalizedPath)) {
+      skippedExternalPaths.push(normalizedPath);
       continue;
     }
 
@@ -272,7 +288,7 @@ export function findOutsideWorkspacePaths(
     violations.push({ rawPath, normalizedPath });
   }
 
-  return violations;
+  return { violations, skippedExternalPaths };
 }
 
 export function containsDirectoryNavigationCommand(command: string): boolean {
@@ -311,7 +327,7 @@ export function getPromptWorkspaceGuardMessage(
   workspaceRoot: string,
   allowedRoots: readonly string[] = [],
 ): string | null {
-  const violations = findOutsideWorkspacePaths(prompt, workspaceRoot, allowedRoots);
+  const { violations } = findOutsideWorkspacePaths(prompt, workspaceRoot, allowedRoots);
   if (violations.length === 0) {
     return null;
   }
@@ -337,7 +353,7 @@ export function getShellWorkspaceGuardMessage(
     ].join("\n");
   }
 
-  const violations = findOutsideWorkspacePaths(command, workspaceRoot, allowedRoots);
+  const { violations } = findOutsideWorkspacePaths(command, workspaceRoot, allowedRoots);
   if (violations.length === 0) {
     return null;
   }
