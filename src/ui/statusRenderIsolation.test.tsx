@@ -390,7 +390,6 @@ test("first action activity keeps the shell frame mounted and visible", async ()
     await sleep(100);
 
     const frame = stripAnsi(output);
-    assert.match(frame, /workspace/);
     assert.match(frame, /What is the point of 5-Date Verification/);
     assert.match(frame, /Codexa is thinking/i);
     assert.match(frame, /Get-Content README\.md/);
@@ -547,7 +546,7 @@ test("native AppShell finalize keeps transcript rows in one keyed tree", async (
     assert.deepEqual(unmountedActionRows, []);
     assert.deepEqual(majorUnmounts, []);
     const frame = stripAnsi(output);
-    assert.match(frame, /13-Custom-CLI-Normal/);
+    assert.match(frame, /What is the point of 5-Date Verification/);
     assert.match(frame, /Hello/);
   } finally {
     instance.unmount();

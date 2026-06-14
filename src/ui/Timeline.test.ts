@@ -14,6 +14,7 @@ import {
   createFollowTailViewport,
   endTimelineViewport,
   findAnchorItem,
+  getTimelineScrollState,
   homeTimelineViewport,
   isNearBottom,
   pageDownTimelineViewport,
@@ -845,6 +846,26 @@ test("home anchors the browse window to the first page and end restores tail fol
   assert.equal(window.window.endRow, 4);
   assert.equal(end.followTail, true);
   assert.equal(end.anchorRow, snapshot.totalRows - 1);
+});
+
+test("scroll state transitions between tail and history with offset from bottom", () => {
+  const snapshot = createSnapshot([1, 1, 1, 1, 1, 1, 1, 1]);
+  const tail = createFollowTailViewport(snapshot.totalRows);
+  const history = scrollTimelineViewport(tail, snapshot, 4, -3);
+  const backToTail = scrollTimelineViewport(history, snapshot, 4, 3);
+
+  assert.deepEqual(getTimelineScrollState(tail, snapshot.totalRows), {
+    mode: "tail",
+    scrollOffsetFromBottom: 0,
+  });
+  assert.deepEqual(getTimelineScrollState(history, history.frozenSnapshot?.totalRows), {
+    mode: "history",
+    scrollOffsetFromBottom: 3,
+  });
+  assert.deepEqual(getTimelineScrollState(backToTail, snapshot.totalRows), {
+    mode: "tail",
+    scrollOffsetFromBottom: 0,
+  });
 });
 
 // ─── findAnchorItem ───────────────────────────────────────────────────────────

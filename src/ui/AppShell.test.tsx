@@ -513,11 +513,37 @@ test("startup uses compact side-by-side ASCII header at normal shorter terminal 
 
   assert.match(output, /██████/);
   assert.match(output, /Codexa v/);
-  assert.match(output, /Workspace:\s*…\\13-Custom CLI/);
-  assert.match(output, /Provider: Codexa Core/);
   assert.match(output, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
   assert.doesNotMatch(output, /Model: gpt-5\.4/);
   assert.doesNotMatch(output, /Reasoning:/);
+  assert.match(output, /\n\s*╭[─]+╮\n\s*│ ❯/);
+});
+
+test("startup system notices do not hide the scrollable CODEXA logo", async () => {
+  const output = await renderStartupShell(100, 22, "main", [
+    {
+      id: 70,
+      type: "system",
+      createdAt: 70,
+      title: "Provider migrated",
+      content: "Antigravity provider is no longer supported. Reverted to OpenAI.",
+    },
+    {
+      id: 71,
+      type: "system",
+      createdAt: 71,
+      title: "Launch mode",
+      content: "Ready. Type a prompt...",
+    },
+  ]);
+
+  const logoIndex = output.search(/██████|✦ CODEXA|CODEXA/);
+  const providerIndex = output.indexOf("Provider migrated");
+  const launchIndex = output.indexOf("Launch mode");
+
+  assert.ok(logoIndex >= 0, "CODEXA logo should render at normal startup size");
+  assert.ok(providerIndex > logoIndex, "Provider migrated notice should render below the logo");
+  assert.ok(launchIndex > logoIndex, "Launch mode notice should render below the logo");
   assert.match(output, /\n\s*╭[─]+╮\n\s*│ ❯/);
 });
 
@@ -540,6 +566,7 @@ test("80x24 keeps the last timeline content visible above the composer", async (
 test("larger terminals keep the composer metadata row", async () => {
   const output = await renderShell(100, 30, { kind: "IDLE" });
 
+  assert.match(output, /██████|CODEXA|Codexa/);
   assert.match(output, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
   assert.match(output, /Dev shell attached/);
   assert.match(output, /gpt-5\.4/i);
@@ -742,7 +769,7 @@ test("model picker renders as a compact command panel with composer", async () =
 
   const output = stripAnsi(raw);
   assert.match(output, /Select model command panel/);
-  assert.match(output, /Codexa v/);
+  assert.doesNotMatch(output, /Codexa v/);
   assert.match(output, /gpt-5\.4 \(medium\)/);
 });
 
@@ -1101,14 +1128,12 @@ function countCodexaMetadataInOutput(raw: string): number {
 
 function assertHeaderBefore(output: string, marker: string) {
   const text = stripAnsi(output);
-  const headerIndex = text.indexOf("Codexa v");
   const markerIndex = text.indexOf(marker);
-  assert.ok(headerIndex >= 0, "header should render");
+  const metadataIndex = text.indexOf("Codexa v");
   assert.ok(markerIndex >= 0, `marker should render: ${marker}`);
-  assert.ok(
-    headerIndex < markerIndex,
-    `header should render before ${marker}; header index ${headerIndex}, marker index ${markerIndex}`,
-  );
+  assert.ok(metadataIndex >= 0, "scrollable intro metadata should render with transcript content");
+  assert.ok(metadataIndex < markerIndex, "scrollable intro should precede transcript content");
+  assert.ok(countLogoInOutput(text) >= 1, "scrollable logo should render with transcript content when room allows");
 }
 
 function rowText(row: ReturnType<typeof buildStaticIntroRows>[number]): string {
@@ -1214,7 +1239,7 @@ test("header renders before command output and system notices", async () => {
   assertHeaderBefore(raw, "Workspace display set to Name");
 });
 
-test("settings panel renders below the header", async () => {
+test("settings panel renders in the transcript-sized stage without a fixed header", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 120;
@@ -1239,7 +1264,11 @@ test("settings panel renders below the header", async () => {
   instance.cleanup();
   await sleep(20);
 
-  assertHeaderBefore(raw, "Settings panel marker");
+  const output = stripAnsi(raw);
+  assert.match(output, /Settings panel marker/);
+  assert.match(output, /\n\s*╭[─]+╮\n\s*│ ❯/);
+  assert.doesNotMatch(output, /Codexa v/);
+  assert.equal(countLogoInOutput(output), 0);
 });
 
 test("header remains topmost after multiple prompt and response cycles", async () => {
@@ -1299,8 +1328,8 @@ test("header remains topmost after multiple prompt and response cycles", async (
 
   assertHeaderBefore(raw, "Second prompt marker");
   assertHeaderBefore(raw, "Second assistant response marker");
-  assert.equal(countLogoInOutput(raw), 1, "header should render once in the initial frame");
-  assert.equal(countCodexaMetadataInOutput(raw), 1, "metadata should render once in the initial frame");
+  assert.equal(countLogoInOutput(raw), 1, "conversation content should render one scrollable logo");
+  assert.equal(countCodexaMetadataInOutput(raw), 1, "conversation content should render one scrollable metadata block");
 });
 
 test("header is not duplicated by provider migration and route switch transcript events", async () => {
@@ -1344,11 +1373,11 @@ test("header is not duplicated by provider migration and route switch transcript
 
   assert.match(stripAnsi(raw), /Provider migrated/);
   assert.match(stripAnsi(raw), /Provider route active/);
-  assert.equal(countLogoInOutput(raw), 1, "route switch events must not add a transcript banner");
-  assert.equal(countCodexaMetadataInOutput(raw), 1, "route switch events must not duplicate metadata");
+  assert.equal(countLogoInOutput(raw), 1, "route switch events should render one scrollable logo");
+  assert.equal(countCodexaMetadataInOutput(raw), 1, "route switch events should render one scrollable metadata block");
 });
 
-test("project instructions render with breathing room below the live header", async () => {
+test("project instructions render below the scrollable startup intro", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 120;
@@ -1381,16 +1410,14 @@ test("project instructions render with breathing room below the live header", as
   await sleep(20);
 
   const rows = stripAnsi(raw).split("\n");
-  const lastLogoRow = rows.findIndex((row) => row.includes("╚═════"));
   const projectRow = rows.findIndex((row) => row.includes("Project instructions"));
 
-  assert.ok(lastLogoRow >= 0, "logo should render");
-  assert.ok(projectRow > lastLogoRow + 1, "project instructions should not touch the logo block");
+  assert.ok(projectRow >= 0, "project instructions should render");
+  assert.equal(countLogoInOutput(raw), 1, "project instruction notice should keep the logo in transcript flow");
   assertHeaderBefore(raw, "Project instructions");
-  assert.equal(countLogoInOutput(raw), 1, "project instruction notice must not add a transcript banner");
 });
 
-test("live header remains visible when transitioning from startup frame to first prompt", async () => {
+test("scrollable intro remains in transcript flow when transitioning from startup frame to first prompt", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   // Use a tall terminal so the large ASCII logo is chosen.
@@ -1423,7 +1450,6 @@ test("live header remains visible when transitioning from startup frame to first
   const postPromptOutput = stripAnsi(raw.slice(transitionOffset));
   assert.match(postPromptOutput, /██████/);
   assert.match(postPromptOutput, /Codexa v/);
-  assert.match(postPromptOutput, /Workspace: C:\\Test/);
   assert.match(postPromptOutput, /Reproduce the resize flicker and fix it\./);
   assert.match(postPromptOutput, /Root cause looks like a layout gutter mismatch/);
   assertHeaderBefore(postPromptOutput, "Reproduce the resize flicker and fix it.");
@@ -1461,7 +1487,7 @@ test("workspace label updates on cold start without remounting the app shell", a
   const output = stripAnsi(raw);
   assert.match(output, /Workspace:\s*Codexa/);
   assert.doesNotMatch(output, /Settings/);
-  assert.ok(countLogoInOutput(raw) <= 4, "workspace label changes should stay bounded to the live startup header");
+  assert.ok(countLogoInOutput(raw) <= 4, "workspace label changes should keep startup intro bounded");
 });
 
 test("post-clear empty native frame renders the live header and empty composer", async () => {
@@ -1528,7 +1554,7 @@ test("clear transition physically reprints the intro after previous transcript o
   assert.doesNotMatch(postClearOutput, /Root cause looks like a layout gutter mismatch/);
 });
 
-test("live header remains visible when panel opens and then closes", async () => {
+test("scrollable intro state survives panel open and close", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 120;
@@ -1757,8 +1783,8 @@ test("cold-start stability: system events do not break the startup frame", async
   await sleep(20);
 
   const output = stripAnsi(raw);
-  // Large logo should still render because there is no user prompt yet.
   assert.match(output, /██████/);
+  assert.match(output, /Codexa v/);
   assert.match(output, /Model updated/);
 
   const lines = output.split("\n").filter(l => l.trim().length > 0);
@@ -1900,27 +1926,26 @@ function makeNativeShellInstance(uiState: UIState, activeEvents: TimelineEvent[]
   };
 }
 
-test("native mode: Page Up during streaming shows pause indicator", async () => {
-  const { stdin, instance, getOutput, getRawLength } = makeNativeShellInstance({ kind: "RESPONDING", turnId: 1 });
+test("native mode: Page Up during streaming shows history indicator", async () => {
+  const { stdin, instance, getOutput } = makeNativeShellInstance({ kind: "RESPONDING", turnId: 1 });
 
   try {
     await sleep(100);
-    const beforePageUp = getRawLength();
 
     // Send Page Up escape code
     stdin.write("[5~");
     await sleep(100);
 
-    const frame = stripAnsi(getOutput().slice(stripAnsi(getOutput().slice(0, beforePageUp)).length - 1));
     const output = getOutput();
-    assert.match(output, /End to follow/, "pause indicator should appear after Page Up");
+    assert.match(output, /History \d+%/, "history indicator should appear after Page Up");
+    assert.match(output, /End: latest/, "history indicator should expose the End shortcut");
   } finally {
     instance.cleanup();
     await sleep(20);
   }
 });
 
-test("native mode: End key after Page Up removes pause indicator", async () => {
+test("native mode: End key after Page Up removes history indicator", async () => {
   const { stdin, instance, getOutput } = makeNativeShellInstance({ kind: "RESPONDING", turnId: 1 });
 
   try {
@@ -1928,7 +1953,7 @@ test("native mode: End key after Page Up removes pause indicator", async () => {
     stdin.write("[5~");
     await sleep(100);
 
-    assert.match(getOutput(), /End to follow/, "pause indicator should appear after Page Up");
+    assert.match(getOutput(), /History \d+%/, "history indicator should appear after Page Up");
 
     stdin.write("[F");
     await sleep(100);
@@ -1938,14 +1963,14 @@ test("native mode: End key after Page Up removes pause indicator", async () => {
     //  no longer contains it by checking the total output ends without it)
     const outputLines = getOutput().split("\n");
     const trailingContent = outputLines.slice(-10).join("\n");
-    assert.doesNotMatch(trailingContent, /End to follow/, "pause indicator should disappear after End");
+    assert.doesNotMatch(trailingContent, /History \d+%/, "history indicator should disappear after End");
   } finally {
     instance.cleanup();
     await sleep(20);
   }
 });
 
-test("native mode: nativePaused auto-clears when streaming ends (uiState becomes IDLE)", async () => {
+test("native mode: history indicator appears while streaming user is detached", async () => {
   const { stdin, instance, getOutput } = makeNativeShellInstance({ kind: "RESPONDING", turnId: 1 });
 
   try {
@@ -1953,15 +1978,10 @@ test("native mode: nativePaused auto-clears when streaming ends (uiState becomes
     stdin.write("[5~");
     await sleep(100);
 
-    assert.match(getOutput(), /End to follow/, "pause indicator should appear while busy");
+    assert.match(getOutput(), /History \d+%/, "history indicator should appear while busy");
 
-    // Simulate streaming ending — we can't re-render the same instance with new props here,
-    // so we verify the auto-clear logic by checking that when busy state would end,
-    // the effect dependency chain is correct (tested via the component's useEffect).
-    // The manual Page Up → End cycle (test above) covers the user-driven resume path.
-    // This test verifies the indicator appears only when isBusy(uiState) is true.
     const output = getOutput();
-    assert.match(output, /End to follow/, "indicator appears while RESPONDING");
+    assert.match(output, /History \d+%/, "indicator appears while RESPONDING");
   } finally {
     instance.cleanup();
     await sleep(20);
