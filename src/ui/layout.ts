@@ -1,22 +1,30 @@
 /**
  * Responsive layout constants and hook.
  *
- * Three modes based purely on terminal column count:
+ * Five modes based on both terminal columns and rows:
  *
- *   full    ≥ 110 cols  → full banner, side-by-side header info
- *   compact  60–109     → single-line mini logo, stacked info, condensed composer
- *   micro    < 60       → no logo, one-line header, ultra-compact composer
+ *   micro    very small rows/cols → one-line shell
+ *   compact  normal short terminal → compact shell, no large logo
+ *   normal   standard terminal → compact header, roomy content
+ *   wide     large terminal → decorative header allowed
+ *   max      maximized terminal → full decorative layout
  */
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useStdout } from "ink";
 import stringWidth from "string-width";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { setTerminalResizing, isTerminalResizing } from "../core/terminal/terminalControl.js";
 
-export const BREAKPOINT_FULL    = 110; // ≥ this → full
-export const BREAKPOINT_COMPACT =  60; // ≥ this → compact; below → micro
-export const MAX_CONTENT_WIDTH = 120;
+export const BREAKPOINT_MAX = 180;
+export const BREAKPOINT_WIDE = 140;
+export const BREAKPOINT_NORMAL = 90;
+export const BREAKPOINT_COMPACT = 60;
+export const ROW_BREAKPOINT_MAX = 40;
+export const ROW_BREAKPOINT_WIDE = 30;
+export const ROW_BREAKPOINT_NORMAL = 20;
+export const ROW_BREAKPOINT_COMPACT = 14;
+export const MAX_CONTENT_WIDTH = 220;
 export const MIN_TERMINAL_COLS = 20;
 export const MIN_TERMINAL_ROWS = 10;
 export const MIN_VIEWPORT_COLS = 20;
@@ -33,13 +41,84 @@ export const transcriptContentIndent = 4; // 2 for DashCard border + 2 for promp
 const DEFAULT_COLUMNS = 120;
 const DEFAULT_ROWS = 24;
 
-export type LayoutMode = "full" | "compact" | "micro";
+export type LayoutMode = "compact" | "regular" | "expanded";
 export type StartupHeaderMode = "large" | "compact" | "tiny";
 
 export interface Layout {
   cols: number;
   rows: number;
   mode: LayoutMode;
+}
+
+export type PanelLayout = {
+  mode: "compact" | "regular" | "expanded";
+  availableRows: number;
+  availableCols: number;
+};
+
+export type BottomChromeBudget = {
+  runtimeMetadataRows: number;
+  composerRows: number;
+  transientStatusRows: number;
+  bottomPaddingRows: number;
+  totalRows: number;
+};
+
+export type AppLayoutBudget = {
+  mode: LayoutMode;
+  rows: number;
+  cols: number;
+
+  headerRows: number;
+  headerGapRows: number;
+  panelStagePaddingY: number;
+
+  activePanelRows: number;
+  activePanelCols: number;
+
+  bottomChromeBudget: BottomChromeBudget;
+  composerRows: number;
+
+  showNormalLogo: boolean;
+  showCompactHeader: boolean;
+  placeMetadataBesideLogo: boolean;
+  placeMetadataBelowLogo: boolean;
+
+  // Backward compatibility fields:
+  transcriptRows: number;
+  panelRows: number;
+  showLargeLogo: boolean;
+  showPanelSeparators: boolean;
+  showPanelColumnHeaders: boolean;
+};
+
+export const PanelAvailableRowsContext = createContext<number | undefined>(undefined);
+export const AppLayoutBudgetContext = createContext<AppLayoutBudget | undefined>(undefined);
+export const PanelLayoutContext = createContext<PanelLayout | undefined>(undefined);
+
+export interface ActivePanelLayout {
+  width: number;
+  height: number;
+  availableRows: number;
+  availableCols: number;
+}
+
+export const ActivePanelLayoutContext = createContext<ActivePanelLayout | undefined>(undefined);
+
+export function usePanelAvailableRows(): number | undefined {
+  return useContext(PanelAvailableRowsContext);
+}
+
+export function useAppLayoutBudget(): AppLayoutBudget | undefined {
+  return useContext(AppLayoutBudgetContext);
+}
+
+export function useActivePanelLayout(): ActivePanelLayout | undefined {
+  return useContext(ActivePanelLayoutContext);
+}
+
+export function usePanelLayout(): PanelLayout | undefined {
+  return useContext(PanelLayoutContext);
 }
 
 export interface TerminalViewport extends Layout {
@@ -94,7 +173,13 @@ export function getShellWidth(cols: number | undefined): number {
  * This is used to center the UI in large terminals.
  */
 export function getContentWidth(cols: number | undefined): number {
-  return Math.min(getShellWidth(cols), MAX_CONTENT_WIDTH);
+  const shellWidth = getShellWidth(cols);
+
+  if (shellWidth < 100) return shellWidth;
+  if (shellWidth < 150) return shellWidth - 4;
+  if (shellWidth < 200) return shellWidth - 8;
+
+  return Math.min(shellWidth - 12, MAX_CONTENT_WIDTH);
 }
 
 export function getUsableShellWidth(cols: number | undefined, reservedColumns = 0): number {
@@ -164,10 +249,118 @@ export function clampVisualText(text: string, maxWidth: number): string {
   return output + ellipsis;
 }
 
-function computeMode(cols: number): LayoutMode {
-  if (cols >= BREAKPOINT_FULL)    return "full";
-  if (cols >= BREAKPOINT_COMPACT) return "compact";
-  return "micro";
+export function computeMode(cols: number, rows: number): LayoutMode {
+  if (rows <= 24 || cols <= 100) {
+    return "compact";
+  }
+  if (cols >= 140 && rows >= 30) {
+    return "expanded";
+  }
+  return "regular";
+}
+
+export function isDecorativeLayoutMode(mode: LayoutMode): boolean {
+  return mode === "expanded";
+}
+
+export function isCompactShellMode(mode: LayoutMode): boolean {
+  return mode === "compact" || mode === "regular";
+}
+
+export interface AppLayoutBudgetParams {
+  cols: number | undefined;
+  rows: number | undefined;
+  composerRows?: number;
+  panelHintRows?: number;
+  headerRows?: number;
+  headerGapRows?: number;
+}
+
+export function computeAppLayoutBudget({
+  cols,
+  rows,
+  composerRows = 4,
+  panelHintRows = 0,
+  headerRows,
+  headerGapRows,
+}: AppLayoutBudgetParams): AppLayoutBudget {
+  const safeCols = normalizeDimension(cols, DEFAULT_COLUMNS);
+  const safeRows = normalizeDimension(rows, DEFAULT_ROWS);
+  const mode = computeMode(safeCols, safeRows);
+  const shellHeight = getShellHeight(safeRows);
+
+  const showNormalLogo =
+    process.env["CODEXA_NO_ASCII_LOGO"] !== "1" && (
+      mode === "regular" ||
+      mode === "expanded" ||
+      (mode === "compact" && safeCols >= 72)
+    );
+
+  const showCompactHeader = !showNormalLogo;
+
+  const placeMetadataBesideLogo =
+    showNormalLogo && safeCols >= 95;
+
+  const placeMetadataBelowLogo =
+    showNormalLogo && !placeMetadataBesideLogo;
+
+  const resolvedHeaderRows = headerRows ?? (showNormalLogo ? 6 : 1);
+  const resolvedHeaderGapRows = headerGapRows ?? (mode === "compact" ? 0 : 1);
+  const panelStagePaddingY = mode === "compact" ? 0 : 1;
+  const resolvedComposerRows = mode === "compact" ? 3 : Math.max(0, composerRows);
+  const runtimeMetadataRows = 1;
+  const transientStatusRows = 0;
+  const bottomPaddingRows = mode === "compact" ? 0 : 1;
+  const bottomChromeBudget: BottomChromeBudget = {
+    runtimeMetadataRows,
+    composerRows: resolvedComposerRows,
+    transientStatusRows,
+    bottomPaddingRows,
+    totalRows: runtimeMetadataRows + resolvedComposerRows + transientStatusRows + bottomPaddingRows,
+  };
+  const baseReservedRows =
+    resolvedHeaderRows +
+    resolvedHeaderGapRows +
+    panelStagePaddingY * 2 +
+    bottomChromeBudget.totalRows +
+    Math.max(0, panelHintRows);
+
+  const activePanelRows = Math.max(1, shellHeight - baseReservedRows);
+  const contentWidth = getContentWidth(safeCols);
+  
+  const isCompact = mode === "compact";
+  const borderRows = 2;
+  const titleRows = 1;
+  const headerRowsInPanel = isCompact ? 0 : 1;
+  const panelChromeRows = borderRows + titleRows + headerRowsInPanel;
+  const innerAvailableRows = Math.max(1, activePanelRows - panelChromeRows);
+
+  const borderCols = 4;
+  const innerAvailableCols = Math.max(20, contentWidth - borderCols);
+
+  return {
+    mode,
+    rows: safeRows,
+    cols: safeCols,
+    headerRows: resolvedHeaderRows,
+    headerGapRows: resolvedHeaderGapRows,
+    panelStagePaddingY,
+    activePanelRows: innerAvailableRows,
+    activePanelCols: innerAvailableCols,
+    bottomChromeBudget,
+    composerRows: resolvedComposerRows,
+    showNormalLogo,
+    showCompactHeader,
+    placeMetadataBesideLogo,
+    placeMetadataBelowLogo,
+    
+    // Backward compatibility fields:
+    transcriptRows: activePanelRows,
+    panelRows: innerAvailableRows,
+    showLargeLogo: mode === "expanded",
+    showPanelSeparators: mode === "expanded",
+    showPanelColumnHeaders: mode === "expanded",
+  };
 }
 
 export function createLayoutSnapshot(
@@ -176,7 +369,7 @@ export function createLayoutSnapshot(
   fallback: Layout = {
     cols: DEFAULT_COLUMNS,
     rows: DEFAULT_ROWS,
-    mode: computeMode(DEFAULT_COLUMNS),
+    mode: computeMode(DEFAULT_COLUMNS, DEFAULT_ROWS),
   },
 ): TerminalViewport {
   const nextCols = normalizeDimension(cols, fallback.cols);
@@ -185,7 +378,7 @@ export function createLayoutSnapshot(
   const stableLayout = {
     cols: nextCols,
     rows: nextRows,
-    mode: computeMode(nextCols),
+    mode: computeMode(nextCols, nextRows),
   };
 
   const isCramped = isCrampedTerminal(nextCols, nextRows);
@@ -350,4 +543,19 @@ export function useTerminalViewport(): TerminalViewport {
   }, [stdout]);
 
   return viewport;
+}
+
+/**
+ * Calculate available vertical rows for active panels, falling back to a layout-based
+ * budget if availableRows is not explicitly provided.
+ */
+export function getAvailableRowsForPanel(
+  layout: Layout,
+  passedAvailableRows?: number
+): number {
+  if (passedAvailableRows !== undefined) {
+    return passedAvailableRows;
+  }
+
+  return computeAppLayoutBudget({ cols: layout.cols, rows: layout.rows }).panelRows;
 }

@@ -8,12 +8,19 @@ import * as renderDebug from "../core/perf/renderDebug.js";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
 import { isBusy } from "../session/types.js";
 import {
+  ActivePanelLayoutContext,
+  type ActivePanelLayout,
+  AppLayoutBudgetContext,
+  computeAppLayoutBudget,
   getContentWidth,
   getShellHeight,
   getShellWidth,
   isCrampedTerminal,
+  PanelAvailableRowsContext,
   type Layout,
   type LayoutMode,
+  type PanelLayout,
+  PanelLayoutContext,
   MIN_TERMINAL_COLS,
   MIN_TERMINAL_ROWS,
   type TerminalViewport,
@@ -54,8 +61,6 @@ export interface AppShellProps {
   panel: React.ReactNode;
   mainPanel?: React.ReactNode;
   mainPanelMode?: "viewport" | "full-output";
-  runtimeStatusBar?: React.ReactNode;
-  runtimeStatusRows?: number;
   composer: React.ReactNode;
   composerRows: number;
   panelHint?: React.ReactNode;
@@ -108,7 +113,7 @@ export function calculateColdStartSpacerRows({
   if (availableRows <= 0) return 0;
 
   const rowsAfterHeaderAndComposer = Math.max(0, shellRows - headerRows - composerRows);
-  const preferredRows = layoutMode === "micro" || shellRows <= 18
+  const preferredRows = layoutMode === "compact" || shellRows <= 18
     ? 1
     : shellRows >= 36
       ? TALL_HEADER_TO_COMPOSER_GAP_ROWS
@@ -120,7 +125,7 @@ export function calculateColdStartSpacerRows({
 }
 
 export function calculateHeaderToContentGapRows(layout: Layout): number {
-  if (layout.mode === "micro" || layout.rows <= 18) return 0;
+  if (layout.mode === "compact" || layout.rows <= 18) return 0;
   return 1;
 }
 
@@ -170,6 +175,35 @@ function CrampedView({ layout }: { layout: Layout }) {
   );
 }
 
+function injectPanelLayout(
+  element: React.ReactNode,
+  availableRows: number,
+  activePanelLayout: ActivePanelLayout,
+  panelLayout: PanelLayout
+): React.ReactNode {
+  if (!React.isValidElement(element)) {
+    return element;
+  }
+  if (element.type === React.Fragment) {
+    const fragment = element as React.ReactElement<{ children?: React.ReactNode }>;
+    return React.cloneElement(
+      fragment,
+      fragment.props,
+      React.Children.map(fragment.props.children, (child) =>
+        injectPanelLayout(child, availableRows, activePanelLayout, panelLayout)
+      )
+    );
+  }
+  return React.cloneElement(
+    element as React.ReactElement<{
+      availableRows?: number;
+      activePanelLayout?: ActivePanelLayout;
+      panelLayout?: PanelLayout;
+    }>,
+    { availableRows, activePanelLayout, panelLayout }
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 function AppShellInner({
@@ -185,8 +219,6 @@ function AppShellInner({
   panel,
   mainPanel,
   mainPanelMode = "viewport",
-  runtimeStatusBar,
-  runtimeStatusRows = 0,
   composer,
   composerRows,
   panelHint,
@@ -230,7 +262,7 @@ function AppShellInner({
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
   const headerRows = measureTopHeaderRows(layout, headerConfig, !!updateAvailable);
-  const headerToContentGapRows = calculateHeaderToContentGapRows(layout);
+
   const showComposer = true;
   const showMainPanel = screen === "main" && mainPanel !== undefined && mainPanel !== null;
   const showMainPanelFullOutput = showMainPanel && mainPanelMode === "full-output";
@@ -292,65 +324,47 @@ function AppShellInner({
   // ── End native mode scroll-pause state ────────────────────────────────────
 
   const effectiveShowComposer = showComposer;
-  const effectiveComposerRows = effectiveShowComposer ? composerRows : 0;
-  const effectiveRuntimeStatusRows = runtimeStatusBar ? runtimeStatusRows : 0;
   const panelHintRows = showPanelStage && panelHint ? 2 : 0;
-  const canUseColdStartGap = effectiveShowComposer && !hasUserPrompt && screen === "main" && !showMainPanel;
 
-  // Timeline/panel owns all vertical space between the live header and fixed composer.
-  const coldStartAvailableRows = Math.max(
-    0,
-    shellHeight - headerRows - headerToContentGapRows - effectiveRuntimeStatusRows - effectiveComposerRows - panelHintRows - 2,
-  );
-  const coldStartComposerGapRows = canUseColdStartGap
-    ? calculateColdStartSpacerRows({
-      shellRows: shellHeight,
-      headerRows,
-      composerRows: effectiveComposerRows,
-      layoutMode: layout.mode,
-      availableRows: coldStartAvailableRows,
-    })
-    : 0;
-  const fixedComposerLeadGapRows = mouseCapture ? coldStartComposerGapRows : 0;
-  const calculatedTimelineRowsRaw = shellHeight
-    - headerRows
-    - headerToContentGapRows
-    - effectiveRuntimeStatusRows
-    - effectiveComposerRows
-    - panelHintRows
-    - fixedComposerLeadGapRows;
-  const calculatedTimelineRows = Math.max(2, calculatedTimelineRowsRaw);
+  // ─── App Layout Budget ────────────────────────────────────────────────────
 
-  const { finalShellHeight, finalShellWidth, finalTimelineRows } = useMemo(() => {
+  const appLayoutBudget = computeAppLayoutBudget({
+    cols: layout.cols,
+    rows: layout.rows,
+    composerRows,
+    panelHintRows,
+    headerRows,
+  });
+
+  const headerToContentGapRows = appLayoutBudget.headerGapRows;
+  const effectiveComposerRows = appLayoutBudget.composerRows;
+  const bottomChromeRows = appLayoutBudget.bottomChromeBudget.totalRows;
+
+  const finalTimelineRows = appLayoutBudget.transcriptRows;
+  const finalShellHeight = shellHeight;
+  const finalShellWidth = shellWidth;
+
+  const { finalTimelineRows: resolvedTimelineRows } = useMemo(() => {
     const prev = previousMeasurements.current;
     const isValid = shellHeight > 0
       && shellWidth > 0
       && Number.isFinite(shellHeight)
       && Number.isFinite(shellWidth)
-      && Number.isFinite(calculatedTimelineRowsRaw)
-      && calculatedTimelineRowsRaw >= 2;
+      && Number.isFinite(finalTimelineRows)
+      && finalTimelineRows >= 2;
 
     if (!isValid && prev) {
-      renderDebug.traceEvent("layout", "measurementFallback", {
-        reason: "invalid-shell-or-timeline-rows",
-        shellHeight,
-        shellWidth,
-        calculatedTimelineRowsRaw,
-        previousTimelineRows: prev.timelineRows,
-      });
       return {
-        finalShellHeight: prev.shellHeight,
-        finalShellWidth: prev.shellWidth,
         finalTimelineRows: prev.timelineRows,
       };
     }
 
     return {
-      finalShellHeight: shellHeight,
-      finalShellWidth: shellWidth,
-      finalTimelineRows: Math.max(2, calculatedTimelineRows),
+      finalTimelineRows: Math.max(2, finalTimelineRows),
     };
-  }, [shellHeight, shellWidth, calculatedTimelineRows, calculatedTimelineRowsRaw]);
+  }, [shellHeight, shellWidth, finalTimelineRows]);
+
+  // ─── Native mode transcript ───────────────────────────────────────────────
 
   const nativeTranscriptParts = useMemo(() => {
     if (mouseCapture) {
@@ -383,16 +397,19 @@ function AppShellInner({
     return parts;
   }, [activeEvents, finalShellWidth, mouseCapture, showTimeline, staticEvents, uiState, verboseMode, workspaceRoot]);
 
+  // ─── Spacer logic for native mode ─────────────────────────────────────────
+
   const nativeStaticTranscriptRows = useMemo(
     () => nativeTranscriptParts.staticItems.reduce((total, item) => total + item.rows.length, 0),
     [nativeTranscriptParts.staticItems],
   );
+
   const nativeSpacerRows = useMemo(() => {
     if (mouseCapture || !effectiveShowComposer || showMainPanel) return 0;
     const rows = calculateNativeSpacerRows({
       shellRows: finalShellHeight,
       introRows: headerRows + headerToContentGapRows,
-      composerRows: effectiveComposerRows + effectiveRuntimeStatusRows,
+      composerRows: bottomChromeRows,
       staticRows: nativeStaticTranscriptRows,
       liveRows: nativeTranscriptParts.liveRows.length,
     });
@@ -400,20 +417,20 @@ function AppShellInner({
       return calculateColdStartSpacerRows({
         shellRows: finalShellHeight,
         headerRows,
-        composerRows: effectiveComposerRows + effectiveRuntimeStatusRows,
+        composerRows: bottomChromeRows,
         layoutMode: layout.mode,
         availableRows: rows,
       });
     }
     return rows;
-  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, headerRows, headerToContentGapRows, effectiveComposerRows, effectiveRuntimeStatusRows, layout.mode, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
+  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, headerRows, headerToContentGapRows, bottomChromeRows, layout.mode, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
 
   const nativeStaticAllItems = useMemo<NativeStaticItem[]>(
     () => {
       if (mouseCapture) return [];
       return nativeTranscriptParts.staticItems.map((item) => ({ ...item, type: "rows" as const }));
     },
-    [mouseCapture, clearCount, nativeTranscriptParts.staticItems],
+    [mouseCapture, nativeTranscriptParts.staticItems],
   );
 
   const nativeAllRows = useMemo<TimelineRow[]>(
@@ -446,44 +463,56 @@ function AppShellInner({
     : 0;
 
   useEffect(() => {
-    const previous = previousMeasurements.current;
-    const changed: string[] = [];
-    if (!previous) {
-      changed.push("mount");
-    } else {
-      if (previous.timelineRows !== finalTimelineRows) changed.push("availableTimelineRows");
-      if (previous.composerRows !== effectiveComposerRows) changed.push("composerRows");
-      if (previous.shellHeight !== finalShellHeight) changed.push("height");
-    }
-
-    if (changed.length > 0) {
-      renderDebug.traceEvent("layout", "measurementUpdate", {
-        reason: changed.join(","),
-        availableTimelineRows: finalTimelineRows,
-        rawAvailableTimelineRows: calculatedTimelineRowsRaw,
-        composerRows: effectiveComposerRows,
-        shellHeight: finalShellHeight,
-        showComposer,
-        showTimeline,
-        showMainPanelFullOutput,
-      });
-    }
-
     previousMeasurements.current = {
-      timelineRows: finalTimelineRows,
-      composerRows: effectiveComposerRows,
+      timelineRows: resolvedTimelineRows,
+      composerRows: bottomChromeRows,
       shellHeight: finalShellHeight,
       shellWidth: finalShellWidth,
     };
-  }, [calculatedTimelineRowsRaw, effectiveComposerRows, effectiveRuntimeStatusRows, finalShellHeight, finalShellWidth, showComposer, showMainPanelFullOutput, showTimeline, finalTimelineRows]);
+  }, [resolvedTimelineRows, bottomChromeRows, finalShellHeight, finalShellWidth]);
 
   const clonedComposer = React.isValidElement(composer)
-    ? React.cloneElement(composer as React.ReactElement<{ selectionProfile?: TerminalSelectionProfile }>, { selectionProfile })
+    ? React.cloneElement(
+      composer as React.ReactElement<{ selectionProfile?: TerminalSelectionProfile }>,
+      { selectionProfile },
+    )
     : composer;
 
-  const contentWidth = layout.contentWidth;
+  const contentWidth = getContentWidth(layout.cols);
+  const panelStagePaddingY = appLayoutBudget.panelStagePaddingY;
+
+  const panelAvailableRows = appLayoutBudget.panelRows;
+
+  const activePanelLayout = useMemo<ActivePanelLayout>(() => {
+    const panelBoxHeight = Math.max(3, resolvedTimelineRows - 2 * panelStagePaddingY);
+    const showBorder = panelBoxHeight >= 7;
+    const borderRows = showBorder ? 2 : 0;
+    const borderCols = showBorder ? 4 : 0;
+    const panelTitleRows = showBorder ? 1 : 0;
+    const panelHeaderRows = panelBoxHeight >= 9 ? 1 : 0;
+    const panelChromeRows = borderRows + panelTitleRows + panelHeaderRows;
+
+    const availableRows = Math.max(1, panelBoxHeight - panelChromeRows);
+    const availableCols = Math.max(20, contentWidth - borderCols);
+
+    return {
+      width: contentWidth,
+      height: panelBoxHeight,
+      availableRows,
+      availableCols,
+    };
+  }, [resolvedTimelineRows, panelStagePaddingY, contentWidth]);
+
+  const panelLayout = useMemo<PanelLayout>(() => {
+    return {
+      mode: appLayoutBudget.mode,
+      availableRows: appLayoutBudget.activePanelRows,
+      availableCols: appLayoutBudget.activePanelCols,
+    };
+  }, [appLayoutBudget.mode, appLayoutBudget.activePanelRows, appLayoutBudget.activePanelCols]);
 
   const mainContent = (
+    <AppLayoutBudgetContext.Provider value={appLayoutBudget}>
     <Box flexDirection="column" width={contentWidth} height="100%">
       <MemoizedTopHeader
         authState={authState}
@@ -500,7 +529,7 @@ function AppShellInner({
 
       <Box
         flexDirection="column"
-        height={finalTimelineRows}
+        height={resolvedTimelineRows}
         overflow="hidden"
         display={showTimeline ? "flex" : "none"}
       >
@@ -510,7 +539,7 @@ function AppShellInner({
           activeEvents={activeEvents}
           layout={layout}
           uiState={uiState}
-          viewportRows={finalTimelineRows}
+          viewportRows={resolvedTimelineRows}
           verboseMode={verboseMode}
           authState={authState}
           workspaceLabel={workspaceLabel}
@@ -522,28 +551,31 @@ function AppShellInner({
       </Box>
 
       {showMainPanel && (
-        <Box flexDirection="column" height={finalTimelineRows} overflow="hidden" justifyContent="center">
+        <Box flexDirection="column" height={resolvedTimelineRows} overflow="hidden" justifyContent="center">
           {mainPanel}
         </Box>
       )}
 
       {showPanelStage && (
-        <Box flexDirection="column" flexGrow={1} overflow="hidden" paddingY={1}>
-          {panel}
+        <Box flexDirection="column" height={resolvedTimelineRows} overflow="hidden" paddingY={panelStagePaddingY}>
+          <PanelAvailableRowsContext.Provider value={panelAvailableRows}>
+            <ActivePanelLayoutContext.Provider value={activePanelLayout}>
+              <PanelLayoutContext.Provider value={panelLayout}>
+                {process.env.CODEXA_DEBUG_LAYOUT === "1" && (
+                  <Box>
+                    <Text color="red">
+                      DEBUG layout: rows={layout.rows} cols={layout.cols} mode={layout.mode} headerRows={headerRows} panelRows={panelAvailableRows} bottomChromeRows={appLayoutBudget.bottomChromeBudget.totalRows}
+                    </Text>
+                  </Box>
+                )}
+                {injectPanelLayout(panel, panelAvailableRows, activePanelLayout, panelLayout)}
+              </PanelLayoutContext.Provider>
+            </ActivePanelLayoutContext.Provider>
+          </PanelAvailableRowsContext.Provider>
         </Box>
-      )}
-
-      {fixedComposerLeadGapRows > 0 && (
-        <Box height={fixedComposerLeadGapRows} />
       )}
 
       {showPanelStage && panelHint}
-
-      {runtimeStatusBar && (
-        <Box flexDirection="column" flexShrink={0} height={effectiveRuntimeStatusRows}>
-          {runtimeStatusBar}
-        </Box>
-      )}
 
       {effectiveShowComposer && (
         <Box flexDirection="column" flexShrink={0}>
@@ -554,6 +586,7 @@ function AppShellInner({
         </Box>
       )}
     </Box>
+    </AppLayoutBudgetContext.Provider>
   );
 
   if (showMainPanelFullOutput) {
@@ -573,12 +606,6 @@ function AppShellInner({
         )}
 
         {mainPanel}
-
-        {runtimeStatusBar && (
-          <Box flexDirection="column" flexShrink={0} height={effectiveRuntimeStatusRows}>
-            {runtimeStatusBar}
-          </Box>
-        )}
 
         {showComposer && (
           <Box flexDirection="column" flexShrink={0}>
@@ -632,8 +659,6 @@ export const AppShell = memo(AppShellInner, (prev, next) => {
     prev.activeEvents    === next.activeEvents    &&
     prev.uiState         === next.uiState         &&
     prev.composerRows    === next.composerRows    &&
-    prev.runtimeStatusBar === next.runtimeStatusBar &&
-    prev.runtimeStatusRows === next.runtimeStatusRows &&
     prev.composer        === next.composer        &&
     prev.mainPanel       === next.mainPanel       &&
     prev.mainPanelMode   === next.mainPanelMode   &&

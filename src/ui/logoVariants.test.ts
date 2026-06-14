@@ -89,22 +89,22 @@ test("selectLogoVariantForViewport returns LOGO_LARGE when cols and rows are amp
   assert.equal(selectLogoVariantForViewport(LOGO_LARGE_MIN_COLS, LOGO_LARGE_MIN_ROWS), LOGO_LARGE);
 });
 
-test("wide-but-short terminal keeps LOGO_LARGE at normal width", () => {
-  assert.equal(selectLogoVariantForViewport(120, 18), LOGO_LARGE);
+test("wide-but-short terminal degrades to LOGO_MEDIUM at normal width", () => {
+  assert.equal(selectLogoVariantForViewport(120, 18), LOGO_MEDIUM);
 });
 
-test("wide-but-shorter terminal keeps LOGO_LARGE instead of showing compact label", () => {
-  assert.equal(selectLogoVariantForViewport(120, 14), LOGO_LARGE);
+test("wide-but-shorter terminal degrades to LOGO_COMPACT", () => {
+  assert.equal(selectLogoVariantForViewport(120, 14), LOGO_COMPACT);
 });
 
 test("selectLogoVariantForViewport returns empty only when even compact cannot fit", () => {
-  assert.equal(selectLogoVariantForViewport(120, 10), LOGO_LARGE);
+  assert.deepStrictEqual(selectLogoVariantForViewport(120, 10), []);
   assert.deepStrictEqual(selectLogoVariantForViewport(LOGO_COMPACT_MIN_COLS - 1, 40), []);
 });
 
-test("selectLogoVariantForViewport at medium cols keeps LOGO_LARGE despite short rows", () => {
-  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS), LOGO_LARGE);
-  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS - 1), LOGO_LARGE);
+test("selectLogoVariantForViewport at medium cols uses medium then compact by row budget", () => {
+  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS), LOGO_MEDIUM);
+  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS - 1), LOGO_COMPACT);
 });
 
 test("CODEXA_NO_ASCII_LOGO=1 suppresses logo in viewport selector at any size", () => {

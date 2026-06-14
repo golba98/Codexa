@@ -10,8 +10,8 @@ import { getTextWidth } from "./textLayout.js";
 // The companion `wrap="truncate"` rule keeps each row on exactly one terminal
 // line regardless of the surrounding Ink flex layout.
 
-// Canonical Codexa brand wordmark — the ██ block art is the authoritative logo.
-// Always shown on any normal-width terminal (≥ LOGO_LARGE_MIN_COLS cols).
+// Canonical Codexa brand wordmark — the ██ block art is the authoritative
+// large logo for wide/max layouts.
 export const CODEXA_WORDMARK = [
   " ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗ █████╗ ",
   "██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝██╔══██╗",
@@ -48,16 +48,13 @@ export const LOGO_COMPACT_MIN_COLS = 48;
 // Minimum terminal rows each variant needs to render without crowding out the
 // metadata + composer. A wide-but-short terminal (e.g. VS Code's bottom panel)
 // must step DOWN to a smaller logo instead of dropping straight to text-only.
-export const LOGO_LARGE_MIN_ROWS = 24;
+export const LOGO_LARGE_MIN_ROWS = 35;
 export const LOGO_MEDIUM_MIN_ROWS = 16;
 export const LOGO_COMPACT_MIN_ROWS = 12;
 
-// LOGO_MEDIUM is kept as an exported constant but intentionally omitted from
-// LOGO_VARIANTS. At 72+ cols, LOGO_LARGE_MIN_COLS = LOGO_MEDIUM_MIN_COLS = 72,
-// so LOGO_LARGE always wins. Below 72 cols the viewport is too narrow for the
-// thin ASCII art to add value over the compact single-line fallback.
 const LOGO_VARIANTS: readonly { logo: readonly string[]; minCols: number; minRows: number }[] = [
   { logo: LOGO_LARGE, minCols: LOGO_LARGE_MIN_COLS, minRows: LOGO_LARGE_MIN_ROWS },
+  { logo: LOGO_MEDIUM, minCols: LOGO_MEDIUM_MIN_COLS, minRows: LOGO_MEDIUM_MIN_ROWS },
   { logo: LOGO_COMPACT, minCols: LOGO_COMPACT_MIN_COLS, minRows: LOGO_COMPACT_MIN_ROWS },
 ];
 
@@ -92,7 +89,6 @@ export function selectLogoVariantForViewport(cols: number, rows: number): readon
   if (process.env["CODEXA_COMPACT_LOGO"] === "1") {
     return rows >= LOGO_COMPACT_MIN_ROWS ? LOGO_COMPACT : [];
   }
-  if (cols >= LOGO_LARGE_MIN_COLS) return LOGO_LARGE;
   for (const variant of LOGO_VARIANTS) {
     if (cols >= variant.minCols && rows >= variant.minRows) {
       return variant.logo;

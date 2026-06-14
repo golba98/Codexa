@@ -12,11 +12,12 @@ import {
   getHeaderHeroLayout,
   HEADER_WORDMARK_LINES,
   measureTopHeaderRows,
+  selectHeaderLogo,
   shortenHeaderWorkspaceLabel,
   TopHeader,
   type UpdateAvailableInfo,
 } from "./TopHeader.js";
-import { LOGO_LARGE, LOGO_MEDIUM_MIN_COLS, LOGO_LARGE_MIN_COLS } from "./logoVariants.js";
+import { LOGO_LARGE, LOGO_MEDIUM, LOGO_MEDIUM_MIN_COLS, LOGO_LARGE_MIN_COLS } from "./logoVariants.js";
 import { APP_VERSION, formatWorkspaceDisplayPath, HEADER_CONFIG_DEFAULTS } from "../config/settings.js";
 import type { HeaderConfig } from "../config/settings.js";
 
@@ -122,9 +123,9 @@ async function renderHeaderWithUpdate(cols: number, updateAvailable: UpdateAvail
 }
 
 test("full mode renders wordmark at wide terminal", async () => {
-  const output = await renderHeader(130, "authenticated", HEADER_CONFIG_WITH_AUTH);
+  const output = await renderHeader(140, "authenticated", HEADER_CONFIG_WITH_AUTH);
 
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(130, 40)).mode, "wide");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(140, 40)).mode, "wide");
   assert.match(output, /[█╔╗╚╝═║]/);
   assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
@@ -157,7 +158,7 @@ test("local-dev channel makes header version obvious", async () => {
 });
 
 test("wide header centers metadata beside the logo with a clear column gap", async () => {
-  const output = await renderHeader(130, "authenticated", HEADER_CONFIG_WITH_AUTH);
+  const output = await renderHeader(140, "authenticated", HEADER_CONFIG_WITH_AUTH);
   const rows = output.split("\n");
   const firstLogoRow = rows.findIndex((row) => row.includes("██████"));
   const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
@@ -170,7 +171,7 @@ test("wide header centers metadata beside the logo with a clear column gap", asy
 });
 
 test("version and workspace metadata rows have a visible gap between them", async () => {
-  const output = await renderHeader(130, "authenticated", {
+  const output = await renderHeader(140, "authenticated", {
     ...HEADER_CONFIG_DEFAULTS,
     showProvider: false,
     showModel: false,
@@ -184,7 +185,7 @@ test("version and workspace metadata rows have a visible gap between them", asyn
   assert.equal(workspaceRow, brandRow + 2, "workspace is exactly 2 rows below brand — 1 blank gap row separates them");
 });
 
-test("medium header keeps metadata beside the logo with compact truncation", async () => {
+test("normal header keeps metadata beside the canonical logo with compact truncation", async () => {
   const output = await renderHeaderWithWorkspace(
     100,
     "authenticated",
@@ -200,23 +201,18 @@ test("medium header keeps metadata beside the logo with compact truncation", asy
   assert.ok(firstLogoRow >= 0, "logo should render");
   assert.ok(brandRow >= firstLogoRow && brandRow <= firstLogoRow + 2, "metadata should stay beside the logo");
   assert.match(workspaceRow, /Workspace:\s*…\\workspace/);
-  assert.ok((rows[brandRow]?.indexOf(`Codexa v${APP_VERSION}`) ?? -1) >= 51, "medium metadata should retain a compact gap from the logo");
+  assert.doesNotMatch(output, /____|\/ ___\||\|_\|/, "thin ASCII logo must not render in the header");
+  assert.ok((rows[brandRow]?.indexOf(`Codexa v${APP_VERSION}`) ?? -1) >= 52, "normal metadata should retain a compact gap from the canonical logo");
 });
 
-test("narrow header stacks metadata below the logo instead of overflowing", async () => {
-  // 65 cols → LOGO_COMPACT (48–71 range) → mode = "narrow" (< MEDIUM threshold of 72)
+test("compact header uses text-only identity instead of logo art", async () => {
   const output = await renderHeader(65, "authenticated", HEADER_CONFIG_WITH_AUTH);
-  const rows = output.split("\n");
-  const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
-  // LOGO_COMPACT row contains "CODEXA"
-  const firstLogoRow = rows.findIndex((row) => row.includes("CODEXA") && !row.includes("Codexa v"));
-  const visibleRows = rows.filter((row) => row.length > 0);
 
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(65, 40)).mode, "narrow");
-  assert.ok(firstLogoRow >= 0, "logo should render");
-  assert.ok(brandRow > firstLogoRow, "metadata should render below the logo when narrow");
-  assert.doesNotMatch(rows[brandRow] ?? "", /✦/, "narrow metadata row should not contain logo glyphs");
-  assert.ok(visibleRows.every((row) => row.length <= 65), "narrow rows should not overflow the terminal width");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(65, 40)).mode, "compact");
+  assert.match(output, /Codexa/);
+  assert.match(output, new RegExp(`v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
+  assert.doesNotMatch(output, /____/);
 });
 
 test("header wordmark lines never contain metadata text", () => {
@@ -227,10 +223,11 @@ test("header wordmark lines never contain metadata text", () => {
   assert.doesNotMatch(wordmarkText, /Auth:/);
 });
 
-test("compact mode renders version and auth", async () => {
+test("normal mode renders canonical logo, version, and auth", async () => {
   const output = await renderHeader(105, "authenticated", HEADER_CONFIG_WITH_AUTH);
 
-  assert.match(output, /[█╔╗╚╝═║]/);
+  assert.match(output, /██████/);
+  assert.doesNotMatch(output, /____|\/ ___\||\|_\|/);
   assert.match(output, new RegExp(`v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(output, /Authenticated/);
   assert.match(output, /Workspace:\s*…\\13-Custom CLI/);
@@ -273,12 +270,12 @@ test("full mode renders Checking for checking auth state", async () => {
 
 test("compact mode preserves workspace truncation with runtime text", async () => {
   const output = await renderHeaderWithWorkspace(
-    60,
+    80,
     "authenticated",
     "C:\\Development\\1-JavaScript\\13-Custom CLI\\packages\\really-long-subfolder\\nested\\workspace",
   );
 
-  assert.match(output, /…\\workspace/);
+  assert.match(output, /Workspace:/);
   assert.doesNotMatch(output, /packages\\really-long-subfolder/);
   assert.match(output, /Provider:\s*Codexa Core/);
   assert.doesNotMatch(output, /Model:/);
@@ -324,8 +321,8 @@ test("header layout changes when width changes without duplicating the component
 
   await sleep(60);
   output = "";
-  stdout.columns = 80;
-  instance.rerender(buildHeader(80));
+  stdout.columns = 100;
+  instance.rerender(buildHeader(100));
   await sleep(60);
 
   instance.cleanup();
@@ -333,11 +330,10 @@ test("header layout changes when width changes without duplicating the component
 
   const rows = stripAnsi(output).split("\n");
   const brandRows = rows.filter((row) => row.includes(`Codexa v${APP_VERSION}`));
-  // LOGO_LARGE (at 80 cols) first row contains block chars
-  const firstLogoRow = rows.findIndex((row) => /[█╔╗╚╝═║]/.test(row));
+  const firstLogoRow = rows.findIndex((row) => row.includes("██████"));
   const firstBrandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
 
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(80, 40), HEADER_CONFIG_WITH_AUTH).mode, "medium");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(100, 40), HEADER_CONFIG_WITH_AUTH).mode, "medium");
   assert.ok(firstBrandRow >= firstLogoRow, "rerendered medium header should show metadata beside or aligned with logo");
   assert.ok(brandRows.length <= 2, "rerender should not duplicate unbounded header instances");
 });
@@ -369,26 +365,21 @@ test("renders configured workspace display labels", async () => {
 
 // ─── Layout threshold tests ───────────────────────────────────────────────────
 
-test("72 cols selects medium mode (LOGO_LARGE at MEDIUM_HEADER_MIN_COLUMNS threshold)", () => {
-  // LOGO_LARGE_MIN_COLS = MEDIUM_HEADER_MIN_COLUMNS = 72 → side-by-side with the block wordmark
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(72, 40)).mode, "medium");
+test("71 cols selects compact text-only mode", () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(71, 40)).mode, "compact");
 });
 
-test("60 cols selects compact mode (LOGO_COMPACT, single-line)", () => {
-  // 48 ≤ 60 < 72 → LOGO_COMPACT (1-row) → narrow mode (not compact unless < 48 or rows too short)
-  // Actually at 60 cols: LOGO_COMPACT is selected; since single-row logo needs rows >= 14, at 40 rows → canRenderLogo = true → mode = "narrow"
-  // "compact" mode only fires when canRenderLogo is false (< 48 cols or too few rows)
+test("60 cols selects compact text-only mode", () => {
   const layout60 = getHeaderHeroLayout(createLayoutSnapshot(60, 40));
-  // LOGO_COMPACT is 1-row compact; at rows=40 we can render it → narrow (not compact)
-  assert.ok(layout60.mode === "narrow" || layout60.mode === "compact", `mode at 60 cols should be narrow or compact, got ${layout60.mode}`);
+  assert.equal(layout60.mode, "compact");
 });
 
 test("100 cols selects medium mode (at MEDIUM_HEADER_MIN_COLUMNS threshold)", () => {
   assert.equal(getHeaderHeroLayout(createLayoutSnapshot(100, 40)).mode, "medium");
 });
 
-test("130 cols selects wide mode (at WIDE_HEADER_MIN_COLUMNS threshold)", () => {
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(130, 40)).mode, "wide");
+test("140 cols selects wide mode", () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(140, 40)).mode, "wide");
 });
 
 test("LOGO_LARGE rows never exceed the minimum columns needed to render them", () => {
@@ -399,14 +390,24 @@ test("LOGO_LARGE rows never exceed the minimum columns needed to render them", (
 
 // ─── Rows-aware header degradation tests ──────────────────────────────────────
 
-test("wide-but-short terminal keeps a logo header instead of collapsing to compact", () => {
-  const layout = getHeaderHeroLayout(createLayoutSnapshot(120, 18));
-  assert.notEqual(layout.mode, "compact");
-  assert.equal(layout.logoRows, LOGO_LARGE.length, "normal-width terminals should keep the full wordmark");
+test("100x21 keeps a normal logo header instead of collapsing to compact", () => {
+  const layout = getHeaderHeroLayout(createLayoutSnapshot(100, 21));
+  assert.equal(layout.mode, "medium");
+  assert.equal(layout.logoRows, LOGO_LARGE.length, "normal terminals should keep the canonical block wordmark");
+});
+
+test("normal, wide, and max header modes select the same canonical logo", () => {
+  assert.equal(selectHeaderLogo(createLayoutSnapshot(100, 21)), LOGO_LARGE);
+  assert.equal(selectHeaderLogo(createLayoutSnapshot(140, 30)), LOGO_LARGE);
+  assert.equal(selectHeaderLogo(createLayoutSnapshot(180, 45)), LOGO_LARGE);
+  assert.deepEqual(selectHeaderLogo(createLayoutSnapshot(80, 24)), LOGO_LARGE);
+  assert.deepEqual(selectHeaderLogo(createLayoutSnapshot(71, 24)), []);
+  assert.deepEqual(selectHeaderLogo(createLayoutSnapshot(39, 13)), []);
+  assert.notEqual(selectHeaderLogo(createLayoutSnapshot(100, 21)), LOGO_MEDIUM);
 });
 
 test("full header is selected when both columns and rows are sufficient", () => {
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(130, 40)).mode, "wide");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(140, 40)).mode, "wide");
   assert.equal(getHeaderHeroLayout(createLayoutSnapshot(120, 30)).mode, "medium");
 });
 
@@ -415,16 +416,15 @@ test("compact mode only fires when the terminal is genuinely too small for any l
   assert.equal(layout.mode, "compact");
 });
 
-test("compact mode includes a recommended-size hint row and measurement matches", () => {
+test("compact mode is one identity row and measurement matches", () => {
   const layout = createLayoutSnapshot(40, 40);
   const hero = getHeaderHeroLayout(layout);
   assert.equal(hero.mode, "compact");
-  assert.equal(hero.compactHintRows, 1, "compact mode should reserve a hint row");
-  // measureTopHeaderRows must account for the hint row exactly.
+  assert.equal(hero.compactHintRows, 0, "compact mode should not reserve a hint row");
   assert.equal(measureTopHeaderRows(layout), hero.totalRows);
 });
 
-test("compact mode renders a deliberate header with accent and resize hint", async () => {
+test("compact mode renders a deliberate one-line header with accent", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 40;
@@ -458,7 +458,7 @@ test("compact mode renders a deliberate header with accent and resize hint", asy
 
   const text = stripAnsi(output);
   assert.match(text, /✦/, "compact header should show the ✦ accent");
-  assert.match(text, /Resize to ≥72×24/, "compact header should show the recommended-size hint");
+  assert.doesNotMatch(text, /Resize to ≥72×24/, "compact header should not show a recommended-size hint");
 });
 
 test("CODEXA_NO_ASCII_LOGO compact header omits the resize hint row", () => {
@@ -476,7 +476,7 @@ test("CODEXA_NO_ASCII_LOGO compact header omits the resize hint row", () => {
 // ─── Update card tests ────────────────────────────────────────────────────────
 
 test("wide mode with update available renders update card in right column", async () => {
-  const output = await renderHeaderWithUpdate(130, MOCK_UPDATE);
+  const output = await renderHeaderWithUpdate(140, MOCK_UPDATE);
 
   // Round-border box uses ╭ and ╰
   assert.match(output, /[╭╰]/, "update card border should appear");
@@ -493,23 +493,22 @@ test("medium mode with update available renders update card in right column", as
   assert.match(output, /Codexa v1\.0\.3/);
 });
 
-test("narrow mode with update available renders compact one-liner instead of card", async () => {
-  // 65 cols → narrow (< MEDIUM threshold of 72) → one-line notice, no card border
+test("compact mode with update available omits the update card", async () => {
   const output = await renderHeaderWithUpdate(65, MOCK_UPDATE);
 
   assert.doesNotMatch(output, /[╭╰]/, "no card border in narrow mode");
-  assert.match(output, /Codexa v1\.0\.3/, "latest version should appear in one-liner");
+  assert.doesNotMatch(output, /Codexa v1\.0\.3/, "compact header should not spend rows on update notice");
 });
 
 test("wide mode without update shows no update notice", async () => {
-  const output = await renderHeaderWithUpdate(130, null);
+  const output = await renderHeaderWithUpdate(140, null);
 
   assert.doesNotMatch(output, /Update available/);
   assert.doesNotMatch(output, /[╭╰]/);
 });
 
 test("measureTopHeaderRows increases when hasUpdate is true in side-by-side mode", () => {
-  const layout = createLayoutSnapshot(130, 40);
+  const layout = createLayoutSnapshot(140, 40);
   const withoutUpdate = measureTopHeaderRows(layout, HEADER_CONFIG_DEFAULTS, false);
   const withUpdate = measureTopHeaderRows(layout, HEADER_CONFIG_DEFAULTS, true);
 
@@ -526,41 +525,44 @@ test("measureTopHeaderRows increases when hasUpdate is true in medium mode", () 
 
 // ─── Responsive threshold parity tests ──────────────────────────────────────
 
-test("80 cols selects medium mode and renders side-by-side with LOGO_LARGE (block wordmark)", async () => {
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(80, 40)).mode, "medium");
+test("80 cols selects narrow mode and renders logo art with metadata below", async () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(80, 40)).mode, "narrow");
 
   const output = await renderHeader(80, "authenticated", HEADER_CONFIG_WITH_AUTH);
-  const rows = output.split("\n");
-  const brandRow = rows.findIndex((row) => row.includes(`Codexa v${APP_VERSION}`));
-  // LOGO_LARGE rows contain block/box-drawing characters
-  const firstLogoRow = rows.findIndex((row) => /[█╔╗╚╝═║]/.test(row));
-
-  assert.ok(firstLogoRow >= 0, "LOGO_LARGE should render at 80 cols");
-  assert.doesNotMatch(output, /____/, "thin ASCII logo must not appear at 80 cols");
-  assert.ok(brandRow >= firstLogoRow && brandRow <= firstLogoRow + 3, "metadata should be beside the logo, not below it");
+  assert.match(output, /[█╔╗╚╝═║]/);
+  assert.doesNotMatch(output, /____/);
+  assert.match(output, /Codexa/);
 });
 
-test("72 cols is the minimum for LOGO_LARGE side-by-side (no thin ASCII)", () => {
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(72, 40)).mode, "medium", "72 → medium with LOGO_LARGE");
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(71, 40)).mode, "narrow", "71 → narrow with LOGO_COMPACT");
+test("70 cols selects compact mode and renders no logo art", async () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(70, 40)).mode, "compact");
+
+  const output = await renderHeader(70, "authenticated", HEADER_CONFIG_WITH_AUTH);
+  assert.doesNotMatch(output, /[█╔╗╚╝═║]/);
+  assert.doesNotMatch(output, /____/);
+  assert.match(output, /Codexa/);
 });
 
-test("71 cols selects narrow mode (LOGO_COMPACT below medium threshold)", () => {
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(71, 40)).mode, "narrow");
+test("95 cols is the minimum for placing metadata beside logo", () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(95, 40)).mode, "medium", "95 → medium layout with canonical logo beside metadata");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(94, 40)).mode, "narrow", "94 → narrow layout with logo and metadata below");
+});
+
+test("71 cols selects compact mode", () => {
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(71, 40)).mode, "compact");
 });
 
 // ─── Canonical wordmark regression tests ─────────────────────────────────────
 
-test("LOGO_LARGE block wordmark renders at 72 cols — thin ASCII must not appear", async () => {
-  const output = await renderHeader(72, "authenticated", HEADER_CONFIG_DEFAULTS);
-  assert.match(output, /[█╔╗╚╝═║]/, "block wordmark must appear at 72 cols");
-  assert.doesNotMatch(output, /____/, "thin ASCII replacement must not appear at 72 cols");
+test("normal canonical wordmark renders at 100 cols without thin ASCII fallback", async () => {
+  const output = await renderHeader(100, "authenticated", HEADER_CONFIG_DEFAULTS);
+  assert.match(output, /██████/, "canonical block wordmark must appear at 100 cols");
+  assert.doesNotMatch(output, /____|\/ ___\||\|_\|/, "thin ASCII wordmark must not appear at 100 cols");
 });
 
-test("LOGO_LARGE block wordmark renders at 80 cols — matches Linux default terminal width", async () => {
-  const output = await renderHeader(80, "authenticated", HEADER_CONFIG_DEFAULTS);
-  assert.match(output, /[█╔╗╚╝═║]/, "block wordmark must appear at normal 80-col terminal");
-  assert.doesNotMatch(output, /____/, "thin ASCII replacement must not appear at 80 cols");
+test("LOGO_LARGE block wordmark renders at 140 cols", async () => {
+  const output = await renderHeader(140, "authenticated", HEADER_CONFIG_DEFAULTS);
+  assert.match(output, /[█╔╗╚╝═║]/, "block wordmark must appear at wide terminal");
 });
 
 test("compact layout at 48 cols shows accent line — not thin ASCII art", async () => {
@@ -675,10 +677,10 @@ test("header does not render fallback unknown context", async () => {
   assert.doesNotMatch(stripped, /Context:\s*0%/, "Context must not show fake 0% percentage");
 });
 
-test("update notice at 80 cols (medium mode) renders card in right column", async () => {
-  const output = await renderHeaderWithUpdate(80, MOCK_UPDATE);
+test("update notice at 100 cols (medium mode) renders card in right column", async () => {
+  const output = await renderHeaderWithUpdate(100, MOCK_UPDATE);
 
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(80, 40)).mode, "medium");
-  assert.match(output, /[╭╰]/, "update card border should appear in medium mode at 80 cols");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(100, 40)).mode, "medium");
+  assert.match(output, /[╭╰]/, "update card border should appear in medium mode at 100 cols");
   assert.match(output, /1\.0\.3/, "latest version should appear in card");
 });

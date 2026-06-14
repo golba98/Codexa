@@ -277,7 +277,7 @@ test("Codexa intro renders as a normal timeline item", () => {
     padded: true,
     intro: {
       version: "1.0.1",
-      layoutMode: "full",
+      layoutMode: "expanded",
       authLabel: "Authenticated",
       workspaceLabel: "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal",
     },
@@ -302,7 +302,7 @@ test("static intro uses the padded timeline snapshot path", () => {
   const layout = {
     cols: 120,
     rows: 40,
-    mode: "full" as const,
+    mode: "expanded" as const,
   };
   const rows = buildStaticIntroRows({
     authState: "authenticated",
@@ -333,7 +333,7 @@ test("Codexa intro scrolls out of the visible timeline window", () => {
     padded: true,
     intro: {
       version: "1.0.1",
-      layoutMode: "full",
+      layoutMode: "expanded",
       authLabel: "Authenticated",
       workspaceLabel: "workspace",
     },

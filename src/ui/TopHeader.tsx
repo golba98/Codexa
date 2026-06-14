@@ -8,16 +8,15 @@ import type { CodexAuthState } from "../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../core/auth/codexAuth.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { useTheme } from "./theme.js";
-import { clampVisualText, type Layout } from "./layout.js";
+import { clampVisualText, isDecorativeLayoutMode, type Layout, useAppLayoutBudget } from "./layout.js";
 import { getTextWidth } from "./textLayout.js";
 import { UPDATE_CARD_ROWS, UpdateAvailableCard } from "./UpdateAvailableCard.js";
 import {
   LOGO_LARGE,
+  LOGO_COMPACT,
   LOGO_COMPACT_MIN_COLS,
   LOGO_LARGE_MIN_COLS,
   LOGO_LARGE_MIN_ROWS,
-  LOGO_MEDIUM_MIN_COLS,
-  selectLogoVariantForViewport,
   getLogoWidth,
 } from "./logoVariants.js";
 
@@ -28,9 +27,8 @@ const HEADER_PADDING_COLUMNS = 2;
 const SHELL_GUTTER_COLUMNS = 1;
 // Require 130+ cols for wide side-by-side so the UpdateAvailableCard has room.
 const WIDE_HEADER_MIN_COLUMNS = 130;
-// Require 72+ cols (= LOGO_MEDIUM_MIN_COLS) for medium side-by-side — both
-// LOGO_LARGE (≥100) and LOGO_MEDIUM (72–99) fit cleanly in side-by-side layout.
-const MEDIUM_HEADER_MIN_COLUMNS = LOGO_MEDIUM_MIN_COLS; // 72
+// Require 72+ cols for medium side-by-side canonical-logo layout.
+const MEDIUM_HEADER_MIN_COLUMNS = LOGO_LARGE_MIN_COLS;
 const MIN_SIDE_BY_SIDE_METADATA_WIDTH = 18;
 const STACKED_METADATA_GAP_ROWS = 1;
 // Gap row between the UpdateAvailableCard and the metadata lines.
@@ -85,7 +83,7 @@ function getMetadataRowCount(headerConfig: HeaderConfig): number {
 }
 
 function getHeaderVerticalMargins(layout: Layout): { topMarginRows: number; bottomMarginRows: number } {
-  if (layout.mode !== "full") {
+  if (!isDecorativeLayoutMode(layout.mode)) {
     return {
       topMarginRows: 0,
       bottomMarginRows: 0,
@@ -102,6 +100,19 @@ function getHeaderVerticalMargins(layout: Layout): { topMarginRows: number; bott
   };
 }
 
+export function selectHeaderLogo(layout: Layout): readonly string[] {
+  if (process.env["CODEXA_NO_ASCII_LOGO"] === "1") return [];
+  const showNormalLogo =
+    process.env["CODEXA_NO_ASCII_LOGO"] !== "1" && (
+      layout.mode === "regular" ||
+      layout.mode === "expanded" ||
+      (layout.mode === "compact" && layout.cols >= 72)
+    );
+  if (!showNormalLogo) return [];
+  if (process.env["CODEXA_COMPACT_LOGO"] === "1") return LOGO_COMPACT;
+  return LOGO_LARGE;
+}
+
 export function getHeaderHeroLayout(
   layout: Layout,
   headerConfig: HeaderConfig = HEADER_CONFIG_DEFAULTS,
@@ -111,17 +122,29 @@ export function getHeaderHeroLayout(
   const metadataRows = getMetadataRowCount(headerConfig);
   const contentWidth = getHeaderContentWidth(layout.cols);
 
-  // Pick the largest logo that fits both the columns AND the rows. This degrades
-  // large → medium → compact on a short terminal instead of collapsing straight
-  // to the flat text-only header.
-  const logo = selectLogoVariantForViewport(layout.cols, layout.rows);
-  const logoWidth = logo.length > 0 ? getLogoWidth(logo) : 0;
-  const canRenderLogo = logo.length > 0;
+  const showNormalLogo =
+    process.env["CODEXA_NO_ASCII_LOGO"] !== "1" && (
+      layout.mode === "regular" ||
+      layout.mode === "expanded" ||
+      (layout.mode === "compact" && layout.cols >= 72)
+    );
 
-  if (!canRenderLogo) {
-    // Compact / text-only header. Show a recommended-size hint when the logo was
-    // dropped purely for size (not because the user disabled ASCII art).
-    const sizeHintRows = process.env["CODEXA_NO_ASCII_LOGO"] === "1" ? 0 : 1;
+  const placeMetadataBesideLogo = showNormalLogo && layout.cols >= 95;
+
+  let mode: HeaderHeroMode;
+  if (!showNormalLogo) {
+    mode = "compact";
+  } else if (placeMetadataBesideLogo) {
+    mode = layout.cols >= 130 ? "wide" : "medium";
+  } else {
+    mode = "narrow";
+  }
+
+  const logo = selectHeaderLogo(layout);
+  const logoWidth = logo.length > 0 ? getLogoWidth(logo) : 0;
+
+  if (mode === "compact") {
+    // Compact / micro text-only header.
     return {
       mode: "compact",
       topMarginRows,
@@ -130,21 +153,13 @@ export function getHeaderHeroLayout(
       metadataGapRows: 0,
       logoRows: 1,
       metadataRows: 0,
-      compactHintRows: sizeHintRows,
-      totalRows: topMarginRows + 1 + sizeHintRows + bottomMarginRows,
+      compactHintRows: 0,
+      totalRows: topMarginRows + 1 + bottomMarginRows,
     };
   }
 
   const logoRowCount = logo.length;
   const metadataGapColumns = layout.cols >= WIDE_HEADER_MIN_COLUMNS ? 4 : 2;
-  const metadataColumnWidth = contentWidth - logoWidth - metadataGapColumns;
-  const canUseSideBySide = metadataRows === 0
-    || metadataColumnWidth >= MIN_SIDE_BY_SIDE_METADATA_WIDTH;
-  const mode: HeaderHeroMode = canUseSideBySide && layout.cols >= WIDE_HEADER_MIN_COLUMNS
-    ? "wide"
-    : canUseSideBySide && layout.cols >= MEDIUM_HEADER_MIN_COLUMNS
-      ? "medium"
-      : "narrow";
   const metadataGapRows = mode === "narrow" && metadataRows > 0 ? STACKED_METADATA_GAP_ROWS : 0;
 
   const isSideBySide = mode === "wide" || mode === "medium";
@@ -245,7 +260,7 @@ export function TopHeader({
     : authLabelRaw;
 
   const heroLayout = getHeaderHeroLayout(layout, headerConfig, !!updateAvailable);
-  const selectedLogo = selectLogoVariantForViewport(layout.cols, layout.rows);
+  const selectedLogo = selectHeaderLogo(layout);
   const selectedLogoWidth = selectedLogo.length > 0 ? getLogoWidth(selectedLogo) : 0;
 
   const contentWidth = getHeaderContentWidth(layout.cols);
@@ -419,4 +434,4 @@ export const MemoizedTopHeader = memo(TopHeader, (prev, next) => {
 export const MIN_LOGO_TERMINAL_WIDTH = LOGO_COMPACT_MIN_COLS;
 
 // Re-export for consumers that reference these constants directly.
-export { LOGO_LARGE_MIN_COLS, LOGO_MEDIUM_MIN_COLS, LOGO_COMPACT_MIN_COLS };
+export { LOGO_LARGE_MIN_COLS, LOGO_MEDIUM_MIN_COLS, LOGO_COMPACT_MIN_COLS } from "./logoVariants.js";
