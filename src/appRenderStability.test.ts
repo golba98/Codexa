@@ -43,8 +43,10 @@ test("Workspace display changes do not force AppShell remounts or viewport clear
   assert.doesNotMatch(appSource, /key=\{`app-shell-\$\{sessionState\.clearCount\}-/);
 });
 
-test("AppShell renders the header as live layout instead of static transcript output", () => {
-  assert.match(appShellSource, /MemoizedTopHeader/);
+test("AppShell keeps startup branding out of the persistent shell layout", () => {
+  assert.match(appShellSource, /showIntro\b/);
+  assert.match(appShellSource, /createFollowTailViewport/);
+  assert.doesNotMatch(appShellSource, /MemoizedTopHeader/);
   assert.doesNotMatch(appShellSource, /import \{[^}]*Static[^}]*\} from "ink"/);
   assert.doesNotMatch(appShellSource, /<Static\b/);
   assert.doesNotMatch(appShellSource, /StaticIntroItem/);

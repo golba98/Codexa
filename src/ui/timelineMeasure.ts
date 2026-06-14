@@ -25,7 +25,7 @@ import { selectVisibleRunActivity } from "./runActivityView.js";
 import { getTextUnits, getTextWidth, wrapPlainText, wrapCommandText, splitTextAtColumn } from "./textLayout.js";
 import type { RenderTimelineItem } from "./Timeline.js";
 import { normalizePlanReviewMarkdown } from "../core/workspace/planStorage.js";
-import { selectLogoVariant, LOGO_LARGE_MIN_COLS } from "./logoVariants.js";
+import { LOGO_COMPACT, selectLogoVariant, LOGO_LARGE_MIN_COLS } from "./logoVariants.js";
 
 // ─── Exported types ───────────────────────────────────────────────────────────
 
@@ -1592,7 +1592,7 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
 
   const logoRows = startupHeaderMode === "large"
     ? selectLogoVariant(safeWidth)
-    : selectLogoVariant(0); // text-only fallback for compact mode
+    : LOGO_COMPACT;
   const effectiveLogoRows = logoRows.length > 0 ? logoRows : ["CODEXA"];
   const logoWidth = effectiveLogoRows.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
   const workspaceName = getWorkspaceDisplayName(intro.workspaceLabel);

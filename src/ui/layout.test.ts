@@ -63,30 +63,31 @@ test("responsive layout breakpoints and budgeting spec assertions", () => {
   });
 
   assert.equal(budget100x22.mode, "compact");
-  assert.equal(budget100x22.showNormalLogo, true);
-  assert.equal(budget100x22.placeMetadataBesideLogo, true);
-  assert.equal(budget100x22.headerRows, 6);
+  assert.equal(budget100x22.showNormalLogo, false);
+  assert.equal(budget100x22.placeMetadataBesideLogo, false);
+  assert.equal(budget100x22.headerRows, 0);
   assert.equal(budget100x22.headerGapRows, 0);
   assert.equal(budget100x22.panelStagePaddingY, 0);
-  assert.equal(budget100x22.composerRows, 3);
-  assert.equal(budget100x22.bottomChromeBudget.runtimeMetadataRows, 1);
-  assert.equal(budget100x22.bottomChromeBudget.composerRows, 3);
+  assert.equal(budget100x22.composerRows, 4);
+  assert.equal(budget100x22.bottomChromeBudget.runtimeMetadataRows, 0);
+  assert.equal(budget100x22.bottomChromeBudget.composerRows, 4);
   assert.equal(budget100x22.bottomChromeBudget.transientStatusRows, 0);
   assert.equal(budget100x22.bottomChromeBudget.totalRows, 4);
-  assert.ok(budget100x22.activePanelRows >= 6, `expected activePanelRows >= 6, got ${budget100x22.activePanelRows}`);
+  assert.equal(budget100x22.transcriptRows, getShellHeight(22) - 4);
+  assert.ok(budget100x22.activePanelRows >= 10, `expected activePanelRows >= 10, got ${budget100x22.activePanelRows}`);
 
   // 80x24 spec assertions
   const layout80x24 = createLayoutSnapshot(80, 24);
   assert.equal(layout80x24.mode, "compact");
   const budget80x24 = computeAppLayoutBudget({ cols: 80, rows: 24 });
-  assert.equal(budget80x24.showNormalLogo, true); // logo visible since cols 80 >= 72
+  assert.equal(budget80x24.showNormalLogo, false);
 
   // <72w compact header only assertion
   const layout70x24 = createLayoutSnapshot(70, 24);
   assert.equal(layout70x24.mode, "compact");
   const budget70x24 = computeAppLayoutBudget({ cols: 70, rows: 24 });
   assert.equal(budget70x24.showNormalLogo, false);
-  assert.equal(budget70x24.showCompactHeader, true);
+  assert.equal(budget70x24.showCompactHeader, false);
 
   // 120x32 regular spec assertions
   const layout120x32 = createLayoutSnapshot(120, 32);
@@ -107,10 +108,10 @@ test("compact size does not show logo tiers if too narrow", () => {
   assert.equal(budget.mode, "compact");
   assert.equal(budget.showNormalLogo, false);
   assert.equal(budget.showLargeLogo, false);
-  assert.equal(budget.showCompactHeader, true);
+  assert.equal(budget.showCompactHeader, false);
 });
 
-test("expanded size shows the large logo tier", () => {
+test("expanded size does not reserve persistent logo rows", () => {
   const budget = computeAppLayoutBudget({
     cols: 180,
     rows: 45,
@@ -118,9 +119,11 @@ test("expanded size shows the large logo tier", () => {
   });
 
   assert.equal(budget.mode, "expanded");
-  assert.equal(budget.showLargeLogo, true);
-  assert.equal(budget.showNormalLogo, true);
+  assert.equal(budget.showLargeLogo, false);
+  assert.equal(budget.showNormalLogo, false);
   assert.equal(budget.showCompactHeader, false);
+  assert.equal(budget.headerRows, 0);
+  assert.equal(budget.transcriptRows, getShellHeight(45) - 4);
 });
 
 test("chooses startup header mode from measured row budget", () => {

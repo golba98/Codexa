@@ -236,7 +236,7 @@ export function measureBottomComposerRows({
     inputLocked,
   });
 
-  const bottomPadding = layout.mode === "compact" ? 0 : 1;
+  const bottomPadding = 0;
   const footerGapRows = getComposerToFooterGapRows(layout);
   const visibleStatusLine = getVisibleComposerStatusLine({
     uiState,
@@ -445,7 +445,7 @@ export function BottomComposer({
 
   const { stdin } = useStdin();
   const theme = useTheme();
-  const { cols, mode: layoutMode } = layout;
+  const { cols } = layout;
   const crampedViewport = layout.rows <= 24;
   const { isFocused } = useFocus({ id: FOCUS_IDS.composer, autoFocus: true });
   const [cursorVisible, setCursorVisible] = useState(true);
@@ -909,7 +909,7 @@ export function BottomComposer({
   }
 
   return (
-    <Box flexDirection="column" paddingBottom={layoutMode === "compact" ? 0 : 1} width="100%">
+    <Box flexDirection="column" width="100%">
       {isAnswerMode ? (
         // Answer mode: Highlighted prompt
         <Box
