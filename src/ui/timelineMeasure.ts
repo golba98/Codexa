@@ -1573,7 +1573,7 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
   const { intro } = item;
   const safeWidth = Math.max(10, width);
   const startupHeaderMode = intro.startupHeaderMode
-    ?? (intro.layoutMode === "full" ? "large" : "compact");
+    ?? (intro.layoutMode === "expanded" ? "large" : "compact");
   if (startupHeaderMode === "tiny") {
     const messageRows = [
       "Codexa",

@@ -91,7 +91,7 @@ test("wheel mode: SGR wheel-up shows JumpToBottomBar with wheel hint", async () 
     await sleep(100);
 
     const frame = stripAnsi(output.slice(beforeWheel));
-    assert.match(frame, /Scrolled up/);
+    assert.match(frame, /History \d+%/);
     assert.match(frame, /wheel↓\/End to bottom/);
   } finally {
     instance.unmount();
@@ -136,7 +136,7 @@ test("wheel mode: End key after wheel-up hides JumpToBottomBar", async () => {
     await sleep(100);
 
     const endFrame = stripAnsi(output.slice(beforeEnd));
-    assert.doesNotMatch(endFrame, /Scrolled up/);
+    assert.doesNotMatch(endFrame, /History \d+%/);
   } finally {
     instance.unmount();
   }
@@ -179,22 +179,22 @@ test("PageUp, End, and SGR wheel packets navigate the timeline through Ink input
     await sleep(100);
 
     const pageUpFrame = stripAnsi(output.slice(beforePageUpLength));
-    assert.match(pageUpFrame, /Scrolled up/);
-    assert.match(pageUpFrame, /PgDn\/End to bottom/);
+    assert.match(pageUpFrame, /History \d+%/);
+    assert.match(pageUpFrame, /PageUp\/PageDown \| End: latest/);
 
     const beforeEndLength = output.length;
     stdin.write("\u001b[F");
     await sleep(100);
 
     const endFrame = stripAnsi(output.slice(beforeEndLength));
-    assert.doesNotMatch(endFrame, /Scrolled up/);
+    assert.doesNotMatch(endFrame, /History \d+%/);
 
     const beforeWheelLength = output.length;
     stdin.write("\u001b[<64;12;9M");
     await sleep(100);
 
     const wheelFrame = stripAnsi(output.slice(beforeWheelLength));
-    assert.match(wheelFrame, /Scrolled up/);
+    assert.match(wheelFrame, /History \d+%/);
   } finally {
     instance.unmount();
   }

@@ -4,12 +4,14 @@ import {
   advanceTerminalViewport,
   clampVisualText,
   createTerminalViewport,
+  computeAppLayoutBudget,
   createLayoutSnapshot,
   getShellHeight,
   getShellWidth,
   getUsableShellWidth,
   getVisualWidth,
   resolveStartupHeaderMode,
+  getContentWidth,
 } from "./layout.js";
 import { getHeaderHeroLayout, measureTopHeaderRows } from "./TopHeader.js";
 
@@ -41,10 +43,84 @@ test("keeps a sensible minimum shell height on tiny terminals", () => {
 });
 
 test("keeps breakpoint modes stable at the edges", () => {
-  assert.equal(createLayoutSnapshot(110, 24).mode, "full");
-  assert.equal(createLayoutSnapshot(109, 24).mode, "compact");
-  assert.equal(createLayoutSnapshot(60, 24).mode, "compact");
-  assert.equal(createLayoutSnapshot(59, 24).mode, "micro");
+  assert.equal(createLayoutSnapshot(59, 30).mode, "compact");
+  assert.equal(createLayoutSnapshot(60, 19).mode, "compact");
+  assert.equal(createLayoutSnapshot(89, 30).mode, "compact");
+  assert.equal(createLayoutSnapshot(90, 20).mode, "compact");
+  assert.equal(createLayoutSnapshot(100, 21).mode, "compact");
+  assert.equal(createLayoutSnapshot(140, 30).mode, "expanded");
+  assert.equal(createLayoutSnapshot(180, 40).mode, "expanded");
+});
+
+test("responsive layout breakpoints and budgeting spec assertions", () => {
+  // 100x22 spec assertions
+  const layout100x22 = createLayoutSnapshot(100, 22);
+  assert.equal(layout100x22.mode, "compact");
+
+  const budget100x22 = computeAppLayoutBudget({
+    cols: 100,
+    rows: 22,
+  });
+
+  assert.equal(budget100x22.mode, "compact");
+  assert.equal(budget100x22.showNormalLogo, true);
+  assert.equal(budget100x22.placeMetadataBesideLogo, true);
+  assert.equal(budget100x22.headerRows, 6);
+  assert.equal(budget100x22.headerGapRows, 0);
+  assert.equal(budget100x22.panelStagePaddingY, 0);
+  assert.equal(budget100x22.composerRows, 3);
+  assert.equal(budget100x22.bottomChromeBudget.runtimeMetadataRows, 1);
+  assert.equal(budget100x22.bottomChromeBudget.composerRows, 3);
+  assert.equal(budget100x22.bottomChromeBudget.transientStatusRows, 0);
+  assert.equal(budget100x22.bottomChromeBudget.totalRows, 4);
+  assert.ok(budget100x22.activePanelRows >= 6, `expected activePanelRows >= 6, got ${budget100x22.activePanelRows}`);
+
+  // 80x24 spec assertions
+  const layout80x24 = createLayoutSnapshot(80, 24);
+  assert.equal(layout80x24.mode, "compact");
+  const budget80x24 = computeAppLayoutBudget({ cols: 80, rows: 24 });
+  assert.equal(budget80x24.showNormalLogo, true); // logo visible since cols 80 >= 72
+
+  // <72w compact header only assertion
+  const layout70x24 = createLayoutSnapshot(70, 24);
+  assert.equal(layout70x24.mode, "compact");
+  const budget70x24 = computeAppLayoutBudget({ cols: 70, rows: 24 });
+  assert.equal(budget70x24.showNormalLogo, false);
+  assert.equal(budget70x24.showCompactHeader, true);
+
+  // 120x32 regular spec assertions
+  const layout120x32 = createLayoutSnapshot(120, 32);
+  assert.equal(layout120x32.mode, "regular");
+
+  // 140x30 expanded spec assertions
+  const layout140x30 = createLayoutSnapshot(140, 30);
+  assert.equal(layout140x30.mode, "expanded");
+});
+
+test("compact size does not show logo tiers if too narrow", () => {
+  const budget = computeAppLayoutBudget({
+    cols: 70,
+    rows: 14,
+    composerRows: 4,
+  });
+
+  assert.equal(budget.mode, "compact");
+  assert.equal(budget.showNormalLogo, false);
+  assert.equal(budget.showLargeLogo, false);
+  assert.equal(budget.showCompactHeader, true);
+});
+
+test("expanded size shows the large logo tier", () => {
+  const budget = computeAppLayoutBudget({
+    cols: 180,
+    rows: 45,
+    composerRows: 4,
+  });
+
+  assert.equal(budget.mode, "expanded");
+  assert.equal(budget.showLargeLogo, true);
+  assert.equal(budget.showNormalLogo, true);
+  assert.equal(budget.showCompactHeader, false);
 });
 
 test("chooses startup header mode from measured row budget", () => {
@@ -85,21 +161,18 @@ test("chooses startup header mode from measured row budget", () => {
 });
 
 test("measures the header rows for full and compact layouts", () => {
-  // 120 cols → LOGO_LARGE (6-row), medium mode, topMargin=1 → total 7
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(120, 30)), 7);
-  // 80 cols → LOGO_LARGE (6-row), medium/side-by-side mode (≥72) → max(logo=6, meta=3) = 6
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 6);
-  // 70 cols → LOGO_COMPACT (1-row, 48–71), narrow mode (< 72) → logo+gap+metadata = 1+1+3 = 5
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(70, 24)), 5);
-  // 50 cols → LOGO_COMPACT (1-row, 48–71), narrow mode (< 72) → logo+gap+metadata = 1+1+3 = 5
-  assert.equal(measureTopHeaderRows(createLayoutSnapshot(50, 24)), 5);
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(100, 21)), 6);
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(120, 30)), 6);
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(80, 24)), 10);
+  assert.equal(measureTopHeaderRows(createLayoutSnapshot(70, 24)), 1);
+  assert.ok(measureTopHeaderRows(createLayoutSnapshot(180, 45)) >= 6);
 });
 
 test("header hero switches across narrow, medium, and wide breakpoints", () => {
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(70, 30)).mode, "narrow");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(70, 30)).mode, "compact");
   assert.equal(getHeaderHeroLayout(createLayoutSnapshot(100, 30)).mode, "medium");
-  // WIDE_HEADER_MIN_COLUMNS raised to 130 so the UpdateAvailableCard has room
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(130, 30)).mode, "wide");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(140, 35)).mode, "wide");
+  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(180, 45)).mode, "wide");
 });
 
 test("preserves the previous layout when resize values are invalid", () => {
@@ -150,4 +223,11 @@ test("measures visual width instead of raw string length", () => {
 test("clamps text to a visual width budget", () => {
   assert.equal(clampVisualText("ACTION REQUIRED", 8), "ACTION …");
   assert.equal(clampVisualText("⚡⚡", 3), "⚡…");
+});
+
+test("getContentWidth returns responsive content widths", () => {
+  assert.equal(getContentWidth(120), 115);
+  assert.equal(getContentWidth(150), 145);
+  assert.equal(getContentWidth(180), 171);
+  assert.equal(getContentWidth(220), 207);
 });

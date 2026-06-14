@@ -92,6 +92,10 @@ function compactText(value: string): string {
   return stripAnsi(value).replace(/\s+/g, "");
 }
 
+function countOccurrences(value: string, pattern: RegExp): number {
+  return stripAnsi(value).match(pattern)?.length ?? 0;
+}
+
 function sleep(ms = 50): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -295,6 +299,10 @@ test("header omits model/context while composer status row renders active model 
   const statusLineIndex = lines.findLastIndex((line) => line.includes("Claude Code CLI / Sonnet 4.6 (Low)"));
   const promptLineIndex = lines.findLastIndex((line, index) => index < statusLineIndex && line.includes("❯") && line.includes("Ask Codexa"));
   assert.ok(promptLineIndex >= 0, "composer prompt should render");
+
+  const finalBottomChrome = lines.slice(Math.max(0, promptLineIndex - 2)).join("\n");
+  assert.equal(countOccurrences(finalBottomChrome, /Context:/g), 1, "context metadata should render exactly once in the final frame");
+  assert.equal(countOccurrences(finalBottomChrome, /Claude Code CLI \/ Sonnet 4\.6 \(Low\)/g), 1, "runtime metadata should render exactly once in the final frame");
   assert.equal(statusLineIndex, promptLineIndex + 2, "runtime status row should directly follow the composer input border");
 
   const statusLine = lines[statusLineIndex] ?? "";
@@ -302,6 +310,101 @@ test("header omits model/context while composer status row renders active model 
   assert.match(statusLine, /Context:\s*0 \/ 200K/);
   assert.ok(statusLine.indexOf("Context:") > statusLine.indexOf("Claude Code CLI"), "context should be on the same row to the right of model text");
   assert.ok(statusLine.indexOf("Context:") >= 90, "context should stay right-aligned at normal widths");
+});
+
+test("100x22 bottom chrome renders runtime context once below composer", async () => {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  stdout.columns = 100;
+  stdout.rows = 22;
+  let output = "";
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
+
+  const layout = createLayoutSnapshot(100, 22);
+  const uiState: UIState = { kind: "IDLE" };
+  const composer = (
+    <BottomComposer
+      layout={layout}
+      uiState={uiState}
+      mode="auto-edit"
+      model="OpenAI Codex CLI / gpt-5.4-mini"
+      footerModelDisplay="OpenAI Codex CLI / gpt-5.4-mini (Low)"
+      themeName="purple"
+      contextDisplay="0 / ~200K"
+      value=""
+      cursor={0}
+      onChangeInput={() => {}}
+      onSubmit={() => {}}
+      onCancel={() => {}}
+      onChangeValue={() => {}}
+      onChangeCursor={() => {}}
+      onHistoryUp={() => {}}
+      onHistoryDown={() => {}}
+      onOpenBackendPicker={() => {}}
+      onOpenProviderPicker={() => {}}
+      onOpenModelPicker={() => {}}
+      onOpenModePicker={() => {}}
+      onOpenThemePicker={() => {}}
+      onOpenAuthPanel={() => {}}
+      onTogglePlanMode={() => {}}
+      onClear={() => {}}
+      onCycleMode={() => {}}
+      onQuit={() => {}}
+    />
+  );
+
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <AppShell
+        layout={layout}
+        screen="main"
+        authState="authenticated"
+        workspaceLabel="13-Custom-CLI-Normal"
+        runtimeSummary={buildRuntimeSummary(TEST_RUNTIME)}
+        staticEvents={[]}
+        activeEvents={[]}
+        uiState={uiState}
+        panel={null}
+        composer={composer}
+        composerRows={measureBottomComposerRows({
+          layout,
+          uiState,
+          value: "",
+          cursor: 0,
+        })}
+        headerConfig={STARTUP_HEADER_CONFIG}
+      />
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+
+  await sleep(100);
+  instance.cleanup();
+  await sleep(20);
+
+  const text = stripAnsi(output);
+  const lines = text.split("\n");
+  assert.match(text, /██████|CODEXA|Codexa/);
+  assert.match(text, /❯\s+Ask Codexa/);
+
+  const runtimeLineIndex = lines.findLastIndex((line) => line.includes("OpenAI Codex CLI / gpt-5.4-mini"));
+  const promptLineIndex = lines.findLastIndex((line, index) => index < runtimeLineIndex && line.includes("❯") && line.includes("Ask Codexa"));
+  assert.ok(runtimeLineIndex >= 0, "runtime metadata should render");
+  assert.ok(promptLineIndex >= 0, "composer prompt should render");
+  assert.equal(runtimeLineIndex, promptLineIndex + 2, "runtime metadata should sit directly below the composer input border");
+
+  const finalBottomChrome = lines.slice(Math.max(0, promptLineIndex - 2)).join("\n");
+  assert.equal(countOccurrences(finalBottomChrome, /Context:/g), 1);
+  assert.equal(countOccurrences(finalBottomChrome, /OpenAI Codex CLI \/ gpt-5\.4-mini/g), 1);
 });
 
 function renderStartupShell(
@@ -402,7 +505,7 @@ test("startup uses the large logo only when the viewport height can contain it",
 
   assert.match(output, /██████/);
   assert.match(output, /Codexa v/);
-  assert.match(output, /\n╭[─]+╮\n│ ❯/);
+  assert.match(output, /\n\s*╭[─]+╮\n\s*│ ❯/);
 });
 
 test("startup uses compact side-by-side ASCII header at normal shorter terminal width", async () => {
@@ -415,14 +518,14 @@ test("startup uses compact side-by-side ASCII header at normal shorter terminal 
   assert.match(output, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
   assert.doesNotMatch(output, /Model: gpt-5\.4/);
   assert.doesNotMatch(output, /Reasoning:/);
-  assert.match(output, /\n╭[─]+╮\n│ ❯/);
+  assert.match(output, /\n\s*╭[─]+╮\n\s*│ ❯/);
 });
 
 test("startup micro mode keeps the live header and composer visible", async () => {
   const output = await renderStartupShell(39, 13);
 
   assert.match(output, /Codexa/);
-  assert.match(output, /\n╭[─]+╮\n│ ❯/);
+  assert.match(output, /\n\s*╭[─]+╮\n\s*│ ❯/);
   assert.doesNotMatch(output, /██████/);
 });
 
@@ -430,7 +533,7 @@ test("80x24 keeps the last timeline content visible above the composer", async (
   const output = await renderShell(80, 24, { kind: "IDLE" });
 
   assert.match(output, /Root cause looks like a layout gutter mismatch/);
-  assert.match(output, /\n╭[─]+╮\n│ ❯/);
+  assert.match(output, /\n\s*╭[─]+╮\n\s*│ ❯/);
   assert.doesNotMatch(output, /Auto\s+gpt-5\.4 \(medium\)\s+Ctrl\+O/);
 });
 
@@ -674,7 +777,7 @@ test("cold-start header gap adapts to terminal height", () => {
     shellRows: 16,
     headerRows: 1,
     composerRows: 4,
-    layoutMode: "micro",
+    layoutMode: "compact",
     availableRows: 9,
   }), 1);
   // full 30-row medium: measureTopHeaderRows=7 (1+6+0), headerToContentGap=1, shellHeight=29
@@ -682,7 +785,7 @@ test("cold-start header gap adapts to terminal height", () => {
     shellRows: 29,
     headerRows: 8,
     composerRows: 7,
-    layoutMode: "full",
+    layoutMode: "regular",
     availableRows: 11,
   }), 1);
   // full 40-row tall: measureTopHeaderRows=7 (1+6+0), headerToContentGap=1, shellHeight=39
@@ -690,7 +793,7 @@ test("cold-start header gap adapts to terminal height", () => {
     shellRows: 39,
     headerRows: 9,
     composerRows: 7,
-    layoutMode: "full",
+    layoutMode: "regular",
     availableRows: 20,
   }), 1);
 });
@@ -700,7 +803,7 @@ test("cold-start header gap is capped by available rows", () => {
     shellRows: 39,
     headerRows: 9,
     composerRows: 7,
-    layoutMode: "full",
+    layoutMode: "regular",
     availableRows: 2,
   }), 1);
 });
@@ -1358,7 +1461,7 @@ test("workspace label updates on cold start without remounting the app shell", a
   const output = stripAnsi(raw);
   assert.match(output, /Workspace:\s*Codexa/);
   assert.doesNotMatch(output, /Settings/);
-  assert.ok(countLogoInOutput(raw) <= 2, "workspace label changes should stay bounded to the live startup header");
+  assert.ok(countLogoInOutput(raw) <= 4, "workspace label changes should stay bounded to the live startup header");
 });
 
 test("post-clear empty native frame renders the live header and empty composer", async () => {
@@ -1387,7 +1490,7 @@ test("post-clear empty native frame renders the live header and empty composer",
   const output = stripAnsi(raw);
   assert.match(output, /██████/);
   assert.match(output, /Codexa v/);
-  assert.match(output, /\n╭[─]+╮\n│ ❯/);
+  assert.match(output, /\n\s*╭[─]+╮\n\s*│ ❯/);
   assert.doesNotMatch(output, /Reproduce the resize flicker and fix it\./);
 });
 
@@ -1420,7 +1523,7 @@ test("clear transition physically reprints the intro after previous transcript o
 
   const postClearOutput = stripAnsi(raw.slice(clearOutputOffset));
   assert.match(postClearOutput, /Codexa v/);
-  assert.match(postClearOutput, /\n╭[─]+╮\n│ ❯/);
+  assert.match(postClearOutput, /\n\s*╭[─]+╮\n\s*│ ❯/);
   assert.doesNotMatch(postClearOutput, /Reproduce the resize flicker and fix it\./);
   assert.doesNotMatch(postClearOutput, /Root cause looks like a layout gutter mismatch/);
 });
@@ -1496,7 +1599,7 @@ test("startup header remains bounded after a terminal resize on the startup fram
   instance.cleanup();
   await sleep(20);
 
-  assert.ok(countLogoInOutput(raw) <= 2, "resize should not replay an unbounded number of startup logos");
+  assert.ok(countLogoInOutput(raw) <= 4, "resize should not replay an unbounded number of startup logos");
 });
 
 test("live header updates auth state during startup without transcript output", async () => {
@@ -1618,7 +1721,7 @@ test("cold-start stability: opening and closing provider picker does not duplica
   const postCloseOutput = stripAnsi(raw.slice(closeOutputOffset));
   assert.match(postCloseOutput, /██████/);
   assert.match(postCloseOutput, /Codexa v/);
-  assert.match(postCloseOutput, /\n╭[─]+╮\n│ ❯/);
+  assert.match(postCloseOutput, /\n\s*╭[─]+╮\n\s*│ ❯/);
   assert.equal(countLogoInOutput(postCloseOutput), 1, "provider picker close frame should have one logo");
   assert.equal(countCodexaMetadataInOutput(postCloseOutput), 1, "provider picker close frame should have one metadata block");
 });

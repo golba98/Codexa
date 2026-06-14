@@ -177,7 +177,7 @@ export function shouldRenderBusyFooter(layout: Layout, uiState: UIState): boolea
 }
 
 export function getComposerToFooterGapRows(layout: Layout): number {
-  return layout.mode === "micro" || layout.rows <= 24 ? 0 : 1;
+  return 0;
 }
 
 export function getCommandSuggestionState({
@@ -236,11 +236,14 @@ export function measureBottomComposerRows({
     inputLocked,
   });
 
-  // ALWAYS reserve 1 row for the status line to prevent height shifting between idle and busy states.
-  const statusLineReservedRows = 1;
-  const showMetadata = layout.mode !== "micro";
-  const bottomPadding = layout.mode === "micro" || layout.rows <= 24 ? 0 : 1;
+  const bottomPadding = layout.mode === "compact" ? 0 : 1;
   const footerGapRows = getComposerToFooterGapRows(layout);
+  const visibleStatusLine = getVisibleComposerStatusLine({
+    uiState,
+    value: normalizedValue,
+    allowCommands,
+  });
+  const transientStatusRows = visibleStatusLine.length > 0 ? 1 : 0;
 
   const visiblePromptRows = inputLocked ? 1 : promptViewport.visibleRows.length;
 
@@ -249,8 +252,8 @@ export function measureBottomComposerRows({
     + 2
     + (commandSuggestionState.reserveSuggestionRow ? 1 : 0)
     + footerGapRows
-    + statusLineReservedRows
-    + (showMetadata ? 1 : 0)
+    + transientStatusRows
+    + 1
     + bottomPadding
   );
 }
@@ -566,6 +569,7 @@ export function BottomComposer({
 
   const rawStatusLine = getVisibleComposerStatusLine({ uiState, value, allowCommands, activeProviderId, runElapsedSeconds, externalCliStatus });
   const showStatusLine = rawStatusLine.length > 0;
+  const showTransientStatusRow = showStatusLine || inputLocked || !!selectionProfile;
   const footerGapRows = getComposerToFooterGapRows(layout);
 
   const promptViewport = useMemo(
@@ -905,7 +909,7 @@ export function BottomComposer({
   }
 
   return (
-    <Box flexDirection="column" paddingBottom={layoutMode === "micro" || crampedViewport ? 0 : 1} width="100%">
+    <Box flexDirection="column" paddingBottom={layoutMode === "compact" ? 0 : 1} width="100%">
       {isAnswerMode ? (
         // Answer mode: Highlighted prompt
         <Box
@@ -932,36 +936,6 @@ export function BottomComposer({
         </Box>
       )}
 
-      {layoutMode !== "micro" && (
-        <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
-          <Box flexGrow={1} flexShrink={1} overflow="hidden">
-            {renderFooterRuntime(footerRuntimeDisplay, theme)}
-          </Box>
-          <Box flexShrink={0}>
-            {contextDisplay ? (
-              <Box flexDirection="row">
-                <Text color={theme.textMuted}>Context: </Text>
-                <Text color={theme.context}>{contextDisplay}</Text>
-              </Box>
-            ) : tokenDisplay.hasKnownLimit ? (
-              <Box flexDirection="row">
-                <Text color={theme.textMuted}>Context: </Text>
-                <Text color={theme.context}>{tokenDisplay.usedText}</Text>
-                <Text color={theme.textDim}>
-                  {" / "}{tokenDisplay.limitText}
-                  {tokenDisplay.percentage !== null ? ` · ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%` : ""}
-                </Text>
-              </Box>
-            ) : (
-              <Box flexDirection="row">
-                <Text color={theme.textMuted}>Context: </Text>
-                <Text color={theme.textDim}>Unknown</Text>
-              </Box>
-            )}
-          </Box>
-        </Box>
-      )}
-
       {commandSuggestionState.reserveSuggestionRow && (
         <Box paddingLeft={1} marginTop={0} width="100%" overflow="hidden">
           <Text color={theme.textDim} wrap="truncate">{suggestionText || " "}</Text>
@@ -972,9 +946,8 @@ export function BottomComposer({
         <Box height={footerGapRows} />
       )}
 
-      {/* Always reserve the status line height */}
-      <Box paddingX={1} marginTop={0} height={1} width="100%" justifyContent="space-between" overflow="hidden">
-        {showStatusLine && (
+      {showTransientStatusRow && (
+        <Box paddingX={1} marginTop={0} height={1} width="100%" justifyContent="space-between" overflow="hidden">
           <>
             <Box flexShrink={1} flexGrow={1} overflow="hidden" flexDirection="row">
               {!!getExternalCliLabel(activeProviderId ?? "") && uiState.kind === "THINKING" && (
@@ -1000,7 +973,35 @@ export function BottomComposer({
               </Box>
             )}
           </>
-        )}
+        </Box>
+      )}
+
+      <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
+        <Box flexGrow={1} flexShrink={1} overflow="hidden">
+          {renderFooterRuntime(footerRuntimeDisplay, theme)}
+        </Box>
+        <Box flexShrink={0}>
+          {contextDisplay ? (
+            <Box flexDirection="row">
+              <Text color={theme.textMuted}>Context: </Text>
+              <Text color={theme.context}>{contextDisplay}</Text>
+            </Box>
+          ) : tokenDisplay.hasKnownLimit ? (
+            <Box flexDirection="row">
+              <Text color={theme.textMuted}>Context: </Text>
+              <Text color={theme.context}>{tokenDisplay.usedText}</Text>
+              <Text color={theme.textDim}>
+                {" / "}{tokenDisplay.limitText}
+                {tokenDisplay.percentage !== null ? ` · ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%` : ""}
+              </Text>
+            </Box>
+          ) : (
+            <Box flexDirection="row">
+              <Text color={theme.textMuted}>Context: </Text>
+              <Text color={theme.textDim}>Unknown</Text>
+            </Box>
+          )}
+        </Box>
       </Box>
 
     </Box>

@@ -24,7 +24,7 @@ test("maps busy, answer, and error states to the right personas", () => {
   assert.equal(getComposerPersona({ kind: "ERROR", turnId: 3, message: "Boom" }), "error");
 });
 
-test("measures the standard composer rows from the rendered prompt state", () => {
+test("measures compact idle bottom chrome as metadata plus prompt border", () => {
   const rows = measureBottomComposerRows({
     layout: createLayoutSnapshot(100, 30),
     uiState: { kind: "IDLE" },
@@ -36,11 +36,11 @@ test("measures the standard composer rows from the rendered prompt state", () =>
     cursor: 0,
   });
 
-  assert.equal(rows, 7);
+  assert.equal(rows, 4);
 });
 
-test("adds a measured footer gap only when the viewport has room", () => {
-  assert.equal(getComposerToFooterGapRows(createLayoutSnapshot(100, 30)), 1);
+test("keeps runtime footer directly attached to the composer", () => {
+  assert.equal(getComposerToFooterGapRows(createLayoutSnapshot(120, 30)), 0);
   assert.equal(getComposerToFooterGapRows(createLayoutSnapshot(100, 24)), 0);
   assert.equal(getComposerToFooterGapRows(createLayoutSnapshot(39, 30)), 0);
 });

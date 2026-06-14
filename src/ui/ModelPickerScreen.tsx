@@ -8,16 +8,34 @@ import {
 import { formatReasoningLabel } from "../config/settings.js";
 import { traceInputDebug } from "../core/debug/inputDebug.js";
 import { FOCUS_IDS } from "./focus.js";
-import { clampVisualText, getShellWidth, type Layout } from "./layout.js";
+import {
+  clampVisualText,
+  getShellWidth,
+  getAvailableRowsForPanel,
+  useAppLayoutBudget,
+  usePanelAvailableRows,
+  type Layout,
+  useActivePanelLayout,
+  type ActivePanelLayout,
+  type PanelLayout,
+  usePanelLayout,
+} from "./layout.js";
+import { calculateListWindow } from "./layoutListWindow.js";
 import { useTheme } from "./theme.js";
 import type { GeminiModelSelection } from "../core/providerRuntime/types.js";
 
 // ─── Types & helpers ─────────────────────────────────────────────────────────
 
 type ModelPickerCloseReason = "escape" | "empty-selection";
+type ModelRenderMode = "full" | "compact" | "windowed";
 
 interface ModelPickerScreenProps {
-  layout: Layout;
+  layout: Layout & {
+    contentWidth?: number;
+  };
+  availableRows?: number;
+  activePanelLayout?: ActivePanelLayout;
+  panelLayout?: PanelLayout;
   models: readonly CodexModelCapability[];
   currentModel: string;
   currentReasoning: string;
@@ -124,6 +142,9 @@ function describeInputKey(
 
 export function ModelPickerScreen({
   layout,
+  availableRows: propAvailableRows,
+  activePanelLayout,
+  panelLayout,
   models: baseModels,
   currentModel,
   currentReasoning,
@@ -294,19 +315,132 @@ export function ModelPickerScreen({
     { isActive: isFocused },
   );
 
+  const contextLayout = useActivePanelLayout();
+  const activeLayout = (activePanelLayout ?? contextLayout) as ActivePanelLayout | undefined;
+
   const shellWidth = getShellWidth(layout.cols);
-  const panelWidth = Math.max(38, Math.min(shellWidth - 2, layout.mode === "full" ? 74 : 64));
-  const innerWidth = Math.max(20, panelWidth - 4);
-  const help = layout.mode === "micro"
+  const hookPanelLayout = usePanelLayout();
+  const hookAvailableRows = usePanelAvailableRows();
+  const resolvedPanelLayout = useMemo<PanelLayout>(() => {
+    if (panelLayout) return panelLayout;
+    if (hookPanelLayout) return hookPanelLayout;
+
+    const mode = layout.mode;
+    const resolvedRows = activeLayout
+      ? activeLayout.availableRows
+      : getAvailableRowsForPanel(layout, propAvailableRows ?? hookAvailableRows);
+    const resolvedCols = activeLayout
+      ? activeLayout.availableCols
+      : Math.max(20, shellWidth - 4);
+
+    return {
+      mode: (mode === "compact" || mode === "micro" as any) ? "compact" : mode === "expanded" || mode === "max" as any || mode === "wide" as any ? "expanded" : "regular",
+      availableRows: resolvedRows,
+      availableCols: resolvedCols,
+    };
+  }, [panelLayout, hookPanelLayout, layout, activeLayout, propAvailableRows, shellWidth, hookAvailableRows]);
+
+  const panelWidth = activeLayout
+    ? activeLayout.width
+    : Math.max(38, Math.min((layout as any).contentWidth ?? shellWidth, shellWidth - 2));
+
+  const availableRows = resolvedPanelLayout.availableRows;
+  const innerWidth = resolvedPanelLayout.availableCols;
+  const help = resolvedPanelLayout.mode === "compact"
     ? "↑↓ · ←→ · Enter · Esc"
     : "↑↓ model · ←→ reasoning · Enter select · Esc cancel";
-  const title = clampVisualText(`Select model   ${help}`, innerWidth);
   const aOrAn = /^[aeiou]/i.test(activeProviderLabel) ? "an" : "a";
   const routeText = routeTextOverride ?? `Choose ${aOrAn} ${activeProviderLabel} model to use inside Codexa.`;
   const reasoningText = reasoningUnavailable
     ? (models.length === 0 ? "Reasoning: current/default" : "Reasoning: unavailable")
     : `Reasoning: ${formatReasoningLabel(draftReasoning)}`;
   const sourceMarker = getModelSourceMarker(models, activeProviderLabel);
+
+  const appLayoutBudget = useAppLayoutBudget();
+  
+  const activeModelIndex = models.findIndex((m) => m.model === currentModel || m.id === currentModel);
+  const hasSourceMarker = !!sourceMarker;
+
+  // ─── Layout & Windowing ───────────────────────────────────────────────────
+
+  const windowResult = useMemo(() => {
+    const allowFull = appLayoutBudget?.showPanelColumnHeaders ?? true;
+
+    // Try fitting with full metadata
+    const fullChrome = 5 + (hasSourceMarker ? 1 : 0);
+    if (allowFull && models.length + fullChrome <= availableRows) {
+      return {
+        ...calculateListWindow({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: fullChrome, showIndicators: false }),
+        mode: "full" as const,
+        showRouteText: true,
+        showReasoningText: true,
+        showSourceMarker: hasSourceMarker,
+      };
+    }
+
+    // Try fitting without source marker
+    if (allowFull && models.length + 5 <= availableRows) {
+      return {
+        ...calculateListWindow({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 5, showIndicators: false }),
+        mode: "full" as const,
+        showRouteText: true,
+        showReasoningText: true,
+        showSourceMarker: false,
+      };
+    }
+
+    // Try compact with reasoning
+    if (models.length + 4 <= availableRows) {
+      return {
+        ...calculateListWindow({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 4, showIndicators: false }),
+        mode: "compact" as const,
+        showRouteText: false,
+        showReasoningText: true,
+        showSourceMarker: false,
+      };
+    }
+
+    // Try minimal compact
+    if (models.length + 3 <= availableRows) {
+      return {
+        ...calculateListWindow({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 3, showIndicators: false }),
+        mode: "compact" as const,
+        showRouteText: false,
+        showReasoningText: false,
+        showSourceMarker: false,
+      };
+    }
+
+    // Windowed mode
+    const window = calculateListWindow({
+      itemCount: models.length,
+      selectedIndex: draftSelectedModel,
+      availableRows,
+      chromeRows: 3, // Title (1) + Border (2)
+      showIndicators: true,
+    });
+
+    return {
+      ...window,
+      mode: "windowed" as const,
+      showRouteText: false,
+      showReasoningText: false,
+      showSourceMarker: false,
+    };
+  }, [models.length, draftSelectedModel, availableRows, hasSourceMarker, appLayoutBudget?.showPanelColumnHeaders]);
+
+  const visibleModels = useMemo(() => {
+    return models.slice(windowResult.start, windowResult.end);
+  }, [models, windowResult.start, windowResult.end]);
+
+  const activeModel = models[activeModelIndex];
+  const showCurrentLine = windowResult.mode === "windowed" && activeModelIndex >= 0 && (activeModelIndex < windowResult.start || activeModelIndex >= windowResult.end);
+  const title = clampVisualText(
+    windowResult.mode === "windowed"
+      ? `Select model · Showing ${windowResult.start + 1}-${windowResult.end} of ${models.length}`
+      : `Select model   ${help}`,
+    innerWidth,
+  );
 
   return (
     <Box flexDirection="column" width={panelWidth}>
@@ -321,17 +455,21 @@ export function ModelPickerScreen({
         <Box width="100%" overflow="hidden">
           <Text color={theme.accent} bold>{title}</Text>
         </Box>
-        <Box width="100%" overflow="hidden">
-          <Text color={theme.textMuted}>
-            {clampVisualText(routeText, innerWidth)}
-          </Text>
-        </Box>
-        <Box width="100%" overflow="hidden">
-          <Text color={reasoningUnavailable ? theme.textDim : theme.textMuted}>
-            {clampVisualText(reasoningText, innerWidth)}
-          </Text>
-        </Box>
-        {sourceMarker && (
+        {windowResult.showRouteText && (
+          <Box width="100%" overflow="hidden">
+            <Text color={theme.textMuted}>
+              {clampVisualText(routeText, innerWidth)}
+            </Text>
+          </Box>
+        )}
+        {windowResult.showReasoningText && (
+          <Box width="100%" overflow="hidden">
+            <Text color={reasoningUnavailable ? theme.textDim : theme.textMuted}>
+              {clampVisualText(reasoningText, innerWidth)}
+            </Text>
+          </Box>
+        )}
+        {windowResult.showSourceMarker && sourceMarker && (
           <Box width="100%" overflow="hidden">
             <Text color={theme.textDim}>
               {clampVisualText(sourceMarker, innerWidth)}
@@ -339,25 +477,52 @@ export function ModelPickerScreen({
           </Box>
         )}
 
-        <Box flexDirection="column" marginTop={0} width="100%">
+        {showCurrentLine && activeModel && (
+          <Box height={1} overflow="hidden">
+            <Text color={theme.textMuted} wrap="truncate">Current: <Text color={theme.text} bold>{getModelName(activeModel)}</Text></Text>
+          </Box>
+        )}
+
+        {windowResult.showAbove && (
+          <Box height={1} overflow="hidden">
+            <Text color={theme.accent}>↑ {windowResult.start} more</Text>
+          </Box>
+        )}
+
+        <Box
+          flexDirection="column"
+          marginTop={0}
+          width="100%"
+          height={models.length > 0 ? visibleModels.length : undefined}
+          overflow={models.length > 0 ? "hidden" : undefined}
+        >
           {models.length === 0 ? (
             <Text color={theme.textMuted}>
               {isLoading ? "Discovering models from the Codex runtime..." : (emptyMessage ?? "No models available.")}
             </Text>
           ) : (
-            models.map((model, index) => (
-              <ModelPickerRow
-                key={model.id}
-                model={model}
-                width={innerWidth}
-                currentModel={currentModel}
-                currentGeminiSelection={currentGeminiSelection}
-                isHighlighted={index === draftSelectedModel}
-                selectedReasoning={index === draftSelectedModel ? draftReasoning : normalizeDraftReasoning(model, currentReasoning)}
-              />
-            ))
+            visibleModels.map((model, index) => {
+              const actualIndex = windowResult.start + index;
+              return (
+                <ModelPickerRow
+                  key={model.id}
+                  model={model}
+                  width={innerWidth}
+                  currentModel={currentModel}
+                  currentGeminiSelection={currentGeminiSelection}
+                  isHighlighted={actualIndex === draftSelectedModel}
+                  selectedReasoning={actualIndex === draftSelectedModel ? draftReasoning : normalizeDraftReasoning(model, currentReasoning)}
+                />
+              );
+            })
           )}
         </Box>
+
+        {windowResult.showBelow && (
+          <Box height={1} overflow="hidden">
+            <Text color={theme.accent}>↓ {windowResult.hiddenBelow} more</Text>
+          </Box>
+        )}
       </Box>
     </Box>
   );
@@ -407,7 +572,7 @@ function ModelPickerRow({
         <Text color={isHighlighted ? theme.accent : theme.textDim}>{isHighlighted ? ">" : " "}</Text>
       </Box>
       <Box width={nameWidth} flexShrink={0} overflow="hidden">
-        <Text color={isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted}>
+        <Text color={isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted} wrap="truncate">
           {name}
         </Text>
       </Box>
@@ -420,7 +585,7 @@ function ModelPickerRow({
             <Text>  </Text>
           </Box>
           <Box width={pillWidth} flexShrink={0} overflow="hidden">
-            <Text color={theme.accent} bold>
+            <Text color={theme.accent} bold wrap="truncate">
               {pillText}
             </Text>
           </Box>

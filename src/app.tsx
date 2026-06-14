@@ -256,7 +256,7 @@ import {
 } from "./ui/themeFlow.js";
 import { isBusy as isUiBusy } from "./session/types.js";
 import { AppShell } from "./ui/AppShell.js";
-import { RuntimeStatusBar, measureRuntimeStatusBarRows, type RuntimeAvailability } from "./ui/RuntimeStatusBar.js";
+import type { RuntimeAvailability } from "./ui/RuntimeStatusBar.js";
 import { checkForUpdates, formatLocalDevUpdateStatus, formatUpdateInstructions, shouldRunStartupUpdateCheck, type UpdateCheckResult } from "./core/version/updateCheck.js";
 import { isLocalDevChannel } from "./core/version/channel.js";
 import {
@@ -4342,19 +4342,6 @@ export function App({ launchArgs }: AppProps) {
 
   const modelDisplayName = activeRuntimeDisplay.modelDisplay;
   const composerReasoningLevel = "";
-  const runtimeStatusElement = useMemo(() => (
-    <RuntimeStatusBar
-      layout={terminalLayout}
-      modelDisplay={visibleRuntimeModelState.modelDisplay}
-      contextDisplay={visibleRuntimeModelState.contextDisplay}
-      availability={visibleRuntimeModelState.availability}
-    />
-  ), [
-    terminalLayout,
-    visibleRuntimeModelState.availability,
-    visibleRuntimeModelState.contextDisplay,
-    visibleRuntimeModelState.modelDisplay,
-  ]);
   const headerRuntimeSummary = useMemo(
     () => runtimeDisplayToSummary(activeRuntimeDisplay, runtimeSummary),
     [activeRuntimeDisplay, runtimeSummary],
@@ -4779,8 +4766,6 @@ export function App({ launchArgs }: AppProps) {
         }
         mainPanel={null}
         mainPanelMode="viewport"
-        runtimeStatusBar={runtimeStatusElement}
-        runtimeStatusRows={measureRuntimeStatusBarRows()}
         composer={composerElement}
         composerRows={composerRows}
         panelHint={screen !== "main" && screen !== "model-picker" ? (

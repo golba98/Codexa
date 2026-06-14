@@ -182,15 +182,8 @@ export function buildDevLaunchNotice(launchContext: LaunchContext): string | nul
   }
 
   return [
-    "This session was started from local-dev Codexa.",
-    "Normal flow:",
-    "  npm run install:dev-bin",
-    "  which codexa-dev",
-    "  cd <target-folder>",
-    "  codexa-dev",
-    "",
-    "Recovery from this session:",
-    "  /workspace relaunch <path>",
+    "Ready. Type a prompt, run !shell, or use /command.",
+    "Tip: /workspace relaunch <path>",
   ].join("\n");
 }
 
