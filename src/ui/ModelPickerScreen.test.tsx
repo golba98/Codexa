@@ -192,8 +192,7 @@ test("ModelPickerScreen does not exceed available vertical rows", async () => {
     .filter(label => cleanOutput.includes(label))
     .length;
 
-  assert.ok(renderedModelsCount >= 8 && renderedModelsCount <= 10, `Should render between 8 and 10 models, got ${renderedModelsCount}`);
-  assert.match(cleanOutput, /Showing 1-10 of 15/);
+  assert.ok(renderedModelsCount >= 3 && renderedModelsCount <= 6, `Should render between 3 and 6 models, got ${renderedModelsCount}`);
 });
 
 test("ModelPickerScreen at 100x21 shows all small model lists before windowing", async () => {

@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useInput, useStdin } from "ink";
 import {
   getRunPlanText,
@@ -37,9 +37,6 @@ interface TimelineProps {
   mouseCapture?: boolean;
   onMouseActivity?: () => void;
   contentSized?: boolean;
-  viewportState?: TimelineViewportState;
-  onViewportStateChange?: Dispatch<SetStateAction<TimelineViewportState>>;
-  showIntro?: boolean;
 }
 
 type StandaloneTimelineEvent = SystemEvent | ErrorEvent | ShellEvent;
@@ -114,18 +111,9 @@ type TimelineNavigationAction = "pageUp" | "pageDown" | "home" | "end" | "wheelU
 export interface TimelineViewportState {
   anchorRow: number;
   followTail: boolean;
-  mode?: ScrollMode;
-  scrollOffsetFromBottom?: number;
   unseenItems: number;
   unseenRows: number;
   frozenSnapshot: TimelineSnapshot | null;
-}
-
-export type ScrollMode = "tail" | "history";
-
-export interface TimelineScrollState {
-  mode: ScrollMode;
-  scrollOffsetFromBottom: number;
 }
 
 interface FinalizeContinuityOptions {
@@ -295,45 +283,20 @@ export function createFollowTailViewport(totalRows: number): TimelineViewportSta
   return {
     anchorRow: Math.max(0, totalRows - 1),
     followTail: true,
-    mode: "tail",
-    scrollOffsetFromBottom: 0,
     unseenItems: 0,
     unseenRows: 0,
     frozenSnapshot: null,
   };
 }
 
-export function getTimelineScrollState(
-  viewport: TimelineViewportState,
-  totalRows: number = viewport.frozenSnapshot?.totalRows ?? 0,
-): TimelineScrollState {
-  if (viewport.followTail) {
-    return { mode: "tail", scrollOffsetFromBottom: 0 };
-  }
-
-  return {
-    mode: "history",
-    scrollOffsetFromBottom: Math.max(0, Math.max(0, totalRows - 1) - viewport.anchorRow),
-  };
-}
-
-function withScrollState(viewport: Omit<TimelineViewportState, "mode" | "scrollOffsetFromBottom">): TimelineViewportState {
-  const scroll = getTimelineScrollState(viewport, viewport.frozenSnapshot?.totalRows ?? 0);
-  return {
-    ...viewport,
-    mode: scroll.mode,
-    scrollOffsetFromBottom: scroll.scrollOffsetFromBottom,
-  };
-}
-
 function createAnchoredViewport(snapshot: TimelineSnapshot, anchorRow: number): TimelineViewportState {
-  return withScrollState({
+  return {
     anchorRow: clampAnchorRow(anchorRow, snapshot.totalRows),
     followTail: false,
     unseenItems: 0,
     unseenRows: 0,
     frozenSnapshot: snapshot,
-  });
+  };
 }
 
 function findFinalResponseStartRow(snapshot: TimelineSnapshot, previousTotalRows: number, viewportRows: number): number | null {
@@ -420,13 +383,13 @@ export function syncTimelineViewport(
     return viewport;
   }
 
-  return withScrollState({
+  return {
     anchorRow,
     followTail: false,
     unseenItems,
     unseenRows,
     frozenSnapshot,
-  });
+  };
 }
 
 /**
@@ -522,13 +485,13 @@ export function reflowTimelineViewport(
   const unseenItems = Math.max(0, liveSnapshot.itemCount - frozenItemCount);
   const unseenRows = Math.max(0, liveSnapshot.totalRows - newFrozenSnapshot.totalRows);
 
-  return withScrollState({
+  return {
     anchorRow: newAnchorRow,
     followTail: false,
     unseenItems,
     unseenRows,
     frozenSnapshot: newFrozenSnapshot,
-  });
+  };
 }
 
 export function pageUpTimelineViewport(
@@ -547,13 +510,13 @@ export function pageUpTimelineViewport(
     : clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
   const nextAnchor = Math.max(getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows), currentAnchor - Math.max(1, viewportRows));
 
-  return withScrollState({
+  return {
     anchorRow: nextAnchor,
     followTail: false,
     unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
     unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
     frozenSnapshot,
-  });
+  };
 }
 
 export function pageDownTimelineViewport(
@@ -577,13 +540,13 @@ export function pageDownTimelineViewport(
     return createFollowTailViewport(liveSnapshot.totalRows);
   }
 
-  return withScrollState({
+  return {
     anchorRow: nextAnchor,
     followTail: false,
     unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
     unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
     frozenSnapshot,
-  });
+  };
 }
 
 export function halfPageUpTimelineViewport(
@@ -603,13 +566,13 @@ export function halfPageUpTimelineViewport(
   const halfPage = Math.max(1, Math.floor(viewportRows / 2));
   const nextAnchor = Math.max(getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows), currentAnchor - halfPage);
 
-  return withScrollState({
+  return {
     anchorRow: nextAnchor,
     followTail: false,
     unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
     unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
     frozenSnapshot,
-  });
+  };
 }
 
 export function halfPageDownTimelineViewport(
@@ -634,13 +597,13 @@ export function halfPageDownTimelineViewport(
     return createFollowTailViewport(liveSnapshot.totalRows);
   }
 
-  return withScrollState({
+  return {
     anchorRow: nextAnchor,
     followTail: false,
     unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
     unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
     frozenSnapshot,
-  });
+  };
 }
 
 export function stepUpTimelineViewport(
@@ -659,13 +622,13 @@ export function stepUpTimelineViewport(
     : clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
   const floor = getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows);
 
-  return withScrollState({
+  return {
     anchorRow: Math.max(floor, currentAnchor - 1),
     followTail: false,
     unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
     unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
     frozenSnapshot,
-  });
+  };
 }
 
 export function stepDownTimelineViewport(
@@ -689,13 +652,13 @@ export function stepDownTimelineViewport(
     return createFollowTailViewport(liveSnapshot.totalRows);
   }
 
-  return withScrollState({
+  return {
     anchorRow: nextAnchor,
     followTail: false,
     unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
     unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
     frozenSnapshot,
-  });
+  };
 }
 
 export function scrollTimelineViewport(
@@ -734,13 +697,13 @@ export function scrollTimelineViewport(
     nextAnchor = floor;
   }
 
-  return withScrollState({
+  return {
     anchorRow: nextAnchor,
     followTail: false,
     unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
     unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
     frozenSnapshot,
-  });
+  };
 }
 
 export function homeTimelineViewport(
@@ -753,13 +716,13 @@ export function homeTimelineViewport(
   }
 
   const frozenSnapshot = getFrozenSnapshot(viewport, liveSnapshot);
-  return withScrollState({
+  return {
     anchorRow: getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows),
     followTail: false,
     unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
     unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
     frozenSnapshot,
-  });
+  };
 }
 
 export function endTimelineViewport(totalRows: number): TimelineViewportState {
@@ -1076,9 +1039,6 @@ export const Timeline = memo(function Timeline({
   mouseCapture = false,
   onMouseActivity,
   contentSized = false,
-  viewportState,
-  onViewportStateChange,
-  showIntro = false,
 }: TimelineProps) {
   renderDebug.useRenderDebug("Timeline", {
     staticEvents,
@@ -1172,27 +1132,6 @@ export const Timeline = memo(function Timeline({
     () => [...staticTurnIds, ...activeTurnIds],
     [activeTurnIds, staticTurnIds],
   );
-  const introRenderItems = useMemo<RenderTimelineItem[]>(() => {
-    if (!showIntro || viewportRows < 3 || process.env["CODEXA_NO_ASCII_LOGO"] === "1") {
-      return [];
-    }
-
-    const startupHeaderMode: StartupHeaderMode = viewportRows >= 8 && layout.cols >= 72
-      ? "large"
-      : viewportRows >= 4
-        ? "compact"
-        : "tiny";
-
-    return [
-      buildIntroRenderItem({
-        authState,
-        workspaceLabel,
-        layout,
-        startupHeaderMode,
-      }),
-    ];
-  }, [authState, layout, showIntro, viewportRows, workspaceLabel]);
-
   const staticRenderItems = useMemo(
     () => buildStaticRenderItems(staticItems, allTurnIds, activeTurnId, questionTurnId, question),
     [activeTurnId, allTurnIds, question, questionTurnId, staticItems],
@@ -1209,8 +1148,8 @@ export const Timeline = memo(function Timeline({
   // the streaming assistant item is rebuilt each frame.
   const snapshotWidth = Math.max(10, getShellWidth(layout.cols) - 1);
   const staticSnapshot = useMemo(
-    () => buildTimelineSnapshot([...introRenderItems, ...staticRenderItems], { totalWidth: snapshotWidth, verboseMode, debugLabel: "static", workspaceRoot }),
-    [snapshotWidth, introRenderItems, staticRenderItems, verboseMode, workspaceRoot],
+    () => buildTimelineSnapshot(staticRenderItems, { totalWidth: snapshotWidth, verboseMode, debugLabel: "static", workspaceRoot }),
+    [snapshotWidth, staticRenderItems, verboseMode, workspaceRoot],
   );
   // Partition active items: non-assistant items are stable during streaming
   const isStreaming = uiState.kind === "RESPONDING";
@@ -1272,6 +1211,11 @@ export const Timeline = memo(function Timeline({
     lastNonEmptySnapshotRef.current = liveSnapshot;
   }
 
+  const isBusy = uiState.kind === "THINKING"
+    || uiState.kind === "RESPONDING"
+    || uiState.kind === "ANSWER_VISIBLE"
+    || uiState.kind === "SHELL_RUNNING";
+
   const transcriptEventCount = staticEvents.length + activeEvents.length;
 
   const effectiveSnapshot = useMemo(() => {
@@ -1290,9 +1234,7 @@ export const Timeline = memo(function Timeline({
   }, [liveSnapshot, transcriptEventCount, uiState.kind]);
   const snapshotForViewport = effectiveSnapshot;
 
-  const [internalViewport, setInternalViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(snapshotForViewport.totalRows));
-  const viewport = viewportState ?? internalViewport;
-  const setViewport = onViewportStateChange ?? setInternalViewport;
+  const [viewport, setViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(snapshotForViewport.totalRows));
   const liveSnapshotRef = useRef(snapshotForViewport);
   // Tracks the previous snapshotWidth so we can detect width changes inside
   // the liveSnapshot effect and dispatch reflowTimelineViewport instead of
@@ -1510,11 +1452,6 @@ export const Timeline = memo(function Timeline({
 
     if (key.end || isEndInput(input)) {
       setViewport(endTimelineViewport(currentSnapshot.totalRows));
-      return;
-    }
-
-    if (key.escape) {
-      setViewport(endTimelineViewport(currentSnapshot.totalRows));
     }
   });
 
@@ -1678,10 +1615,7 @@ export const Timeline = memo(function Timeline({
     prev.workspaceRoot === next.workspaceRoot &&
     prev.mouseCapture === next.mouseCapture &&
     prev.onMouseActivity === next.onMouseActivity &&
-    prev.contentSized === next.contentSized &&
-    prev.viewportState === next.viewportState &&
-    prev.onViewportStateChange === next.onViewportStateChange &&
-    prev.showIntro === next.showIntro
+    prev.contentSized === next.contentSized
   );
 });
 

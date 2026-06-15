@@ -281,30 +281,42 @@ export function computeAppLayoutBudget({
   rows,
   composerRows = 4,
   panelHintRows = 0,
+  headerRows,
+  headerGapRows,
 }: AppLayoutBudgetParams): AppLayoutBudget {
   const safeCols = normalizeDimension(cols, DEFAULT_COLUMNS);
   const safeRows = normalizeDimension(rows, DEFAULT_ROWS);
   const mode = computeMode(safeCols, safeRows);
   const shellHeight = getShellHeight(safeRows);
 
-  const showNormalLogo = false;
-  const showCompactHeader = false;
-  const placeMetadataBesideLogo = false;
-  const placeMetadataBelowLogo = false;
+  const showNormalLogo =
+    process.env["CODEXA_NO_ASCII_LOGO"] !== "1" && (
+      mode === "regular" ||
+      mode === "expanded" ||
+      (mode === "compact" && safeCols >= 72)
+    );
 
-  const resolvedHeaderRows = 0;
-  const resolvedHeaderGapRows = 0;
-  const panelStagePaddingY = 0;
-  const resolvedComposerRows = Math.max(0, composerRows);
-  const runtimeMetadataRows = 0;
+  const showCompactHeader = !showNormalLogo;
+
+  const placeMetadataBesideLogo =
+    showNormalLogo && safeCols >= 95;
+
+  const placeMetadataBelowLogo =
+    showNormalLogo && !placeMetadataBesideLogo;
+
+  const resolvedHeaderRows = headerRows ?? (showNormalLogo ? 6 : 1);
+  const resolvedHeaderGapRows = headerGapRows ?? (mode === "compact" ? 0 : 1);
+  const panelStagePaddingY = mode === "compact" ? 0 : 1;
+  const resolvedComposerRows = mode === "compact" ? 3 : Math.max(0, composerRows);
+  const runtimeMetadataRows = 1;
   const transientStatusRows = 0;
-  const bottomPaddingRows = 0;
+  const bottomPaddingRows = mode === "compact" ? 0 : 1;
   const bottomChromeBudget: BottomChromeBudget = {
     runtimeMetadataRows,
     composerRows: resolvedComposerRows,
     transientStatusRows,
     bottomPaddingRows,
-    totalRows: resolvedComposerRows,
+    totalRows: runtimeMetadataRows + resolvedComposerRows + transientStatusRows + bottomPaddingRows,
   };
   const baseReservedRows =
     resolvedHeaderRows +
@@ -345,7 +357,7 @@ export function computeAppLayoutBudget({
     // Backward compatibility fields:
     transcriptRows: activePanelRows,
     panelRows: innerAvailableRows,
-    showLargeLogo: false,
+    showLargeLogo: mode === "expanded",
     showPanelSeparators: mode === "expanded",
     showPanelColumnHeaders: mode === "expanded",
   };
