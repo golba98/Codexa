@@ -1,6 +1,20 @@
 # Changelog
 
-## [1.0.4] — 2026-05-30 — Update Notice Reliability
+## [1.1.0] - 2026-06-15 - Terminal Scrollback Release
+
+### Changed
+
+- Normal chat now runs in terminal scrollback mode; fullscreen alternate-screen mode is reserved for overlays such as provider/model pickers, settings, and approval screens.
+- App/version metadata now comes from one build info module shared by UI, update checks, and release tooling.
+- The launch screen has one live layout path: header, body, composer, and a single bottom runtime/context row.
+
+### Removed
+
+- Removed legacy intro/status render paths and stale local-dev branding.
+
+---
+
+## [1.0.3] - 2026-05-30 - Update Notice Reliability
 
 ### Fixed
 
@@ -14,14 +28,14 @@
 
 ---
 
-## [1.0.3] — 2026-05-30 — Package-Ready Release
+## [1.0.2] - 2026-05-30 - Package-Ready Release
 
 **This is the package-ready release.** The installed/downloaded Codexa package now includes the full startup UI and matches the working dev/local version.
 
 ### Fixed
 
 - **Installed package now shows full Codexa UI** — the large ASCII logo/header, version line, workspace, provider, and footer are all present after `npm install -g @golba98/codexa`. Previously, the published tarball predated the UI overhaul and produced a stripped-down startup screen.
-- **`gen-build-info` now runs as part of `prepublishOnly`** — the `APP_VERSION` constant embedded in the package (`src/config/buildInfo.ts`) is guaranteed to match `package.json` at publish time. Previously, publishing without running `npm run build` first could leave a stale version constant in the tarball, causing the header brand line and `codexa --version` to disagree.
+- **`gen-build-info` now runs as part of `prepublishOnly`** — the generated app version constant embedded in the package is guaranteed to match `package.json` at publish time. Previously, publishing without running `npm run build` first could leave a stale version constant in the tarball, causing the header brand line and `codexa --version` to disagree.
 
 ### Changed
 
@@ -32,7 +46,7 @@
 
 ### Notes
 
-- Dev and production share the same UI renderer. The installed `codexa` command shows `Codexa v1.0.3`; the dev launchers (`codexa-dev` / `cxd`) show `Codexa v1.0.3-dev local`.
+- Dev and production share the same UI renderer. The installed `codexa` command shows `Codexa vX.Y.Z`; the dev launchers (`codexa-dev` / `cxd`) show `Codexa vX.Y.Z-dev`.
 - This release does not include new features. It is a package correctness and release-process fix.
 
 ### Update checker behavior (for users on v1.0.2)
@@ -43,10 +57,10 @@ The update checker fetches `dist-tags.latest` from `https://registry.npmjs.org/@
 
 ---
 
-## [1.0.2] — internal
+## [1.0.1] - internal
 
 Color system and package cleanup pass. Not re-released as a standalone version; improvements folded into v1.0.3.
 
-## [1.0.1] — initial release
+## [1.0.0] - initial release
 
 Initial published release of Codexa.

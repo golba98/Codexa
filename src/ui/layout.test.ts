@@ -10,7 +10,6 @@ import {
   getShellWidth,
   getUsableShellWidth,
   getVisualWidth,
-  resolveStartupHeaderMode,
   getContentWidth,
 } from "./layout.js";
 import { getHeaderHeroLayout, measureTopHeaderRows } from "./TopHeader.js";
@@ -121,43 +120,6 @@ test("expanded size shows the large logo tier", () => {
   assert.equal(budget.showLargeLogo, true);
   assert.equal(budget.showNormalLogo, true);
   assert.equal(budget.showCompactHeader, false);
-});
-
-test("chooses startup header mode from measured row budget", () => {
-  assert.equal(resolveStartupHeaderMode({
-    cols: 120,
-    rows: 30,
-    introRows: 7,
-    composerRows: 6,
-  }), "large");
-
-  assert.equal(resolveStartupHeaderMode({
-    cols: 120,
-    rows: 16,
-    introRows: 7,
-    composerRows: 6,
-  }), "compact");
-
-  assert.equal(resolveStartupHeaderMode({
-    cols: 100,
-    rows: 24,
-    introRows: 7,
-    composerRows: 5,
-  }), "large"); // STARTUP_FULL_MIN_COLS lowered to 100 to match LOGO_LARGE_MIN_COLS
-
-  assert.equal(resolveStartupHeaderMode({
-    cols: 39,
-    rows: 24,
-    introRows: 7,
-    composerRows: 5,
-  }), "tiny");
-
-  assert.equal(resolveStartupHeaderMode({
-    cols: 100,
-    rows: 13,
-    introRows: 7,
-    composerRows: 5,
-  }), "tiny");
 });
 
 test("measures the header rows for full and compact layouts", () => {

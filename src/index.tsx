@@ -159,7 +159,6 @@ export function startApp({
     write: (chunk) => writeStdout(chunk, "src/index.tsx:startup.title"),
   });
   terminal.setBracketedPaste(true, "src/index.tsx:startup.bracketedPaste");
-  terminal.setAlternateScreen(true, "src/index.tsx:startup.alternateScreen");
 
   let cleanupDone = false;
   let repaintArmed = false;
@@ -204,7 +203,6 @@ export function startApp({
     // Restore terminal state: disable mouse reporting and bracketed paste.
     terminal.setMouseReporting(false, "src/index.tsx:cleanup.mouse");
     terminal.setBracketedPaste(false, "src/index.tsx:cleanup.bracketedPaste");
-    terminal.setAlternateScreen(false, "src/index.tsx:cleanup.alternateScreen");
     terminal.resetModes();
     activeRoot = null;
   };

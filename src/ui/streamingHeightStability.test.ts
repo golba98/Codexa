@@ -70,7 +70,7 @@ function hasActionSummary(rows: { key: string }[]): boolean {
 
 // ─── Monotonic height while running ─────────────────────────────────────────────
 
-test("native snapshot: a streaming turn's height never shrinks while the run is running", () => {
+test("timeline snapshot: a streaming turn's height never shrinks while the run is running", () => {
   __clearTimelineMeasureCachesForTests();
   const user = makeUser(1);
   let run = newRun(1);

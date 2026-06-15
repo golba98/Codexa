@@ -1,7 +1,7 @@
 import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
-import { formatCodexaBrandLabel } from "../core/version/channel.js";
+import { formatBrandLabel } from "../core/buildInfo.js";
 import { formatVersionLabel } from "../core/version/updateCheck.js";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
@@ -270,7 +270,7 @@ export function TopHeader({
     : contentWidth;
   const workspaceValueWidth = Math.max(1, metadataWidth - getTextWidth("Workspace: "));
   const wsDisplay = shortenHeaderWorkspaceLabel(workspaceLabel, workspaceValueWidth);
-  const brandLabel = formatCodexaBrandLabel();
+  const brandLabel = formatBrandLabel();
   const metadataLinesRaw = [
     headerConfig.showBrand ? { key: "brand", text: brandLabel, color: theme.text, bold: true } : null,
     headerConfig.showAuthStatus ? { key: "auth", text: `Auth: ${authLabel}`, color: theme.text, bold: false } : null,

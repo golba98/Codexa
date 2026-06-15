@@ -147,7 +147,8 @@ test("local-dev channel makes header version obvious", async () => {
   process.env.CODEXA_CHANNEL = "local-dev";
   try {
     const output = await renderHeader(130, "authenticated", HEADER_CONFIG_WITH_AUTH);
-    assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-dev local`));
+    assert.match(output, new RegExp(`Codexa v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-dev`));
+    assert.doesNotMatch(output, new RegExp("dev " + "local"));
   } finally {
     if (previous === undefined) {
       delete process.env.CODEXA_CHANNEL;

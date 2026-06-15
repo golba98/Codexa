@@ -8,10 +8,9 @@ import { buildRuntimeSummary } from "../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../config/settings.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
-import { AppShell, calculateColdStartSpacerRows, calculateHeaderToContentGapRows, calculateNativeSpacerRows } from "./AppShell.js";
+import { AppShell, calculateHeaderToContentGapRows } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "./layout.js";
 import { PlanActionPicker, measurePlanActionPickerRows } from "./PlanActionPicker.js";
-import { buildStaticIntroRows, StaticIntroItem } from "./StaticIntroItem.js";
 import { ThemeProvider } from "./theme.js";
 
 class TestInput extends PassThrough {
@@ -642,59 +641,6 @@ test("non-main panel content updates while the active screen is unchanged", asyn
   }
 });
 
-test("startup intro workspace label updates when the intro component rerenders", async () => {
-  const stdin = new TestInput();
-  const stdout = new TestOutput();
-  let output = "";
-
-  stdout.on("data", (chunk) => {
-    output += chunk.toString();
-  });
-
-  const layout = createLayoutSnapshot(120, 34);
-  const instance = render(
-    <ThemeProvider theme="purple">
-      <StaticIntroItem
-        authState="authenticated"
-        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
-        layout={layout}
-        verboseMode={false}
-        workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
-      />
-    </ThemeProvider>,
-    {
-      stdin: stdin as unknown as NodeJS.ReadStream,
-      stdout: stdout as unknown as NodeJS.WriteStream,
-      stderr: stdout as unknown as NodeJS.WriteStream,
-      debug: true,
-      exitOnCtrlC: false,
-      patchConsole: false,
-    },
-  );
-
-  try {
-    await sleep(80);
-    instance.rerender(
-      <ThemeProvider theme="purple">
-        <StaticIntroItem
-          authState="authenticated"
-          workspaceLabel="Codexa"
-          layout={layout}
-          verboseMode={false}
-          workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
-        />
-      </ThemeProvider>,
-    );
-    await sleep(80);
-
-    const frame = stripAnsi(output);
-    assert.match(frame, /Workspace:\s*Codexa/);
-  } finally {
-    instance.cleanup();
-    await sleep(20);
-  }
-});
-
 test("model picker renders as a compact command panel with composer", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
@@ -744,68 +690,6 @@ test("model picker renders as a compact command panel with composer", async () =
   assert.match(output, /Select model command panel/);
   assert.match(output, /Codexa v/);
   assert.match(output, /gpt-5\.4 \(medium\)/);
-});
-
-test("native spacer subtracts persistent transcript rows before anchoring the composer", () => {
-  const spacerRows = calculateNativeSpacerRows({
-    shellRows: 30,
-    introRows: 10,
-    composerRows: 5,
-    staticRows: 4,
-    liveRows: 2,
-  });
-
-  assert.equal(spacerRows, 9);
-  assert.equal(10 + 4 + 2 + spacerRows + 5, 30);
-});
-
-test("native spacer clamps when model update events fill the body", () => {
-  const spacerRows = calculateNativeSpacerRows({
-    shellRows: 24,
-    introRows: 9,
-    composerRows: 5,
-    staticRows: 12,
-    liveRows: 0,
-  });
-
-  assert.equal(spacerRows, 0);
-});
-
-test("cold-start header gap adapts to terminal height", () => {
-  // micro 17-row: measureTopHeaderRows=1, headerToContentGap=0, shellHeight=16
-  assert.equal(calculateColdStartSpacerRows({
-    shellRows: 16,
-    headerRows: 1,
-    composerRows: 4,
-    layoutMode: "compact",
-    availableRows: 9,
-  }), 1);
-  // full 30-row medium: measureTopHeaderRows=7 (1+6+0), headerToContentGap=1, shellHeight=29
-  assert.equal(calculateColdStartSpacerRows({
-    shellRows: 29,
-    headerRows: 8,
-    composerRows: 7,
-    layoutMode: "regular",
-    availableRows: 11,
-  }), 1);
-  // full 40-row tall: measureTopHeaderRows=7 (1+6+0), headerToContentGap=1, shellHeight=39
-  assert.equal(calculateColdStartSpacerRows({
-    shellRows: 39,
-    headerRows: 9,
-    composerRows: 7,
-    layoutMode: "regular",
-    availableRows: 20,
-  }), 1);
-});
-
-test("cold-start header gap is capped by available rows", () => {
-  assert.equal(calculateColdStartSpacerRows({
-    shellRows: 39,
-    headerRows: 9,
-    composerRows: 7,
-    layoutMode: "regular",
-    availableRows: 2,
-  }), 1);
 });
 
 test("header-to-content gap is reserved outside the hero", () => {
@@ -990,7 +874,7 @@ test("terminal viewport ignores invalid restore sizes and bumps layout epoch on 
 });
 
 // ---------------------------------------------------------------------------
-// Logo / intro duplication tests
+// Logo / launch duplication tests
 //
 // These tests use debug:false (real Ink cursor-control mode) so that Ink's
 // <Static> commitment semantics are exercised correctly.  In debug:true each
@@ -1110,27 +994,6 @@ function assertHeaderBefore(output: string, marker: string) {
     `header should render before ${marker}; header index ${headerIndex}, marker index ${markerIndex}`,
   );
 }
-
-function rowText(row: ReturnType<typeof buildStaticIntroRows>[number]): string {
-  return row.spans.map((span) => span.text).join("");
-}
-
-test("startup metadata stacks workspace directly below auth in the right block", () => {
-  const rows = buildStaticIntroRows({
-    authState: "checking",
-    workspaceLabel: "Codexa",
-    layout: createLayoutSnapshot(120, 40),
-    verboseMode: false,
-    workspaceRoot: "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal",
-  }).map(rowText);
-
-  const authIndex = rows.findIndex((row) => row.includes("Auth: Checking"));
-  const workspaceIndex = rows.findIndex((row) => row.includes("Workspace: Codexa"));
-
-  assert.ok(authIndex >= 0, "auth metadata row should render");
-  assert.equal(workspaceIndex, authIndex + 1, "workspace metadata should be directly below auth");
-  assert.doesNotMatch(rows.slice(workspaceIndex + 1).join("\n"), /Workspace:/);
-});
 
 test("header renders before committed prompt and assistant transcript content", async () => {
   const stdin = new TestInput();
@@ -1464,7 +1327,7 @@ test("workspace label updates on cold start without remounting the app shell", a
   assert.ok(countLogoInOutput(raw) <= 4, "workspace label changes should stay bounded to the live startup header");
 });
 
-test("post-clear empty native frame renders the live header and empty composer", async () => {
+test("post-clear empty frame renders the live header and empty composer", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 120;
@@ -1494,7 +1357,7 @@ test("post-clear empty native frame renders the live header and empty composer",
   assert.doesNotMatch(output, /Reproduce the resize flicker and fix it\./);
 });
 
-test("clear transition physically reprints the intro after previous transcript output", async () => {
+test("clear transition physically reprints the launch header after previous transcript output", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   stdout.columns = 120;
@@ -1809,161 +1672,9 @@ test("cold-start stability: panel height is bounded on cold start", async () => 
   assert.match(output, /Transient Picker/);
 
   // Count actual lines in output.
-  // If height was nativePanelBodyRows (around 25+), we'd have many trailing newlines or spaces.
+  // If height used the old oversized panel body rows, we'd have many trailing newlines or spaces.
   const finalPanelFrame = output.slice(Math.max(0, output.lastIndexOf("Transient Picker")));
   const lines = finalPanelFrame.split("\n");
   assert.ok(lines.length <= layout.rows, "Panel height should be bounded on cold start");
 });
 
-// ─── Native mode scroll-pause tests ──────────────────────────────────────────
-
-function makeNativeShellInstance(uiState: UIState, activeEvents: TimelineEvent[] = []) {
-  const stdin = new TestInput();
-  const stdout = new TestOutput();
-  stdout.columns = 100;
-  stdout.rows = 30;
-  let rawOutput = "";
-  stdout.on("data", (chunk) => { rawOutput += chunk.toString(); });
-
-  const layout = createLayoutSnapshot(100, 30);
-  const composerRows = measureBottomComposerRows({
-    layout,
-    uiState,
-    mode: "auto-edit",
-    model: "gpt-5.4",
-    reasoningLevel: "medium",
-    tokensUsed: 1200,
-    value: "",
-    cursor: 0,
-  });
-
-  const instance = render(
-    <ThemeProvider theme="purple">
-      <AppShell
-        layout={layout}
-        screen="main"
-        authState="authenticated"
-        workspaceLabel="test"
-        staticEvents={EVENTS}
-        activeEvents={activeEvents}
-        uiState={uiState}
-        panel={null}
-        mouseCapture={false}
-        composer={
-          <BottomComposer
-            layout={layout}
-            uiState={uiState}
-            mode="auto-edit"
-            model="gpt-5.4"
-            themeName="purple"
-            reasoningLevel="medium"
-            tokensUsed={1200}
-            value=""
-            cursor={0}
-            onChangeInput={() => {}}
-            onSubmit={() => {}}
-            onCancel={() => {}}
-            onChangeValue={() => {}}
-            onChangeCursor={() => {}}
-            onHistoryUp={() => {}}
-            onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
-            onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
-            onCycleMode={() => {}}
-            onQuit={() => {}}
-          />
-        }
-        composerRows={composerRows}
-      />
-    </ThemeProvider>,
-    {
-      stdin: stdin as unknown as NodeJS.ReadStream,
-      stdout: stdout as unknown as NodeJS.WriteStream,
-      stderr: stdout as unknown as NodeJS.WriteStream,
-      debug: true,
-      exitOnCtrlC: false,
-      patchConsole: false,
-    },
-  );
-
-  return {
-    stdin,
-    instance,
-    getOutput: () => stripAnsi(rawOutput),
-    getOutputFrom: (offset: number) => stripAnsi(rawOutput.slice(offset)),
-    getRawLength: () => rawOutput.length,
-  };
-}
-
-test("native mode: Page Up during streaming shows pause indicator", async () => {
-  const { stdin, instance, getOutput, getRawLength } = makeNativeShellInstance({ kind: "RESPONDING", turnId: 1 });
-
-  try {
-    await sleep(100);
-    const beforePageUp = getRawLength();
-
-    // Send Page Up escape code
-    stdin.write("[5~");
-    await sleep(100);
-
-    const frame = stripAnsi(getOutput().slice(stripAnsi(getOutput().slice(0, beforePageUp)).length - 1));
-    const output = getOutput();
-    assert.match(output, /End to follow/, "pause indicator should appear after Page Up");
-  } finally {
-    instance.cleanup();
-    await sleep(20);
-  }
-});
-
-test("native mode: End key after Page Up removes pause indicator", async () => {
-  const { stdin, instance, getOutput } = makeNativeShellInstance({ kind: "RESPONDING", turnId: 1 });
-
-  try {
-    await sleep(100);
-    stdin.write("[5~");
-    await sleep(100);
-
-    assert.match(getOutput(), /End to follow/, "pause indicator should appear after Page Up");
-
-    stdin.write("[F");
-    await sleep(100);
-
-    // After End, the indicator text should no longer be in the latest frame
-    // (it may have appeared in earlier frames, so we just check the most recent output
-    //  no longer contains it by checking the total output ends without it)
-    const outputLines = getOutput().split("\n");
-    const trailingContent = outputLines.slice(-10).join("\n");
-    assert.doesNotMatch(trailingContent, /End to follow/, "pause indicator should disappear after End");
-  } finally {
-    instance.cleanup();
-    await sleep(20);
-  }
-});
-
-test("native mode: nativePaused auto-clears when streaming ends (uiState becomes IDLE)", async () => {
-  const { stdin, instance, getOutput } = makeNativeShellInstance({ kind: "RESPONDING", turnId: 1 });
-
-  try {
-    await sleep(100);
-    stdin.write("[5~");
-    await sleep(100);
-
-    assert.match(getOutput(), /End to follow/, "pause indicator should appear while busy");
-
-    // Simulate streaming ending — we can't re-render the same instance with new props here,
-    // so we verify the auto-clear logic by checking that when busy state would end,
-    // the effect dependency chain is correct (tested via the component's useEffect).
-    // The manual Page Up → End cycle (test above) covers the user-driven resume path.
-    // This test verifies the indicator appears only when isBusy(uiState) is true.
-    const output = getOutput();
-    assert.match(output, /End to follow/, "indicator appears while RESPONDING");
-  } finally {
-    instance.cleanup();
-    await sleep(20);
-  }
-});

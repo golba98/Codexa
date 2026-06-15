@@ -48,7 +48,6 @@ import {
 import type { LaunchArgs } from "./config/launchArgs.js";
 import { loadSettings, saveSettings } from "./config/persistence.js";
 import {
-  APP_VERSION,
   type AuthPreference,
   type AvailableBackend,
   type AvailableMode,
@@ -246,6 +245,7 @@ import { ThemePicker } from "./ui/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
 import { ThemeProvider, THEMES } from "./ui/theme.js";
 import { buildActiveRuntimeDisplay, runtimeDisplayToSummary } from "./ui/runtimeDisplay.js";
+import { getRenderModeForScreen } from "./ui/renderMode.js";
 import {
   cancelThemeSelection,
   commitThemeSelection,
@@ -256,9 +256,9 @@ import {
 } from "./ui/themeFlow.js";
 import { isBusy as isUiBusy } from "./session/types.js";
 import { AppShell } from "./ui/AppShell.js";
-import type { RuntimeAvailability } from "./ui/RuntimeStatusBar.js";
+import type { RuntimeAvailability } from "./ui/runtimeDisplay.js";
 import { checkForUpdates, formatLocalDevUpdateStatus, formatUpdateInstructions, shouldRunStartupUpdateCheck, type UpdateCheckResult } from "./core/version/updateCheck.js";
-import { isLocalDevChannel } from "./core/version/channel.js";
+import { APP_VERSION, isDevBuild } from "./core/buildInfo.js";
 import {
   isCacheValid,
   loadUpdateCheckCache,
@@ -497,6 +497,17 @@ export function App({ launchArgs }: AppProps) {
       bumpPostClearRepaint((tick) => tick + 1);
     }
   }, [clearFrameBoundaryController, sessionState]);
+
+  useEffect(() => {
+    const renderMode = getRenderModeForScreen(screen);
+    terminalControl.setAlternateScreen(
+      renderMode === "fullscreen-tui",
+      renderMode === "fullscreen-tui" ? "src/app.tsx:renderMode.fullscreen-tui" : "src/app.tsx:renderMode.terminal-scrollback",
+    );
+    return () => {
+      terminalControl.setAlternateScreen(false, "src/app.tsx:renderMode.cleanup");
+    };
+  }, [screen, terminalControl]);
 
   useEffect(() => {
     // Default path writes the disable sequences defensively, preserving native
@@ -4174,7 +4185,7 @@ export function App({ launchArgs }: AppProps) {
           return;
         case "update": {
           const arg = commandResult.value ?? "status";
-          if (isLocalDevChannel() && arg !== "check") {
+          if (isDevBuild() && arg !== "check") {
             appendSystemEvent("Update", formatLocalDevUpdateStatus());
             return;
           }
