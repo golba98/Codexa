@@ -298,7 +298,7 @@ export function ProviderPicker({
         showBorder: true,
         showTitle: true,
         reserveCurrent,
-        renderMode: "compact" as const,
+        listMode: "compact" as const,
         visibleCount: visibleRows,
       };
     }
@@ -314,7 +314,7 @@ export function ProviderPicker({
         showBorder: true,
         showTitle: true,
         reserveCurrent: false,
-        renderMode: "compact" as const,
+        listMode: "compact" as const,
         visibleCount: providers.length,
       };
     }
@@ -364,7 +364,7 @@ export function ProviderPicker({
       showTitle,
       showHeaders,
       reserveCurrent,
-      renderMode: window.visibleCount < providers.length ? ("windowed" as const) : ("full" as const),
+      listMode: window.visibleCount < providers.length ? ("windowed" as const) : ("full" as const),
     };
   }, [mode, providers.length, providerIndex, availableRows, resolvedPanelLayout, activeRouteIndex]);
 
@@ -527,7 +527,7 @@ export function ProviderPicker({
       {process.env.CODEXA_DEBUG_LAYOUT === "1" && (
         <Box flexDirection="column" marginTop={1} flexShrink={0}>
           <Text color="red">
-            DEBUG layout: rows={layout?.rows} cols={layout?.cols} mode={layout?.mode} headerRows={budget?.headerRows ?? 6} panelRows={availableRows} bottomChromeRows={budget?.bottomChromeBudget.totalRows ?? 4} composerRows={budget?.composerRows ?? 3} providerRows={visibleProviders.length} renderMode={windowResult?.renderMode}
+                      DEBUG layout: rows={layout?.rows} cols={layout?.cols} mode={layout?.mode} headerRows={budget?.headerRows ?? 6} panelRows={availableRows} bottomChromeRows={budget?.bottomChromeBudget.totalRows ?? 4} composerRows={budget?.composerRows ?? 3} providerRows={visibleProviders.length} listMode={windowResult?.listMode}
           </Text>
         </Box>
       )}

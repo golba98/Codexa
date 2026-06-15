@@ -25,6 +25,8 @@ export interface ActiveRuntimeDisplay {
   modelSpec: ModelSpec;
 }
 
+export type RuntimeAvailability = "available" | "checking" | "reconnecting" | "unavailable" | "unknown";
+
 const PROVIDER_DISPLAY: Record<string, string> = {
   openai: "OpenAI Codex CLI",
   anthropic: "Claude Code CLI",

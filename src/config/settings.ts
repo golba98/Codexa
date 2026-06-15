@@ -1,5 +1,6 @@
 import { homedir } from "os";
 import { basename, join, parse, win32 } from "path";
+import { APP_NAME } from "../core/buildInfo.js";
 
 function isWindowsStylePath(p: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p);
@@ -9,8 +10,7 @@ function smartJoin(base: string, ...parts: string[]): string {
   return isWindowsStylePath(base) ? win32.join(base, ...parts) : join(base, ...parts);
 }
 
-export { APP_VERSION } from "./buildInfo.js";
-export const APP_NAME = "Codexa";
+export { APP_NAME, APP_VERSION } from "../core/buildInfo.js";
 export const DEFAULT_BACKEND = "codex-subprocess";
 export const DEFAULT_MODEL = "gpt-5.4";
 export const DEFAULT_MODE = "full-auto";

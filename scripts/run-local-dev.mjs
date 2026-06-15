@@ -56,7 +56,7 @@ function readPackageVersion() {
 
 function formatLocalDevVersion() {
   const version = readPackageVersion();
-  return version ? `${version}-dev local` : "unknown-dev local";
+  return version ? `${version}-dev` : "unknown-dev";
 }
 
 function printHelp() {

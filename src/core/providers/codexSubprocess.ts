@@ -16,7 +16,7 @@ import {
 import type { BackendProvider } from "./types.js";
 
 // Detects CLI error messages that indicate --experimental-json is not supported.
-// When this fires the provider retries in legacy transcript mode.
+// When this fires the provider retries with the plain transcript parser.
 function looksLikeUnsupportedStructuredOutput(raw: string): boolean {
   return /experimental-json|unknown option|unrecognized option|unexpected argument|unexpected option/i.test(raw);
 }

@@ -420,7 +420,7 @@ UI-only preferences are stored in `~/.codexa-settings.json` (separate from runti
 **Local Codexa** (`bun run dev` from the repo):
 - Runs directly from the working tree
 - Reflects uncommitted changes immediately (with `--watch`)
-- Header shows `Codexa vX.Y.Z-dev local` so you can tell it apart from the published build
+- Header shows `Codexa vX.Y.Z-dev` so you can tell it apart from the published build
 - Use this for testing new features or contributing
 
 > **Gotcha:** When testing local changes, confirm you are running the local build and not the global one. Use `Get-Command codexa` (Windows) or `which -a codexa` (Linux/macOS) to check.
@@ -568,7 +568,7 @@ Then restart your terminal.
 
 ### Local linked build running instead of published package
 
-If you ran `npm link` from the repo, `codexa` points at the local source. The header shows `Codexa vX.Y.Z-dev local` in that case. To go back to the published version:
+If you ran `npm link` from the repo, `codexa` points at the local source. The header shows `Codexa vX.Y.Z-dev` in that case. To go back to the published version:
 
 ```bash
 npm unlink -g @golba98/codexa
@@ -606,11 +606,11 @@ If you expect a notice but don't see one:
 
 See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
-**Current release: v1.0.4**
+**Current release: v1.1.0**
 
-v1.0.4 is an update-notice reliability fix:
-- Older installed versions can detect when npm `latest` is newer
-- `/update check` bypasses stale cache and reports a useful status
-- Failed registry lookups do not get cached as “up to date”
+v1.1.0 is the terminal scrollback release:
+- Normal chat stays in terminal scrollback mode
+- Fullscreen alternate-screen mode is reserved for overlays
+- App version/build metadata is centralized for UI and update checks
 
 > Versions before the fixed update checker may not show update notices. Update directly with `npm install -g @golba98/codexa@latest`.

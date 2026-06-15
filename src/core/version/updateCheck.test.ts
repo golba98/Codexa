@@ -77,8 +77,8 @@ test("checkForUpdates does not show update available when installed version is h
   const result = await checkForUpdates(
     {},
     {
-      currentVersion: "1.0.4",
-      fetchNpmMetadataFn: async () => metadata("1.0.3"),
+      currentVersion: "1.1.0",
+      fetchNpmMetadataFn: async () => metadata("1.0.9"),
     },
   );
 
@@ -349,8 +349,8 @@ test("skips prompt when skippedUpdateVersion matches the latest version", () => 
 });
 
 test("shows prompt again when npm latest is newer than skipped version", () => {
-  const latest = "1.0.4";
-  const skipped = "1.0.3";
+  const latest = "1.1.0";
+  const skipped = "1.0.9";
   // Different versions means the prompt is shown again
   assert.notEqual(latest, skipped);
   assert.equal(isNewerVersion(latest, skipped), true);
