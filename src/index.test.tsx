@@ -504,7 +504,7 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
   assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1006h/);
   assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1015h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
-  assert.match(harness.stdout.writes, /\x1b\[\?1049h/);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1049h/);
   // Verify defensive disable sequences were written during cleanup.
   assert.match(harness.stdout.writes, /\x1b\[\?1000l/);
   assert.match(harness.stdout.writes, /\x1b\[\?1002l/);
@@ -512,7 +512,7 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
   assert.match(harness.stdout.writes, /\x1b\[\?1006l/);
   assert.match(harness.stdout.writes, /\x1b\[\?1015l/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004l/);
-  assert.match(harness.stdout.writes, /\x1b\[\?1049l/);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1049l/);
 
   // Resolving after explicit cleanup should be idempotent.
   harness.resolveExit();
@@ -614,8 +614,7 @@ test("scheduled soft repaint does not call renderHandle.clear when inkInstance i
   await flushMicrotasks();
 });
 
-test("render startup manages alternate-screen mode stably", () => {
+test("render startup leaves alternate-screen mode to App overlays", () => {
   const source = readFileSync(new URL("./index.tsx", import.meta.url), "utf8");
-  assert.match(source, /setAlternateScreen\(true/);
-  assert.match(source, /setAlternateScreen\(false/);
+  assert.doesNotMatch(source, /setAlternateScreen/);
 });

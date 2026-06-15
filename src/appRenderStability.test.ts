@@ -43,12 +43,10 @@ test("Workspace display changes do not force AppShell remounts or viewport clear
   assert.doesNotMatch(appSource, /key=\{`app-shell-\$\{sessionState\.clearCount\}-/);
 });
 
-test("AppShell renders the header as live layout instead of static transcript output", () => {
+test("AppShell renders the header as live layout instead of legacy static output", () => {
   assert.match(appShellSource, /MemoizedTopHeader/);
   assert.doesNotMatch(appShellSource, /import \{[^}]*Static[^}]*\} from "ink"/);
   assert.doesNotMatch(appShellSource, /<Static\b/);
-  assert.doesNotMatch(appShellSource, /StaticIntroItem/);
-  assert.doesNotMatch(appShellSource, /session-intro/);
 });
 
 test("Settings panel workspace display save path does not append Settings transcript events", () => {
@@ -195,13 +193,12 @@ test("Startup keeps a single resize listener and disables Ink's competing handle
   assert.doesNotMatch(onResizeMatch[1] ?? "", /clearTranscript|clearViewport|resetInkOutputForFreshFrame|\.clear\(\)/);
 });
 
-test("Fix uses alternate-screen mode stably and has exactly one Ink root", () => {
-  // index.tsx uses alternateScreen to enter alternate screen once on startup
-  // and exit on cleanup.
-  assert.match(indexSource, /setAlternateScreen/);
-  // app.tsx must not bounce or use alternate screen mode
+test("Default startup avoids alternate screen and keeps exactly one Ink root", () => {
+  assert.doesNotMatch(indexSource, /setAlternateScreen/);
   assert.doesNotMatch(appSource, /\\x1b\[\?1049h/);
-  assert.doesNotMatch(appSource, /alternateScreen|enterAlternativeScreen/);
+  assert.match(appSource, /getRenderModeForScreen/);
+  assert.match(appSource, /fullscreen-tui/);
+  assert.match(appSource, /terminal-scrollback/);
   const renderRoots = indexSource.match(/renderApp\(<App /g) ?? [];
   assert.equal(renderRoots.length, 1, "exactly one Ink root is mounted");
 });

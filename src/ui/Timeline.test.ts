@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { RunProgressEntry, TimelineEvent } from "../session/types.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
-import { getShellWidth, getVisualWidth } from "./layout.js";
-import { buildStaticIntroRows } from "./StaticIntroItem.js";
+import { getVisualWidth } from "./layout.js";
 import type { TimelineRow, TimelineSnapshot } from "./timelineMeasure.js";
 import { buildTimelineSnapshot } from "./timelineMeasure.js";
 import {
@@ -270,74 +269,7 @@ test("builds multi-row snapshots from wrapped timeline items", () => {
   assert.equal(snapshot.itemCount, 1);
 });
 
-test("Codexa intro renders as a normal timeline item", () => {
-  const item: RenderTimelineItem = {
-    key: "codexa-intro",
-    type: "intro",
-    padded: true,
-    intro: {
-      version: "1.0.1",
-      layoutMode: "expanded",
-      authLabel: "Authenticated",
-      workspaceLabel: "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal",
-    },
-  };
-
-  const snapshot = buildTimelineSnapshot([item], { totalWidth: 110 });
-  const lines = snapshot.rows.map((row) => row.spans.map((span) => span.text).join(""));
-  const text = lines.join("\n");
-  const versionLineIndex = lines.findIndex((line) => line.includes("Codexa v1.0.1"));
-
-  assert.equal(snapshot.itemCount, 1);
-  assert.match(text, /██████/);
-  assert.match(text, /Codexa v1\.0\.1/);
-  assert.match(text, /Auth: Authenticated/);
-  assert.match(text, /Workspace: 13-Custom-CLI-Normal/);
-  assert.doesNotMatch(text, /Model:/);
-  assert(versionLineIndex >= 0 && versionLineIndex < 6);
-  assert.match(lines[versionLineIndex]!, /[█╔║╝]/);
-});
-
-test("static intro uses the padded timeline snapshot path", () => {
-  const layout = {
-    cols: 120,
-    rows: 40,
-    mode: "expanded" as const,
-  };
-  const rows = buildStaticIntroRows({
-    authState: "authenticated",
-    workspaceLabel: "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal",
-    layout,
-    verboseMode: false,
-    workspaceRoot: null,
-  });
-  const shellWidth = getShellWidth(layout.cols);
-  const lines = rows.map((row) => row.spans.map((span) => span.text).join(""));
-  const text = lines.join("\n");
-
-  assert(rows.length >= 7);
-  assert(rows[0]!.key.startsWith("codexa-intro-wrapped-"));
-  assert(lines.every((line) => line.length === shellWidth));
-  assert(lines[0]!.startsWith(" "));
-  assert.match(text, /██████/);
-  assert.match(text, /╚██████╗/);
-  assert.match(text, /Codexa v/);
-  assert.match(text, /Auth: Authenticated/);
-  assert.match(text, /Workspace: 13-Custom-CLI-Normal/);
-});
-
-test("Codexa intro scrolls out of the visible timeline window", () => {
-  const intro: RenderTimelineItem = {
-    key: "codexa-intro",
-    type: "intro",
-    padded: true,
-    intro: {
-      version: "1.0.1",
-      layoutMode: "expanded",
-      authLabel: "Authenticated",
-      workspaceLabel: "workspace",
-    },
-  };
+test("timeline window follows the latest standalone events", () => {
   const rows = Array.from({ length: 30 }, (_, index) => ({
     key: `event-${index}`,
     type: "event" as const,
@@ -351,7 +283,7 @@ test("Codexa intro scrolls out of the visible timeline window", () => {
     },
   }));
 
-  const snapshot = buildTimelineSnapshot([intro, ...rows], { totalWidth: 80 });
+  const snapshot = buildTimelineSnapshot(rows, { totalWidth: 80 });
   const selection = selectTimelineRows(snapshot, createFollowTailViewport(snapshot.totalRows), 8);
   const text = selection.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 

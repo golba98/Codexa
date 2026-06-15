@@ -38,5 +38,5 @@ test("run-local-dev handles version without requiring an interactive terminal", 
     encoding: "utf8",
   }).trim();
 
-  assert.match(output, /^\d+\.\d+\.\d+-dev local$/);
+  assert.match(output, /^\d+\.\d+\.\d+-dev$/);
 });

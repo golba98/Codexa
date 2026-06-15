@@ -25,7 +25,6 @@ import { selectVisibleRunActivity } from "./runActivityView.js";
 import { getTextUnits, getTextWidth, wrapPlainText, wrapCommandText, splitTextAtColumn } from "./textLayout.js";
 import type { RenderTimelineItem } from "./Timeline.js";
 import { normalizePlanReviewMarkdown } from "../core/workspace/planStorage.js";
-import { selectLogoVariant, LOGO_LARGE_MIN_COLS } from "./logoVariants.js";
 
 // ─── Exported types ───────────────────────────────────────────────────────────
 
@@ -77,16 +76,6 @@ export interface StableTimelineSnapshot {
   liveRows: TimelineRow[];
 }
 
-export interface NativeTranscriptRowItem {
-  key: string;
-  rows: TimelineRow[];
-}
-
-export interface NativeTranscriptParts {
-  staticItems: NativeTranscriptRowItem[];
-  liveRows: TimelineRow[];
-}
-
 // ─── Internal types & constants ──────────────────────────────────────────────
 
 interface MarkdownInlinePart {
@@ -99,9 +88,6 @@ const MAX_VISIBLE_PROGRESS_ENTRIES = 3;
 const COMPACT_PROCESSING_BODY_LINE_CAP = 4;
 const COMPACT_STREAMING_TAIL_CAP = 6;
 const VISIBLE_THINKING_SOURCES = new Set(["reasoning", "todo"]);
-// Logo rows for the intro item — selected dynamically from logoVariants.ts so
-// the dead-code intro path stays consistent with the live TopHeader rendering.
-
 // Matches sentence-ending punctuation followed (optionally after whitespace) by
 // a capital letter starting a new word. Requires [A-Z] to be followed by [a-z]
 // OR to be a standalone "I" (I'm / I've / I ) so abbreviations like U.S.A.
@@ -1457,7 +1443,7 @@ function buildActionRequiredRows(item: Extract<RenderTimelineItem, { type: "turn
   return rows;
 }
 
-// ─── Standalone event & intro rows ───────────────────────────────────────────
+// ─── Standalone event rows ───────────────────────────────────────────────────
 
 export function buildStandaloneEventRows(item: Extract<RenderTimelineItem, { type: "event" }>, width: number): TimelineRow[] {
   const rows: TimelineRow[] = [];
@@ -1566,114 +1552,6 @@ export function buildStandaloneEventRows(item: Extract<RenderTimelineItem, { typ
   }
 
   return rows;
-}
-
-export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro" }>, width: number): TimelineRow[] {
-  const rows: TimelineRow[] = [];
-  const { intro } = item;
-  const safeWidth = Math.max(10, width);
-  const startupHeaderMode = intro.startupHeaderMode
-    ?? (intro.layoutMode === "expanded" ? "large" : "compact");
-  if (startupHeaderMode === "tiny") {
-    const messageRows = [
-      "Codexa",
-      "Terminal is too small for the startup view.",
-      "Resize the terminal to continue.",
-    ];
-    messageRows.forEach((line, index) => {
-      rows.push(createRow(
-        `${item.key}-resize-${index}`,
-        [createSpan(clampVisualText(line, safeWidth), index === 0 ? "text" : "muted", { bold: index === 0 })],
-        safeWidth,
-      ));
-    });
-    return rows;
-  }
-
-  const logoRows = startupHeaderMode === "large"
-    ? selectLogoVariant(safeWidth)
-    : selectLogoVariant(0); // text-only fallback for compact mode
-  const effectiveLogoRows = logoRows.length > 0 ? logoRows : ["CODEXA"];
-  const logoWidth = effectiveLogoRows.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
-  const workspaceName = getWorkspaceDisplayName(intro.workspaceLabel);
-  const metaLines = [
-    `Codexa v${intro.version}`,
-    `Auth: ${intro.authLabel}`,
-    workspaceName ? `Workspace: ${workspaceName}` : null,
-  ].filter((line): line is string => Boolean(line));
-  const gapWidth = 2;
-  const widestMetaLine = metaLines.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
-  const canRenderSideBySide = metaLines.length > 0
-    && safeWidth >= logoWidth + gapWidth + widestMetaLine;
-
-  if (canRenderSideBySide) {
-    const metaStartRow = Math.max(0, Math.floor((effectiveLogoRows.length - metaLines.length) / 2));
-    const rowCount = Math.max(effectiveLogoRows.length, metaStartRow + metaLines.length);
-    const metaWidth = Math.max(1, safeWidth - logoWidth - gapWidth);
-
-    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-      const logoLine = effectiveLogoRows[rowIndex] ?? "";
-      const logoPadding = Math.max(0, logoWidth - getTextWidth(logoLine));
-      const metaIndex = rowIndex - metaStartRow;
-      const metaLine = metaIndex >= 0 && metaIndex < metaLines.length
-        ? sanitizeTerminalOutput(metaLines[metaIndex]!)
-        : "";
-      let logoTone: TimelineTone = "logoPrimary";
-      if (effectiveLogoRows.length === 6) {
-        if (rowIndex === 2 || rowIndex === 3) logoTone = "logoSecondary";
-        else if (rowIndex === 4 || rowIndex === 5) logoTone = "logoShadow";
-      }
-      // No bold on logo spans — bold on block/box-drawing chars causes spacing artifacts.
-      const spans = [
-        createSpan(`${logoLine}${" ".repeat(logoPadding)}`, logoTone),
-        createSpan(" ".repeat(gapWidth)),
-      ];
-
-      if (metaLine) {
-        spans.push(createSpan(clampVisualText(metaLine, metaWidth), metaIndex === 0 ? "text" : "muted", { bold: metaIndex === 0 }));
-      }
-
-      rows.push(createRow(
-        `${item.key}-intro-row-${rowIndex}`,
-        spans,
-        safeWidth,
-      ));
-    }
-  } else {
-    effectiveLogoRows.forEach((line, index) => {
-      let logoTone: TimelineTone = "logoPrimary";
-      if (effectiveLogoRows.length === 6) {
-        if (index === 2 || index === 3) logoTone = "logoSecondary";
-        else if (index === 4 || index === 5) logoTone = "logoShadow";
-      }
-      rows.push(createRow(
-        `${item.key}-logo-${index}`,
-        [createSpan(clampVisualText(line, safeWidth), logoTone)],
-        safeWidth,
-      ));
-    });
-
-    metaLines.forEach((line, index) => {
-      const wrapped = wrapPlainText(sanitizeTerminalOutput(line), safeWidth);
-      wrapped.forEach((row, rowIndex) => {
-        rows.push(createRow(
-          `${item.key}-meta-${index}-${rowIndex}`,
-          [createSpan(row || " ", index === 0 ? "text" : "muted", { bold: index === 0 })],
-          safeWidth,
-        ));
-      });
-    });
-  }
-
-  rows.push(createBlankRow(`${item.key}-gap`, safeWidth));
-  return rows;
-}
-
-function getWorkspaceDisplayName(workspaceLabel: string): string {
-  const sanitized = sanitizeTerminalOutput(workspaceLabel).trim();
-  if (!sanitized) return "";
-  const segments = sanitized.split(/[\\/]+/).map((segment) => segment.trim()).filter(Boolean);
-  return segments[segments.length - 1] ?? sanitized;
 }
 
 function applyTurnOpacity(rows: TimelineRow[], opacity: "active" | "recent" | "dim"): TimelineRow[] {
@@ -2521,19 +2399,6 @@ function buildStableEventRows(item: Extract<RenderTimelineItem, { type: "event" 
   return getCachedFrozenRows(cacheKey, () => buildStandaloneEventRows(item, innerWidth));
 }
 
-function buildStableIntroRows(item: Extract<RenderTimelineItem, { type: "intro" }>, innerWidth: number): TimelineRow[] {
-  const cacheKey = rowCacheKey([
-    "stable-intro",
-    item.key,
-    innerWidth,
-    item.intro.version,
-    item.intro.layoutMode,
-    item.intro.authLabel,
-    textCacheToken(item.intro.workspaceLabel),
-  ]);
-  return getCachedFrozenRows(cacheKey, () => buildIntroRows(item, innerWidth));
-}
-
 function buildPlanCacheSignature(run: RunEvent | null | undefined): string {
   if (!run) return "";
   const plan = run.plan;
@@ -2621,8 +2486,8 @@ function buildStableActiveTurnGroups(
     const isLastEvent = index === events.length - 1;
 
     if (index > 0) {
-      // Stable creation-order key (streamSeq), not array index — matches the
-      // native path and avoids index-based remount when events change.
+      // Stable creation-order key (streamSeq), not array index. This avoids
+      // index-based remounts when events change.
       targetRows.push(createBlankRow(`${item.key}-stream-gap-${event.streamSeq}`, innerWidth));
     }
 
@@ -2725,213 +2590,6 @@ function buildStableActiveTurnGroups(
   };
 }
 
-// ─── Native transcript builders ───────────────────────────────────────────────
-
-function isNativeLiveStreamEvent(event: StreamEvent, run: RunEvent): boolean {
-  if (run.status !== "running") return false;
-  if (event.kind === "action") return event.tool.status === "running";
-  if (event.kind === "response") return event.segment.id === (run.activeResponseSegmentId ?? null);
-  if (event.kind === "plan") return run.plan?.status === "active";
-  return false;
-}
-
-function buildNativeStreamEventRows(params: {
-  item: Extract<RenderTimelineItem, { type: "turn" }>;
-  event: StreamEvent;
-  eventIndex: number;
-  innerWidth: number;
-  verbose: boolean;
-  workspaceRoot?: string | null;
-  forceStable?: boolean;
-}): TimelineRow[] {
-  const { item, event, eventIndex, innerWidth, verbose } = params;
-  const run = item.item.run!;
-  const streaming = item.renderState.runPhase === "streaming";
-  const actionBorderTone = item.renderState.opacity === "dim" ? "borderSubtle" : "borderActive";
-  const rows: TimelineRow[] = [];
-
-  if (eventIndex > 0) {
-    rows.push(createBlankRow(`${item.key}-stream-gap-${event.streamSeq}`, innerWidth));
-  }
-
-  if (event.kind === "thinking") {
-    rows.push(...buildCodexThinkingRows({
-      keyPrefix: `${item.key}-codex-thinking-${event.streamSeq}`,
-      width: innerWidth,
-      event,
-      verbose,
-    }));
-  } else if (event.kind === "action") {
-    rows.push(...buildActionEventRows({
-      keyPrefix: `${item.key}-action-${event.streamSeq}`,
-      width: innerWidth,
-      event,
-      borderTone: actionBorderTone,
-      verbose,
-      isLive: !params.forceStable && isNativeLiveStreamEvent(event, run),
-    }));
-  } else if (event.kind === "actionSummary") {
-    rows.push(...buildActionSummaryRows({
-      keyPrefix: `${item.key}-action-summary-${event.streamSeq}`,
-      width: innerWidth,
-      event,
-      borderTone: actionBorderTone,
-    }));
-  } else if (event.kind === "response") {
-    const stableEvent = params.forceStable
-      ? { ...event, segment: { ...event.segment, status: "completed" as const } }
-      : event;
-    rows.push(...buildCodexResponseRows({
-      keyPrefix: `${item.key}-codex-response-${event.streamSeq}`,
-      width: innerWidth,
-      run,
-      event: stableEvent,
-      streaming,
-      isLastEvent: false,
-      isLive: !params.forceStable && isNativeLiveStreamEvent(event, run),
-      verbose,
-    }));
-  } else if (event.kind === "plan") {
-    rows.push(...buildApprovedPlanRows({
-      keyPrefix: `${item.key}-plan-${event.streamSeq}`,
-      width: innerWidth,
-      planText: event.planText,
-      approved: event.approved,
-      workspaceRoot: params.workspaceRoot,
-    }));
-  }
-
-  return rows;
-}
-
-function wrapNativeRows(
-  rows: TimelineRow[],
-  totalWidth: number,
-  padded: boolean,
-  keyPrefix: string,
-): TimelineRow[] {
-  return wrapRows(rows, totalWidth, padded, keyPrefix, false);
-}
-
-function appendNativeTurnParts(
-  output: NativeTranscriptParts,
-  item: Extract<RenderTimelineItem, { type: "turn" }>,
-  options: {
-    totalWidth: number;
-    verboseMode?: boolean;
-    workspaceRoot?: string | null;
-  },
-): void {
-  const run = item.item.run;
-  const innerWidth = Math.max(10, options.totalWidth - (item.padded ? 2 : 0));
-  const verbose = options.verboseMode ?? false;
-
-  if (item.item.user) {
-    output.staticItems.push({
-      key: `${item.key}-user`,
-      rows: wrapNativeRows(
-        buildUserInputRows(item, innerWidth),
-        options.totalWidth,
-        item.padded,
-        item.key,
-      ),
-    });
-    output.staticItems.push({
-      key: `${item.key}-prompt-gap`,
-      rows: [createBlankRow(`${item.key}-prompt-gap-row`, options.totalWidth)],
-    });
-  }
-
-  if (!run) return;
-
-  const events = compactActionBursts(
-    collectStreamEvents(item),
-    verbose,
-    run.status !== "running",
-  );
-
-  events.forEach((event, eventIndex) => {
-    // Placement: keep ALL events in liveRows while the run is active so Ink's
-    // <Static> does not grow mid-generation (which shifts the viewport).
-    // Only after run.status flips away from "running" do events go to staticItems.
-    const placeAsLive = run.status === "running";
-    // Rendering: only the event that is currently active gets a live indicator
-    // (spinner / streaming cursor). Completed events render in stable form even
-    // while their parent run is still running.
-    const isLiveRender = placeAsLive && isNativeLiveStreamEvent(event, run);
-    const rows = buildNativeStreamEventRows({
-      item,
-      event,
-      eventIndex,
-      innerWidth,
-      verbose,
-      workspaceRoot: options.workspaceRoot,
-      forceStable: !isLiveRender,
-    });
-
-    const wrappedRows = wrapNativeRows(rows, options.totalWidth, item.padded, item.key);
-    if (placeAsLive) {
-      output.liveRows.push(...wrappedRows);
-    } else {
-      output.staticItems.push({
-        key: `${item.key}-stream-${event.streamSeq}`,
-        rows: wrappedRows,
-      });
-    }
-  });
-
-  const questionRows = buildActionRequiredRows(item, innerWidth);
-  if (questionRows.length > 0) {
-    output.liveRows.push(...wrapNativeRows(questionRows, options.totalWidth, item.padded, item.key));
-  }
-
-  const endGapRow = createBlankRow(`${item.key}-turn-end-gap-row`, options.totalWidth);
-  if (run && run.status === "running") {
-    output.liveRows.push(endGapRow);
-  } else {
-    output.staticItems.push({
-      key: `${item.key}-turn-end-gap`,
-      rows: [endGapRow],
-    });
-  }
-}
-
-export function buildNativeTranscriptParts(
-  items: RenderTimelineItem[],
-  options: {
-    totalWidth: number;
-    verboseMode?: boolean;
-    debugLabel?: string;
-    workspaceRoot?: string | null;
-  },
-): NativeTranscriptParts {
-  renderDebug.traceEvent("timeline", "buildNativeTranscriptParts", {
-    debugLabel: options.debugLabel ?? "native",
-    items: items.length,
-    totalWidth: options.totalWidth,
-    verbose: options.verboseMode ?? false,
-  });
-
-  const output: NativeTranscriptParts = {
-    staticItems: [],
-    liveRows: [],
-  };
-
-  for (const item of items) {
-    if (item.type === "turn") {
-      appendNativeTurnParts(output, item, options);
-      continue;
-    }
-
-    output.staticItems.push({
-      key: item.key,
-      rows: buildTimelineSnapshot([item], options).rows,
-    });
-  }
-
-  return output;
-}
-
 // ─── Public snapshot builders ─────────────────────────────────────────────────
 
 export function buildStableTimelineSnapshot(
@@ -2961,10 +2619,7 @@ export function buildStableTimelineSnapshot(
     let itemFrozenRows: TimelineRow[];
     let itemLiveRows: TimelineRow[];
 
-    if (item.type === "intro") {
-      itemFrozenRows = buildStableIntroRows(item, innerWidth);
-      itemLiveRows = [];
-    } else if (item.type === "event") {
+    if (item.type === "event") {
       itemFrozenRows = buildStableEventRows(item, innerWidth);
       itemLiveRows = [];
     } else {
@@ -3025,31 +2680,7 @@ export function buildTimelineSnapshot(
 
     let builtRows: TimelineRow[];
 
-    if (item.type === "intro") {
-      const cacheKey = `i:${item.key}:${innerWidth}:${item.intro.version}:${item.intro.layoutMode}:${item.intro.startupHeaderMode ?? ""}:${item.intro.authLabel}:${item.intro.workspaceLabel}:v${LOGO_LARGE_MIN_COLS}`;
-      const cached = _staticRowCache.get(cacheKey);
-      if (cached) {
-        renderDebug.traceEvent("timeline", "rowGeneration", {
-          itemKey: item.key,
-          itemType: "intro",
-          cache: "hit",
-          innerWidth,
-        });
-        renderDebug.traceEvent("timeline", "staticCacheHit", { cacheKey, itemType: "intro" });
-        builtRows = cached;
-      } else {
-        renderDebug.traceEvent("timeline", "rowGeneration", {
-          itemKey: item.key,
-          itemType: "intro",
-          cache: "miss",
-          innerWidth,
-        });
-        renderDebug.traceEvent("timeline", "staticCacheMiss", { cacheKey, itemType: "intro" });
-        const r = buildIntroRows(item, innerWidth);
-        _staticRowCache.set(cacheKey, r);
-        builtRows = r;
-      }
-    } else if (item.type === "event") {
+    if (item.type === "event") {
       // Standalone events (system, error, etc.) are immutable — cache by key+width.
       const cacheKey = `e:${item.key}:${innerWidth}`;
       const cached = _staticRowCache.get(cacheKey);

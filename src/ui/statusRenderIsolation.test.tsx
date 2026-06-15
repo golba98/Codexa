@@ -463,8 +463,8 @@ test("appending a second action does not remount existing action rows", async ()
   }
 });
 
-test("native AppShell finalize keeps transcript rows in one keyed tree", async () => {
-  const logPath = join(tmpdir(), `codexa-native-finalize-${process.pid}.jsonl`);
+test("live AppShell finalize keeps transcript rows in one keyed tree", async () => {
+  const logPath = join(tmpdir(), `codexa-live-finalize-${process.pid}.jsonl`);
   rmSync(logPath, { force: true });
   renderDebug.configureRenderDebug({
     CODEXA_DEBUG_RENDER_TRACE: "1",

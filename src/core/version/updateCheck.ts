@@ -1,5 +1,4 @@
-import { APP_VERSION } from "../../config/settings.js";
-import { isLocalDevChannel } from "./channel.js";
+import { APP_VERSION, isDevBuild } from "../buildInfo.js";
 
 export const CODEXA_NPM_PACKAGE = "@golba98/codexa";
 export const CODEXA_NPM_REGISTRY_URL = "https://registry.npmjs.org/@golba98%2Fcodexa";
@@ -43,7 +42,7 @@ export function shouldRunStartupUpdateCheck(
   env: NodeJS.ProcessEnv = process.env,
   enabled = true,
 ): boolean {
-  return enabled && !isLocalDevChannel(env);
+  return enabled && !isDevBuild(env);
 }
 
 // Compares two semver strings numerically. Returns negative if a < b, 0 if equal, positive if a > b.

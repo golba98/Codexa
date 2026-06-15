@@ -3,7 +3,7 @@ import { basename, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { resolveWorkspacePath } from "./workspaceGuard.js";
 import { normalizeWorkspaceRoot } from "./workspaceRoot.js";
-import { CODEXA_CHANNEL_ENV, LOCAL_DEV_CHANNEL, isLocalDevChannel } from "../version/channel.js";
+import { CODEXA_CHANNEL_ENV, LOCAL_DEV_CHANNEL, isDevBuild } from "../buildInfo.js";
 
 export type LaunchKind = "installed-bin" | "dev-run";
 
@@ -211,7 +211,7 @@ function buildRelaunchEnv(
     [ENV_KEYS.launcherScript]: launchContext.launcherScriptPath ?? "",
     [ENV_KEYS.relaunchExecutable]: launchContext.relaunchExecutable,
     [ENV_KEYS.relaunchArgs]: JSON.stringify(launchContext.relaunchArgs),
-    [CODEXA_CHANNEL_ENV]: isLocalDevChannel(baseEnv) ? LOCAL_DEV_CHANNEL : baseEnv[CODEXA_CHANNEL_ENV],
+    [CODEXA_CHANNEL_ENV]: isDevBuild(baseEnv) ? LOCAL_DEV_CHANNEL : baseEnv[CODEXA_CHANNEL_ENV],
   };
 }
 

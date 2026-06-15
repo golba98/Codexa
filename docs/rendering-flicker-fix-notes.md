@@ -16,7 +16,7 @@
 
 ## Status Bar Stability
 
-- `RuntimeStatusBar` remains mounted as a fixed one-row element.
+- The bottom composer remains the single owner of the fixed one-row runtime/status display.
 - Provider/model text falls back to `Local / Detecting...`.
 - The context region always renders, using `Unknown` when no context metadata is available.
 - Status bar render counts are traced through the render debug log when render debugging is enabled.

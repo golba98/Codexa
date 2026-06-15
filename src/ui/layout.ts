@@ -30,19 +30,11 @@ export const MIN_TERMINAL_ROWS = 10;
 export const MIN_VIEWPORT_COLS = 20;
 export const MIN_VIEWPORT_ROWS = 10;
 export const RESTORE_SETTLE_MS = process.env.NODE_ENV === "test" ? 0 : 100;
-export const STARTUP_TINY_MIN_COLS = 40;
-export const STARTUP_TINY_MIN_ROWS = 14;
-export const STARTUP_FULL_MIN_COLS = 100; // matches LOGO_LARGE_MIN_COLS in logoVariants.ts
-export const STARTUP_FULL_MIN_BODY_ROWS = 4;
-export const STARTUP_FULL_SAFE_PADDING_ROWS = 1;
-export const STARTUP_COMPACT_INTRO_ROWS = 4;
-export const STARTUP_TINY_MESSAGE_ROWS = 3;
 export const transcriptContentIndent = 4; // 2 for DashCard border + 2 for prompt prefix
 const DEFAULT_COLUMNS = 120;
 const DEFAULT_ROWS = 24;
 
 export type LayoutMode = "compact" | "regular" | "expanded";
-export type StartupHeaderMode = "large" | "compact" | "tiny";
 
 export interface Layout {
   cols: number;
@@ -192,39 +184,6 @@ export function getUsableShellWidth(cols: number | undefined, reservedColumns = 
  */
 export function getShellHeight(rows: number | undefined): number {
   return Math.max(10, (rows ?? DEFAULT_ROWS) - 1);
-}
-
-export interface StartupHeaderModeParams {
-  cols: number | undefined;
-  rows: number | undefined;
-  introRows: number;
-  composerRows: number;
-}
-
-export function resolveStartupHeaderMode({
-  cols,
-  rows,
-  introRows,
-  composerRows,
-}: StartupHeaderModeParams): StartupHeaderMode {
-  const safeCols = normalizeDimension(cols, DEFAULT_COLUMNS);
-  const safeRows = normalizeDimension(rows, DEFAULT_ROWS);
-
-  if (safeCols < STARTUP_TINY_MIN_COLS || safeRows < STARTUP_TINY_MIN_ROWS) {
-    return "tiny";
-  }
-
-  const shellHeight = getShellHeight(safeRows);
-  const fullStartupRows = introRows
-    + composerRows
-    + STARTUP_FULL_MIN_BODY_ROWS
-    + STARTUP_FULL_SAFE_PADDING_ROWS;
-
-  if (safeCols >= STARTUP_FULL_MIN_COLS && shellHeight >= fullStartupRows) {
-    return "large";
-  }
-
-  return "compact";
 }
 
 export function getVisualWidth(text: string): number {
