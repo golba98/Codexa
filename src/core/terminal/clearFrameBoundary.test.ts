@@ -256,6 +256,43 @@ test("seeded post-clear launch frame is ready even when static events are not em
   assert.equal(controller.getState().committedGeneration, 1);
 });
 
+test("replays suppressed static intro rows into the first authoritative post-clear frame", () => {
+  const harness = createHarness();
+  const { controller, instance, events } = harness;
+  const staticIntro = "██╔════╝██╔═══██╗\nCodexa v1.0.4-dev local\nProvider: Local\n";
+
+  controller.syncRenderState({
+    generation: 0,
+    staticEventsLength: 3,
+    activeEventsLength: 1,
+    transcriptCleared: false,
+    uiStateKind: "RESPONDING",
+  });
+  controller.beginClearGeneration(1);
+
+  instance.renderInteractiveFrame?.("│ ❯ Ask Codexa\nContext: 0 / ~200K", 4, staticIntro);
+  assert.equal(events.length, 0, "first post-clear commit is still behind the stale gate");
+
+  const repaintRequested = controller.syncRenderState({
+    generation: 1,
+    staticEventsLength: 2,
+    activeEventsLength: 0,
+    transcriptCleared: false,
+    clearGenerationReady: true,
+    uiStateKind: "IDLE",
+  });
+  assert.equal(repaintRequested, true);
+
+  instance.renderInteractiveFrame?.("│ ❯ Ask Codexa\nContext: 0 / ~200K", 4, "");
+
+  assert.equal(events[0]?.startsWith("clear:test:clearBoundary:firstPostClearFrame"), true);
+  assert.ok(
+    events.some((entry) => entry === `write:│ ❯ Ask Codexa\nContext: 0 / ~200K:4:${staticIntro.length}`),
+    "authoritative frame should replay the static intro that Ink consumed during the suppressed frame",
+  );
+  assert.equal(controller.getState().clearPending, false);
+});
+
 test("repaints authoritatively with a scrollback-inclusive clear on a width-changing resize after clear", () => {
   const harness = createHarness();
   const { controller, instance, stdout, calls, events } = harness;

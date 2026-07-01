@@ -88,6 +88,7 @@ export interface IntroRenderTimelineItem {
     startupHeaderMode?: StartupHeaderMode;
     authLabel: string;
     workspaceLabel: string;
+    providerLabel?: string | null;
   };
 }
 
@@ -907,6 +908,7 @@ export function buildIntroRenderItem(params: {
   workspaceLabel: string;
   layout: Layout;
   startupHeaderMode?: StartupHeaderMode;
+  providerLabel?: string | null;
 }): IntroRenderTimelineItem {
   return {
     key: "codexa-intro",
@@ -918,6 +920,7 @@ export function buildIntroRenderItem(params: {
       startupHeaderMode: params.startupHeaderMode,
       authLabel: formatAuthLabel(params.authState),
       workspaceLabel: params.workspaceLabel,
+      providerLabel: params.providerLabel ?? null,
     },
   };
 }
