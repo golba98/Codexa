@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "app.tsx"), "utf8");
 const appShellSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "AppShell.tsx"), "utf8");
+const transcriptShellSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "TranscriptShell.tsx"), "utf8");
 const composerSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "BottomComposer.tsx"), "utf8");
 const launcherSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "codexa.js"), "utf8");
 const indexSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "index.tsx"), "utf8");
@@ -30,11 +31,10 @@ test("App root does not own the busy status animation frame", () => {
   assert.doesNotMatch(composerSource, /busyStatusFrame/);
 });
 
-test("App mouse capture follows terminalMouseMode setting, defaults to off (selection mode)", () => {
-  // mouseCapture is driven by the persisted terminalMouseMode. Default is "selection" so
-  // mouseCapture=false by default — no SGR tracking. "wheel" mode enables SGR capture.
-  assert.match(appSource, /const mouseCapture = \(mouseOverride \?\? \(terminalMouseMode === "wheel"\)\) && !isMouseIdle/);
-  assert.doesNotMatch(appSource, /mouseOverride \?\? false/);
+test("App leaves mouse reporting disabled so transcript scrolling stays terminal-native", () => {
+  assert.match(appSource, /const effectiveMouseCapture = false;/);
+  assert.match(appSource, /native terminal scrollback/);
+  assert.doesNotMatch(appSource, /screen === "main" \? mouseCapture : false/);
 });
 
 test("Workspace display changes do not force AppShell remounts or viewport clears", () => {
@@ -43,12 +43,63 @@ test("Workspace display changes do not force AppShell remounts or viewport clear
   assert.doesNotMatch(appSource, /key=\{`app-shell-\$\{sessionState\.clearCount\}-/);
 });
 
-test("AppShell renders the header as live layout instead of static transcript output", () => {
+test("TranscriptShell owns one-time transcript output while AppShell remains the overlay renderer", () => {
+  assert.match(transcriptShellSource, /import \{ Box, Static \} from "ink"/);
+  assert.match(transcriptShellSource, /buildIntroRenderItem/);
+  assert.match(transcriptShellSource, /resolveStartupHeaderMode/);
+  assert.match(transcriptShellSource, /providerLabel: runtimeSummary\?\.providerLabel/);
+  assert.doesNotMatch(transcriptShellSource, /staticOffsetRef/);
+  assert.doesNotMatch(transcriptShellSource, /clear-offset-\$\{clearCount\}/);
+  assert.match(transcriptShellSource, /<Static key=\{`static-\$\{clearCount\}`\} items=\{staticRenderItems\}>/);
+  // repaintGeneration must fold into the outer remount key (not just <Static>'s
+  // own key) — Ink only reliably re-flushes already-printed <Static> content on
+  // a genuine fresh mount of the whole subtree, confirmed empirically: keying
+  // away only the inner <Static> node did not trigger Ink's isStaticDirty/
+  // onImmediateRender escape hatch the same way a full remount does.
+  assert.match(transcriptShellSource, /key=\{`clear-\$\{props\.clearCount \?\? 0\}-repaint-\$\{props\.repaintGeneration \?\? 0\}`\}/);
   assert.match(appShellSource, /MemoizedTopHeader/);
   assert.doesNotMatch(appShellSource, /import \{[^}]*Static[^}]*\} from "ink"/);
   assert.doesNotMatch(appShellSource, /<Static\b/);
-  assert.doesNotMatch(appShellSource, /StaticIntroItem/);
-  assert.doesNotMatch(appShellSource, /session-intro/);
+});
+
+test("App routes main chat to TranscriptShell and gates AppShell to overlays", () => {
+  assert.match(appSource, /<TranscriptShell[\s\S]*visible=\{screen === "main"\}/);
+  assert.match(appSource, /\{screen !== "main" && \(\s*<AppShell/);
+  assert.match(appSource, /panel=\{\s*<>\s*\{screen === "backend-picker"/);
+  assert.match(appSource, /screen === "provider-picker"/);
+  assert.match(appSource, /screen === "model-picker"/);
+});
+
+test("Startup provider migration notice is seeded before the first composer frame", () => {
+  assert.match(appSource, /function createStartupStaticEvents/);
+  assert.match(appSource, /createLaunchModeEvent\(launchContext\)/);
+  assert.match(appSource, /createProviderMigrationNoticeEvent\(providerWorkspaceConfig\.migrationNotice\)/);
+  assert.match(appSource, /useAppSessionState\(\(\) => \{\s*return createStartupStaticEvents\(/);
+  assert.match(
+    appSource,
+    /providerMigrationNoticeShownRef = useRef\(Boolean\(initialProviderWorkspaceConfig\.current\.migrationNotice\)\)/,
+  );
+  assert.doesNotMatch(appSource, /appendSystemEvent\(\s*"Provider migrated"/);
+});
+
+test("TranscriptShell never keeps its composer mounted while hidden behind an overlay", () => {
+  // Both TranscriptShell and AppShell are handed the same composer element
+  // (app.tsx passes composerElement into both). TranscriptShell only toggles
+  // display:none when hidden, so if it kept rendering {composer} unconditionally,
+  // a second live BottomComposer instance (with the same useFocus id) would exist
+  // alongside AppShell's overlay composer whenever a picker/panel is open —
+  // causing duplicate keystroke handling and focus corruption. It must render the
+  // composer only while visible so the instance actually unmounts.
+  assert.match(transcriptShellSource, /\{visible && composer\}/);
+  assert.doesNotMatch(transcriptShellSource, /\n\s*\{composer\}\s*\n/);
+});
+
+test("TranscriptShell appends transcript rows without viewport slicing or clears", () => {
+  assert.match(transcriptShellSource, /buildNativeTranscriptParts/);
+  assert.match(transcriptShellSource, /<Static\b/);
+  assert.doesNotMatch(transcriptShellSource, /selectTimelineRows|scrollTimelineViewport|viewportRows/);
+  assert.doesNotMatch(transcriptShellSource, /overflow="hidden"|height=\{/);
+  assert.doesNotMatch(transcriptShellSource, /clearTranscript|clearViewport|resetInkOutputForFreshFrame/);
 });
 
 test("Settings panel workspace display save path does not append Settings transcript events", () => {
@@ -135,10 +186,16 @@ test("/clear arms a fresh render generation before transcript reset", () => {
   assert.ok(handleClearMatch, "handleClear callback should exist");
   const body = handleClearMatch[1] ?? "";
   const armBoundaryIndex = body.indexOf("beginClearGeneration(clearGeneration)");
-  const clearDispatchIndex = body.indexOf('dispatchSession({ type: "CLEAR_TRANSCRIPT" })');
+  const launchEventIndex = body.indexOf("const launchModeEvent = createLaunchModeEvent(launchContext)");
+  const clearDispatchIndex = body.indexOf('type: "CLEAR_TRANSCRIPT"');
+  const seedEventsIndex = body.indexOf("seedEvents: launchModeEvent ? [launchModeEvent] : []");
   assert.ok(armBoundaryIndex >= 0, "handleClear should arm clear-generation boundary");
+  assert.ok(launchEventIndex >= 0, "handleClear should create the fresh launch notice");
   assert.ok(clearDispatchIndex >= 0, "handleClear should clear transcript state");
   assert.ok(armBoundaryIndex < clearDispatchIndex, "clear generation should be armed before transcript reset");
+  assert.ok(launchEventIndex < clearDispatchIndex, "launch event should be prepared before the atomic reset dispatch");
+  assert.ok(seedEventsIndex > clearDispatchIndex, "clear should seed the launch notice in the reset dispatch");
+  assert.match(body, /focusManager\.focus\(FOCUS_IDS\.composer\)/, "clear should return focus to the prompt");
 });
 
 test("Ink render-cache reset is owned by the render path, never wired into out-of-band resize handlers", () => {
@@ -195,13 +252,30 @@ test("Startup keeps a single resize listener and disables Ink's competing handle
   assert.doesNotMatch(onResizeMatch[1] ?? "", /clearTranscript|clearViewport|resetInkOutputForFreshFrame|\.clear\(\)/);
 });
 
-test("Fix uses alternate-screen mode stably and has exactly one Ink root", () => {
-  // index.tsx uses alternateScreen to enter alternate screen once on startup
-  // and exit on cleanup.
-  assert.match(indexSource, /setAlternateScreen/);
-  // app.tsx must not bounce or use alternate screen mode
+test("Main UI starts in the normal buffer and overlays own alternate screen mode", () => {
+  // index.tsx deliberately stays out of alternate screen so terminal scrollback
+  // remains available; cleanup may still defensively disable alternate screen.
+  assert.doesNotMatch(indexSource, /performStartupClear|startupClear/);
+  assert.doesNotMatch(indexSource, /traceTerminalClear\("src\/index\.tsx:startup"/);
+  assert.doesNotMatch(indexSource, /setAlternateScreen\(true/);
+  assert.match(indexSource, /setAlternateScreen\(false/);
+  assert.match(appSource, /const overlayMode = screen !== "main";/);
+  assert.match(appSource, /setAlternateScreen\(\s*overlayMode,/);
+  assert.match(appSource, /overlay\.enterAlternateScreen/);
+  assert.match(appSource, /overlay\.exitAlternateScreen/);
   assert.doesNotMatch(appSource, /\\x1b\[\?1049h/);
-  assert.doesNotMatch(appSource, /alternateScreen|enterAlternativeScreen/);
   const renderRoots = indexSource.match(/renderApp\(<App /g) ?? [];
   assert.equal(renderRoots.length, 1, "exactly one Ink root is mounted");
+});
+
+test("VTE terminal trace records startup root, logo branch, composer count, and footer count", () => {
+  assert.match(appSource, /renderDebug\.traceEvent\("startup", "state"/);
+  assert.match(appSource, /activeRoot: activeRootComponent/);
+  assert.match(appSource, /logoBranchSelected: startupHeaderMode === "large"/);
+  assert.match(clearBoundarySource, /codexaLogoCount/);
+  assert.match(clearBoundarySource, /composerCount/);
+  assert.match(clearBoundarySource, /footerCount/);
+  assert.match(clearBoundarySource, /currentCols/);
+  assert.match(clearBoundarySource, /currentRows/);
+  assert.match(clearBoundarySource, /buildFrameText\(instance, output, staticOutput\)/);
 });

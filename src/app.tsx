@@ -1,4 +1,4 @@
-import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { spawn } from "child_process";
 import { existsSync } from "fs";
 import path from "node:path";
@@ -135,6 +135,7 @@ import {
   buildWorkspaceCommandContext,
   createWorkspaceRelaunchPlan,
   guardWorkspaceRelaunch,
+  type LaunchContext,
   resolveLaunchContext,
 } from "./core/workspace/launchContext.js";
 import {
@@ -230,7 +231,7 @@ import {
 import { AuthPanel } from "./ui/AuthPanel.js";
 import { BackendPicker } from "./ui/BackendPicker.js";
 import { measureBottomComposerRows, MemoizedBottomComposer } from "./ui/BottomComposer.js";
-import { useTerminalViewport } from "./ui/layout.js";
+import { resolveStartupHeaderMode, useTerminalViewport } from "./ui/layout.js";
 import { ModelPickerScreen } from "./ui/ModelPickerScreen.js";
 import { ModePicker } from "./ui/ModePicker.js";
 import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } from "./ui/PlanActionPicker.js";
@@ -256,6 +257,7 @@ import {
 } from "./ui/themeFlow.js";
 import { isBusy as isUiBusy } from "./session/types.js";
 import { AppShell } from "./ui/AppShell.js";
+import { TranscriptShell } from "./ui/TranscriptShell.js";
 import type { RuntimeAvailability } from "./ui/RuntimeStatusBar.js";
 import { checkForUpdates, formatLocalDevUpdateStatus, formatUpdateInstructions, shouldRunStartupUpdateCheck, type UpdateCheckResult } from "./core/version/updateCheck.js";
 import { isLocalDevChannel } from "./core/version/channel.js";
@@ -288,6 +290,51 @@ function createEventId(): number {
 
 function createTurnId(): number {
   return nextTurnId++;
+}
+
+function createLaunchModeEvent(launchContext: LaunchContext): TimelineEvent | null {
+  const devLaunchNotice = buildDevLaunchNotice(launchContext);
+  if (!devLaunchNotice) return null;
+
+  return {
+    id: createEventId(),
+    type: "system",
+    createdAt: Date.now(),
+    title: sanitizeTerminalOutput("Launch mode"),
+    content: sanitizeTerminalOutput(devLaunchNotice, { preserveTabs: false, tabSize: 2 }),
+  };
+}
+
+function createProviderMigrationNoticeEvent(
+  notice: ProviderWorkspaceConfig["migrationNotice"] | undefined,
+  providerLabel: string | null = null,
+): TimelineEvent | null {
+  if (!notice) return null;
+
+  const resolvedProviderLabel = providerLabel ?? formatRuntimeProviderLabel(notice.revertedProviderId);
+  return {
+    id: createEventId(),
+    type: "system",
+    createdAt: Date.now(),
+    title: sanitizeTerminalOutput("Provider migrated"),
+    content: sanitizeTerminalOutput(
+      `Antigravity provider is no longer supported. Reverted to ${resolvedProviderLabel}.`,
+      { preserveTabs: false, tabSize: 2 },
+    ),
+  };
+}
+
+function createStartupStaticEvents({
+  launchContext,
+  providerWorkspaceConfig,
+}: {
+  launchContext: LaunchContext;
+  providerWorkspaceConfig: ProviderWorkspaceConfig;
+}): TimelineEvent[] {
+  return [
+    createLaunchModeEvent(launchContext),
+    createProviderMigrationNoticeEvent(providerWorkspaceConfig.migrationNotice),
+  ].filter((event): event is TimelineEvent => event !== null);
 }
 
 function createInitialAuthStatus(): CodexAuthProbeResult {
@@ -408,7 +455,18 @@ export function App({ launchArgs }: AppProps) {
   // Bumped purely to force one extra React commit when the /clear boundary needs
   // the authoritative post-clear frame flushed (see the syncRenderState effect).
   const [, bumpPostClearRepaint] = useState(0);
-  const { state: sessionState, dispatch: dispatchSession } = useAppSessionState();
+  // Bumped whenever a width-changing resize forces a physical terminal clear
+  // (see clearFrameBoundaryController below). TranscriptShell folds this into
+  // its <Static> key so already-flushed content (logo, past turns) reprints
+  // at the new width instead of staying erased — Ink's <Static> never
+  // re-emits items on its own once flushed.
+  const [staticRepaintGeneration, bumpStaticRepaintGeneration] = useState(0);
+  const { state: sessionState, dispatch: dispatchSession } = useAppSessionState(() => {
+    return createStartupStaticEvents({
+      launchContext,
+      providerWorkspaceConfig: initialProviderWorkspaceConfig.current,
+    });
+  });
   const [authStatus, setAuthStatus] = useState<CodexAuthProbeResult>(createInitialAuthStatus());
   const [authStatusBusy, setAuthStatusBusy] = useState(false);
   // Running character total across the conversation — used to estimate token usage
@@ -428,6 +486,7 @@ export function App({ launchArgs }: AppProps) {
       terminalControl,
       stdout,
       source: "src/app.tsx:clearBoundary",
+      onWidthResizeRefresh: () => bumpStaticRepaintGeneration((tick) => tick + 1),
     }),
     [inkInstance, stdout, terminalControl],
   );
@@ -459,16 +518,11 @@ export function App({ launchArgs }: AppProps) {
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
   const [initialRevisionText, setInitialRevisionText] = useState("");
   const [updateCheckResult, setUpdateCheckResult] = useState<UpdateCheckResult | null>(null);
-  // Mouse reporting defaults to the persisted terminalMouseMode setting.
-  // "wheel" (default) enables SGR mouse reporting so the timeline can receive
-  // wheel events; native drag-select then requires Shift in Windows Terminal.
-  // "selection" keeps the terminal in control of mouse events.
-  // /mouse toggles the in-session override without changing the saved setting.
-  //
-  // We apply an idle-timeout: if no wheel events or keypresses occur for 1.5s,
-  // we disable mouse reporting so native drag-selection works unmodified.
+  // Transcript mode leaves mouse reporting off so wheel/trackpad input scrolls
+  // the terminal emulator's native scrollback instead of an in-app viewport.
   const mouseCapture = (mouseOverride ?? (terminalMouseMode === "wheel")) && !isMouseIdle;
-  const effectiveMouseCapture = screen === "main" ? mouseCapture : false;
+  const effectiveMouseCapture = false;
+  const overlayMode = screen !== "main";
 
   // ─── Effects & Handlers ──────────────────────────────────────────────────────
 
@@ -485,6 +539,7 @@ export function App({ launchArgs }: AppProps) {
       staticEventsLength: sessionState.staticEvents.length,
       activeEventsLength: sessionState.activeEvents.length,
       transcriptCleared: sessionState.staticEvents.length === 0 && sessionState.activeEvents.length === 0,
+      clearGenerationReady: sessionState.clearEpoch > 0 && sessionState.uiState.kind === "IDLE" && sessionState.activeEvents.length === 0,
       uiStateKind: sessionState.uiState.kind,
     });
     if (postClearRepaintPending) {
@@ -499,13 +554,27 @@ export function App({ launchArgs }: AppProps) {
   }, [clearFrameBoundaryController, sessionState]);
 
   useEffect(() => {
-    // Default path writes the disable sequences defensively, preserving native
-    // terminal selection unless the user explicitly opts into /mouse capture.
+    // Main transcript mode keeps native terminal scrollback and selection in
+    // control. Keep writing the disable sequence defensively in case a previous
+    // version or overlay left mouse reporting enabled.
     terminalControl.setMouseReporting(effectiveMouseCapture, effectiveMouseCapture ? "src/app.tsx:mouseCapture.enable" : "src/app.tsx:mouseCapture.disable");
     return () => {
       terminalControl.setMouseReporting(false, "src/app.tsx:mouseCapture.cleanup");
     };
   }, [effectiveMouseCapture, terminalControl]);
+
+  useLayoutEffect(() => {
+    terminalControl.setAlternateScreen(
+      overlayMode,
+      overlayMode ? "src/app.tsx:overlay.enterAlternateScreen" : "src/app.tsx:overlay.exitAlternateScreen",
+    );
+  }, [overlayMode, terminalControl]);
+
+  useEffect(() => {
+    return () => {
+      terminalControl.setAlternateScreen(false, "src/app.tsx:overlay.cleanupAlternateScreen");
+    };
+  }, [terminalControl]);
 
   const cleanupRef = useRef<(() => void) | null>(null);
   const activeRunLifecycleRef = useRef<PromptRunLifecycle | null>(null);
@@ -524,7 +593,7 @@ export function App({ launchArgs }: AppProps) {
   const modelSelectionInFlightRef = useRef(false);
   const providerRouteErrorsRef = useRef<Record<string, string>>({});
   const providerDiagnosticsRef = useRef<Record<string, Record<string, string | number | boolean | null>>>({});
-  const providerMigrationNoticeShownRef = useRef(false);
+  const providerMigrationNoticeShownRef = useRef(Boolean(initialProviderWorkspaceConfig.current.migrationNotice));
   const initialPromptSubmittedRef = useRef(false);
   const activeThemeName = getDisplayedThemeName(themeSelection);
   const activeTheme =
@@ -992,9 +1061,59 @@ export function App({ launchArgs }: AppProps) {
     terminalLayout,
     uiState,
   ]);
+  const activeRootComponent = screen === "main" ? "TranscriptShell" : "AppShell";
+  const startupHeaderMode = useMemo(
+    () => resolveStartupHeaderMode({
+      cols: terminalLayout.cols,
+      rows: terminalLayout.rows,
+      introRows: 8,
+      composerRows,
+    }),
+    [composerRows, terminalLayout.cols, terminalLayout.rows],
+  );
+  const previousStartupTraceKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const nextKey = [
+      terminalLayout.cols,
+      terminalLayout.rows,
+      terminalLayout.mode,
+      activeRootComponent,
+      screen,
+      startupHeaderMode,
+      staticEvents.length,
+      activeEvents.length,
+      uiState.kind,
+    ].join("|");
+    if (previousStartupTraceKeyRef.current === nextKey) return;
+    previousStartupTraceKeyRef.current = nextKey;
+    renderDebug.traceEvent("startup", "state", {
+      cols: terminalLayout.cols,
+      rows: terminalLayout.rows,
+      layoutMode: terminalLayout.mode,
+      activeRoot: activeRootComponent,
+      screen,
+      startupHeaderMode,
+      logoBranchSelected: startupHeaderMode === "large",
+      staticEventsLength: staticEvents.length,
+      activeEventsLength: activeEvents.length,
+      uiStateKind: uiState.kind,
+    });
+  }, [
+    activeEvents.length,
+    activeRootComponent,
+    screen,
+    startupHeaderMode,
+    staticEvents.length,
+    terminalLayout.cols,
+    terminalLayout.mode,
+    terminalLayout.rows,
+    uiState.kind,
+  ]);
 
   renderDebug.useRenderDebug("Root", {
     screen,
+    activeRoot: activeRootComponent,
     uiStateKind: uiState.kind,
     staticEvents,
     activeEvents,
@@ -1003,8 +1122,11 @@ export function App({ launchArgs }: AppProps) {
     cursor,
     busy,
     composerRows,
+    startupHeaderMode,
+    logoBranchSelected: startupHeaderMode === "large",
     cols: terminalLayout.cols,
     rows: terminalLayout.rows,
+    layoutMode: terminalLayout.mode,
     layoutEpoch: terminalLayout.layoutEpoch,
     planFlowKind: planFlow.kind,
     mode,
@@ -1283,13 +1405,12 @@ export function App({ launchArgs }: AppProps) {
   useEffect(() => {
     const notice = providerWorkspaceConfig.migrationNotice;
     if (!notice || providerMigrationNoticeShownRef.current) return;
-    providerMigrationNoticeShownRef.current = true;
     const providerLabel = findProvider(providerRegistry, notice.revertedProviderId)?.displayName ?? "OpenAI";
-    appendSystemEvent(
-      "Provider migrated",
-      `Antigravity provider is no longer supported. Reverted to ${providerLabel}.`,
-    );
-  }, [appendSystemEvent, providerRegistry, providerWorkspaceConfig.migrationNotice]);
+    const event = createProviderMigrationNoticeEvent(notice, providerLabel);
+    if (!event) return;
+    providerMigrationNoticeShownRef.current = true;
+    appendStaticEvent(event);
+  }, [appendStaticEvent, providerRegistry, providerWorkspaceConfig.migrationNotice]);
 
   useEffect(() => {
     if (projectInstructionsLoad.status === "loaded") {
@@ -1456,13 +1577,6 @@ export function App({ launchArgs }: AppProps) {
   // loaded before this first startup probe.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceRoot]);
-
-  useEffect(() => {
-    const devLaunchNotice = buildDevLaunchNotice(launchContext);
-    if (!devLaunchNotice) return;
-
-    appendSystemEvent("Launch mode", devLaunchNotice);
-  }, [appendSystemEvent, launchContext]);
 
   // Non-blocking background update check — runs once at startup.
   useEffect(() => {
@@ -2975,10 +3089,16 @@ export function App({ launchArgs }: AppProps) {
       clearGeneration,
       clearPending: clearBoundaryArmed,
     });
-    dispatchSession({ type: "CLEAR_TRANSCRIPT" });
+    const launchModeEvent = createLaunchModeEvent(launchContext);
+    dispatchSession({
+      type: "CLEAR_TRANSCRIPT",
+      seedEvents: launchModeEvent ? [launchModeEvent] : [],
+    });
     setConversationChars(0);
     setScreen("main");
     resetComposer();
+    intendedFocusTargetRef.current = FOCUS_IDS.composer;
+    focusManager.focus(FOCUS_IDS.composer);
     if (!clearBoundaryArmed) {
       // Fallback path (unexpected Ink mismatch): preserve /clear semantics.
       terminalControl.clearTranscript("src/app.tsx:handleClear:fallback");
@@ -2988,7 +3108,7 @@ export function App({ launchArgs }: AppProps) {
         liveInkInstanceResolved: Boolean(inkInstance),
       });
     }
-  }, [cancelActiveRun, clearFrameBoundaryController, dispatchSession, inkInstance, resetComposer, sessionState.clearEpoch, stdout.columns, terminalControl]);
+  }, [cancelActiveRun, clearFrameBoundaryController, dispatchSession, focusManager, inkInstance, launchContext, resetComposer, sessionState.clearEpoch, stdout.columns, terminalControl]);
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();
@@ -4131,8 +4251,8 @@ export function App({ launchArgs }: AppProps) {
           appendSystemEvent(
             "Mouse mode updated",
             nextMouse
-              ? "SGR mouse capture on — in-app wheel scroll active. Native drag-select requires Shift (Windows Terminal). Run /mouse to disable."
-              : "SGR mouse capture off — native drag-select and native wheel scroll restored. Run /mouse to re-enable.",
+              ? "Mouse preference set to wheel mode. Main chat still uses native terminal scrollback; SGR capture is not used for transcript scrolling."
+              : "Mouse preference set to selection mode. Main chat uses native terminal scrollback and native drag-select.",
           );
           return;
         }
@@ -4478,14 +4598,10 @@ export function App({ launchArgs }: AppProps) {
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
-  // Plan review is shown inline in the Timeline, not as a separate overlay.
-  const mainPanelElement = null;
-
   return (
     <ThemeProvider theme={activeThemeName} customTheme={customTheme}>
-      <AppShell
+      <TranscriptShell
         layout={terminalLayout}
-        screen={screen}
         authState={authStatus.state}
         workspaceLabel={workspaceLabel}
         workspaceRoot={workspaceRoot}
@@ -4494,25 +4610,44 @@ export function App({ launchArgs }: AppProps) {
         activeEvents={activeEvents}
         uiState={uiState}
         verboseMode={verboseMode}
-        mouseCapture={effectiveMouseCapture}
-        onMouseActivity={resetMouseIdle}
-        selectionProfile={selectionProfile}
         clearCount={sessionState.clearCount}
-        headerConfig={effectiveHeaderConfig}
-        updateAvailable={
-          updateCheckResult?.status === "update-available" && updateCheckResult.latestVersion
-            ? { latestVersion: updateCheckResult.latestVersion, currentVersion: updateCheckResult.currentVersion }
-            : null
-        }
-        panel={
-          <>
-            {screen === "backend-picker" && (
-              <BackendPicker
-                currentBackend={backend}
-                onSelect={(value) => setBackendWithNotice(value as AvailableBackend)}
-                onCancel={() => setScreen("main")}
-              />
-            )}
+        repaintGeneration={staticRepaintGeneration}
+        composer={composerElement}
+        composerRows={composerRows}
+        visible={screen === "main"}
+      />
+
+      {screen !== "main" && (
+        <AppShell
+          layout={terminalLayout}
+          screen={screen}
+          authState={authStatus.state}
+          workspaceLabel={workspaceLabel}
+          workspaceRoot={workspaceRoot}
+          runtimeSummary={headerRuntimeSummary}
+          staticEvents={staticEvents}
+          activeEvents={activeEvents}
+          uiState={uiState}
+          verboseMode={verboseMode}
+          mouseCapture={effectiveMouseCapture}
+          onMouseActivity={resetMouseIdle}
+          selectionProfile={selectionProfile}
+          clearCount={sessionState.clearCount}
+          headerConfig={effectiveHeaderConfig}
+          updateAvailable={
+            updateCheckResult?.status === "update-available" && updateCheckResult.latestVersion
+              ? { latestVersion: updateCheckResult.latestVersion, currentVersion: updateCheckResult.currentVersion }
+              : null
+          }
+          panel={
+            <>
+              {screen === "backend-picker" && (
+                <BackendPicker
+                  currentBackend={backend}
+                  onSelect={(value) => setBackendWithNotice(value as AvailableBackend)}
+                  onCancel={() => setScreen("main")}
+                />
+              )}
 
             {screen === "provider-picker" && (
               <ProviderPicker
@@ -4762,18 +4897,19 @@ export function App({ launchArgs }: AppProps) {
                 onSkipUntilNextVersion={handleSkipUpdateVersion}
               />
             )}
-          </>
-        }
-        mainPanel={null}
-        mainPanelMode="viewport"
-        composer={composerElement}
-        composerRows={composerRows}
-        panelHint={screen !== "main" && screen !== "model-picker" ? (
-          <Box marginTop={1} paddingX={1}>
-            <Text color={activeTheme.textDim}>Close the active panel with Esc to return to the composer.</Text>
-          </Box>
-        ) : null}
-      />
+            </>
+          }
+          mainPanel={null}
+          mainPanelMode="viewport"
+          composer={composerElement}
+          composerRows={composerRows}
+          panelHint={screen !== "model-picker" ? (
+            <Box marginTop={1} paddingX={1}>
+              <Text color={activeTheme.textDim}>Close the active panel with Esc to return to the composer.</Text>
+            </Box>
+          ) : null}
+        />
+      )}
     </ThemeProvider>
   );
 }

@@ -40,6 +40,7 @@ export interface ClearFrameBoundaryRenderState {
   staticEventsLength: number;
   activeEventsLength: number;
   transcriptCleared: boolean;
+  clearGenerationReady?: boolean;
   uiStateKind: string;
 }
 
@@ -69,6 +70,31 @@ interface CreateClearFrameBoundaryOptions {
   terminalControl: TerminalClearLike;
   stdout: ClearBoundaryStdoutLike;
   source?: string;
+  /** Injectable clock, so tests can drive the startup grace window deterministically. */
+  now?: () => number;
+  /**
+   * Many terminals/PTYs report a provisional column/row count when a process
+   * first attaches, then correct it a few milliseconds later once the real
+   * size negotiation settles. Treating that early settle as a genuine
+   * mid-session resize would trigger the scrollback-inclusive clear below
+   * before anything has actually gone stale — and since Ink's <Static> never
+   * re-emits items once flushed, that clear permanently erases whatever
+   * intro/logo/system-events were already committed. Suppress the resize
+   * refresh for this long after the boundary is created so real dimensions
+   * can settle first; 0 in test env so existing tests are unaffected.
+   */
+  startupGraceMs?: number;
+  /**
+   * Called synchronously whenever a width-changing resize triggers the
+   * scrollback-inclusive clear. The physical clear happens mid-commit, after
+   * React has already decided this frame's static output, so anything
+   * <Static> already flushed (the logo, past conversation turns) is erased
+   * from the real terminal but never re-emitted by Ink — <Static> has no
+   * concept of "the terminal was wiped out from under me." The caller must
+   * use this to force a fresh render with a new <Static> key so its content
+   * gets reflushed at the new width.
+   */
+  onWidthResizeRefresh?: () => void;
 }
 
 interface FrameMarkerCounts {
@@ -76,12 +102,15 @@ interface FrameMarkerCounts {
   providerMigratedCount: number;
   launchModeCount: number;
   composerCount: number;
+  footerCount: number;
 }
 
 const LOGO_LINE = /██╔════╝██╔═══██╗/g;
 const PROVIDER_MIGRATED = /Provider migrated/g;
 const LAUNCH_MODE = /Launch mode/g;
 const COMPOSER = /│ ❯/g;
+const FOOTER_CONTEXT = /Context:/g;
+const ANSI_SEQUENCE = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
 
 function stableFrameHash(text: string): string {
   return createHash("sha1").update(text, "utf8").digest("hex").slice(0, 12);
@@ -96,16 +125,23 @@ function countMatches(text: string, pattern: RegExp): number {
 }
 
 function countFrameMarkers(text: string): FrameMarkerCounts {
+  const plainText = text.replace(ANSI_SEQUENCE, "");
   return {
-    codexaLogoCount: countMatches(text, LOGO_LINE),
-    providerMigratedCount: countMatches(text, PROVIDER_MIGRATED),
-    launchModeCount: countMatches(text, LAUNCH_MODE),
-    composerCount: countMatches(text, COMPOSER),
+    codexaLogoCount: countMatches(plainText, LOGO_LINE),
+    providerMigratedCount: countMatches(plainText, PROVIDER_MIGRATED),
+    launchModeCount: countMatches(plainText, LAUNCH_MODE),
+    composerCount: countMatches(plainText, COMPOSER),
+    footerCount: countMatches(plainText, FOOTER_CONTEXT),
   };
 }
 
-function buildFrameText(instance: InkRenderInstance, output: string): string {
-  return `${instance.fullStaticOutput ?? ""}${output}`;
+function buildFrameText(instance: InkRenderInstance, output: string, staticOutput = ""): string {
+  const fullStaticOutput = instance.fullStaticOutput ?? "";
+  if (!staticOutput) return `${fullStaticOutput}${output}`;
+  if (!fullStaticOutput || staticOutput.includes(fullStaticOutput)) {
+    return `${staticOutput}${output}`;
+  }
+  return `${fullStaticOutput}${staticOutput}${output}`;
 }
 
 function snapshotFrameState(instance: InkRenderInstance, logShadow: LogShadowState) {
@@ -236,6 +272,9 @@ export function createClearFrameBoundaryController({
   terminalControl,
   stdout,
   source = "src/core/terminal/clearFrameBoundary.ts",
+  now = Date.now,
+  startupGraceMs = process.env.NODE_ENV === "test" ? 0 : 300,
+  onWidthResizeRefresh,
 }: CreateClearFrameBoundaryOptions): ClearFrameBoundaryController | null {
   const originalRenderInteractiveFrame = instance?.renderInteractiveFrame;
   if (!instance || typeof originalRenderInteractiveFrame !== "function") {
@@ -252,12 +291,14 @@ export function createClearFrameBoundaryController({
   let committedGeneration: number | null = null;
   let renderGeneration = 0;
   let transcriptCleared = false;
+  let clearGenerationReady = false;
   let staticEventsLength = 0;
   let activeEventsLength = 0;
   let uiStateKind = "IDLE";
   let lastFrameWasAuthoritative = false;
   let previousCols = stdout.columns;
   let previousRows = stdout.rows;
+  const createdAt = now();
   const logShadow: LogShadowState = { previousOutputLength: 0, previousLineCount: 0 };
 
   const restoreLog = wrapInkLogForTrace(instance, source, logShadow);
@@ -265,7 +306,7 @@ export function createClearFrameBoundaryController({
 
   const isPostClearFrameReady = (): boolean => {
     if (!clearPending || pendingGeneration === null) return false;
-    return renderGeneration >= pendingGeneration && transcriptCleared;
+    return renderGeneration >= pendingGeneration && (transcriptCleared || clearGenerationReady);
   };
 
   instance.renderInteractiveFrame = (output: string, outputHeight: number, staticOutput: string) => {
@@ -281,14 +322,15 @@ export function createClearFrameBoundaryController({
     // it. Repaint authoritatively from a scrollback-clean baseline on every width
     // change, using the same primitive /clear uses. Skip while a clear is still
     // pending: that path owns the next authoritative frame.
-    const isWidthResizeRefresh = widthChanged && !clearPending && !isFirstPostClearCommit;
+    const withinStartupGrace = now() - createdAt < startupGraceMs;
+    const isWidthResizeRefresh = widthChanged && !clearPending && !isFirstPostClearCommit && !withinStartupGrace;
     const frameClassification = isFirstPostClearCommit
       ? "post-clear"
       : (isWidthResizeRefresh ? "resize-refresh" : (clearPending ? "pre-clear" : "normal"));
     const staleFrameSuppressed = clearPending && !postClearReady;
     const frameWriteAllowed = !staleFrameSuppressed;
     const isAuthoritativeFrame = isFirstPostClearCommit || isWidthResizeRefresh;
-    const frameText = isAuthoritativeFrame ? output : buildFrameText(instance, output);
+    const frameText = isAuthoritativeFrame ? `${staticOutput}${output}` : buildFrameText(instance, output, staticOutput);
     const markerCounts = countFrameMarkers(frameText);
     const frameHash = stableFrameHash(frameText);
     const clearGenerationUsed = isFirstPostClearCommit ? pendingGeneration : committedGeneration;
@@ -331,6 +373,8 @@ export function createClearFrameBoundaryController({
       staleFrameSuppressed,
       frameWriteAllowed,
       widthChanged,
+      currentCols,
+      currentRows,
       resizeRefreshApplied: isWidthResizeRefresh,
       resizeFramePath: isAuthoritativeFrame ? "full-authoritative" : "diffed",
       clearGenerationUsed,
@@ -392,6 +436,13 @@ export function createClearFrameBoundaryController({
         afterReset: snapshotFrameState(instance, logShadow),
       });
       lastFrameWasAuthoritative = true;
+      // previousCols/previousRows are already updated above, so this callback
+      // fires exactly once per genuine width change, not on every subsequent
+      // commit. The caller must force a fresh <Static> instance so its
+      // already-flushed content (logo, past turns) gets reprinted at the new
+      // width — this physical clear just erased it and Ink won't redo that on
+      // its own.
+      onWidthResizeRefresh?.();
     } else {
       lastFrameWasAuthoritative = false;
     }
@@ -413,6 +464,8 @@ export function createClearFrameBoundaryController({
       diffedFrame: !isAuthoritativeFrame,
       fullAuthoritativeFrame: isAuthoritativeFrame,
       widthChanged,
+      currentCols,
+      currentRows,
       resizeRefreshApplied: isWidthResizeRefresh,
       resizeFramePath: isAuthoritativeFrame ? "full-authoritative" : "diffed",
       clearGenerationUsed,
@@ -476,6 +529,7 @@ export function createClearFrameBoundaryController({
       if (!Number.isFinite(state.generation)) return false;
       renderGeneration = state.generation;
       transcriptCleared = state.transcriptCleared;
+      clearGenerationReady = state.clearGenerationReady === true;
       staticEventsLength = state.staticEventsLength;
       activeEventsLength = state.activeEventsLength;
       uiStateKind = state.uiStateKind;
@@ -488,6 +542,7 @@ export function createClearFrameBoundaryController({
       renderDebug.traceEvent("terminal", "clearBoundaryRenderState", {
         renderGeneration,
         transcriptCleared,
+        clearGenerationReady,
         staticEventsLength,
         activeEventsLength,
         uiStateKind,
