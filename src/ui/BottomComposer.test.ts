@@ -11,6 +11,15 @@ import {
 import { createLayoutSnapshot } from "./layout.js";
 import { getSlashCommandSuggestions } from "./slashCommands.js";
 import type { PendingModelSpec, VerifiedModelSpec } from "../core/models/modelSpecs.js";
+import type { TerminalSelectionProfile } from "../core/terminal/terminalSelection.js";
+
+const FAKE_SELECTION_PROFILE: TerminalSelectionProfile = {
+  id: "xterm-like",
+  terminalLabel: "xterm",
+  selectionHint: "hold shift and drag",
+  shortHint: "shift-drag",
+  normalDragBehavior: "scrolls",
+};
 
 test("maps the idle state to the idle composer persona", () => {
   assert.equal(getComposerPersona({ kind: "IDLE" }), "idle");
@@ -37,6 +46,48 @@ test("measures compact idle bottom chrome as metadata plus prompt border", () =>
   });
 
   assert.equal(rows, 4);
+});
+
+test("measures one extra row for a set selectionProfile, matching the real render's showTransientStatusRow", () => {
+  // BottomComposer's render shows the transient status row whenever
+  // showStatusLine || inputLocked || !!selectionProfile is true (BottomComposer.tsx),
+  // even with no status text. The measurement must agree, or the spacer TranscriptShell
+  // computes to anchor the composer at the bottom will be off by one row.
+  const base = {
+    layout: createLayoutSnapshot(120, 30),
+    uiState: { kind: "IDLE" as const },
+    value: "",
+    cursor: 0,
+  };
+
+  const withoutSelection = measureBottomComposerRows(base);
+  const withSelection = measureBottomComposerRows({ ...base, selectionProfile: FAKE_SELECTION_PROFILE });
+
+  assert.equal(withSelection, withoutSelection + 1);
+});
+
+test("measures the same row count for raw and pre-normalized equivalent input", () => {
+  // The real render normalizes `value` before wrapping it (normalizeInputText),
+  // matching measureBottomComposerRows. A value with a stray \r (collapsed by
+  // normalization) must measure identically to its already-normalized form —
+  // otherwise the measured row count silently drifts from what's painted.
+  const layout = createLayoutSnapshot(120, 30);
+  const uiState = { kind: "IDLE" as const };
+
+  const rawRows = measureBottomComposerRows({
+    layout,
+    uiState,
+    value: "hello\r\nworld",
+    cursor: 12,
+  });
+  const normalizedRows = measureBottomComposerRows({
+    layout,
+    uiState,
+    value: "hello\nworld",
+    cursor: 11,
+  });
+
+  assert.equal(rawRows, normalizedRows);
 });
 
 test("keeps runtime footer directly attached to the composer", () => {

@@ -61,6 +61,21 @@ function stateWithActiveRun(turnId: number): SessionState {
   };
 }
 
+test("initial session state can seed static transcript events", () => {
+  const launchEvent: TimelineEvent = {
+    id: 1,
+    type: "system",
+    createdAt: 1,
+    title: "Launch mode",
+    content: "Ready.",
+  };
+  const state = createInitialSessionState({ staticEvents: [launchEvent] });
+
+  assert.deepEqual(state.staticEvents, [launchEvent]);
+  assert.deepEqual(state.activeEvents, []);
+  assert.deepEqual(state.uiState, { kind: "IDLE" });
+});
+
 test("SUBMIT_PROMPT_RUN atomically clears composer, records history, appends one turn, and enters thinking", () => {
   const turnId = 50;
   const runId = 2;
@@ -168,9 +183,16 @@ test("CLEAR_TRANSCRIPT removes all rendered transcript event state and preserves
     history: ["Hello"],
   };
 
-  const cleared = reduceSessionState(state, { type: "CLEAR_TRANSCRIPT" });
+  const seedEvent: TimelineEvent = {
+    id: 12,
+    type: "system",
+    createdAt: 12,
+    title: "Launch mode",
+    content: "Ready.",
+  };
+  const cleared = reduceSessionState(state, { type: "CLEAR_TRANSCRIPT", seedEvents: [seedEvent] });
 
-  assert.deepEqual(cleared.staticEvents, []);
+  assert.deepEqual(cleared.staticEvents, [seedEvent]);
   assert.deepEqual(cleared.activeEvents, []);
   assert.deepEqual(cleared.uiState, { kind: "IDLE" });
   assert.equal(cleared.clearCount, state.clearCount + 1);

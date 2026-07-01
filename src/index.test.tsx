@@ -361,13 +361,12 @@ test("resize recovery preserves the viewport after invalid dimensions", async ()
   await flushMicrotasks();
 });
 
-test("resize repaint does not erase terminal scrollback buffer", async () => {
+test("startup and resize repaint do not erase terminal scrollback buffer", async () => {
   const harness = createSupportedHarness();
   startApp(harness.deps);
 
-  // Startup intentionally clears scrollback (\x1b[3J) so the app opens into a
-  // clean screen. Verify it IS written exactly once during startup.
-  assert.match(harness.stdout.writes, /\x1b\[3J/, "startup must erase scrollback for clean open");
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[3J/, "startup must not erase scrollback");
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[2J/, "startup must not clear the viewport");
 
   // Capture offset so we can inspect only post-startup writes.
   const startupEnd = harness.stdout.writes.length;
@@ -404,19 +403,17 @@ test("normal app render writes do not clear the terminal after startup", async (
   await flushMicrotasks();
 });
 
-test("startup writes one workspace title after repaint and before Ink render setup", async () => {
+test("startup writes one workspace title before Ink render setup", async () => {
   const harness = createSupportedHarness();
   startApp(harness.deps);
 
-  // Startup now writes a full transcript clear: viewport + scrollback + cursor home.
-  const repaintIndex = harness.stdout.writes.indexOf("\x1b[2J\x1b[3J\x1b[H");
   const titleMatches = [...harness.stdout.writes.matchAll(TITLE_SEQUENCE_PATTERN)];
   const firstTitleIndex = titleMatches[0]?.index ?? -1;
   const bracketedPasteIndex = harness.stdout.writes.indexOf("\x1b[?2004h");
 
-  assert.ok(repaintIndex >= 0, "startup repaint should be written");
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[2J|\x1b\[3J/, "startup should append without clearing");
   assert.equal(titleMatches.length, 2, "startup should write one OSC 0 and one OSC 2 title sequence");
-  assert.ok(firstTitleIndex > repaintIndex, "workspace title should be written after startup repaint");
+  assert.ok(firstTitleIndex >= 0, "workspace title should be written");
   assert.ok(bracketedPasteIndex > firstTitleIndex, "workspace title should be written before bracketed paste/render setup");
   assert.match(harness.stdout.writes, /\x1b\]0;[^\x07]+\x07\x1b\]2;[^\x07]+\x07/);
   assert.doesNotMatch(harness.stdout.writes, /\x1b\](?:0|2);[a-zA-Z]:[\\/]/);
@@ -504,7 +501,7 @@ test("removes resize listener and restores bracketed paste on cleanup", async ()
   assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1006h/);
   assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1015h/);
   assert.match(harness.stdout.writes, /\x1b\[\?2004h/);
-  assert.match(harness.stdout.writes, /\x1b\[\?1049h/);
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?1049h/);
   // Verify defensive disable sequences were written during cleanup.
   assert.match(harness.stdout.writes, /\x1b\[\?1000l/);
   assert.match(harness.stdout.writes, /\x1b\[\?1002l/);
@@ -614,8 +611,8 @@ test("scheduled soft repaint does not call renderHandle.clear when inkInstance i
   await flushMicrotasks();
 });
 
-test("render startup manages alternate-screen mode stably", () => {
+test("render startup stays in the normal screen buffer", () => {
   const source = readFileSync(new URL("./index.tsx", import.meta.url), "utf8");
-  assert.match(source, /setAlternateScreen\(true/);
+  assert.doesNotMatch(source, /setAlternateScreen\(true/);
   assert.match(source, /setAlternateScreen\(false/);
 });

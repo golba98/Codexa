@@ -47,7 +47,7 @@ export type SessionAction =
   | { type: "SUBMIT_PROMPT_RUN"; historyValue?: string; events: TimelineEvent[]; turnId: number; runId: number }
   | { type: "HISTORY_UP" }
   | { type: "HISTORY_DOWN" }
-  | { type: "CLEAR_TRANSCRIPT" }
+  | { type: "CLEAR_TRANSCRIPT"; seedEvents?: TimelineEvent[] }
   | { type: "SET_ACTIVE_EVENTS"; events: TimelineEvent[] }
   | { type: "RUN_APPEND_ACTIVITY"; runId: number; activity: RunFileActivity[] }
   | { type: "RUN_APPLY_PROGRESS_UPDATES"; runId: number; updates: BackendProgressUpdate[] }
@@ -98,9 +98,9 @@ export type SessionAction =
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-export function createInitialSessionState(): SessionState {
+export function createInitialSessionState(options: { staticEvents?: TimelineEvent[] } = {}): SessionState {
   return {
-    staticEvents: [],
+    staticEvents: options.staticEvents ?? [],
     activeEvents: [],
     uiState: { kind: "IDLE" },
     externalCliStatus: "idle",
@@ -327,11 +327,12 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       renderDebug.traceEvent("transcript", "clear", {
         previousStaticEventsLength: state.staticEvents.length,
         previousActiveEventsLength: state.activeEvents.length,
+        seedEventsLength: action.seedEvents?.length ?? 0,
         uiStateKind: state.uiState.kind,
       });
       return {
         ...state,
-        staticEvents: [],
+        staticEvents: action.seedEvents ?? [],
         activeEvents: [],
         uiState: { kind: "IDLE" },
         clearCount: state.clearCount + 1,
@@ -694,8 +695,10 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
-export function useAppSessionState() {
-  const [state, setState] = useState<SessionState>(createInitialSessionState);
+export function useAppSessionState(createInitialStaticEvents?: () => TimelineEvent[]) {
+  const [state, setState] = useState<SessionState>(() => createInitialSessionState({
+    staticEvents: createInitialStaticEvents?.() ?? [],
+  }));
   const queueRef = useRef<SessionAction[]>([]);
   const scheduledRef = useRef(false);
 

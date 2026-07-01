@@ -163,9 +163,8 @@ export const USER_SETTING_DEFINITIONS: readonly UserSettingDefinition[] = [
     label: "Mouse mode",
     description:
       "Selection (default): no mouse tracking — native drag-select and native wheel scroll work unmodified. "
-      + "Scroll history via native terminal scrollback. "
-      + "Wheel: enables SGR mouse tracking so the Codexa timeline captures wheel events for in-app scroll. "
-      + "Native drag-select then requires Shift (Windows Terminal) or equivalent modifier. "
+      + "Main chat history scrolls via native terminal scrollback. "
+      + "Wheel is kept as a stored preference for compatibility, but transcript scrolling is not app-captured. "
       + "Run /mouse to toggle for the current session.",
     options: [
       { value: "selection", label: "Native selection" },

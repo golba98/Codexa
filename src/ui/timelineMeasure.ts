@@ -1594,12 +1594,15 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
     ? selectLogoVariant(safeWidth)
     : selectLogoVariant(0); // text-only fallback for compact mode
   const effectiveLogoRows = logoRows.length > 0 ? logoRows : ["CODEXA"];
+  if (startupHeaderMode === "large") {
+    rows.push(createBlankRow(`${item.key}-top-gap`, safeWidth));
+  }
   const logoWidth = effectiveLogoRows.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
   const workspaceName = getWorkspaceDisplayName(intro.workspaceLabel);
   const metaLines = [
     `Codexa v${intro.version}`,
-    `Auth: ${intro.authLabel}`,
     workspaceName ? `Workspace: ${workspaceName}` : null,
+    intro.providerLabel ? `Provider: ${intro.providerLabel}` : `Auth: ${intro.authLabel}`,
   ].filter((line): line is string => Boolean(line));
   const gapWidth = 2;
   const widestMetaLine = metaLines.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
@@ -2528,8 +2531,10 @@ function buildStableIntroRows(item: Extract<RenderTimelineItem, { type: "intro" 
     innerWidth,
     item.intro.version,
     item.intro.layoutMode,
+    item.intro.startupHeaderMode ?? "",
     item.intro.authLabel,
     textCacheToken(item.intro.workspaceLabel),
+    item.intro.providerLabel ?? "",
   ]);
   return getCachedFrozenRows(cacheKey, () => buildIntroRows(item, innerWidth));
 }
@@ -2827,19 +2832,26 @@ function appendNativeTurnParts(
   const verbose = options.verboseMode ?? false;
 
   if (item.item.user) {
-    output.staticItems.push({
-      key: `${item.key}-user`,
-      rows: wrapNativeRows(
-        buildUserInputRows(item, innerWidth),
-        options.totalWidth,
-        item.padded,
-        item.key,
-      ),
-    });
-    output.staticItems.push({
-      key: `${item.key}-prompt-gap`,
-      rows: [createBlankRow(`${item.key}-prompt-gap-row`, options.totalWidth)],
-    });
+    const userRows = wrapNativeRows(
+      buildUserInputRows(item, innerWidth),
+      options.totalWidth,
+      item.padded,
+      item.key,
+    );
+    const promptGapRows = [createBlankRow(`${item.key}-prompt-gap-row`, options.totalWidth)];
+
+    if (run?.status === "running") {
+      output.liveRows.push(...userRows, ...promptGapRows);
+    } else {
+      output.staticItems.push({
+        key: `${item.key}-user`,
+        rows: userRows,
+      });
+      output.staticItems.push({
+        key: `${item.key}-prompt-gap`,
+        rows: promptGapRows,
+      });
+    }
   }
 
   if (!run) return;
@@ -3026,7 +3038,7 @@ export function buildTimelineSnapshot(
     let builtRows: TimelineRow[];
 
     if (item.type === "intro") {
-      const cacheKey = `i:${item.key}:${innerWidth}:${item.intro.version}:${item.intro.layoutMode}:${item.intro.startupHeaderMode ?? ""}:${item.intro.authLabel}:${item.intro.workspaceLabel}:v${LOGO_LARGE_MIN_COLS}`;
+      const cacheKey = `i:${item.key}:${innerWidth}:${item.intro.version}:${item.intro.layoutMode}:${item.intro.startupHeaderMode ?? ""}:${item.intro.authLabel}:${item.intro.workspaceLabel}:${item.intro.providerLabel ?? ""}:v${LOGO_LARGE_MIN_COLS}`;
       const cached = _staticRowCache.get(cacheKey);
       if (cached) {
         renderDebug.traceEvent("timeline", "rowGeneration", {
@@ -3051,7 +3063,17 @@ export function buildTimelineSnapshot(
       }
     } else if (item.type === "event") {
       // Standalone events (system, error, etc.) are immutable — cache by key+width.
-      const cacheKey = `e:${item.key}:${innerWidth}`;
+      const cacheKey = rowCacheKey([
+        "event",
+        item.key,
+        item.event.type,
+        item.event.id,
+        innerWidth,
+        textCacheToken("title" in item.event ? item.event.title : item.event.command),
+        textCacheToken("content" in item.event ? item.event.content : item.event.summary ?? ""),
+        "status" in item.event ? item.event.status : "",
+        "durationMs" in item.event ? item.event.durationMs : "",
+      ]);
       const cached = _staticRowCache.get(cacheKey);
       if (cached) {
         renderDebug.traceEvent("timeline", "rowGeneration", {

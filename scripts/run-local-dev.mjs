@@ -30,6 +30,21 @@ export function resolveLocalDevEntry(root, args) {
   };
 }
 
+/**
+ * Restarting codexa-dev in the same terminal window is a common dev-loop
+ * action. The app itself deliberately never clears scrollback on startup (it
+ * appends like normal CLI output, to avoid a clear/first-paint race that used
+ * to cut off the logo — see src/index.tsx). Without a clear here, a fresh
+ * run's output stacks below whatever the previous run left on screen. This
+ * runs once, in a separate process, well before Ink even initializes, so it
+ * can't race with the app's own first paint the way an in-app startup clear
+ * did. Skipped for headless mode (no persistent screen to clear) and when
+ * stdout isn't a TTY (piped/redirected output shouldn't get escape codes).
+ */
+export function shouldClearTerminalOnLaunch(isHeadlessMode, isStdoutTTY) {
+  return !isHeadlessMode && isStdoutTTY === true;
+}
+
 const { isHeadlessMode, isHeadlessBenchmark, entry, entryArgs } = resolveLocalDevEntry(repoRoot, forwardArgs);
 const bunExecutable = process.env.CODEXA_BUN_EXECUTABLE?.trim()
   || (process.platform === "win32" ? "bun.exe" : "bun");
@@ -88,6 +103,10 @@ function launch() {
   if (!isHeadlessMode && hasFlag(forwardArgs, "--version", "-v")) {
     console.log(formatLocalDevVersion());
     process.exit(0);
+  }
+
+  if (shouldClearTerminalOnLaunch(isHeadlessMode, process.stdout.isTTY)) {
+    process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
   }
 
   const child = spawn(

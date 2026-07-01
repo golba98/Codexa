@@ -384,7 +384,7 @@ function buildHelpMessage(context: CommandContext): string {
     "  /theme [name]      Switch theme directly (no arg opens picker)",
     "  /themes            Open visual theme picker (Up/Down + Enter)",
     "  /verbose           Toggle verbose mode (shows detailed processing info)",
-    "  /mouse             Toggle SGR mouse capture for in-app wheel scroll (off by default). On: wheel scrolls the Codexa timeline; drag-select requires Shift. Off: native drag-select and native wheel scroll work without modifiers.",
+    "  /mouse             Toggle the stored mouse preference. Main chat uses native terminal scrollback; wheel/trackpad scrolling stays owned by the terminal.",
     "  /auth [option]     Open auth panel or set auth preference",
     "  /auth status       Probe Codexa auth status",
     "  /login             Show guided ChatGPT subscription login steps",

@@ -142,6 +142,7 @@ export interface BottomComposerMeasureParams {
   modelSpec?: ModelSpec;
   value: string;
   cursor: number;
+  selectionProfile?: TerminalSelectionProfile;
 }
 
 export interface CommandSuggestionState {
@@ -210,6 +211,7 @@ export function measureBottomComposerRows({
   uiState,
   value,
   cursor,
+  selectionProfile,
 }: BottomComposerMeasureParams): number {
   if (shouldRenderBusyFooter(layout, uiState)) {
     return measureRunFooterRows();
@@ -243,7 +245,7 @@ export function measureBottomComposerRows({
     value: normalizedValue,
     allowCommands,
   });
-  const transientStatusRows = visibleStatusLine.length > 0 ? 1 : 0;
+  const transientStatusRows = visibleStatusLine.length > 0 || inputLocked || !!selectionProfile ? 1 : 0;
 
   const visiblePromptRows = inputLocked ? 1 : promptViewport.visibleRows.length;
 
@@ -537,7 +539,11 @@ export function BottomComposer({
       }
     };
 
-    stdin.on("data", handleRawInput);
+    // Must run before Ink's own stdin listener (attached at render() time, ahead
+    // of this effect) so the delete-vs-backspace classification for a chunk is
+    // ready by the time useInput's callback dispatches for that same chunk —
+    // otherwise this always classifies one keystroke behind.
+    stdin.prependListener("data", handleRawInput);
     return () => {
       stdin.off("data", handleRawInput);
       if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
@@ -557,8 +563,12 @@ export function BottomComposer({
     }
   }, [cursor, value]);
 
+  // Measured against the same normalized text as measureBottomComposerRows(), so
+  // the row count used to anchor the composer never disagrees with what's actually painted.
+  const normalizedValue = useMemo(() => normalizeInputText(value), [value]);
+
   const commandSuggestionState = getCommandSuggestionState({
-    value,
+    value: normalizedValue,
     allowCommands,
     inputLocked,
   });
@@ -567,20 +577,20 @@ export function BottomComposer({
     .map((suggestion, index) => `${index === selectedIndex ? "›" : "·"} ${suggestion.cmd}`)
     .join("   ");
 
-  const rawStatusLine = getVisibleComposerStatusLine({ uiState, value, allowCommands, activeProviderId, runElapsedSeconds, externalCliStatus });
+  const rawStatusLine = getVisibleComposerStatusLine({ uiState, value: normalizedValue, allowCommands, activeProviderId, runElapsedSeconds, externalCliStatus });
   const showStatusLine = rawStatusLine.length > 0;
   const showTransientStatusRow = showStatusLine || inputLocked || !!selectionProfile;
   const footerGapRows = getComposerToFooterGapRows(layout);
 
   const promptViewport = useMemo(
     () => createInputViewport({
-      text: value,
-      cursorOffset: normalizeCursorOffset(value, cursor),
+      text: normalizedValue,
+      cursorOffset: normalizeCursorOffset(normalizedValue, cursor),
       width: promptWidth,
       maxVisibleRows: MAX_VISIBLE_INPUT_ROWS,
       scrollRow,
     }),
-    [cursor, promptWidth, scrollRow, value],
+    [cursor, normalizedValue, promptWidth, scrollRow],
   );
   const placeholderText = clampVisualText(getPlaceholder(persona), Math.max(1, promptWidth - 1));
 
@@ -1033,11 +1043,11 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   const prevKey = getUiStateKey(prev.uiState);
   const nextKey = getUiStateKey(next.uiState);
   if (prevKey !== nextKey) return false;
-  
+
   // Re-render if input-related props change
   if (prev.value !== next.value) return false;
   if (prev.cursor !== next.cursor) return false;
-  
+
   // Re-render if display props change
   if (prev.mode !== next.mode) return false;
   if (prev.model !== next.model) return false;
@@ -1047,16 +1057,16 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   if (prev.planMode !== next.planMode) return false;
   if (prev.showBusyLoader !== next.showBusyLoader) return false;
   if (prev.tokensUsed !== next.tokensUsed) return false;
-  
+
   // Re-render if layout changes
   if (prev.layout.cols !== next.layout.cols) return false;
   if (prev.layout.rows !== next.layout.rows) return false;
   if (prev.layout.mode !== next.layout.mode) return false;
   if (prev.themeName !== next.themeName) return false;
-  
+
   if (prev.modelSpec?.status !== next.modelSpec?.status) return false;
   if (prev.modelSpec?.contextWindow !== next.modelSpec?.contextWindow) return false;
-  
+
   // Re-render if selection profile changes
   if (prev.selectionProfile?.id !== next.selectionProfile?.id) return false;
 
