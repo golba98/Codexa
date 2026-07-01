@@ -271,6 +271,10 @@ test("VTE terminal trace records startup root, logo branch, composer count, and 
   assert.match(appSource, /renderDebug\.traceEvent\("startup", "state"/);
   assert.match(appSource, /activeRoot: activeRootComponent/);
   assert.match(appSource, /logoBranchSelected: startupHeaderMode === "large"/);
+  assert.match(transcriptShellSource, /renderDebug\.traceEvent\("startup", "homeRender"/);
+  assert.match(transcriptShellSource, /selectedLogoVariant/);
+  assert.match(transcriptShellSource, /logoHiddenReason/);
+  assert.match(transcriptShellSource, /homeScreenRendererUsed: homeScreenActive/);
   assert.match(clearBoundarySource, /codexaLogoCount/);
   assert.match(clearBoundarySource, /composerCount/);
   assert.match(clearBoundarySource, /footerCount/);

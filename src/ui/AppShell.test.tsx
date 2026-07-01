@@ -1115,7 +1115,7 @@ function rowText(row: ReturnType<typeof buildStaticIntroRows>[number]): string {
   return row.spans.map((span) => span.text).join("");
 }
 
-test("startup metadata stacks workspace directly below auth in the right block", () => {
+test("startup metadata stacks workspace between version and auth in the right block", () => {
   const rows = buildStaticIntroRows({
     authState: "checking",
     workspaceLabel: "Codexa",
@@ -1124,11 +1124,15 @@ test("startup metadata stacks workspace directly below auth in the right block",
     workspaceRoot: "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal",
   }).map(rowText);
 
+  const versionIndex = rows.findIndex((row) => row.includes("Codexa v"));
   const authIndex = rows.findIndex((row) => row.includes("Auth: Checking"));
   const workspaceIndex = rows.findIndex((row) => row.includes("Workspace: Codexa"));
 
+  assert.ok(versionIndex >= 0, "version metadata row should render");
+  assert.ok(workspaceIndex >= 0, "workspace metadata row should render");
   assert.ok(authIndex >= 0, "auth metadata row should render");
-  assert.equal(workspaceIndex, authIndex + 1, "workspace metadata should be directly below auth");
+  assert.equal(workspaceIndex, versionIndex + 1, "workspace metadata should be directly below version");
+  assert.equal(authIndex, workspaceIndex + 1, "auth metadata should be directly below workspace");
   assert.doesNotMatch(rows.slice(workspaceIndex + 1).join("\n"), /Workspace:/);
 });
 
