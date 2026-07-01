@@ -215,8 +215,21 @@ test("Resize repaint uses the scrollback-inclusive transcript clear, not a viewp
   // A width grow re-exposes the pre-resize frame from scrollback; the resize repaint
   // must erase scrollback too (transcriptClear / \x1b[3J), matching the /clear path.
   // Otherwise the old frame stacks behind the new one on GNOME Terminal.
-  assert.match(clearBoundarySource, /clearTranscript\(`\$\{source\}:resizeRefresh`\)/, "resize repaint clears the transcript (scrollback-inclusive)");
-  assert.doesNotMatch(clearBoundarySource, /clearViewport\(`\$\{source\}/, "resize repaint must not use a viewport-only clear");
+  assert.match(
+    clearBoundarySource,
+    /commitAuthoritativeFrame\(output, outputHeight, staticOutput, "transcript", "resizeRefresh"\)/,
+    "resize repaint clears the transcript (scrollback-inclusive)",
+  );
+  // Viewport-only clears are reserved for the alternate screen buffer, which has
+  // no scrollback (overlay enter / overlay resize) — never for the transcript.
+  const viewportClearReasons = [...clearBoundarySource.matchAll(/clearViewport\(`\$\{source\}:([a-zA-Z]+)`\)/g)]
+    .map((match) => match[1]);
+  assert.ok(viewportClearReasons.length > 0, "overlay paths home/clear the alternate buffer");
+  assert.equal(
+    viewportClearReasons.every((reason) => reason?.startsWith("overlay")),
+    true,
+    `viewport-only clears must be overlay-scoped, got: ${viewportClearReasons.join(", ")}`,
+  );
 });
 
 test("/clear fallback preserves clear-then-reset ordering when boundary cannot arm", () => {

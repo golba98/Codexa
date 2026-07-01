@@ -401,6 +401,12 @@ export function App({ launchArgs }: AppProps) {
     [launchContext],
   );
   const terminalLayout = useTerminalViewport();
+  // Assigned during render (like screenRef) so the clear-frame boundary can
+  // tell, at frame-write time, whether the committing tree was laid out
+  // against the current terminal width (the viewport hook commits dimensions
+  // on a trailing settle, so frames can lag stdout.columns).
+  const terminalLayoutColsRef = useRef<number | undefined>(terminalLayout.rawCols ?? terminalLayout.cols);
+  terminalLayoutColsRef.current = terminalLayout.rawCols ?? terminalLayout.cols;
 
   // ─── State & Refs ────────────────────────────────────────────────────────────
 
@@ -461,6 +467,11 @@ export function App({ launchArgs }: AppProps) {
   // at the new width instead of staying erased — Ink's <Static> never
   // re-emits items on its own once flushed.
   const [staticRepaintGeneration, bumpStaticRepaintGeneration] = useState(0);
+  // Assigned during render (like screenRef) so the clear-frame boundary can
+  // tell, at frame-write time, whether the committing tree already contains
+  // the re-flushed <Static> content for a pending width repaint.
+  const staticRepaintGenerationRef = useRef(0);
+  staticRepaintGenerationRef.current = staticRepaintGeneration;
   const { state: sessionState, dispatch: dispatchSession } = useAppSessionState(() => {
     return createStartupStaticEvents({
       launchContext,
@@ -486,7 +497,12 @@ export function App({ launchArgs }: AppProps) {
       terminalControl,
       stdout,
       source: "src/app.tsx:clearBoundary",
+      // Read at frame-write time; screenRef is assigned during render, so it
+      // always reflects the render that produced the frame being written.
+      isOverlayActive: () => screenRef.current !== "main",
       onWidthResizeRefresh: () => bumpStaticRepaintGeneration((tick) => tick + 1),
+      getRenderedRepaintGeneration: () => staticRepaintGenerationRef.current,
+      getRenderedLayoutCols: () => terminalLayoutColsRef.current,
     }),
     [inkInstance, stdout, terminalControl],
   );
@@ -564,11 +580,19 @@ export function App({ launchArgs }: AppProps) {
   }, [effectiveMouseCapture, terminalControl]);
 
   useLayoutEffect(() => {
+    // The clear-frame boundary owns alternate-screen switching so the buffer
+    // flip happens atomically with the first frame of the new screen (see
+    // clearFrameBoundary.ts). Toggling from an effect would run after Ink has
+    // already written that frame into the wrong buffer — the overlay would
+    // land in the normal buffer's scrollback and the alt screen would open
+    // blank. This effect is only a fallback for environments where no live
+    // Ink instance could be resolved (tests, exotic Ink versions).
+    if (clearFrameBoundaryController) return;
     terminalControl.setAlternateScreen(
       overlayMode,
       overlayMode ? "src/app.tsx:overlay.enterAlternateScreen" : "src/app.tsx:overlay.exitAlternateScreen",
     );
-  }, [overlayMode, terminalControl]);
+  }, [clearFrameBoundaryController, overlayMode, terminalControl]);
 
   useEffect(() => {
     return () => {
