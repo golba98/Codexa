@@ -661,8 +661,10 @@ test("native transcript parts keep all actions in liveRows during active run", (
   const staticKeys = parts.staticItems.flatMap((item) => item.rows.map((row) => row.key));
   const liveKeys = parts.liveRows.map((row) => row.key);
 
-  // User prompt is always committed to staticItems immediately.
-  assert.ok(staticKeys.some((key) => key.includes("-user-")));
+  // During an active run the user prompt stays in liveRows with the streamed
+  // output so <Static> does not grow at submit time and shift the viewport.
+  assert.equal(staticKeys.some((key) => key.includes("-user-")), false);
+  assert.ok(liveKeys.some((key) => key.includes("-user-")));
   // During an active run both completed and running actions stay in liveRows —
   // no stream events go to staticItems, which prevents <Static> growth and viewport jumps.
   assert.equal(staticKeys.some((key) => key.includes("-action-1-")), false);
@@ -737,9 +739,9 @@ test("running run keeps append-only stream events in liveRows and defers reasoni
 
   const parts = buildNativeTranscriptParts([item], { totalWidth: 80, debugLabel: "running-placement" });
 
-  // User prompt is always committed to staticItems immediately (correct behavior).
+  // User prompt stays with the live turn while a run is active.
   const staticKeys = parts.staticItems.flatMap((si) => si.rows.map((r) => r.key));
-  assert.ok(staticKeys.some((k) => k.includes("-user-")), "user row should be in staticItems");
+  assert.equal(staticKeys.some((k) => k.includes("-user-")), false, "user row should not grow staticItems during an active run");
 
   // Append-only stream events (actions, responses) must be in liveRows — not in
   // staticItems — while the run is active, so <Static> doesn't grow and shift the
@@ -754,6 +756,7 @@ test("running run keeps append-only stream events in liveRows and defers reasoni
   );
 
   const liveKeys = parts.liveRows.map((r) => r.key);
+  assert.ok(liveKeys.some((k) => k.includes("-user-")), "user row should be in liveRows during an active run");
   assert.ok(liveKeys.some((k) => k.includes("-action-1-")), "completed action should be in liveRows");
   assert.ok(liveKeys.some((k) => k.includes("-action-2-")), "running action should be in liveRows");
   assert.ok(
@@ -812,6 +815,7 @@ test("completed run moves all stream events to staticItems — one atomic commit
 
   // After run completes, all stream events must be in staticItems.
   const staticItemKeys = parts.staticItems.map((si) => si.key);
+  assert.ok(staticItemKeys.some((k) => k.includes("-user")), "user prompt should be committed to staticItems after completion");
   assert.ok(staticItemKeys.some((k) => k.includes("-stream-1")), "action 1 should be in staticItems");
   assert.ok(staticItemKeys.some((k) => k.includes("-stream-2")), "action 2 should be in staticItems");
 

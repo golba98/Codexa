@@ -88,6 +88,7 @@ export interface IntroRenderTimelineItem {
     startupHeaderMode?: StartupHeaderMode;
     authLabel: string;
     workspaceLabel: string;
+    providerLabel?: string | null;
   };
 }
 
@@ -103,7 +104,7 @@ const HOME_KEY_INPUTS = new Set(["\u001b[H", "\u001b[1~", "\u001bOH", "\u001b[1;
 const END_KEY_INPUTS = new Set(["\u001b[F", "\u001b[4~", "\u001bOF", "\u001b[1;5F", "\u001b[1;2F"]);
 const CTRL_HOME_KEY_INPUTS = new Set(["\u001b[1;5H", "\u001b[H"]);
 const CTRL_END_KEY_INPUTS = new Set(["\u001b[1;5F", "\u001b[F"]);
-const SGR_WHEEL_EVENT_PATTERN = /\u001b\[<(\d+);(\d+);(\d+)([Mm])/g;
+const SGR_WHEEL_EVENT_PATTERN = /\u001b\[<(\d+);(\d+);(\d+)(?:;(\d+))?([Mm])/g;
 const STABLE_RENDER_ENABLED = process.env.CODEXA_STABLE_RENDER !== "0";
 
 type TimelineNavigationAction = "pageUp" | "pageDown" | "home" | "end" | "wheelUp" | "wheelDown";
@@ -689,6 +690,10 @@ export function scrollTimelineViewport(
 
   let nextAnchor = currentAnchor + deltaRows;
 
+  if (deltaRows > 0 && isNearBottom(nextAnchor, frozenSnapshot.totalRows)) {
+    return createFollowTailViewport(liveSnapshot.totalRows);
+  }
+
   if (nextAnchor >= tailRow) {
     return createFollowTailViewport(liveSnapshot.totalRows);
   }
@@ -734,12 +739,17 @@ export function parseWheelScrollDirections(raw: string): Array<"up" | "down"> {
 
   for (const match of raw.matchAll(SGR_WHEEL_EVENT_PATTERN)) {
     const code = Number.parseInt(match[1] ?? "", 10);
-    const terminator = match[4];
+    const terminator = match[5];
     if (terminator !== "M" || Number.isNaN(code) || (code & 64) !== 64) {
       continue;
     }
 
-    directions.push((code & 1) === 0 ? "up" : "down");
+    const direction = (code & 1) === 0 ? "up" : "down";
+    const delta = match[4] ? Math.max(1, Number.parseInt(match[4], 10)) : 1;
+
+    for (let i = 0; i < delta; i++) {
+      directions.push(direction);
+    }
   }
 
   return directions;
@@ -907,6 +917,7 @@ export function buildIntroRenderItem(params: {
   workspaceLabel: string;
   layout: Layout;
   startupHeaderMode?: StartupHeaderMode;
+  providerLabel?: string | null;
 }): IntroRenderTimelineItem {
   return {
     key: "codexa-intro",
@@ -918,6 +929,7 @@ export function buildIntroRenderItem(params: {
       startupHeaderMode: params.startupHeaderMode,
       authLabel: formatAuthLabel(params.authState),
       workspaceLabel: params.workspaceLabel,
+      providerLabel: params.providerLabel ?? null,
     },
   };
 }

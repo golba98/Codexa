@@ -14,10 +14,8 @@ import { resolveWorkspaceRoot } from "./core/workspace/workspaceRoot.js";
 import {
   createTerminalModeController,
   TERMINAL_SEQUENCES,
-  traceTerminalClear,
   writeTerminalControl,
 } from "./core/terminal/terminalControl.js";
-import { performStartupClear } from "./core/terminal/startupClear.js";
 import { resolveInkRenderInstance, type InkRenderInstance } from "./core/terminal/inkRenderReset.js";
 import { wrapStdoutWithFrameLock } from "./core/terminal/frameLock.js";
 
@@ -137,18 +135,8 @@ export function startApp({
     return { started: false, exitCode: 1 };
   }
   const launchArgs: LaunchArgs = parsedLaunchArgs.value;
-  // Clear the screen (viewport + scrollback) and move cursor home before Ink
-  // renders the first frame.  This removes any previous terminal content so
-  // the app opens into a clean screen.  We stay in the normal screen buffer
-  // (no \x1b[?1049h) to preserve mouse text selection after exit.
-  // Skipped when --no-clear or CODEXA_NO_CLEAR=1 is set.
-  // NOTE: Mouse reporting is NOT enabled here — managed solely by app.tsx.
-  traceTerminalClear("src/index.tsx:startup", { mode: "transcript" });
-  performStartupClear({
-    write: (c) => writeStdout(c, "src/index.tsx:startup"),
-    noClear: launchArgs.noClear,
-    env,
-  });
+  // Main chat is a normal-screen transcript. Do not clear viewport or
+  // scrollback before the first render; let the intro append like CLI output.
   const startupWorkspaceRoot = resolveWorkspaceRoot();
   const startupSettings = loadSettings();
   const startupTitle =
@@ -159,7 +147,6 @@ export function startApp({
     write: (chunk) => writeStdout(chunk, "src/index.tsx:startup.title"),
   });
   terminal.setBracketedPaste(true, "src/index.tsx:startup.bracketedPaste");
-  terminal.setAlternateScreen(true, "src/index.tsx:startup.alternateScreen");
 
   let cleanupDone = false;
   let repaintArmed = false;

@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, useStdin } from "ink";
+import { Box, Text, useInput, useStdin } from "ink";
 import { useTheme } from "./theme.js";
 import type { RuntimeSummary } from "../config/runtimeConfig.js";
 import type { CodexAuthState } from "../core/auth/codexAuth.js";
@@ -27,20 +27,38 @@ import {
 } from "./layout.js";
 import {
   buildActiveRenderItems,
+  buildIntroRenderItem,
   buildStaticRenderItems,
   buildTimelineItems,
+  createFollowTailViewport,
+  endTimelineViewport,
+  halfPageDownTimelineViewport,
+  halfPageUpTimelineViewport,
+  homeTimelineViewport,
+  pageDownTimelineViewport,
+  pageUpTimelineViewport,
   parseTimelineNavigationInput,
+  reflowTimelineViewport,
+  scrollTimelineViewport,
+  selectTimelineRows,
+  stepDownTimelineViewport,
+  stepUpTimelineViewport,
   Timeline,
   TimelineRowView,
   type TimelineItem,
+  type TimelineViewportState,
 } from "./Timeline.js";
-import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow } from "./timelineMeasure.js";
+import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow, type TimelineSnapshot } from "./timelineMeasure.js";
 import type { TerminalSelectionProfile } from "../core/terminal/terminalSelection.js";
 import { MemoizedTopHeader, measureTopHeaderRows, type UpdateAvailableInfo } from "./TopHeader.js";
 
 const COMPACT_HEADER_TO_COMPOSER_GAP_ROWS = 1;
 const MEDIUM_HEADER_TO_COMPOSER_GAP_ROWS = 1;
 const TALL_HEADER_TO_COMPOSER_GAP_ROWS = 1;
+const WHEEL_SCROLL_STEP = 3;
+const MOUSE_CLICK_EVENT_PATTERN = /\u001b\[<(\d+);(\d+);(\d+)(?:;(\d+))?([Mm])/g;
+const HOME_KEY_INPUTS = new Set(["\u001b[H", "\u001b[1~", "\u001bOH", "\u001b[1;5H", "\u001b[1;2H"]);
+const END_KEY_INPUTS = new Set(["\u001b[F", "\u001b[4~", "\u001bOF", "\u001b[1;5F", "\u001b[1;2F"]);
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
@@ -139,16 +157,64 @@ function NativeRowsItem({ rows }: { rows: TimelineRow[] }) {
   );
 }
 
-function NativePauseBar({ unseenRows }: { unseenRows: number }) {
+function BackToBottomBar({ unseenRows }: { unseenRows: number }) {
+  const theme = useTheme();
   return (
     <Box width="100%" paddingX={1}>
-      <Text dimColor>
+      <Text color={theme.info}>
         {unseenRows > 0
-          ? `↓  ${unseenRows} new rows · End to follow`
-          : "↓  New output · End to follow"}
+          ? `↓  Back to bottom (${unseenRows} new rows) · End`
+          : "↓  Back to bottom · End"}
       </Text>
     </Box>
   );
+}
+
+function rowItemsToSnapshot(items: NativeStaticItem[], liveRows: TimelineRow[]): TimelineSnapshot {
+  const itemRows = items.map((item) => item.rows);
+  const rows = [...itemRows.flat(), ...liveRows];
+  return {
+    items: [
+      ...items.map((item) => ({
+        key: item.key,
+        rows: item.rows,
+        rowCount: item.rows.length,
+      })),
+      ...(liveRows.length > 0 ? [{
+        key: "live",
+        rows: liveRows,
+        rowCount: liveRows.length,
+      }] : []),
+    ],
+    rows,
+    totalRows: rows.length,
+    itemCount: items.length + (liveRows.length > 0 ? 1 : 0),
+  };
+}
+
+function hasBackToBottomClick(raw: string, viewportRows: number): boolean {
+  for (const match of raw.matchAll(MOUSE_CLICK_EVENT_PATTERN)) {
+    const code = Number.parseInt(match[1] ?? "", 10);
+    const y = Number.parseInt(match[3] ?? "", 10);
+    const terminator = match[5];
+    if (terminator !== "M" || Number.isNaN(code) || Number.isNaN(y)) {
+      continue;
+    }
+    const isWheel = (code & 64) === 64;
+    const isRelease = (code & 3) === 3;
+    if (!isWheel && !isRelease && y >= Math.max(1, viewportRows)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isHomeInput(input: string): boolean {
+  return HOME_KEY_INPUTS.has(input);
+}
+
+function isEndInput(input: string): boolean {
+  return END_KEY_INPUTS.has(input);
 }
 
 function CrampedView({ layout }: { layout: Layout }) {
@@ -279,31 +345,50 @@ function AppShellInner({
     shellWidth: number;
   } | null>(null);
 
-  // ── Native mode scroll-pause state ────────────────────────────────────────
-  // When the user presses Page Up or Home during streaming, we freeze nativeAllRows
-  // so Ink's lastOutputHeight stays constant and the terminal stops auto-scrolling.
-  const [nativePaused, setNativePaused] = useState(false);
-  const nativePausedRef = useRef(false);
-  const frozenNativeRowsRef = useRef<TimelineRow[]>([]);
-  const frozenLiveRowCountRef = useRef(0);
+  // ── Main-chat scrollback state ────────────────────────────────────────────
+  // The main chat has two modes:
+  // - follow-tail: live bottom chrome is visible and focused.
+  // - detached: the transcript viewport owns the screen; only Back to bottom stays visible.
+  const [scrollbackViewport, setScrollbackViewport] = useState<TimelineViewportState>(() => createFollowTailViewport(0));
+  const scrollbackSnapshotRef = useRef<TimelineSnapshot>({ items: [], rows: [], totalRows: 0, itemCount: 0 });
+  const scrollbackRowsRef = useRef(1);
+  const snapshotWidthRef = useRef(shellWidth);
   const { stdin } = useStdin();
 
   useEffect(() => {
-    nativePausedRef.current = nativePaused;
-  }, [nativePaused]);
-
-  useEffect(() => {
     const handleRawInput = (chunk: Buffer | string) => {
-      if (!showTimeline || !isBusy(uiState)) return;
+      if (!showTimeline) return;
       const raw = typeof chunk === "string" ? chunk : chunk.toString();
       const actions = parseTimelineNavigationInput(raw);
-      if (actions.length === 0) return;
+      const snapshot = scrollbackSnapshotRef.current;
+      if (snapshot.totalRows === 0) return;
 
-      if (actions.some((action) => action === "pageUp" || action === "home" || action === "wheelUp")) {
-        setNativePaused(true);
-      } else if (actions.some((action) => action === "pageDown" || action === "end" || action === "wheelDown")) {
-        setNativePaused(false);
+      if (hasBackToBottomClick(raw, scrollbackRowsRef.current) || actions.includes("end")) {
+        setScrollbackViewport(endTimelineViewport(snapshot.totalRows));
+        return;
       }
+
+      if (actions.length === 0) {
+        return;
+      }
+
+      setScrollbackViewport((current) => {
+        let next = current;
+        for (const action of actions) {
+          if (action === "pageUp") {
+            next = pageUpTimelineViewport(next, snapshot, scrollbackRowsRef.current);
+          } else if (action === "pageDown") {
+            next = pageDownTimelineViewport(next, snapshot, scrollbackRowsRef.current);
+          } else if (action === "home") {
+            next = homeTimelineViewport(next, snapshot, scrollbackRowsRef.current);
+          } else if (action === "wheelUp") {
+            next = scrollTimelineViewport(next, snapshot, scrollbackRowsRef.current, -WHEEL_SCROLL_STEP);
+          } else if (action === "wheelDown") {
+            next = scrollTimelineViewport(next, snapshot, scrollbackRowsRef.current, WHEEL_SCROLL_STEP);
+          }
+        }
+        return next;
+      });
     };
 
     if (stdin.isTTY) {
@@ -312,16 +397,54 @@ function AppShellInner({
         stdin.off("data", handleRawInput);
       };
     }
-  }, [stdin, uiState, showTimeline]);
+  }, [stdin, showTimeline]);
 
-  // Auto-unpause when busy state ends.
-  useEffect(() => {
-    if (!isBusy(uiState) && nativePaused) {
-      setNativePaused(false);
+  useInput((input, key) => {
+    if (!showTimeline) return;
+    const snapshot = scrollbackSnapshotRef.current;
+    if (snapshot.totalRows === 0) return;
+
+    if (key.end || isEndInput(input)) {
+      setScrollbackViewport(endTimelineViewport(snapshot.totalRows));
+      return;
     }
-  }, [uiState, nativePaused]);
 
-  // ── End native mode scroll-pause state ────────────────────────────────────
+    if (key.pageUp) {
+      setScrollbackViewport((current) => pageUpTimelineViewport(current, snapshot, scrollbackRowsRef.current));
+      return;
+    }
+
+    if (key.pageDown) {
+      setScrollbackViewport((current) => pageDownTimelineViewport(current, snapshot, scrollbackRowsRef.current));
+      return;
+    }
+
+    if (key.ctrl && input === "u") {
+      setScrollbackViewport((current) => halfPageUpTimelineViewport(current, snapshot, scrollbackRowsRef.current));
+      return;
+    }
+
+    if (key.ctrl && input === "d") {
+      setScrollbackViewport((current) => halfPageDownTimelineViewport(current, snapshot, scrollbackRowsRef.current));
+      return;
+    }
+
+    if ((key.meta && key.upArrow) || input === "\u001b\u001b[A" || input === "\u001b[1;3A") {
+      setScrollbackViewport((current) => stepUpTimelineViewport(current, snapshot, scrollbackRowsRef.current));
+      return;
+    }
+
+    if ((key.meta && key.downArrow) || input === "\u001b\u001b[B" || input === "\u001b[1;3B") {
+      setScrollbackViewport((current) => stepDownTimelineViewport(current, snapshot, scrollbackRowsRef.current));
+      return;
+    }
+
+    if (key.home || isHomeInput(input)) {
+      setScrollbackViewport((current) => homeTimelineViewport(current, snapshot, scrollbackRowsRef.current));
+    }
+  });
+
+  // ── End main-chat scrollback state ────────────────────────────────────────
 
   const effectiveShowComposer = showComposer;
   const panelHintRows = showPanelStage && panelHint ? 2 : 0;
@@ -364,13 +487,9 @@ function AppShellInner({
     };
   }, [shellHeight, shellWidth, finalTimelineRows]);
 
-  // ─── Native mode transcript ───────────────────────────────────────────────
+  // ─── Main-chat scrollback transcript ─────────────────────────────────────
 
   const nativeTranscriptParts = useMemo(() => {
-    if (mouseCapture) {
-      return { staticItems: [], liveRows: [] };
-    }
-
     const staticItems = buildTimelineItems(staticEvents);
     const activeItems = buildTimelineItems(activeEvents);
     const turnIds = [...staticItems, ...activeItems]
@@ -379,6 +498,7 @@ function AppShellInner({
 
     const parts = buildNativeTranscriptParts(
       [
+        buildIntroRenderItem({ authState, workspaceLabel, layout }),
         ...buildStaticRenderItems(staticItems, turnIds, null, null, null),
         ...buildActiveRenderItems(activeItems, turnIds, uiState),
       ],
@@ -395,7 +515,7 @@ function AppShellInner({
     }
 
     return parts;
-  }, [activeEvents, finalShellWidth, mouseCapture, showTimeline, staticEvents, uiState, verboseMode, workspaceRoot]);
+  }, [activeEvents, authState, finalShellWidth, layout, showTimeline, staticEvents, uiState, verboseMode, workspaceLabel, workspaceRoot]);
 
   // ─── Spacer logic for native mode ─────────────────────────────────────────
 
@@ -405,7 +525,7 @@ function AppShellInner({
   );
 
   const nativeSpacerRows = useMemo(() => {
-    if (mouseCapture || !effectiveShowComposer || showMainPanel) return 0;
+    if (!effectiveShowComposer || showMainPanel) return 0;
     const rows = calculateNativeSpacerRows({
       shellRows: finalShellHeight,
       introRows: headerRows + headerToContentGapRows,
@@ -423,43 +543,68 @@ function AppShellInner({
       });
     }
     return rows;
-  }, [mouseCapture, effectiveShowComposer, showMainPanel, finalShellHeight, headerRows, headerToContentGapRows, bottomChromeRows, layout.mode, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
+  }, [effectiveShowComposer, showMainPanel, finalShellHeight, headerRows, headerToContentGapRows, bottomChromeRows, layout.mode, nativeStaticTranscriptRows, nativeTranscriptParts.liveRows.length, hasUserPrompt]);
 
   const nativeStaticAllItems = useMemo<NativeStaticItem[]>(
     () => {
-      if (mouseCapture) return [];
       return nativeTranscriptParts.staticItems.map((item) => ({ ...item, type: "rows" as const }));
     },
-    [mouseCapture, nativeTranscriptParts.staticItems],
+    [nativeTranscriptParts.staticItems],
   );
 
   const nativeAllRows = useMemo<TimelineRow[]>(
     () => {
-      if (mouseCapture) return [];
-
       const allStaticRows = nativeStaticAllItems.flatMap((item) => item.rows);
-      const maxStaticRows = finalShellHeight > 0 ? finalShellHeight * 2 : allStaticRows.length;
-      const trimmedStaticRows = allStaticRows.slice(Math.max(0, allStaticRows.length - maxStaticRows));
-
       const liveRows = showTimeline ? nativeTranscriptParts.liveRows : [];
-
-      if (nativePaused) {
-        return frozenNativeRowsRef.current;
-      }
-
       const rows = [
-        ...trimmedStaticRows,
+        ...allStaticRows,
         ...liveRows,
       ];
-      frozenLiveRowCountRef.current = liveRows.length;
-      frozenNativeRowsRef.current = rows;
       return rows;
     },
-    [mouseCapture, nativePaused, nativeStaticAllItems, nativeTranscriptParts.liveRows, showTimeline, finalShellHeight],
+    [nativeStaticAllItems, nativeTranscriptParts.liveRows, showTimeline],
   );
 
-  const nativeUnseenRows = nativePaused
-    ? Math.max(0, (showTimeline ? nativeTranscriptParts.liveRows.length : 0) - frozenLiveRowCountRef.current)
+  const scrollbackSnapshot = useMemo(
+    () => rowItemsToSnapshot(nativeStaticAllItems, showTimeline ? nativeTranscriptParts.liveRows : []),
+    [nativeStaticAllItems, nativeTranscriptParts.liveRows, showTimeline],
+  );
+  const scrollbackViewportRows = Math.max(1, finalShellHeight - 1);
+
+  useEffect(() => {
+    scrollbackSnapshotRef.current = scrollbackSnapshot;
+  }, [scrollbackSnapshot]);
+
+  useEffect(() => {
+    scrollbackRowsRef.current = scrollbackViewportRows;
+  }, [scrollbackViewportRows]);
+
+  useEffect(() => {
+    setScrollbackViewport(createFollowTailViewport(scrollbackSnapshot.totalRows));
+  }, [clearCount, scrollbackSnapshot.totalRows]);
+
+  useEffect(() => {
+    const widthChanged = snapshotWidthRef.current !== finalShellWidth;
+    snapshotWidthRef.current = finalShellWidth;
+    setScrollbackViewport((current) => {
+      if (widthChanged && !current.followTail) {
+        return reflowTimelineViewport(current, scrollbackSnapshot);
+      }
+      return current.followTail
+        ? createFollowTailViewport(scrollbackSnapshot.totalRows)
+        : current;
+    });
+  }, [finalShellWidth, scrollbackSnapshot]);
+
+  const { visibleRows: scrollbackVisibleRows, sourceSnapshot: scrollbackSourceSnapshot } = useMemo(
+    () => selectTimelineRows(scrollbackSnapshot, scrollbackViewport, scrollbackViewportRows),
+    [scrollbackSnapshot, scrollbackViewport, scrollbackViewportRows],
+  );
+
+  const isAtBottom = scrollbackViewport.followTail;
+  const showScrollbackMode = showTimeline && !isAtBottom;
+  const nativeUnseenRows = showScrollbackMode
+    ? Math.max(0, scrollbackSnapshot.totalRows - scrollbackSourceSnapshot.totalRows)
     : 0;
 
   useEffect(() => {
@@ -510,6 +655,32 @@ function AppShellInner({
       availableCols: appLayoutBudget.activePanelCols,
     };
   }, [appLayoutBudget.mode, appLayoutBudget.activePanelRows, appLayoutBudget.activePanelCols]);
+
+  if (showScrollbackMode) {
+    const rowsForDisplay = scrollbackVisibleRows.slice(0, Math.max(0, scrollbackViewportRows - 1));
+    const scrollbackContent = (
+      <Box flexDirection="column" width={contentWidth} height={finalShellHeight}>
+        <Box flexDirection="column" height={Math.max(1, finalShellHeight - 1)} overflow="hidden">
+          <NativeRowsItem rows={rowsForDisplay} />
+        </Box>
+        <BackToBottomBar unseenRows={nativeUnseenRows} />
+      </Box>
+    );
+
+    if (shellWidth > contentWidth) {
+      return (
+        <Box flexDirection="column" width="100%" height={finalShellHeight} alignItems="center">
+          {scrollbackContent}
+        </Box>
+      );
+    }
+
+    return (
+      <Box flexDirection="column" width="100%" height={finalShellHeight}>
+        {scrollbackContent}
+      </Box>
+    );
+  }
 
   const mainContent = (
     <AppLayoutBudgetContext.Provider value={appLayoutBudget}>
@@ -579,9 +750,6 @@ function AppShellInner({
 
       {effectiveShowComposer && (
         <Box flexDirection="column" flexShrink={0}>
-          {nativePaused && (
-            <NativePauseBar unseenRows={nativeUnseenRows} />
-          )}
           {clonedComposer}
         </Box>
       )}

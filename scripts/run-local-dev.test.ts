@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { resolveLocalDevEntry } from "./run-local-dev.mjs";
+import { resolveLocalDevEntry, shouldClearTerminalOnLaunch } from "./run-local-dev.mjs";
 import { createCodexaDevShim, SHIM_NAMES } from "./install-local-dev-bin.mjs";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
@@ -37,6 +37,19 @@ test("resolveLocalDevEntry resolves --headless-benchmark to src/exec.ts", () => 
   assert.equal(resolved.isHeadlessMode, true);
   assert.equal(resolved.isHeadlessBenchmark, true);
   assert.equal(resolved.entry, join(repoRoot, "src", "exec.ts"));
+});
+
+test("shouldClearTerminalOnLaunch clears for a plain interactive TTY launch", () => {
+  assert.equal(shouldClearTerminalOnLaunch(false, true), true);
+});
+
+test("shouldClearTerminalOnLaunch does not clear for headless (exec/benchmark) launches", () => {
+  assert.equal(shouldClearTerminalOnLaunch(true, true), false);
+});
+
+test("shouldClearTerminalOnLaunch does not clear when stdout is not a TTY (piped/redirected)", () => {
+  assert.equal(shouldClearTerminalOnLaunch(false, false), false);
+  assert.equal(shouldClearTerminalOnLaunch(false, undefined), false);
 });
 
 test("createCodexaDevShim installs both codexa-dev and cxd pointing at the local launcher", () => {

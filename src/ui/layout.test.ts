@@ -68,11 +68,14 @@ test("responsive layout breakpoints and budgeting spec assertions", () => {
   assert.equal(budget100x22.headerRows, 6);
   assert.equal(budget100x22.headerGapRows, 0);
   assert.equal(budget100x22.panelStagePaddingY, 0);
-  assert.equal(budget100x22.composerRows, 3);
+  // Default composerRows (4, from AppLayoutBudgetParams) is honored as-is in
+  // compact mode too — it must never be overridden with an arbitrary hardcode,
+  // since that's what let the composer drift out of sync with its real height.
+  assert.equal(budget100x22.composerRows, 4);
   assert.equal(budget100x22.bottomChromeBudget.runtimeMetadataRows, 1);
-  assert.equal(budget100x22.bottomChromeBudget.composerRows, 3);
+  assert.equal(budget100x22.bottomChromeBudget.composerRows, 4);
   assert.equal(budget100x22.bottomChromeBudget.transientStatusRows, 0);
-  assert.equal(budget100x22.bottomChromeBudget.totalRows, 4);
+  assert.equal(budget100x22.bottomChromeBudget.totalRows, 5);
   assert.ok(budget100x22.activePanelRows >= 6, `expected activePanelRows >= 6, got ${budget100x22.activePanelRows}`);
 
   // 80x24 spec assertions

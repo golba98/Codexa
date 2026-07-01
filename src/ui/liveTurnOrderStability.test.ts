@@ -245,14 +245,21 @@ test("a streaming turn never reorders its live blocks; reasoning reflows in only
   assertAppendOnly(f3, f4, "f3->f4");
   assert.deepEqual(f4, ["action-2", "action-3", "response-4"], "final live order");
 
-  // ── No clipped/empty bordered action-card fragment at the top ───────────────
-  // The first live row must belong to the top action card, and that card must
-  // render real content (not a lone border fragment).
+  // ── No clipped/empty bordered action-card fragment after the prompt ─────────
+  // The active prompt owns the first live rows until the run finalizes. The first
+  // stream block after it must be the top action card, and that card must render
+  // real content (not a lone border fragment).
   const liveRows = nativeParts(run, user, "streaming").liveRows;
+  assert.ok(
+    liveRows[0]?.key.includes("-user-"),
+    "active prompt should stay in liveRows while the run is streaming",
+  );
+  const firstStreamRow = liveRows.find((row) => blockIdFromKey(row.key) !== null);
+  assert.ok(firstStreamRow, "expected a live stream row after the active prompt");
   assert.equal(
-    blockIdFromKey(liveRows[0]!.key),
+    blockIdFromKey(firstStreamRow.key),
     "action-2",
-    "first live row must be the top action card, not a stray fragment",
+    "first stream row after the prompt must be the top action card, not a stray fragment",
   );
   const topCardRows = liveRows.filter((row) => blockIdFromKey(row.key) === "action-2");
   assert.ok(

@@ -307,7 +307,7 @@ export function computeAppLayoutBudget({
   const resolvedHeaderRows = headerRows ?? (showNormalLogo ? 6 : 1);
   const resolvedHeaderGapRows = headerGapRows ?? (mode === "compact" ? 0 : 1);
   const panelStagePaddingY = mode === "compact" ? 0 : 1;
-  const resolvedComposerRows = mode === "compact" ? 3 : Math.max(0, composerRows);
+  const resolvedComposerRows = Math.max(0, composerRows);
   const runtimeMetadataRows = 1;
   const transientStatusRows = 0;
   const bottomPaddingRows = mode === "compact" ? 0 : 1;
@@ -327,7 +327,7 @@ export function computeAppLayoutBudget({
 
   const activePanelRows = Math.max(1, shellHeight - baseReservedRows);
   const contentWidth = getContentWidth(safeCols);
-  
+
   const isCompact = mode === "compact";
   const borderRows = 2;
   const titleRows = 1;
@@ -353,7 +353,7 @@ export function computeAppLayoutBudget({
     showCompactHeader,
     placeMetadataBesideLogo,
     placeMetadataBelowLogo,
-    
+
     // Backward compatibility fields:
     transcriptRows: activePanelRows,
     panelRows: innerAvailableRows,
@@ -434,7 +434,7 @@ export function advanceTerminalViewport(
   isResizing = false,
 ): TerminalViewport {
   const next = createTerminalViewport(cols, rows, current, isResizing);
-  
+
   if (process.env.CODEXA_LAYOUT_DEBUG === "1") {
     renderDebug.traceEvent("layout", "advanceViewport", {
       cols: next.cols,
