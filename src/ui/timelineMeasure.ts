@@ -25,7 +25,7 @@ import { selectVisibleRunActivity } from "./runActivityView.js";
 import { getTextUnits, getTextWidth, wrapPlainText, wrapCommandText, splitTextAtColumn } from "./textLayout.js";
 import type { RenderTimelineItem } from "./Timeline.js";
 import { normalizePlanReviewMarkdown } from "../core/workspace/planStorage.js";
-import { selectLogoVariant, LOGO_LARGE_MIN_COLS } from "./logoVariants.js";
+import { LOGO_COMPACT, LOGO_LARGE_MIN_COLS, selectLogoVariant } from "./logoVariants.js";
 
 // ─── Exported types ───────────────────────────────────────────────────────────
 
@@ -1592,14 +1592,17 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
 
   const logoRows = startupHeaderMode === "large"
     ? selectLogoVariant(safeWidth)
-    : selectLogoVariant(0); // text-only fallback for compact mode
+    : selectLogoVariant(safeWidth);
   const effectiveLogoRows = logoRows.length > 0 ? logoRows : ["CODEXA"];
+  if (startupHeaderMode === "large") {
+    rows.push(createBlankRow(`${item.key}-top-gap`, safeWidth));
+  }
   const logoWidth = effectiveLogoRows.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
   const workspaceName = getWorkspaceDisplayName(intro.workspaceLabel);
   const metaLines = [
     `Codexa v${intro.version}`,
-    `Auth: ${intro.authLabel}`,
     workspaceName ? `Workspace: ${workspaceName}` : null,
+    intro.providerLabel ? `Provider: ${intro.providerLabel}` : `Auth: ${intro.authLabel}`,
   ].filter((line): line is string => Boolean(line));
   const gapWidth = 2;
   const widestMetaLine = metaLines.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
@@ -1622,6 +1625,8 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
       if (effectiveLogoRows.length === 6) {
         if (rowIndex === 2 || rowIndex === 3) logoTone = "logoSecondary";
         else if (rowIndex === 4 || rowIndex === 5) logoTone = "logoShadow";
+      } else if (effectiveLogoRows === LOGO_COMPACT) {
+        logoTone = "accent";
       }
       // No bold on logo spans — bold on block/box-drawing chars causes spacing artifacts.
       const spans = [
@@ -1645,6 +1650,8 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
       if (effectiveLogoRows.length === 6) {
         if (index === 2 || index === 3) logoTone = "logoSecondary";
         else if (index === 4 || index === 5) logoTone = "logoShadow";
+      } else if (effectiveLogoRows === LOGO_COMPACT) {
+        logoTone = "accent";
       }
       rows.push(createRow(
         `${item.key}-logo-${index}`,
@@ -2528,8 +2535,10 @@ function buildStableIntroRows(item: Extract<RenderTimelineItem, { type: "intro" 
     innerWidth,
     item.intro.version,
     item.intro.layoutMode,
+    item.intro.startupHeaderMode ?? "",
     item.intro.authLabel,
     textCacheToken(item.intro.workspaceLabel),
+    item.intro.providerLabel ?? "",
   ]);
   return getCachedFrozenRows(cacheKey, () => buildIntroRows(item, innerWidth));
 }
@@ -3026,7 +3035,7 @@ export function buildTimelineSnapshot(
     let builtRows: TimelineRow[];
 
     if (item.type === "intro") {
-      const cacheKey = `i:${item.key}:${innerWidth}:${item.intro.version}:${item.intro.layoutMode}:${item.intro.startupHeaderMode ?? ""}:${item.intro.authLabel}:${item.intro.workspaceLabel}:v${LOGO_LARGE_MIN_COLS}`;
+      const cacheKey = `i:${item.key}:${innerWidth}:${item.intro.version}:${item.intro.layoutMode}:${item.intro.startupHeaderMode ?? ""}:${item.intro.authLabel}:${item.intro.workspaceLabel}:${item.intro.providerLabel ?? ""}:v${LOGO_LARGE_MIN_COLS}`;
       const cached = _staticRowCache.get(cacheKey);
       if (cached) {
         renderDebug.traceEvent("timeline", "rowGeneration", {
@@ -3050,8 +3059,18 @@ export function buildTimelineSnapshot(
         builtRows = r;
       }
     } else if (item.type === "event") {
-      // Standalone events (system, error, etc.) are immutable — cache by key+width.
-      const cacheKey = `e:${item.key}:${innerWidth}`;
+      // Standalone events are immutable for a given event payload, not just id.
+      const cacheKey = rowCacheKey([
+        "event",
+        item.key,
+        item.event.type,
+        item.event.id,
+        innerWidth,
+        textCacheToken("title" in item.event ? item.event.title : item.event.command),
+        textCacheToken("content" in item.event ? item.event.content : item.event.summary ?? ""),
+        "status" in item.event ? item.event.status : "",
+        "durationMs" in item.event ? item.event.durationMs : "",
+      ]);
       const cached = _staticRowCache.get(cacheKey);
       if (cached) {
         renderDebug.traceEvent("timeline", "rowGeneration", {

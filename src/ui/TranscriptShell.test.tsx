@@ -8,7 +8,7 @@ import type { RunEvent, TimelineEvent, UIState, UserPromptEvent } from "../sessi
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { resetInkOutputForFreshFrame, resolveInkRenderInstance } from "../core/terminal/inkRenderReset.js";
 import { createLayoutSnapshot } from "./layout.js";
-import { LOGO_LARGE } from "./logoVariants.js";
+import { LOGO_COMPACT, LOGO_LARGE } from "./logoVariants.js";
 import { ThemeProvider } from "./theme.js";
 import { TranscriptShell } from "./TranscriptShell.js";
 
@@ -157,6 +157,8 @@ function transcriptNode({
   prompt = "LIVE PROMPT",
   clearCount = 0,
   repaintGeneration = 0,
+  cols = 120,
+  rows = 30,
 }: {
   staticEvents: TimelineEvent[];
   activeEvents?: TimelineEvent[];
@@ -165,8 +167,10 @@ function transcriptNode({
   prompt?: string;
   clearCount?: number;
   repaintGeneration?: number;
+  cols?: number;
+  rows?: number;
 }) {
-  const layout = createLayoutSnapshot(120, 30);
+  const layout = createLayoutSnapshot(cols, rows);
   return (
     <ThemeProvider theme="purple">
       <TranscriptShell
@@ -194,10 +198,14 @@ function renderTranscript(
     prompt?: string;
     activeEvents?: TimelineEvent[];
     uiState?: UIState;
+    cols?: number;
+    rows?: number;
   } = {},
 ) {
   const stdin = new TestInput();
   const stdout = new TestOutput();
+  stdout.columns = options.cols ?? stdout.columns;
+  stdout.rows = options.rows ?? stdout.rows;
   let output = "";
   stdout.on("data", (chunk) => {
     output += chunk.toString();
@@ -213,6 +221,30 @@ function renderTranscript(
   });
 
   return { instance, stdout, getOutput: () => output };
+}
+
+function detectBrandTier(value: string): "large" | "compact" | "wordmark" | "none" {
+  const text = stripAnsi(value);
+  if (text.includes(LOGO_LARGE[0]!.trim())) return "large";
+  if (text.includes(LOGO_COMPACT[0]!)) return "compact";
+  if (text.includes("CODEXA") || text.includes("Codexa")) return "wordmark";
+  return "none";
+}
+
+function assertHomeScreenFrame(value: string, size: { cols: number; rows: number }, expectedTier: "large" | "compact" | "wordmark") {
+  const text = stripAnsi(value);
+  assert.equal(detectBrandTier(text), expectedTier, `${size.cols}x${size.rows} should use the same responsive brand tier`);
+  assert.match(text, /Codexa v/);
+  assert.match(text, /Workspace: codexa/);
+  assert.match(text, /Provider: Local/);
+  assert.equal(countOccurrences(text, "│ ❯"), 1, `${size.cols}x${size.rows} should render one composer`);
+  assert.equal(countOccurrences(text, "Context:"), 1, `${size.cols}x${size.rows} should render one footer/status area`);
+
+  const lines = text.split(/\r?\n/);
+  const brandIndex = lines.findIndex((line) => line.includes("██████") || line.includes("✦ CODEXA") || line.includes("CODEXA") || line.includes("Codexa v"));
+  const composerIndex = lines.findIndex((line) => line.includes("│ ❯"));
+  assert.ok(brandIndex >= 0, `${size.cols}x${size.rows} should render branding`);
+  assert.ok(composerIndex > brandIndex, `${size.cols}x${size.rows} should render branding before composer`);
 }
 
 test("prints the Codexa intro once into the transcript across prompt rerenders", async () => {
@@ -440,3 +472,60 @@ test("clear rerender shows fresh banner and launch text once without stale messa
   assert.equal(countOccurrences(postClearOutput, "Launch mode"), 1);
   assert.doesNotMatch(postClearOutput, /old message before clear/);
 });
+
+const CLEAR_HOME_SCREEN_CASES: Array<{
+  cols: number;
+  rows: number;
+  expectedTier: "large" | "compact" | "wordmark";
+}> = [
+  { cols: 140, rows: 40, expectedTier: "large" },
+  { cols: 120, rows: 32, expectedTier: "large" },
+  { cols: 100, rows: 28, expectedTier: "large" },
+  { cols: 80, rows: 24, expectedTier: "large" },
+  { cols: 70, rows: 20, expectedTier: "compact" },
+  { cols: 60, rows: 18, expectedTier: "compact" },
+];
+
+for (const testCase of CLEAR_HOME_SCREEN_CASES) {
+  test(`fresh startup and /clear render the same branded home screen at ${testCase.cols}x${testCase.rows}`, async () => {
+    const prompt = [
+      "│ ❯ Ask Codexa, run !shell, or use /command",
+      "OpenAI Codex CLI / gpt-5.4-mini (Low)",
+      "Context: 0 / 1M",
+    ].join("\n");
+    const startupEvents = [launchEvent(500), providerMigrationEvent(501)];
+    const { instance, getOutput } = renderTranscript(startupEvents, {
+      cols: testCase.cols,
+      rows: testCase.rows,
+      prompt,
+    });
+    await sleep();
+
+    const freshOutput = stripAnsi(getOutput());
+    assertHomeScreenFrame(freshOutput, testCase, testCase.expectedTier);
+    assert.equal(countOccurrences(freshOutput, "Provider migrated"), 1);
+    assert.equal(countOccurrences(freshOutput, "Launch mode"), 1);
+
+    const clearOutputOffset = getOutput().length;
+    instance.rerender(transcriptNode({
+      staticEvents: [launchEvent(600), providerMigrationEvent(601)],
+      clearCount: 1,
+      prompt,
+      cols: testCase.cols,
+      rows: testCase.rows,
+    }));
+    await sleep();
+    instance.cleanup();
+
+    const postClearOutput = stripAnsi(getOutput().slice(clearOutputOffset));
+    assertHomeScreenFrame(postClearOutput, testCase, testCase.expectedTier);
+    assert.equal(countOccurrences(postClearOutput, "Provider migrated"), 1);
+    assert.equal(countOccurrences(postClearOutput, "Launch mode"), 1);
+    assert.doesNotMatch(postClearOutput, /old message before clear/);
+    assert.equal(
+      detectBrandTier(postClearOutput),
+      detectBrandTier(freshOutput),
+      `${testCase.cols}x${testCase.rows} clear should use startup's responsive home layout rules`,
+    );
+  });
+}

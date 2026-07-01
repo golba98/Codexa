@@ -38,6 +38,10 @@ function makeAssistantEvent(turnId: number, content: string): AssistantEvent {
   return { id: 3, type: "assistant", createdAt: 3, content, contentChunks: [], turnId };
 }
 
+function makeSystemEvent(id: number, title = "Launch mode", content = "Ready"): TimelineEvent {
+  return { id, type: "system", createdAt: id, title, content };
+}
+
 function makeProgressUpdate(
   id: string,
   text: string,
@@ -60,6 +64,16 @@ function stateWithActiveRun(turnId: number): SessionState {
     ],
   };
 }
+
+test("initial session state can seed static home events", () => {
+  const homeEvent = makeSystemEvent(99);
+  const state = createInitialSessionState({ staticEvents: [homeEvent] });
+
+  assert.deepEqual(state.staticEvents, [homeEvent]);
+  assert.deepEqual(state.activeEvents, []);
+  assert.deepEqual(state.uiState, { kind: "IDLE" });
+  assert.equal(state.inputValue, "");
+});
 
 test("SUBMIT_PROMPT_RUN atomically clears composer, records history, appends one turn, and enters thinking", () => {
   const turnId = 50;
@@ -176,6 +190,32 @@ test("CLEAR_TRANSCRIPT removes all rendered transcript event state and preserves
   assert.equal(cleared.clearCount, state.clearCount + 1);
   assert.equal(cleared.clearEpoch, state.clearEpoch + 1);
   assert.deepEqual(cleared.history, ["Hello"]);
+});
+
+test("CLEAR_TRANSCRIPT can seed the clean home screen events", () => {
+  const state: SessionState = {
+    ...createInitialSessionState(),
+    staticEvents: [makeUserEvent(1), makeAssistantEvent(1, "old answer")],
+    activeEvents: [makeUserEvent(2), makeRunEvent(2)],
+    uiState: { kind: "THINKING", turnId: 2 },
+    inputValue: "/clear",
+    cursor: 6,
+    history: ["old prompt"],
+  };
+  const launchEvent = makeSystemEvent(20, "Launch mode", "Ready");
+  const migrationEvent = makeSystemEvent(21, "Provider migrated", "Reverted to Local.");
+
+  const cleared = reduceSessionState(state, {
+    type: "CLEAR_TRANSCRIPT",
+    seedEvents: [launchEvent, migrationEvent],
+  });
+
+  assert.deepEqual(cleared.staticEvents, [launchEvent, migrationEvent]);
+  assert.deepEqual(cleared.activeEvents, []);
+  assert.deepEqual(cleared.uiState, { kind: "IDLE" });
+  assert.equal(cleared.clearCount, state.clearCount + 1);
+  assert.equal(cleared.clearEpoch, state.clearEpoch + 1);
+  assert.deepEqual(cleared.history, ["old prompt"]);
 });
 
 test("FINALIZE_RUN preserves streamed content when response is undefined", () => {

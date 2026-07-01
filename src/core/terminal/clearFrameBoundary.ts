@@ -296,6 +296,7 @@ export function createClearFrameBoundaryController({
   let activeEventsLength = 0;
   let uiStateKind = "IDLE";
   let lastFrameWasAuthoritative = false;
+  let suppressedPostClearStaticOutput = "";
   let previousCols = stdout.columns;
   let previousRows = stdout.rows;
   const createdAt = now();
@@ -330,7 +331,10 @@ export function createClearFrameBoundaryController({
     const staleFrameSuppressed = clearPending && !postClearReady;
     const frameWriteAllowed = !staleFrameSuppressed;
     const isAuthoritativeFrame = isFirstPostClearCommit || isWidthResizeRefresh;
-    const frameText = isAuthoritativeFrame ? `${staticOutput}${output}` : buildFrameText(instance, output, staticOutput);
+    const effectiveStaticOutput = isFirstPostClearCommit && !staticOutput && suppressedPostClearStaticOutput
+      ? suppressedPostClearStaticOutput
+      : staticOutput;
+    const frameText = isAuthoritativeFrame ? `${effectiveStaticOutput}${output}` : buildFrameText(instance, output, staticOutput);
     const markerCounts = countFrameMarkers(frameText);
     const frameHash = stableFrameHash(frameText);
     const clearGenerationUsed = isFirstPostClearCommit ? pendingGeneration : committedGeneration;
@@ -388,6 +392,9 @@ export function createClearFrameBoundaryController({
     });
 
     if (staleFrameSuppressed) {
+      if (staticOutput) {
+        suppressedPostClearStaticOutput = staticOutput;
+      }
       return;
     }
 
@@ -447,7 +454,7 @@ export function createClearFrameBoundaryController({
       lastFrameWasAuthoritative = false;
     }
 
-    boundOriginal(output, outputHeight, staticOutput);
+    boundOriginal(output, outputHeight, effectiveStaticOutput);
 
     const after = snapshotFrameState(instance, logShadow);
     renderDebug.traceEvent("terminal", "clearBoundaryFrameCommitted", {
@@ -478,6 +485,7 @@ export function createClearFrameBoundaryController({
       committedGeneration = pendingGeneration;
       clearPending = false;
       pendingGeneration = null;
+      suppressedPostClearStaticOutput = "";
       renderDebug.traceEvent("terminal", "firstCommittedPostClearFrame", {
         committedGeneration,
         frameHash,
@@ -506,6 +514,7 @@ export function createClearFrameBoundaryController({
       if (!Number.isFinite(generation)) return false;
       clearPending = true;
       pendingGeneration = generation;
+      suppressedPostClearStaticOutput = "";
       renderDebug.traceEvent("terminal", "clearBoundaryBegin", {
         clearGeneration: generation,
         clearPending,

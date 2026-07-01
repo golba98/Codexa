@@ -2762,6 +2762,18 @@ export function App({ launchArgs }: AppProps) {
     dispatchSession({ type: "RESET_INPUT" });
   }, [dispatchSession]);
 
+  const resetToHomeScreen = useCallback((seedEvents: TimelineEvent[] = []) => {
+    dispatchSession({
+      type: "CLEAR_TRANSCRIPT",
+      seedEvents,
+    });
+    setConversationChars(0);
+    setScreen("main");
+    resetComposer();
+    intendedFocusTargetRef.current = FOCUS_IDS.composer;
+    focusManager.focus(FOCUS_IDS.composer);
+  }, [dispatchSession, focusManager, resetComposer]);
+
   const finalizePromptRun = useCallback((
     runId: number,
     turnId: number,
@@ -3089,16 +3101,10 @@ export function App({ launchArgs }: AppProps) {
       clearGeneration,
       clearPending: clearBoundaryArmed,
     });
-    const launchModeEvent = createLaunchModeEvent(launchContext);
-    dispatchSession({
-      type: "CLEAR_TRANSCRIPT",
-      seedEvents: launchModeEvent ? [launchModeEvent] : [],
-    });
-    setConversationChars(0);
-    setScreen("main");
-    resetComposer();
-    intendedFocusTargetRef.current = FOCUS_IDS.composer;
-    focusManager.focus(FOCUS_IDS.composer);
+    resetToHomeScreen(createStartupStaticEvents({
+      launchContext,
+      providerWorkspaceConfig,
+    }));
     if (!clearBoundaryArmed) {
       // Fallback path (unexpected Ink mismatch): preserve /clear semantics.
       terminalControl.clearTranscript("src/app.tsx:handleClear:fallback");
@@ -3108,7 +3114,7 @@ export function App({ launchArgs }: AppProps) {
         liveInkInstanceResolved: Boolean(inkInstance),
       });
     }
-  }, [cancelActiveRun, clearFrameBoundaryController, dispatchSession, focusManager, inkInstance, launchContext, resetComposer, sessionState.clearEpoch, stdout.columns, terminalControl]);
+  }, [cancelActiveRun, clearFrameBoundaryController, inkInstance, launchContext, providerWorkspaceConfig, resetToHomeScreen, sessionState.clearEpoch, stdout.columns, terminalControl]);
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();

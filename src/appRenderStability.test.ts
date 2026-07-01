@@ -186,16 +186,15 @@ test("/clear arms a fresh render generation before transcript reset", () => {
   assert.ok(handleClearMatch, "handleClear callback should exist");
   const body = handleClearMatch[1] ?? "";
   const armBoundaryIndex = body.indexOf("beginClearGeneration(clearGeneration)");
-  const launchEventIndex = body.indexOf("const launchModeEvent = createLaunchModeEvent(launchContext)");
-  const clearDispatchIndex = body.indexOf('type: "CLEAR_TRANSCRIPT"');
-  const seedEventsIndex = body.indexOf("seedEvents: launchModeEvent ? [launchModeEvent] : []");
+  const seedEventsIndex = body.indexOf("createStartupStaticEvents({");
+  const resetToHomeIndex = body.indexOf("resetToHomeScreen(createStartupStaticEvents({");
   assert.ok(armBoundaryIndex >= 0, "handleClear should arm clear-generation boundary");
-  assert.ok(launchEventIndex >= 0, "handleClear should create the fresh launch notice");
-  assert.ok(clearDispatchIndex >= 0, "handleClear should clear transcript state");
-  assert.ok(armBoundaryIndex < clearDispatchIndex, "clear generation should be armed before transcript reset");
-  assert.ok(launchEventIndex < clearDispatchIndex, "launch event should be prepared before the atomic reset dispatch");
-  assert.ok(seedEventsIndex > clearDispatchIndex, "clear should seed the launch notice in the reset dispatch");
-  assert.match(body, /focusManager\.focus\(FOCUS_IDS\.composer\)/, "clear should return focus to the prompt");
+  assert.ok(seedEventsIndex >= 0, "handleClear should create fresh home-screen seed events");
+  assert.ok(resetToHomeIndex >= 0, "handleClear should reset through the shared home-screen path");
+  assert.ok(armBoundaryIndex < resetToHomeIndex, "clear generation should be armed before transcript reset");
+  assert.match(appSource, /const resetToHomeScreen = useCallback/);
+  assert.match(appSource, /type: "CLEAR_TRANSCRIPT",\s*seedEvents/s, "home reset should seed the transcript reset");
+  assert.match(appSource, /focusManager\.focus\(FOCUS_IDS\.composer\)/, "clear should return focus to the prompt");
 });
 
 test("Ink render-cache reset is owned by the render path, never wired into out-of-band resize handlers", () => {
@@ -272,6 +271,10 @@ test("VTE terminal trace records startup root, logo branch, composer count, and 
   assert.match(appSource, /renderDebug\.traceEvent\("startup", "state"/);
   assert.match(appSource, /activeRoot: activeRootComponent/);
   assert.match(appSource, /logoBranchSelected: startupHeaderMode === "large"/);
+  assert.match(transcriptShellSource, /renderDebug\.traceEvent\("startup", "homeRender"/);
+  assert.match(transcriptShellSource, /selectedLogoVariant/);
+  assert.match(transcriptShellSource, /logoHiddenReason/);
+  assert.match(transcriptShellSource, /homeScreenRendererUsed: homeScreenActive/);
   assert.match(clearBoundarySource, /codexaLogoCount/);
   assert.match(clearBoundarySource, /composerCount/);
   assert.match(clearBoundarySource, /footerCount/);
