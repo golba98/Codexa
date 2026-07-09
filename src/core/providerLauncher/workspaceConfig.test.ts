@@ -77,7 +77,7 @@ test("parses provider workspace config from Codexa-owned JSON", () => {
     },
   });
 
-  assert.equal(config.workspaceDefaultProviderId, "google");
+  assert.equal(config.workspaceDefaultProviderId, "openai");
   assert.deepEqual(config.activeRoute, {
     providerId: "openai",
     modelId: "gpt-5.5",
@@ -94,6 +94,7 @@ test("parses provider workspace config from Codexa-owned JSON", () => {
     command: "ollama",
   });
   assert.equal("unknown" in (config.providers ?? {}), false);
+  assert.equal(config.migrationNotice?.deprecatedProviderId, "google");
 });
 
 test("legacy Antigravity active/default config falls back to OpenAI and drops provider override", () => {
@@ -165,7 +166,7 @@ test("serializes and persists provider workspace defaults", () => {
   }
 });
 
-test("loaded workspace default is applied to a fresh provider registry", () => {
+test("saved Google workspace default is migrated to OpenAI before registry construction", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "codexa-provider-restart-"));
   try {
     saveProviderWorkspaceConfig(tempRoot, setProviderWorkspaceDefault({}, "google"));
@@ -176,8 +177,8 @@ test("loaded workspace default is applied to a fresh provider registry", () => {
       workspaceConfig: loadedConfig,
     });
 
-    assert.equal(providers.find((provider) => provider.id === "google")?.isDefault, true);
-    assert.equal(providers.find((provider) => provider.id === "openai")?.isDefault, false);
+    assert.equal(providers.find((provider) => provider.id === "google"), undefined);
+    assert.equal(providers.find((provider) => provider.id === "openai")?.isDefault, true);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -272,7 +273,7 @@ test("setProviderActiveRoute rejects unconfigured Gemini routes", () => {
   });
 });
 
-test("setProviderActiveRoute persists Gemini routes when GEMINI_API_KEY is configured", () => {
+test("setProviderActiveRoute does not persist Google routes even when Gemini is configured", () => {
   withGeminiEnv({ GEMINI_API_KEY: "test-gemini-key" }, () => {
     const config = setProviderActiveRoute({}, {
       providerId: "google",
@@ -281,12 +282,7 @@ test("setProviderActiveRoute persists Gemini routes when GEMINI_API_KEY is confi
       reasoning: "high",
     });
 
-    assert.deepEqual(config.activeRoute, {
-      providerId: "google",
-      modelId: "gemini-2.5-flash",
-      backendKind: "gemini-api-key",
-      reasoning: "high",
-    });
+    assert.equal(config.activeRoute, undefined);
     assert.doesNotMatch(JSON.stringify(serializeProviderWorkspaceConfig(config)), /test-gemini-key/);
   });
 });
@@ -372,7 +368,7 @@ test("Anthropic claudeCommandPath round-trips through serialize/parse", () => {
   });
 });
 
-test("Gemini geminiCommandPath round-trips through serialize/parse", () => {
+test("saved Google provider overrides are removed during migration", () => {
   const config = parseProviderWorkspaceConfig({
     providers: {
       google: {
@@ -382,14 +378,10 @@ test("Gemini geminiCommandPath round-trips through serialize/parse", () => {
     },
   });
 
-  assert.equal(config.providers?.google?.geminiCommandPath, "C:\\Users\\Example\\AppData\\Roaming\\npm\\gemini.cmd");
+  assert.equal(config.providers?.google, undefined);
+  assert.equal(config.migrationNotice?.deprecatedProviderId, "google");
   const serialized = serializeProviderWorkspaceConfig(config);
-  assert.deepEqual(serialized.providers, {
-    google: {
-      current_model: "gemini-2.5-flash",
-      gemini_command_path: "C:\\Users\\Example\\AppData\\Roaming\\npm\\gemini.cmd",
-    },
-  });
+  assert.equal(serialized.providers, undefined);
 });
 
 test("Codex codexCommandPath round-trips through serialize/parse", () => {
@@ -512,7 +504,7 @@ test("setProviderActiveRoute persists Local routes after endpoint discovery", as
   }
 });
 
-test("Gemini workspace config normalizes legacy flash model IDs to preview", () => {
+test("Google workspace routes migrate to OpenAI and drop Google model overrides", () => {
   const config = parseProviderWorkspaceConfig({
     activeRoute: {
       providerId: "google",
@@ -530,12 +522,9 @@ test("Gemini workspace config normalizes legacy flash model IDs to preview", () 
     },
   });
 
-  assert.equal(config.activeRoute?.modelId, "gemini-3-flash-preview");
-  assert.deepEqual(config.activeRoute?.modelSelection, {
-    kind: "manual",
-    modelId: "gemini-3-flash-preview",
-  });
-  assert.equal(config.providers?.google?.currentModel, "gemini-3-flash-preview");
+  assert.equal(config.activeRoute?.providerId, "openai");
+  assert.equal(config.providers?.google, undefined);
+  assert.equal(config.migrationNotice?.deprecatedProviderId, "google");
 });
 
 test("Local model capability fields round-trip through serialize/parse", () => {
@@ -618,7 +607,7 @@ test("Local model maxOutputTokens: 4096 round-trips; invalid values are rejected
   assert.equal(config.providers?.local?.models?.decimal, undefined);
 });
 
-test("setProviderActiveRoute persists Gemini routes when GOOGLE_API_KEY is configured", () => {
+test("setProviderActiveRoute ignores Google routes when GOOGLE_API_KEY is configured", () => {
   withGeminiEnv({ GOOGLE_API_KEY: "test-google-key" }, () => {
     const config = setProviderActiveRoute({}, {
       providerId: "google",
@@ -627,12 +616,7 @@ test("setProviderActiveRoute persists Gemini routes when GOOGLE_API_KEY is confi
       reasoning: "high",
     });
 
-    assert.deepEqual(config.activeRoute, {
-      providerId: "google",
-      modelId: "gemini-2.5-flash",
-      backendKind: "gemini-api-key",
-      reasoning: "high",
-    });
+    assert.equal(config.activeRoute, undefined);
     assert.doesNotMatch(JSON.stringify(serializeProviderWorkspaceConfig(config)), /test-google-key/);
   });
 });

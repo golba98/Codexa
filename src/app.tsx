@@ -19,6 +19,7 @@ function formatRuntimeProviderLabel(providerId: ProviderId): string {
   if (providerId === "local") return "Local";
   if (providerId === "google") return "Google";
   if (providerId === "anthropic") return "Anthropic";
+  if (providerId === "antigravity") return "Antigravity";
   return "OpenAI";
 }
 
@@ -318,7 +319,7 @@ function createProviderMigrationNoticeEvent(
     createdAt: Date.now(),
     title: sanitizeTerminalOutput("Provider migrated"),
     content: sanitizeTerminalOutput(
-      `Antigravity provider is no longer supported. Reverted to ${resolvedProviderLabel}.`,
+      `${formatRuntimeProviderLabel(notice.deprecatedProviderId as ProviderId)} provider is no longer supported. Reverted to ${resolvedProviderLabel}.`,
       { preserveTabs: false, tabSize: 2 },
     ),
   };
@@ -4173,8 +4174,13 @@ export function App({ launchArgs }: AppProps) {
         case "diagnose_providers": {
           const lines: string[] = ["Provider CLI diagnostics:"];
           const diags = providerDiagnosticsRef.current;
-          const providerIds = ["openai", "anthropic", "google"] as const;
-          const labels: Record<string, string> = { openai: "OpenAI/Codex", anthropic: "Anthropic/Claude", google: "Google/Gemini" };
+          const providerIds = ["openai", "anthropic", "local", "antigravity"] as const;
+          const labels: Record<string, string> = {
+            openai: "OpenAI/Codex",
+            anthropic: "Anthropic/Claude",
+            local: "Local OpenAI-compatible",
+            antigravity: "Antigravity CLI",
+          };
           for (const id of providerIds) {
             const diag = diags[id];
             lines.push(`\n  ${labels[id] ?? id}:`);

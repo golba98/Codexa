@@ -20,7 +20,10 @@ import { setLocalProviderConfig } from "../providerRuntime/local.js";
 import { formatContextLength, resolveModelContextLengthCached } from "../providerRuntime/contextMetadata.js";
 import { resolveModelCapabilityProfileCached } from "../providerRuntime/capabilityProfile.js";
 
-const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "google", "local", "antigravity"];
+// Google/Gemini remains a recognized legacy config value so existing workspace
+// files can be migrated, but it is no longer a selectable Codexa provider.
+const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "local", "antigravity"];
+const KNOWN_PROVIDER_IDS: readonly ProviderId[] = ["openai", "anthropic", "google", "local", "antigravity"];
 
 const DEFAULT_PROVIDER_ID: ProviderId = "openai";
 
@@ -89,7 +92,7 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
 };
 
 function isProviderId(value: unknown): value is ProviderId {
-  return typeof value === "string" && PROVIDER_ORDER.includes(value as ProviderId);
+  return typeof value === "string" && KNOWN_PROVIDER_IDS.includes(value as ProviderId);
 }
 
 function normalizeLaunchCommand(value: ProviderWorkspaceOverride["command"] | undefined): ProviderLaunchCommand | null | undefined {
@@ -141,12 +144,13 @@ function applyOverride(
 }
 
 export function getDefaultProviderId(config: ProviderWorkspaceConfig | null | undefined): ProviderId {
-  return isProviderId(config?.workspaceDefaultProviderId) ? config.workspaceDefaultProviderId : DEFAULT_PROVIDER_ID;
+  const providerId = config?.workspaceDefaultProviderId;
+  return isProviderId(providerId) && providerId !== "google" ? providerId : DEFAULT_PROVIDER_ID;
 }
 
 export function getActiveRouteProviderId(config: ProviderWorkspaceConfig | null | undefined): ProviderId {
   const providerId = config?.activeRoute?.providerId;
-  return isProviderId(providerId) && isProviderRoutableInCodexa(providerId)
+  return isProviderId(providerId) && providerId !== "google" && isProviderRoutableInCodexa(providerId)
     ? providerId
     : DEFAULT_PROVIDER_ID;
 }

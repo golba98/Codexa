@@ -18,7 +18,7 @@ import {
   type NativeTranscriptRowItem,
   type TimelineRow,
 } from "./timelineMeasure.js";
-import { LOGO_COMPACT, LOGO_LARGE, LOGO_MEDIUM, selectLogoVariant } from "./logoVariants.js";
+import { LOGO_COMPACT, LOGO_COMPACT_MIN_COLS, LOGO_LARGE, LOGO_MEDIUM, selectLogoVariant } from "./logoVariants.js";
 
 type TranscriptStaticItem = NativeTranscriptRowItem & { type: "rows" };
 type StaticRenderItem = TranscriptStaticItem;
@@ -226,7 +226,11 @@ function TranscriptShellInner({
   );
   const shellWidth = getShellWidth(layout.cols);
   const introInnerWidth = Math.max(10, shellWidth - 2);
-  const selectedLogoRows = startupHeaderMode === "tiny" ? [] : selectLogoVariant(introInnerWidth);
+  const selectedLogoRows = startupHeaderMode === "tiny"
+    ? []
+    : startupHeaderMode === "large"
+      ? selectLogoVariant(introInnerWidth)
+      : introInnerWidth >= LOGO_COMPACT_MIN_COLS ? LOGO_COMPACT : [];
   const selectedLogoVariant = getLogoVariantName(selectedLogoRows);
   const logoHiddenReason = getLogoHiddenReason({
     startupHeaderMode,

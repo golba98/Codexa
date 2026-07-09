@@ -351,6 +351,79 @@ test("Local provider sends prompt to configured OpenAI-compatible base URL", asy
   });
 });
 
+test("Local provider extracts common OpenAI-compatible response text shapes", async () => {
+  const fixtures: Array<{ name: string; body: unknown; expected: string }> = [
+    {
+      name: "legacy choice text",
+      body: { choices: [{ text: "Legacy completion" }] },
+      expected: "Legacy completion",
+    },
+    {
+      name: "array content parts",
+      body: {
+        choices: [{
+          message: {
+            content: [
+              { type: "text", text: "Part one" },
+              { type: "output_text", text: " and part two" },
+            ],
+          },
+        }],
+      },
+      expected: "Part one and part two",
+    },
+    {
+      name: "reasoning and final content split",
+      body: {
+        choices: [{
+          message: {
+            reasoning_content: "Internal reasoning",
+            content: [{ type: "text", text: "Final answer" }],
+          },
+        }],
+      },
+      expected: "Final answer",
+    },
+    {
+      name: "reasoning-only fallback",
+      body: { choices: [{ message: { reasoning_content: "Useful reasoning-only response" } }] },
+      expected: "Useful reasoning-only response",
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const text = await runLocalOpenAiCompatible(
+      buildRequest({ localConfig: { baseUrl: "http://local.test/v1" } }),
+      { onResponse: () => undefined, onError: assert.fail },
+      { fetchImpl: (async () => jsonResponse(fixture.body)) as typeof fetch },
+    );
+    assert.equal(text, fixture.expected, fixture.name);
+  }
+});
+
+test("Local provider reports safe response-shape diagnostics for a genuinely empty completion", async () => {
+  await assert.rejects(
+    () => runLocalOpenAiCompatible(
+      buildRequest({ localConfig: { baseUrl: "http://local.test/v1" } }),
+      { onResponse: () => undefined, onError: assert.fail },
+      {
+        fetchImpl: (async () => jsonResponse({
+          id: "chatcmpl-test",
+          choices: [{ message: { content: [] }, finish_reason: "stop" }],
+        })) as typeof fetch,
+      },
+    ),
+    (error: Error) => {
+      assert.match(error.message, /returned no assistant text/i);
+      assert.match(error.message, /Endpoint: http:\/\/local\.test\/v1\/chat\/completions/);
+      assert.match(error.message, /choices=1/);
+      assert.match(error.message, /finish_reason=stop/);
+      assert.match(error.message, /top_level_keys=choices, id/);
+      return true;
+    },
+  );
+});
+
 test("Local request payload uses refreshed LM Studio active loaded model", async () => {
   await withLocalEnv({}, async () => {
     const payloads: Array<Record<string, unknown>> = [];

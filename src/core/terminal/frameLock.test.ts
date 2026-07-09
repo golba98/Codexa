@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test, describe } from "node:test";
-import { wrapStdoutWithFrameLock } from "./frameLock.js";
+import { resetFrameLockForResize, wrapStdoutWithFrameLock } from "./frameLock.js";
 import { setTerminalResizing } from "./terminalControl.js";
 
 describe("frameLock", () => {
@@ -62,5 +62,23 @@ describe("frameLock", () => {
     wrapped.write("initial frame");
     
     assert.equal(writeCount, 1); // Nested write should have been dropped by the lock
+  });
+
+  test("terminal resize invalidates identical-frame deduplication", () => {
+    const writes: string[] = [];
+    const stdout = {
+      write(chunk: string) {
+        writes.push(chunk);
+        return true;
+      },
+    };
+
+    const wrapped = wrapStdoutWithFrameLock({ stdout, env: {} });
+    wrapped.write("same frame");
+    wrapped.write("same frame");
+    resetFrameLockForResize(stdout);
+    wrapped.write("same frame");
+
+    assert.deepEqual(writes, ["same frame\x1b[K", "same frame\x1b[K"]);
   });
 });

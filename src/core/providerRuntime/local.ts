@@ -458,30 +458,109 @@ function getCachedSelectedModel(config: LocalProviderConfig, routeModel: string)
   return selectFallbackLocalModel(config, discoveredIds) ?? routeModel;
 }
 
-function extractNonStreamingResponse(body: unknown): AgentChatResponse {
-  if (typeof body !== "object" || body === null) return { text: "" };
-  const choices = (body as { choices?: unknown }).choices;
-  if (!Array.isArray(choices)) return { text: "" };
+interface LocalResponseDiagnostics {
+  choiceCount: number;
+  finishReasons: string[];
+  recognizedFields: string[];
+  topLevelKeys: string[];
+}
+
+interface ExtractedLocalResponse extends AgentChatResponse {
+  diagnostics: LocalResponseDiagnostics;
+}
+
+function textFromContent(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(textFromContent).join("");
+  if (!isRecord(value)) return "";
+
+  // OpenAI-compatible servers commonly emit content as typed parts, such as
+  // { type: "text", text: "..." } or { type: "output_text", text: "..." }.
+  if (typeof value.text === "string") return value.text;
+  if (typeof value.content === "string" || Array.isArray(value.content)) {
+    return textFromContent(value.content);
+  }
+  if ((value.type === "text" || value.type === "output_text") && typeof value.value === "string") {
+    return value.value;
+  }
+  return "";
+}
+
+function messageFieldText(message: Record<string, unknown>, fields: readonly string[], recognizedFields: Set<string>): string {
+  for (const field of fields) {
+    const text = textFromContent(message[field]);
+    if (text.trim()) {
+      recognizedFields.add(`message.${field}`);
+      return text;
+    }
+  }
+  return "";
+}
+
+function extractNonStreamingResponse(body: unknown): ExtractedLocalResponse {
+  const topLevelKeys = isRecord(body) ? Object.keys(body).sort() : [];
+  const choices = isRecord(body) && Array.isArray(body.choices) ? body.choices : [];
+  const recognizedFields = new Set<string>();
+  const finishReasons: string[] = [];
   const toolCalls = choices.flatMap((choice) => {
-    if (typeof choice !== "object" || choice === null) return [];
-    const message = (choice as { message?: unknown }).message;
-    if (typeof message !== "object" || message === null) return [];
-    return parseOpenAiToolCalls((message as { tool_calls?: unknown }).tool_calls);
+    if (!isRecord(choice)) return [];
+    if (typeof choice.finish_reason === "string") finishReasons.push(choice.finish_reason);
+    const message = isRecord(choice.message) ? choice.message : null;
+    return message ? parseOpenAiToolCalls(message.tool_calls) : [];
   });
-  const text = choices
-    .map((choice) => {
-      if (typeof choice !== "object" || choice === null) return "";
-      const message = (choice as { message?: { content?: unknown }; text?: unknown }).message;
-      if (typeof message?.content === "string") return message.content;
-      const text = (choice as { text?: unknown }).text;
-      return typeof text === "string" ? text : "";
-    })
-    .join("")
-    .trim();
+
+  const content: string[] = [];
+  const reasoning: string[] = [];
+  for (const choice of choices) {
+    if (!isRecord(choice)) continue;
+    const message = isRecord(choice.message) ? choice.message : null;
+    const messageContent = message
+      ? messageFieldText(message, ["content"], recognizedFields)
+      : "";
+    const legacyText = textFromContent(choice.text);
+    if (legacyText.trim()) recognizedFields.add("choice.text");
+    const answer = messageContent || legacyText;
+    if (answer.trim()) {
+      content.push(answer);
+      continue;
+    }
+
+    const reasoningText = message
+      ? messageFieldText(message, ["reasoning_content", "reasoning", "analysis"], recognizedFields)
+      : "";
+    const choiceReasoning = !reasoningText
+      ? messageFieldText(choice, ["reasoning_content", "reasoning", "analysis"], recognizedFields)
+      : "";
+    if ((reasoningText || choiceReasoning).trim()) {
+      reasoning.push(reasoningText || choiceReasoning);
+    }
+  }
+
   return {
-    text,
+    // Reasoning is a fallback only. A response with both fields should show its
+    // final answer, while reasoning-only servers still produce useful text.
+    text: (content.length > 0 ? content : reasoning).join("").trim(),
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    diagnostics: {
+      choiceCount: choices.length,
+      finishReasons: [...new Set(finishReasons)],
+      recognizedFields: [...recognizedFields].sort(),
+      topLevelKeys,
+    },
   };
+}
+
+function emptyResponseError(config: LocalProviderConfig, model: string, diagnostics: LocalResponseDiagnostics): Error {
+  const finishReasons = diagnostics.finishReasons.length > 0 ? diagnostics.finishReasons.join(", ") : "none";
+  const fields = diagnostics.recognizedFields.length > 0 ? diagnostics.recognizedFields.join(", ") : "none";
+  const keys = diagnostics.topLevelKeys.length > 0 ? diagnostics.topLevelKeys.join(", ") : "none";
+  return new Error([
+    "Local OpenAI-compatible API returned no assistant text.",
+    `Endpoint: ${config.baseUrl}/chat/completions`,
+    `Model: ${model}`,
+    `Response details: choices=${diagnostics.choiceCount}; finish_reason=${finishReasons}; recognized_fields=${fields}; top_level_keys=${keys}.`,
+    "Check the local server response format or retry the prompt.",
+  ].join("\n"));
 }
 
 function parseStreamDelta(line: string): string | null {
@@ -577,7 +656,11 @@ async function postLocalChatCompletion(options: {
   }
 
   const parsed = JSON.parse(await response.text()) as unknown;
-  return extractNonStreamingResponse(parsed);
+  const extracted = extractNonStreamingResponse(parsed);
+  if (!extracted.text.trim() && (extracted.toolCalls?.length ?? 0) === 0) {
+    throw emptyResponseError(options.config, model, extracted.diagnostics);
+  }
+  return extracted;
 }
 
 function isModelNotLoadedError(status: number, body: string): boolean {
@@ -619,9 +702,7 @@ export async function runLocalOpenAiCompatible(
         capProfile,
       }),
   });
-  if (!text) {
-    throw new Error("Local OpenAI-compatible API returned no assistant text.");
-  }
+  if (!text) throw new Error("Local OpenAI-compatible API returned no assistant text after tool execution.");
   handlers.onAssistantDelta?.(text);
   return text;
 }

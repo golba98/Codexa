@@ -7,6 +7,12 @@ export interface FrameLockOptions {
   env: Record<string, string | undefined>;
 }
 
+const resizeFrameCacheResetters = new WeakMap<object, () => void>();
+
+export function resetFrameLockForResize(stdout: object): void {
+  resizeFrameCacheResetters.get(stdout)?.();
+}
+
 /**
  * Wraps the stdout stream to enforce frame-level deduplication, a flush lock,
  * and width-safe row padding via ANSI clear-to-EOL (\x1b[K) injection.
@@ -41,6 +47,15 @@ export function wrapStdoutWithFrameLock({
   };
 
   const originalWrite = stdout.write.bind(stdout);
+
+  // A terminal resize can make an otherwise identical Ink frame meaningful:
+  // rows reflow at a new width and height-driven spacer/layout changes must be
+  // written even when their source text did not change. src/index.tsx owns the
+  // single resize listener and invokes this reset through the exported helper.
+  resizeFrameCacheResetters.set(stdout, () => {
+    lastFrame = "";
+    logDebug("Frame cache reset: terminal resize");
+  });
 
   stdout.write = (chunk: string | Uint8Array) => {
     if (typeof chunk !== "string") {
