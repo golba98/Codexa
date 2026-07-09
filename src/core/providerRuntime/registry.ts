@@ -157,7 +157,7 @@ export function resolveActiveProviderRoute(options: {
   currentReasoning: string;
 }): ActiveProviderRoute {
   const configuredRoute = options.workspaceConfigActiveRoute;
-  if (configuredRoute && isProviderRoutableInCodexa(configuredRoute.providerId)) {
+  if (configuredRoute && configuredRoute.providerId !== "google" && isProviderRoutableInCodexa(configuredRoute.providerId)) {
     const route: ActiveProviderRoute = {
       providerId: configuredRoute.providerId,
       modelId: configuredRoute.modelId,

@@ -104,6 +104,34 @@ test("run it performs run_shell", async () => {
   });
 });
 
+test("broad workspace prompts receive a bounded automatic project summary", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    await writeFile(path.join(workspaceRoot, "package.json"), JSON.stringify({
+      name: "sample-workspace",
+      description: "A focused local agent fixture",
+    }), "utf8");
+    await writeFile(path.join(workspaceRoot, "README.md"), "# Sample\n", "utf8");
+    let initialMessages: readonly AgentChatMessage[] = [];
+
+    const text = await runAgentLoop({
+      request: request(workspaceRoot, "what is the purpose of this repo?"),
+      handlers: handlers().handlers,
+      includeSystemPrompt: true,
+      sendMessages: async (messages) => {
+        initialMessages = messages;
+        return { text: "It is a focused local agent fixture." };
+      },
+    });
+
+    assert.equal(text, "It is a focused local agent fixture.");
+    const system = initialMessages[0]?.content ?? "";
+    assert.match(system, /Workspace summary:/);
+    assert.match(system, /Top-level entries: .*README\.md.*package\.json/);
+    assert.match(system, /Package: sample-workspace - A focused local agent fixture/);
+    assert.match(system, /get_workspace_info or list_files/);
+  });
+});
+
 test("structured provider tool calls are executed before final text", async () => {
   await withTempWorkspace(async (workspaceRoot) => {
     const text = await runAgentLoop({

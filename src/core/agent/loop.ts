@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { ProviderChatRequest } from "../providerRuntime/types.js";
@@ -26,11 +26,40 @@ export interface RunAgentLoopOptions {
 
 const DEFAULT_MAX_TOOL_CALLS = 10;
 
+function workspaceSummary(workspaceRoot: string): string {
+  const lines = [`Workspace root: ${workspaceRoot}`];
+  try {
+    const entries = readdirSync(workspaceRoot, { withFileTypes: true })
+      .filter((entry) => ![".git", "node_modules", "dist", "build", "coverage"].includes(entry.name))
+      .map((entry) => `${entry.name}${entry.isDirectory() ? "/" : ""}`)
+      .sort()
+      .slice(0, 20);
+    if (entries.length > 0) lines.push(`Top-level entries: ${entries.join(", ")}`);
+  } catch {
+    // Tool-based inspection remains available when a shallow summary is unavailable.
+  }
+
+  try {
+    const packageJsonPath = path.join(workspaceRoot, "package.json");
+    if (existsSync(packageJsonPath)) {
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as Record<string, unknown>;
+      const name = typeof packageJson.name === "string" ? packageJson.name : null;
+      const description = typeof packageJson.description === "string" ? packageJson.description : null;
+      if (name) lines.push(`Package: ${name}${description ? ` - ${description}` : ""}`);
+    }
+  } catch {
+    // A malformed package.json should not prevent a local chat request.
+  }
+
+  return lines.join("\n");
+}
+
 function localAgentSystemPrompt(request: ProviderChatRequest): string {
   const hasCargoToml = existsSync(path.join(request.workspaceRoot, "Cargo.toml"));
   return [
     `You are an autonomous coding assistant running inside this workspace: ${request.workspaceRoot}`,
     "You must inspect files with tools before claiming you cannot see them.",
+    "For broad questions about the repository, use the workspace summary below, then inspect with get_workspace_info or list_files before answering when more detail is needed.",
     "Use tools to create, edit, build, and test when the user asks for workspace changes.",
     "Do not ask vague clarification questions when the user's intent has an obvious safe implementation.",
     hasCargoToml
@@ -40,6 +69,7 @@ function localAgentSystemPrompt(request: ProviderChatRequest): string {
     '<tool_call>{"name":"read_file","arguments":{"path":"src/index.tsx"}}</tool_call>',
     "Available tools: list_files, read_file, write_file, apply_patch, run_shell, get_workspace_info.",
     "Summarize changed files and commands run in your final answer.",
+    `Workspace summary:\n${workspaceSummary(request.workspaceRoot)}`,
     request.projectInstructions?.content
       ? ["Project instructions:", request.projectInstructions.content].join("\n")
       : null,

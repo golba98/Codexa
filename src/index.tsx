@@ -16,7 +16,7 @@ import {
   writeTerminalControl,
 } from "./core/terminal/terminalControl.js";
 import { resolveInkRenderInstance, type InkRenderInstance } from "./core/terminal/inkRenderReset.js";
-import { wrapStdoutWithFrameLock } from "./core/terminal/frameLock.js";
+import { resetFrameLockForResize, wrapStdoutWithFrameLock } from "./core/terminal/frameLock.js";
 
 type RenderHandle = Pick<Instance, "clear" | "cleanup" | "waitUntilExit">;
 const KITTY_KEYBOARD_OPTIONS: RenderOptions["kittyKeyboard"] = {
@@ -156,6 +156,7 @@ export function startApp({
   let previousResizeRows = stdout.rows;
 
   const onResize = () => {
+    resetFrameLockForResize(wrappedStdout);
     renderDebug.traceEvent("terminal", "resize", {
       previousCols: previousResizeCols,
       previousRows: previousResizeRows,

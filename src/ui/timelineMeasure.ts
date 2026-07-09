@@ -25,7 +25,7 @@ import { selectVisibleRunActivity } from "./runActivityView.js";
 import { getTextUnits, getTextWidth, wrapPlainText, wrapCommandText, splitTextAtColumn } from "./textLayout.js";
 import type { RenderTimelineItem } from "./Timeline.js";
 import { normalizePlanReviewMarkdown } from "../core/workspace/planStorage.js";
-import { LOGO_COMPACT, LOGO_LARGE_MIN_COLS, selectLogoVariant } from "./logoVariants.js";
+import { LOGO_COMPACT, LOGO_COMPACT_MIN_COLS, LOGO_LARGE_MIN_COLS, selectLogoVariant } from "./logoVariants.js";
 
 // ─── Exported types ───────────────────────────────────────────────────────────
 
@@ -1574,12 +1574,13 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
   const safeWidth = Math.max(10, width);
   const startupHeaderMode = intro.startupHeaderMode
     ?? (intro.layoutMode === "expanded" ? "large" : "compact");
+  const workspaceName = getWorkspaceDisplayName(intro.workspaceLabel);
   if (startupHeaderMode === "tiny") {
     const messageRows = [
-      "Codexa",
-      "Terminal is too small for the startup view.",
-      "Resize the terminal to continue.",
-    ];
+      `Codexa v${intro.version}`,
+      workspaceName ? `Workspace: ${workspaceName}` : null,
+      intro.providerLabel ? `Provider: ${intro.providerLabel}` : `Auth: ${intro.authLabel}`,
+    ].filter((line): line is string => Boolean(line));
     messageRows.forEach((line, index) => {
       rows.push(createRow(
         `${item.key}-resize-${index}`,
@@ -1590,15 +1591,16 @@ export function buildIntroRows(item: Extract<RenderTimelineItem, { type: "intro"
     return rows;
   }
 
+  // Compact startup mode deliberately uses the one-line mark even when the
+  // terminal is wide: its row budget is what made the full logo unsafe.
   const logoRows = startupHeaderMode === "large"
     ? selectLogoVariant(safeWidth)
-    : selectLogoVariant(safeWidth);
+    : safeWidth >= LOGO_COMPACT_MIN_COLS ? LOGO_COMPACT : [];
   const effectiveLogoRows = logoRows.length > 0 ? logoRows : ["CODEXA"];
   if (startupHeaderMode === "large") {
     rows.push(createBlankRow(`${item.key}-top-gap`, safeWidth));
   }
   const logoWidth = effectiveLogoRows.reduce((maxWidth, line) => Math.max(maxWidth, getTextWidth(line)), 0);
-  const workspaceName = getWorkspaceDisplayName(intro.workspaceLabel);
   const metaLines = [
     `Codexa v${intro.version}`,
     workspaceName ? `Workspace: ${workspaceName}` : null,

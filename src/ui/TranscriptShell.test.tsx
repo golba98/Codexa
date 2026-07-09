@@ -481,9 +481,10 @@ const CLEAR_HOME_SCREEN_CASES: Array<{
   { cols: 140, rows: 40, expectedTier: "large" },
   { cols: 120, rows: 32, expectedTier: "large" },
   { cols: 100, rows: 28, expectedTier: "large" },
-  { cols: 80, rows: 24, expectedTier: "large" },
+  { cols: 80, rows: 24, expectedTier: "compact" },
   { cols: 70, rows: 20, expectedTier: "compact" },
   { cols: 60, rows: 18, expectedTier: "compact" },
+  { cols: 39, rows: 24, expectedTier: "wordmark" },
 ];
 
 for (const testCase of CLEAR_HOME_SCREEN_CASES) {

@@ -15,6 +15,7 @@ import type {
 
 const DEPRECATED_ANTIGRAVITY_PROVIDER_ID = "antigravity";
 const DEPRECATED_ANTIGRAVITY_BACKENDS = new Set(["antigravity-cli-auth", "agy"]);
+const DEPRECATED_GOOGLE_PROVIDER_ID = "google";
 
 export function getProviderWorkspaceConfigFile(workspaceRoot: string): string {
   return join(normalizeWorkspaceRoot(workspaceRoot), ".codexa", "providers.json");
@@ -34,10 +35,14 @@ function isDeprecatedAntigravityRoute(value: unknown): boolean {
     || DEPRECATED_ANTIGRAVITY_BACKENDS.has(String(value.backendKind ?? value.backend_kind));
 }
 
+function isDeprecatedGoogleRoute(value: unknown): boolean {
+  return isRecord(value) && (value.providerId ?? value.provider_id) === DEPRECATED_GOOGLE_PROVIDER_ID;
+}
+
 function resolveDeprecatedProviderFallback(
   providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>>,
 ): ProviderId {
-  const candidates: readonly ProviderId[] = ["openai", "google", "anthropic", "local"];
+  const candidates: readonly ProviderId[] = ["openai", "anthropic", "local"];
   return candidates.find((providerId) =>
     isProviderRoutableInCodexa(providerId)
     && (providerId === "openai" || providers[providerId] !== undefined || isProviderRouteConfigured(providerId))
@@ -217,6 +222,7 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
   const config: ProviderWorkspaceConfig = {};
   const providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>> = {};
   let foundDeprecatedAntigravity = false;
+  let foundDeprecatedGoogle = false;
 
   if (isRecord(data.providers)) {
     for (const [id, value] of Object.entries(data.providers)) {
@@ -224,11 +230,12 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
         foundDeprecatedAntigravity = true;
         continue;
       }
+      if (id === DEPRECATED_GOOGLE_PROVIDER_ID) {
+        foundDeprecatedGoogle = true;
+        continue;
+      }
       if (!isKnownProviderId(id)) continue;
       const override = parseProviderOverride(value);
-      if (id === "google" && override?.currentModel) {
-        override.currentModel = normalizeGeminiModelId(override.currentModel);
-      }
       if (override) providers[id] = override;
     }
     config.providers = providers;
@@ -238,7 +245,10 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
     ?? data.workspace_default_provider_id
     ?? data.defaultProviderId
     ?? data.default_provider_id;
-  if (isDeprecatedAntigravityProviderId(defaultProvider)) {
+  if (defaultProvider === DEPRECATED_GOOGLE_PROVIDER_ID) {
+    foundDeprecatedGoogle = true;
+    config.workspaceDefaultProviderId = resolveDeprecatedProviderFallback(providers);
+  } else if (isDeprecatedAntigravityProviderId(defaultProvider)) {
     foundDeprecatedAntigravity = true;
     config.workspaceDefaultProviderId = resolveDeprecatedProviderFallback(providers);
   } else if (typeof defaultProvider === "string" && isKnownProviderId(defaultProvider)) {
@@ -246,7 +256,12 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
   }
 
   const rawActiveRoute = data.activeRoute ?? data.active_route;
-  if (isDeprecatedAntigravityRoute(rawActiveRoute)) {
+  if (isDeprecatedGoogleRoute(rawActiveRoute)) {
+    foundDeprecatedGoogle = true;
+    const fallbackProviderId = resolveDeprecatedProviderFallback(providers);
+    config.activeRoute = createFallbackActiveRoute(fallbackProviderId, providers);
+    config.workspaceDefaultProviderId ??= fallbackProviderId;
+  } else if (isDeprecatedAntigravityRoute(rawActiveRoute)) {
     foundDeprecatedAntigravity = true;
     const fallbackProviderId = resolveDeprecatedProviderFallback(providers);
     config.activeRoute = createFallbackActiveRoute(fallbackProviderId, providers);
@@ -258,12 +273,12 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
     }
   }
 
-  if (foundDeprecatedAntigravity) {
+  if (foundDeprecatedGoogle || foundDeprecatedAntigravity) {
     const revertedProviderId = config.activeRoute?.providerId
       ?? config.workspaceDefaultProviderId
       ?? resolveDeprecatedProviderFallback(providers);
     config.migrationNotice = {
-      deprecatedProviderId: DEPRECATED_ANTIGRAVITY_PROVIDER_ID,
+      deprecatedProviderId: foundDeprecatedGoogle ? DEPRECATED_GOOGLE_PROVIDER_ID : DEPRECATED_ANTIGRAVITY_PROVIDER_ID,
       revertedProviderId,
     };
   }
@@ -354,7 +369,7 @@ export function setProviderWorkspaceDefault(
 ): ProviderWorkspaceConfig {
   return {
     ...config,
-    workspaceDefaultProviderId: providerId,
+    workspaceDefaultProviderId: providerId === DEPRECATED_GOOGLE_PROVIDER_ID ? "openai" : providerId,
   };
 }
 
@@ -396,7 +411,7 @@ export function setProviderActiveRoute(
   config: ProviderWorkspaceConfig,
   activeRoute: ProviderActiveRoute,
 ): ProviderWorkspaceConfig {
-  if (!isProviderRoutableInCodexa(activeRoute.providerId) || !isProviderRouteConfigured(activeRoute.providerId)) {
+  if (activeRoute.providerId === DEPRECATED_GOOGLE_PROVIDER_ID || !isProviderRoutableInCodexa(activeRoute.providerId) || !isProviderRouteConfigured(activeRoute.providerId)) {
     return config;
   }
 

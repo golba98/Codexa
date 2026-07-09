@@ -206,7 +206,7 @@ test("provider picker renders compact aligned provider rows", async () => {
     await sleep(80);
     const output = harness.getOutput();
     const frame = getLatestBoxFrame(output);
-    const providerNames = ["OpenAI", "Anthropic", "Google", "Local", "Antigravity"];
+    const providerNames = ["OpenAI", "Anthropic", "Local", "Antigravity"];
 
     assert.match(frame, /Providers/);
     assert.match(frame, /Enter select \| U use \| S default \| Esc close/);
@@ -245,7 +245,7 @@ test("provider picker stays readable in a cramped terminal layout", async () => 
     assert.doesNotMatch(output, /Gemini CLIEnabled/);
     assert.match(output, /OpenAI/);
     assert.match(output, /Anthrop/);
-    assert.match(output, /Google/);
+    assert.doesNotMatch(output, /Google/);
     assert.match(output, /Local/);
     assert.match(output, /Antigra/);
     assert.match(output, /Off/);
@@ -342,7 +342,7 @@ test("provider picker reports Anthropic in-Codexa route actions without launchin
   }
 });
 
-test("provider picker exposes Gemini diagnostics action", async () => {
+test("provider picker exposes Local diagnostics action", async () => {
   const harness = createInkHarness(<ProviderPickerHarness />);
 
   try {
@@ -353,8 +353,8 @@ test("provider picker exposes Gemini diagnostics action", async () => {
     await sleep(40);
     harness.stdin.write("\r");
     await sleep(40);
-    assert.match(harness.getOutput(), /Provider action: Google/);
-    assert.match(harness.getOutput(), /Run Gemini diagnostics/);
+    assert.match(harness.getOutput(), /Provider action: Local/);
+    assert.match(harness.getOutput(), /Run Local diagnostics/);
     harness.stdin.write("\u001b[B");
     await sleep(40);
     harness.stdin.write("\u001b[B");
@@ -364,7 +364,7 @@ test("provider picker exposes Gemini diagnostics action", async () => {
     harness.stdin.write("\r");
     await sleep(80);
 
-    assert.match(harness.getOutput(), /action:google:run-diagnostics/);
+    assert.match(harness.getOutput(), /action:local:run-diagnostics/);
   } finally {
     await harness.cleanup();
   }
@@ -746,7 +746,7 @@ test("ProviderPicker does not reserve excessive empty vertical rows", async () =
   }
 });
 
-test("ProviderPicker at 100x21 uses compact mode and shows all 5 providers", async () => {
+test("ProviderPicker at 100x21 uses compact mode and shows all selectable providers", async () => {
   const providers = buildProviderRegistry({
     activeModel: "gpt-5.4-mini",
     workspaceConfig: { workspaceDefaultProviderId: "openai" },
@@ -766,27 +766,23 @@ test("ProviderPicker at 100x21 uses compact mode and shows all 5 providers", asy
     await sleep(80);
     const output = harness.getOutput();
     const frame = getLatestBoxFrame(output);
-    const providerNames = ["OpenAI", "Anthropic", "Google", "Local", "Antigravity"];
+    const providerNames = ["OpenAI", "Anthropic", "Local", "Antigravity"];
 
     for (const providerName of providerNames) {
       assert.match(frame, new RegExp(providerName));
     }
     assertProviderOrder(frame, providerNames);
     assertProviderRowsAreAdjacent(frame, providerNames);
-    assert.doesNotMatch(frame, /Showing \d+-\d+ of 5/);
+    assert.doesNotMatch(frame, /Showing \d+-\d+ of 4/);
     assert.doesNotMatch(frame, /↓ \d+ more|↑ \d+ more/);
     assert.doesNotMatch(frame, /Current:\s*Local/);
 
     const hasOpenAI = frame.includes("OpenAI");
     const hasAnthropic = frame.includes("Anthropic");
     const hasAntigravity = frame.includes("Antigravity");
-    const hasGoogle = frame.includes("Google");
     const hasLocal = frame.includes("Local");
-    assert.equal(
-      hasOpenAI && hasAnthropic && hasAntigravity && (!hasGoogle || !hasLocal),
-      false,
-      "ProviderPicker must not render OpenAI, Anthropic, and Antigravity while skipping Google or Local",
-    );
+    assert.equal(hasOpenAI && hasAnthropic && hasAntigravity && hasLocal, true);
+    assert.doesNotMatch(frame, /Google/);
   } finally {
     await harness.cleanup();
   }
@@ -797,7 +793,7 @@ test("ProviderPicker keeps each selected provider visible at normal size", async
     activeModel: "gpt-5.4-mini",
     workspaceConfig: { workspaceDefaultProviderId: "openai" },
   });
-  const providerNames = ["OpenAI", "Anthropic", "Google", "Local", "Antigravity"];
+  const providerNames = ["OpenAI", "Anthropic", "Local", "Antigravity"];
 
   for (let i = 0; i < providerNames.length; i += 1) {
     const frame = await renderProviderPickerAtIndex({
@@ -808,30 +804,30 @@ test("ProviderPicker keeps each selected provider visible at normal size", async
     assert.match(frame, new RegExp(providerNames[i]!));
     assertProviderOrder(frame, providerNames);
     assertSelectedProviderLine(frame, providerNames[i]!);
-    assert.doesNotMatch(frame, /Showing \d+-\d+ of 5/);
+    assert.doesNotMatch(frame, /Showing \d+-\d+ of 4/);
   }
 });
 
-test("ProviderPicker cursor remains visible on Google and Local", async () => {
+test("ProviderPicker cursor remains visible on Local and Antigravity", async () => {
   const providers = buildProviderRegistry({
     activeModel: "gpt-5.4-mini",
     workspaceConfig: { workspaceDefaultProviderId: "openai" },
   });
 
-  const googleFrame = await renderProviderPickerAtIndex({
+  const localFrame = await renderProviderPickerAtIndex({
     providers,
     selectedIndex: 2,
   });
-  assertSelectedProviderLine(googleFrame, "Google");
+  assertSelectedProviderLine(localFrame, "Local");
 
-  const localFrame = await renderProviderPickerAtIndex({
+  const antigravityFrame = await renderProviderPickerAtIndex({
     providers,
     selectedIndex: 3,
   });
-  assertSelectedProviderLine(localFrame, "Local");
+  assertSelectedProviderLine(antigravityFrame, "Antigravity");
 });
 
-test("ProviderPicker at wide standard size keeps 5 providers compact and contiguous", async () => {
+test("ProviderPicker at wide standard size keeps selectable providers compact and contiguous", async () => {
   const providers = buildProviderRegistry({
     activeModel: "gpt-5.4-mini",
     workspaceConfig: { workspaceDefaultProviderId: "openai" },
@@ -851,14 +847,15 @@ test("ProviderPicker at wide standard size keeps 5 providers compact and contigu
     await sleep(80);
     const output = harness.getOutput();
     const frame = getLatestBoxFrame(output);
-    const providerNames = ["OpenAI", "Anthropic", "Google", "Local", "Antigravity"];
+    const providerNames = ["OpenAI", "Anthropic", "Local", "Antigravity"];
 
     for (const providerName of providerNames) {
       assert.match(frame, new RegExp(providerName));
     }
     assertProviderOrder(frame, providerNames);
     assertProviderRowsAreAdjacent(frame, providerNames);
-    assert.doesNotMatch(frame, /Showing \d+-\d+ of 5/);
+    assert.doesNotMatch(frame, /Showing \d+-\d+ of 4/);
+    assert.doesNotMatch(frame, /Google/);
     assert.doesNotMatch(frame, /↓ \d+ more|↑ \d+ more/);
     assert.doesNotMatch(frame, /Context/);
     assert.doesNotMatch(frame, /Tool/);
