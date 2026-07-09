@@ -38,7 +38,7 @@ test("anthropic runtime exposes configured Claude models for in-Codexa routing",
   assert.ok(discovery.models.length > 0);
 });
 
-test("active route resolution preserves routable google routes", () => {
+test("active route resolution falls back from legacy google routes", () => {
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "google",
@@ -51,14 +51,14 @@ test("active route resolution preserves routable google routes", () => {
   });
 
   assert.deepEqual(route, {
-    providerId: "google",
-    modelId: "gemini-2.5-pro",
-    backendKind: "gemini-cli-auth",
-    reasoning: "medium",
+    providerId: "openai",
+    modelId: "gpt-5.4",
+    backendKind: "codex-cli-auth",
+    reasoning: "high",
   });
 });
 
-test("active route resolution normalizes legacy Gemini 3 Flash routes to preview", () => {
+test("active route resolution falls back from legacy Gemini 3 Flash routes", () => {
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "google",
@@ -71,10 +71,10 @@ test("active route resolution normalizes legacy Gemini 3 Flash routes to preview
   });
 
   assert.deepEqual(route, {
-    providerId: "google",
-    modelId: "gemini-3-flash-preview",
-    backendKind: "gemini-cli-auth",
-    reasoning: "high",
+    providerId: "openai",
+    modelId: "gpt-5.4",
+    backendKind: "codex-cli-auth",
+    reasoning: "medium",
   });
 });
 
