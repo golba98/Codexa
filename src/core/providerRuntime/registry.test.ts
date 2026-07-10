@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChildProcess } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCommand, type CommandResult } from "../process/CommandRunner.js";
@@ -200,6 +200,22 @@ test("antigravity runtime has routeAvailable and correct backendKind", () => {
   assert.equal(discovery.providerId, "antigravity");
 });
 
+test("Mistral Vibe runtime is routable in Codexa and exposes the configured model", () => {
+  const runtime = getProviderRuntime("mistral");
+  const discovery = discoverProviderModels("mistral");
+
+  assert.equal(runtime.label, "Mistral Vibe CLI");
+  assert.equal(runtime.backendKind, "mistral-vibe-cli-auth");
+  assert.equal(runtime.routeAvailable, true);
+  assert.equal(runtime.launchAvailable, true);
+  assert.equal(typeof runtime.run, "function");
+  assert.equal(typeof runtime.refreshModels, "function");
+  assert.equal(typeof runtime.validateRoute, "function");
+  assert.equal(discovery.providerId, "mistral");
+  assert.equal(discovery.backendKind, "mistral-vibe-cli-auth");
+  assert.ok(discovery.models[0]?.modelId);
+});
+
 test("getDefaultRouteModel returns the Antigravity default model", () => {
   const model = getDefaultRouteModel("antigravity", "gpt-5.4");
 
@@ -352,6 +368,8 @@ async function withEmptyClaudeSettingsHome(run: () => Promise<void>): Promise<vo
 
     if (originalUserProfile === undefined) delete process.env.USERPROFILE;
     else process.env.USERPROFILE = originalUserProfile;
+
+    rmSync(tempHome, { recursive: true, force: true });
   }
 }
 
@@ -436,6 +454,7 @@ test("getDefaultRouteModel with discovered models: prefers discovered anthropic 
 });
 
 test("resolveActiveProviderRoute selects first discovered Anthropic model when saved alias is stale", async () => {
+  await withEmptyClaudeSettingsHome(async () => {
   resetAnthropicRouteValidationCacheForTests();
 
   const mockImpl = mockRunCommand((executable, args) => {
@@ -469,4 +488,5 @@ test("resolveActiveProviderRoute selects first discovered Anthropic model when s
   assert.equal(route.modelId, "claude-opus-4-8");
 
   resetAnthropicRouteValidationCacheForTests();
+  });
 });

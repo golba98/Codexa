@@ -16,14 +16,15 @@ import {
 } from "../providerRuntime/registry.js";
 import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "../providerRuntime/antigravity.js";
+import { discoverMistralVibeModels } from "../providerRuntime/mistralVibe.js";
 import { setLocalProviderConfig } from "../providerRuntime/local.js";
 import { formatContextLength, resolveModelContextLengthCached } from "../providerRuntime/contextMetadata.js";
 import { resolveModelCapabilityProfileCached } from "../providerRuntime/capabilityProfile.js";
 
 // Google/Gemini remains a recognized legacy config value so existing workspace
 // files can be migrated, but it is no longer a selectable Codexa provider.
-const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "local", "antigravity"];
-const KNOWN_PROVIDER_IDS: readonly ProviderId[] = ["openai", "anthropic", "google", "local", "antigravity"];
+const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "mistral", "local", "antigravity"];
+const KNOWN_PROVIDER_IDS: readonly ProviderId[] = ["openai", "anthropic", "google", "mistral", "local", "antigravity"];
 
 const DEFAULT_PROVIDER_ID: ProviderId = "openai";
 
@@ -77,6 +78,17 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
     launchCommand: null,
     isActiveRoute: false,
     routeUnavailableReason: "Local provider unavailable. Start LM Studio, load a model, and enable the local server.",
+  },
+  mistral: {
+    id: "mistral",
+    displayName: "Mistral Vibe CLI",
+    currentModel: () => "Vibe default",
+    backendType: "mistral-vibe-cli-auth",
+    routeMode: "in-codexa",
+    enabled: true,
+    launchCommand: { executable: "vibe", args: [] },
+    isActiveRoute: false,
+    routeUnavailableReason: null,
   },
   antigravity: {
     id: "antigravity",
@@ -137,9 +149,11 @@ function applyOverride(
       : provider.currentModel,
     enabled: nextEnabled,
     launchCommand: nextCommand,
-    statusLabel: nextEnabled
-      ? (provider.routeUnavailableReason ? "Needs config" : "Enabled")
-      : "Disabled",
+    statusLabel: !nextEnabled
+      ? "Disabled"
+      : provider.routeMode === "launch-only"
+        ? provider.statusLabel
+        : (provider.routeUnavailableReason ? "Needs config" : "Enabled"),
   };
 }
 
@@ -157,6 +171,7 @@ export function getActiveRouteProviderId(config: ProviderWorkspaceConfig | null 
 
 export function buildProviderRegistry(options: {
   activeModel: string;
+  workspaceRoot?: string;
   workspaceConfig?: ProviderWorkspaceConfig | null;
   diagnostics?: Record<string, Record<string, string | number | boolean | null>>;
   routeErrors?: Record<string, string>;
@@ -170,7 +185,9 @@ export function buildProviderRegistry(options: {
     }
     const defaults = DEFAULT_PROVIDERS[id];
     const runtime = getProviderRuntime(id);
-    const discovery = runtime.discoverModels();
+    const discovery = id === "mistral"
+      ? discoverMistralVibeModels(options.workspaceRoot ?? process.cwd())
+      : runtime.discoverModels();
 
     const activeRoute = options.workspaceConfig?.activeRoute;
     const isThisActive = activeRoute?.providerId === id;
@@ -205,6 +222,10 @@ export function buildProviderRegistry(options: {
       }
     }
 
+    if (id === "mistral") {
+      currentModelLabel = discovery.models[0]?.modelId ?? "Vibe default";
+    }
+
     const rawMetadataForModel = discovery.models.find((model) => model.modelId === currentModelLabel)?.raw;
     const contextMetadata = resolveModelContextLengthCached({
       providerId: id,
@@ -230,7 +251,16 @@ export function buildProviderRegistry(options: {
 
     const enabled = id === "local" ? discovery.status === "ready" : defaults.enabled;
 
-    const statusLabel = id === "local"
+    const availabilityStatus = options.diagnostics?.[id]?.availabilityStatus;
+    const statusLabel = id === "mistral"
+      ? availabilityStatus === "checking"
+        ? "Checking"
+        : availabilityStatus === "unavailable"
+          ? "Missing"
+          : routeUnavailableReason
+            ? "Needs config"
+            : "Enabled"
+      : id === "local"
       ? (discovery.status === "ready" ? "Enabled" : "Disabled")
       : !defaults.enabled
         ? "Disabled"

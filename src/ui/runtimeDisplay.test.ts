@@ -143,6 +143,24 @@ test("Antigravity route display uses Antigravity CLI label and human-readable mo
   assert.equal(display.footerModelDisplay, "Antigravity CLI / Gemini 3.5 Flash (High)");
 });
 
+test("provider label system recognizes Mistral Vibe CLI", () => {
+  const route: ActiveProviderRoute = {
+    providerId: "mistral",
+    modelId: "mistral-medium-3.5",
+    backendKind: "mistral-vibe-cli-auth",
+  };
+  const display = buildActiveRuntimeDisplay({
+    route,
+    reasoningLevel: "",
+    mode: "full-auto",
+    tokensUsed: 0,
+    contextMetadata: context(route, null),
+  });
+
+  assert.equal(display.providerLabel, "Mistral Vibe CLI");
+  assert.equal(display.footerModelDisplay, "Mistral Vibe CLI / mistral-medium-3.5");
+});
+
 test("Antigravity route footer reflects reasoning separately from model label", () => {
   const route: ActiveProviderRoute = {
     providerId: "antigravity",

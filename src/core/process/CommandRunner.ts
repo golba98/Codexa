@@ -9,6 +9,7 @@ export interface CommandSpec {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  stdinData?: string;
 }
 
 export interface CommandResult {
@@ -177,9 +178,19 @@ function runProcess(
     cwd: spec.cwd,
     env: spec.env,
     shell: false,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: [spec.stdinData !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
   });
   handlers.onProcessLifecycle?.("spawned");
+
+  if (spec.stdinData !== undefined) {
+    try {
+      child.stdin?.on("error", () => { /* EPIPE when the process exits before reading stdin */ });
+      child.stdin?.write(spec.stdinData);
+      child.stdin?.end();
+    } catch {
+      // stdin already closed; the close/error handlers report the outcome
+    }
+  }
 
   const result = new Promise<CommandResult>((resolve) => {
     const finish = (partial: Omit<CommandResult, "stdout" | "stderr" | "startedAt" | "endedAt" | "durationMs" | "userMessage"> & { endedAt?: number }) => {

@@ -29,6 +29,7 @@ const PROVIDER_DISPLAY: Record<string, string> = {
   openai: "OpenAI Codex CLI",
   anthropic: "Claude Code CLI",
   google: "Gemini CLI",
+  mistral: "Mistral Vibe CLI",
   local: "Local",
   antigravity: "Antigravity CLI",
 };

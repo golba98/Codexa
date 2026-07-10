@@ -5,6 +5,7 @@ import { anthropicRuntime } from "./anthropic.js";
 import { geminiRuntime } from "./gemini.js";
 import { localRuntime } from "./local.js";
 import { antigravityRuntime, ANTIGRAVITY_DEFAULT_MODEL_ID, migrateAntigravityLegacyModelId } from "./antigravity.js";
+import { mistralVibeRuntime } from "./mistralVibe.js";
 import {
   ANTHROPIC_FALLBACK_MODELS,
   GEMINI_DEFAULT_MODEL_ID,
@@ -74,6 +75,7 @@ const PROVIDER_RUNTIMES: Record<ProviderId, ProviderRuntime> = {
   openai: openAiRuntime,
   anthropic: anthropicRuntime,
   google: geminiRuntime,
+  mistral: mistralVibeRuntime,
   local: localRuntime,
   antigravity: antigravityRuntime,
 };
@@ -222,6 +224,10 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
   if (providerId === "local") {
     const discovery = discoverProviderModels("local");
     return discovery.models[0]?.modelId ?? "Local default";
+  }
+  if (providerId === "mistral") {
+    const discovery = discoverProviderModels("mistral");
+    return discovery.models[0]?.modelId ?? "Vibe default";
   }
   if (providerId === "antigravity") {
     return ANTIGRAVITY_DEFAULT_MODEL_ID;

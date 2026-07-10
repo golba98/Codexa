@@ -206,7 +206,7 @@ test("provider picker renders compact aligned provider rows", async () => {
     await sleep(80);
     const output = harness.getOutput();
     const frame = getLatestBoxFrame(output);
-    const providerNames = ["OpenAI", "Anthropic", "Local", "Antigravity"];
+    const providerNames = ["OpenAI", "Anthropic", "Mistral Vibe", "Local", "Antigravity"];
 
     assert.match(frame, /Providers/);
     assert.match(frame, /Enter select \| U use \| S default \| Esc close/);
@@ -342,11 +342,35 @@ test("provider picker reports Anthropic in-Codexa route actions without launchin
   }
 });
 
+test("provider picker reports Mistral Vibe in-Codexa route actions without launching", async () => {
+  const harness = createInkHarness(<ProviderPickerHarness />);
+
+  try {
+    await sleep(80);
+    harness.stdin.write("[B");
+    await sleep(40);
+    harness.stdin.write("[B");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(40);
+    assert.match(harness.getOutput(), /Provider action: Mistral Vibe CLI/);
+    assert.doesNotMatch(harness.getOutput(), /Use in Codexa unavailable/);
+    harness.stdin.write("\r");
+    await sleep(80);
+
+    assert.match(harness.getOutput(), /action:mistral:use-in-codexa/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test("provider picker exposes Local diagnostics action", async () => {
   const harness = createInkHarness(<ProviderPickerHarness />);
 
   try {
     await sleep(80);
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
     harness.stdin.write("\u001b[B");
     await sleep(40);
     harness.stdin.write("\u001b[B");
@@ -766,14 +790,14 @@ test("ProviderPicker at 100x21 uses compact mode and shows all selectable provid
     await sleep(80);
     const output = harness.getOutput();
     const frame = getLatestBoxFrame(output);
-    const providerNames = ["OpenAI", "Anthropic", "Local", "Antigravity"];
+    const providerNames = ["OpenAI", "Anthropic", "Mistral Vibe", "Local", "Antigravity"];
 
     for (const providerName of providerNames) {
       assert.match(frame, new RegExp(providerName));
     }
     assertProviderOrder(frame, providerNames);
     assertProviderRowsAreAdjacent(frame, providerNames);
-    assert.doesNotMatch(frame, /Showing \d+-\d+ of 4/);
+    assert.doesNotMatch(frame, /Showing \d+-\d+ of 5/);
     assert.doesNotMatch(frame, /↓ \d+ more|↑ \d+ more/);
     assert.doesNotMatch(frame, /Current:\s*Local/);
 
@@ -793,7 +817,7 @@ test("ProviderPicker keeps each selected provider visible at normal size", async
     activeModel: "gpt-5.4-mini",
     workspaceConfig: { workspaceDefaultProviderId: "openai" },
   });
-  const providerNames = ["OpenAI", "Anthropic", "Local", "Antigravity"];
+  const providerNames = ["OpenAI", "Anthropic", "Mistral Vibe", "Local", "Antigravity"];
 
   for (let i = 0; i < providerNames.length; i += 1) {
     const frame = await renderProviderPickerAtIndex({
@@ -804,7 +828,7 @@ test("ProviderPicker keeps each selected provider visible at normal size", async
     assert.match(frame, new RegExp(providerNames[i]!));
     assertProviderOrder(frame, providerNames);
     assertSelectedProviderLine(frame, providerNames[i]!);
-    assert.doesNotMatch(frame, /Showing \d+-\d+ of 4/);
+    assert.doesNotMatch(frame, /Showing \d+-\d+ of 5/);
   }
 });
 
@@ -816,13 +840,13 @@ test("ProviderPicker cursor remains visible on Local and Antigravity", async () 
 
   const localFrame = await renderProviderPickerAtIndex({
     providers,
-    selectedIndex: 2,
+    selectedIndex: 3,
   });
   assertSelectedProviderLine(localFrame, "Local");
 
   const antigravityFrame = await renderProviderPickerAtIndex({
     providers,
-    selectedIndex: 3,
+    selectedIndex: 4,
   });
   assertSelectedProviderLine(antigravityFrame, "Antigravity");
 });
@@ -847,14 +871,14 @@ test("ProviderPicker at wide standard size keeps selectable providers compact an
     await sleep(80);
     const output = harness.getOutput();
     const frame = getLatestBoxFrame(output);
-    const providerNames = ["OpenAI", "Anthropic", "Local", "Antigravity"];
+    const providerNames = ["OpenAI", "Anthropic", "Mistral Vibe", "Local", "Antigravity"];
 
     for (const providerName of providerNames) {
       assert.match(frame, new RegExp(providerName));
     }
     assertProviderOrder(frame, providerNames);
     assertProviderRowsAreAdjacent(frame, providerNames);
-    assert.doesNotMatch(frame, /Showing \d+-\d+ of 4/);
+    assert.doesNotMatch(frame, /Showing \d+-\d+ of 5/);
     assert.doesNotMatch(frame, /Google/);
     assert.doesNotMatch(frame, /↓ \d+ more|↑ \d+ more/);
     assert.doesNotMatch(frame, /Context/);

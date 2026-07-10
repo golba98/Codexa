@@ -10,6 +10,7 @@ export type ProviderBackendKind =
   | "codex-cli-auth"
   | "gemini-cli-auth"
   | "claude-code-auth"
+  | "mistral-vibe-cli-auth"
   | "antigravity-cli-auth"
   | "openai-api-key"
   | "gemini-api-key"

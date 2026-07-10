@@ -166,6 +166,24 @@ test("serializes and persists provider workspace defaults", () => {
   }
 });
 
+test("Mistral Vibe workspace default and active route both round-trip", () => {
+  const serialized = serializeProviderWorkspaceConfig({ workspaceDefaultProviderId: "mistral" });
+  assert.deepEqual(serialized, { workspaceDefaultProviderId: "mistral" });
+  assert.deepEqual(parseProviderWorkspaceConfig(serialized), { workspaceDefaultProviderId: "mistral" });
+
+  const parsed = parseProviderWorkspaceConfig({
+    workspaceDefaultProviderId: "mistral",
+    activeRoute: {
+      providerId: "mistral",
+      modelId: "mistral-medium-3.5",
+      backendKind: "mistral-vibe-cli-auth",
+    },
+  });
+  assert.equal(parsed.workspaceDefaultProviderId, "mistral");
+  assert.equal(parsed.activeRoute?.providerId, "mistral");
+  assert.equal(parsed.activeRoute?.modelId, "mistral-medium-3.5");
+});
+
 test("saved Google workspace default is migrated to OpenAI before registry construction", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "codexa-provider-restart-"));
   try {
