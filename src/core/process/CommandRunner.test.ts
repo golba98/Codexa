@@ -59,6 +59,33 @@ test("runCommand executes a direct executable with argument array", async () => 
   assert.equal(result.stdout.trim(), "direct-ok");
 });
 
+test("runCommand pipes stdinData to the child process", async () => {
+  const runner = runCommand({
+    executable: process.execPath,
+    args: ["-e", "let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => process.stdout.write(d));"],
+    cwd: process.cwd(),
+    stdinData: "stdin-payload",
+  });
+
+  const result = await runner.result;
+  assert.equal(result.status, "completed");
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stdout.trim(), "stdin-payload");
+});
+
+test("runCommand without stdinData keeps stdin closed so children do not hang", async () => {
+  const runner = runCommand({
+    executable: process.execPath,
+    args: ["-e", "let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => process.stdout.write('closed:' + d));"],
+    cwd: process.cwd(),
+    timeoutMs: 5_000,
+  });
+
+  const result = await runner.result;
+  assert.equal(result.status, "completed");
+  assert.equal(result.stdout.trim(), "closed:");
+});
+
 test("runCommand rejects obvious executable injection", () => {
   assert.throws(
     () => runCommand({

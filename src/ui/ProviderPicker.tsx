@@ -247,7 +247,9 @@ export function ProviderPicker({
       return;
     }
     if (key.return && selectedProvider) {
-      onAction(selectedProvider.id, actions[actionIndex]?.value ?? "cancel");
+      const action = actions[actionIndex];
+      if (action?.disabledReason) return;
+      onAction(selectedProvider.id, action?.value ?? "cancel");
     }
   }, { isActive: isFocused });
 

@@ -1,9 +1,10 @@
-export type ProviderId = "openai" | "anthropic" | "google" | "local" | "antigravity";
+export type ProviderId = "openai" | "anthropic" | "google" | "mistral" | "local" | "antigravity";
 
 export type ProviderBackendType =
   | "codex-cli-auth"
   | "gemini-cli-auth"
   | "claude-code-auth"
+  | "mistral-vibe-cli-auth"
   | "antigravity-cli-auth"
   | "openai-api-key"
   | "gemini-api-key"

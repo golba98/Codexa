@@ -19,6 +19,7 @@ function formatRuntimeProviderLabel(providerId: ProviderId): string {
   if (providerId === "local") return "Local";
   if (providerId === "google") return "Google";
   if (providerId === "anthropic") return "Anthropic";
+  if (providerId === "mistral") return "Mistral Vibe CLI";
   if (providerId === "antigravity") return "Antigravity";
   return "OpenAI";
 }
@@ -176,6 +177,12 @@ import {
 } from "./core/providerRuntime/registry.js";
 import { hasGeminiApiKey, runGeminiDiagnostics } from "./core/providerRuntime/gemini.js";
 import { checkLocalProvider, runLocalDiagnostics, setLocalProviderConfig } from "./core/providerRuntime/local.js";
+import {
+  detectVibeActiveModel,
+  launchMistralVibeCli,
+  resetMistralVibeSession,
+  resolveVibeExecutable,
+} from "./core/providerRuntime/mistralVibe.js";
 import { validateAnthropicRoute, ANTHROPIC_ROUTE_SETUP_MESSAGE } from "./core/providerRuntime/anthropic.js";
 import { providerModelsToCodexCapabilities } from "./core/providerRuntime/models.js";
 import {
@@ -658,6 +665,7 @@ export function App({ launchArgs }: AppProps) {
       setLocalProviderConfig(providerWorkspaceConfig.providers?.local);
       return buildProviderRegistry({
         activeModel: model,
+        workspaceRoot,
         workspaceConfig: providerWorkspaceConfig,
         diagnostics: providerDiagnosticsRef.current,
         routeErrors: providerRouteErrorsRef.current,
@@ -667,7 +675,7 @@ export function App({ launchArgs }: AppProps) {
     // updates mutate providerDiagnosticsRef/providerRouteErrorsRef (refs, not state)
     // and then increment the nonce to trigger a re-read of those refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [model, providerWorkspaceConfig, registryNonce],
+    [model, providerWorkspaceConfig, registryNonce, workspaceRoot],
   );
   const workspaceDefaultProvider = useMemo(
     () => providerRegistry.find((provider) => provider.isDefault) ?? providerRegistry[0] ?? null,
@@ -2062,6 +2070,10 @@ export function App({ launchArgs }: AppProps) {
         model: nextModel,
         reasoningLevel: normalizedReasoning,
       }));
+      if (providerId === "mistral" && activeProviderRoute.providerId !== "mistral") {
+        // Switching to Vibe starts a fresh CLI conversation instead of resuming a stale one.
+        resetMistralVibeSession(workspaceRoot);
+      }
       persistActiveRoute(providerId, nextModel, normalizedReasoning, validation.backendKind, geminiSelection);
       setPendingRouteProviderId(null);
       traceInputDebug("model_selection_app_success", getInputDebugSnapshot({
@@ -2277,6 +2289,31 @@ export function App({ launchArgs }: AppProps) {
     }
 
     setScreen("provider-picker");
+    providerDiagnosticsRef.current.mistral = {
+      ...providerDiagnosticsRef.current.mistral,
+      selectedModel: detectVibeActiveModel({ cwd: workspaceRoot }).modelId,
+      availabilityStatus: "checking",
+    };
+    void resolveVibeExecutable({ cwd: workspaceRoot }).then((resolvedCommand) => {
+      if (!isMountedRef.current) return;
+      const modelDetection = detectVibeActiveModel({ cwd: workspaceRoot });
+      providerDiagnosticsRef.current.mistral = {
+        resolvedCommand,
+        selectedModel: modelDetection.modelId,
+        modelSource: modelDetection.source,
+        configPath: modelDetection.configPath,
+        availabilityStatus: resolvedCommand ? "available" : "unavailable",
+      };
+      setRegistryNonce((n) => n + 1);
+    }).catch(() => {
+      if (!isMountedRef.current) return;
+      providerDiagnosticsRef.current.mistral = {
+        selectedModel: detectVibeActiveModel({ cwd: workspaceRoot }).modelId,
+        resolvedCommand: null,
+        availabilityStatus: "unavailable",
+      };
+      setRegistryNonce((n) => n + 1);
+    });
     markProviderAvailability("local", "checking", "provider-picker-open");
     void checkLocalProvider({ override: providerWorkspaceConfig.providers?.local }).then((result) => {
       if (!isMountedRef.current) return;
@@ -2290,7 +2327,7 @@ export function App({ launchArgs }: AppProps) {
       }
       setRegistryNonce((n) => n + 1);
     }).catch(() => undefined);
-  }, [appendSystemEvent, busy, markProviderAvailability, providerWorkspaceConfig.providers]);
+  }, [appendSystemEvent, busy, markProviderAvailability, providerWorkspaceConfig.providers, workspaceRoot]);
 
   const setWorkspaceDefaultProviderWithNotice = useCallback((providerId: ProviderId) => {
     const provider = findProvider(providerRegistry, providerId);
@@ -2307,7 +2344,9 @@ export function App({ launchArgs }: AppProps) {
       const routeConfigured = isProviderRouteConfigured(providerId);
       appendSystemEvent(
         "Provider default updated",
-        provider.routeMode === "in-codexa" && routeConfigured
+        provider.routeMode === "launch-only"
+          ? `${provider.displayName} is now the workspace default external CLI. Active chat route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${model}.`
+          : provider.routeMode === "in-codexa" && routeConfigured
           ? `${provider.displayName} is now the workspace default provider. Active chat route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${model}.`
           : `${provider.displayName} is set as the workspace default, but in-Codexa routing is not configured yet. Active chat route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${model}.`,
       );
@@ -2557,10 +2596,10 @@ export function App({ launchArgs }: AppProps) {
     setScreen("main");
     appendSystemEvent(
       "Provider launch",
-      `Suspending Codexa and launching ${provider.displayName}. Codexa will resume when the external CLI exits.`,
+      `Suspending Codexa and launching ${provider.displayName}${providerId === "mistral" ? ` / ${provider.currentModel}` : ""}. Codexa will resume when the external CLI exits.`,
     );
 
-    void launchProviderCli(provider, {
+    const launchOptions = {
       cwd: workspaceRoot,
       stdin,
       beforeLaunch: () => {
@@ -2570,9 +2609,18 @@ export function App({ launchArgs }: AppProps) {
       afterLaunch: () => {
         terminalControl.setMouseReporting(effectiveMouseCapture, "src/app.tsx:providerLaunch.restoreMouse");
       },
-    }).then((result) => {
+    };
+    const launchPromise = providerId === "mistral"
+      ? launchMistralVibeCli(provider, launchOptions)
+      : launchProviderCli(provider, launchOptions);
+
+    void launchPromise.then((result) => {
       if (!isMountedRef.current) return;
-      appendSystemEvent("Provider launch", result.message);
+      if (providerId === "mistral" && (result.status === "missing-command" || result.status === "spawn-error")) {
+        appendErrorEvent("Mistral Vibe launch failed", result.message);
+      } else {
+        appendSystemEvent("Provider launch", result.message);
+      }
     }).catch((error) => {
       if (!isMountedRef.current) return;
       const message = error instanceof Error ? error.message : "Provider launch failed.";
@@ -3121,6 +3169,7 @@ export function App({ launchArgs }: AppProps) {
     activeTurnIdRef.current = null;
     activeRunLifecycleRef.current = null;
     activeRunTimingRef.current = null;
+    resetMistralVibeSession(workspaceRoot);
     setPlanFlow(resetPlanFlow());
     renderDebug.traceEvent("terminal", "clearReactStateRequested", {
       clearGeneration,
@@ -3139,7 +3188,7 @@ export function App({ launchArgs }: AppProps) {
         liveInkInstanceResolved: Boolean(inkInstance),
       });
     }
-  }, [cancelActiveRun, clearFrameBoundaryController, inkInstance, launchContext, providerWorkspaceConfig, resetToHomeScreen, sessionState.clearEpoch, stdout.columns, terminalControl]);
+  }, [cancelActiveRun, clearFrameBoundaryController, inkInstance, launchContext, providerWorkspaceConfig, resetToHomeScreen, sessionState.clearEpoch, stdout.columns, terminalControl, workspaceRoot]);
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();

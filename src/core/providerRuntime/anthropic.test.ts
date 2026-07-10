@@ -81,7 +81,12 @@ async function withAnthropicEnv<T>(
 ): Promise<T> {
   const originalApiKey = process.env.ANTHROPIC_API_KEY;
   const originalClaudeExe = process.env.CLAUDE_EXECUTABLE;
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  const isolatedHome = mkdtempSync(join(tmpdir(), "codexa-anthropic-home-"));
   try {
+    process.env.HOME = isolatedHome;
+    delete process.env.USERPROFILE;
     if ("ANTHROPIC_API_KEY" in env) {
       process.env.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY;
     } else {
@@ -105,6 +110,17 @@ async function withAnthropicEnv<T>(
     } else {
       process.env.CLAUDE_EXECUTABLE = originalClaudeExe;
     }
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
+    }
+    rmSync(isolatedHome, { recursive: true, force: true });
     resetAnthropicRouteValidationCacheForTests();
   }
 }

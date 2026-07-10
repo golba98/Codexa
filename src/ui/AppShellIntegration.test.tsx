@@ -30,7 +30,7 @@ class TestOutput extends PassThrough {
 const mockProviders = [
   { id: "openai", displayName: "OpenAI", routeMode: "provider-direct", backendType: "openai", isActiveRoute: true, enabled: true, currentModel: "gpt-4", statusLabel: "Active" },
   { id: "anthropic", displayName: "Anthropic", routeMode: "provider-direct", backendType: "anthropic", isActiveRoute: false, enabled: true, currentModel: "claude-3", statusLabel: "Ready" },
-  { id: "google", displayName: "Google", routeMode: "provider-direct", backendType: "google", isActiveRoute: false, enabled: true, currentModel: "gemini-1.5", statusLabel: "Ready" },
+  { id: "mistral", displayName: "Mistral Vibe CLI", routeMode: "in-codexa", backendType: "mistral-vibe-cli-auth", isActiveRoute: false, enabled: true, currentModel: "mistral-medium-3.5", statusLabel: "Enabled" },
   { id: "local", displayName: "Local", routeMode: "provider-direct", backendType: "local", isActiveRoute: false, enabled: true, currentModel: "llama-3", statusLabel: "Ready" },
   { id: "antigravity", displayName: "Antigravity", routeMode: "provider-direct", backendType: "antigravity", isActiveRoute: false, enabled: true, currentModel: "AG-1", statusLabel: "Ready" }
 ];
@@ -115,7 +115,7 @@ test("AppShell renders ProviderPicker with all 5 providers at normal standard si
   // Assert all five providers are visible:
   assert.ok(stripped.includes("OpenAI"), "Missing OpenAI");
   assert.ok(stripped.includes("Anthropic"), "Missing Anthropic");
-  assert.ok(stripped.includes("Google"), "Missing Google");
+  assert.ok(stripped.includes("Mistral Vibe"), "Missing Mistral Vibe CLI");
   assert.ok(stripped.includes("Local"), "Missing Local");
   assert.ok(stripped.includes("Antigravity"), "Missing Antigravity");
 
@@ -123,7 +123,7 @@ test("AppShell renders ProviderPicker with all 5 providers at normal standard si
   const hasOpenAI = stripped.includes("OpenAI");
   const hasAnthropic = stripped.includes("Anthropic");
   const hasAntigravity = stripped.includes("Antigravity");
-  const hasGoogle = stripped.includes("Google");
+  const hasMistral = stripped.includes("Mistral Vibe");
   const hasLocal = stripped.includes("Local");
   const finalRuntimeIndex = stripped.lastIndexOf("gpt-5.4 (medium)");
   assert.ok(finalRuntimeIndex >= 0, "ProviderPicker shell should render runtime metadata");
@@ -132,8 +132,8 @@ test("AppShell renders ProviderPicker with all 5 providers at normal standard si
   assert.equal(finalBottomChrome.match(/gpt-5\.4 \(medium\)/g)?.length ?? 0, 1, "ProviderPicker shell should render one runtime row");
 
   assert.equal(
-    hasOpenAI && hasAnthropic && hasAntigravity && (!hasGoogle || !hasLocal),
+    hasOpenAI && hasAnthropic && hasAntigravity && (!hasMistral || !hasLocal),
     false,
-    "Broken state (missing Google or Local while rendering others) detected!"
+    "Broken state (missing Mistral Vibe or Local while rendering others) detected!"
   );
 });

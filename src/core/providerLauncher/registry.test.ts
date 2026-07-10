@@ -9,14 +9,34 @@ import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "../providerRuntime/antigravity.js"
 test("provider registry exposes the default launcher providers", () => {
   const providers = buildProviderRegistry({ activeModel: "gpt-5.4" });
 
-  assert.deepEqual(providers.map((provider) => provider.id), ["openai", "anthropic", "local", "antigravity"]);
+  assert.deepEqual(providers.map((provider) => provider.id), ["openai", "anthropic", "mistral", "local", "antigravity"]);
   assert.equal(providers[0]?.displayName, "OpenAI");
   assert.equal(providers[0]?.currentModel, "gpt-5.4");
   assert.deepEqual(providers[0]?.launchCommand, { executable: "codex", args: [] });
   assert.deepEqual(providers[1]?.launchCommand, { executable: "claude", args: [] });
-  assert.equal(providers[2]?.enabled, false);
-  assert.equal(providers[2]?.launchCommand, null);
-  assert.deepEqual(providers[3]?.launchCommand, { executable: "agy", args: [] });
+  assert.equal(providers[2]?.displayName, "Mistral Vibe CLI");
+  assert.equal(providers[2]?.backendType, "mistral-vibe-cli-auth");
+  assert.equal(providers[2]?.routeMode, "in-codexa");
+  assert.equal(providers[2]?.statusLabel, "Enabled");
+  assert.deepEqual(providers[2]?.launchCommand, { executable: "vibe", args: [] });
+  assert.equal(providers[3]?.enabled, false);
+  assert.equal(providers[3]?.launchCommand, null);
+  assert.deepEqual(providers[4]?.launchCommand, { executable: "agy", args: [] });
+});
+
+test("Mistral Vibe can be the workspace default without becoming the active chat route", () => {
+  const providers = buildProviderRegistry({
+    activeModel: "gpt-5.4",
+    workspaceConfig: {
+      workspaceDefaultProviderId: "mistral",
+      activeRoute: { providerId: "openai", modelId: "gpt-5.4", backendKind: "codex-cli-auth" },
+    },
+  });
+
+  const mistral = providers.find((provider) => provider.id === "mistral");
+  assert.equal(mistral?.isDefault, true);
+  assert.equal(mistral?.isActiveRoute, false);
+  assert.equal(providers.find((provider) => provider.id === "openai")?.isActiveRoute, true);
 });
 
 test("antigravity appears in the provider registry with correct defaults", () => {
