@@ -1,6 +1,9 @@
 import { type ChildProcess } from "child_process";
 import { APP_NAME, APP_VERSION, DEFAULT_MODEL, LEGACY_FALLBACK_MODELS, formatReasoningLabel } from "../../config/settings.js";
 import { resolveCodexExecutable, spawnCodexProcess } from "../executables/codexExecutable.js";
+import { loadSeededCodexCapabilities } from "./codexModelsCacheSeed.js";
+import { saveCachedProviderModels } from "./providerModelCache.js";
+import type { ProviderModel } from "../providerRuntime/types.js";
 
 export type ModelCapabilitySource = "runtime" | "fallback";
 export type ModelCapabilityStatus = "ready" | "fallback";
@@ -47,6 +50,8 @@ export interface GetCodexModelCapabilitiesOptions extends DiscoverCodexModelCapa
   ttlMs?: number;
   resolveExecutable?: typeof resolveCodexExecutable;
   discover?: typeof discoverCodexModelCapabilities;
+  seed?: typeof loadSeededCodexCapabilities;
+  persist?: typeof persistCodexModelCapabilities;
 }
 
 interface JsonRpcResponse {
@@ -439,14 +444,36 @@ export async function discoverCodexModelCapabilities(
   });
 }
 
-// Cache chain: TTL-based in-memory cache → live discovery → fallback model list on error.
-// Failed discoveries are evicted from the cache so retries are possible.
+// Persist a successful live discovery so the next launch can seed the model
+// picker without spawning the codex app-server. Best-effort by design.
+export function persistCodexModelCapabilities(capabilities: CodexModelCapabilities): void {
+  const models: ProviderModel[] = capabilities.models
+    .filter((capability) => !capability.hidden)
+    .map((capability) => ({
+      id: capability.id,
+      modelId: capability.model,
+      label: capability.label,
+      description: capability.description,
+      defaultReasoningLevel: capability.defaultReasoningLevel,
+      supportedReasoningLevels: capability.supportedReasoningLevels,
+      source: "discovered",
+    }));
+  saveCachedProviderModels("openai", { discoveredAt: capabilities.discoveredAt, models });
+}
+
+// Cache chain: TTL-based in-memory cache → live discovery → seeded local caches
+// (codex's own models_cache.json / Codexa's last-good discovery) → static
+// fallback model list. Failed discoveries are evicted from the in-memory cache
+// so retries are possible even when a seed satisfied the request.
 export async function getCodexModelCapabilities(
   options: GetCodexModelCapabilitiesOptions = {},
 ): Promise<CodexModelCapabilities> {
   const now = options.now?.() ?? Date.now();
   const ttlMs = options.ttlMs ?? DEFAULT_CACHE_TTL_MS;
+  const seed = options.seed ?? loadSeededCodexCapabilities;
+  const persist = options.persist ?? persistCodexModelCapabilities;
   let executable: string | null = null;
+  let liveDiscoverySucceeded = false;
 
   try {
     executable = options.executable ?? await (options.resolveExecutable ?? resolveCodexExecutable)();
@@ -462,7 +489,25 @@ export async function getCodexModelCapabilities(
       includeHidden: options.includeHidden,
       timeoutMs: options.timeoutMs,
       now: () => now,
-    }).catch((error) => createFallbackModelCapabilities(error, { discoveredAt: now, executable }));
+    }).then((discovered) => {
+      liveDiscoverySucceeded = true;
+      try {
+        persist(discovered);
+      } catch {
+        // Persistence must never fail a successful discovery.
+      }
+      return discovered;
+    }).catch((error) => {
+      try {
+        const seeded = seed();
+        if (seeded) {
+          return seeded;
+        }
+      } catch {
+        // Seed read failures fall through to the static list.
+      }
+      return createFallbackModelCapabilities(error, { discoveredAt: now, executable });
+    });
 
     capabilityCache.set(cacheKey, {
       expiresAt: now + ttlMs,
@@ -470,12 +515,20 @@ export async function getCodexModelCapabilities(
     });
 
     const result = await promise;
-    if (result.status === "fallback") {
+    if (!liveDiscoverySucceeded) {
       capabilityCache.delete(cacheKey);
     }
 
     return result;
   } catch (error) {
+    try {
+      const seeded = seed();
+      if (seeded) {
+        return seeded;
+      }
+    } catch {
+      // Seed read failures fall through to the static list.
+    }
     return createFallbackModelCapabilities(error, { discoveredAt: now, executable });
   }
 }

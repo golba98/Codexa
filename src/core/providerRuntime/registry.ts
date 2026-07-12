@@ -1,4 +1,6 @@
 import { codexSubprocessProvider } from "../providers/codexSubprocess.js";
+import { loadSeededOpenAiModels } from "../models/codexModelsCacheSeed.js";
+import { loadCachedProviderModels, saveCachedProviderModels } from "../models/providerModelCache.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { ProviderId, ProviderActiveRoute, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
 import { anthropicRuntime } from "./anthropic.js";
@@ -29,11 +31,14 @@ const openAiRuntime: ProviderRuntime = {
   routeAvailable: true,
   routeStatus: "Uses the configured Codex/OpenAI backend inside Codexa.",
   launchAvailable: true,
+  // Seeded from local caches (codex's own models_cache.json or Codexa's
+  // last-good discovery); live app-server discovery refreshes them via
+  // getCodexModelCapabilities in the app run loop.
   discoverModels: () => ({
     status: "ready",
     providerId: "openai",
     backendKind: "codex-cli-auth",
-    models: [],
+    models: loadSeededOpenAiModels()?.models ?? [],
   }),
   run: (request: ProviderChatRequest, handlers: BackendRunHandlers) => {
     handlers.onProgress?.({
@@ -99,7 +104,29 @@ export function getProviderRouteSetupMessage(providerId: ProviderId): string {
 }
 
 export function discoverProviderModels(providerId: ProviderId): ProviderModelDiscoveryResult {
-  return getProviderRuntime(providerId).discoverModels();
+  const result = getProviderRuntime(providerId).discoverModels();
+  // When the live/synchronous probe only produced fallback entries (or none),
+  // prefer the last-good discovery persisted from a previous session.
+  const hasRuntimeModels = result.models.some((model) => model.source && model.source !== "fallback");
+  if (result.status === "ready" && !hasRuntimeModels) {
+    const cached = loadCachedProviderModels(providerId);
+    if (cached) {
+      return { ...result, models: cached.models };
+    }
+  }
+  return result;
+}
+
+// Persist a ready discovery so the next session starts from last-good models.
+export function persistProviderDiscovery(discovery: ProviderModelDiscoveryResult): void {
+  const runtimeModels = discovery.models.filter((model) => model.source && model.source !== "fallback");
+  if (discovery.status !== "ready" || runtimeModels.length === 0) {
+    return;
+  }
+  saveCachedProviderModels(discovery.providerId, {
+    discoveredAt: Date.now(),
+    models: runtimeModels,
+  });
 }
 
 export async function validateProviderRouteActivation(options: {

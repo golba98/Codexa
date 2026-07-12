@@ -5,7 +5,7 @@ import type { AssistantEvent, RunEvent, TimelineEvent, UserPromptEvent } from ".
 import { getRunPlanText, isBusy } from "./types.js";
 import { createInitialSessionState, reduceSessionState, type SessionState } from "./appSession.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
-import { isAnimatedBusyState } from "../ui/busyStatusAnimation.js";
+import { isAnimatedBusyState } from "../ui/chrome/busyStatusAnimation.js";
 
 function makeUserEvent(turnId: number): UserPromptEvent {
   return { id: 1, type: "user", createdAt: 1, prompt: "Do work", turnId };

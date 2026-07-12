@@ -132,6 +132,7 @@ import {
   normalizeReasoningForModelCapabilities,
   type CodexModelCapabilities,
 } from "./core/models/codexModelCapabilities.js";
+import { loadSeededCodexCapabilities } from "./core/models/codexModelsCacheSeed.js";
 import {
   buildDevLaunchNotice,
   buildWorkspaceCommandContext,
@@ -172,6 +173,7 @@ import {
   getProviderRuntime,
   isProviderRouteConfigured,
   isProviderRoutableInCodexa,
+  persistProviderDiscovery,
   resolveActiveProviderRoute,
   validateProviderRouteActivation,
 } from "./core/providerRuntime/registry.js";
@@ -236,25 +238,25 @@ import {
   submitPlanFeedback,
   type PlanFlowState,
 } from "./session/planFlow.js";
-import { AuthPanel } from "./ui/AuthPanel.js";
-import { BackendPicker } from "./ui/BackendPicker.js";
-import { measureBottomComposerRows, MemoizedBottomComposer } from "./ui/BottomComposer.js";
+import { AuthPanel } from "./ui/panels/AuthPanel.js";
+import { BackendPicker } from "./ui/panels/BackendPicker.js";
+import { measureBottomComposerRows, MemoizedBottomComposer } from "./ui/chrome/BottomComposer.js";
 import { resolveStartupHeaderMode, useTerminalViewport } from "./ui/layout.js";
-import { ModelPickerScreen } from "./ui/ModelPickerScreen.js";
-import { ModePicker } from "./ui/ModePicker.js";
-import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } from "./ui/PlanActionPicker.js";
-import { PermissionsPanel, type PermissionsPanelAction } from "./ui/PermissionsPanel.js";
-import { ProviderPicker } from "./ui/ProviderPicker.js";
-import { ReasoningPicker } from "./ui/ReasoningPicker.js";
-import { AttachmentImportPanel, type PendingImportFile } from "./ui/AttachmentImportPanel.js";
-import { SelectionPanel } from "./ui/SelectionPanel.js";
-import { SettingsPanel } from "./ui/SettingsPanel.js";
-import { UpdatePromptPanel } from "./ui/UpdatePromptPanel.js";
-import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/TextEntryPanel.js";
-import { ThemePicker } from "./ui/ThemePicker.js";
-import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/focus.js";
+import { ModelPickerScreen } from "./ui/panels/ModelPickerScreen.js";
+import { ModePicker } from "./ui/panels/ModePicker.js";
+import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } from "./ui/panels/PlanActionPicker.js";
+import { PermissionsPanel, type PermissionsPanelAction } from "./ui/panels/PermissionsPanel.js";
+import { ProviderPicker } from "./ui/panels/ProviderPicker.js";
+import { ReasoningPicker } from "./ui/panels/ReasoningPicker.js";
+import { AttachmentImportPanel, type PendingImportFile } from "./ui/panels/AttachmentImportPanel.js";
+import { SelectionPanel } from "./ui/panels/SelectionPanel.js";
+import { SettingsPanel } from "./ui/panels/SettingsPanel.js";
+import { UpdatePromptPanel } from "./ui/panels/UpdatePromptPanel.js";
+import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/panels/TextEntryPanel.js";
+import { ThemePicker } from "./ui/panels/ThemePicker.js";
+import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/input/focus.js";
 import { ThemeProvider, THEMES } from "./ui/theme.js";
-import { buildActiveRuntimeDisplay, runtimeDisplayToSummary } from "./ui/runtimeDisplay.js";
+import { buildActiveRuntimeDisplay, runtimeDisplayToSummary } from "./ui/render/runtimeDisplay.js";
 import {
   cancelThemeSelection,
   commitThemeSelection,
@@ -264,9 +266,9 @@ import {
   type ThemeSelectionState,
 } from "./ui/themeFlow.js";
 import { isBusy as isUiBusy } from "./session/types.js";
-import { AppShell } from "./ui/AppShell.js";
-import { TranscriptShell } from "./ui/TranscriptShell.js";
-import type { RuntimeAvailability } from "./ui/RuntimeStatusBar.js";
+import { AppShell } from "./ui/chrome/AppShell.js";
+import { TranscriptShell } from "./ui/timeline/TranscriptShell.js";
+import type { RuntimeAvailability } from "./ui/chrome/RuntimeStatusBar.js";
 import { checkForUpdates, formatLocalDevUpdateStatus, formatUpdateInstructions, shouldRunStartupUpdateCheck, type UpdateCheckResult } from "./core/version/updateCheck.js";
 import { isLocalDevChannel } from "./core/version/channel.js";
 import {
@@ -490,7 +492,10 @@ export function App({ launchArgs }: AppProps) {
   const [authStatusBusy, setAuthStatusBusy] = useState(false);
   // Running character total across the conversation — used to estimate token usage
   const [conversationChars, setConversationChars] = useState(0);
-  const [modelCapabilities, setModelCapabilities] = useState<CodexModelCapabilities | null>(null);
+  // Seeded synchronously from local caches (codex's models_cache.json or the
+  // persisted last-good discovery) so the model picker opens instantly with
+  // real models; live discovery replaces this in the background.
+  const [modelCapabilities, setModelCapabilities] = useState<CodexModelCapabilities | null>(() => loadSeededCodexCapabilities());
   const [modelCapabilitiesBusy, setModelCapabilitiesBusy] = useState(false);
   const [activeContextMetadata, setActiveContextMetadata] = useState<ModelContextMetadata | null>(null);
   const { stdout } = useStdout();
@@ -2505,6 +2510,7 @@ export function App({ launchArgs }: AppProps) {
             cwd: workspaceRoot,
             localConfig: providerId === "local" ? providerWorkspaceConfig.providers?.local : undefined,
           }).then((discovery) => {
+            persistProviderDiscovery(discovery);
             if (discovery.diagnostics) {
               providerDiagnosticsRef.current[providerId] = discovery.diagnostics as Record<string, string | number | boolean | null>;
             }

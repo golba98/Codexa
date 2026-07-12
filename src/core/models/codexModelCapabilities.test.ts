@@ -9,6 +9,7 @@ import {
   getPreferredModelFromCapabilities,
   normalizeCodexModelListResponses,
   normalizeReasoningForModelCapabilities,
+  type CodexModelCapabilities,
 } from "./codexModelCapabilities.js";
 
 const SAMPLE_RESPONSE = {
@@ -148,18 +149,21 @@ test("caches successful discovery and refreshes when forced", async () => {
   const first = await getCodexModelCapabilities({
     executable: "codex",
     discover,
+    persist: () => {},
     now: () => 100,
     ttlMs: 1000,
   });
   const cached = await getCodexModelCapabilities({
     executable: "codex",
     discover,
+    persist: () => {},
     now: () => 200,
     ttlMs: 1000,
   });
   const refreshed = await getCodexModelCapabilities({
     executable: "codex",
     discover,
+    persist: () => {},
     forceRefresh: true,
     now: () => 300,
     ttlMs: 1000,
@@ -203,18 +207,21 @@ test("concurrent callers share a single in-flight discovery promise", async () =
   const firstPromise = getCodexModelCapabilities({
     executable: "codex",
     discover,
+    persist: () => {},
     now: () => 100,
     ttlMs: 1000,
   });
   const secondPromise = getCodexModelCapabilities({
     executable: "codex",
     discover,
+    persist: () => {},
     now: () => 100,
     ttlMs: 1000,
   });
   const thirdPromise = getCodexModelCapabilities({
     executable: "codex",
     discover,
+    persist: () => {},
     now: () => 100,
     ttlMs: 1000,
   });
@@ -236,11 +243,93 @@ test("falls back safely when discovery fails", async () => {
     discover: async () => {
       throw new Error("broken json");
     },
+    seed: () => null,
+    persist: () => {},
     now: () => 100,
   });
 
   assert.equal(capabilities.status, "fallback");
   assert.match(capabilities.error ?? "", /broken json/);
   assert.equal(capabilities.models[0]?.supportedReasoningLevels, null);
+  clearCodexModelCapabilityCache();
+});
+
+test("failed discovery returns seeded capabilities and stays retryable", async () => {
+  clearCodexModelCapabilityCache();
+  const seeded = {
+    status: "ready" as const,
+    source: "runtime" as const,
+    models: [
+      {
+        id: "gpt-5.6-sol",
+        model: "gpt-5.6-sol",
+        label: "GPT-5.6-Sol",
+        description: null,
+        available: true,
+        hidden: false,
+        isDefault: true,
+        defaultReasoningLevel: "medium",
+        supportedReasoningLevels: [{ id: "low", label: "Low", description: null }],
+        reasoningLevelCount: 1,
+        source: "runtime" as const,
+        raw: null,
+      },
+    ],
+    discoveredAt: 50,
+    executable: null,
+    error: null,
+  };
+
+  const fromSeed = await getCodexModelCapabilities({
+    executable: "codex",
+    discover: async () => {
+      throw new Error("app-server unavailable");
+    },
+    seed: () => seeded,
+    persist: () => {},
+    now: () => 100,
+    ttlMs: 1000,
+  });
+  assert.equal(fromSeed.status, "ready");
+  assert.equal(fromSeed.models[0]?.model, "gpt-5.6-sol");
+
+  // The seeded result must not occupy the TTL cache: a later call retries live
+  // discovery instead of serving the seed for the whole TTL window.
+  let retried = false;
+  const afterRetry = await getCodexModelCapabilities({
+    executable: "codex",
+    discover: async () => {
+      retried = true;
+      return normalizeCodexModelListResponses([
+        { data: [{ id: "model-live", model: "model-live", displayName: "Live" }] },
+      ], { discoveredAt: 2, executable: "codex" });
+    },
+    seed: () => seeded,
+    persist: () => {},
+    now: () => 100,
+    ttlMs: 1000,
+  });
+  assert.equal(retried, true, "seeded fulfillment must not suppress the retry");
+  assert.equal(afterRetry.models[0]?.model, "model-live");
+  clearCodexModelCapabilityCache();
+});
+
+test("successful discovery is persisted for the next launch", async () => {
+  clearCodexModelCapabilityCache();
+  const persisted: CodexModelCapabilities[] = [];
+  const result = await getCodexModelCapabilities({
+    executable: "codex",
+    discover: async () => normalizeCodexModelListResponses([
+      { data: [{ id: "model-p", model: "model-p", displayName: "Persist Me" }] },
+    ], { discoveredAt: 7, executable: "codex" }),
+    seed: () => null,
+    persist: (capabilities) => {
+      persisted.push(capabilities);
+    },
+    now: () => 100,
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0]?.models[0]?.model, "model-p");
   clearCodexModelCapabilityCache();
 });
