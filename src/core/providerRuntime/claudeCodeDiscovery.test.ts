@@ -648,8 +648,16 @@ test("ANTHROPIC_FALLBACK_MODELS labels contain no version-specific numbers", () 
   }
 });
 
+test("ANTHROPIC_FALLBACK_MODELS offers the Fable flagship first with the full effort range", () => {
+  const fable = ANTHROPIC_FALLBACK_MODELS[0];
+  assert.equal(fable?.modelId, "fable");
+  assert.equal(fable?.family, "fable");
+  assert.equal(fable?.defaultReasoningLevel, "xhigh");
+  assert.deepEqual(fable?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
+});
+
 test("ANTHROPIC_FALLBACK_MODELS uses short aliases as modelId, not versioned canonical IDs", () => {
-  const validAliases = new Set(["opus", "sonnet", "haiku"]);
+  const validAliases = new Set(["fable", "opus", "sonnet", "haiku"]);
   for (const model of ANTHROPIC_FALLBACK_MODELS) {
     assert.ok(
       validAliases.has(model.modelId),

@@ -10,7 +10,7 @@ import type { ProviderModel } from "./types.js";
 
 type CommandRunner = typeof runCommand;
 
-const CLAUDE_MODEL_FAMILIES = ["opus", "sonnet", "haiku"] as const;
+const CLAUDE_MODEL_FAMILIES = ["fable", "opus", "sonnet", "haiku"] as const;
 type ClaudeModelFamily = (typeof CLAUDE_MODEL_FAMILIES)[number];
 const CLAUDE_FAMILIES_ALT = CLAUDE_MODEL_FAMILIES.join("|");
 // Pre-compiled from CLAUDE_MODEL_FAMILIES — update that constant when new families are added.
@@ -116,6 +116,7 @@ export function parseClaudeAuthStatus(stdout: string): ClaudeCodeAuthInfo | null
 
 function modelFamilyFromValue(value: string): ClaudeModelFamily {
   const normalized = value.toLowerCase();
+  if (normalized.includes("fable")) return "fable";
   if (normalized.includes("opus")) return "opus";
   if (normalized.includes("haiku")) return "haiku";
   return "sonnet";
@@ -135,6 +136,7 @@ function fallbackDefaultEffort(family: string): string {
 }
 
 function titleCaseFamily(family: string): string {
+  if (family === "fable") return "Fable";
   if (family === "opus") return "Opus";
   if (family === "haiku") return "Haiku";
   return "Sonnet";
@@ -144,7 +146,7 @@ function versionFromModelText(value: string): string | null {
   const normalized = value.trim().toLowerCase();
   const idMatch = normalized.match(RE_VERSIONED_ID);
   if (idMatch) return idMatch[2] ? `${idMatch[1]}.${idMatch[2]}` : idMatch[1] ?? null;
-  const labelMatch = normalized.match(/^(?:claude\s+)?(?:opus|sonnet|haiku)\s+(\d+(?:\.\d+)?)\b/);
+  const labelMatch = normalized.match(new RegExp(`^(?:claude\\s+)?(?:${CLAUDE_FAMILIES_ALT})\\s+(\\d+(?:\\.\\d+)?)\\b`));
   return labelMatch?.[1] ?? null;
 }
 

@@ -79,6 +79,19 @@ function fallbackModelDescription(family: string): string {
 
 export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
   {
+    id: "fable",
+    modelId: "fable",
+    label: "Claude Fable (version unknown)",
+    description: fallbackModelDescription("Fable"),
+    defaultReasoningLevel: "xhigh",
+    supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high", "xhigh", "max"]),
+    source: "fallback",
+    canonicalId: "fable",
+    family: "fable",
+    effortSource: "fallback",
+    effortVerified: false,
+  },
+  {
     id: "opus",
     modelId: "opus",
     label: "Claude Opus (version unknown)",
