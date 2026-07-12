@@ -267,6 +267,24 @@ export async function validateAntigravityRoute(options: {
   runCommandImpl?: typeof runCommand;
   platform?: NodeJS.Platform;
 }): Promise<ProviderRouteValidationResult> {
+  // Already validated this session: skip the executable probe and model
+  // re-discovery so re-activating antigravity is instant. "Refresh models"
+  // bypasses this via runtime.refreshModels, so a stale catalog stays
+  // user-recoverable.
+  if (agyRouteValidated && discoveredAgyModels?.length) {
+    return {
+      status: "ready",
+      providerId: "antigravity",
+      backendKind: "antigravity-cli-auth",
+      message: `Antigravity CLI found at: ${resolvedAgyExecutable}`,
+      diagnostics: {
+        resolvedCommand: resolvedAgyExecutable,
+        modelSource: "session-cache",
+        discoveredModelCount: discoveredAgyModels.length,
+      },
+    };
+  }
+
   let resolved: string;
   try {
     resolved = await resolveAgyExecutable({

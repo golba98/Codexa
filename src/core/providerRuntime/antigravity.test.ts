@@ -395,6 +395,27 @@ test("validateAntigravityRoute: returns ready when agy --help succeeds", async (
   assert.equal(result.backendKind, "antigravity-cli-auth");
 });
 
+test("validateAntigravityRoute: second validation in a session short-circuits without re-spawning", async () => {
+  resetAntigravityRouteValidationCacheForTests();
+  let spawnCount = 0;
+  const runCommandImpl = mockRunCommand((spec) => {
+    if (spec.args[0] === "--help") return commandResult({ status: "completed", exitCode: 0, stdout: "Usage of agy..." });
+    if (spec.args[0] === "models") return commandResult({ stdout: AGY_MODELS_OUTPUT });
+    return commandResult({ status: "failed", exitCode: 1 });
+  }, () => { spawnCount += 1; });
+
+  const first = await validateAntigravityRoute({ cwd: "/tmp", runCommandImpl });
+  assert.equal(first.status, "ready");
+  const spawnsAfterFirst = spawnCount;
+  assert.ok(spawnsAfterFirst > 0, "first validation should probe the executable");
+
+  const second = await validateAntigravityRoute({ cwd: "/tmp", runCommandImpl });
+  assert.equal(second.status, "ready");
+  assert.equal(second.backendKind, "antigravity-cli-auth");
+  assert.equal(second.diagnostics?.modelSource, "session-cache");
+  assert.equal(spawnCount, spawnsAfterFirst, "second validation must not spawn subprocesses");
+});
+
 test("validateAntigravityRoute: wraps a .cmd executable probe in cmd.exe on Windows", async () => {
   resetAntigravityRouteValidationCacheForTests();
   const capturedSpecs: CommandSpec[] = [];

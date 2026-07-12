@@ -92,6 +92,22 @@ async function renderModelPicker(props: Partial<Parameters<typeof ModelPickerScr
   return stripAnsi(output);
 }
 
+test("model picker loading state names the active provider", async () => {
+  const output = await renderModelPicker({ activeProviderLabel: "Antigravity", isLoading: true });
+  assert.match(output, /Discovering models from Antigravity\.\.\./);
+});
+
+test("model picker loading state keeps Codex runtime copy for OpenAI", async () => {
+  const output = await renderModelPicker({ isLoading: true });
+  assert.match(output, /Discovering models from the Codex runtime\.\.\./);
+});
+
+test("model picker shows emptyMessage when not loading", async () => {
+  const output = await renderModelPicker({ emptyMessage: "No Antigravity models available." });
+  assert.match(output, /No Antigravity models available\./);
+  assert.doesNotMatch(output, /Discovering models/);
+});
+
 test("model picker shows default routeText when no override provided", async () => {
   const output = await renderModelPicker({ activeProviderLabel: "Google" });
   assert.match(output, /Choose a Google model to use inside Codexa\./);
