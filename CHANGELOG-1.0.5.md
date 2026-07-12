@@ -6,6 +6,7 @@ Release notes for the changes currently planned for the next Codexa release.
 
 - **Instant dynamic model lists for OpenAI/Codex** — the model picker now seeds from the codex CLI's own model catalog (`~/.codex/models_cache.json`) and Codexa's last-good discovery, so all current models and their full reasoning-level ranges (low through ultra) appear immediately at launch without waiting for a live probe. The static compatibility list is now a true last resort instead of the visible default.
 - **Persistent per-provider model cache** — successful model discoveries for every provider are saved to `~/.codexa-model-cache.json` and survive restarts: pickers open instantly with the previous session's models while a background refresh updates the list in place.
+- **Claude Fable support** — the Anthropic provider now recognizes the Fable family: `fable` is offered first among the Claude aliases with the full effort range (low through max, defaulting to xhigh), and discovery classifies Fable model IDs and labels into their own family.
 - **Mistral Vibe CLI provider** — Codexa can discover and launch the `vibe` executable, use Vibe’s existing authentication, display configured Vibe models, and select Vibe as a workspace provider.
 - **Vibe session continuity** — workspace sessions can resume through the Vibe CLI, with a safe retry using a fresh session when a saved session is no longer valid.
 - **Vibe diagnostics and setup guidance** — missing executables, authentication failures, and unavailable provider configuration now produce actionable messages.

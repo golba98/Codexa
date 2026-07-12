@@ -153,7 +153,7 @@ function versionFromModelText(value: string): string | null {
   const normalized = value.trim().toLowerCase();
   const idMatch = normalized.match(RE_VERSIONED_ID);
   if (idMatch) return idMatch[2] ? `${idMatch[1]}.${idMatch[2]}` : idMatch[1] ?? null;
-  const labelMatch = normalized.match(/^(?:claude\s+)?(?:opus|sonnet|haiku)\s+(\d+(?:\.\d+)?)\b/);
+  const labelMatch = normalized.match(new RegExp(`^(?:claude\\s+)?(?:${CLAUDE_FAMILIES_ALT})\\s+(\\d+(?:\\.\\d+)?)\\b`));
   return labelMatch?.[1] ?? null;
 }
 

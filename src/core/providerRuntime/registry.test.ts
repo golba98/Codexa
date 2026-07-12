@@ -422,7 +422,7 @@ test("getDefaultRouteModel with discovered models: prefers discovered anthropic 
 
   // Cold cache: should return hardcoded default
   const coldDefault = getDefaultRouteModel("anthropic", "gpt-5.4");
-  assert.equal(coldDefault, "opus"); // ANTHROPIC_FALLBACK_MODELS[0]?.modelId is "opus"
+  assert.equal(coldDefault, "fable"); // ANTHROPIC_FALLBACK_MODELS[0]?.modelId is "fable"
 
   // Mock-validate anthropic to populate cache
   const mockImpl = mockRunCommand((executable, args) => {
