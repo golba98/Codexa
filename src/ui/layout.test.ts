@@ -13,7 +13,7 @@ import {
   resolveStartupHeaderMode,
   getContentWidth,
 } from "./layout.js";
-import { getHeaderHeroLayout, measureTopHeaderRows } from "./TopHeader.js";
+import { getHeaderHeroLayout, measureTopHeaderRows } from "./chrome/TopHeader.js";
 
 test("leaves a one-column gutter to avoid edge-triggered scrollbars", () => {
   assert.equal(getShellWidth(120), 119);

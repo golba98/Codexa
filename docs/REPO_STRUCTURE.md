@@ -92,22 +92,26 @@ Headless (non-interactive) execution mode used by `codexa exec`. `execRunner.ts`
 
 ### `src/ui/`
 
-All Ink components and rendering utilities. Kept flat by design — co-locating related tests avoids deep nesting in a directory with 48 files.
+All Ink components and rendering utilities, grouped one level deep by domain. Tests stay co-located with their source files.
 
-**Key rendering pipeline** (for subprocess output): `outputPipeline.ts` → sanitize → normalize → classify (Markdown segments) → `timelineMeasure.ts` (row heights for viewport).
+| Directory | Contents |
+|---|---|
+| `chrome/` | App shell and persistent chrome: `AppShell.tsx` (layout shell: `TopHeader` + `Timeline` + `BottomComposer`), `TopHeader.tsx`, `BottomComposer.tsx` (multiline input with slash-command completion), `RunFooter.tsx`, `RuntimeStatusBar.tsx`, activity indicators/spinners, update cards, busy-status animation |
+| `timeline/` | Transcript rendering: `Timeline.tsx` (scrollable event list), `TranscriptShell.tsx`, `TurnGroup.tsx` (one conversation turn), `AgentBlock.tsx`, `ThinkingBlock.tsx`, `ActionRequiredBlock.tsx`, `StaticIntroItem.tsx`, `timelineMeasure.ts` (row height engine — performance critical; do not split), `runActivityView.ts`, `progressEntries.ts` |
+| `panels/` | Pickers and overlay panels: `Panel.tsx` / `SelectionPanel.tsx` / `TextEntryPanel.tsx` primitives, model/provider/backend/mode/theme/reasoning pickers, `SettingsPanel.tsx`, `AuthPanel.tsx`, `PermissionsPanel.tsx`, `PlanReviewPanel.tsx`, attachment import, update prompt |
+| `render/` | Text/output rendering: `outputPipeline.ts`, `Markdown.tsx`, `diffRenderer.ts`, `textLayout.ts`, `terminalAnswerFormat.ts`, runtime/mode display formatters, logo variants |
+| `input/` | Keyboard and command handling: `focus.ts` (focus ID registry and routing), `inputBuffer.ts`, `slashCommands.ts`, `commandNormalize.ts` |
 
-Notable files:
+**Root files** (foundations shared by every group):
 
 | File | Purpose |
 |---|---|
-| `AppShell.tsx` | Layout shell: `TopHeader` + `Timeline` + `BottomComposer` |
-| `Timeline.tsx` | Scrollable event list with virtual-height measurement |
-| `TurnGroup.tsx` | Renders a single conversation turn |
-| `BottomComposer.tsx` | Multiline text input with slash-command completion |
-| `timelineMeasure.ts` | Row height calculation engine (performance critical; do not split) |
 | `theme.tsx` | Theme system and `useTheme()` hook |
-| `focus.ts` | Focus ID registry and keyboard routing |
+| `themeFlow.ts` | Theme selection flow state |
 | `layout.ts` | Responsive layout breakpoints and viewport hook |
+| `useThrottledValue.ts` | Throttled value hook for streaming updates |
+
+**Key rendering pipeline** (for subprocess output): `render/outputPipeline.ts` → sanitize → normalize → classify (Markdown segments) → `timeline/timelineMeasure.ts` (row heights for viewport).
 
 ### `src/types/`
 

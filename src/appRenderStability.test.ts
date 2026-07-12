@@ -5,9 +5,9 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "app.tsx"), "utf8");
-const appShellSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "AppShell.tsx"), "utf8");
-const transcriptShellSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "TranscriptShell.tsx"), "utf8");
-const composerSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "BottomComposer.tsx"), "utf8");
+const appShellSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "AppShell.tsx"), "utf8");
+const transcriptShellSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "timeline", "TranscriptShell.tsx"), "utf8");
+const composerSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "BottomComposer.tsx"), "utf8");
 const launcherSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "codexa.js"), "utf8");
 const indexSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "index.tsx"), "utf8");
 const layoutSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "layout.ts"), "utf8");
