@@ -14,6 +14,9 @@ Release notes for the changes currently planned for the next Codexa release.
 
 ## Fixed
 
+- **Model picker no longer lags behind a provider switch** — pressing "Use in Codexa" on a provider (Antigravity, Claude, GPT, Mistral) now flips the model picker to the new provider immediately instead of showing the previous provider's models until background route validation finished. While a first-ever discovery is still running, the picker shows a provider-named "Discovering models..." state instead of a stale or empty list, and a failed activation rolls the picker back to the previous provider.
+- **Faster Antigravity re-activation** — switching back to Antigravity within a session reuses the validated route and discovered model catalog instead of re-spawning the `agy` executable probes every time.
+- **New Claude models are discovered automatically** — model discovery now recognizes major-only Claude model ids (e.g. `claude-sonnet-5`, `claude-fable-5`), so newly released models appear in the picker instead of the family staying pinned to an older version (previously stuck on Sonnet 4.6). Each launch also persists the freshly discovered Claude catalog to the model cache, so new models show up after a CLI update with no manual "Refresh models".
 - **Kitty terminal startup leak** — Codexa no longer uses Ink’s automatic Kitty keyboard-protocol probe, which could expose the `ESC[?0u` response as visible text above the startup screen or inside the composer. Direct Kitty sessions enable the protocol without probing; other terminals skip it.
 - **OpenAI-compatible local responses** — local providers now handle message content, text completions, content-part arrays, and separated reasoning payloads more reliably, with clear errors for genuinely empty responses.
 - **Terminal resize and frame stability** — resize recovery preserves the current frame and avoids transient blank or duplicated output.

@@ -497,6 +497,9 @@ export function App({ launchArgs }: AppProps) {
   // real models; live discovery replaces this in the background.
   const [modelCapabilities, setModelCapabilities] = useState<CodexModelCapabilities | null>(() => loadSeededCodexCapabilities());
   const [modelCapabilitiesBusy, setModelCapabilitiesBusy] = useState(false);
+  // True while a provider route switch is validating (subprocess probes);
+  // drives the model picker's loading state for non-openai providers.
+  const [routeSwitchBusy, setRouteSwitchBusy] = useState(false);
   const [activeContextMetadata, setActiveContextMetadata] = useState<ModelContextMetadata | null>(null);
   const { stdout } = useStdout();
   const { stdin } = useStdin();
@@ -730,7 +733,10 @@ export function App({ launchArgs }: AppProps) {
   const modelPickerDiscovery = useMemo(() => {
     if (modelPickerProviderId === "openai") return null;
     return discoverProviderModels(modelPickerProviderId);
-  }, [modelPickerProviderId]);
+    // registryNonce is intentionally included: route validation discovers models
+    // as a side effect and bumps the nonce so an open picker re-reads them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelPickerProviderId, registryNonce]);
   const providerModelCapabilities = useMemo(() => {
     if (!modelPickerDiscovery) return null;
     return providerModelsToCodexCapabilities(modelPickerDiscovery.models, activeProviderRoute.modelId);
@@ -1581,6 +1587,9 @@ export function App({ launchArgs }: AppProps) {
           providerRouteErrorsRef.current["anthropic"] = result.message ?? ANTHROPIC_ROUTE_SETUP_MESSAGE;
         } else {
           delete providerRouteErrorsRef.current["anthropic"];
+          // Persist the freshly discovered catalog so newly released Claude
+          // models replace the stale on-disk cache without a manual refresh.
+          persistProviderDiscovery(discoverProviderModels("anthropic"));
         }
       } catch {
         // Best-effort probe — failures are surfaced only when the user activates the route.
@@ -2006,6 +2015,12 @@ export function App({ launchArgs }: AppProps) {
     }
 
     modelSelectionInFlightRef.current = true;
+    // Reflect the target provider in the model picker immediately: route
+    // validation below can take seconds (subprocess probes), and until it
+    // persists the new active route, modelPickerProviderId would otherwise
+    // keep resolving to the stale route.
+    setPendingRouteProviderId(providerId);
+    setRouteSwitchBusy(true);
     traceInputDebug("model_selection_app_start", getInputDebugSnapshot({
       handler: "setModelAndReasoningWithNotice",
       model: nextModel,
@@ -2096,8 +2111,10 @@ export function App({ launchArgs }: AppProps) {
         reasoning: nextReasoning,
         error: message,
       }));
+      setPendingRouteProviderId(null);
       appendErrorEvent("Model selection failed", message);
     } finally {
+      setRouteSwitchBusy(false);
       modelSelectionInFlightRef.current = false;
       returnToChatMode("selection");
     }
@@ -2286,7 +2303,11 @@ export function App({ launchArgs }: AppProps) {
   }, [appendSystemEvent, busy]);
 
   const openProviderPicker = useCallback(() => {
-    setPendingRouteProviderId(null);
+    // Mid route switch, keep the pending id so initialProviderId highlights
+    // the provider being activated instead of the stale route.
+    if (!modelSelectionInFlightRef.current) {
+      setPendingRouteProviderId(null);
+    }
     const gate = guardConfigMutation("backend", busy);
     if (!gate.allowed) {
       appendSystemEvent("Busy", gate.message ?? "Finish the current run before opening providers.");
@@ -2653,7 +2674,11 @@ export function App({ launchArgs }: AppProps) {
   ]);
 
   const openModelPicker = useCallback(() => {
-    setPendingRouteProviderId(null);
+    // While a route switch is validating, keep the pending id so the picker
+    // shows the target provider instead of snapping back to the stale route.
+    if (!modelSelectionInFlightRef.current) {
+      setPendingRouteProviderId(null);
+    }
     traceInputDebug("model_picker_open_request", getInputDebugSnapshot({
       handler: "openModelPicker",
       currentScreen: screen,
@@ -4760,7 +4785,8 @@ export function App({ launchArgs }: AppProps) {
                 currentModel={modelPickerCurrentModel}
                 currentReasoning={modelPickerCurrentReasoning}
                 activeProviderLabel={modelPickerProviderLabel}
-                isLoading={modelPickerProviderId === "openai" && modelCapabilitiesBusy && modelPickerModels.length === 0}
+                isLoading={modelPickerModels.length === 0
+                  && ((modelPickerProviderId === "openai" && modelCapabilitiesBusy) || routeSwitchBusy)}
                 emptyMessage={modelPickerEmptyMessage}
                 onSelect={(m, r, geminiSelection) => {
                   if (pendingRouteProviderId && pendingRouteProviderId !== activeProviderRoute.providerId) {

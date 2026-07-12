@@ -498,7 +498,9 @@ export function ModelPickerScreen({
         >
           {models.length === 0 ? (
             <Text color={theme.textMuted}>
-              {isLoading ? "Discovering models from the Codex runtime..." : (emptyMessage ?? "No models available.")}
+              {isLoading
+                ? `Discovering models from ${activeProviderLabel === "OpenAI" ? "the Codex runtime" : activeProviderLabel}...`
+                : (emptyMessage ?? "No models available.")}
             </Text>
           ) : (
             visibleModels.map((model, index) => {

@@ -408,7 +408,10 @@ function extractClaudeModelIdsFromMetadata(raw: Buffer): string[] {
   const text = raw.toString("latin1");
   const ids = new Set<string>();
   // Fresh regex per call — /g flag requires a clean lastIndex on each invocation.
-  const pattern = new RegExp(`\\bclaude-(${CLAUDE_FAMILIES_ALT})-(\\d+)-(\\d{1,2})\\b`, "g");
+  // The minor version is optional (mirrors RE_VERSIONED_ID): major-only ids like
+  // claude-sonnet-5 must be discovered too. \d{1,2} keeps date suffixes
+  // (claude-haiku-4-5-20251001) from being absorbed into the version.
+  const pattern = new RegExp(`\\bclaude-(${CLAUDE_FAMILIES_ALT})-(\\d+)(?:-(\\d{1,2}))?\\b`, "g");
   for (let match = pattern.exec(text); match; match = pattern.exec(text)) {
     ids.add(match[0]);
   }
