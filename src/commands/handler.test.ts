@@ -191,6 +191,26 @@ test("validates reasoning against detected levels for the active model", () => {
   assert.match(rejected?.message ?? "", /Valid: medium, high/i);
 });
 
+test("validates ultra from the active model's real metadata", () => {
+  const capabilities = normalizeCodexModelListResponses([{ data: [
+    { id: "gpt-5.6-sol", model: "gpt-5.6-sol", supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"].map((reasoningEffort) => ({ reasoningEffort })) },
+    { id: "gpt-5.5", model: "gpt-5.5", supportedReasoningEfforts: ["low", "medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort })) },
+  ] }]);
+  const solRuntime = normalizeRuntimeConfig({ model: "gpt-5.6-sol" });
+  assert.equal(runCommand("/reasoning ultra", { runtime: solRuntime, resolvedRuntime: resolveRuntimeConfig(solRuntime), modelCapabilities: capabilities })?.action, "reasoning");
+  const gpt55Runtime = normalizeRuntimeConfig({ model: "gpt-5.5" });
+  const rejected = runCommand("/reasoning ultra", { runtime: gpt55Runtime, resolvedRuntime: resolveRuntimeConfig(gpt55Runtime), modelCapabilities: capabilities });
+  assert.equal(rejected?.action, "unknown");
+  assert.match(rejected?.message ?? "", /Valid: low, medium, high, xhigh/);
+});
+
+test("accepts unverified reasoning ids when runtime metadata is unavailable", () => {
+  const result = runCommand("/reasoning ultra", { modelCapabilities: undefined });
+  assert.equal(result?.action, "reasoning");
+  assert.equal(result?.value, "ultra");
+  assert.match(result?.message ?? "", /metadata unavailable; unverified/i);
+});
+
 test("shows and toggles plan mode", () => {
   const statusResult = runCommand("/plan");
   assert.equal(statusResult?.action, "plan_mode");

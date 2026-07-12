@@ -141,25 +141,25 @@ test("providerModelsToCodexCapabilities converts Anthropic models to selectable 
   assert.ok(modelIds.includes("sonnet"), "Should include sonnet alias");
   assert.ok(modelIds.includes("opus"), "Should include opus alias");
   assert.ok(modelIds.includes("haiku"), "Should include haiku alias");
+  assert.ok(modelIds.includes("fable"), "Should include fable alias");
   for (const id of modelIds) {
     assert.ok(!id.startsWith("gpt-"), `Converted Anthropic capabilities must not contain OpenAI model: "${id}"`);
   }
   const sonnet = selectable.find((model) => model.model === "sonnet");
   assert.deepEqual(
     sonnet?.supportedReasoningLevels?.map((level) => level.id),
-    ["low", "medium", "high", "max"],
+    ["low", "medium", "high", "xhigh", "max"],
   );
 });
 
-test("Claude reasoning options do not include OpenAI-only levels", () => {
+test("Claude fallback reasoning options use the last-known CLI ladder", () => {
   const caps = providerModelsToCodexCapabilities(ANTHROPIC_FALLBACK_MODELS, "sonnet");
   const sonnet = getSelectableModelCapabilities(caps).find((model) => model.model === "sonnet");
   const opus = getSelectableModelCapabilities(caps).find((model) => model.model === "opus");
   const ids = sonnet?.supportedReasoningLevels?.map((level) => level.id) ?? [];
 
-  assert.deepEqual(ids, ["low", "medium", "high", "max"]);
+  assert.deepEqual(ids, ["low", "medium", "high", "xhigh", "max"]);
   assert.deepEqual(opus?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
-  assert.ok(!ids.includes("xhigh"), "Sonnet fallback must not show xhigh unless verified");
   assert.ok(!ids.includes("none"), "Claude picker must not show OpenAI none reasoning");
   assert.ok(!ids.includes("minimal"), "Claude picker must not show OpenAI minimal reasoning");
 });

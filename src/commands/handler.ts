@@ -18,7 +18,6 @@ import {
   AUTH_PREFERENCES,
   AVAILABLE_BACKENDS,
   AVAILABLE_MODELS,
-  AVAILABLE_REASONING_LEVELS,
   AVAILABLE_THEMES,
   BUSY_LOADER_SETTING_VALUES,
   WORKSPACE_DISPLAY_MODES,
@@ -148,10 +147,6 @@ function expandReasoningAliases(arg: string): string {
   const normalized = arg.toLowerCase();
   // "extra high" is a user-facing alias for "xhigh"
   return normalized === "extra high" ? "xhigh" : normalized;
-}
-
-function isKnownFallbackReasoning(value: string): boolean {
-  return AVAILABLE_REASONING_LEVELS.some((item) => item.id === value);
 }
 
 function simplePolicySetter<T extends string>(
@@ -520,16 +515,10 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
             message: `Unknown reasoning level for ${context.runtime.model}: ${arg}. Valid: ${valid}`,
           };
         }
-        if (isKnownFallbackReasoning(normalized)) {
-          return {
-            action: "reasoning",
-            value: normalized,
-            message: `Reasoning level switched to ${formatReasoningLabel(normalized)} (runtime metadata unavailable)`,
-          };
-        }
         return {
-          action: "unknown",
-          message: `Unknown reasoning level: ${arg}. Runtime reasoning metadata is unavailable for ${context.runtime.model}.`,
+          action: "reasoning",
+          value: normalized,
+          message: `Reasoning level switched to ${formatReasoningLabel(normalized)} (runtime metadata unavailable; unverified until runtime)`,
         };
       }
 

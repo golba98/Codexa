@@ -224,6 +224,18 @@ export function resolveActiveProviderRoute(options: {
       if (!route.reasoning && migrated.reasoning) {
         route.reasoning = migrated.reasoning;
       }
+      const discovery = discoverProviderModels("antigravity");
+      if (discovery.status === "ready" && discovery.models.length > 0) {
+        let model = discovery.models.find((item) => item.modelId === route.modelId || item.id === route.modelId);
+        if (!model) {
+          model = discovery.models[0];
+          route.modelId = model.modelId;
+        }
+        const levels = model.supportedReasoningLevels;
+        if (levels?.length && (!route.reasoning || !levels.some((level) => level.id === route.reasoning))) {
+          route.reasoning = model.defaultReasoningLevel ?? levels[0]?.id;
+        }
+      }
     }
 
     return route;
@@ -257,7 +269,7 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
     return discovery.models[0]?.modelId ?? "Vibe default";
   }
   if (providerId === "antigravity") {
-    return ANTIGRAVITY_DEFAULT_MODEL_ID;
+    return discoverProviderModels("antigravity").models[0]?.modelId ?? ANTIGRAVITY_DEFAULT_MODEL_ID;
   }
   return currentOpenAiModel;
 }

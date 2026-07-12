@@ -545,10 +545,10 @@ test("mapReasoningToEffort: maps low/medium/high correctly", () => {
   assert.equal(mapReasoningToEffort("max"), "max");
 });
 
-test("mapReasoningToEffort: returns null for unknown or missing values", () => {
+test("mapReasoningToEffort: passes through discovered levels and rejects missing values", () => {
   assert.equal(mapReasoningToEffort(null), null);
   assert.equal(mapReasoningToEffort(undefined), null);
-  assert.equal(mapReasoningToEffort("ultra"), null);
+  assert.equal(mapReasoningToEffort("ultra"), "ultra");
 });
 
 test("buildClaudeCodeArgs: includes -p, model, effort, permission-mode, and prompt", () => {
@@ -933,12 +933,13 @@ test("discoverModels returns ANTHROPIC_FALLBACK_MODELS before any validation", (
   assert.ok(ids.includes("sonnet"), "Should include sonnet alias");
   assert.ok(ids.includes("opus"), "Should include opus alias");
   assert.ok(ids.includes("haiku"), "Should include haiku alias");
+  assert.ok(ids.includes("fable"), "Should include fable alias");
   for (const m of result.models) {
     assert.ok(!m.modelId.startsWith("gpt-"), "Must not include OpenAI models");
   }
   assert.deepEqual(result.models.find((m) => m.modelId === "opus")?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
-  assert.deepEqual(result.models.find((m) => m.modelId === "sonnet")?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "max"]);
-  assert.deepEqual(result.models.find((m) => m.modelId === "haiku")?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high"]);
+  assert.deepEqual(result.models.find((m) => m.modelId === "sonnet")?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
+  assert.deepEqual(result.models.find((m) => m.modelId === "haiku")?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
 });
 
 test("discoverModels uses Claude Code model-list result when available", async () => {
