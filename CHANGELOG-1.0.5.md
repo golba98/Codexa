@@ -4,6 +4,8 @@ Release notes for the changes currently planned for the next Codexa release.
 
 ## Added
 
+- **Instant dynamic model lists for OpenAI/Codex** — the model picker now seeds from the codex CLI's own model catalog (`~/.codex/models_cache.json`) and Codexa's last-good discovery, so all current models and their full reasoning-level ranges (low through ultra) appear immediately at launch without waiting for a live probe. The static compatibility list is now a true last resort instead of the visible default.
+- **Persistent per-provider model cache** — successful model discoveries for every provider are saved to `~/.codexa-model-cache.json` and survive restarts: pickers open instantly with the previous session's models while a background refresh updates the list in place.
 - **Mistral Vibe CLI provider** — Codexa can discover and launch the `vibe` executable, use Vibe’s existing authentication, display configured Vibe models, and select Vibe as a workspace provider.
 - **Vibe session continuity** — workspace sessions can resume through the Vibe CLI, with a safe retry using a fresh session when a saved session is no longer valid.
 - **Vibe diagnostics and setup guidance** — missing executables, authentication failures, and unavailable provider configuration now produce actionable messages.
@@ -24,6 +26,7 @@ Release notes for the changes currently planned for the next Codexa release.
 - **Google/Gemini route policy** — Google/Gemini is no longer an active Codexa provider route; fallback behavior and tests now reflect the removed route.
 - **Native terminal scrollback** — main chat history follows the terminal’s scrollback buffer, with the composer anchored at the live tail.
 - **Provider model discovery** — provider registries and workspace configuration use discovered model capabilities and preserve provider-specific defaults more consistently.
+- **`src/ui` reorganized into domain folders** — Ink components are now grouped into `chrome/`, `timeline/`, `panels/`, `render/`, and `input/` (shared foundations stay at the `src/ui` root), with imports, tests, and structure docs updated accordingly. No behavior change.
 
 ## Validation
 
