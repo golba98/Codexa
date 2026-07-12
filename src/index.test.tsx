@@ -321,10 +321,29 @@ test("enforces a single render root while active", async () => {
   assert.deepEqual(first, { started: true, exitCode: 0 });
   assert.deepEqual(second, { started: true, exitCode: 0 });
   assert.equal(harness.getRenderCalls(), 1);
+  assert.equal(harness.getRenderOptions()?.kittyKeyboard, undefined);
+
+  harness.resolveExit();
+  await flushMicrotasks();
+});
+
+test("enables Kitty keyboard support without using the leaking auto-detection query", async () => {
+  const harness = createSupportedHarness();
+
+  startApp({
+    ...harness.deps,
+    env: {
+      TERM: "xterm-kitty",
+      KITTY_WINDOW_ID: "1",
+    },
+  });
+
   assert.deepEqual(harness.getRenderOptions()?.kittyKeyboard, {
-    mode: "auto",
+    mode: "enabled",
     flags: ["disambiguateEscapeCodes"],
   });
+  assert.notEqual(harness.getRenderOptions()?.kittyKeyboard?.mode, "auto");
+  assert.doesNotMatch(harness.stdout.writes, /\x1b\[\?u/);
 
   harness.resolveExit();
   await flushMicrotasks();
