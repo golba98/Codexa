@@ -66,6 +66,17 @@ function preferredAgyDefault(modelId: string, efforts: readonly string[]): strin
   return efforts[0] ?? ANTIGRAVITY_DEFAULT_REASONING;
 }
 
+const AGY_REASONING_DISPLAY_ORDER = ["low", "medium", "high", "xhigh", "max"] as const;
+
+function sortAgyReasoningLevels(levels: readonly ReasoningEffortCapability[]): ReasoningEffortCapability[] {
+  const rank = new Map<string, number>(AGY_REASONING_DISPLAY_ORDER.map((id, index) => [id, index]));
+  return levels
+    .map((level, index) => ({ level, index }))
+    .sort((left, right) => (rank.get(left.level.id) ?? AGY_REASONING_DISPLAY_ORDER.length + left.index)
+      - (rank.get(right.level.id) ?? AGY_REASONING_DISPLAY_ORDER.length + right.index))
+    .map(({ level }) => level);
+}
+
 export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
   const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const parsed = lines.map((selector) => {
@@ -99,11 +110,11 @@ export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
     const existing = grouped.get(item.base);
     if (existing) {
       const metadata = readAgySelectorMetadata(existing);
-      const levels = [...(existing.supportedReasoningLevels ?? []), {
+      const levels = sortAgyReasoningLevels([...(existing.supportedReasoningLevels ?? []), {
         id: effortId,
         label: formatAgyVariantLabel(item.variant ?? effortId),
         description: null,
-      }];
+      }]);
       const selectors = { ...(metadata?.selectors ?? {}), [effortId]: item.selector };
       const updated = {
         ...existing,

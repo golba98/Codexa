@@ -111,6 +111,7 @@ test("Gemini 3.5 Flash supports Low/Medium/High reasoning (3 levels)", () => {
   assert.ok(model!.supportedReasoningLevels !== null, "supportedReasoningLevels should not be null");
   assert.equal(model!.supportedReasoningLevels!.length, 3);
   const ids = model!.supportedReasoningLevels!.map((l) => l.id);
+  assert.deepEqual(ids, ["low", "medium", "high"]);
   assert.ok(ids.includes("low"), "missing low");
   assert.ok(ids.includes("medium"), "missing medium");
   assert.ok(ids.includes("high"), "missing high");
@@ -122,6 +123,7 @@ test("Gemini 3.1 Pro supports Low/High reasoning (2 levels, no Medium)", () => {
   assert.ok(model!.supportedReasoningLevels !== null, "supportedReasoningLevels should not be null");
   assert.equal(model!.supportedReasoningLevels!.length, 2);
   const ids = model!.supportedReasoningLevels!.map((l) => l.id);
+  assert.deepEqual(ids, ["low", "high"]);
   assert.ok(ids.includes("low"), "missing low");
   assert.ok(ids.includes("high"), "missing high");
   assert.ok(!ids.includes("medium"), "Gemini 3.1 Pro should not have medium");
