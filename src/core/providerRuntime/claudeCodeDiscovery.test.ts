@@ -12,6 +12,7 @@ import {
   getClaudeModelDefaultEffort,
   modelSupportsClaudeEffort,
   discoverClaudeCodeCapabilities,
+  discoverModelsFromClaudePackageMetadata,
 } from "./claudeCodeDiscovery.js";
 import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
 
@@ -464,6 +465,53 @@ test("discoverClaudeCodeCapabilities: resolves alias-only command output using i
       ],
     );
     assert.ok(!discovery.models.some((model) => /version unknown/i.test(model.label)));
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("discoverModelsFromClaudePackageMetadata: major-only ids like claude-sonnet-5 win over older versioned ids", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "claude-package-metadata-test-"));
+  const metadataPath = join(tempRoot, "claude-binary-strings.txt");
+  try {
+    writeFileSync(
+      metadataPath,
+      [
+        "claude-opus-4-8",
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        "claude-haiku-4-5-20251001",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const discovery = discoverModelsFromClaudePackageMetadata("claude", [metadataPath]);
+    assert.ok(discovery, "expected package metadata discovery to succeed");
+    const byFamily = new Map(discovery.models.map((model) => [model.family, model]));
+    assert.deepEqual(
+      { canonicalId: byFamily.get("sonnet")?.canonicalId, version: byFamily.get("sonnet")?.version, label: byFamily.get("sonnet")?.label },
+      { canonicalId: "claude-sonnet-5", version: "5", label: "Claude Sonnet 5" },
+    );
+    assert.equal(byFamily.get("opus")?.canonicalId, "claude-opus-4-8");
+    // Date-suffixed ids keep extracting the family-version prefix only.
+    assert.equal(byFamily.get("haiku")?.canonicalId, "claude-haiku-4-5");
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("discoverModelsFromClaudePackageMetadata: resolves a family from a major-only id alone", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "claude-package-metadata-test-"));
+  const metadataPath = join(tempRoot, "claude-binary-strings.txt");
+  try {
+    writeFileSync(metadataPath, "claude-sonnet-5\n", "utf-8");
+
+    const discovery = discoverModelsFromClaudePackageMetadata("claude", [metadataPath]);
+    assert.ok(discovery, "expected package metadata discovery to succeed");
+    assert.deepEqual(
+      discovery.models.map((model) => [model.value, model.canonicalId, model.label]),
+      [["sonnet", "claude-sonnet-5", "Claude Sonnet 5"]],
+    );
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
