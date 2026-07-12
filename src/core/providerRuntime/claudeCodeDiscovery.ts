@@ -5,12 +5,12 @@ import { runCommand } from "../process/CommandRunner.js";
 import type { CommandResult } from "../process/CommandRunner.js";
 import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
 import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
-import { CLAUDE_CODE_EFFORT_IDS, getClaudeCodeEffortLevels } from "./reasoning.js";
+import { getClaudeCodeEffortLevels } from "./reasoning.js";
 import type { ProviderModel } from "./types.js";
 
 type CommandRunner = typeof runCommand;
 
-const CLAUDE_MODEL_FAMILIES = ["opus", "sonnet", "haiku"] as const;
+const CLAUDE_MODEL_FAMILIES = ["fable", "opus", "sonnet", "haiku"] as const;
 type ClaudeModelFamily = (typeof CLAUDE_MODEL_FAMILIES)[number];
 const CLAUDE_FAMILIES_ALT = CLAUDE_MODEL_FAMILIES.join("|");
 // Pre-compiled from CLAUDE_MODEL_FAMILIES — update that constant when new families are added.
@@ -114,8 +114,16 @@ export function parseClaudeAuthStatus(stdout: string): ClaudeCodeAuthInfo | null
   }
 }
 
+export function parseClaudeEffortLevelsFromHelp(helpText: string): string[] | null {
+  const match = helpText.match(/^\s*--effort\b[^\r\n]*\(([^)]+)\)/im);
+  if (!match?.[1]) return null;
+  const levels = match[1].split(",").map((level) => level.trim()).filter(Boolean);
+  return levels.length > 0 ? levels : null;
+}
+
 function modelFamilyFromValue(value: string): ClaudeModelFamily {
   const normalized = value.toLowerCase();
+  if (normalized.includes("fable")) return "fable";
   if (normalized.includes("opus")) return "opus";
   if (normalized.includes("haiku")) return "haiku";
   return "sonnet";
@@ -135,6 +143,7 @@ function fallbackDefaultEffort(family: string): string {
 }
 
 function titleCaseFamily(family: string): string {
+  if (family === "fable") return "Fable";
   if (family === "opus") return "Opus";
   if (family === "haiku") return "Haiku";
   return "Sonnet";
@@ -186,8 +195,7 @@ function normalizeClaudeDisplayLabel(value: string, rawLabel?: string): string {
 }
 
 function normalizeEffortIds(value: unknown, fallbackFamily: string): string[] {
-  const fromArray = readStringArray(value)
-    ?.filter((item) => CLAUDE_CODE_EFFORT_IDS.has(item));
+  const fromArray = readStringArray(value);
   return fromArray && fromArray.length > 0 ? fromArray : fallbackEffortIds(fallbackFamily);
 }
 
@@ -518,6 +526,7 @@ async function discoverModelsFromClaudeHelp(
   cwd: string,
   runCommandImpl: CommandRunner,
   timeoutMs: number,
+  rootHelpText: string,
 ): Promise<ClaudeCodeModel[]> {
   // Step 1: try well-known command shapes directly, without requiring the help text
   // to advertise them. Claude Code CLI versions vary in whether (and how) they expose
@@ -534,15 +543,15 @@ async function discoverModelsFromClaudeHelp(
 
   // Step 2: fall through to help-text-based detection as a supplementary strategy
   // for future Claude Code versions that advertise additional model-list commands.
-  const helpResults = await Promise.all([
-    runClaudeCommand(executable, ["--help"], cwd, runCommandImpl, timeoutMs),
-    runClaudeCommand(executable, ["model", "--help"], cwd, runCommandImpl, timeoutMs),
-  ]);
-  const candidates = helpResults.flatMap((result) =>
+  const modelHelpResult = await runClaudeCommand(executable, ["model", "--help"], cwd, runCommandImpl, timeoutMs);
+  const candidates = [
+    ...candidateModelListArgs(rootHelpText),
+    ...([modelHelpResult].flatMap((result) =>
     result.status === "completed" && result.exitCode === 0
       ? candidateModelListArgs(`${result.stdout}\n${result.stderr}`)
       : []
-  );
+    )),
+  ];
 
   for (const args of candidates) {
     if (triedArgKeys.has(args.join("\0"))) continue; // skip already-probed commands
@@ -599,7 +608,12 @@ export async function discoverClaudeCodeCapabilities(
     : { loggedIn: false };
 
   const settings = readClaudeSettings(options.settingsPath);
-  const discoveredModels = await discoverModelsFromClaudeHelp(resolvedCommand, options.cwd, runCommandImpl, timeoutMs);
+  const helpResult = await runClaudeCommand(resolvedCommand, ["--help"], options.cwd, runCommandImpl, timeoutMs);
+  const helpText = helpResult.status === "completed" && helpResult.exitCode === 0
+    ? `${helpResult.stdout}\n${helpResult.stderr}`
+    : "";
+  const cliEffortLevels = parseClaudeEffortLevelsFromHelp(helpText);
+  const discoveredModels = await discoverModelsFromClaudeHelp(resolvedCommand, options.cwd, runCommandImpl, timeoutMs, helpText);
   const packageMetadata = discoverModelsFromClaudePackageMetadata(resolvedCommand, options.metadataPaths);
 
   let modelSource: ClaudeCodeModelSource = "fallback";
@@ -635,6 +649,21 @@ export async function discoverClaudeCodeCapabilities(
   }
 
   models = applyAvailableModelAllowlist(dedupeModels(models), settings?.availableModels);
+  if (cliEffortLevels) {
+    models = models.map((model) => {
+      if (model.effortSource !== "fallback") return model;
+      const preferredDefault = settings?.effortLevel && cliEffortLevels.includes(settings.effortLevel)
+        ? settings.effortLevel
+        : model.defaultEffort;
+      return {
+        ...model,
+        effortLevels: cliEffortLevels,
+        defaultEffort: cliEffortLevels.includes(preferredDefault) ? preferredDefault : cliEffortLevels[0] ?? "high",
+        effortSource: "claude-code-command",
+        effortVerified: true,
+      };
+    });
+  }
 
   return {
     provider: "anthropic",

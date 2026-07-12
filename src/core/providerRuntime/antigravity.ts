@@ -1,6 +1,7 @@
 import { runCommand } from "../process/CommandRunner.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
+import { loadCachedProviderModels } from "../models/providerModelCache.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type {
   ProviderBackendKind,
@@ -27,97 +28,133 @@ export const ANTIGRAVITY_DEFAULT_MODEL_ID = "gemini-3.5-flash";
 export const ANTIGRAVITY_DEFAULT_REASONING = "high";
 
 // ---------------------------------------------------------------------------
-// Effort levels for Antigravity Gemini models
-// ---------------------------------------------------------------------------
-
-const AGY_LOW:    ReasoningEffortCapability = { id: "low",    label: "Low",    description: null };
-const AGY_MEDIUM: ReasoningEffortCapability = { id: "medium", label: "Medium", description: null };
-const AGY_HIGH:   ReasoningEffortCapability = { id: "high",   label: "High",   description: null };
-
-// ---------------------------------------------------------------------------
 // Model definitions
 // ---------------------------------------------------------------------------
 
-export const ANTIGRAVITY_MODELS: readonly ProviderModel[] = [
-  {
-    id: "gemini-3.5-flash",
-    modelId: "gemini-3.5-flash",
-    label: "Gemini 3.5 Flash",
-    description: "Antigravity-routed Gemini 3.5 Flash. Select effort with ←/→.",
-    defaultReasoningLevel: "high",
-    supportedReasoningLevels: [AGY_LOW, AGY_MEDIUM, AGY_HIGH],
-    source: "fallback",
-  },
-  {
-    id: "gemini-3.1-pro",
-    modelId: "gemini-3.1-pro",
-    label: "Gemini 3.1 Pro",
-    description: "Antigravity-routed Gemini 3.1 Pro. Select effort with ←/→.",
-    defaultReasoningLevel: "high",
-    supportedReasoningLevels: [AGY_LOW, AGY_HIGH],
-    source: "fallback",
-  },
-  {
-    id: "claude-sonnet-4-6-think",
-    modelId: "claude-sonnet-4-6-think",
-    label: "Claude Sonnet 4.6 (Thinking)",
-    description: "Antigravity-routed Claude Sonnet 4.6 with extended thinking.",
-    defaultReasoningLevel: null,
-    supportedReasoningLevels: null,
-    source: "fallback",
-  },
-  {
-    id: "claude-opus-4-6-think",
-    modelId: "claude-opus-4-6-think",
-    label: "Claude Opus 4.6 (Thinking)",
-    description: "Antigravity-routed Claude Opus 4.6 with extended thinking.",
-    defaultReasoningLevel: null,
-    supportedReasoningLevels: null,
-    source: "fallback",
-  },
-  {
-    id: "gpt-oss-120b",
-    modelId: "gpt-oss-120b",
-    label: "GPT-OSS 120B",
-    description: "Antigravity-routed GPT-OSS 120B.",
-    defaultReasoningLevel: null,
-    supportedReasoningLevels: null,
-    source: "fallback",
-  },
-];
-
-// ---------------------------------------------------------------------------
-// AGY_MODEL env mapping
-// ---------------------------------------------------------------------------
-
-/**
- * Maps Codexa model IDs to the AGY_MODEL env value passed to the agy subprocess.
- *
- * Verified:
- *   gemini-3.5-flash → "gemini-3.5-flash"  (confirmed via: AGY_MODEL=gemini-3.5-flash agy -p "say hello back")
- *
- * Unverified (same pattern, not independently smoke-tested):
- *   gemini-3.1-pro → "gemini-3.1-pro"
- */
-const AGY_MODEL_ENV_MAP: Readonly<Record<string, string>> = {
-  "gemini-3.5-flash": "gemini-3.5-flash",
-  "gemini-3.1-pro":   "gemini-3.1-pro",
-};
-
-export function getAgyModelEnvValue(modelId: string): string | null {
-  return AGY_MODEL_ENV_MAP[modelId] ?? null;
+interface AgySelectorMetadata {
+  provider: "antigravity";
+  selectors: Record<string, string>;
 }
 
-export function buildAgyEnv(modelId: string, _reasoning?: string): NodeJS.ProcessEnv {
-  // _reasoning is stored in route state and surfaced in the footer UI, but agy
-  // has no verified CLI flag or env var for passing effort level to the subprocess.
-  // TODO: wire _reasoning here once Antigravity exposes a stable mechanism.
-  const envValue = getAgyModelEnvValue(modelId);
-  return envValue ? { ...process.env, AGY_MODEL: envValue } : { ...process.env };
+function normalizeAgyId(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9.]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function formatAgyVariantLabel(value: string): string {
+  return value
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join(" ") || value;
+}
+
+function readAgySelectorMetadata(model: ProviderModel): AgySelectorMetadata | null {
+  if (!model.raw || typeof model.raw !== "object" || Array.isArray(model.raw)) return null;
+  const raw = model.raw as Partial<AgySelectorMetadata>;
+  if (raw.provider !== "antigravity" || !raw.selectors || typeof raw.selectors !== "object") return null;
+  return { provider: "antigravity", selectors: raw.selectors };
+}
+
+function preferredAgyDefault(modelId: string, efforts: readonly string[]): string {
+  if ((modelId === "gemini-3.5-flash" || modelId === "gemini-3.1-pro") && efforts.includes(ANTIGRAVITY_DEFAULT_REASONING)) {
+    return ANTIGRAVITY_DEFAULT_REASONING;
+  }
+  return efforts[0] ?? ANTIGRAVITY_DEFAULT_REASONING;
+}
+
+export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
+  const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const parsed = lines.map((selector) => {
+    const match = selector.match(/^(.*?)\s+\(([^()]+)\)$/);
+    return { selector, base: match?.[1]?.trim() ?? selector, variant: match?.[2]?.trim() ?? null };
+  });
+  const baseCounts = new Map<string, number>();
+  for (const item of parsed) baseCounts.set(item.base, (baseCounts.get(item.base) ?? 0) + 1);
+
+  const models: ProviderModel[] = [];
+  const grouped = new Map<string, ProviderModel>();
+  for (const item of parsed) {
+    const isVariantGroup = item.variant !== null && (baseCounts.get(item.base) ?? 0) > 1;
+    if (!isVariantGroup) {
+      const modelId = normalizeAgyId(item.selector);
+      models.push({
+        id: modelId,
+        modelId,
+        label: item.selector,
+        description: `Discovered from agy models: ${item.selector}`,
+        defaultReasoningLevel: null,
+        supportedReasoningLevels: null,
+        source: "discovered",
+        raw: { provider: "antigravity", selectors: { "": item.selector } } satisfies AgySelectorMetadata,
+      });
+      continue;
+    }
+
+    const modelId = normalizeAgyId(item.base);
+    const effortId = normalizeAgyId(item.variant ?? "");
+    const existing = grouped.get(item.base);
+    if (existing) {
+      const metadata = readAgySelectorMetadata(existing);
+      const levels = [...(existing.supportedReasoningLevels ?? []), {
+        id: effortId,
+        label: formatAgyVariantLabel(item.variant ?? effortId),
+        description: null,
+      }];
+      const selectors = { ...(metadata?.selectors ?? {}), [effortId]: item.selector };
+      const updated = {
+        ...existing,
+        defaultReasoningLevel: preferredAgyDefault(modelId, levels.map((level) => level.id)),
+        supportedReasoningLevels: levels,
+        raw: { provider: "antigravity", selectors } satisfies AgySelectorMetadata,
+      };
+      grouped.set(item.base, updated);
+      models[models.indexOf(existing)] = updated;
+      continue;
+    }
+
+    const level: ReasoningEffortCapability = {
+      id: effortId,
+      label: formatAgyVariantLabel(item.variant ?? effortId),
+      description: null,
+    };
+    const model: ProviderModel = {
+      id: modelId,
+      modelId,
+      label: item.base,
+      description: `Discovered from agy models. Select an advertised variant with ←/→.`,
+      defaultReasoningLevel: preferredAgyDefault(modelId, [effortId]),
+      supportedReasoningLevels: [level],
+      source: "discovered",
+      raw: { provider: "antigravity", selectors: { [effortId]: item.selector } } satisfies AgySelectorMetadata,
+    };
+    grouped.set(item.base, model);
+    models.push(model);
+  }
+  return models;
+}
+
+// Resolve persisted model/reasoning state to the exact selector advertised by `agy models`.
+export function getAgyModelSelector(
+  modelId: string,
+  reasoning: string | null | undefined,
+  models: readonly ProviderModel[] = getActiveAgyModels(),
+): string | null {
+  const model = models.find((item) => item.modelId === modelId || item.id === modelId);
+  if (!model) return null;
+  const metadata = readAgySelectorMetadata(model);
+  if (!metadata) return null;
+  if (!model.supportedReasoningLevels?.length) return metadata.selectors[""] ?? null;
+  if (reasoning) return metadata.selectors[reasoning] ?? null;
+  const effort = model.defaultReasoningLevel;
+  return effort ? metadata.selectors[effort] ?? null : null;
 }
 
 export function getAntigravityModelLabel(modelId: string): string {
-  return ANTIGRAVITY_MODELS.find((m) => m.id === modelId)?.label ?? modelId;
+  return getActiveAgyModels().find((m) => m.id === modelId)?.label ?? modelId;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +175,9 @@ export function migrateAntigravityLegacyModelId(modelId: string): { modelId: str
     "gemini-3.5-flash-low":    { modelId: "gemini-3.5-flash", reasoning: "low" },
     "gemini-3.1-pro-high":     { modelId: "gemini-3.1-pro",   reasoning: "high" },
     "gemini-3.1-pro-low":      { modelId: "gemini-3.1-pro",   reasoning: "low" },
-    "gpt-oss-120b-medium":     { modelId: "gpt-oss-120b" },
+    "claude-sonnet-4-6-think": { modelId: "claude-sonnet-4.6-thinking" },
+    "claude-opus-4-6-think":   { modelId: "claude-opus-4.6-thinking" },
+    "gpt-oss-120b":            { modelId: "gpt-oss-120b-medium" },
   };
   return legacy[modelId] ?? { modelId };
 }
@@ -149,6 +188,52 @@ export function migrateAntigravityLegacyModelId(modelId: string): { modelId: str
 
 let agyRouteValidated = false;
 let resolvedAgyExecutable: string = "agy";
+let discoveredAgyModels: readonly ProviderModel[] | null = null;
+
+function getActiveAgyModels(): readonly ProviderModel[] {
+  if (discoveredAgyModels?.length) return discoveredAgyModels;
+  return loadCachedProviderModels("antigravity")?.models ?? [];
+}
+
+export async function discoverAgyModels(options: {
+  executable: string;
+  cwd: string;
+  runCommandImpl: typeof runCommand;
+  platform: NodeJS.Platform;
+}): Promise<ProviderModelDiscoveryResult> {
+  const spawnSpec = buildSpawnSpec(options.executable, ["models"], options.platform);
+  const result = await options.runCommandImpl({
+    executable: spawnSpec.executable,
+    args: spawnSpec.args,
+    cwd: options.cwd,
+    timeoutMs: ANTIGRAVITY_VALIDATION_TIMEOUT_MS,
+  }).result;
+  const models = result.status === "completed" && result.exitCode === 0
+    ? parseAgyModelsOutput(result.stdout)
+    : [];
+  if (models.length > 0) {
+    discoveredAgyModels = models;
+    return {
+      status: "ready",
+      providerId: "antigravity",
+      backendKind: "antigravity-cli-auth",
+      models,
+      message: `Loaded ${models.length} models from agy models.`,
+      diagnostics: { modelSource: "agy-models-command", modelsExitCode: result.exitCode, modelsStatus: result.status },
+    };
+  }
+  const cached = loadCachedProviderModels("antigravity")?.models ?? [];
+  return {
+    status: cached.length > 0 ? "ready" : "not-configured",
+    providerId: "antigravity",
+    backendKind: cached.length > 0 ? "antigravity-cli-auth" : "unavailable",
+    models: cached,
+    message: cached.length > 0
+      ? "Live agy model metadata is unavailable; using the last successful discovery."
+      : "Antigravity model metadata is unavailable. Run Refresh models after checking `agy models`.",
+    diagnostics: { modelSource: cached.length > 0 ? "cache" : "unavailable", modelsExitCode: result.exitCode, modelsStatus: result.status },
+  };
+}
 
 export function isAntigravityRouteConfigured(): boolean {
   return agyRouteValidated;
@@ -157,6 +242,7 @@ export function isAntigravityRouteConfigured(): boolean {
 export function resetAntigravityRouteValidationCacheForTests(): void {
   agyRouteValidated = false;
   resolvedAgyExecutable = "agy";
+  discoveredAgyModels = null;
   resetAgyExecutableCacheForTests();
 }
 
@@ -213,13 +299,23 @@ export async function validateAntigravityRoute(options: {
 
   resolvedAgyExecutable = resolved;
   agyRouteValidated = true;
+  const modelDiscovery = await discoverAgyModels({
+    executable: resolved,
+    cwd: options.cwd ?? process.cwd(),
+    runCommandImpl,
+    platform: options.platform ?? process.platform,
+  });
 
   return {
     status: "ready",
     providerId: "antigravity",
     backendKind: "antigravity-cli-auth",
     message: `Antigravity CLI found at: ${resolved}`,
-    diagnostics: { resolvedCommand: resolved },
+    diagnostics: {
+      resolvedCommand: resolved,
+      modelSource: modelDiscovery.diagnostics?.modelSource ?? "unavailable",
+      discoveredModelCount: modelDiscovery.models.length,
+    },
   };
 }
 
@@ -233,16 +329,23 @@ export function runAntigravityWithRunner(
   runCommandImpl: typeof runCommand = runCommand,
   executable: string = resolvedAgyExecutable,
   platform: NodeJS.Platform = process.platform,
+  models: readonly ProviderModel[] = getActiveAgyModels(),
 ): () => void {
-  const spawnSpec = buildSpawnSpec(executable, ["-p", request.prompt], platform);
-  const env = buildAgyEnv(request.route.modelId, request.route.reasoning);
+  const selector = getAgyModelSelector(request.route.modelId, request.route.reasoning, models);
+  if (!selector) {
+    handlers.onError(
+      `Antigravity has no verified selector for ${request.route.modelId}${request.route.reasoning ? ` / ${request.route.reasoning}` : ""}. Refresh models and try again.`,
+    );
+    return () => undefined;
+  }
+  const spawnSpec = buildSpawnSpec(executable, ["--model", selector, "-p", request.prompt], platform);
 
   const runner = runCommandImpl(
     {
       executable: spawnSpec.executable,
       args: spawnSpec.args,
       cwd: request.workspaceRoot,
-      env,
+      env: { ...process.env },
       timeoutMs: ANTIGRAVITY_TIMEOUT_MS,
     },
   );
@@ -288,12 +391,36 @@ export const antigravityRuntime: ProviderRuntime = {
     cwd: workspaceRoot,
     configuredPath: antigravityCommandPath ?? null,
   }),
-  discoverModels: (): ProviderModelDiscoveryResult => ({
-    status: "ready",
-    providerId: "antigravity",
-    backendKind: "antigravity-cli-auth",
-    models: ANTIGRAVITY_MODELS,
-  }),
+  discoverModels: (): ProviderModelDiscoveryResult => {
+    const models = getActiveAgyModels();
+    return {
+      status: models.length > 0 ? "ready" : "not-configured",
+      providerId: "antigravity",
+      backendKind: models.length > 0 ? "antigravity-cli-auth" : "unavailable",
+      models,
+      ...(models.length === 0 ? { message: "Antigravity model metadata is unavailable. Run Refresh models." } : {}),
+    };
+  },
+  refreshModels: async ({ cwd }): Promise<ProviderModelDiscoveryResult> => {
+    let executable = resolvedAgyExecutable;
+    try {
+      executable = await resolveAgyExecutable({ cwd });
+      resolvedAgyExecutable = executable;
+    } catch {
+      const cached = loadCachedProviderModels("antigravity")?.models ?? [];
+      return {
+        status: cached.length > 0 ? "ready" : "not-configured",
+        providerId: "antigravity",
+        backendKind: cached.length > 0 ? "antigravity-cli-auth" : "unavailable",
+        models: cached,
+        message: cached.length > 0
+          ? "Antigravity CLI is unavailable; using the last successful model discovery."
+          : ANTIGRAVITY_ROUTE_SETUP_MESSAGE,
+        diagnostics: { modelSource: cached.length > 0 ? "cache" : "unavailable", resolvedCommand: null },
+      };
+    }
+    return discoverAgyModels({ executable, cwd, runCommandImpl: runCommand, platform: process.platform });
+  },
   run: (request: ProviderChatRequest, handlers: BackendRunHandlers) => {
     handlers.onProgress?.({
       id: "antigravity-route",
