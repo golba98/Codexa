@@ -4,7 +4,6 @@ import type { BackendRunHandlers } from "../providers/types.js";
 import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
 import type { ProviderBackendKind, ProviderChatRequest, ProviderModel, ProviderModelDiscoveryResult, ProviderRouteValidationResult, ProviderRuntime } from "./types.js";
 import { buildClaudeSpawnSpec, resetClaudeExecutableCacheForTests } from "../executables/claudeExecutable.js";
-import { CLAUDE_CODE_EFFORT_IDS } from "./reasoning.js";
 import {
   claudeCodeModelsToProviderModels,
   discoverClaudeCodeCapabilities,
@@ -57,8 +56,7 @@ export function mapModelIdToClaudeArg(modelId: string): string {
 }
 
 export function mapReasoningToEffort(reasoning: string | null | undefined): string | null {
-  if (reasoning && CLAUDE_CODE_EFFORT_IDS.has(reasoning)) return reasoning;
-  return null;
+  return reasoning?.trim() || null;
 }
 
 function buildClaudeCodeBaseArgs(request: ProviderChatRequest): string[] {

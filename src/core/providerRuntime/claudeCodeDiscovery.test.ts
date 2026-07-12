@@ -7,6 +7,7 @@ import type { ChildProcess } from "node:child_process";
 import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 import {
   parseClaudeAuthStatus,
+  parseClaudeEffortLevelsFromHelp,
   claudeCodeModelsToProviderModels,
   getClaudeModelDefaultEffort,
   modelSupportsClaudeEffort,
@@ -81,6 +82,12 @@ test("parseClaudeAuthStatus: returns null for invalid JSON or non-object", () =>
   assert.equal(parseClaudeAuthStatus("42"), null);
   assert.equal(parseClaudeAuthStatus("[]"), null);
   assert.equal(parseClaudeAuthStatus("null"), null);
+});
+
+test("parseClaudeEffortLevelsFromHelp: extracts the CLI valid-values list", () => {
+  const helpText = "Usage: claude [options]\n  --effort <level>  Effort level (low, medium, high, xhigh, max)";
+  assert.deepEqual(parseClaudeEffortLevelsFromHelp(helpText), ["low", "medium", "high", "xhigh", "max"]);
+  assert.equal(parseClaudeEffortLevelsFromHelp("Usage: claude [options]"), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -323,6 +330,36 @@ test("discoverClaudeCodeCapabilities: full success with model list --json return
   assert.equal(discovery.models.length, 1);
   assert.equal(discovery.models[0].value, "claude-3-5-sonnet-custom-3");
   assert.equal(discovery.models[0].label, "Claude Sonnet (version unknown)");
+});
+
+test("discoverClaudeCodeCapabilities: applies CLI effort truth and settings default without overriding per-model metadata", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "claude-discovery-effort-test-"));
+  const settingsPath = join(tempRoot, "settings.json");
+  try {
+    writeFileSync(settingsPath, JSON.stringify({ effortLevel: "xhigh" }), "utf-8");
+    const discovery = await discoverClaudeCodeCapabilities({
+      cwd: process.cwd(), settingsPath, metadataPaths: [],
+      runCommandImpl: mockRunCommand((executable, args) => {
+        if (args[0] === "auth") return commandResult({ stdout: JSON.stringify({ loggedIn: true }) });
+        if (args[0] === "--help") return commandResult({ stdout: "  --effort <level>  Set effort (low, medium, high, xhigh, max)" });
+        if (args[0] === "model" && args[1] === "list") return commandResult({ stdout: JSON.stringify([
+          { value: "sonnet", family: "sonnet" },
+          { value: "haiku", family: "haiku", effortLevels: ["low", "ultra"], defaultEffort: "ultra" },
+        ]) });
+        return commandResult({ exitCode: 1 });
+      }),
+    });
+    const sonnet = discovery.models.find((model) => model.value === "sonnet");
+    assert.deepEqual(sonnet?.effortLevels, ["low", "medium", "high", "xhigh", "max"]);
+    assert.equal(sonnet?.defaultEffort, "xhigh");
+    assert.equal(sonnet?.effortSource, "claude-code-command");
+    assert.equal(sonnet?.effortVerified, true);
+    const haiku = discovery.models.find((model) => model.value === "haiku");
+    assert.deepEqual(haiku?.effortLevels, ["low", "ultra"]);
+    assert.equal(haiku?.defaultEffort, "ultra");
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("discoverClaudeCodeCapabilities: normalizes versioned Claude Code IDs into clear labels", async () => {
@@ -667,5 +704,12 @@ test("ANTHROPIC_FALLBACK_MODELS uses short aliases as modelId, not versioned can
       model.canonicalId === undefined || validAliases.has(model.canonicalId),
       `Fallback canonicalId "${model.canonicalId}" must not pin a stale Claude version`,
     );
+  }
+});
+
+test("ANTHROPIC_FALLBACK_MODELS uses the full last-known Claude CLI effort ladder", () => {
+  for (const model of ANTHROPIC_FALLBACK_MODELS) {
+    assert.deepEqual(model.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
+    assert.equal(model.effortVerified, false);
   }
 });
