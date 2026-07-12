@@ -19,10 +19,23 @@ import { resolveInkRenderInstance, type InkRenderInstance } from "./core/termina
 import { resetFrameLockForResize, wrapStdoutWithFrameLock } from "./core/terminal/frameLock.js";
 
 type RenderHandle = Pick<Instance, "clear" | "cleanup" | "waitUntilExit">;
-const KITTY_KEYBOARD_OPTIONS: RenderOptions["kittyKeyboard"] = {
-  mode: "auto",
-  flags: ["disambiguateEscapeCodes"],
-};
+
+export function resolveKittyKeyboardOptions(
+  env: Record<string, string | undefined>,
+): RenderOptions["kittyKeyboard"] | undefined {
+  // Ink's auto mode probes with CSI ? u. Kitty's response can race Ink's
+  // regular input listeners and leak into both the first frame and composer.
+  // A direct Kitty session is already known to support the protocol, so enable
+  // it without probing. Avoid protocol negotiation in all other terminals.
+  if ((env.TERM ?? "").toLowerCase() !== "xterm-kitty") {
+    return undefined;
+  }
+
+  return {
+    mode: "enabled",
+    flags: ["disambiguateEscapeCodes"],
+  };
+}
 
 export interface AppStdout {
   isTTY: boolean;
@@ -222,8 +235,9 @@ export function startApp({
   process.on("uncaughtException", handleFatal);
   process.on("unhandledRejection", handleFatal);
 
+  const kittyKeyboard = resolveKittyKeyboardOptions(env);
   renderHandle = renderApp(<App launchArgs={launchArgs} />, {
-    kittyKeyboard: KITTY_KEYBOARD_OPTIONS,
+    ...(kittyKeyboard ? { kittyKeyboard } : {}),
     stdout: wrappedStdout as any,
   });
 
