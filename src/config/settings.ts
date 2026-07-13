@@ -9,7 +9,11 @@ function smartJoin(base: string, ...parts: string[]): string {
   return isWindowsStylePath(base) ? win32.join(base, ...parts) : join(base, ...parts);
 }
 
-export { APP_VERSION } from "./buildInfo.js";
+import { getAppVersion } from "./appVersion.js";
+
+// Authoritative runtime version: resolved from the installed package.json at
+// startup (buildInfo.ts is only the committed fallback and can drift).
+export const APP_VERSION: string = getAppVersion();
 export const APP_NAME = "Codexa";
 export const DEFAULT_BACKEND = "codex-subprocess";
 export const DEFAULT_MODEL = "gpt-5.4";

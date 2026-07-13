@@ -9,11 +9,16 @@ export interface UpdateCheckCache {
   updateAvailable: boolean;
 }
 
-const CACHE_FILE = join(homedir(), ".codexa-update-check.json");
+// Resolved per call (not at module load) so HOME changes — e.g. test isolation —
+// are honored. See the same pattern in src/core/models/providerModelCache.ts.
+export function getUpdateCheckCacheFilePath(): string {
+  const home = process.env.USERPROFILE ?? process.env.HOME ?? homedir();
+  return join(home, ".codexa-update-check.json");
+}
 
-export function loadUpdateCheckCache(): UpdateCheckCache | null {
+export function loadUpdateCheckCache(filePath = getUpdateCheckCacheFilePath()): UpdateCheckCache | null {
   try {
-    const text = readFileSync(CACHE_FILE, "utf-8");
+    const text = readFileSync(filePath, "utf-8");
     const data = JSON.parse(text) as Record<string, unknown>;
     if (typeof data.lastChecked !== "number") return null;
     if (typeof data.currentVersion !== "string") return null;
@@ -28,12 +33,12 @@ export function loadUpdateCheckCache(): UpdateCheckCache | null {
   }
 }
 
-export function saveUpdateCheckCache(cache: UpdateCheckCache): void {
+export function saveUpdateCheckCache(cache: UpdateCheckCache, filePath = getUpdateCheckCacheFilePath()): void {
   try {
-    mkdirSync(dirname(CACHE_FILE), { recursive: true });
-    const tmp = `${CACHE_FILE}.tmp`;
+    mkdirSync(dirname(filePath), { recursive: true });
+    const tmp = `${filePath}.tmp`;
     writeFileSync(tmp, JSON.stringify(cache, null, 2), "utf-8");
-    renameSync(tmp, CACHE_FILE);
+    renameSync(tmp, filePath);
   } catch {
     // Best-effort — never crash on cache write failure.
   }

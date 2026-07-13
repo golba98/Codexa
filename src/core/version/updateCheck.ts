@@ -154,7 +154,10 @@ export async function checkForUpdates(
   }
 }
 
-export function formatUpdateInstructions(result: UpdateCheckResult | null): string {
+export function formatUpdateInstructions(
+  result: UpdateCheckResult | null,
+  updateCommand: string = CODEXA_UPDATE_COMMAND,
+): string {
   const current = result?.currentVersion ?? APP_VERSION;
   const latest = result?.latestVersion ?? "unknown";
 
@@ -166,21 +169,24 @@ export function formatUpdateInstructions(result: UpdateCheckResult | null): stri
     ].join("\n");
   }
 
-  let statusLine: string;
-  if (result?.status === "update-available" && result.latestVersion) {
-    statusLine = `Update available: Codexa ${formatVersionLabel(result.latestVersion)}`;
-  } else if (result?.status === "up-to-date") {
-    statusLine = "Already up to date.";
-  } else {
-    statusLine = "Status unknown — could not reach npm registry.";
+  if (result?.status === "up-to-date") {
+    return [
+      "Codexa is up to date.",
+      `Current installed version: ${current}`,
+      `npm latest version:        ${latest}`,
+    ].join("\n");
   }
+
+  const statusLine = result?.status === "update-available" && result.latestVersion
+    ? `Update available: Codexa ${formatVersionLabel(result.latestVersion)}`
+    : "Status unknown — could not reach npm registry.";
 
   return [
     `Current installed version: ${current}`,
     `npm latest version:        ${latest}`,
     `Status:          ${statusLine}`,
     "",
-    `Run: ${CODEXA_UPDATE_COMMAND}`,
+    `Run: ${updateCommand}`,
   ].join("\n");
 }
 

@@ -1,31 +1,45 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
-import { spawn } from "child_process";
 import { useTheme } from "../theme.js";
-import { CODEXA_NPM_PACKAGE, CODEXA_UPDATE_COMMAND, formatVersionLabel } from "../../core/version/updateCheck.js";
+import { CODEXA_NPM_PACKAGE, formatVersionLabel } from "../../core/version/updateCheck.js";
+import {
+  formatPermissionGuidance,
+  getUpdateCommand,
+  isPermissionError,
+  runUpdateCommand,
+  type GlobalPackageManager,
+} from "../../core/version/packageManager.js";
+import type { CommandResult, CommandStreamHandlers } from "../../core/process/CommandRunner.js";
 
 type Phase = "menu" | "running" | "done" | "error";
 
+export type RunUpdateFn = (
+  pm: GlobalPackageManager,
+  handlers?: CommandStreamHandlers,
+) => { result: Promise<CommandResult>; cancel: () => void };
+
 const MENU_ITEMS = [
   { label: "Update now" },
-  { label: "Skip" },
-  { label: "Skip until next version" },
+  { label: "Later" },
 ] as const;
 
 interface UpdatePromptPanelProps {
   focusId: string;
   currentVersion: string;
   latestVersion: string;
+  packageManager: GlobalPackageManager;
+  /** Test seam — defaults to the real cross-platform runner. */
+  runUpdate?: RunUpdateFn;
   onSkip: () => void;
-  onSkipUntilNextVersion: (version: string) => void;
 }
 
 export function UpdatePromptPanel({
   focusId,
   currentVersion,
   latestVersion,
+  packageManager,
+  runUpdate,
   onSkip,
-  onSkipUntilNextVersion,
 }: UpdatePromptPanelProps) {
   const theme = useTheme();
   const { isFocused } = useFocus({ id: focusId, autoFocus: true });
@@ -35,7 +49,7 @@ export function UpdatePromptPanel({
   const [outputLines, setOutputLines] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const spawnStartedRef = useRef(false);
+  const runStartedRef = useRef(false);
 
   useInput((input, key) => {
     if (key.escape) {
@@ -54,10 +68,8 @@ export function UpdatePromptPanel({
       if (key.return) {
         if (selectedIndex === 0) {
           setPhase("running");
-        } else if (selectedIndex === 1) {
-          onSkip();
         } else {
-          onSkipUntilNextVersion(latestVersion);
+          onSkip();
         }
         return;
       }
@@ -70,42 +82,42 @@ export function UpdatePromptPanel({
 
   useEffect(() => {
     if (phase !== "running") return;
-    if (spawnStartedRef.current) return;
-    spawnStartedRef.current = true;
+    if (runStartedRef.current) return;
+    runStartedRef.current = true;
 
-    const child = spawn("npm", ["install", "-g", `${CODEXA_NPM_PACKAGE}@latest`], {
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    const appendLines = (buf: Buffer) => {
-      const lines = buf.toString("utf8").split(/\r?\n/).filter(Boolean);
+    const appendLines = (text: string) => {
+      const lines = text.split(/\r?\n/).filter(Boolean);
       if (lines.length > 0) {
         setOutputLines((prev) => [...prev, ...lines]);
       }
     };
 
-    child.stdout?.on("data", appendLines);
-    child.stderr?.on("data", appendLines);
+    const runner = runUpdate ?? runUpdateCommand;
+    const { result, cancel } = runner(packageManager, {
+      onStdout: appendLines,
+      onStderr: appendLines,
+    });
 
-    child.once("error", (err: Error) => {
-      setErrorMessage(err.message);
+    let disposed = false;
+    void result.then((res) => {
+      if (disposed) return;
+      if (res.status === "completed" && res.exitCode === 0) {
+        setPhase("done");
+        return;
+      }
+      if (isPermissionError(res)) {
+        setErrorMessage(formatPermissionGuidance(packageManager));
+      } else {
+        setErrorMessage(res.userMessage);
+      }
       setPhase("error");
     });
 
-    child.once("close", (code: number | null) => {
-      if (code === 0) {
-        setPhase("done");
-      } else {
-        setErrorMessage(`npm exited with code ${code ?? "unknown"}.`);
-        setPhase("error");
-      }
-    });
-
     return () => {
-      try { child.kill(); } catch { /* ignore */ }
+      disposed = true;
+      cancel();
     };
-  }, [phase]);
+  }, [phase, packageManager, runUpdate]);
 
   const footerText = phase === "menu"
     ? "Esc to close · Enter to confirm"
@@ -122,16 +134,16 @@ export function UpdatePromptPanel({
         flexDirection="column"
       >
         <Box>
-          <Text color={theme.accent} bold>{`Update available: Codexa ${formatVersionLabel(latestVersion)}`}</Text>
+          <Text color={theme.accent} bold>{`Update available: Codexa ${latestVersion}`}</Text>
         </Box>
         <Box marginTop={1}>
-          <Text color={theme.text}>{`${formatVersionLabel(currentVersion)} -> ${formatVersionLabel(latestVersion)}`}</Text>
+          <Text color={theme.text}>{`Current version: ${currentVersion}`}</Text>
         </Box>
         <Box>
           <Text color={theme.textMuted}>{`Package: ${CODEXA_NPM_PACKAGE}`}</Text>
         </Box>
         <Box>
-          <Text color={theme.textMuted}>{`Run: ${CODEXA_UPDATE_COMMAND}`}</Text>
+          <Text color={theme.textMuted}>{`Run: ${getUpdateCommand(packageManager).displayCommand}`}</Text>
         </Box>
       </Box>
 
@@ -146,19 +158,17 @@ export function UpdatePromptPanel({
       >
         {phase === "menu" && (
           <>
-            {MENU_ITEMS.map((item, index) => (
-              <Box key={item.label}>
-                <Text color={index === selectedIndex ? theme.accent : theme.textMuted}>
-                  {index === selectedIndex ? "› " : "  "}
-                </Text>
+            <Box>
+              {MENU_ITEMS.map((item, index) => (
                 <Text
+                  key={item.label}
                   color={index === selectedIndex ? theme.text : theme.textMuted}
                   bold={index === selectedIndex}
                 >
-                  {`${index + 1}. ${item.label}`}
+                  {`[ ${item.label} ]${index === 0 ? "  " : ""}`}
                 </Text>
-              </Box>
-            ))}
+              ))}
+            </Box>
           </>
         )}
 
@@ -173,7 +183,7 @@ export function UpdatePromptPanel({
 
         {phase === "done" && (
           <>
-            <Text color={theme.success}>{"Codexa was updated successfully."}</Text>
+            <Text color={theme.success}>{`Codexa ${formatVersionLabel(latestVersion)} installed successfully.`}</Text>
             <Text color={theme.textMuted}>{"Restart Codexa to use the new version."}</Text>
           </>
         )}

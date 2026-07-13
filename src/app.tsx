@@ -270,6 +270,7 @@ import { AppShell } from "./ui/chrome/AppShell.js";
 import { TranscriptShell } from "./ui/timeline/TranscriptShell.js";
 import type { RuntimeAvailability } from "./ui/chrome/RuntimeStatusBar.js";
 import { checkForUpdates, formatLocalDevUpdateStatus, formatUpdateInstructions, shouldRunStartupUpdateCheck, type UpdateCheckResult } from "./core/version/updateCheck.js";
+import { detectGlobalPackageManager, getUpdateCommand } from "./core/version/packageManager.js";
 import { isLocalDevChannel } from "./core/version/channel.js";
 import {
   isCacheValid,
@@ -550,6 +551,8 @@ export function App({ launchArgs }: AppProps) {
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
   const [initialRevisionText, setInitialRevisionText] = useState("");
   const [updateCheckResult, setUpdateCheckResult] = useState<UpdateCheckResult | null>(null);
+  // Launcher path is fixed for the process lifetime, so detect once.
+  const globalPackageManager = useMemo(() => detectGlobalPackageManager(), []);
   // Transcript mode leaves mouse reporting off so wheel/trackpad input scrolls
   // the terminal emulator's native scrollback instead of an in-app viewport.
   const mouseCapture = (mouseOverride ?? (terminalMouseMode === "wheel")) && !isMouseIdle;
@@ -1630,6 +1633,12 @@ export function App({ launchArgs }: AppProps) {
     const ucSettings = initialSettings.current.updateCheck ?? DEFAULT_UPDATE_CHECK_SETTINGS;
     if (!shouldRunStartupUpdateCheck(process.env, ucSettings.enabled)) return;
 
+    // The startup prompt is a modal takeover — never let it interrupt an
+    // active run or another open panel. The passive UpdateAvailableCard still
+    // gets the result via setUpdateCheckResult; user-initiated /update prompts
+    // stay unguarded.
+    const canOpenStartupPrompt = () => !busyRef.current && screenRef.current === "main";
+
     const timer = setTimeout(() => {
       void (async () => {
         try {
@@ -1642,7 +1651,7 @@ export function App({ launchArgs }: AppProps) {
                 latestVersion: cache.latestVersion,
                 checkedAt: cache.lastChecked,
               });
-              if (cache.latestVersion !== skippedUpdateVersionRef.current) {
+              if (cache.latestVersion !== skippedUpdateVersionRef.current && canOpenStartupPrompt()) {
                 setScreen("update-prompt");
               }
             }
@@ -1658,7 +1667,7 @@ export function App({ launchArgs }: AppProps) {
               updateAvailable: result.status === "update-available",
             });
             if (result.status === "update-available" && result.latestVersion) {
-              if (result.latestVersion !== skippedUpdateVersionRef.current) {
+              if (result.latestVersion !== skippedUpdateVersionRef.current && canOpenStartupPrompt()) {
                 setScreen("update-prompt");
               }
             }
@@ -2162,29 +2171,6 @@ export function App({ launchArgs }: AppProps) {
   const handleSkipUpdateForSession = useCallback(() => {
     setScreen("main");
   }, []);
-
-  const handleSkipUpdateVersion = useCallback((version: string) => {
-    initialSettings.current.updateCheck = {
-      ...initialSettings.current.updateCheck,
-      skippedUpdateVersion: version,
-    };
-    saveSettings({
-      ui: {
-        layoutStyle: initialSettings.current.ui.layoutStyle,
-        theme: themeSelection.committedTheme,
-        workspaceDisplayMode,
-        terminalTitleMode,
-        showBusyLoader,
-        terminalMouseMode,
-        customTheme,
-      },
-      auth: { preference: authPreference },
-      header: headerConfig,
-      updateCheck: initialSettings.current.updateCheck,
-    });
-    skippedUpdateVersionRef.current = version;
-    setScreen("main");
-  }, [authPreference, customTheme, headerConfig, showBusyLoader, terminalMouseMode, terminalTitleMode, themeSelection.committedTheme, workspaceDisplayMode]);
 
   const setApprovalPolicyWithNotice = useCallback((nextValue: RuntimeApprovalPolicy) => {
     const gate = guardConfigMutation("mode", busy);
@@ -4435,7 +4421,10 @@ export function App({ launchArgs }: AppProps) {
             if (freshResult?.status === "update-available" && freshResult.latestVersion) {
               setScreen("update-prompt");
             } else {
-              appendSystemEvent("Update", formatUpdateInstructions(freshResult));
+              appendSystemEvent(
+                "Update",
+                formatUpdateInstructions(freshResult, getUpdateCommand(globalPackageManager).displayCommand),
+              );
             }
           })();
           return;
@@ -4527,6 +4516,7 @@ export function App({ launchArgs }: AppProps) {
     dispatchSession,
     findUserPromptForTurn,
     focusManager,
+    globalPackageManager,
     handleCopy,
     handleClear,
     handleQuit,
@@ -4751,7 +4741,7 @@ export function App({ launchArgs }: AppProps) {
           clearCount={sessionState.clearCount}
           headerConfig={effectiveHeaderConfig}
           updateAvailable={
-            updateCheckResult?.status === "update-available" && updateCheckResult.latestVersion
+            screen !== "update-prompt" && updateCheckResult?.status === "update-available" && updateCheckResult.latestVersion
               ? { latestVersion: updateCheckResult.latestVersion, currentVersion: updateCheckResult.currentVersion }
               : null
           }
@@ -5010,8 +5000,8 @@ export function App({ launchArgs }: AppProps) {
                 focusId={FOCUS_IDS.updatePrompt}
                 currentVersion={updateCheckResult.currentVersion}
                 latestVersion={updateCheckResult.latestVersion}
+                packageManager={globalPackageManager}
                 onSkip={handleSkipUpdateForSession}
-                onSkipUntilNextVersion={handleSkipUpdateVersion}
               />
             )}
             </>
