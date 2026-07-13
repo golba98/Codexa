@@ -70,6 +70,14 @@ test("App routes main chat to TranscriptShell and gates AppShell to overlays", (
   assert.match(appSource, /screen === "model-picker"/);
 });
 
+test("Update prompt owns the visible update notice so the header card is not duplicated", () => {
+  assert.match(
+    appSource,
+    /screen !== "update-prompt" && updateCheckResult\?\.status === "update-available"/,
+  );
+  assert.match(appSource, /screen === "update-prompt"[\s\S]*?<UpdatePromptPanel/);
+});
+
 test("Startup provider migration notice is seeded before the first composer frame", () => {
   assert.match(appSource, /function createStartupStaticEvents/);
   assert.match(appSource, /createLaunchModeEvent\(launchContext\)/);

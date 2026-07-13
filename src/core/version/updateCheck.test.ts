@@ -36,6 +36,44 @@ test("checkForUpdates returns update-available when installed version is lower t
   assert.equal(result.latestVersion, "1.0.3");
 });
 
+test("checkForUpdates flags 1.0.5 as an update over installed 1.0.4", async () => {
+  // The exact scenario the stale-cache bug masked: 1.0.4 installed, 1.0.5 published.
+  const result = await checkForUpdates(
+    {},
+    {
+      currentVersion: "1.0.4",
+      fetchNpmMetadataFn: async () => metadata("1.0.5"),
+    },
+  );
+
+  assert.equal(result.status, "update-available");
+  assert.equal(result.latestVersion, "1.0.5");
+});
+
+test("checkForUpdates compares versions numerically, not as strings", async () => {
+  // As strings "1.0.10" < "1.0.9"; numerically it is newer.
+  const result = await checkForUpdates(
+    {},
+    {
+      currentVersion: "1.0.9",
+      fetchNpmMetadataFn: async () => metadata("1.0.10"),
+    },
+  );
+
+  assert.equal(result.status, "update-available");
+
+  const downgrade = await checkForUpdates(
+    {},
+    {
+      currentVersion: "1.0.10",
+      fetchNpmMetadataFn: async () => metadata("1.0.9"),
+    },
+  );
+
+  assert.equal(downgrade.status, "up-to-date");
+  assert.equal(isNewerVersion("1.0.10", "1.0.9"), true);
+});
+
 test("checkForUpdates returns up-to-date when installed version equals npm latest", async () => {
   const result = await checkForUpdates(
     {},
@@ -285,7 +323,7 @@ test("formatUpdateInstructions formats update-available npm status", () => {
   assert.match(result, new RegExp(`Run: ${CODEXA_UPDATE_COMMAND.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 });
 
-test("formatUpdateInstructions formats up-to-date npm status", () => {
+test("formatUpdateInstructions leads with up-to-date confirmation and both versions", () => {
   const result = formatUpdateInstructions({
     status: "up-to-date",
     currentVersion: "1.0.2",
@@ -293,8 +331,20 @@ test("formatUpdateInstructions formats up-to-date npm status", () => {
     checkedAt: Date.now(),
   });
 
-  assert.match(result, /Already up to date/);
-  assert.match(result, /npm install -g @golba98\/codexa@latest/);
+  assert.match(result, /^Codexa is up to date\./);
+  assert.match(result, /Current installed version: 1\.0\.2/);
+  assert.match(result, /npm latest version:\s+1\.0\.2/);
+});
+
+test("formatUpdateInstructions shows the caller-provided update command", () => {
+  const result = formatUpdateInstructions({
+    status: "update-available",
+    currentVersion: "1.0.1",
+    latestVersion: "1.0.2",
+    checkedAt: Date.now(),
+  }, "bun add -g @golba98/codexa@latest");
+
+  assert.match(result, /Run: bun add -g @golba98\/codexa@latest/);
 });
 
 test("formatUpdateInstructions formats manual npm errors", () => {

@@ -391,7 +391,7 @@ function buildHelpMessage(context: CommandContext): string {
     `  Current reasoning: ${formatReasoningLabel(context.runtime.reasoningLevel)}`,
     `  Current plan mode: ${context.runtime.planMode ? "Enabled" : "Disabled"}`,
     "  /copy              Copy last response to clipboard",
-    "  /update [check]    Show update status and instructions for updating Codexa",
+    "  /update [status]   Check for updates and install the latest Codexa (status: cached result only)",
     "  /help              Show this help",
     "",
     "Local development:",
@@ -846,7 +846,9 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
         return { action: "help", message: buildHelpMessage(context) };
 
       case "update":
-        return { action: "update", value: normalizedArg || "status" };
+        // Bare /update forces a fresh registry check; /update status is the
+        // explicit no-network path that reuses the cached/in-memory result.
+        return { action: "update", value: normalizedArg || "check" };
 
       default:
         return {

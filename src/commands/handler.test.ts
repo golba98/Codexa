@@ -663,13 +663,18 @@ test("non-command text without / or ? prefix returns null", () => {
   assert.equal(result, null);
 });
 
-test("parses /update and /update check commands", () => {
-  const resultStatus = runCommand("/update");
-  assert.equal(resultStatus?.action, "update");
-  assert.equal(resultStatus?.value, "status");
+test("parses /update, /update check, and /update status commands", () => {
+  // Bare /update defaults to a forced fresh check.
+  const resultBare = runCommand("/update");
+  assert.equal(resultBare?.action, "update");
+  assert.equal(resultBare?.value, "check");
 
   const resultCheck = runCommand("/update check");
   assert.equal(resultCheck?.action, "update");
   assert.equal(resultCheck?.value, "check");
+
+  const resultStatus = runCommand("/update status");
+  assert.equal(resultStatus?.action, "update");
+  assert.equal(resultStatus?.value, "status");
 });
 
