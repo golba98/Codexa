@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync } from "fs";
-import { dirname, join } from "path";
+import { dirname } from "path";
+import { resolveCodexaDebugLogPath } from "../workspace/appData.js";
 
 type ModelStateDebugDetails = Record<string, unknown>;
 
@@ -12,7 +13,7 @@ export function isModelStateDebugEnabled(): boolean {
 export function getModelStateDebugLogPath(): string {
   return process.env.CODEXA_RENDER_DEBUG_FILE?.trim()
     || process.env.CODEXA_DEBUG_MODEL_STATE_LOG?.trim()
-    || join(process.cwd(), ".codexa", "debug", "render-status.log");
+    || resolveCodexaDebugLogPath();
 }
 
 export function traceModelStateDebug(event: string, details: ModelStateDebugDetails = {}): void {

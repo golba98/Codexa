@@ -2,10 +2,21 @@
 
 import { spawn } from "child_process";
 import { appendFileSync, mkdirSync, readFileSync } from "fs";
+import { homedir } from "os";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 process.title = "CODEXA";
+
+function resolveLauncherDebugDir() {
+  const dataDir = process.env.CODEXA_DATA_DIR?.trim()
+    || (process.platform === "win32"
+      ? join(process.env.LOCALAPPDATA?.trim() || process.env.APPDATA?.trim() || join(homedir(), "AppData", "Local"), "Codexa")
+      : process.platform === "darwin"
+        ? join(homedir(), "Library", "Application Support", "Codexa")
+        : join(process.env.XDG_DATA_HOME?.trim() || join(homedir(), ".local", "share"), "codexa"));
+  return join(dataDir, "debug");
+}
 
 const currentFile = fileURLToPath(import.meta.url);
 const packageRoot = dirname(dirname(currentFile));
@@ -21,7 +32,7 @@ function writeRenderDebugRecord(kind, fields) {
   }
 
   try {
-    const debugDir = join(workspaceRoot, ".codexa", "debug");
+    const debugDir = resolveLauncherDebugDir();
     mkdirSync(debugDir, { recursive: true });
     appendFileSync(
       process.env.CODEXA_RENDER_DEBUG_FILE?.trim() || join(debugDir, "render-status.log"),
@@ -56,7 +67,7 @@ function writeTerminalTitleDebugRecord(fields) {
   }
 
   try {
-    const debugDir = join(workspaceRoot, ".codexa", "debug");
+    const debugDir = resolveLauncherDebugDir();
     mkdirSync(debugDir, { recursive: true });
     appendFileSync(
       process.env.CODEXA_TERMINAL_TITLE_DEBUG_FILE?.trim()

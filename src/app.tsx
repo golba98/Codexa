@@ -155,6 +155,7 @@ import {
 } from "./core/providerRuntime/contextMetadata.js";
 import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots } from "./core/workspace/workspaceActivity.js";
 import { resolveWorkspaceRoot } from "./core/workspace/workspaceRoot.js";
+import { resolveCodexaAttachmentDir } from "./core/workspace/appData.js";
 import {
   importExternalFile,
   isImageFile,
@@ -3830,13 +3831,12 @@ export function App({ launchArgs }: AppProps) {
 
   const handleImportConfirm = useCallback(async () => {
     if (!pendingImport) return;
-    const replacements: Array<{ rawPath: string; workspaceRelativePath: string }> = [];
+    const replacements: Array<{ rawPath: string; replacementPath: string }> = [];
     for (const file of pendingImport.files) {
       try {
         const destPath = await importExternalFile(file.srcPath, pendingImport.attachmentsDir);
         if (destPath) {
-          const relPath = path.relative(workspaceRoot, destPath).replace(/\\/g, "/");
-          replacements.push({ rawPath: file.rawPath, workspaceRelativePath: relPath });
+          replacements.push({ rawPath: file.rawPath, replacementPath: destPath });
         }
       } catch (err: any) {
         appendErrorEvent("Import failed", `Could not import ${path.basename(file.srcPath)}: ${err.message}`);
@@ -4470,9 +4470,7 @@ export function App({ launchArgs }: AppProps) {
 
     if (outsideViolations.length > 0) {
       if (runtimeConfig.policy.allowExternalFileImport) {
-        const attachmentsDir = path.isAbsolute(runtimeConfig.policy.attachmentDir)
-          ? runtimeConfig.policy.attachmentDir
-          : path.join(workspaceRoot, runtimeConfig.policy.attachmentDir);
+        const attachmentsDir = resolveCodexaAttachmentDir(workspaceRoot, runtimeConfig.policy.attachmentDir);
         const importFiles: PendingImportFile[] = outsideViolations.map((v) => ({
           srcPath: v.normalizedPath,
           rawPath: v.rawPath,

@@ -44,6 +44,7 @@ export function AttachmentImportPanel({
   }, { isActive: isFocused });
 
   const relativeAttachmentsDir = path.relative(workspaceRoot, attachmentsDir).replace(/\\/g, "/");
+  const displayedAttachmentsDir = relativeAttachmentsDir.startsWith("..") ? attachmentsDir : relativeAttachmentsDir;
   const hasImages = files.some((f) => f.isImage);
   const showVisionWarning = hasImages && modelSupportsVision === false;
   const fileLabel = files.length === 1 ? "file" : "files";
@@ -59,7 +60,7 @@ export function AttachmentImportPanel({
       >
         <Text color={theme.accent} bold>IMPORT FILE  </Text>
         <Text color={theme.textMuted}>
-          Copy {files.length} outside-workspace {fileLabel} into .codexa/attachments?
+          Copy {files.length} outside-workspace {fileLabel} into {displayedAttachmentsDir}?
         </Text>
       </Box>
 
@@ -76,7 +77,7 @@ export function AttachmentImportPanel({
           <Box key={i} flexDirection="column" marginBottom={i < files.length - 1 ? 1 : 0}>
             <Text color={theme.text}>{path.basename(file.srcPath)}</Text>
             <Text color={theme.textDim}>
-              {"→ "}{relativeAttachmentsDir}/{file.destFilename}
+              {"→ "}{displayedAttachmentsDir}/{file.destFilename}
             </Text>
           </Box>
         ))}

@@ -76,14 +76,14 @@ export async function importExternalFile(
 
 export function rewritePromptWithImportedPaths(
   prompt: string,
-  replacements: Array<{ rawPath: string; workspaceRelativePath: string }>,
+  replacements: Array<{ rawPath: string; replacementPath: string }>,
 ): string {
   let result = prompt;
-  for (const { rawPath, workspaceRelativePath } of replacements) {
-    const needsQuotes = /\s/.test(workspaceRelativePath);
+  for (const { rawPath, replacementPath } of replacements) {
+    const needsQuotes = /\s/.test(replacementPath);
     const quotedReplacement = needsQuotes
-      ? `"${workspaceRelativePath}"`
-      : workspaceRelativePath;
+      ? `"${replacementPath}"`
+      : replacementPath;
     // Replace quoted forms first so the unquoted pass doesn't double-replace
     result = result.split(`"${rawPath}"`).join(quotedReplacement);
     result = result.split(`'${rawPath}'`).join(quotedReplacement);

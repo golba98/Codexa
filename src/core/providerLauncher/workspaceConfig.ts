@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { DEFAULT_MODEL } from "../../config/settings.js";
+import { resolveCodexaWorkspaceDataDir } from "../workspace/appData.js";
 import { normalizeWorkspaceRoot } from "../workspace/workspaceRoot.js";
 import { isKnownProviderId } from "./registry.js";
 import { getDefaultRouteModel, getProviderRuntime, isProviderRouteConfigured, isProviderRoutableInCodexa } from "../providerRuntime/registry.js";
@@ -18,6 +19,10 @@ const DEPRECATED_ANTIGRAVITY_BACKENDS = new Set(["antigravity-cli-auth", "agy"])
 const DEPRECATED_GOOGLE_PROVIDER_ID = "google";
 
 export function getProviderWorkspaceConfigFile(workspaceRoot: string): string {
+  return join(resolveCodexaWorkspaceDataDir(normalizeWorkspaceRoot(workspaceRoot)), "providers.json");
+}
+
+export function getLegacyProviderWorkspaceConfigFile(workspaceRoot: string): string {
   return join(normalizeWorkspaceRoot(workspaceRoot), ".codexa", "providers.json");
 }
 
@@ -347,9 +352,18 @@ export function serializeProviderWorkspaceConfig(config: ProviderWorkspaceConfig
 
 export function loadProviderWorkspaceConfig(workspaceRoot: string): ProviderWorkspaceConfig {
   const filePath = getProviderWorkspaceConfigFile(workspaceRoot);
-  if (!existsSync(filePath)) return {};
+  if (existsSync(filePath)) {
+    try {
+      return parseProviderWorkspaceConfig(JSON.parse(readFileSync(filePath, "utf-8")));
+    } catch {
+      return {};
+    }
+  }
+
+  const legacyFilePath = getLegacyProviderWorkspaceConfigFile(workspaceRoot);
+  if (!existsSync(legacyFilePath)) return {};
   try {
-    return parseProviderWorkspaceConfig(JSON.parse(readFileSync(filePath, "utf-8")));
+    return parseProviderWorkspaceConfig(JSON.parse(readFileSync(legacyFilePath, "utf-8")));
   } catch {
     return {};
   }

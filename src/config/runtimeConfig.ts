@@ -130,7 +130,7 @@ export const DEFAULT_RUNTIME_POLICY: RuntimePolicyConfig = {
   serviceTier: "flex",
   personality: "none",
   allowExternalFileImport: true,
-  attachmentDir: ".codexa/attachments",
+  attachmentDir: "attachments",
 };
 
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
