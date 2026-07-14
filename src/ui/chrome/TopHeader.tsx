@@ -2,7 +2,7 @@ import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../../config/settings.js";
 import { formatCodexaBrandLabel } from "../../core/version/channel.js";
-import { formatVersionLabel } from "../../core/version/updateCheck.js";
+import { CODEXA_UPDATE_COMMAND, formatVersionLabel } from "../../core/version/updateCheck.js";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
 import type { CodexAuthState } from "../../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../../core/auth/codexAuth.js";
@@ -58,6 +58,7 @@ type HeaderMetadataLine = { key: string; text: string; color: string; bold: bool
 export interface UpdateAvailableInfo {
   latestVersion: string;
   currentVersion: string;
+  updateCommand?: string;
 }
 
 interface TopHeaderProps {
@@ -343,6 +344,7 @@ export function TopHeader({
                   <UpdateAvailableCard
                     latestVersion={updateAvailable.latestVersion}
                     currentVersion={updateAvailable.currentVersion}
+                    updateCommand={updateAvailable.updateCommand}
                     width={metadataWidth}
                   />
                   <Box height={UPDATE_CARD_GAP_ROWS} />
@@ -359,7 +361,7 @@ export function TopHeader({
             )}
             {metadataColumn}
             {updateAvailable && (
-              <Text color={theme.warning} wrap="truncate">{`Update available: Codexa ${formatVersionLabel(updateAvailable.latestVersion)} — Run: npm install -g @golba98/codexa@latest`}</Text>
+              <Text color={theme.warning} wrap="truncate">{`Update available: Codexa ${formatVersionLabel(updateAvailable.latestVersion)} — Run: ${updateAvailable.updateCommand ?? CODEXA_UPDATE_COMMAND}`}</Text>
             )}
           </Box>
         )}

@@ -48,6 +48,11 @@ function stripV(v: string): string {
   return v.startsWith("v") ? v.slice(1) : v;
 }
 
+/** Returns true when a cache entry was created by the running Codexa version. */
+export function isCacheForRunningVersion(cache: UpdateCheckCache, runningVersion: string): boolean {
+  return stripV(cache.currentVersion) === stripV(runningVersion);
+}
+
 /**
  * Returns true only when the cache is still usable:
  * - `runningVersion` matches the version the cache was written for (version-mismatch = stale)
@@ -59,7 +64,7 @@ export function isCacheValid(
   runningVersion?: string,
 ): boolean {
   if (runningVersion !== undefined) {
-    if (stripV(cache.currentVersion) !== stripV(runningVersion)) {
+    if (!isCacheForRunningVersion(cache, runningVersion)) {
       return false;
     }
   }

@@ -273,7 +273,7 @@ import { checkForUpdates, formatLocalDevUpdateStatus, formatUpdateInstructions, 
 import { detectGlobalPackageManager, getUpdateCommand } from "./core/version/packageManager.js";
 import { isLocalDevChannel } from "./core/version/channel.js";
 import {
-  isCacheValid,
+  isCacheForRunningVersion,
   loadUpdateCheckCache,
   saveUpdateCheckCache,
 } from "./config/updateCheckCache.js";
@@ -395,9 +395,6 @@ export function App({ launchArgs }: AppProps) {
     ? projectInstructionsLoad.instructions
     : null;
   const initialSettings = useRef(loadSettings());
-  const skippedUpdateVersionRef = useRef<string | null>(
-    initialSettings.current.updateCheck.skippedUpdateVersion ?? null,
-  );
   const initialProviderWorkspaceConfig = useRef<ProviderWorkspaceConfig>(loadProviderWorkspaceConfig(workspaceRoot));
   const initialLayeredConfig = useRef<LayeredConfigResult | null>(null);
   if (initialLayeredConfig.current === null) {
@@ -551,6 +548,7 @@ export function App({ launchArgs }: AppProps) {
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
   const [initialRevisionText, setInitialRevisionText] = useState("");
   const [updateCheckResult, setUpdateCheckResult] = useState<UpdateCheckResult | null>(null);
+  const [startupUpdateDismissed, setStartupUpdateDismissed] = useState(false);
   // Launcher path is fixed for the process lifetime, so detect once.
   const globalPackageManager = useMemo(() => detectGlobalPackageManager(), []);
   // Transcript mode leaves mouse reporting off so wheel/trackpad input scrolls
@@ -1628,59 +1626,52 @@ export function App({ launchArgs }: AppProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceRoot]);
 
-  // Non-blocking background update check — runs once at startup.
+  // Non-blocking background update check — fetches npm on every interactive startup.
   useEffect(() => {
     const ucSettings = initialSettings.current.updateCheck ?? DEFAULT_UPDATE_CHECK_SETTINGS;
     if (!shouldRunStartupUpdateCheck(process.env, ucSettings.enabled)) return;
 
-    // The startup prompt is a modal takeover — never let it interrupt an
-    // active run or another open panel. The passive UpdateAvailableCard still
-    // gets the result via setUpdateCheckResult; user-initiated /update prompts
-    // stay unguarded.
-    const canOpenStartupPrompt = () => !busyRef.current && screenRef.current === "main";
-
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          const cache = loadUpdateCheckCache();
-          if (cache && isCacheValid(cache, ucSettings.intervalHours, APP_VERSION)) {
-            if (cache.updateAvailable && cache.latestVersion) {
-              setUpdateCheckResult({
-                status: "update-available",
-                currentVersion: cache.currentVersion,
-                latestVersion: cache.latestVersion,
-                checkedAt: cache.lastChecked,
-              });
-              if (cache.latestVersion !== skippedUpdateVersionRef.current && canOpenStartupPrompt()) {
-                setScreen("update-prompt");
-              }
-            }
-            return;
-          }
-          const result = await checkForUpdates({ enabled: true });
-          if (result.status !== "error") {
-            setUpdateCheckResult(result);
-            saveUpdateCheckCache({
-              lastChecked: result.checkedAt,
-              currentVersion: result.currentVersion,
-              latestVersion: result.latestVersion,
-              updateAvailable: result.status === "update-available",
+    void (async () => {
+      const cache = loadUpdateCheckCache();
+      try {
+        const result = await checkForUpdates({ enabled: true });
+        if (result.status === "error") {
+          // A previously confirmed update is still useful when npm is briefly
+          // unreachable, but it must never suppress the next fresh startup check.
+          if (cache?.updateAvailable && cache.latestVersion && isCacheForRunningVersion(cache, APP_VERSION)) {
+            setUpdateCheckResult({
+              status: "update-available",
+              currentVersion: cache.currentVersion,
+              latestVersion: cache.latestVersion,
+              checkedAt: cache.lastChecked,
+              source: "cache",
             });
-            if (result.status === "update-available" && result.latestVersion) {
-              if (result.latestVersion !== skippedUpdateVersionRef.current && canOpenStartupPrompt()) {
-                setScreen("update-prompt");
-              }
-            }
           }
-        } catch {
-          // Never crash the TUI on a failed update check.
+          return;
         }
-      })();
-    }, 2000);
 
-    return () => clearTimeout(timer);
+        setUpdateCheckResult(result);
+        saveUpdateCheckCache({
+          lastChecked: result.checkedAt,
+          currentVersion: result.currentVersion,
+          latestVersion: result.latestVersion,
+          updateAvailable: result.status === "update-available",
+        });
+      } catch {
+        // Never crash the TUI on a failed update check.
+      }
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A startup update prompt must not interrupt an active run or another panel.
+  // Keep the result until the user returns to the idle main screen instead.
+  useEffect(() => {
+    if (startupUpdateDismissed || busy || screen !== "main") return;
+    if (updateCheckResult?.status === "update-available" && updateCheckResult.latestVersion) {
+      setScreen("update-prompt");
+    }
+  }, [busy, screen, startupUpdateDismissed, updateCheckResult]);
 
   // Track clear epoch to suppress stale command result events
   useEffect(() => {
@@ -2169,6 +2160,7 @@ export function App({ launchArgs }: AppProps) {
   }, [applyWorkspaceDisplayMode, showBusyLoader, terminalMouseMode, terminalTitleMode, workspaceDisplayMode]);
 
   const handleSkipUpdateForSession = useCallback(() => {
+    setStartupUpdateDismissed(true);
     setScreen("main");
   }, []);
 
@@ -4742,7 +4734,11 @@ export function App({ launchArgs }: AppProps) {
           headerConfig={effectiveHeaderConfig}
           updateAvailable={
             screen !== "update-prompt" && updateCheckResult?.status === "update-available" && updateCheckResult.latestVersion
-              ? { latestVersion: updateCheckResult.latestVersion, currentVersion: updateCheckResult.currentVersion }
+              ? {
+                latestVersion: updateCheckResult.latestVersion,
+                currentVersion: updateCheckResult.currentVersion,
+                updateCommand: getUpdateCommand(globalPackageManager).displayCommand,
+              }
               : null
           }
           panel={
