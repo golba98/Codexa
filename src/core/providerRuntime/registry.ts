@@ -207,7 +207,13 @@ export function resolveActiveProviderRoute(options: {
         model.canonicalId === route.modelId
       );
       const hasNonFallbackModels = discovery.models.some((model) => model.source !== "fallback");
-      if (discovery.status === "ready" && hasNonFallbackModels && discovery.models.length > 0 && !stillAvailable) {
+      if (
+        route.backendKind === "claude-code-auth" &&
+        discovery.status === "ready" &&
+        hasNonFallbackModels &&
+        discovery.models.length > 0 &&
+        !stillAvailable
+      ) {
         route.modelId = discovery.models[0]!.modelId;
       }
     } else if (route.providerId === "local") {

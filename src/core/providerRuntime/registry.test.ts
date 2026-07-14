@@ -16,7 +16,7 @@ import {
 import { resetGeminiRouteValidationCacheForTests } from "./gemini.js";
 import { resetAnthropicRouteValidationCacheForTests, validateAnthropicRoute } from "./anthropic.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "./local.js";
-import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "./antigravity.js";
+import { ANTIGRAVITY_DEFAULT_MODEL_ID, discoverAgyModels } from "./antigravity.js";
 
 test("google runtime exposes configured Gemini models for in-Codexa routing", () => {
   const runtime = getProviderRuntime("google");
@@ -189,7 +189,24 @@ test("CLI model override preserves provider from providers.json activeRoute", ()
   assert.equal(route.reasoning, "low", "Reasoning from providers.json must be preserved");
 });
 
-test("antigravity runtime has routeAvailable and correct backendKind", () => {
+test("antigravity runtime has routeAvailable and correct backendKind", async () => {
+  await discoverAgyModels({
+    executable: "agy",
+    cwd: process.cwd(),
+    platform: "linux",
+    runCommandImpl: mockRunCommand(commandResult({
+      stdout: [
+        "Gemini 3.5 Flash (Medium)",
+        "Gemini 3.5 Flash (High)",
+        "Gemini 3.5 Flash (Low)",
+        "Gemini 3.1 Pro (Low)",
+        "Gemini 3.1 Pro (High)",
+        "Claude Sonnet 4.6 (Thinking)",
+        "Claude Opus 4.6 (Thinking)",
+        "GPT-OSS 120B (Medium)",
+      ].join("\n"),
+    })),
+  });
   const runtime = getProviderRuntime("antigravity");
   const discovery = discoverProviderModels("antigravity");
 
