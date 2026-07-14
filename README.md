@@ -26,8 +26,10 @@ codexa --version
 | Local dev / running from source | [Bun](https://bun.sh) |
 | Codex/OpenAI route | Codex CLI installed and authenticated |
 | Claude/Anthropic route | Claude Code CLI installed and authenticated |
-| Gemini/Google route | Gemini CLI installed and authenticated |
+| Mistral Vibe route | Mistral Vibe CLI (`vibe`) installed and authenticated |
+| Antigravity route | Antigravity CLI (`agy`) installed and authenticated |
 | Local route | LM Studio (or any OpenAI-compatible server) |
+| Gemini/Google route | *(Legacy)* Gemini CLI installed and authenticated (falls back to OpenAI route) |
 
 ## Installing Codexa
 
@@ -73,6 +75,8 @@ Codexa and provider CLIs are independent tools with separate version numbers. Up
 |------|---------|---------------|--------|
 | Codex CLI | OpenAI coding agent | `codex --version` | `codex update` or reinstall |
 | Claude Code CLI | Anthropic coding agent | `claude --version` | `npm install -g @anthropic-ai/claude-code@latest` |
+| Mistral Vibe CLI | Mistral coding agent | `vibe --version` | `vibe --setup` or reinstall |
+| Antigravity CLI | Antigravity coding agent | `agy --version` | Reinstall via package manager |
 | Codexa | TUI wrapper / workspace experience | `codexa --version` | `npm install -g @golba98/codexa@latest` |
 
 ## Provider CLI Setup
@@ -146,9 +150,12 @@ claude
 npm install -g @anthropic-ai/claude-code@latest
 ```
 
-### Installing Gemini CLI
+### Installing Gemini CLI (Legacy / Deprecated)
 
-Codexa routes to the `gemini` executable. Install the Gemini CLI separately and authenticate per Google's instructions. Once installed and authenticated, Codexa can use it without additional configuration.
+> [!NOTE]
+> Google/Gemini is no longer supported as an active provider route inside Codexa and falls back automatically to the OpenAI/Codex route.
+
+If you are using legacy features that route to the `gemini` executable, install the Gemini CLI separately and authenticate per Google's instructions.
 
 If the Gemini executable is not on PATH or has a non-standard name, specify it explicitly:
 
@@ -159,6 +166,30 @@ export GEMINI_EXECUTABLE="/path/to/gemini"
 # or in .codex/config.toml
 gemini_command_path = "/path/to/gemini"
 ```
+
+### Installing Mistral Vibe CLI
+
+Codexa supports routing through the Mistral Vibe CLI (`vibe`).
+
+1. **Install Vibe CLI** — Install the Mistral Vibe CLI tool.
+2. **Authenticate Vibe** — Run `vibe` or `vibe --setup` in a terminal and sign in when prompted.
+3. **Environment & Config (Optional)**:
+   - Codexa automatically detects the active model from your environment (`VIBE_ACTIVE_MODEL`) or configuration files (`.vibe/config.toml` in your project/workspace, or `~/.vibe/config.toml`).
+   - You can customize the active session location using the `VIBE_HOME` environment variable.
+
+### Installing Antigravity CLI
+
+Codexa supports routing through the Antigravity CLI (`agy`).
+
+1. **Install Antigravity CLI** — Install the Antigravity CLI tool (`agy`).
+2. **Authenticate Antigravity** — Authenticate the CLI according to your provider setup.
+3. **Environment & Config (Optional)**:
+   - Specifying the `agy` command path:
+     ```toml
+     # in .codex/config.toml
+     antigravity_command_path = "/path/to/agy"
+     ```
+   - Alternatively, set the `AGY_EXECUTABLE` environment variable.
 
 ### Using Local Models (LM Studio)
 
@@ -305,6 +336,7 @@ Type `/` in the composer to access in-app commands. Key commands:
 | `/verbose` | Toggle verbose output |
 | `/copy` | Copy last response to clipboard |
 | `/diagnose github` | Run GitHub connectivity diagnostics |
+| `/diagnose providers` | Collect diagnostics for all configured providers |
 | `!<command>` | Run a shell command inline |
 
 ## Layered Config
@@ -609,4 +641,10 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 v1.0.6 checks npm on every interactive startup and shows an update prompt as soon as Codexa is idle. The prompt offers the correct update command for the package manager that installed Codexa.
 
-> Versions before v1.0.6 can wait for a cached result before discovering a new npm release. Update directly with `npm install -g @golba98/codexa@latest` if needed.
+Other recent releases introduce major additions, including:
+- **Mistral Vibe CLI Routing**: Connect through the `vibe` CLI tool (`vibe --setup`).
+- **Antigravity CLI Routing**: Connect through the `agy` CLI tool (`agy`).
+- **Dynamic Model Discovery & Caching**: Models are discovered dynamically and cached locally at `~/.codexa-model-cache.json` for instant launch, with instant provider sync for the model picker.
+- **Native Terminal Scrollback**: History follows native scrollback with composer anchored at the bottom.
+- **Kitty Keyboard Protocol Fix**: Corrected probe output leak.
+- **Google/Gemini Route Deprecation**: In-Codexa routing for Google/Gemini now falls back to OpenAI/Codex.
