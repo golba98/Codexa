@@ -469,6 +469,7 @@ UI-only preferences are stored in `~/.codexa-settings.json` (separate from runti
 
 - [Architecture](docs/ARCHITECTURE.md) explains Codexa's entry points, subsystem boundaries, prompt and rendering flows, provider layers, state model, persistence, and maintenance invariants with diagrams.
 - [Source Guide](docs/SOURCE_GUIDE.md) catalogs the purpose of every file under `src/` and records the maintenance rules for each source area.
+- [Developer Scripts](scripts/README.md) lists every package command and explains launcher, shim, audit, build-metadata, smoke, and test behavior.
 
 ## Local Development
 
