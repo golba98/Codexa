@@ -27,6 +27,30 @@ Codexa does not replace provider authentication. External provider CLIs remain r
 | Configuration | TOML + JSON caches | Resolves defaults, user/project config, profiles, CLI overrides, settings, trust, and provider state. |
 | Tests | Bun test | Colocated unit, reducer, parser, integration, and terminal-rendering contracts. |
 
+## Developer automation
+
+Repository scripts sit outside the application runtime and provide local launching, shim installation, build metadata, static capability auditing, and an authenticated headless smoke. Their full command and side-effect reference is the [Developer Scripts guide](../scripts/README.md).
+
+```mermaid
+flowchart LR
+  Package[package.json commands] --> Dev[run-local-dev.mjs]
+  Package --> Install[install-local-dev-bin.mjs]
+  Package --> Build[gen-build-info.mjs]
+  Package --> Audit[audit-codexa-capabilities.mjs]
+  Package --> Smoke[smoke-terminal-bench.mjs]
+
+  Install --> Shims[codexa-dev and cxd]
+  Shims --> Dev
+  Dev --> Interactive[src/index.tsx]
+  Dev --> Headless[src/exec.ts]
+  Build --> BuildInfo[src/config/buildInfo.ts]
+  Audit --> Source[Read-only src inspection]
+  Smoke --> Launcher[bin/codexa.js exec]
+  Launcher --> Headless
+```
+
+Only build-info generation intentionally rewrites a tracked source file. The capability audit is read-only. The terminal smoke is an external integration command that inherits the caller's workspace and provider authentication, so it is not part of the default unit-test suite.
+
 ## System context
 
 ```mermaid

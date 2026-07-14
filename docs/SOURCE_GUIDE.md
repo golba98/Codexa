@@ -1,6 +1,6 @@
 # Codexa Source Guide
 
-This is the maintenance catalog for every file under `src/`. It describes ownership and purpose; [Codexa Architecture](ARCHITECTURE.md) explains how the subsystems work together.
+This is the maintenance catalog for every file under `src/`. It describes ownership and purpose; [Codexa Architecture](ARCHITECTURE.md) explains how the subsystems work together, and [Developer Scripts](../scripts/README.md) documents repository automation outside `src/`.
 
 ## How to use this guide
 

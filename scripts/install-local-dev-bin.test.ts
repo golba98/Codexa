@@ -14,7 +14,7 @@ test("resolveInstallBinDir honors explicit codexa dev bin override", () => {
   assert.equal(resolveInstallBinDir({ CODEXA_DEV_BIN_DIR: "/tmp/codexa-dev-bin" }), "/tmp/codexa-dev-bin");
 });
 
-test("install-local-dev-bin creates only codexa-dev shim", () => {
+test("install-local-dev-bin preserves published codexa while creating local dev shims", () => {
   const binDir = mkdtempSync(join(tmpdir(), "codexa-dev-bin-"));
   const publishedBin = join(binDir, "codexa");
   writeFileSync(publishedBin, "published", "utf8");

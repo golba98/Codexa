@@ -74,7 +74,7 @@ const checks = {
     const hasExtraction = /initialPrompt/.test(launchContent) && /promptArgs/.test(launchContent);
     const hasUsage = /launchArgs\.initialPrompt/.test(appContent)
       && /initialPromptSubmittedRef/.test(appContent)
-      && /startPromptRun\(initialPrompt,\s*initialPrompt\)/.test(appContent);
+      && /startPromptRun\(initialPrompt,\s*initialPrompt,/.test(appContent);
     
     return {
       pass: hasExtraction && hasUsage,
@@ -106,7 +106,7 @@ const checks = {
 
   modelPicker() {
     const paths = [
-      join(repoRoot, "src", "ui", "ModelPicker.tsx"),
+      join(repoRoot, "src", "ui", "panels", "ModelPicker.tsx"),
       join(repoRoot, "src", "config", "settings.ts")
     ];
     
@@ -142,9 +142,9 @@ const checks = {
   },
 
   agentsmdSupport() {
-    const loaderPath = join(repoRoot, "src", "core", "projectInstructions.ts");
+    const loaderPath = join(repoRoot, "src", "core", "workspace", "projectInstructions.ts");
     const appPath = join(repoRoot, "src", "app.tsx");
-    const promptPath = join(repoRoot, "src", "core", "codexPrompt.ts");
+    const promptPath = join(repoRoot, "src", "core", "codex", "codexPrompt.ts");
     const providerPath = join(repoRoot, "src", "core", "providers", "codexSubprocess.ts");
     
     const paths = [loaderPath, appPath, promptPath, providerPath];
@@ -201,8 +201,8 @@ const checks = {
 
   fileEditingLayer() {
     const paths = [
-      join(repoRoot, "src", "core", "workspaceActivity.ts"),
-      join(repoRoot, "src", "core", "workspaceGuard.ts")
+      join(repoRoot, "src", "core", "workspace", "workspaceActivity.ts"),
+      join(repoRoot, "src", "core", "workspace", "workspaceGuard.ts")
     ];
     
     const exist = paths.filter(p => existsSync(p));
@@ -220,10 +220,10 @@ const checks = {
   },
 
   diffRenderer() {
-    const rendererPath = join(repoRoot, "src", "ui", "diffRenderer.ts");
-    const testPath = join(repoRoot, "src", "ui", "diffRenderer.test.ts");
-    const markdownPath = join(repoRoot, "src", "ui", "Markdown.tsx");
-    const timelinePath = join(repoRoot, "src", "ui", "timelineMeasure.ts");
+    const rendererPath = join(repoRoot, "src", "ui", "render", "diffRenderer.ts");
+    const testPath = join(repoRoot, "src", "ui", "render", "diffRenderer.test.ts");
+    const markdownPath = join(repoRoot, "src", "ui", "render", "Markdown.tsx");
+    const timelinePath = join(repoRoot, "src", "ui", "timeline", "timelineMeasure.ts");
     const paths = [rendererPath, testPath, markdownPath, timelinePath];
     const existing = paths.filter(p => existsSync(p));
 
@@ -271,7 +271,7 @@ const checks = {
 
   approvalSandboxLogic() {
     const paths = [
-      join(repoRoot, "src", "core", "workspaceGuard.ts"),
+      join(repoRoot, "src", "core", "workspace", "workspaceGuard.ts"),
       join(repoRoot, "src", "config", "runtimeConfig.ts")
     ];
     
@@ -306,7 +306,7 @@ const checks = {
   },
 
   debugLogging() {
-    const debugPath = join(repoRoot, "src", "core", "inputDebug.ts");
+    const debugPath = join(repoRoot, "src", "core", "debug", "inputDebug.ts");
     const envPath = join(repoRoot, "bin", "codexa.js");
     
     const debugExists = existsSync(debugPath);
@@ -365,7 +365,8 @@ const checks = {
   streamingHandler() {
     const paths = [
       join(repoRoot, "src", "core", "providers", "codexSubprocess.ts"),
-      join(repoRoot, "src", "core", "codex.ts")
+      join(repoRoot, "src", "core", "providers", "codexJsonStream.ts"),
+      join(repoRoot, "src", "core", "providers", "codexTranscript.ts")
     ];
     
     const exist = paths.filter(p => existsSync(p));
@@ -373,11 +374,11 @@ const checks = {
     const hasStreaming = /stream|emit|chunk|line|onLine/.test(content);
     
     return {
-      pass: exist.length > 0 && hasStreaming,
+      pass: exist.length === paths.length && hasStreaming,
       evidence: exist,
-      reason: hasStreaming
+      reason: exist.length === paths.length && hasStreaming
         ? "Streaming response handler present"
-        : "Streaming implementation not found"
+        : `Streaming implementation incomplete: found ${exist.length}/${paths.length} modules`
     };
   },
 
