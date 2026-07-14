@@ -465,6 +465,11 @@ UI-only preferences are stored in `~/.codexa-settings.json` (separate from runti
 
 > **Gotcha:** When testing local changes, confirm you are running the local build and not the global one. Use `Get-Command codexa` (Windows) or `which -a codexa` (Linux/macOS) to check.
 
+## Maintainer Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) explains Codexa's entry points, subsystem boundaries, prompt and rendering flows, provider layers, state model, persistence, and maintenance invariants with diagrams.
+- [Source Guide](docs/SOURCE_GUIDE.md) catalogs the purpose of every file under `src/` and records the maintenance rules for each source area.
+
 ## Local Development
 
 **Requirement:** [Bun](https://bun.sh) installed.
