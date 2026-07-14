@@ -207,7 +207,11 @@ export function resolveActiveProviderRoute(options: {
         model.canonicalId === route.modelId
       );
       const hasNonFallbackModels = discovery.models.some((model) => model.source !== "fallback");
-      if (discovery.status === "ready" && hasNonFallbackModels && discovery.models.length > 0 && !stillAvailable) {
+      // Preserve explicit versioned Claude IDs even when the current discovery
+      // output does not advertise that historical model. Short aliases are the
+      // values that need migration to the first currently discovered model.
+      const isKnownShortAlias = ANTHROPIC_FALLBACK_MODELS.some((model) => model.modelId === route.modelId);
+      if (discovery.status === "ready" && hasNonFallbackModels && discovery.models.length > 0 && !stillAvailable && isKnownShortAlias) {
         route.modelId = discovery.models[0]!.modelId;
       }
     } else if (route.providerId === "local") {

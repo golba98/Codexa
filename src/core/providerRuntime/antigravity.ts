@@ -165,7 +165,18 @@ export function getAgyModelSelector(
 }
 
 export function getAntigravityModelLabel(modelId: string): string {
-  return getActiveAgyModels().find((m) => m.id === modelId)?.label ?? modelId;
+  const discovered = getActiveAgyModels().find((m) => m.id === modelId || m.modelId === modelId);
+  if (discovered) return discovered.label;
+
+  const normalizedId = migrateAntigravityLegacyModelId(modelId).modelId;
+  const knownLabels: Record<string, string> = {
+    "gemini-3.5-flash": "Gemini 3.5 Flash",
+    "gemini-3.1-pro": "Gemini 3.1 Pro",
+    "claude-sonnet-4.6-thinking": "Claude Sonnet 4.6 (Thinking)",
+    "claude-opus-4.6-thinking": "Claude Opus 4.6 (Thinking)",
+    "gpt-oss-120b-medium": "GPT-OSS 120B",
+  };
+  return knownLabels[normalizedId] ?? modelId;
 }
 
 // ---------------------------------------------------------------------------
