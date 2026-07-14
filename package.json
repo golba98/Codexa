@@ -1,10 +1,10 @@
 {
   "name": "@golba98/codexa",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Terminal UI for Codexa — TypeScript + Bun + Ink",
   "type": "module",
   "bin": {
-    "codexa": "./bin/codexa.js"
+    "codexa": "bin/codexa.js"
   },
   "scripts": {
     "start": "bun run --silent src/index.tsx",

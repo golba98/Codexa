@@ -652,9 +652,9 @@ If you expect a notice but don't see one:
 
 See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
-**Current release: v1.0.7**
+**Current release: v1.0.8**
 
-v1.0.7 keeps workspaces clean: provider choices, imported attachments, and default diagnostic logs now live in Codexa user data instead of a project-local `.codexa` directory.
+v1.0.8 is a packaging-maintenance release that normalizes the published executable path without changing runtime behavior.
 
 Other recent releases introduce major additions, including:
 - **Mistral Vibe CLI Routing**: Connect through the `vibe` CLI tool (`vibe --setup`).

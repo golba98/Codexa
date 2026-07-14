@@ -11,7 +11,7 @@ const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf
 };
 
 test("published package binary remains codexa only", () => {
-  assert.deepEqual(packageJson.bin, { codexa: "./bin/codexa.js" });
+  assert.deepEqual(packageJson.bin, { codexa: "bin/codexa.js" });
   assert.equal(Object.hasOwn(packageJson.bin ?? {}, "codexa-dev"), false);
 });
 

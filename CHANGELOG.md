@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.8] — 2026-07-14 — Packaging Maintenance
+
+### Changed
+
+- **Published executable metadata is normalized** — the package now records the `codexa` binary as `bin/codexa.js`, matching npm's canonical package format and avoiding publish-time normalization warnings.
+- **Runtime behavior is unchanged** — this maintenance release contains no CLI, configuration, provider, or UI behavior changes.
+
+---
+
 ## [1.0.7] — 2026-07-14 — Clean Workspaces
 
 ### Changed
