@@ -82,7 +82,7 @@ const TEST_FILE: PendingImportFile = {
   isImage: true,
 };
 
-const ATTACHMENTS_DIR = "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal\\.codexa\\attachments";
+const ATTACHMENTS_DIR = "C:\\Users\\jorda\\AppData\\Local\\Codexa\\workspaces\\example\\attachments";
 const WORKSPACE_ROOT = "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal";
 
 interface HarnessState {
@@ -124,7 +124,7 @@ test("AttachmentImportPanel renders filename and destination path", async () => 
     await sleep();
     const output = harness.getOutput();
     assert.match(output, /Screenshot 2026-05-18\.png/);
-    assert.match(output, /\.codexa\/attachments/);
+    assert.match(output, /AppData.*Codexa.*attachments/);
   } finally {
     await harness.cleanup();
   }

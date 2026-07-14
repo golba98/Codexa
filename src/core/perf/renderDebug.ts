@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from "fs";
-import { dirname, join } from "path";
+import { dirname } from "path";
 import { useEffect, useRef } from "react";
+import { resolveCodexaDebugLogPath } from "../workspace/appData.js";
 
 type DebugEnv = Record<string, string | undefined>;
 
@@ -11,7 +12,7 @@ let renderTraceEnabled = false;
 let lifecycleEnabled = false;
 let flickerEnabled = false;
 let plainActionsEnabled = false;
-let logPath = join(process.cwd(), ".codexa", "debug", "render-status.log");
+let logPath = resolveCodexaDebugLogPath();
 let sessionId = `${Date.now()}-${process.pid}`;
 const counters = new Map<string, number>();
 
@@ -29,7 +30,7 @@ function configureFromEnv(env: DebugEnv = process.env): void {
   lifecycleEnabled = env["CODEXA_DEBUG_LIFECYCLE"] === "1";
   flickerEnabled = env["CODEXA_DEBUG_FLICKER"] === "1";
   plainActionsEnabled = env["CODEXA_DEBUG_PLAIN_ACTIONS"] === "1";
-  logPath = env["CODEXA_RENDER_DEBUG_FILE"]?.trim() || join(process.cwd(), ".codexa", "debug", "render-status.log");
+  logPath = env["CODEXA_RENDER_DEBUG_FILE"]?.trim() || resolveCodexaDebugLogPath(env);
   sessionId = `${Date.now()}-${process.pid}`;
   configured = true;
 }

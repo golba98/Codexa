@@ -209,7 +209,15 @@ export CODEXA_LOCAL_API_KEY="lm-studio"
 export CODEXA_LOCAL_MODEL="google/gemma-4-26b-a4b"
 ```
 
-Workspace provider config in `.codexa/providers.json`:
+Provider configuration is stored in Codexa user data and remains isolated per workspace:
+
+- Windows: `%LOCALAPPDATA%\\Codexa\\workspaces\\<workspace-hash>\\providers.json`
+- macOS: `~/Library/Application Support/Codexa/workspaces/<workspace-hash>/providers.json`
+- Linux: `$XDG_DATA_HOME/codexa/workspaces/<workspace-hash>/providers.json` (or `~/.local/share/codexa/...`)
+
+Existing `.codexa/providers.json` files are read as a legacy fallback and are never deleted. New saves go to user data, so opening or configuring Codexa no longer adds `.codexa` files to projects.
+
+The provider config format is:
 
 ```json
 {
@@ -637,9 +645,9 @@ If you expect a notice but don't see one:
 
 See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
-**Current release: v1.0.6**
+**Current release: v1.0.7**
 
-v1.0.6 checks npm on every interactive startup and shows an update prompt as soon as Codexa is idle. The prompt offers the correct update command for the package manager that installed Codexa.
+v1.0.7 keeps workspaces clean: provider choices, imported attachments, and default diagnostic logs now live in Codexa user data instead of a project-local `.codexa` directory.
 
 Other recent releases introduce major additions, including:
 - **Mistral Vibe CLI Routing**: Connect through the `vibe` CLI tool (`vibe --setup`).

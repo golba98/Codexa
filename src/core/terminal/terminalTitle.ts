@@ -1,7 +1,8 @@
 import { APP_NAME, type TerminalTitleMode, formatTerminalTitlePath } from "../../config/settings.js";
 import { appendFileSync, mkdirSync } from "fs";
-import { dirname, join } from "path";
+import { dirname } from "path";
 import * as renderDebug from "../perf/renderDebug.js";
+import { resolveCodexaDebugLogPath } from "../workspace/appData.js";
 
 export const DEFAULT_TERMINAL_TITLE = APP_NAME;
 
@@ -52,7 +53,7 @@ function findIncompleteOscTitleStart(text: string): number {
 
 const TERMINAL_TITLE_DEBUG_LOG_PATH = process.env["CODEXA_TERMINAL_TITLE_DEBUG_FILE"]?.trim()
   || process.env["CODEXA_RENDER_DEBUG_FILE"]?.trim()
-  || join(process.cwd(), ".codexa", "debug", "render-status.log");
+  || resolveCodexaDebugLogPath();
 
 let terminalTitleLifecycleState = "unknown";
 

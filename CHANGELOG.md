@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.7] — 2026-07-14 — Clean Workspaces
+
+### Changed
+
+- **Codexa no longer creates `.codexa` directories in projects** — provider preferences, imported attachments, and default diagnostic logs now use platform user-data storage instead of the active workspace.
+- **Provider settings remain workspace-specific without becoming project files** — Codexa stores each workspace's route, model, and reasoning preferences under a hashed user-data directory.
+
+### Migration
+
+- Existing `.codexa/providers.json` files remain untouched and load as a legacy fallback. When you next save provider settings, Codexa writes the migrated configuration to user data only.
+- Existing `.codexa` directories are never deleted automatically.
+
+---
+
 ## [1.0.6] — 2026-07-14 — Startup Update Notice
 
 ### Fixed

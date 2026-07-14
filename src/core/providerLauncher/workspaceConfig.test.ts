@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import test from "node:test";
+import test, { afterEach, beforeEach } from "node:test";
 import { buildProviderRegistry } from "./registry.js";
 import { resetGeminiRouteValidationCacheForTests } from "../providerRuntime/gemini.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "../providerRuntime/local.js";
 import {
   getProviderWorkspaceConfigFile,
+  getLegacyProviderWorkspaceConfigFile,
   loadProviderWorkspaceConfig,
   parseProviderWorkspaceConfig,
   saveProviderWorkspaceConfig,
@@ -17,6 +18,21 @@ import {
   setProviderDefaultModel,
   setProviderWorkspaceDefault,
 } from "./workspaceConfig.js";
+
+let testDataRoot = "";
+let originalDataRoot: string | undefined;
+
+beforeEach(() => {
+  originalDataRoot = process.env.CODEXA_DATA_DIR;
+  testDataRoot = mkdtempSync(join(tmpdir(), "codexa-provider-test-data-"));
+  process.env.CODEXA_DATA_DIR = testDataRoot;
+});
+
+afterEach(() => {
+  if (originalDataRoot === undefined) delete process.env.CODEXA_DATA_DIR;
+  else process.env.CODEXA_DATA_DIR = originalDataRoot;
+  rmSync(testDataRoot, { recursive: true, force: true });
+});
 
 function withGeminiEnv<T>(
   env: Partial<NodeJS.ProcessEnv>,
@@ -150,11 +166,16 @@ test("legacy Antigravity backend aliases are treated as deprecated routes", () =
 
 test("serializes and persists provider workspace defaults", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "codexa-provider-config-"));
+  const dataRoot = mkdtempSync(join(tmpdir(), "codexa-provider-data-"));
+  const previousDataRoot = process.env.CODEXA_DATA_DIR;
+  process.env.CODEXA_DATA_DIR = dataRoot;
   try {
     const config = setProviderWorkspaceDefault({}, "anthropic");
     saveProviderWorkspaceConfig(tempRoot, config);
 
-    assert.equal(getProviderWorkspaceConfigFile(tempRoot), join(tempRoot, ".codexa", "providers.json"));
+    assert.match(getProviderWorkspaceConfigFile(tempRoot), /codexa-provider-data-/);
+    assert.doesNotMatch(getProviderWorkspaceConfigFile(tempRoot), /\.codexa/);
+    assert.equal(existsSync(join(tempRoot, ".codexa")), false);
     assert.deepEqual(loadProviderWorkspaceConfig(tempRoot), {
       workspaceDefaultProviderId: "anthropic",
     });
@@ -162,7 +183,34 @@ test("serializes and persists provider workspace defaults", () => {
       workspaceDefaultProviderId: "anthropic",
     });
   } finally {
+    if (previousDataRoot === undefined) delete process.env.CODEXA_DATA_DIR;
+    else process.env.CODEXA_DATA_DIR = previousDataRoot;
     rmSync(tempRoot, { recursive: true, force: true });
+    rmSync(dataRoot, { recursive: true, force: true });
+  }
+});
+
+test("loads legacy provider settings without recreating the workspace directory", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "codexa-provider-legacy-"));
+  const dataRoot = mkdtempSync(join(tmpdir(), "codexa-provider-data-"));
+  const previousDataRoot = process.env.CODEXA_DATA_DIR;
+  process.env.CODEXA_DATA_DIR = dataRoot;
+  try {
+    const legacyFile = getLegacyProviderWorkspaceConfigFile(tempRoot);
+    mkdirSync(join(legacyFile, ".."), { recursive: true });
+    writeFileSync(legacyFile, JSON.stringify({ workspaceDefaultProviderId: "anthropic" }), "utf8");
+
+    assert.deepEqual(loadProviderWorkspaceConfig(tempRoot), { workspaceDefaultProviderId: "anthropic" });
+    assert.equal(existsSync(getProviderWorkspaceConfigFile(tempRoot)), false);
+
+    saveProviderWorkspaceConfig(tempRoot, { workspaceDefaultProviderId: "openai" });
+    assert.deepEqual(loadProviderWorkspaceConfig(tempRoot), { workspaceDefaultProviderId: "openai" });
+    assert.equal(existsSync(legacyFile), true);
+  } finally {
+    if (previousDataRoot === undefined) delete process.env.CODEXA_DATA_DIR;
+    else process.env.CODEXA_DATA_DIR = previousDataRoot;
+    rmSync(tempRoot, { recursive: true, force: true });
+    rmSync(dataRoot, { recursive: true, force: true });
   }
 });
 

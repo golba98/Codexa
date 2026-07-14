@@ -4,6 +4,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { isNoiseLine } from "../providers/codexTranscript.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
+import { resolveCodexaDataDir } from "./appData.js";
 
 type Platform = "win32" | "darwin" | "linux" | string;
 
@@ -91,14 +92,7 @@ export function resolvePlanDir(platformOverride?: Platform): string {
     return join(homedir(), "AppData", "Local", "Codexa", "plans");
   }
 
-  if (platform === "darwin") {
-    return join(homedir(), "Library", "Application Support", "Codexa", "plans");
-  }
-
-  // Linux and other Unix-like
-  const xdgDataHome = process.env["XDG_DATA_HOME"];
-  if (xdgDataHome) return join(xdgDataHome, "codexa", "plans");
-  return join(homedir(), ".local", "share", "codexa", "plans");
+  return join(resolveCodexaDataDir(platform), "plans");
 }
 
 // SHA-256 of the workspace path ensures filename uniqueness across projects with the same name.

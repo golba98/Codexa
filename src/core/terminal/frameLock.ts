@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { resolveCodexaDebugLogPath } from "../workspace/appData.js";
 import { isTerminalResizing } from "./terminalControl.js";
 
 export interface FrameLockOptions {
@@ -28,7 +29,7 @@ export function wrapStdoutWithFrameLock({
   if (env.CODEXA_RENDER_DEBUG === "1") {
     try {
       const logPath = env.CODEXA_RENDER_DEBUG_FILE?.trim()
-        || path.join(process.cwd(), ".codexa", "debug", "render-status.log");
+        || resolveCodexaDebugLogPath(env);
       const logDir = path.dirname(logPath);
       if (!fs.existsSync(logDir)) {
         fs.mkdirSync(logDir, { recursive: true });
