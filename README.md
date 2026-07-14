@@ -577,7 +577,7 @@ npm install -g @golba98/codexa@latest
 
 ### Update notice does not appear
 
-Codexa checks for updates on startup and caches the result for 6 hours (stored in `~/.codexa-update-check.json`). The update notice only appears when the npm registry `latest` version is newer than the running version.
+Codexa checks npm for updates on every interactive startup. The local cache at `~/.codexa-update-check.json` is only used as a best-effort fallback if npm is temporarily unavailable. The update notice appears when the npm registry `latest` version is newer than the running version.
 
 Published npm versions are immutable. Versions before the fixed update checker may not show update notices even when a newer package exists. If in doubt, update directly:
 
@@ -588,9 +588,8 @@ npm install -g @golba98/codexa@latest
 If you expect a notice but don't see one:
 
 1. Check the current registry state: `npm view @golba98/codexa dist-tags --json`
-2. Clear the cache to force a fresh check: delete `~/.codexa-update-check.json`, then restart Codexa
-3. Force an explicit check in-app: `/update check`
-4. Update checks are disabled for local dev builds (`codexa-dev` / `cxd`)
+2. Force an explicit check in-app: `/update check`
+3. Update checks are disabled for local dev builds (`codexa-dev` / `cxd`)
 
 | Symptom | Fix |
 |---------|-----|
@@ -606,11 +605,8 @@ If you expect a notice but don't see one:
 
 See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
-**Current release: v1.0.4**
+**Current release: v1.0.6**
 
-v1.0.4 is an update-notice reliability fix:
-- Older installed versions can detect when npm `latest` is newer
-- `/update check` bypasses stale cache and reports a useful status
-- Failed registry lookups do not get cached as “up to date”
+v1.0.6 checks npm on every interactive startup and shows an update prompt as soon as Codexa is idle. The prompt offers the correct update command for the package manager that installed Codexa.
 
-> Versions before the fixed update checker may not show update notices. Update directly with `npm install -g @golba98/codexa@latest`.
+> Versions before v1.0.6 can wait for a cached result before discovering a new npm release. Update directly with `npm install -g @golba98/codexa@latest` if needed.

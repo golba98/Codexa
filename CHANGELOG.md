@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.6] — 2026-07-14 — Startup Update Notice
+
+### Fixed
+
+- **New releases are checked on every interactive startup** — Codexa now fetches npm's `latest` tag each time the TUI opens, so a release published after a previous launch is detected on the next run instead of waiting for a cached check to expire.
+- **Update prompts are delivered safely** — if Codexa is busy or another panel is open when npm responds, the update prompt waits until the user returns to the idle main screen. Choosing “Later” dismisses it only for that session.
+- **Package-manager guidance matches the install** — passive update notices now show the detected npm, pnpm, Yarn, or Bun update command.
+
+### Notes
+
+- Automatic checks remain disabled for local development launches. Headless `codexa exec` output is unchanged.
+
+---
+
 ## [1.0.4] — 2026-05-30 — Update Notice Reliability
 
 ### Fixed

@@ -34,7 +34,12 @@ function sleep(ms = 50): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function renderCard(latestVersion: string, currentVersion: string, width?: number): Promise<string> {
+async function renderCard(
+  latestVersion: string,
+  currentVersion: string,
+  width?: number,
+  updateCommand?: string,
+): Promise<string> {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
@@ -49,6 +54,7 @@ async function renderCard(latestVersion: string, currentVersion: string, width?:
         latestVersion={latestVersion}
         currentVersion={currentVersion}
         width={width}
+        updateCommand={updateCommand}
       />
     </ThemeProvider>,
     {
@@ -81,6 +87,13 @@ test("card renders all four content lines", async () => {
   assert.match(output, /Codexa v1\.0\.3/);
   assert.match(output, /Using v1\.0\.2/);
   assert.match(output, /npm install -g/);
+});
+
+test("card renders the supplied package-manager command", async () => {
+  const output = await renderCard("1.0.3", "1.0.2", undefined, "bun add -g @golba98/codexa@latest");
+
+  assert.match(output, /bun add -g @golba98\/codexa@latest/);
+  assert.doesNotMatch(output, /npm install -g/);
 });
 
 test("card renders round border glyphs", async () => {

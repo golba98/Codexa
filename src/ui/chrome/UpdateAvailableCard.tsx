@@ -10,13 +10,14 @@ export const UPDATE_CARD_ROWS = UPDATE_CARD_CONTENT_ROWS + 2; // +2 for top/bott
 export interface UpdateAvailableCardProps {
   latestVersion: string;
   currentVersion: string;
+  updateCommand?: string;
   /** Total box width including borders. Long lines are truncated to fit. */
   width?: number;
 }
 
-export function UpdateAvailableCard({ latestVersion, currentVersion, width }: UpdateAvailableCardProps) {
+export function UpdateAvailableCard({ latestVersion, currentVersion, updateCommand = CODEXA_UPDATE_COMMAND, width }: UpdateAvailableCardProps) {
   const theme = useTheme();
-  const command = `Run: ${CODEXA_UPDATE_COMMAND}`;
+  const command = `Run: ${updateCommand}`;
   // Inner content width = boxWidth - 2 (left/right border cols)
   const innerWidth = width !== undefined ? Math.max(8, width - 2) : undefined;
 

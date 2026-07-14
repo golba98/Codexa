@@ -5,6 +5,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   getUpdateCheckCacheFilePath,
+  isCacheForRunningVersion,
   isCacheValid,
   loadUpdateCheckCache,
   saveUpdateCheckCache,
@@ -133,4 +134,10 @@ test("isCacheValid: version mismatch invalidates (post-upgrade, still-running sc
 test("isCacheValid: fresh cache for the running version is valid", () => {
   const cache = makeCache();
   assert.equal(isCacheValid(cache, 6, "1.0.4"), true);
+});
+
+test("isCacheForRunningVersion ignores a leading v but rejects a different install", () => {
+  const cache = makeCache({ currentVersion: "v1.0.4" });
+  assert.equal(isCacheForRunningVersion(cache, "1.0.4"), true);
+  assert.equal(isCacheForRunningVersion(cache, "1.0.5"), false);
 });
