@@ -219,3 +219,10 @@ test("buildSpawnSpec: rejects a .cmd path containing a batch metacharacter on Wi
     /unsafe for cmd\.exe batch launch/i,
   );
 });
+
+test("buildSpawnSpec rejects batch arguments containing cmd metacharacters", () => {
+  assert.throws(
+    () => buildSpawnSpec("test.cmd", ["safe", "& whoami"], "win32"),
+    /unsafe for cmd\.exe batch launch/i,
+  );
+});

@@ -40,6 +40,7 @@ const RUST_RELATIVE_DIAGNOSTIC_PATH_PATTERN =
   /(?:^|[\s([{\],;=])((?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+\.rs(?::\d+(?::\d+)?)?)/g;
 const TRAILING_PUNCTUATION_PATTERN = /[),.;:\]}]+$/;
 const DIRECTORY_NAVIGATION_PATTERN = /(?:^|[;&\n]|&&|\|\|)\s*(cd|pushd|set-location)\b/i;
+const CARGO_REGISTRY_INDEX_DIRECTORY_PATTERN = /^index\.crates\.io-[A-Za-z0-9-]+$/;
 
 function detectPathStyle(pathValue: string): PathStyle | null {
   if (/^[A-Za-z]:[\\/]/.test(pathValue) || /^\\\\[^\\\/]+[\\\/][^\\\/]+/.test(pathValue)) {
@@ -243,7 +244,11 @@ export function extractExplicitPathReferences(text: string): string[] {
 export function formatSkippedDependencyPath(pathValue: string): string {
   const parts = pathValue.replace(/\\/g, "/").split("/");
   const registryIndex = parts.indexOf("registry");
-  if (registryIndex !== -1 && parts[registryIndex + 1] === "src" && parts[registryIndex + 2]?.includes("index.crates.io")) {
+  if (
+    registryIndex !== -1
+    && parts[registryIndex + 1] === "src"
+    && CARGO_REGISTRY_INDEX_DIRECTORY_PATTERN.test(parts[registryIndex + 2] ?? "")
+  ) {
     return parts.slice(registryIndex + 3).join("/");
   }
   const gitIndex = parts.indexOf("git");

@@ -95,9 +95,14 @@ function hasCargoManifest(workspaceRoot: string): boolean {
 function rustCommandGuard(command: string, context: AgentToolContext): string | null {
   if (!hasCargoManifest(context.workspaceRoot)) return null;
   const normalized = command.trim().replace(/\s+/g, " ");
-  const rustcMatch = /^rustc(?:\s+--?[^\s]+)*\s+([^\s]+\.rs)\b/.exec(normalized);
-  if (!rustcMatch) return null;
-  const target = rustcMatch[1]!;
+  const tokens = normalized.split(" ");
+  if (tokens[0] !== "rustc") return null;
+
+  let targetIndex = 1;
+  while (tokens[targetIndex]?.startsWith("-")) targetIndex += 1;
+  const target = tokens[targetIndex];
+  if (!target?.endsWith(".rs")) return null;
+
   const resolved = path.resolve(context.workspaceRoot, target);
   const rootMain = path.join(context.workspaceRoot, "main.rs");
   if (resolved !== rootMain || !existsSync(rootMain)) {
