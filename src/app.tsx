@@ -17,6 +17,7 @@ function normalizeRuntimeAvailability(value: unknown): RuntimeAvailability {
 
 function formatRuntimeProviderLabel(providerId: ProviderId): string {
   if (providerId === "local") return "Local";
+  if (providerId === "codexa-native") return "Codexa Native";
   if (providerId === "google") return "Google";
   if (providerId === "anthropic") return "Anthropic";
   if (providerId === "mistral") return "Mistral Vibe CLI";
@@ -134,7 +135,6 @@ import {
 } from "./core/models/codexModelCapabilities.js";
 import { loadSeededCodexCapabilities } from "./core/models/codexModelsCacheSeed.js";
 import {
-  buildDevLaunchNotice,
   buildWorkspaceCommandContext,
   createWorkspaceRelaunchPlan,
   guardWorkspaceRelaunch,
@@ -304,19 +304,6 @@ function createTurnId(): number {
   return nextTurnId++;
 }
 
-function createLaunchModeEvent(launchContext: LaunchContext): TimelineEvent | null {
-  const devLaunchNotice = buildDevLaunchNotice(launchContext);
-  if (!devLaunchNotice) return null;
-
-  return {
-    id: createEventId(),
-    type: "system",
-    createdAt: Date.now(),
-    title: sanitizeTerminalOutput("Launch mode"),
-    content: sanitizeTerminalOutput(devLaunchNotice, { preserveTabs: false, tabSize: 2 }),
-  };
-}
-
 function createProviderMigrationNoticeEvent(
   notice: ProviderWorkspaceConfig["migrationNotice"] | undefined,
   providerLabel: string | null = null,
@@ -337,14 +324,11 @@ function createProviderMigrationNoticeEvent(
 }
 
 function createStartupStaticEvents({
-  launchContext,
   providerWorkspaceConfig,
 }: {
-  launchContext: LaunchContext;
   providerWorkspaceConfig: ProviderWorkspaceConfig;
 }): TimelineEvent[] {
   return [
-    createLaunchModeEvent(launchContext),
     createProviderMigrationNoticeEvent(providerWorkspaceConfig.migrationNotice),
   ].filter((event): event is TimelineEvent => event !== null);
 }
@@ -455,6 +439,7 @@ export function App({ launchArgs }: AppProps) {
     committedTheme: initialSettings.current.ui.theme,
     previewTheme: null,
   });
+  const [themeNotice, setThemeNotice] = useState<string | null>(null);
   const [customTheme, setCustomTheme] = useState(initialSettings.current.ui.customTheme);
   const [headerConfig] = useState(initialSettings.current.header);
   const [screen, setScreen] = useState<Screen>("main");
@@ -483,7 +468,6 @@ export function App({ launchArgs }: AppProps) {
   staticRepaintGenerationRef.current = staticRepaintGeneration;
   const { state: sessionState, dispatch: dispatchSession } = useAppSessionState(() => {
     return createStartupStaticEvents({
-      launchContext,
       providerWorkspaceConfig: initialProviderWorkspaceConfig.current,
     });
   });
@@ -628,6 +612,7 @@ export function App({ launchArgs }: AppProps) {
   const externalCliStatusRef = useRef(sessionState.externalCliStatus);
   const previousScreenRef = useRef<Screen>("main");
   const themePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const themeNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modelDiscoveryInFlightRef = useRef<Promise<CodexModelCapabilities> | null>(null);
   const modelDiscoveryAnnounceRef = useRef(false);
   const intendedInputModeRef = useRef<"chat/input" | "model-picker">("chat/input");
@@ -1346,6 +1331,10 @@ export function App({ launchArgs }: AppProps) {
         clearTimeout(themePreviewTimerRef.current);
         themePreviewTimerRef.current = null;
       }
+      if (themeNoticeTimerRef.current) {
+        clearTimeout(themeNoticeTimerRef.current);
+        themeNoticeTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -1605,6 +1594,7 @@ export function App({ launchArgs }: AppProps) {
   // Probe local OpenAI-compatible servers such as LM Studio at startup so the
   // provider picker can show actual availability and loaded model IDs.
   useEffect(() => {
+    if (activeProviderRoute.providerId !== "local") return;
     void (async () => {
       try {
         markProviderAvailability("local", "checking", "startup-probe");
@@ -1625,7 +1615,7 @@ export function App({ launchArgs }: AppProps) {
   // workspaceRoot is stable for the session lifetime; local provider config is
   // loaded before this first startup probe.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceRoot]);
+  }, [activeProviderRoute.providerId, workspaceRoot]);
 
   // Non-blocking background update check — fetches npm on every interactive startup.
   useEffect(() => {
@@ -1664,6 +1654,24 @@ export function App({ launchArgs }: AppProps) {
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const repaintCommittedTheme = useCallback((themeName: string) => {
+    setThemeSelection((currentTheme) => commitThemeSelection(currentTheme, themeName));
+    setThemeNotice(`Theme switched to ${formatThemeLabel(themeName)}.`);
+    if (themeNoticeTimerRef.current) clearTimeout(themeNoticeTimerRef.current);
+    themeNoticeTimerRef.current = setTimeout(() => {
+      setThemeNotice(null);
+      themeNoticeTimerRef.current = null;
+    }, 1800);
+
+    // Ink's <Static> output has already been flushed with the previous colour
+    // tokens. Clear only the visible viewport, reset Ink's frame cache, and
+    // remount the static subtree so the complete current UI is repainted using
+    // the newly committed theme without adding anything to scrollback.
+    terminalControl.clearViewport("src/app.tsx:theme:viewportClear");
+    resetInkOutputForFreshFrame({ instance: inkInstance, columns: stdout.columns });
+    bumpStaticRepaintGeneration((tick) => tick + 1);
+  }, [inkInstance, stdout.columns, terminalControl]);
 
   // A startup update prompt must not interrupt an active run or another panel.
   // Keep the result until the user returns to the idle main screen instead.
@@ -3186,7 +3194,6 @@ export function App({ launchArgs }: AppProps) {
       clearPending: clearBoundaryArmed,
     });
     resetToHomeScreen(createStartupStaticEvents({
-      launchContext,
       providerWorkspaceConfig,
     }));
     if (!clearBoundaryArmed) {
@@ -4232,11 +4239,12 @@ export function App({ launchArgs }: AppProps) {
         case "diagnose_providers": {
           const lines: string[] = ["Provider CLI diagnostics:"];
           const diags = providerDiagnosticsRef.current;
-          const providerIds = ["openai", "anthropic", "local", "antigravity"] as const;
+          const providerIds = ["openai", "anthropic", "codexa-native", "local", "antigravity"] as const;
           const labels: Record<string, string> = {
             openai: "OpenAI/Codex",
             anthropic: "Anthropic/Claude",
             local: "Local OpenAI-compatible",
+            "codexa-native": "Codexa Native",
             antigravity: "Antigravity CLI",
           };
           for (const id of providerIds) {
@@ -4292,10 +4300,7 @@ export function App({ launchArgs }: AppProps) {
           return;
         case "theme":
           if (commandResult.value) {
-            setThemeSelection((currentTheme) => commitThemeSelection(currentTheme, commandResult.value!));
-            if (commandResult.message) {
-              appendSystemEvent("Theme", commandResult.message);
-            }
+            repaintCommittedTheme(commandResult.value);
           }
           return;
         case "themes":
@@ -4527,6 +4532,7 @@ export function App({ launchArgs }: AppProps) {
     openSettingsPanel,
     planMode,
     refreshAuthStatus,
+    repaintCommittedTheme,
     resetComposer,
     resolvedRuntimeConfig,
     runPlanGeneration,
@@ -4708,6 +4714,7 @@ export function App({ launchArgs }: AppProps) {
         verboseMode={verboseMode}
         clearCount={sessionState.clearCount}
         repaintGeneration={staticRepaintGeneration}
+        notice={themeNotice}
         composer={composerElement}
         composerRows={composerRows}
         visible={screen === "main"}
@@ -4939,24 +4946,18 @@ export function App({ launchArgs }: AppProps) {
                     clearTimeout(themePreviewTimerRef.current);
                     themePreviewTimerRef.current = null;
                   }
-                  setThemeSelection((currentTheme) => commitThemeSelection(currentTheme, value));
+                  repaintCommittedTheme(value);
                   setScreen("main");
-                  appendSystemEvent("Theme updated", `Visual theme switched to ${formatThemeLabel(value)}.`);
                   if (value === "custom") {
                     if (!customTheme) {
                       setCustomTheme({ ...THEMES.purple });
                     }
-                    appendSystemEvent(
-                      "Custom Theme",
-                      "Add a \"custom_theme\" object to ~/.codexa-settings.json with any of these keys: BG, PANEL, PANEL_ALT, PANEL_SOFT, BORDER, BORDER_ACTIVE, BORDER_SUBTLE, TEXT, MUTED, DIM, ACCENT, PROMPT, SUCCESS, WARNING, ERROR, INFO, STAR. Unset keys fall back to Midnight Purple defaults.",
-                    );
                   }
                 }}
                 onHighlight={(value) => {
                   if (themePreviewTimerRef.current) clearTimeout(themePreviewTimerRef.current);
-                  themePreviewTimerRef.current = setTimeout(() => {
-                    setThemeSelection((currentTheme) => previewThemeSelection(currentTheme, value));
-                  }, 120);
+                  themePreviewTimerRef.current = null;
+                  setThemeSelection((currentTheme) => previewThemeSelection(currentTheme, value));
                 }}
                 onCancel={() => {
                   if (themePreviewTimerRef.current) clearTimeout(themePreviewTimerRef.current);
@@ -5004,11 +5005,7 @@ export function App({ launchArgs }: AppProps) {
           mainPanelMode="viewport"
           composer={composerElement}
           composerRows={composerRows}
-          panelHint={screen !== "model-picker" ? (
-            <Box marginTop={1} paddingX={1}>
-              <Text color={activeTheme.textDim}>Close the active panel with Esc to return to the composer.</Text>
-            </Box>
-          ) : null}
+          panelHint={null}
         />
       )}
     </ThemeProvider>

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { resolveLocalDevEntry } from "./run-local-dev.mjs";
+import { resolveLocalDevEntry, resolveNativeChatCommand } from "./run-local-dev.mjs";
 import { createCodexaDevShim, SHIM_NAMES } from "./install-local-dev-bin.mjs";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
@@ -37,6 +37,23 @@ test("resolveLocalDevEntry resolves --headless-benchmark to src/exec.ts", () => 
   assert.equal(resolved.isHeadlessMode, true);
   assert.equal(resolved.isHeadlessBenchmark, true);
   assert.equal(resolved.entry, join(repoRoot, "src", "exec.ts"));
+});
+
+test("resolveNativeChatCommand targets the native SFT v2 checkpoint", () => {
+  const modelRoot = join(tmpdir(), "Codexa model");
+  const resolved = resolveNativeChatCommand({
+    CODEXA_NATIVE_MODEL_ROOT: modelRoot,
+    CODEXA_NATIVE_DEVICE: "cpu",
+  });
+
+  assert.equal(resolved.cwd, modelRoot);
+  assert.equal(resolved.executable, join(modelRoot, ".venv", "bin", "python"));
+  assert.deepEqual(resolved.args, [
+    join(modelRoot, "scripts", "chat_native.py"),
+    "--checkpoint", join(modelRoot, "checkpoints", "codexa-900m-sft-v2", "latest.pt"),
+    "--tokenizer", join(modelRoot, "checkpoints", "tokenizer-base-v1", "tokenizer.json"),
+    "--device", "cpu",
+  ]);
 });
 
 test("createCodexaDevShim installs both codexa-dev and cxd pointing at the local launcher", () => {

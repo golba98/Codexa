@@ -215,3 +215,20 @@ test("Antigravity GPT-OSS 120B displays label without effort suffix", () => {
   assert.equal(display.modelDisplay, "Antigravity CLI / GPT-OSS 120B");
   assert.equal(display.footerModelDisplay, "Antigravity CLI / GPT-OSS 120B");
 });
+
+test("Codexa Native displays the canonical 1B model name for legacy 900M routes", () => {
+  const route: ActiveProviderRoute = {
+    providerId: "codexa-native",
+    modelId: "codexa-900m-sft-v2-native",
+    backendKind: "codexa-native-pytorch",
+  };
+  const display = buildActiveRuntimeDisplay({
+    route,
+    reasoningLevel: "low",
+    mode: "full-auto",
+    tokensUsed: 0,
+    contextMetadata: context(route, null),
+  });
+
+  assert.equal(display.footerModelDisplay, "codexa-native / codexa-1b-sft-v2-native (Low)");
+});

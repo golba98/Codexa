@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildProviderRegistry, getDefaultProviderId } from "./registry.js";
+import { buildProviderRegistry, getDefaultProviderId, isKnownProviderId } from "./registry.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "../providerRuntime/local.js";
-import { setProviderActiveRoute } from "./workspaceConfig.js";
+import { setProviderActiveRoute, parseProviderWorkspaceConfig } from "./workspaceConfig.js";
 import { resolveActiveProviderRoute } from "../providerRuntime/registry.js";
 import {
   ANTIGRAVITY_DEFAULT_MODEL_ID,
@@ -11,22 +11,40 @@ import {
 } from "../providerRuntime/antigravity.js";
 import { runCommand } from "../process/CommandRunner.js";
 
-test("provider registry exposes the default launcher providers", () => {
-  const providers = buildProviderRegistry({ activeModel: "gpt-5.4" });
+test("provider registry exposes Codexa Native in local-dev channel and excludes it in production", () => {
+  const devProviders = buildProviderRegistry({ activeModel: "gpt-5.4", env: { CODEXA_CHANNEL: "local-dev" } });
+  assert.deepEqual(devProviders.map((provider) => provider.id), ["openai", "anthropic", "mistral", "codexa-native", "local", "antigravity"]);
+  assert.equal(devProviders[0]?.displayName, "OpenAI");
+  assert.equal(devProviders[0]?.currentModel, "gpt-5.4");
+  assert.deepEqual(devProviders[0]?.launchCommand, { executable: "codex", args: [] });
+  assert.deepEqual(devProviders[1]?.launchCommand, { executable: "claude", args: [] });
+  assert.equal(devProviders[2]?.displayName, "Mistral Vibe CLI");
+  assert.equal(devProviders[2]?.backendType, "mistral-vibe-cli-auth");
+  assert.equal(devProviders[2]?.routeMode, "in-codexa");
+  assert.equal(devProviders[2]?.statusLabel, "Enabled");
+  assert.deepEqual(devProviders[2]?.launchCommand, { executable: "vibe", args: [] });
+  assert.equal(devProviders[3]?.displayName, "Codexa Native");
+  assert.equal(devProviders[3]?.backendType, "codexa-native-pytorch");
+  assert.equal(devProviders[3]?.launchCommand, null);
+  assert.equal(devProviders[4]?.enabled, false);
+  assert.equal(devProviders[4]?.launchCommand, null);
+  assert.deepEqual(devProviders[5]?.launchCommand, { executable: "agy", args: [] });
 
-  assert.deepEqual(providers.map((provider) => provider.id), ["openai", "anthropic", "mistral", "local", "antigravity"]);
-  assert.equal(providers[0]?.displayName, "OpenAI");
-  assert.equal(providers[0]?.currentModel, "gpt-5.4");
-  assert.deepEqual(providers[0]?.launchCommand, { executable: "codex", args: [] });
-  assert.deepEqual(providers[1]?.launchCommand, { executable: "claude", args: [] });
-  assert.equal(providers[2]?.displayName, "Mistral Vibe CLI");
-  assert.equal(providers[2]?.backendType, "mistral-vibe-cli-auth");
-  assert.equal(providers[2]?.routeMode, "in-codexa");
-  assert.equal(providers[2]?.statusLabel, "Enabled");
-  assert.deepEqual(providers[2]?.launchCommand, { executable: "vibe", args: [] });
-  assert.equal(providers[3]?.enabled, false);
-  assert.equal(providers[3]?.launchCommand, null);
-  assert.deepEqual(providers[4]?.launchCommand, { executable: "agy", args: [] });
+  const prodProviders = buildProviderRegistry({ activeModel: "gpt-5.4", env: { CODEXA_CHANNEL: "published" } });
+  assert.deepEqual(prodProviders.map((provider) => provider.id), ["openai", "anthropic", "mistral", "local", "antigravity"]);
+  assert.equal(prodProviders.find((p) => p.id === "codexa-native"), undefined);
+});
+
+test("Codexa Native remains a known provider ID so workspace config preserves overrides when saved", () => {
+  assert.equal(isKnownProviderId("codexa-native"), true);
+  const parsed = parseProviderWorkspaceConfig({
+    providers: {
+      "codexa-native": { current_model: "codexa-1b-sft-v2-native" },
+      openai: { current_model: "gpt-5.4" },
+    },
+  });
+  assert.ok(parsed.providers?.["codexa-native"]);
+  assert.equal(parsed.providers["codexa-native"].currentModel, "codexa-1b-sft-v2-native");
 });
 
 test("Mistral Vibe can be the workspace default without becoming the active chat route", () => {
@@ -68,7 +86,7 @@ test("antigravity appears in the provider registry with correct defaults", async
       })) as typeof runCommand,
     });
 
-    const providers = buildProviderRegistry({ activeModel: "gpt-5.4" });
+    const providers = buildProviderRegistry({ activeModel: "gpt-5.4", env: { CODEXA_CHANNEL: "local-dev" } });
     const antigravity = providers.find((p) => p.id === "antigravity");
 
     assert.ok(antigravity, "antigravity provider not found");
@@ -163,7 +181,6 @@ test("anthropic can be selected as an active in-Codexa route", () => {
   assert.equal(providers.find((provider) => provider.id === "anthropic")?.currentModel, "claude-sonnet-4-20250514");
   assert.equal(providers.find((provider) => provider.id === "openai")?.isActiveRoute, false);
 });
-
 
 test("discovered local models enable local provider and display selected model", async () => {
   resetLocalProviderStateForTests();

@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useRef } from "react";
-import { Box, Static } from "ink";
+import { Box, Static, Text } from "ink";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
 import type { CodexAuthState } from "../../core/auth/codexAuth.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
@@ -19,6 +19,7 @@ import {
   type TimelineRow,
 } from "./timelineMeasure.js";
 import { LOGO_COMPACT, LOGO_COMPACT_MIN_COLS, LOGO_LARGE, LOGO_MEDIUM, selectLogoVariant } from "../render/logoVariants.js";
+import { useTheme } from "../theme.js";
 
 type TranscriptStaticItem = NativeTranscriptRowItem & { type: "rows" };
 type StaticRenderItem = TranscriptStaticItem;
@@ -34,6 +35,7 @@ export interface TranscriptShellProps {
   uiState: UIState;
   composer: React.ReactNode;
   composerRows?: number;
+  notice?: string | null;
   verboseMode?: boolean;
   clearCount?: number;
   /**
@@ -172,10 +174,12 @@ function TranscriptShellInner({
   uiState,
   composer,
   composerRows,
+  notice = null,
   verboseMode = false,
   clearCount = 0,
   visible = true,
 }: TranscriptShellProps) {
+  const theme = useTheme();
   const { staticItems, liveRows, startupHeaderMode } = useMemo(
     () => buildTranscriptItems({
       layout,
@@ -215,7 +219,7 @@ function TranscriptShellInner({
     [displayedStaticItems],
   );
   const liveBottomSpacerRows = visible
-    ? Math.max(0, getShellHeight(layout.rows) - staticRowCount - displayedLiveRows.length - (composerRows ?? 0))
+    ? Math.max(0, getShellHeight(layout.rows) - staticRowCount - displayedLiveRows.length - (composerRows ?? 0) - (notice ? 1 : 0))
     : 0;
   const spacerRows = useMemo<TimelineRow[]>(
     () => Array.from({ length: liveBottomSpacerRows }, (_, index) => ({
@@ -300,6 +304,11 @@ function TranscriptShellInner({
       {displayedLiveRows.length > 0 && <RowsBlock rows={displayedLiveRows} />}
       {spacerRows.length > 0 && <RowsBlock rows={spacerRows} />}
 
+      {visible && notice && (
+        <Box width="100%" paddingX={1}>
+          <Text color={theme.success} wrap="truncate">{notice}</Text>
+        </Box>
+      )}
       {visible && composer}
     </Box>
   );

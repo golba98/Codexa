@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Provider and model pickers now consume the terminal space available to them** — fixed three/five-row-style windowing has been replaced by a shared responsive capacity and continuous scroll offset. Short lists render in full; overflowing lists show the selected position rather than artificial page ranges.
+- **Picker resize and compact behavior is stable** — selection remains visible while navigating or resizing, offsets and invalid dimensions are clamped, and 80×20 panel screens use the existing compact header so list rows take priority. At 100×22 all current provider rows fit alongside the composer and runtime status.
+- **Narrow and wide picker rows remain bounded** — secondary metadata yields to names at narrow widths, display-width-aware ellipses prevent border wrapping, and wider layouts retain aligned provider capability metadata.
+- **All short-terminal overlay panels expose their options** — Theme (`Ctrl+T`), Mode (`Ctrl+P`), Settings, Auth, provider, and model screens use the compact one-line Codexa header at 24 rows or fewer and no longer lose rows to a redundant close-panel hint.
+- **Dense Auth and Settings panels remain readable** — Auth collapses secondary guidance before hiding its three preferences, while Settings keeps each option group on one clipped row so neighboring labels cannot overlap.
+- **Theme and generic selection lists no longer drop options** — the fixed `ink-select-input` viewport and stacked padded cards were replaced with the shared continuous responsive list. All nine themes fit at 100×22, the current item owns the cursor, and arrow-key theme previews apply immediately.
+- **Development startup is cleaner** — `codexa-dev` no longer prints the `Launch mode` readiness/tip transcript block on startup or after `/clear`; the relaunch command itself remains available.
+
+### Tests
+
+- Added shared viewport tests for complete-list fit, continuous scrolling, larger-terminal capacity, data/resize clamping, and invalid dimensions; updated provider, model, and shell integration coverage for responsive indicators and row use.
+- Manually verified the live provider and model panels at 80×20, 100×22, 120×30, and 160×40, including resizing an open 20-model list with its selected item retained.
+
+---
+
 ## [1.0.8] — 2026-07-14 — Packaging Maintenance
 
 ### Changed

@@ -44,7 +44,7 @@ test("Workspace display changes do not force AppShell remounts or viewport clear
 });
 
 test("TranscriptShell owns one-time transcript output while AppShell remains the overlay renderer", () => {
-  assert.match(transcriptShellSource, /import \{ Box, Static \} from "ink"/);
+  assert.match(transcriptShellSource, /import \{ Box, Static(?:, Text)? \} from "ink"/);
   assert.match(transcriptShellSource, /buildIntroRenderItem/);
   assert.match(transcriptShellSource, /resolveStartupHeaderMode/);
   assert.match(transcriptShellSource, /providerLabel: runtimeSummary\?\.providerLabel/);
@@ -88,7 +88,7 @@ test("startup update checks fetch npm on every launch and defer the modal until 
 
 test("Startup provider migration notice is seeded before the first composer frame", () => {
   assert.match(appSource, /function createStartupStaticEvents/);
-  assert.match(appSource, /createLaunchModeEvent\(launchContext\)/);
+  assert.doesNotMatch(appSource, /createLaunchModeEvent|buildDevLaunchNotice/);
   assert.match(appSource, /createProviderMigrationNoticeEvent\(providerWorkspaceConfig\.migrationNotice\)/);
   assert.match(appSource, /useAppSessionState\(\(\) => \{\s*return createStartupStaticEvents\(/);
   assert.match(
@@ -213,16 +213,17 @@ test("/clear arms a fresh render generation before transcript reset", () => {
   assert.match(appSource, /focusManager\.focus\(FOCUS_IDS\.composer\)/, "clear should return focus to the prompt");
 });
 
-test("Ink render-cache reset is owned by the render path, never wired into out-of-band resize handlers", () => {
+test("Ink render-cache reset is owned by repaint paths, never wired into out-of-band resize handlers", () => {
   // The repaint authority is clearFrameBoundary's wrapped renderInteractiveFrame:
   // it resets caches both on the /clear boundary AND on width-changing resizes,
   // atomically with the very frame it writes (no transient blank). It must NOT be
   // called from the out-of-band resize paths (index.tsx onResize / ui/layout.ts),
   // where a clear/reset would blank the screen until the next React commit.
   assert.match(clearBoundarySource, /resetInkOutputForFreshFrame/, "render-path wrapper owns the cache reset");
-  // app.tsx only references it in the /clear fallback (when the boundary can't arm).
+  // app.tsx references it in the /clear fallback and the explicit theme repaint.
   const appResetCalls = appSource.match(/resetInkOutputForFreshFrame\(/g) ?? [];
-  assert.equal(appResetCalls.length, 1, "app.tsx references reset once (handleClear fallback only)");
+  assert.equal(appResetCalls.length, 2, "app.tsx resets only for clear fallback and committed theme repaint");
+  assert.match(appSource, /clearViewport\("src\/app\.tsx:theme:viewportClear"\)/);
   assert.doesNotMatch(indexSource, /resetInkOutputForFreshFrame/);
   assert.doesNotMatch(layoutSource, /resetInkOutputForFreshFrame/);
 });

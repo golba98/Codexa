@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,7 +31,33 @@ export function resolveLocalDevEntry(root, args) {
   };
 }
 
+/** Resolve the native Codexa model chat command used by `codexa-dev native`. */
+export function resolveNativeChatCommand(env = process.env) {
+  const modelRoot = env.CODEXA_NATIVE_MODEL_ROOT?.trim()
+    || join(homedir(), "Development", "2-Python", "31-LLM (Codexa v1)");
+  const executable = env.CODEXA_NATIVE_PYTHON?.trim()
+    || join(modelRoot, ".venv", "bin", "python");
+  const script = join(modelRoot, "scripts", "chat_native.py");
+  const checkpoint = env.CODEXA_NATIVE_CHECKPOINT?.trim()
+    || join(modelRoot, "checkpoints", "codexa-900m-sft-v2", "latest.pt");
+  const tokenizer = env.CODEXA_NATIVE_TOKENIZER?.trim()
+    || join(modelRoot, "checkpoints", "tokenizer-base-v1", "tokenizer.json");
+  const device = env.CODEXA_NATIVE_DEVICE?.trim() || "cuda";
+  return {
+    executable,
+    cwd: modelRoot,
+    requiredPaths: [executable, script, checkpoint, tokenizer],
+    args: [
+      script,
+      "--checkpoint", checkpoint,
+      "--tokenizer", tokenizer,
+      "--device", device,
+    ],
+  };
+}
+
 const { isHeadlessMode, isHeadlessBenchmark, entry, entryArgs } = resolveLocalDevEntry(repoRoot, forwardArgs);
+const isNativeChat = forwardArgs[0] === "native";
 const bunExecutable = process.env.CODEXA_BUN_EXECUTABLE?.trim()
   || (process.platform === "win32" ? "bun.exe" : "bun");
 
@@ -64,12 +91,16 @@ function printHelp() {
 
 Usage:
   codexa-dev
+  codexa-dev native
   codexa-dev "explain this repo"
   codexa-dev exec "print the current directory"
   codexa-dev [options] [prompt]
 
 This command runs the local repository source with CODEXA_CHANNEL=local-dev.
 It does not replace or modify the published codexa command.
+
+codexa-dev native talks directly to the local Codexa 900M SFT checkpoint
+through native PyTorch inference. It does not use LM Studio or GGUF.
 `);
 }
 
@@ -88,6 +119,34 @@ function launch() {
   if (!isHeadlessMode && hasFlag(forwardArgs, "--version", "-v")) {
     console.log(formatLocalDevVersion());
     process.exit(0);
+  }
+
+  if (isNativeChat) {
+    const native = resolveNativeChatCommand();
+    const missing = native.requiredPaths.filter((path) => !existsSync(path));
+    if (missing.length > 0) {
+      console.error("Codexa native chat is not available because required files are missing:");
+      for (const path of missing) console.error(`  ${path}`);
+      console.error("Set CODEXA_NATIVE_MODEL_ROOT if the model repository moved.");
+      process.exit(1);
+    }
+    const child = spawn(native.executable, [...native.args, ...forwardArgs.slice(1)], {
+      cwd: native.cwd,
+      stdio: "inherit",
+      env: { ...process.env, CODEXA_CHANNEL: "local-dev-native" },
+    });
+    child.on("error", (error) => {
+      console.error(`Failed to launch Codexa native chat: ${error.message}`);
+      process.exit(1);
+    });
+    child.on("close", (code, signal) => {
+      if (signal) {
+        process.kill(process.pid, signal);
+        return;
+      }
+      process.exit(code ?? 0);
+    });
+    return;
   }
 
   const child = spawn(
@@ -127,6 +186,6 @@ function launch() {
 }
 
 // Only launch when executed directly (not when imported by tests).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (currentFile === process.argv[1]) {
   launch();
 }

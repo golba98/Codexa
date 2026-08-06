@@ -7,6 +7,7 @@ import type {
   ProviderWorkspaceOverride,
 } from "./types.js";
 import { DEFAULT_MODEL } from "../../config/settings.js";
+import { isLocalDevChannel } from "../version/channel.js";
 import {
   getDefaultRouteModel,
   getProviderRouteSetupMessage,
@@ -18,13 +19,21 @@ import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "../providerRuntime/antigravity.js";
 import { discoverMistralVibeModels } from "../providerRuntime/mistralVibe.js";
 import { setLocalProviderConfig } from "../providerRuntime/local.js";
+import { CODEXA_NATIVE_MODEL_ID, discoverCodexaNativeModels } from "../providerRuntime/codexaNative.js";
 import { formatContextLength, resolveModelContextLengthCached } from "../providerRuntime/contextMetadata.js";
 import { resolveModelCapabilityProfileCached } from "../providerRuntime/capabilityProfile.js";
 
 // Google/Gemini remains a recognized legacy config value so existing workspace
 // files can be migrated, but it is no longer a selectable Codexa provider.
-const PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "mistral", "local", "antigravity"];
-const KNOWN_PROVIDER_IDS: readonly ProviderId[] = ["openai", "anthropic", "google", "mistral", "local", "antigravity"];
+const ALL_PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "mistral", "codexa-native", "local", "antigravity"];
+const KNOWN_PROVIDER_IDS: readonly ProviderId[] = ["openai", "anthropic", "google", "mistral", "local", "codexa-native", "antigravity"];
+
+export function getProviderOrder(env: NodeJS.ProcessEnv = process.env): readonly ProviderId[] {
+  if (isLocalDevChannel(env)) {
+    return ALL_PROVIDER_ORDER;
+  }
+  return ALL_PROVIDER_ORDER.filter((id) => id !== "codexa-native");
+}
 
 const DEFAULT_PROVIDER_ID: ProviderId = "openai";
 
@@ -78,6 +87,17 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
     launchCommand: null,
     isActiveRoute: false,
     routeUnavailableReason: "Local provider unavailable. Start LM Studio, load a model, and enable the local server.",
+  },
+  "codexa-native": {
+    id: "codexa-native",
+    displayName: "Codexa Native",
+    currentModel: () => CODEXA_NATIVE_MODEL_ID,
+    backendType: "codexa-native-pytorch",
+    routeMode: "in-codexa",
+    enabled: false,
+    launchCommand: null,
+    isActiveRoute: false,
+    routeUnavailableReason: "Codexa Native is only available on codexa-dev.",
   },
   mistral: {
     id: "mistral",
@@ -157,14 +177,23 @@ function applyOverride(
   };
 }
 
-export function getDefaultProviderId(config: ProviderWorkspaceConfig | null | undefined): ProviderId {
+export function getDefaultProviderId(
+  config: ProviderWorkspaceConfig | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): ProviderId {
   const providerId = config?.workspaceDefaultProviderId;
-  return isProviderId(providerId) && providerId !== "google" ? providerId : DEFAULT_PROVIDER_ID;
+  const isAvailable = isProviderId(providerId)
+    && providerId !== "google"
+    && (providerId !== "codexa-native" || isLocalDevChannel(env));
+  return isAvailable ? providerId : DEFAULT_PROVIDER_ID;
 }
 
-export function getActiveRouteProviderId(config: ProviderWorkspaceConfig | null | undefined): ProviderId {
+export function getActiveRouteProviderId(
+  config: ProviderWorkspaceConfig | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): ProviderId {
   const providerId = config?.activeRoute?.providerId;
-  return isProviderId(providerId) && providerId !== "google" && isProviderRoutableInCodexa(providerId)
+  return isProviderId(providerId) && providerId !== "google" && isProviderRoutableInCodexa(providerId, env)
     ? providerId
     : DEFAULT_PROVIDER_ID;
 }
@@ -175,11 +204,14 @@ export function buildProviderRegistry(options: {
   workspaceConfig?: ProviderWorkspaceConfig | null;
   diagnostics?: Record<string, Record<string, string | number | boolean | null>>;
   routeErrors?: Record<string, string>;
+  env?: NodeJS.ProcessEnv;
 }): ProviderConfig[] {
-  const defaultProviderId = getDefaultProviderId(options.workspaceConfig);
-  const activeRouteProviderId = getActiveRouteProviderId(options.workspaceConfig);
+  const env = options.env ?? process.env;
+  const defaultProviderId = getDefaultProviderId(options.workspaceConfig, env);
+  const activeRouteProviderId = getActiveRouteProviderId(options.workspaceConfig, env);
+  const providerOrder = getProviderOrder(env);
 
-  return PROVIDER_ORDER.map((id) => {
+  return providerOrder.map((id) => {
     if (id === "local") {
       setLocalProviderConfig(options.workspaceConfig?.providers?.local);
     }
@@ -187,6 +219,8 @@ export function buildProviderRegistry(options: {
     const runtime = getProviderRuntime(id);
     const discovery = id === "mistral"
       ? discoverMistralVibeModels(options.workspaceRoot ?? process.cwd())
+      : id === "codexa-native"
+      ? discoverCodexaNativeModels(undefined, env)
       : runtime.discoverModels();
 
     const activeRoute = options.workspaceConfig?.activeRoute;
@@ -197,8 +231,6 @@ export function buildProviderRegistry(options: {
       : getDefaultRouteModel(id, id === "openai" ? DEFAULT_MODEL : defaults.currentModel(options.activeModel));
 
     if (id === "google") {
-      // Use the active route's model selection when this provider is active, or when
-      // the workspace config has no explicit Google model override.
       const hasGoogleOverride = options.workspaceConfig?.providers?.google?.currentModel !== undefined;
       const geminiRoute = isThisActive || !hasGoogleOverride ? activeRoute : null;
       const selection = geminiRoute?.modelSelection;
@@ -242,14 +274,18 @@ export function buildProviderRegistry(options: {
     });
 
     const routeUnavailableReason: string | null = runtime.routeAvailable
-      ? (isProviderRouteConfigured(id)
+      ? (isProviderRouteConfigured(id, env)
           ? null
           : (options.routeErrors?.[id]
             ?? discovery.message
             ?? getProviderRouteSetupMessage(id)))
       : runtime.routeStatus;
 
-    const enabled = id === "local" ? discovery.status === "ready" : defaults.enabled;
+    const enabled = id === "codexa-native"
+      ? isLocalDevChannel(env)
+      : id === "local"
+      ? discovery.status === "ready"
+      : defaults.enabled;
 
     const availabilityStatus = options.diagnostics?.[id]?.availabilityStatus;
     const statusLabel = id === "mistral"
@@ -262,7 +298,7 @@ export function buildProviderRegistry(options: {
             : "Enabled"
       : id === "local"
       ? (discovery.status === "ready" ? "Enabled" : "Disabled")
-      : !defaults.enabled
+      : !enabled
         ? "Disabled"
         : routeUnavailableReason
           ? "Needs config"

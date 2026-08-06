@@ -6,7 +6,7 @@ This directory contains Codexa's standalone development, validation, build-metad
 
 | File or entry point | Package command | Direct command | Purpose |
 | --- | --- | --- | --- |
-| `run-local-dev.mjs` | `bun run dev:run` | `node scripts/run-local-dev.mjs [args]` | Launch the current checkout through the same interactive/headless split as installed Codexa. |
+| `run-local-dev.mjs` | `bun run dev:run` | `node scripts/run-local-dev.mjs [args]` | Launch the current checkout or direct native-model chat through `codexa-dev native`. |
 | `install-local-dev-bin.mjs` | `bun run install:dev-bin` | `node scripts/install-local-dev-bin.mjs` | Install `codexa-dev` and `cxd` shims that point to this checkout without changing published `codexa`. |
 | `gen-build-info.mjs` | `bun run gen-build-info` | `node scripts/gen-build-info.mjs` | Generate the tracked version/commit constants consumed by the application. |
 | `audit-codexa-capabilities.mjs` | `bun run audit:codexa-gap` | `node scripts/audit-codexa-capabilities.mjs` | Perform a read-only static capability audit against the current source layout. |
@@ -35,11 +35,17 @@ bun run dev:run
 bun run dev:run -- "explain this repository"
 bun run dev:run -- exec "print the current directory"
 node scripts/run-local-dev.mjs --version
+codexa-dev native
 ```
 
 Inputs and effects:
 
 - `CODEXA_BUN_EXECUTABLE` overrides the Bun executable.
+- `codexa-dev native` launches the local 900M SFT v2 checkpoint directly through
+  native PyTorch inference, bypassing LM Studio and GGUF.
+- `CODEXA_NATIVE_MODEL_ROOT`, `CODEXA_NATIVE_PYTHON`,
+  `CODEXA_NATIVE_CHECKPOINT`, `CODEXA_NATIVE_TOKENIZER`, and
+  `CODEXA_NATIVE_DEVICE` override the native model command defaults.
 - `CODEXA_DEBUG_LAUNCH=1` prints the resolved local entry point.
 - `--help` and `--version` are handled without starting Ink.
 - The script does not install a command or modify the published package.

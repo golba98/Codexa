@@ -159,6 +159,7 @@ function transcriptNode({
   repaintGeneration = 0,
   cols = 120,
   rows = 30,
+  notice = null,
 }: {
   staticEvents: TimelineEvent[];
   activeEvents?: TimelineEvent[];
@@ -169,6 +170,7 @@ function transcriptNode({
   repaintGeneration?: number;
   cols?: number;
   rows?: number;
+  notice?: string | null;
 }) {
   const layout = createLayoutSnapshot(cols, rows);
   return (
@@ -186,11 +188,30 @@ function transcriptNode({
         composerRows={5}
         clearCount={clearCount}
         repaintGeneration={repaintGeneration}
+        notice={notice}
         visible={visible}
       />
     </ThemeProvider>
   );
 }
+
+test("renders theme feedback in a replaceable row without adding transcript events", async () => {
+  const staticEvents: TimelineEvent[] = [];
+  const { instance, getOutput } = renderTranscript(staticEvents, { cols: 100, rows: 22 });
+
+  instance.rerender(transcriptNode({
+    staticEvents,
+    cols: 100,
+    rows: 22,
+    notice: "Theme switched to Monochrome.",
+  }));
+  await sleep();
+
+  const output = stripAnsi(getOutput());
+  assert.match(output, /Theme switched to Monochrome\./);
+  assert.equal(staticEvents.length, 0);
+  instance.unmount();
+});
 
 function renderTranscript(
   staticEvents: TimelineEvent[] = [],

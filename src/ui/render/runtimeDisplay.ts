@@ -6,6 +6,7 @@ import type { ModelContextMetadata } from "../../core/providerRuntime/contextMet
 import { contextMetadataToModelSpec, formatContextCompact } from "../../core/providerRuntime/contextMetadata.js";
 import type { ActiveProviderRoute } from "../../core/providerRuntime/types.js";
 import { getAntigravityModelLabel } from "../../core/providerRuntime/antigravity.js";
+import { CODEXA_NATIVE_MODEL_ID } from "../../core/providerRuntime/codexaNative.js";
 
 export interface ActiveRuntimeDisplayInput {
   route: ActiveProviderRoute;
@@ -58,6 +59,11 @@ function getModelLabel(route: ActiveProviderRoute, capability?: CodexModelCapabi
   }
   if (route.providerId === "antigravity") {
     return getAntigravityModelLabel(route.modelId);
+  }
+  if (route.providerId === "codexa-native") {
+    // Older persisted routes may still contain the 900M checkpoint directory
+    // name; the user-facing Codexa Native model is the canonical 1B SFT v2 ID.
+    return CODEXA_NATIVE_MODEL_ID;
   }
   return route.modelId;
 }

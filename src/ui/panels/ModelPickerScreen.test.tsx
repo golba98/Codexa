@@ -174,7 +174,7 @@ test("small ModelPickerScreen renders without availableRows fragment warnings", 
       models,
       currentModel: "model-0",
     });
-    assert.match(output, /Select model/);
+    assert.match(output, /Models · 1\/5/);
     assert.match(output, /Model 0/);
     assertNoAvailableRowsFragmentWarning(consoleCapture.messages);
   } finally {
@@ -208,7 +208,7 @@ test("ModelPickerScreen does not exceed available vertical rows", async () => {
     .filter(label => cleanOutput.includes(label))
     .length;
 
-  assert.ok(renderedModelsCount >= 3 && renderedModelsCount <= 6, `Should render between 3 and 6 models, got ${renderedModelsCount}`);
+  assert.equal(renderedModelsCount, 7, "Should use every calculated model row at this terminal size");
 });
 
 test("ModelPickerScreen at 100x21 shows all small model lists before windowing", async () => {
@@ -232,10 +232,10 @@ test("ModelPickerScreen at 100x21 shows all small model lists before windowing",
   });
 
   const cleanOutput = output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
-  // Standard 100x21 might window if chrome is high, but should show at least 3 models.
-  for (let i = 0; i < 3; i += 1) {
+  for (let i = 0; i < 5; i += 1) {
     assert.match(cleanOutput, new RegExp(`Model ${i}`));
   }
+  assert.doesNotMatch(cleanOutput, /Models · \d+\/5|Showing|more/);
 });
 
 test("ModelPickerScreen with many models keeps selected model visible", async () => {
@@ -263,7 +263,7 @@ test("ModelPickerScreen with many models keeps selected model visible", async ()
   assert.match(cleanOutput, />\s*Model 10/);
 });
 
-test("tiny ModelPickerScreen shows Showing X-Y of N and ↓ N more", async () => {
+test("tiny ModelPickerScreen shows continuous selection position without page copy", async () => {
   const models = Array.from({ length: 15 }, (_, i) => ({
     id: `m${i}`,
     model: `model-${i}`,
@@ -286,8 +286,8 @@ test("tiny ModelPickerScreen shows Showing X-Y of N and ↓ N more", async () =>
   });
 
   const cleanOutput = output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
-  assert.match(cleanOutput, /Showing 1-1 of 15/);
-  assert.match(cleanOutput, /↓ 14 more/);
+  assert.match(cleanOutput, /Models · 1\/15/);
+  assert.doesNotMatch(cleanOutput, /Showing|↓ .*more/);
 });
 
 test("active model is shown in a Current line when outside the visible slice", async () => {

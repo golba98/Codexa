@@ -112,6 +112,10 @@ function assertSelectedProviderLine(frame: string, providerName: string) {
   assert.match(selectedLine, />/, `expected ${providerName} row to contain the selected marker`);
 }
 
+function visibleProviderNames(providers: readonly ProviderConfig[]): string[] {
+  return providers.map((provider) => provider.id === "mistral" ? "Mistral Vibe" : provider.displayName);
+}
+
 function createInkHarness(node: React.ReactElement) {
   const stdin = new TestInput();
   const stdout = new TestOutput();
@@ -206,7 +210,7 @@ test("provider picker renders compact aligned provider rows", async () => {
     await sleep(80);
     const output = harness.getOutput();
     const frame = getLatestBoxFrame(output);
-    const providerNames = ["OpenAI", "Anthropic", "Mistral Vibe", "Local", "Antigravity"];
+    const providerNames = visibleProviderNames(buildProviderRegistry({ activeModel: "gpt-5.4" }));
 
     assert.match(frame, /Providers/);
     assert.match(frame, /Enter select \| U use \| S default \| Esc close/);
@@ -366,15 +370,15 @@ test("provider picker reports Mistral Vibe in-Codexa route actions without launc
 
 test("provider picker exposes Local diagnostics action", async () => {
   const harness = createInkHarness(<ProviderPickerHarness />);
+  const localIndex = buildProviderRegistry({ activeModel: "gpt-5.4" })
+    .findIndex((provider) => provider.id === "local");
 
   try {
     await sleep(80);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
+    for (let index = 0; index < localIndex; index += 1) {
+      harness.stdin.write("\u001b[B");
+      await sleep(40);
+    }
     harness.stdin.write("\r");
     await sleep(40);
     assert.match(harness.getOutput(), /Provider action: Local/);
@@ -790,7 +794,7 @@ test("ProviderPicker at 100x21 uses compact mode and shows all selectable provid
     await sleep(80);
     const output = harness.getOutput();
     const frame = getLatestBoxFrame(output);
-    const providerNames = ["OpenAI", "Anthropic", "Mistral Vibe", "Local", "Antigravity"];
+    const providerNames = visibleProviderNames(providers);
 
     for (const providerName of providerNames) {
       assert.match(frame, new RegExp(providerName));
@@ -817,7 +821,7 @@ test("ProviderPicker keeps each selected provider visible at normal size", async
     activeModel: "gpt-5.4-mini",
     workspaceConfig: { workspaceDefaultProviderId: "openai" },
   });
-  const providerNames = ["OpenAI", "Anthropic", "Mistral Vibe", "Local", "Antigravity"];
+  const providerNames = visibleProviderNames(providers);
 
   for (let i = 0; i < providerNames.length; i += 1) {
     const frame = await renderProviderPickerAtIndex({
@@ -832,21 +836,28 @@ test("ProviderPicker keeps each selected provider visible at normal size", async
   }
 });
 
-test("ProviderPicker cursor remains visible on Local and Antigravity", async () => {
+test("ProviderPicker cursor remains visible on Codexa Native, Local, and Antigravity", async () => {
   const providers = buildProviderRegistry({
     activeModel: "gpt-5.4-mini",
     workspaceConfig: { workspaceDefaultProviderId: "openai" },
+    env: { CODEXA_CHANNEL: "local-dev" },
   });
+
+  const nativeFrame = await renderProviderPickerAtIndex({
+    providers,
+    selectedIndex: providers.findIndex((provider) => provider.id === "codexa-native"),
+  });
+  assertSelectedProviderLine(nativeFrame, "Codexa Native");
 
   const localFrame = await renderProviderPickerAtIndex({
     providers,
-    selectedIndex: 3,
+    selectedIndex: providers.findIndex((provider) => provider.id === "local"),
   });
   assertSelectedProviderLine(localFrame, "Local");
 
   const antigravityFrame = await renderProviderPickerAtIndex({
     providers,
-    selectedIndex: 4,
+    selectedIndex: providers.findIndex((provider) => provider.id === "antigravity"),
   });
   assertSelectedProviderLine(antigravityFrame, "Antigravity");
 });
@@ -871,7 +882,7 @@ test("ProviderPicker at wide standard size keeps selectable providers compact an
     await sleep(80);
     const output = harness.getOutput();
     const frame = getLatestBoxFrame(output);
-    const providerNames = ["OpenAI", "Anthropic", "Mistral Vibe", "Local", "Antigravity"];
+    const providerNames = visibleProviderNames(providers);
 
     for (const providerName of providerNames) {
       assert.match(frame, new RegExp(providerName));
@@ -889,7 +900,7 @@ test("ProviderPicker at wide standard size keeps selectable providers compact an
   }
 });
 
-test("tiny ProviderPicker with many providers shows window range and overflow", async () => {
+test("tiny ProviderPicker with many providers shows continuous selection position", async () => {
   const providers = Array.from({ length: 10 }, (_, index) => buildMockProvider({
     id: (index === 0 ? "openai" : `p${index + 1}`) as any,
     displayName: `Provider${index + 1}`,
@@ -908,8 +919,8 @@ test("tiny ProviderPicker with many providers shows window range and overflow", 
   try {
     await sleep(80);
     const output = harness.getOutput();
-    assert.match(output, /Showing \d+-\d+ of 10/);
-    assert.match(output, /↓ (?:more|\d+ more)/);
+    assert.match(output, /Providers · 1\/10/);
+    assert.doesNotMatch(output, /Showing|↓ .*more/);
     assert.match(output, /Provider1/);
     assert.ok(!output.includes("Provider10"));
   } finally {
@@ -917,7 +928,7 @@ test("tiny ProviderPicker with many providers shows window range and overflow", 
   }
 });
 
-test("tiny ProviderPicker windows around the selected provider and shows indicators", async () => {
+test("tiny ProviderPicker keeps selection visible and reports its position", async () => {
   const providers = [
     buildMockProvider({ id: "openai", displayName: "OpenAI" }),
     buildMockProvider({ id: "anthropic", displayName: "Anthropic" }),
@@ -934,8 +945,8 @@ test("tiny ProviderPicker windows around the selected provider and shows indicat
 
   assert.match(frame, /Local/);
   assertSelectedProviderLine(frame, "Local");
-  assert.match(frame, /Showing \d+-\d+ of 5/);
-  assert.match(frame, /↑ (?:more|\d+ more)|↓ (?:more|\d+ more)/);
+  assert.match(frame, /Providers · 4\/5/);
+  assert.doesNotMatch(frame, /Showing|↑ .*more|↓ .*more/);
 });
 
 test("sliced provider order is contiguous and does not skip Anthropic", async () => {
