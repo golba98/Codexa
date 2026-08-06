@@ -215,6 +215,12 @@ test("skips Cargo registry diagnostic paths", () => {
   assert.equal(skippedExternalPaths.length, 1);
 });
 
+test("does not trust a similarly named Cargo registry directory", () => {
+  const spoofedPath = "/home/user/.cargo/registry/src/not-index.crates.io-123/iced_widget/src/container.rs:109:12";
+
+  assert.equal(formatSkippedDependencyPath(spoofedPath), "container.rs:109:12");
+});
+
 test("skips Cargo git checkout diagnostic paths", () => {
   const dependencyPath = "/home/user/.cargo/git/checkouts/example-123/src/lib.rs:10:5";
 

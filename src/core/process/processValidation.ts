@@ -103,3 +103,9 @@ export function validateWindowsBatchExecutableForCmd(
     throw new Error(`${label} contains characters that are unsafe for cmd.exe batch launch.`);
   }
 }
+
+export function validateWindowsBatchArgumentForCmd(argument: string, label: string): void {
+  if (WINDOWS_BATCH_METACHARACTER_PATTERN.test(argument)) {
+    throw new Error(`${label} contains characters that are unsafe for cmd.exe batch launch.`);
+  }
+}

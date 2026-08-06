@@ -3,6 +3,7 @@ import { join } from "path";
 import { runCommand } from "../process/CommandRunner.js";
 import {
   normalizeExecutableValue,
+  validateWindowsBatchArgumentForCmd,
   validateWindowsBatchExecutableForCmd,
 } from "../process/processValidation.js";
 
@@ -153,6 +154,9 @@ export function buildSpawnSpec(
     const lower = validatedExecutable.toLowerCase();
     if (lower.endsWith(".cmd") || lower.endsWith(".bat")) {
       validateWindowsBatchExecutableForCmd(validatedExecutable, "Windows batch executable");
+      for (const argument of args) {
+        validateWindowsBatchArgumentForCmd(argument, "Windows batch argument");
+      }
       return { executable: "cmd.exe", args: ["/d", "/s", "/c", "call", validatedExecutable, ...args] };
     }
   }
