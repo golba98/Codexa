@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
 import type { ProviderConfig, ProviderId, ProviderPickerAction } from "../../core/providerLauncher/types.js";
 import { traceInputDebug } from "../../core/debug/inputDebug.js";
@@ -15,7 +15,7 @@ import {
   type PanelLayout,
   usePanelLayout,
 } from "../layout.js";
-import { calculateListWindow } from "../timeline/layoutListWindow.js";
+import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
 import { useTheme } from "../theme.js";
 
 // ─── Types & helpers ─────────────────────────────────────────────────────────
@@ -99,6 +99,7 @@ export function ProviderPicker({
     initialProviderId ? "actions" : "providers",
   );
   const [actionIndex, setActionIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
 
   const contextLayout = useActivePanelLayout();
   const activeLayout = (activePanelLayout ?? contextLayout) as ActivePanelLayout | undefined;
@@ -134,7 +135,7 @@ export function ProviderPicker({
   }, [panelLayout, hookPanelLayout, layout, activeLayout, propAvailableRows, shellWidth, hookAvailableRows]);
 
   const availableRows = resolvedPanelLayout.availableRows;
-  const innerWidth = resolvedPanelLayout.availableCols;
+  const innerWidth = Math.max(1, Math.min(resolvedPanelLayout.availableCols, panelWidth - 4));
 
   const isCompactLayout = resolvedPanelLayout.mode === "compact";
 
@@ -215,6 +216,22 @@ export function ProviderPicker({
     }
 
     if (mode === "providers") {
+      if (key.home) {
+        setProviderIndex(0);
+        return;
+      }
+      if (key.end) {
+        setProviderIndex(Math.max(0, providers.length - 1));
+        return;
+      }
+      if (key.pageUp) {
+        setProviderIndex((current) => clampIndex(current - Math.max(1, windowResult?.capacity ?? 1), providers.length));
+        return;
+      }
+      if (key.pageDown) {
+        setProviderIndex((current) => clampIndex(current + Math.max(1, windowResult?.capacity ?? 1), providers.length));
+        return;
+      }
       if (key.upArrow || input === "k") {
         setProviderIndex((current) => clampIndex(current - 1, providers.length));
         return;
@@ -253,122 +270,59 @@ export function ProviderPicker({
     }
   }, { isActive: isFocused });
 
-  const activeRouteIndex = providers.findIndex((p) => p.isActiveRoute);
-  
   // ─── Layout & Windowing ───────────────────────────────────────────────────
+
+  const activeRouteIndex = providers.findIndex((provider) => provider.isActiveRoute);
 
   const windowResult = useMemo(() => {
     if (mode !== "providers") return null;
-
-    if (resolvedPanelLayout.mode === "compact") {
-      const titleRows = 1;
-      const hasActiveRoute = activeRouteIndex >= 0;
-
-      let footerRows = providers.length > resolvedPanelLayout.availableRows - titleRows ? 1 : 0;
-      let visibleRows = Math.max(1, resolvedPanelLayout.availableRows - titleRows - footerRows);
-
-      let start = clampIndex(
-        providerIndex - Math.floor(visibleRows / 2),
-        providers.length
-      );
-      let adjustedStart = Math.max(0, Math.min(start, providers.length - visibleRows));
-      let end = Math.min(providers.length, adjustedStart + visibleRows);
-
-      let reserveCurrent = false;
-      if (hasActiveRoute && visibleRows < providers.length) {
-        const isOutside = activeRouteIndex < adjustedStart || activeRouteIndex >= end;
-        if (isOutside) {
-          reserveCurrent = true;
-          footerRows = providers.length > resolvedPanelLayout.availableRows - titleRows - 1 ? 1 : 0;
-          visibleRows = Math.max(1, resolvedPanelLayout.availableRows - titleRows - footerRows - 1);
-          start = clampIndex(
-            providerIndex - Math.floor(visibleRows / 2),
-            providers.length
-          );
-          adjustedStart = Math.max(0, Math.min(start, providers.length - visibleRows));
-          end = Math.min(providers.length, adjustedStart + visibleRows);
-        }
-      }
-
-      return {
-        start: adjustedStart,
-        end,
-        showAbove: adjustedStart > 0,
-        showBelow: end < providers.length,
-        showRange: providers.length > visibleRows,
-        showHeaders: false,
-        showBorder: true,
-        showTitle: true,
-        reserveCurrent,
-        renderMode: "compact" as const,
-        visibleCount: visibleRows,
-      };
-    }
-
-    if (resolvedPanelLayout.mode === "expanded" && providers.length <= 6) {
-      return {
-        start: 0,
-        end: providers.length,
-        showAbove: false,
-        showBelow: false,
-        showRange: false,
-        showHeaders: false,
-        showBorder: true,
-        showTitle: true,
-        reserveCurrent: false,
-        renderMode: "compact" as const,
-        visibleCount: providers.length,
-      };
-    }
-
-    // Determine chrome rows based on available space
-    let showBorder = true;
-    let showTitle = true;
-    let showHeaders = true;
-
-    if (availableRows < 7) {
-      showBorder = false;
-      showTitle = false;
-      showHeaders = false;
-    } else if (availableRows < 9) {
-      showHeaders = false;
-    }
-
-    const baseChrome = (showBorder ? 2 : 0) + (showTitle ? 1 : 0) + (showHeaders ? 1 : 0);
-    const hasActiveRoute = activeRouteIndex >= 0;
-
-    let window = calculateListWindow({
+    const showBorder = availableRows >= 3;
+    const showTitle = availableRows >= 2;
+    const useCompactRows = resolvedPanelLayout.mode === "compact"
+      || (resolvedPanelLayout.mode === "expanded" && providers.length <= 6);
+    const showHeaders = !useCompactRows && availableRows >= 7;
+    const chromeRows = (showTitle ? 1 : 0) + (showHeaders ? 1 : 0);
+    let viewport = calculateResponsivePickerViewport({
       itemCount: providers.length,
       selectedIndex: providerIndex,
       availableRows,
-      chromeRows: baseChrome,
-      showRangeLine: true,
+      chromeRows,
+      scrollOffset,
     });
-
-    let reserveCurrent = false;
-    if (hasActiveRoute && window.visibleCount < providers.length) {
-      const isOutside = activeRouteIndex < window.start || activeRouteIndex >= window.end;
-      if (isOutside) {
-        reserveCurrent = true;
-        window = calculateListWindow({
-          itemCount: providers.length,
-          selectedIndex: providerIndex,
-          availableRows,
-          chromeRows: baseChrome + 1,
-          showRangeLine: true,
-        });
-      }
+    let reserveCurrent = viewport.hasOverflow
+      && activeRouteIndex >= 0
+      && (activeRouteIndex < viewport.start || activeRouteIndex >= viewport.end);
+    if (reserveCurrent) {
+      viewport = calculateResponsivePickerViewport({
+        itemCount: providers.length,
+        selectedIndex: providerIndex,
+        availableRows,
+        chromeRows: chromeRows + 1,
+        scrollOffset,
+      });
+      reserveCurrent = activeRouteIndex < viewport.start || activeRouteIndex >= viewport.end;
     }
-
     return {
-      ...window,
+      ...viewport,
+      visibleCount: viewport.end - viewport.start,
+      showAbove: false,
+      showBelow: false,
+      showRange: viewport.hasOverflow,
       showBorder,
       showTitle,
       showHeaders,
       reserveCurrent,
-      renderMode: window.visibleCount < providers.length ? ("windowed" as const) : ("full" as const),
+      renderMode: useCompactRows ? ("compact" as const) : viewport.hasOverflow ? ("windowed" as const) : ("full" as const),
     };
-  }, [mode, providers.length, providerIndex, availableRows, resolvedPanelLayout, activeRouteIndex]);
+  }, [mode, providers.length, providerIndex, availableRows, resolvedPanelLayout.mode, scrollOffset, activeRouteIndex]);
+
+  useEffect(() => {
+    setProviderIndex((current) => clampIndex(current, providers.length));
+  }, [providers.length]);
+
+  useEffect(() => {
+    if (windowResult) setScrollOffset(windowResult.start);
+  }, [windowResult?.start]);
 
   const visibleProviders = useMemo(() => {
     if (mode !== "providers") return [];
@@ -376,14 +330,12 @@ export function ProviderPicker({
     return providers.slice(windowResult.start, windowResult.end);
   }, [mode, providers, windowResult]);
 
-  const showCurrent = mode === "providers" && windowResult?.reserveCurrent && 
-    activeRouteIndex >= 0 && (activeRouteIndex < windowResult.start || activeRouteIndex >= windowResult.end);
-
   const titleText = mode === "actions" && selectedProvider
     ? `Provider action: ${selectedProvider.displayName}`
     : (windowResult?.showRange)
-      ? `Providers · Showing ${windowResult.start + 1}-${windowResult.end} of ${providers.length}`
-      : "Providers";
+      ? `Providers · ${windowResult.selectedIndex + 1}/${providers.length}`
+      : providers.length > 0 ? `Providers · ${providers.length} available` : "Providers";
+  const showCurrent = mode === "providers" && windowResult?.reserveCurrent && activeRouteIndex >= 0;
 
   const body = useMemo(() => {
     if (mode === "actions" && selectedProvider) {
@@ -454,7 +406,7 @@ export function ProviderPicker({
         widths={{ providerNameWidth, modelWidth, contextWidth, toolsWidth, streamWidth, statusWidth }}
       />
     ));
-  }, [actionIndex, actions, contextWidth, innerWidth, mode, modelWidth, providerIndex, providerNameWidth, visibleProviders, windowResult?.start, streamWidth, toolsWidth, statusWidth, theme, selectedProvider, isCompactLayout, compactWidths]);
+  }, [actionIndex, actions, contextWidth, innerWidth, mode, modelWidth, providerIndex, providerNameWidth, visibleProviders, windowResult?.start, windowResult?.renderMode, streamWidth, toolsWidth, statusWidth, theme, selectedProvider, isCompactLayout, compactWidths]);
 
   const showBorder = mode === "actions" ? (availableRows >= actions.length + 7) : (windowResult?.showBorder ?? true);
 
@@ -480,7 +432,7 @@ export function ProviderPicker({
         {!(windowResult?.showTitle ?? true) && windowResult?.showRange && (
           <Box width="100%" overflow="hidden" flexShrink={0}>
             <Text color={theme.accent}>
-              Showing {windowResult.start + 1}-{windowResult.end} of {providers.length}
+              Providers · {windowResult.selectedIndex + 1}/{providers.length}
             </Text>
           </Box>
         )}
@@ -511,10 +463,10 @@ export function ProviderPicker({
           {body}
         </Box>
 
-        {showCurrent && activeRouteIndex >= 0 && (
-          <Box height={1} overflow="hidden" flexShrink={0} marginTop={0}>
+        {showCurrent && (
+          <Box height={1} overflow="hidden" flexShrink={0}>
             <Text color={theme.textDim}>
-              Current: <Text color={theme.text}>{providers[activeRouteIndex].displayName} / {providers[activeRouteIndex].currentModel}</Text>
+              Current: <Text color={theme.text}>{clampVisualText(`${providers[activeRouteIndex]!.displayName} / ${providers[activeRouteIndex]!.currentModel}`, Math.max(1, innerWidth - 9))}</Text>
             </Text>
           </Box>
         )}

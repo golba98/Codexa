@@ -16,6 +16,7 @@ export type ProviderBackendKind =
   | "gemini-api-key"
   | "anthropic-api-key"
   | "local-openai-compatible"
+  | "codexa-native-pytorch"
   | "unavailable";
 
 export interface ProviderModel {

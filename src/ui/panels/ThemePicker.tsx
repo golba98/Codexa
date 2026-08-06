@@ -23,6 +23,7 @@ export function ThemePicker({ currentTheme, onSelect, onHighlight, onCancel }: T
       subtitle="Use arrow keys and Enter to switch. Esc closes the panel."
       items={items}
       limit={8}
+      initialValue={currentTheme}
       onSelect={onSelect}
       onHighlight={onHighlight}
       onCancel={onCancel}

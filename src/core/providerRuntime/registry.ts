@@ -3,9 +3,11 @@ import { loadSeededOpenAiModels } from "../models/codexModelsCacheSeed.js";
 import { loadCachedProviderModels, saveCachedProviderModels } from "../models/providerModelCache.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { ProviderId, ProviderActiveRoute, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
+import { isLocalDevChannel } from "../version/channel.js";
 import { anthropicRuntime } from "./anthropic.js";
 import { geminiRuntime } from "./gemini.js";
 import { localRuntime } from "./local.js";
+import { codexaNativeRuntime, CODEXA_NATIVE_MODEL_ID } from "./codexaNative.js";
 import { antigravityRuntime, ANTIGRAVITY_DEFAULT_MODEL_ID, migrateAntigravityLegacyModelId } from "./antigravity.js";
 import { mistralVibeRuntime } from "./mistralVibe.js";
 import {
@@ -31,9 +33,6 @@ const openAiRuntime: ProviderRuntime = {
   routeAvailable: true,
   routeStatus: "Uses the configured Codex/OpenAI backend inside Codexa.",
   launchAvailable: true,
-  // Seeded from local caches (codex's own models_cache.json or Codexa's
-  // last-good discovery); live app-server discovery refreshes them via
-  // getCodexModelCapabilities in the app run loop.
   discoverModels: () => ({
     status: "ready",
     providerId: "openai",
@@ -82,6 +81,7 @@ const PROVIDER_RUNTIMES: Record<ProviderId, ProviderRuntime> = {
   google: geminiRuntime,
   mistral: mistralVibeRuntime,
   local: localRuntime,
+  "codexa-native": codexaNativeRuntime,
   antigravity: antigravityRuntime,
 };
 
@@ -89,13 +89,22 @@ export function getProviderRuntime(providerId: ProviderId): ProviderRuntime {
   return PROVIDER_RUNTIMES[providerId];
 }
 
-export function isProviderRoutableInCodexa(providerId: ProviderId): boolean {
+export function isProviderRoutableInCodexa(
+  providerId: ProviderId,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (providerId === "codexa-native" && !isLocalDevChannel(env)) {
+    return false;
+  }
   return getProviderRuntime(providerId).routeAvailable;
 }
 
-export function isProviderRouteConfigured(providerId: ProviderId): boolean {
+export function isProviderRouteConfigured(
+  providerId: ProviderId,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
   const runtime = getProviderRuntime(providerId);
-  return runtime.routeAvailable && (runtime.isRouteConfigured?.() ?? true);
+  return isProviderRoutableInCodexa(providerId, env) && (runtime.isRouteConfigured?.() ?? true);
 }
 
 export function getProviderRouteSetupMessage(providerId: ProviderId): string {
@@ -105,8 +114,6 @@ export function getProviderRouteSetupMessage(providerId: ProviderId): string {
 
 export function discoverProviderModels(providerId: ProviderId): ProviderModelDiscoveryResult {
   const result = getProviderRuntime(providerId).discoverModels();
-  // When the live/synchronous probe only produced fallback entries (or none),
-  // prefer the last-good discovery persisted from a previous session.
   const hasRuntimeModels = result.models.some((model) => model.source && model.source !== "fallback");
   if (result.status === "ready" && !hasRuntimeModels) {
     const cached = loadCachedProviderModels(providerId);
@@ -117,7 +124,6 @@ export function discoverProviderModels(providerId: ProviderId): ProviderModelDis
   return result;
 }
 
-// Persist a ready discovery so the next session starts from last-good models.
 export function persistProviderDiscovery(discovery: ProviderModelDiscoveryResult): void {
   const runtimeModels = discovery.models.filter((model) => model.source && model.source !== "fallback");
   if (discovery.status !== "ready" || runtimeModels.length === 0) {
@@ -207,9 +213,6 @@ export function resolveActiveProviderRoute(options: {
         model.canonicalId === route.modelId
       );
       const hasNonFallbackModels = discovery.models.some((model) => model.source !== "fallback");
-      // Preserve explicit versioned Claude IDs even when the current discovery
-      // output does not advertise that historical model. Short aliases are the
-      // values that need migration to the first currently discovered model.
       const isKnownShortAlias = ANTHROPIC_FALLBACK_MODELS.some((model) => model.modelId === route.modelId);
       if (discovery.status === "ready" && hasNonFallbackModels && discovery.models.length > 0 && !stillAvailable && isKnownShortAlias) {
         route.modelId = discovery.models[0]!.modelId;
@@ -267,6 +270,9 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
   if (providerId === "local") {
     const discovery = discoverProviderModels("local");
     return discovery.models[0]?.modelId ?? "Local default";
+  }
+  if (providerId === "codexa-native") {
+    return CODEXA_NATIVE_MODEL_ID;
   }
   if (providerId === "mistral") {
     const discovery = discoverProviderModels("mistral");

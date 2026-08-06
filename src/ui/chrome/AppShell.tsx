@@ -261,13 +261,16 @@ function AppShellInner({
 
   const shellWidth = getShellWidth(layout.cols);
   const shellHeight = getShellHeight(layout.rows);
-  const headerRows = measureTopHeaderRows(layout, headerConfig, !!updateAvailable);
 
   const showComposer = true;
   const showMainPanel = screen === "main" && mainPanel !== undefined && mainPanel !== null;
   const showMainPanelFullOutput = showMainPanel && mainPanelMode === "full-output";
   const showTimeline = screen === "main" && !showMainPanel;
   const showPanelStage = screen !== "main";
+  const headerLayout = showPanelStage && layout.rows <= 24
+    ? { ...layout, cols: Math.min(layout.cols, 71), mode: "compact" as const }
+    : layout;
+  const headerRows = measureTopHeaderRows(headerLayout, headerConfig, !!updateAvailable);
   const hasUserPrompt = useMemo(
     () => staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
     [staticEvents, activeEvents],
@@ -517,7 +520,7 @@ function AppShellInner({
       <MemoizedTopHeader
         authState={authState}
         workspaceLabel={workspaceLabel}
-        layout={layout}
+        layout={headerLayout}
         runtimeSummary={runtimeSummary}
         headerConfig={headerConfig}
         updateAvailable={updateAvailable}

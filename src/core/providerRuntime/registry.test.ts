@@ -16,7 +16,11 @@ import {
 import { resetGeminiRouteValidationCacheForTests } from "./gemini.js";
 import { resetAnthropicRouteValidationCacheForTests, validateAnthropicRoute } from "./anthropic.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "./local.js";
-import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "./antigravity.js";
+import {
+  ANTIGRAVITY_DEFAULT_MODEL_ID,
+  discoverAgyModels,
+  resetAntigravityRouteValidationCacheForTests,
+} from "./antigravity.js";
 
 test("google runtime exposes configured Gemini models for in-Codexa routing", () => {
   const runtime = getProviderRuntime("google");
@@ -189,7 +193,28 @@ test("CLI model override preserves provider from providers.json activeRoute", ()
   assert.equal(route.reasoning, "low", "Reasoning from providers.json must be preserved");
 });
 
-test("antigravity runtime has routeAvailable and correct backendKind", () => {
+test("antigravity runtime has routeAvailable and correct backendKind", async () => {
+  resetAntigravityRouteValidationCacheForTests();
+  await discoverAgyModels({
+    executable: "agy",
+    cwd: process.cwd(),
+    platform: process.platform,
+    runCommandImpl: (() => ({
+      child: null as never,
+      result: Promise.resolve({
+        status: "completed" as const,
+        exitCode: 0,
+        signal: null,
+        stdout: "Gemini 3.5 Flash\nGemini 3.1 Pro\nClaude 3.7 Sonnet\nClaude 3.5 Sonnet\nGPT-OSS 120B\n",
+        stderr: "",
+        startedAt: 0,
+        endedAt: 0,
+        durationMs: 0,
+        userMessage: "Command completed.",
+      }),
+      cancel: () => {},
+    })) as typeof runCommand,
+  });
   const runtime = getProviderRuntime("antigravity");
   const discovery = discoverProviderModels("antigravity");
 
@@ -198,6 +223,7 @@ test("antigravity runtime has routeAvailable and correct backendKind", () => {
   assert.equal(discovery.status, "ready");
   assert.equal(discovery.models.length, 5);
   assert.equal(discovery.providerId, "antigravity");
+  resetAntigravityRouteValidationCacheForTests();
 });
 
 test("Mistral Vibe runtime is routable in Codexa and exposes the configured model", () => {

@@ -55,7 +55,7 @@ export function createCodexaDevShim(options = {}) {
   return { binDir, shimPath: shimPaths[0], shimPaths, launcherPath };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (currentFile === process.argv[1]) {
   const result = createCodexaDevShim();
   console.log(`Installed ${SHIM_NAMES.join(", ")} -> ${result.launcherPath}`);
   for (const shimPath of result.shimPaths) {

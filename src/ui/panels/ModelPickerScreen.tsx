@@ -20,7 +20,7 @@ import {
   type PanelLayout,
   usePanelLayout,
 } from "../layout.js";
-import { calculateListWindow } from "../timeline/layoutListWindow.js";
+import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
 import { useTheme } from "../theme.js";
 import type { GeminiModelSelection } from "../../core/providerRuntime/types.js";
 
@@ -207,6 +207,7 @@ export function ModelPickerScreen({
   const [draftReasoning, setDraftReasoning] = useState(() =>
     normalizeDraftReasoning(models[getInitialCursor(models, currentModel, currentGeminiSelection)], currentReasoning)
   );
+  const [scrollOffset, setScrollOffset] = useState(0);
 
   const selectedModel = models[draftSelectedModel];
   const selectedReasoningLevels = getReasoningLevels(selectedModel);
@@ -245,6 +246,14 @@ export function ModelPickerScreen({
       const next = Math.max(0, Math.min(models.length - 1, current + direction));
       const nextModel = models[next];
       setDraftReasoning((reasoning) => normalizeDraftReasoning(nextModel, reasoning));
+      return next;
+    });
+  };
+
+  const selectModelIndex = (index: number) => {
+    setDraftSelectedModel(() => {
+      const next = Math.max(0, Math.min(models.length - 1, index));
+      setDraftReasoning((reasoning) => normalizeDraftReasoning(models[next], reasoning));
       return next;
     });
   };
@@ -303,6 +312,26 @@ export function ModelPickerScreen({
         return;
       }
 
+      if (key.home) {
+        selectModelIndex(0);
+        return;
+      }
+
+      if (key.end) {
+        selectModelIndex(models.length - 1);
+        return;
+      }
+
+      if (key.pageUp) {
+        selectModelIndex(draftSelectedModel - Math.max(1, windowResult.capacity));
+        return;
+      }
+
+      if (key.pageDown) {
+        selectModelIndex(draftSelectedModel + Math.max(1, windowResult.capacity));
+        return;
+      }
+
       if (key.leftArrow || input === "h") {
         moveReasoning(-1);
         return;
@@ -345,7 +374,7 @@ export function ModelPickerScreen({
     : Math.max(38, Math.min((layout as any).contentWidth ?? shellWidth, shellWidth - 2));
 
   const availableRows = resolvedPanelLayout.availableRows;
-  const innerWidth = resolvedPanelLayout.availableCols;
+  const innerWidth = Math.max(1, Math.min(resolvedPanelLayout.availableCols, panelWidth - 4));
   const help = resolvedPanelLayout.mode === "compact"
     ? "↑↓ · ←→ · Enter · Esc"
     : "↑↓ model · ←→ reasoning · Enter select · Esc cancel";
@@ -358,7 +387,7 @@ export function ModelPickerScreen({
 
   const appLayoutBudget = useAppLayoutBudget();
   
-  const activeModelIndex = models.findIndex((m) => m.model === currentModel || m.id === currentModel);
+  const activeModelIndex = models.findIndex((model) => model.model === currentModel || model.id === currentModel);
   const hasSourceMarker = !!sourceMarker;
 
   // ─── Layout & Windowing ───────────────────────────────────────────────────
@@ -366,12 +395,14 @@ export function ModelPickerScreen({
   const windowResult = useMemo(() => {
     const allowFull = appLayoutBudget?.showPanelColumnHeaders ?? true;
 
-    // Try fitting with full metadata
-    const fullChrome = 5 + (hasSourceMarker ? 1 : 0);
+    // availableRows is already the shell's border-safe panel body. Only rows
+    // rendered inside that body belong in this calculation.
+    const fullChrome = 3 + (hasSourceMarker ? 1 : 0);
     if (allowFull && models.length + fullChrome <= availableRows) {
       return {
-        ...calculateListWindow({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: fullChrome, showIndicators: false }),
+        ...calculateResponsivePickerViewport({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: fullChrome, scrollOffset }),
         mode: "full" as const,
+        showCurrentLine: false,
         showRouteText: true,
         showReasoningText: true,
         showSourceMarker: hasSourceMarker,
@@ -379,10 +410,11 @@ export function ModelPickerScreen({
     }
 
     // Try fitting without source marker
-    if (allowFull && models.length + 5 <= availableRows) {
+    if (allowFull && models.length + 3 <= availableRows) {
       return {
-        ...calculateListWindow({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 5, showIndicators: false }),
+        ...calculateResponsivePickerViewport({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 3, scrollOffset }),
         mode: "full" as const,
+        showCurrentLine: false,
         showRouteText: true,
         showReasoningText: true,
         showSourceMarker: false,
@@ -390,10 +422,11 @@ export function ModelPickerScreen({
     }
 
     // Try compact with reasoning
-    if (models.length + 4 <= availableRows) {
+    if (models.length + 2 <= availableRows) {
       return {
-        ...calculateListWindow({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 4, showIndicators: false }),
+        ...calculateResponsivePickerViewport({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 2, scrollOffset }),
         mode: "compact" as const,
+        showCurrentLine: false,
         showRouteText: false,
         showReasoningText: true,
         showSourceMarker: false,
@@ -401,10 +434,11 @@ export function ModelPickerScreen({
     }
 
     // Try minimal compact
-    if (models.length + 3 <= availableRows) {
+    if (models.length + 1 <= availableRows) {
       return {
-        ...calculateListWindow({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 3, showIndicators: false }),
+        ...calculateResponsivePickerViewport({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 1, scrollOffset }),
         mode: "compact" as const,
+        showCurrentLine: false,
         showRouteText: false,
         showReasoningText: false,
         showSourceMarker: false,
@@ -412,32 +446,49 @@ export function ModelPickerScreen({
     }
 
     // Windowed mode
-    const window = calculateListWindow({
+    let window = calculateResponsivePickerViewport({
       itemCount: models.length,
       selectedIndex: draftSelectedModel,
       availableRows,
-      chromeRows: 3, // Title (1) + Border (2)
-      showIndicators: true,
+      chromeRows: 1,
+      scrollOffset,
     });
+    let showCurrentLine = activeModelIndex >= 0
+      && (activeModelIndex < window.start || activeModelIndex >= window.end);
+    if (showCurrentLine) {
+      window = calculateResponsivePickerViewport({
+        itemCount: models.length,
+        selectedIndex: draftSelectedModel,
+        availableRows,
+        chromeRows: 2,
+        scrollOffset,
+      });
+      showCurrentLine = activeModelIndex < window.start || activeModelIndex >= window.end;
+    }
 
     return {
       ...window,
       mode: "windowed" as const,
+      showCurrentLine,
       showRouteText: false,
       showReasoningText: false,
       showSourceMarker: false,
     };
-  }, [models.length, draftSelectedModel, availableRows, hasSourceMarker, appLayoutBudget?.showPanelColumnHeaders]);
+  }, [models.length, draftSelectedModel, availableRows, hasSourceMarker, appLayoutBudget?.showPanelColumnHeaders, scrollOffset, activeModelIndex]);
+
+  useEffect(() => {
+    setScrollOffset(windowResult.start);
+  }, [windowResult.start]);
 
   const visibleModels = useMemo(() => {
     return models.slice(windowResult.start, windowResult.end);
   }, [models, windowResult.start, windowResult.end]);
 
   const activeModel = models[activeModelIndex];
-  const showCurrentLine = windowResult.mode === "windowed" && activeModelIndex >= 0 && (activeModelIndex < windowResult.start || activeModelIndex >= windowResult.end);
+
   const title = clampVisualText(
     windowResult.mode === "windowed"
-      ? `Select model · Showing ${windowResult.start + 1}-${windowResult.end} of ${models.length}`
+      ? `Models · ${windowResult.selectedIndex + 1}/${models.length}`
       : `Select model   ${help}`,
     innerWidth,
   );
@@ -477,15 +528,9 @@ export function ModelPickerScreen({
           </Box>
         )}
 
-        {showCurrentLine && activeModel && (
+        {windowResult.showCurrentLine && activeModel && (
           <Box height={1} overflow="hidden">
-            <Text color={theme.textMuted} wrap="truncate">Current: <Text color={theme.text} bold>{getModelName(activeModel)}</Text></Text>
-          </Box>
-        )}
-
-        {windowResult.showAbove && (
-          <Box height={1} overflow="hidden">
-            <Text color={theme.accent}>↑ {windowResult.start} more</Text>
+            <Text color={theme.textMuted} wrap="truncate">Current: <Text color={theme.text} bold>{clampVisualText(getModelName(activeModel), Math.max(1, innerWidth - 9))}</Text></Text>
           </Box>
         )}
 
@@ -520,11 +565,6 @@ export function ModelPickerScreen({
           )}
         </Box>
 
-        {windowResult.showBelow && (
-          <Box height={1} overflow="hidden">
-            <Text color={theme.accent}>↓ {windowResult.hiddenBelow} more</Text>
-          </Box>
-        )}
       </Box>
     </Box>
   );

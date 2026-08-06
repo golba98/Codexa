@@ -1,4 +1,4 @@
-export type ProviderId = "openai" | "anthropic" | "google" | "mistral" | "local" | "antigravity";
+export type ProviderId = "openai" | "anthropic" | "google" | "mistral" | "local" | "codexa-native" | "antigravity";
 
 export type ProviderBackendType =
   | "codex-cli-auth"
@@ -10,6 +10,7 @@ export type ProviderBackendType =
   | "gemini-api-key"
   | "anthropic-api-key"
   | "local-openai-compatible"
+  | "codexa-native-pytorch"
   | "unavailable";
 
 export type ProviderLaunchAction = "launch" | "set-default" | "cancel";

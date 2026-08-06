@@ -18,7 +18,7 @@ import {
 import { getModeDisplaySpec } from "../render/modeDisplay.js";
 import { ActivityIndicator } from "./ActivityIndicator.js";
 import { measureRunFooterRows, MemoizedRunFooter } from "./RunFooter.js";
-import { useTheme } from "../theme.js";
+import { THEMES, useTheme } from "../theme.js";
 import { clampVisualText, getShellWidth, type Layout } from "../layout.js";
 import { getTextWidth, splitTextAtColumn } from "../render/textLayout.js";
 import { useThrottledValue } from "../useThrottledValue.js";
@@ -444,7 +444,15 @@ export function BottomComposer({
   });
 
   const { stdin } = useStdin();
-  const theme = useTheme();
+  const inheritedTheme = useTheme();
+  // The composer is memoized and also rendered across the main/overlay shell
+  // boundary. Resolve the explicit active theme name here so the runtime row
+  // (provider, model, reasoning and context) cannot retain a stale inherited
+  // token set during a theme transition. Custom themes remain sourced from the
+  // provider because their merged tokens are supplied there.
+  const theme = themeName === "custom"
+    ? inheritedTheme
+    : (THEMES[themeName] ?? inheritedTheme);
   const { cols, mode: layoutMode } = layout;
   const crampedViewport = layout.rows <= 24;
   const { isFocused } = useFocus({ id: FOCUS_IDS.composer, autoFocus: true });

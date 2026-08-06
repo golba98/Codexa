@@ -4,6 +4,7 @@ import { AUTH_PREFERENCES, formatAuthPreferenceLabel } from "../../config/settin
 import type { CodexAuthProbeResult } from "../../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../../core/auth/codexAuth.js";
 import type { BackendProvider } from "../../core/providers/types.js";
+import { clampVisualText, usePanelLayout } from "../layout.js";
 import { useTheme } from "../theme.js";
 
 interface AuthPanelProps {
@@ -28,6 +29,9 @@ export function AuthPanel({
   onClose,
 }: AuthPanelProps) {
   const theme = useTheme();
+  const panelLayout = usePanelLayout();
+  const compact = panelLayout?.mode === "compact" || (panelLayout?.availableRows ?? 24) < 16;
+  const contentWidth = Math.max(1, (panelLayout?.availableCols ?? 80) - 4);
   const { isFocused } = useFocus({ id: focusId, autoFocus: true });
 
   useInput((input, key) => {
@@ -56,6 +60,38 @@ export function AuthPanel({
   const checkedAtLabel = authStatus.checkedAt > 0
     ? new Date(authStatus.checkedAt).toLocaleTimeString()
     : "not checked yet";
+
+  if (compact) {
+    return (
+      <Box
+        borderStyle="round"
+        borderColor={theme.borderFocused}
+        flexDirection="column"
+        paddingX={1}
+        width="100%"
+      >
+        <Text color={theme.accent} bold>Auth and subscription guidance</Text>
+        <Text color={theme.textMuted} wrap="truncate">
+          {clampVisualText(`${provider.label} · ${provider.authLabel} · ${authStateLabel}`, contentWidth)}
+        </Text>
+        <Text color={theme.textDim} wrap="truncate">
+          {clampVisualText(`Probe: ${authStatus.rawSummary || "No probe output yet"}`, contentWidth)}
+        </Text>
+        {AUTH_PREFERENCES.map((item, index) => (
+          <Text key={item.id} color={item.id === authPreference ? theme.success : theme.text}>
+            {index + 1}. {item.label} {item.id === authPreference ? "✓" : ""}
+          </Text>
+        ))}
+        <Text color={theme.textDim}>1-{AUTH_PREFERENCES.length} change · R refresh · Esc close</Text>
+        {authStatusBusy && <Text color={theme.warning}>Checking auth status...</Text>}
+        {authStatus.recommendedAction && (
+          <Text color={theme.textDim} wrap="truncate">
+            {clampVisualText(`Next: ${authStatus.recommendedAction}`, contentWidth)}
+          </Text>
+        )}
+      </Box>
+    );
+  }
 
   return (
     <Box

@@ -122,16 +122,16 @@ export function SettingsPanel<TKey extends string>({
           const currentValue = draftValues[setting.key];
 
           return (
-            <Box key={setting.key} flexDirection="row" width="100%">
-              <Box width={3}>
+            <Box key={setting.key} flexDirection="row" overflow="hidden">
+              <Box width={3} flexShrink={0}>
                 <Text color={isSelectedRow ? theme.accent : theme.textDim}>{isSelectedRow ? "▸ " : "  "}</Text>
               </Box>
-              <Box width={20}>
+              <Box width={20} flexShrink={0} overflow="hidden">
                 <Text color={isSelectedRow ? theme.text : theme.textMuted} bold={isSelectedRow}>
                   {setting.label}
                 </Text>
               </Box>
-              <Box flexDirection="row" flexWrap="wrap" flexGrow={1}>
+              <Box flexDirection="row" flexWrap="nowrap" flexGrow={1} flexShrink={1} overflow="hidden">
                 {setting.options.map((option, optionIndex) => {
                   const isActiveOption = option.value === currentValue;
                   const optionText = isActiveOption ? `[${option.label}]` : option.label;

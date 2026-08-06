@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
 import { PassThrough } from "node:stream";
-import { render, Text } from "ink";
+import { Box, render, Text } from "ink";
 import type { Screen, TimelineEvent, UIState } from "../../session/types.js";
 import { buildRuntimeSummary } from "../../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../../config/settings.js";
@@ -571,6 +571,30 @@ test("non-main screens center the active panel and keep the composer visible", a
   );
 
   assert.match(output, /Theme panel/);
+  assert.match(output, /gpt-5\.4 \(medium\)/);
+});
+
+test("100x22 overlay panels prioritize visible options over the large startup logo", async () => {
+  const output = await renderShell(
+    100,
+    22,
+    { kind: "IDLE" },
+    "theme-picker",
+    <Box flexDirection="column">
+      <Text>Midnight Purple</Text>
+      <Text>Codex the Black</Text>
+      <Text>Dracula Night</Text>
+      <Text>Deep Oceanic</Text>
+    </Box>,
+  );
+
+  assert.match(output, /Codexa v/);
+  assert.doesNotMatch(output, /██████/);
+  assert.match(output, /Midnight Purple/);
+  assert.match(output, /Codex the Black/);
+  assert.match(output, /Dracula Night/);
+  assert.match(output, /Deep Oceanic/);
+  assert.match(output, /Ask Codexa/);
   assert.match(output, /gpt-5\.4 \(medium\)/);
 });
 
