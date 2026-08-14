@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+No changes yet.
+
+---
+
+## [1.0.9] — 2026-08-14 — Responsive UI and Security Maintenance
+
+### Changed
+
+- **Codexa Native is restricted to the local-development channel** — the native runtime remains available for local development while published routing continues to use supported external providers.
+- **Dependency maintenance is consolidated** — Ink, React, TypeScript, and Node type definitions were updated to the validated release set.
+
+### Security
+
+- **Process and workspace validation is hardened** — shell execution keeps argument boundaries explicit, Windows batch arguments are validated, and workspace/Cargo path checks use bounded, anchored matching.
+
 ### Fixed
 
 - **Provider and model pickers now consume the terminal space available to them** — fixed three/five-row-style windowing has been replaced by a shared responsive capacity and continuous scroll offset. Short lists render in full; overflowing lists show the selected position rather than artificial page ranges.
