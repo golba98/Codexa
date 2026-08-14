@@ -12,7 +12,7 @@ function request(workspaceRoot: string, prompt: string): ProviderChatRequest {
     prompt,
     workspaceRoot,
     runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
-      policy: { sandboxMode: "danger-full-access" },
+      policy: { sandboxMode: "danger-full-access", approvalPolicy: "never" },
     })),
     route: {
       providerId: "local",
@@ -63,6 +63,90 @@ test("create a rust hello world project leads to write_file and final summary", 
     assert.equal(text, "Created Cargo.toml.");
     assert.match(await readFile(path.join(workspaceRoot, "Cargo.toml"), "utf8"), /name = "hello"/);
     assert.deepEqual(observed.tools, ["write_file: Cargo.toml"]);
+  });
+});
+
+test("on-request local mutations wait for approval and denial prevents writes", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const pending = request(workspaceRoot, "write a file");
+    pending.runtime = resolveRuntimeConfig(normalizeRuntimeConfig({
+      policy: { sandboxMode: "workspace-write", approvalPolicy: "on-request" },
+    }));
+    const decisions: string[] = [];
+    const replies = [
+      '<tool_call>{"name":"write_file","arguments":{"path":"blocked.txt","content":"nope"}}</tool_call>',
+      "The write was denied.",
+    ];
+    const text = await runAgentLoop({
+      request: pending,
+      handlers: {
+        ...handlers().handlers,
+        onToolApproval: async (approval) => {
+          decisions.push(`${approval.tool}:${approval.paths.join(",")}`);
+          return "deny";
+        },
+      },
+      includeSystemPrompt: true,
+      sendMessages: async () => ({ text: replies.shift() ?? "done" }),
+    });
+    assert.equal(text, "The write was denied.");
+    assert.deepEqual(decisions, ["write_file:blocked.txt"]);
+    await assert.rejects(readFile(path.join(workspaceRoot, "blocked.txt"), "utf8"));
+  });
+});
+
+test("plan intent advertises only inspection tools and blocks model mutations", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const planning = request(workspaceRoot, "plan a change");
+    planning.runIntent = "plan";
+    let systemPrompt = "";
+    const replies = [
+      '<tool_call>{"name":"write_file","arguments":{"path":"blocked.txt","content":"nope"}}</tool_call>',
+      "# Plan\n\n1. Inspect and update the target.",
+    ];
+    const text = await runAgentLoop({
+      request: planning,
+      handlers: handlers().handlers,
+      includeSystemPrompt: true,
+      sendMessages: async (messages) => {
+        systemPrompt ||= messages[0]?.content ?? "";
+        return { text: replies.shift() ?? "done" };
+      },
+    });
+    assert.match(systemPrompt, /PLAN MODE/);
+    assert.match(systemPrompt, /Available tools: list_files, read_file, get_workspace_info/);
+    assert.equal(text, "# Plan\n\n1. Inspect and update the target.");
+    await assert.rejects(readFile(path.join(workspaceRoot, "blocked.txt"), "utf8"));
+  });
+});
+
+test("allow-for-run remembers an exact local action signature", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const pending = request(workspaceRoot, "write, inspect, then repeat");
+    pending.runtime = resolveRuntimeConfig(normalizeRuntimeConfig({
+      policy: { sandboxMode: "workspace-write", approvalPolicy: "on-request" },
+    }));
+    let approvals = 0;
+    const replies = [
+      '<tool_call>{"name":"write_file","arguments":{"path":"same.txt","content":"ok"}}</tool_call>',
+      '<tool_call>{"name":"list_files","arguments":{"path":"."}}</tool_call>',
+      '<tool_call>{"name":"write_file","arguments":{"path":"same.txt","content":"ok"}}</tool_call>',
+      "Done.",
+    ];
+    await runAgentLoop({
+      request: pending,
+      handlers: {
+        ...handlers().handlers,
+        onToolApproval: async () => {
+          approvals += 1;
+          return "allow-for-run";
+        },
+      },
+      includeSystemPrompt: true,
+      sendMessages: async () => ({ text: replies.shift() ?? "Done." }),
+    });
+    assert.equal(approvals, 1);
+    assert.equal(await readFile(path.join(workspaceRoot, "same.txt"), "utf8"), "ok");
   });
 });
 

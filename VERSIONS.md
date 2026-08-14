@@ -3,9 +3,21 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
-## v1.0.9 — 2026-08-14
+## v1.0.10 — 2026-08-15
 
 This is the current patch release.
+
+Large pastes now stay readable as compact content markers while the full text
+still reaches the model. Outside-file imports have clear, keyboard-navigable
+one-time consent.
+
+Local models now support the full Plan review workflow. Planning is read-only,
+and local writes, patches, and shell commands obey the configured approval
+policy with an interactive permission prompt.
+
+## v1.0.9 — 2026-08-14
+
+This was the previous patch release.
 
 ### Easier terminal panels
 

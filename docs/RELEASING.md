@@ -2,17 +2,17 @@
 
 This guide documents how to publish `@golba98/codexa` to NPM.
 
-## Prepare version 1.0.9
+## Prepare version 1.0.10
 
 Run these commands from the repository root. NPM versions are immutable, so
 never reuse a version that has already been published.
 
 ```bash
-npm version 1.0.9 --no-git-tag-version
+npm version 1.0.10 --no-git-tag-version
 npm pkg get name version
 ```
 
-Continue only after the printed version is `1.0.9`.
+Continue only after the printed version is `1.0.10`.
 
 ## Validate the release
 
@@ -42,8 +42,8 @@ runs the TypeScript typecheck, and runs the full Bun test suite.
 ## Verify the published package
 
 ```bash
-npm view @golba98/codexa@1.0.9 version
-npm install -g @golba98/codexa@1.0.9
+npm view @golba98/codexa@1.0.10 version
+npm install -g @golba98/codexa@1.0.10
 codexa --version
 ```
 
@@ -59,7 +59,7 @@ codexa --version
 
 ```bash
 git add package.json package-lock.json CHANGELOG.md README.md src/config/buildInfo.ts docs/RELEASING.md
-git commit -m "release: prepare Codexa v1.0.9"
-git tag v1.0.9
+git commit -m "release: prepare Codexa v1.0.10"
+git tag v1.0.10
 git push origin main --follow-tags
 ```

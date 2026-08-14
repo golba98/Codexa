@@ -6,6 +6,28 @@ No changes yet.
 
 ---
 
+## [1.0.10] — 2026-08-15 — Local Planning and Permission Controls
+
+### Added
+
+- **Plan mode is available directly in the mode picker** — local models receive an explicit read-only planning prompt and inspection-only tools, while approved plans restore the previously selected execution mode.
+- **Local model mutations require real approval** — On request and Untrusted policies pause before writes, patches, and shell commands with Allow once, Allow for run, and Deny choices.
+
+### Changed
+
+- **Large pastes stay compact** — bracketed pastes of 1,000 or more characters render as `[Pasted Content … chars]` while the complete content is retained for the provider.
+- **Outside-file imports explain their scope** — the confirmation panel now provides keyboard-navigable Import once and Cancel actions and makes clear that no folder access is granted.
+
+### Fixed
+
+- **Overlay focus is unambiguous** — the composer caret is hidden while another panel owns keyboard focus.
+
+### Tests
+
+- Added paste-boundary, raw-payload, atomic-navigation, import-navigation, local approval, and read-only Plan-mode coverage.
+
+---
+
 ## [1.0.9] — 2026-08-14 — Responsive UI and Security Maintenance
 
 ### Changed

@@ -30,6 +30,12 @@ import { isAnimatedBusyState } from "./busyStatusAnimation.js";
 import { Spinner } from "./Spinner.js";
 import type { TerminalSelectionProfile } from "../../core/terminal/terminalSelection.js";
 import { getSlashCommandSuggestions, type CommandSuggestion } from "../input/slashCommands.js";
+import {
+  createPastedContentToken,
+  deleteAdjacentPastedContent,
+  isLargePaste,
+  moveAcrossPastedContent,
+} from "../input/pastedContent.js";
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
@@ -111,6 +117,7 @@ interface BottomComposerProps {
   value: string;
   cursor: number;
   onChangeInput: (value: string, cursor: number) => void;
+  onRegisterPaste?: (label: string, content: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
   onChangeValue: (value: string) => void;
@@ -397,6 +404,7 @@ export function BottomComposer({
   value,
   cursor,
   onChangeInput,
+  onRegisterPaste,
   onSubmit,
   onCancel,
   onChangeValue,
@@ -625,6 +633,17 @@ export function BottomComposer({
     commitInputChange(next.value, next.cursorOffset);
   };
 
+  const insertPaste = (text: string) => {
+    const pastedText = normalizeInputText(text);
+    if (isLargePaste(pastedText)) {
+      const label = createPastedContentToken(pastedText);
+      onRegisterPaste?.(label, pastedText);
+      insertText(label);
+      return;
+    }
+    insertText(pastedText);
+  };
+
   const handlePastedInput = (chunk: string) => {
     let remaining = chunk;
 
@@ -639,14 +658,17 @@ export function BottomComposer({
         pasteBufferRef.current += remaining.slice(0, endMatch.index);
         const pastedText = normalizeInputText(pasteBufferRef.current);
         pasteBufferRef.current = null;
-        insertText(pastedText);
+        insertPaste(pastedText);
         remaining = remaining.slice(endMatch.index + endMatch[0].length);
         continue;
       }
 
       const startMatch = BRACKETED_PASTE_START.exec(remaining);
       if (!startMatch) {
-        insertText(normalizeInputText(remaining));
+        // Ink/readline may consume bracketed-paste delimiters and deliver the
+        // complete payload as one input event. Treat a large event as a paste
+        // even when the terminal markers are no longer present.
+        insertPaste(remaining);
         return;
       }
 
@@ -814,20 +836,22 @@ export function BottomComposer({
     }
 
     if (key.leftArrow) {
-      const nextCursor = moveCursorLeft(valueRef.current, cursorRef.current);
+      const nextCursor = moveAcrossPastedContent(valueRef.current, cursorRef.current, "left")
+        ?? moveCursorLeft(valueRef.current, cursorRef.current);
       commitInputChange(valueRef.current, nextCursor);
       return;
     }
 
     if (key.rightArrow) {
-      const nextCursor = moveCursorRight(valueRef.current, cursorRef.current);
+      const nextCursor = moveAcrossPastedContent(valueRef.current, cursorRef.current, "right")
+        ?? moveCursorRight(valueRef.current, cursorRef.current);
       commitInputChange(valueRef.current, nextCursor);
       return;
     }
 
     if (key.backspace || input === "\b" || (input === "\u007f" && !key.delete)) {
       deleteIntentRef.current = null;
-      const next = deleteInputBackward({
+      const next = deleteAdjacentPastedContent(valueRef.current, cursorRef.current, "backward") ?? deleteInputBackward({
         value: valueRef.current,
         cursorOffset: cursorRef.current,
       });
@@ -848,7 +872,7 @@ export function BottomComposer({
         return;
       }
 
-      const next = deleteInputForward({
+      const next = deleteAdjacentPastedContent(valueRef.current, cursorRef.current, "forward") ?? deleteInputForward({
         value: valueRef.current,
         cursorOffset: cursorRef.current,
       });
@@ -876,7 +900,7 @@ export function BottomComposer({
       <Box flexDirection="column" flexGrow={1}>
         {value.length === 0 && !inputLocked ? (
           <Box width="100%" overflow="hidden">
-            <Text backgroundColor={cursorVisible ? theme.text : undefined} color={cursorVisible ? theme.surface : undefined}>{" "}</Text>
+            <Text backgroundColor={cursorVisible && isFocused ? theme.text : undefined} color={cursorVisible && isFocused ? theme.surface : undefined}>{" "}</Text>
             <Text color={theme.textDim}>{placeholderText}</Text>
           </Box>
         ) : inputLocked ? (
@@ -896,7 +920,7 @@ export function BottomComposer({
                 {isCursorRow && segments ? (
                   <>
                     <Text color={theme.text}>{segments.before}</Text>
-                    <Text backgroundColor={cursorVisible ? theme.text : undefined} color={cursorVisible ? theme.surface : undefined}>
+                    <Text backgroundColor={cursorVisible && isFocused ? theme.text : undefined} color={cursorVisible && isFocused ? theme.surface : undefined}>
                       {segments.current || " "}
                     </Text>
                     <Text color={theme.text}>{segments.after}</Text>
@@ -985,8 +1009,9 @@ export function BottomComposer({
       )}
 
       <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
-        <Box flexGrow={1} flexShrink={1} overflow="hidden">
+        <Box flexGrow={1} flexShrink={1} overflow="hidden" flexDirection="row">
           {renderFooterRuntime(footerRuntimeDisplay, theme)}
+          {planMode && <Text color={theme.accent}>{"  · PLAN"}</Text>}
         </Box>
         <Box flexShrink={0}>
           {contextDisplay ? (

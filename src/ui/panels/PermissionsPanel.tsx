@@ -68,7 +68,7 @@ export function PermissionsPanel({
     <SelectionPanel
       focusId={FOCUS_IDS.permissionsPanel}
       title="Permissions"
-      subtitle="Inspect or update approval, sandbox, network, and writable-root policy."
+      subtitle="Codexa policy guards. Recommended for local coding: On request + Workspace write."
       items={items}
       limit={items.length}
       onSelect={(value) => onSelect(value as PermissionsPanelAction)}

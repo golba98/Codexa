@@ -56,18 +56,23 @@ function workspaceSummary(workspaceRoot: string): string {
 
 function localAgentSystemPrompt(request: ProviderChatRequest): string {
   const hasCargoToml = existsSync(path.join(request.workspaceRoot, "Cargo.toml"));
+  const planning = request.runIntent === "plan";
   return [
     `You are an autonomous coding assistant running inside this workspace: ${request.workspaceRoot}`,
     "You must inspect files with tools before claiming you cannot see them.",
     "For broad questions about the repository, use the workspace summary below, then inspect with get_workspace_info or list_files before answering when more detail is needed.",
-    "Use tools to create, edit, build, and test when the user asks for workspace changes.",
+    planning
+      ? "PLAN MODE: inspect the repository and return a concrete Markdown implementation plan. Do not write files, apply patches, or run shell commands."
+      : "Use tools to create, edit, build, and test when the user asks for workspace changes.",
     "Do not ask vague clarification questions when the user's intent has an obvious safe implementation.",
     hasCargoToml
       ? "Rust workspace note: Cargo.toml exists. Prefer src/main.rs for simple binaries, use cargo check for validation, use cargo run for running, and do not use rustc main.rs unless main.rs is truly at the workspace root."
       : null,
     "Use exactly one tool call at a time in this format:",
     '<tool_call>{"name":"read_file","arguments":{"path":"src/index.tsx"}}</tool_call>',
-    "Available tools: list_files, read_file, write_file, apply_patch, run_shell, get_workspace_info.",
+    planning
+      ? "Available tools: list_files, read_file, get_workspace_info."
+      : "Available tools: list_files, read_file, write_file, apply_patch, run_shell, get_workspace_info.",
     "Summarize changed files and commands run in your final answer.",
     `Workspace summary:\n${workspaceSummary(request.workspaceRoot)}`,
     request.projectInstructions?.content
@@ -191,6 +196,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
   const messages = buildInitialMessages(options.request, options.includeSystemPrompt);
   let toolCallCount = 0;
   let previousToolSignature: string | null = null;
+  const approvedForRun = new Set<string>();
   const summary: AgentLoopSummary = {
     changedFiles: new Set(),
     commands: [],
@@ -249,6 +255,44 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
       path: typeof parsed.arguments.path === "string" ? parsed.arguments.path : undefined,
       command: typeof parsed.arguments.command === "string" ? parsed.arguments.command : undefined,
     });
+    const mutating = parsed.name === "write_file" || parsed.name === "apply_patch" || parsed.name === "run_shell";
+    let deniedReason: string | null = null;
+    if (mutating && options.request.runIntent === "plan") {
+      deniedReason = "This tool is unavailable in Plan mode. Continue with read-only inspection and return a plan.";
+    } else if (
+      mutating
+      && options.request.runtime.policy.approvalPolicy !== "never"
+      && !approvedForRun.has(signature)
+    ) {
+      const rawPath = typeof parsed.arguments.path === "string" ? parsed.arguments.path : null;
+      const patchPaths = parsed.name === "apply_patch" && typeof parsed.arguments.patch === "string"
+        ? [...parsed.arguments.patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File:\s*(.+)$/gm)].map((match) => match[1]!.trim())
+        : [];
+      const decision = await options.handlers.onToolApproval?.({
+        tool: parsed.name,
+        signature,
+        command: typeof parsed.arguments.command === "string" ? parsed.arguments.command : undefined,
+        paths: rawPath ? [rawPath] : patchPaths,
+      }) ?? "deny";
+      if (decision === "deny") deniedReason = "User denied this local-model action.";
+      if (decision === "allow-for-run") approvedForRun.add(signature);
+    }
+
+    if (deniedReason) {
+      const denied: AgentToolResult = { success: false, tool: parsed.name, error: deniedReason };
+      options.handlers.onToolActivity?.({
+        id: activityId,
+        command: runningCommand,
+        status: "failed",
+        startedAt,
+        completedAt: Date.now(),
+        summary: deniedReason,
+      });
+      recordToolResult(summary, denied);
+      messages.push({ role: "user", content: serializeToolResult(denied) });
+      continue;
+    }
+
     options.handlers.onToolActivity?.({
       id: activityId,
       command: runningCommand,
