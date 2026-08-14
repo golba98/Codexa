@@ -311,7 +311,12 @@ export function buildProviderRegistry(options: {
       contextLengthLabel: formatContextLength(contextMetadata.contextLength),
       contextLengthSource: contextSource,
       capabilityProfile,
-      backendType: discovery.backendKind as ProviderBackendType,
+      // Keep the provider's stable backend identity even when discovery reports
+      // missing local model files. Availability is represented separately by
+      // statusLabel and routeUnavailableReason.
+      backendType: id === "codexa-native"
+        ? defaults.backendType
+        : discovery.backendKind as ProviderBackendType,
       routeMode: runtime.routeAvailable ? "in-codexa" : "launch-only",
       enabled,
       statusLabel,
