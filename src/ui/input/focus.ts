@@ -5,6 +5,7 @@ export const FOCUS_IDS = {
   planReviewPanel: "plan-review-panel",
   backendPicker: "backend-picker",
   providerPicker: "provider-picker",
+  providerSetup: "provider-setup",
   modelPicker: "model-picker",
   modePicker: "mode-picker",
   reasoningPicker: "reasoning-picker",
@@ -29,6 +30,8 @@ export function getFocusTargetForScreen(screen: Screen): FocusTargetId {
       return FOCUS_IDS.backendPicker;
     case "provider-picker":
       return FOCUS_IDS.providerPicker;
+    case "provider-setup":
+      return FOCUS_IDS.providerSetup;
     case "model-picker":
       return FOCUS_IDS.modelPicker;
     case "mode-picker":

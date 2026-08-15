@@ -181,10 +181,11 @@ test("model picker renders a compact command panel", async () => {
     assert.match(output, /Choose an OpenAI model to use inside Codexa/);
     assert.match(output, /Reasoning: Medium/);
     assert.match(output, /Model Four \(model-four\)/);
-    assert.match(output, /Model Two \(model-two\)/);
+    assert.match(output, /Model Two/);
     const frame = getLastModelPickerFrame(output);
-    assert.match(frame, />\s+Model Four \(model-four\).*\[Medium\]/);
-    assert.match(frame, /\s+Model Two \(model-two\)/);
+    assert.match(frame, />\s+Model Four \(model-four\)/);
+    assert.match(frame, /Intelligence\s+Low.*Medium/);
+    assert.match(frame, /\s+Model Two/);
     assert.doesNotMatch(frame, /Model Two \(model-two\).*\[/);
     assert.doesNotMatch(frame, /■/);
     assert.match(output, /✓/);
@@ -225,8 +226,87 @@ test("model picker supports model movement and reasoning adjustment", async () =
     assert.equal(selected, "model-two:high");
     const frame = getLastModelPickerFrame(harness.getOutput());
     assert.match(frame, /Reasoning: High/);
-    assert.match(frame, />\s+Model Two \(model-two\).*\[High\]/);
+    assert.match(frame, />\s+Model Two/);
+    assert.match(frame, /Intelligence\s+Medium.*High\s+High/);
     assert.doesNotMatch(frame, /Model Four \(model-four\).*\[/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("Antigravity collapses Gemini effort variants into one model with an intelligence slider", async () => {
+  const models = normalizeCodexModelListResponses([
+    {
+      data: [
+        { id: "gemini-3.7-flash-high", model: "gemini-3.7-flash-high", displayName: "Gemini 3.7 Flash (High)", hidden: false },
+        { id: "gemini-3.7-flash-medium", model: "gemini-3.7-flash-medium", displayName: "Gemini 3.7 Flash (Medium)", hidden: false },
+        { id: "gemini-3.7-flash-low", model: "gemini-3.7-flash-low", displayName: "Gemini 3.7 Flash (Low)", hidden: false },
+      ],
+    },
+  ]).models;
+  let selected = "";
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ModelPickerScreen
+        layout={createLayoutSnapshot(120, 30)}
+        models={models}
+        currentModel="gemini-3.7-flash-high"
+        currentReasoning="high"
+        activeProviderLabel="Antigravity"
+        onSelect={(model, reasoning) => { selected = `${model}:${reasoning}`; }}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    assert.match(output, /Gemini 3\.7 Flash/);
+    assert.match(output, /Intelligence\s+Low.*High/);
+    assert.doesNotMatch(output, /Gemini 3\.7 Flash \(Medium\)/);
+    assert.doesNotMatch(output, /gemini-3\.7-flash-medium/);
+    harness.stdin.write("h");
+    await sleep(40);
+    harness.stdin.write("h");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+    assert.equal(selected, "gemini-3.7-flash-low:low");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("Antigravity native Claude and GPT-OSS models do not show an intelligence control", async () => {
+  const models = normalizeCodexModelListResponses([{
+    data: [
+      { id: "claude-sonnet-4-6", model: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6 (Thinking)", hidden: false },
+      { id: "claude-opus-4-6-thinking", model: "claude-opus-4-6-thinking", displayName: "Claude Opus 4.6 (Thinking)", hidden: false },
+      { id: "gpt-oss-120b-medium", model: "gpt-oss-120b-medium", displayName: "GPT-OSS 120B (Medium)", hidden: false },
+    ],
+  }]).models;
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ModelPickerScreen
+        layout={createLayoutSnapshot(120, 30)}
+        models={models}
+        currentModel="claude-sonnet-4-6"
+        currentReasoning="medium"
+        activeProviderLabel="Antigravity"
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+  );
+
+  try {
+    await sleep(80);
+    const frame = getLastModelPickerFrame(harness.getOutput());
+    assert.match(frame, /Claude Sonnet 4\.6/);
+    assert.match(frame, /Claude Opus 4\.6/);
+    assert.match(frame, /GPT-OSS 120B/);
+    assert.doesNotMatch(frame, /Intelligence/);
   } finally {
     await harness.cleanup();
   }

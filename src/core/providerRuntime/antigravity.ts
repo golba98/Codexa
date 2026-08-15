@@ -79,9 +79,21 @@ function sortAgyReasoningLevels(levels: readonly ReasoningEffortCapability[]): R
 
 export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
   const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const parsed = lines.map((selector) => {
-    const match = selector.match(/^(.*?)\s+\(([^()]+)\)$/);
-    return { selector, base: match?.[1]?.trim() ?? selector, variant: match?.[2]?.trim() ?? null };
+  const parsed = lines.map((line) => {
+    // Current `agy models` output is a two-column table:
+    //   gemini-3.7-flash-high  Gemini 3.7 Flash (High)
+    // The first column is the exact CLI selector and the second is display text.
+    // Older versions emitted display text only, so retain that as a fallback.
+    const columns = line.match(/^(\S+)\s{2,}(.+)$/);
+    const selector = columns?.[1] ?? line;
+    const label = columns?.[2]?.trim() ?? line;
+    const match = label.match(/^(.*?)\s+\(([^()]+)\)$/);
+    return {
+      selector,
+      label,
+      base: match?.[1]?.trim() ?? label,
+      variant: match?.[2]?.trim() ?? null,
+    };
   });
   const baseCounts = new Map<string, number>();
   for (const item of parsed) baseCounts.set(item.base, (baseCounts.get(item.base) ?? 0) + 1);
@@ -95,8 +107,8 @@ export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
       models.push({
         id: modelId,
         modelId,
-        label: item.selector,
-        description: `Discovered from agy models: ${item.selector}`,
+        label: item.label,
+        description: `Discovered from agy models: ${item.label}`,
         defaultReasoningLevel: null,
         supportedReasoningLevels: null,
         source: "discovered",
@@ -105,8 +117,9 @@ export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
       continue;
     }
 
-    const modelId = normalizeAgyId(item.base);
     const effortId = normalizeAgyId(item.variant ?? "");
+    const selectorFamily = item.selector.match(new RegExp(`^(.*?)-${effortId}$`, "i"))?.[1];
+    const modelId = normalizeAgyId(selectorFamily ?? item.base);
     const existing = grouped.get(item.base);
     if (existing) {
       const metadata = readAgySelectorMetadata(existing);
@@ -146,6 +159,17 @@ export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
     models.push(model);
   }
   return models;
+}
+
+function normalizeCachedAgyModels(models: readonly ProviderModel[]): readonly ProviderModel[] {
+  const legacyRows = models.map((model) => {
+    const metadata = readAgySelectorMetadata(model);
+    return metadata?.selectors[""] ?? null;
+  });
+  if (!legacyRows.some((row) => row && /^(\S+)\s{2,}(.+)$/.test(row))) return models;
+
+  const normalized = parseAgyModelsOutput(legacyRows.filter((row): row is string => Boolean(row)).join("\n"));
+  return normalized.length > 0 ? normalized : models;
 }
 
 // Resolve persisted model/reasoning state to the exact selector advertised by `agy models`.
@@ -214,7 +238,7 @@ let discoveredAgyModels: readonly ProviderModel[] | null = null;
 
 function getActiveAgyModels(): readonly ProviderModel[] {
   if (discoveredAgyModels?.length) return discoveredAgyModels;
-  return loadCachedProviderModels("antigravity")?.models ?? [];
+  return normalizeCachedAgyModels(loadCachedProviderModels("antigravity")?.models ?? []);
 }
 
 export async function discoverAgyModels(options: {
@@ -244,7 +268,7 @@ export async function discoverAgyModels(options: {
       diagnostics: { modelSource: "agy-models-command", modelsExitCode: result.exitCode, modelsStatus: result.status },
     };
   }
-  const cached = loadCachedProviderModels("antigravity")?.models ?? [];
+  const cached = normalizeCachedAgyModels(loadCachedProviderModels("antigravity")?.models ?? []);
   return {
     status: cached.length > 0 ? "ready" : "not-configured",
     providerId: "antigravity",
@@ -447,7 +471,7 @@ export const antigravityRuntime: ProviderRuntime = {
       executable = await resolveAgyExecutable({ cwd });
       resolvedAgyExecutable = executable;
     } catch {
-      const cached = loadCachedProviderModels("antigravity")?.models ?? [];
+      const cached = normalizeCachedAgyModels(loadCachedProviderModels("antigravity")?.models ?? []);
       return {
         status: cached.length > 0 ? "ready" : "not-configured",
         providerId: "antigravity",

@@ -25,6 +25,32 @@ function formatRuntimeProviderLabel(providerId: ProviderId): string {
   return "OpenAI";
 }
 
+interface ProviderSetupPlan {
+  installCommand: string | null;
+  setupCommand: string;
+}
+
+function getProviderSetupPlan(providerId: ProviderId, windows: boolean): ProviderSetupPlan {
+  switch (providerId) {
+    case "openai":
+      return { installCommand: "npm install -g @openai/codex", setupCommand: "codex login" };
+    case "anthropic":
+      return { installCommand: "npm install -g @anthropic-ai/claude-code", setupCommand: "claude" };
+    case "google":
+      return { installCommand: "npm install -g @google/gemini-cli", setupCommand: "gemini" };
+    case "mistral":
+      return windows
+        ? { installCommand: "if (Get-Command uv -ErrorAction SilentlyContinue) { uv tool install mistral-vibe } else { irm https://astral.sh/uv/install.ps1 | iex; uv tool install mistral-vibe }", setupCommand: "vibe --setup" }
+        : { installCommand: "curl -LsSf https://mistral.ai/vibe/install.sh | bash", setupCommand: "vibe --setup" };
+    case "antigravity":
+      return windows
+        ? { installCommand: "irm https://antigravity.google/cli/install.ps1 | iex", setupCommand: "agy" }
+        : { installCommand: "curl -fsSL https://antigravity.google/cli/install.sh | bash", setupCommand: "agy" };
+    default:
+      return { installCommand: null, setupCommand: "" };
+  }
+}
+
 function readDiagnosticString(
   diagnostics: Record<string, string | number | boolean | null> | undefined,
   keys: string[],
@@ -165,7 +191,7 @@ import { loadProjectInstructions } from "./core/workspace/projectInstructions.js
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
-import { launchProviderCli } from "./core/providerLauncher/launcher.js";
+import { commandExistsOnPath, launchProviderCli } from "./core/providerLauncher/launcher.js";
 import { buildProviderRegistry, findProvider, getActiveRouteProviderId } from "./core/providerLauncher/registry.js";
 import type { ProviderId, ProviderPickerAction, ProviderWorkspaceConfig } from "./core/providerLauncher/types.js";
 import {
@@ -248,6 +274,7 @@ import { ModePicker } from "./ui/panels/ModePicker.js";
 import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } from "./ui/panels/PlanActionPicker.js";
 import { PermissionsPanel, type PermissionsPanelAction } from "./ui/panels/PermissionsPanel.js";
 import { ProviderPicker } from "./ui/panels/ProviderPicker.js";
+import { ProviderSetupPrompt } from "./ui/panels/ProviderSetupPrompt.js";
 import { ReasoningPicker } from "./ui/panels/ReasoningPicker.js";
 import { AttachmentImportPanel, type PendingImportFile } from "./ui/panels/AttachmentImportPanel.js";
 import { SelectionPanel } from "./ui/panels/SelectionPanel.js";
@@ -435,6 +462,9 @@ export function App({ launchArgs }: AppProps) {
     initialProviderWorkspaceConfig.current,
   );
   const [pendingRouteProviderId, setPendingRouteProviderId] = useState<ProviderId | null>(null);
+  const [providerSetup, setProviderSetup] = useState<ProviderId | null>(null);
+  const providerLaunchBypassRef = useRef(false);
+  const providerActionRef = useRef<((providerId: ProviderId, action: ProviderPickerAction) => void) | null>(null);
   const [themeSelection, setThemeSelection] = useState<ThemeSelectionState>({
     committedTheme: initialSettings.current.ui.theme,
     previewTheme: null,
@@ -483,6 +513,8 @@ export function App({ launchArgs }: AppProps) {
   // True while a provider route switch is validating (subprocess probes);
   // drives the model picker's loading state for non-openai providers.
   const [routeSwitchBusy, setRouteSwitchBusy] = useState(false);
+  const [providerModelLoading, setProviderModelLoading] = useState<Record<string, boolean>>({});
+  const [providerModelErrors, setProviderModelErrors] = useState<Record<string, string>>({});
   const [activeContextMetadata, setActiveContextMetadata] = useState<ModelContextMetadata | null>(null);
   const { stdout } = useStdout();
   const { stdin } = useStdin();
@@ -618,6 +650,11 @@ export function App({ launchArgs }: AppProps) {
   const intendedInputModeRef = useRef<"chat/input" | "model-picker">("chat/input");
   const intendedFocusTargetRef = useRef<string>(FOCUS_IDS.composer);
   const modelSelectionInFlightRef = useRef(false);
+  // Async provider validation/model discovery must not infer that the picker
+  // should close. This ref is set only by explicit picker open/close actions.
+  const modelPickerOpenRef = useRef(false);
+  const providerModelRefreshesRef = useRef(new Map<ProviderId, Promise<unknown>>());
+  const providerModelsLoadedRef = useRef(new Set<ProviderId>());
   const providerRouteErrorsRef = useRef<Record<string, string>>({});
   const providerDiagnosticsRef = useRef<Record<string, Record<string, string | number | boolean | null>>>({});
   const providerMigrationNoticeShownRef = useRef(Boolean(initialProviderWorkspaceConfig.current.migrationNotice));
@@ -793,8 +830,11 @@ export function App({ launchArgs }: AppProps) {
       const setup = getProviderRouteSetupMessage(modelPickerProviderId);
       return `No ${modelPickerProviderLabel} models available because the route is not configured. ${setup}`;
     }
+    if (providerModelErrors[modelPickerProviderId]) {
+      return `${providerModelErrors[modelPickerProviderId]} Press Refresh models to retry.`;
+    }
     return modelPickerDiscovery?.message ?? "No models available.";
-  }, [modelCapabilities, modelPickerDiscovery, modelPickerProviderId, modelPickerProviderLabel]);
+  }, [modelCapabilities, modelPickerDiscovery, modelPickerProviderId, modelPickerProviderLabel, providerModelErrors]);
   const routeStatusMessage = useMemo(() => {
     const providerLines = providerRegistry.map((provider) => {
       const runtime = getProviderRuntime(provider.id);
@@ -1395,6 +1435,18 @@ export function App({ launchArgs }: AppProps) {
   }, [focusManager, getInputDebugSnapshot, screen]);
 
   const returnToChatMode = useCallback((reason = "unknown") => {
+    if (modelPickerOpenRef.current) {
+      intendedInputModeRef.current = "model-picker";
+      intendedFocusTargetRef.current = FOCUS_IDS.modelPicker;
+      traceInputDebug("model_picker_async_completion_preserved", getInputDebugSnapshot({
+        reason,
+        restoredMode: "model-picker",
+        restoredModelPickerOpen: true,
+        restoredFocusTarget: FOCUS_IDS.modelPicker,
+      }));
+      focusManager.focus(FOCUS_IDS.modelPicker);
+      return;
+    }
     intendedInputModeRef.current = "chat/input";
     intendedFocusTargetRef.current = FOCUS_IDS.composer;
     traceInputDebug("model_picker_close", getInputDebugSnapshot({
@@ -1524,6 +1576,60 @@ export function App({ launchArgs }: AppProps) {
     modelDiscoveryInFlightRef.current = promise;
     return promise;
   }, [appendErrorEvent, appendSystemEvent, getInputDebugSnapshot]);
+
+  const ensureProviderModels = useCallback((providerId: ProviderId, forceRefresh = false) => {
+    if (providerId === "openai") {
+      return refreshModelCapabilities(forceRefresh, false);
+    }
+
+    const runtime = getProviderRuntime(providerId);
+    if (!runtime.refreshModels) {
+      return Promise.resolve(null);
+    }
+
+    const cached = discoverProviderModels(providerId);
+    const hasDiscoveredModels = cached.models.some((item) => item.source && item.source !== "fallback");
+    if (!forceRefresh && cached.models.length > 0 && (hasDiscoveredModels || providerModelsLoadedRef.current.has(providerId))) {
+      return Promise.resolve(cached);
+    }
+
+    const existing = providerModelRefreshesRef.current.get(providerId);
+    if (existing && !forceRefresh) return existing;
+
+    setProviderModelLoading((current) => ({ ...current, [providerId]: true }));
+    setProviderModelErrors((current) => {
+      const next = { ...current };
+      delete next[providerId];
+      return next;
+    });
+
+    const promise = runtime.refreshModels({
+      cwd: workspaceRoot,
+      localConfig: providerId === "local" ? providerWorkspaceConfig.providers?.local : undefined,
+    }).then((discovery) => {
+      providerModelsLoadedRef.current.add(providerId);
+      persistProviderDiscovery(discovery);
+      if (discovery.status !== "ready" || discovery.models.length === 0) {
+        setProviderModelErrors((current) => ({
+          ...current,
+          [providerId]: discovery.message ?? `Unable to load ${runtime.label} models.`,
+        }));
+      }
+      setRegistryNonce((current) => current + 1);
+      return discovery;
+    }).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setProviderModelErrors((current) => ({ ...current, [providerId]: message }));
+      setRegistryNonce((current) => current + 1);
+      return null;
+    }).finally(() => {
+      providerModelRefreshesRef.current.delete(providerId);
+      setProviderModelLoading((current) => ({ ...current, [providerId]: false }));
+    });
+
+    providerModelRefreshesRef.current.set(providerId, promise);
+    return promise;
+  }, [persistProviderDiscovery, providerWorkspaceConfig.providers, refreshModelCapabilities, workspaceRoot]);
 
   const setRuntimeUnauthenticated = useCallback((summary: string) => {
     setAuthStatus({
@@ -1656,6 +1762,23 @@ export function App({ launchArgs }: AppProps) {
   }, []);
 
   const repaintCommittedTheme = useCallback((themeName: string) => {
+    // Persist the committed value synchronously as well as through the normal
+    // settings effect. This matters when the terminal is closed immediately
+    // after choosing a theme, before React gets another effect pass.
+    saveSettings({
+      ui: {
+        layoutStyle: initialSettings.current.ui.layoutStyle,
+        theme: themeName,
+        workspaceDisplayMode,
+        terminalTitleMode,
+        showBusyLoader,
+        terminalMouseMode,
+        customTheme,
+      },
+      auth: { preference: authPreference },
+      header: headerConfig,
+      updateCheck: initialSettings.current.updateCheck,
+    });
     setThemeSelection((currentTheme) => commitThemeSelection(currentTheme, themeName));
     setThemeNotice(`Theme switched to ${formatThemeLabel(themeName)}.`);
     if (themeNoticeTimerRef.current) clearTimeout(themeNoticeTimerRef.current);
@@ -1671,7 +1794,7 @@ export function App({ launchArgs }: AppProps) {
     terminalControl.clearViewport("src/app.tsx:theme:viewportClear");
     resetInkOutputForFreshFrame({ instance: inkInstance, columns: stdout.columns });
     bumpStaticRepaintGeneration((tick) => tick + 1);
-  }, [inkInstance, stdout.columns, terminalControl]);
+  }, [authPreference, customTheme, headerConfig, inkInstance, showBusyLoader, stdout.columns, terminalControl, terminalMouseMode, terminalTitleMode, workspaceDisplayMode]);
 
   // A startup update prompt must not interrupt an active run or another panel.
   // Keep the result until the user returns to the idle main screen instead.
@@ -2078,7 +2201,7 @@ export function App({ launchArgs }: AppProps) {
           );
           providerRouteErrorsRef.current[providerId] = errorMessage;
         }
-        setPendingRouteProviderId(null);
+        if (!modelPickerOpenRef.current) setPendingRouteProviderId(null);
         return;
       }
 
@@ -2104,7 +2227,7 @@ export function App({ launchArgs }: AppProps) {
         resetMistralVibeSession(workspaceRoot);
       }
       persistActiveRoute(providerId, nextModel, normalizedReasoning, validation.backendKind, geminiSelection);
-      setPendingRouteProviderId(null);
+      if (!modelPickerOpenRef.current) setPendingRouteProviderId(null);
       traceInputDebug("model_selection_app_success", getInputDebugSnapshot({
         handler: "setModelAndReasoningWithNotice",
         model: nextModel,
@@ -2120,7 +2243,7 @@ export function App({ launchArgs }: AppProps) {
         reasoning: nextReasoning,
         error: message,
       }));
-      setPendingRouteProviderId(null);
+      if (!modelPickerOpenRef.current) setPendingRouteProviderId(null);
       appendErrorEvent("Model selection failed", message);
     } finally {
       setRouteSwitchBusy(false);
@@ -2290,6 +2413,7 @@ export function App({ launchArgs }: AppProps) {
   }, [appendSystemEvent, busy]);
 
   const openProviderPicker = useCallback(() => {
+    modelPickerOpenRef.current = false;
     // Mid route switch, keep the pending id so initialProviderId highlights
     // the provider being activated instead of the stale route.
     if (!modelSelectionInFlightRef.current) {
@@ -2371,6 +2495,7 @@ export function App({ launchArgs }: AppProps) {
 
   const handleProviderAction = useCallback((providerId: ProviderId, action: ProviderPickerAction) => {
     if (action === "cancel") {
+      modelPickerOpenRef.current = false;
       setScreen("main");
       return;
     }
@@ -2472,7 +2597,9 @@ export function App({ launchArgs }: AppProps) {
       }
 
       // No clear model to use, open the picker.
+      void ensureProviderModels(providerId);
       setPendingRouteProviderId(providerId);
+      modelPickerOpenRef.current = true;
       intendedInputModeRef.current = "model-picker";
       intendedFocusTargetRef.current = FOCUS_IDS.modelPicker;
       setScreen("model-picker");
@@ -2483,7 +2610,9 @@ export function App({ launchArgs }: AppProps) {
       if (providerId === "openai" && !modelCapabilities) {
         void refreshModelCapabilities(false, false);
       }
+      void ensureProviderModels(providerId);
       setPendingRouteProviderId(providerId);
+      modelPickerOpenRef.current = true;
       intendedInputModeRef.current = "model-picker";
       intendedFocusTargetRef.current = FOCUS_IDS.modelPicker;
       setScreen("model-picker");
@@ -2602,6 +2731,28 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
+    // Do a real executable preflight before launching any external provider.
+    // A missing CLI is a setup state, not a launch error the user should have
+    // to decode after Codexa has already handed over the terminal.
+    if (action === "launch" && provider.launchCommand?.executable && !providerLaunchBypassRef.current) {
+      void commandExistsOnPath(provider.launchCommand.executable).then((available) => {
+        if (!isMountedRef.current) return;
+        if (!available) {
+          setProviderSetup(providerId);
+          setScreen("provider-setup");
+          return;
+        }
+        providerLaunchBypassRef.current = true;
+        providerActionRef.current?.(providerId, action);
+      }).catch(() => {
+        if (!isMountedRef.current) return;
+        setProviderSetup(providerId);
+        setScreen("provider-setup");
+      });
+      return;
+    }
+    providerLaunchBypassRef.current = false;
+
     if (busyRef.current) {
       appendSystemEvent("Busy", "Finish the current run before launching a provider CLI.");
       return;
@@ -2645,6 +2796,7 @@ export function App({ launchArgs }: AppProps) {
     appendErrorEvent,
     appendSystemEvent,
     effectiveMouseCapture,
+    ensureProviderModels,
     providerRegistry,
     providerWorkspaceConfig.providers,
     markProviderAvailability,
@@ -2659,6 +2811,56 @@ export function App({ launchArgs }: AppProps) {
     terminalControl,
     workspaceRoot,
   ]);
+
+  useEffect(() => {
+    providerActionRef.current = handleProviderAction;
+    return () => {
+      providerActionRef.current = null;
+    };
+  }, [handleProviderAction]);
+
+  const runProviderSetup = useCallback((providerId: ProviderId) => {
+    const provider = findProvider(providerRegistry, providerId);
+    const windows = process.platform === "win32";
+    const plan = getProviderSetupPlan(providerId, windows);
+
+    // Providers with user-supplied commands cannot be safely installed by
+    // Codexa. The prompt still gives them a retry path after manual setup.
+    if (!plan.installCommand) {
+      providerLaunchBypassRef.current = true;
+      setProviderSetup(null);
+      setScreen("provider-picker");
+      providerActionRef.current?.(providerId, "launch");
+      return;
+    }
+
+    setProviderSetup(null);
+    setScreen("main");
+    const command = `${plan.installCommand}${plan.setupCommand ? `; ${plan.setupCommand}` : ""}`;
+    const child = windows
+      ? spawn("powershell.exe", [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `$ErrorActionPreference='Stop'; ${command}`,
+      ], { cwd: workspaceRoot, stdio: "inherit" })
+      : spawn("sh", ["-lc", command.replace(/; /g, " && ")], {
+        cwd: workspaceRoot,
+        stdio: "inherit",
+      });
+
+    child.once("error", (error) => {
+      appendErrorEvent("Mistral Vibe setup failed", error.message);
+    });
+    child.once("close", (code) => {
+      if (code === 0) {
+        appendSystemEvent(`${provider?.displayName ?? providerId} setup`, "Installation and setup finished. Reopen the provider picker to launch it.");
+      } else if (code !== null) {
+        appendErrorEvent(`${provider?.displayName ?? providerId} setup failed`, `The setup process exited with code ${code}.`);
+      }
+    });
+  }, [appendErrorEvent, appendSystemEvent, providerRegistry, workspaceRoot]);
 
   const openModelPicker = useCallback(() => {
     // While a route switch is validating, keep the pending id so the picker
@@ -2682,6 +2884,7 @@ export function App({ launchArgs }: AppProps) {
     }
 
     if (screen === "model-picker") {
+      modelPickerOpenRef.current = true;
       intendedInputModeRef.current = "model-picker";
       intendedFocusTargetRef.current = FOCUS_IDS.modelPicker;
       traceInputDebug("model_picker_open_duplicate", getInputDebugSnapshot({
@@ -2697,12 +2900,15 @@ export function App({ launchArgs }: AppProps) {
     // subscribe to the existing promise instead of spawning duplicate jobs or
     // log entries. Open the picker immediately; it renders a loading state
     // until the promise resolves and state updates commit the model list.
-    if (activeProviderRoute.providerId === "openai" && !modelCapabilities) {
+    modelPickerOpenRef.current = true;
+    const targetProviderId = pendingRouteProviderId ?? activeProviderRoute.providerId;
+    if (targetProviderId === "openai" && !modelCapabilities) {
       traceInputDebug("model_picker_loading_trigger", getInputDebugSnapshot({
         handler: "openModelPicker",
       }));
       void refreshModelCapabilities(false, false);
     }
+    void ensureProviderModels(targetProviderId);
 
     intendedInputModeRef.current = "model-picker";
     intendedFocusTargetRef.current = FOCUS_IDS.modelPicker;
@@ -2712,7 +2918,7 @@ export function App({ launchArgs }: AppProps) {
       nextScreen: "model-picker",
       focusTarget: FOCUS_IDS.modelPicker,
     }));
-  }, [activeProviderRoute.providerId, appendSystemEvent, busy, focusManager, getInputDebugSnapshot, modelCapabilities, refreshModelCapabilities, screen]);
+  }, [activeProviderRoute.providerId, appendSystemEvent, busy, ensureProviderModels, focusManager, getInputDebugSnapshot, modelCapabilities, pendingRouteProviderId, refreshModelCapabilities, screen]);
 
   const openModePicker = useCallback(() => {
     const gate = guardConfigMutation("mode", busy);
@@ -4756,12 +4962,27 @@ export function App({ launchArgs }: AppProps) {
                 />
               )}
 
+              {screen === "provider-setup" && providerSetup && (
+                <ProviderSetupPrompt
+                  providerLabel={findProvider(providerRegistry, providerSetup)?.displayName ?? providerSetup}
+                  executable={findProvider(providerRegistry, providerSetup)?.launchCommand?.executable ?? providerSetup}
+                  installCommand={getProviderSetupPlan(providerSetup, process.platform === "win32").installCommand}
+                  setupCommand={getProviderSetupPlan(providerSetup, process.platform === "win32").setupCommand}
+                  onInstall={() => runProviderSetup(providerSetup)}
+                  onCancel={() => {
+                    setProviderSetup(null);
+                    setScreen("provider-picker");
+                  }}
+                />
+              )}
+
             {screen === "provider-picker" && (
               <ProviderPicker
                 layout={terminalLayout}
                 providers={providerRegistry}
                 onAction={handleProviderAction}
                 onCancel={() => {
+                  modelPickerOpenRef.current = false;
                   setPendingRouteProviderId(null);
                   setScreen("main");
                 }}
@@ -4777,9 +4998,12 @@ export function App({ launchArgs }: AppProps) {
                 currentReasoning={modelPickerCurrentReasoning}
                 activeProviderLabel={modelPickerProviderLabel}
                 isLoading={modelPickerModels.length === 0
-                  && ((modelPickerProviderId === "openai" && modelCapabilitiesBusy) || routeSwitchBusy)}
+                  && ((modelPickerProviderId === "openai" && modelCapabilitiesBusy)
+                    || providerModelLoading[modelPickerProviderId]
+                    || routeSwitchBusy)}
                 emptyMessage={modelPickerEmptyMessage}
                 onSelect={(m, r, geminiSelection) => {
+                  modelPickerOpenRef.current = false;
                   if (pendingRouteProviderId && pendingRouteProviderId !== activeProviderRoute.providerId) {
                     // Non-active provider: save as provider default without switching the active route.
                     // User must click "Use in Codexa" to validate and activate.
@@ -4794,6 +5018,7 @@ export function App({ launchArgs }: AppProps) {
                   }
                 }}
                 onCancel={() => {
+                  modelPickerOpenRef.current = false;
                   setPendingRouteProviderId(null);
                   returnToChatMode();
                 }}
