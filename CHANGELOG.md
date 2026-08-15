@@ -6,12 +6,7 @@ No changes yet.
 
 ---
 
-## [1.0.11] — 2026-08-15 — Update Menu Navigation
-
-### Changed
-
-- **Update actions follow their visual layout** — the horizontal Update now and Later choices use Left/Right navigation and show the matching keyboard hint.
-- **Startup updates appear before chat input** — Codexa opens a cached update immediately or briefly checks npm before enabling the composer, preventing a delayed prompt from interrupting typing.
+## [1.0.12] — 2026-08-15 — Update Overlay Stability
 
 ### Fixed
 
@@ -20,7 +15,20 @@ No changes yet.
 
 ### Tests
 
-- Updated update-prompt navigation and startup-render coverage for horizontal selection, raw arrow protocols, pre-composer checks, and overlay-exit repaint ownership.
+- Added raw arrow-protocol and overlay-exit repaint ownership coverage.
+
+---
+
+## [1.0.11] — 2026-08-15 — Update Menu Navigation
+
+### Changed
+
+- **Update actions follow their visual layout** — the horizontal Update now and Later choices use Left/Right navigation and show the matching keyboard hint.
+- **Startup updates appear before chat input** — Codexa opens a cached update immediately or briefly checks npm before enabling the composer, preventing a delayed prompt from interrupting typing.
+
+### Tests
+
+- Updated update-prompt navigation and startup-render coverage for horizontal selection and pre-composer checks.
 
 ---
 

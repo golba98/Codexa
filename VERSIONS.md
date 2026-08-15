@@ -3,16 +3,18 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v1.0.12 — 2026-08-15
+
+This patch restores the complete Codexa home screen after closing the startup
+update prompt. The selected update action now has a visible pointer, and more
+terminal Left/Right arrow encodings are supported.
+
 ## v1.0.11 — 2026-08-15
 
 This patch makes the update prompt match its horizontal layout. Use Left and
 Right to move between Update now and Later, then press Enter to confirm.
 Update checks now finish before chat input becomes available, so an update
 prompt cannot suddenly interrupt text entered just after Codexa opens.
-The selected update action now has a visible pointer, additional terminal arrow
-encodings are supported, and closing the prompt restores the complete Codexa
-header instead of leaving a blank upper screen.
-
 ## v1.0.10 — 2026-08-15
 
 This is the current patch release.
