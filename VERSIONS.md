@@ -11,9 +11,11 @@ Large pastes now stay readable as compact content markers while the full text
 still reaches the model. Outside-file imports have clear, keyboard-navigable
 one-time consent.
 
-Local models now support the full Plan review workflow. Planning is read-only,
-and local writes, patches, and shell commands obey the configured approval
-policy with an interactive permission prompt.
+Codex, Claude, Mistral, Antigravity, and Local now share the full Plan review
+workflow. Shift+Tab rotates Plan, Read-only, Auto, and Full Access directly in
+the composer footer without opening a mode panel or adding notices to chat.
+Planning is read-only, and local writes, patches, and shell commands obey the
+configured approval policy with an interactive permission prompt.
 
 ## v1.0.9 — 2026-08-14
 

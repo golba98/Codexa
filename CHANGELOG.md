@@ -10,7 +10,8 @@ No changes yet.
 
 ### Added
 
-- **Plan mode is available directly in the mode picker** — local models receive an explicit read-only planning prompt and inspection-only tools, while approved plans restore the previously selected execution mode.
+- **Plan mode works across every supported provider** — Codex, Claude, Mistral, Antigravity, and Local use the shared plan-review workflow with an explicit read-only planning turn.
+- **Safety modes rotate without an overlay** — Shift+Tab cycles Plan, Read-only, Auto, and Full Access while the active mode stays visible in the footer.
 - **Local model mutations require real approval** — On request and Untrusted policies pause before writes, patches, and shell commands with Allow once, Allow for run, and Deny choices.
 
 ### Changed
@@ -21,10 +22,11 @@ No changes yet.
 ### Fixed
 
 - **Overlay focus is unambiguous** — the composer caret is hidden while another panel owns keyboard focus.
+- **Shift+Tab works across terminal protocols** — VTE, xterm, Kitty CSI-u, and modifyOtherKeys backtab encodings are recognized without adding mode-change notices to chat.
 
 ### Tests
 
-- Added paste-boundary, raw-payload, atomic-navigation, import-navigation, local approval, and read-only Plan-mode coverage.
+- Added paste-boundary, raw-payload, atomic-navigation, import-navigation, provider planning, safety-mode rotation, terminal backtab, local approval, and read-only Plan-mode coverage.
 
 ---
 
