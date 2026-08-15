@@ -5327,6 +5327,7 @@ export function App({ launchArgs }: AppProps) {
                 latestVersion={updateCheckResult.latestVersion}
                 packageManager={globalPackageManager}
                 onSkip={handleSkipUpdateForSession}
+                onRestart={exit}
               />
             )}
             {screen === "update-prompt" && updateCheckResult === null && (

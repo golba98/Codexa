@@ -39,6 +39,7 @@ interface UpdatePromptPanelProps {
   /** Test seam — defaults to the real cross-platform runner. */
   runUpdate?: RunUpdateFn;
   onSkip: () => void;
+  onRestart: () => void;
 }
 
 export function UpdatePromptPanel({
@@ -48,6 +49,7 @@ export function UpdatePromptPanel({
   packageManager,
   runUpdate,
   onSkip,
+  onRestart,
 }: UpdatePromptPanelProps) {
   const theme = useTheme();
   const { stdin } = useStdin();
@@ -97,7 +99,11 @@ export function UpdatePromptPanel({
         }
         return;
       }
-    } else if (phase === "done" || phase === "error") {
+    } else if (phase === "done") {
+      if (key.return) {
+        onRestart();
+      }
+    } else if (phase === "error") {
       if (key.return) {
         onSkip();
       }
@@ -145,6 +151,8 @@ export function UpdatePromptPanel({
 
   const footerText = phase === "menu"
     ? "←/→ to choose · Enter to confirm · Esc to close"
+    : phase === "done"
+      ? "Enter to restart · Esc to stay in Codexa"
     : "Esc to close";
 
   return (
@@ -209,6 +217,9 @@ export function UpdatePromptPanel({
           <>
             <Text color={theme.success}>{`Codexa ${formatVersionLabel(latestVersion)} installed successfully.`}</Text>
             <Text color={theme.textMuted}>{"Restart Codexa to use the new version."}</Text>
+            <Box marginTop={1}>
+              <Text color={theme.text} bold>{"❯ [ Restart now ]"}</Text>
+            </Box>
           </>
         )}
 

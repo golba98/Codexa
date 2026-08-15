@@ -58,6 +58,7 @@ interface Harness {
   output: () => string;
   cleanup: () => void;
   onSkipCalls: () => number;
+  onRestartCalls: () => number;
 }
 
 function renderPanel(options: {
@@ -68,6 +69,7 @@ function renderPanel(options: {
   const stdout = new TestOutput();
   let output = "";
   let skipCalls = 0;
+  let restartCalls = 0;
 
   stdout.on("data", (chunk) => {
     output += chunk.toString();
@@ -82,6 +84,7 @@ function renderPanel(options: {
         packageManager={options.packageManager ?? "npm"}
         runUpdate={options.runUpdate}
         onSkip={() => { skipCalls += 1; }}
+        onRestart={() => { restartCalls += 1; }}
       />
     </ThemeProvider>,
     {
@@ -99,6 +102,7 @@ function renderPanel(options: {
     output: () => stripAnsi(output),
     cleanup: () => instance.cleanup(),
     onSkipCalls: () => skipCalls,
+    onRestartCalls: () => restartCalls,
   };
 }
 
@@ -126,11 +130,18 @@ test("Update now with a successful runner reaches the done phase", async () => {
   await sleep();
   harness.stdin.write("\r"); // Enter on "Update now"
   await sleep();
-  harness.cleanup();
 
   assert.deepEqual(calls, ["pnpm"]);
   assert.match(harness.output(), /Codexa v1\.0\.5 installed successfully\./);
   assert.match(harness.output(), /Restart Codexa to use the new version\./);
+  assert.match(harness.output(), /❯ \[ Restart now \]/);
+  assert.match(harness.output(), /Enter to restart · Esc to stay in Codexa/);
+
+  harness.stdin.write("\r");
+  await sleep(20);
+  assert.equal(harness.onRestartCalls(), 1);
+  assert.equal(harness.onSkipCalls(), 0);
+  harness.cleanup();
 });
 
 test("permission failure shows guidance without sudo", async () => {
