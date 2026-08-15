@@ -716,7 +716,7 @@ export function BottomComposer({
         clearTimeout(backtabEventTimeoutRef.current);
         backtabEventTimeoutRef.current = null;
       }
-      onTogglePlanMode();
+      onCycleMode();
       return;
     }
 
@@ -776,9 +776,7 @@ export function BottomComposer({
         case "p":
           if (key.meta) {
             onOpenProviderPicker();
-            return;
           }
-          onOpenModePicker();
           return;
         case "m": onOpenModelPicker(); return;
         case "o":
@@ -1034,7 +1032,13 @@ export function BottomComposer({
       <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
         <Box flexGrow={1} flexShrink={1} overflow="hidden" flexDirection="row">
           {renderFooterRuntime(footerRuntimeDisplay, theme)}
-          {planMode && <Text color={theme.accent}>{"  · PLAN"}</Text>}
+          {planMode ? (
+            <Text color={theme.accent}>{"  · PLAN"}</Text>
+          ) : mode ? (
+            <Text color={getModeDisplaySpec(mode, theme).ringColor}>
+              {`  · ${getModeDisplaySpec(mode, theme).label}`}
+            </Text>
+          ) : null}
         </Box>
         <Box flexShrink={0}>
           {contextDisplay ? (

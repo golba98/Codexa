@@ -515,7 +515,7 @@ test("startup uses compact side-by-side ASCII header at normal shorter terminal 
   assert.match(output, /Codexa v/);
   assert.match(output, /Workspace:\s*…\\13-Custom CLI/);
   assert.match(output, /Provider: Codexa Core/);
-  assert.match(output, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
+  assert.match(output, /gpt-5\.4 \(medium\)\s+· Auto\s+Context: Unknown/);
   assert.doesNotMatch(output, /Model: gpt-5\.4/);
   assert.doesNotMatch(output, /Reasoning:/);
   assert.match(output, /\n\s*╭[─]+╮\n\s*│ ❯/);
@@ -540,7 +540,7 @@ test("80x24 keeps the last timeline content visible above the composer", async (
 test("larger terminals keep the composer metadata row", async () => {
   const output = await renderShell(100, 30, { kind: "IDLE" });
 
-  assert.match(output, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
+  assert.match(output, /gpt-5\.4 \(medium\)\s+· Auto\s+Context: Unknown/);
   assert.match(output, /Dev shell attached/);
   assert.match(output, /gpt-5\.4/i);
 });
@@ -944,13 +944,13 @@ test("memoized composer re-renders when only the terminal height changes", async
 
   await sleep(80);
   let frame = stripAnsi(output);
-  assert.match(frame, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
+  assert.match(frame, /gpt-5\.4 \(medium\)\s+· Auto\s+Context: Unknown/);
 
   output = "";
   instance.rerender(renderComposer(24));
   await sleep(80);
   frame = stripAnsi(output);
-  assert.match(frame, /gpt-5\.4 \(medium\)\s+Context: Unknown/);
+  assert.match(frame, /gpt-5\.4 \(medium\)\s+· Auto\s+Context: Unknown/);
 
   instance.cleanup();
   await sleep(20);

@@ -98,7 +98,7 @@ import {
   formatReasoningLabel,
   formatThemeLabel,
   formatWorkspaceDisplayPath,
-  getNextMode,
+  getNextRotatingMode,
   type HeaderConfig,
   type TerminalTitleMode,
 } from "./config/settings.js";
@@ -1978,8 +1978,26 @@ export function App({ launchArgs }: AppProps) {
   }, [appendSystemEvent, busy, updateRuntimeConfig]);
 
   const cycleModeWithNotice = useCallback(() => {
-    setModeWithNotice(getNextMode(mode));
-  }, [mode, setModeWithNotice]);
+    const gate = guardConfigMutation("mode", busy);
+    if (!gate.allowed) {
+      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing the mode.");
+      return;
+    }
+
+    const next = getNextRotatingMode(mode, planMode);
+    updateRuntimeConfig((current) => ({
+      ...current,
+      mode: next.mode,
+      planMode: next.planMode,
+    }));
+    if (!next.planMode) {
+      setPlanFlow(resetPlanFlow());
+    }
+    appendSystemEvent(
+      "Mode updated",
+      `Mode switched to ${next.planMode ? "Plan" : formatModeLabel(next.mode)}.`,
+    );
+  }, [appendSystemEvent, busy, mode, planMode, updateRuntimeConfig]);
 
   const setReasoningWithNotice = useCallback((nextReasoningLevel: ReasoningLevel) => {
     const gate = guardConfigMutation("reasoning", busy);
@@ -4332,6 +4350,8 @@ export function App({ launchArgs }: AppProps) {
         case "mode":
           if (commandResult.value) {
             setModeWithNotice(commandResult.value as AvailableMode);
+          } else if (commandResult.message) {
+            appendSystemEvent("Mode", commandResult.message);
           }
           return;
         case "reasoning":

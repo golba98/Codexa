@@ -401,8 +401,7 @@ function buildHelpMessage(context: CommandContext): string {
     "Shortcuts:",
     "  Ctrl+B    Open backend picker",
     "  Ctrl+O    Open model picker",
-    "  Shift+Tab Toggle plan mode",
-    "  Ctrl+P    Open mode picker",
+    "  Shift+Tab Rotate Plan → Read-only → Auto → Full Access",
     "  Ctrl+Alt+P Open provider picker",
     "  Ctrl+A    Open auth panel",
     "  Ctrl+L    Clear chat and cancel active run",
@@ -481,7 +480,19 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
         return { action: "open_model_picker" };
 
       case "mode": {
-        if (!arg) return { action: "open_mode_picker" };
+        if (!arg) {
+          return {
+            action: "mode",
+            message: `Mode: ${context.runtime.planMode ? "Plan" : formatModeLabel(context.runtime.mode)}. Use Shift+Tab to rotate modes.`,
+          };
+        }
+        if (normalizedArg === "plan") {
+          return {
+            action: "plan_mode",
+            value: "on",
+            message: "Plan mode enabled.",
+          };
+        }
         const resolvedMode = resolveModeCommand(arg);
         if (resolvedMode) {
           return {

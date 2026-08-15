@@ -141,7 +141,6 @@ test("resolves canonical and aliased /mode commands", () => {
     ["/mode default", "full-auto"],
     ["/mode ask", "suggest"],
     ["/mode auto", "auto-edit"],
-    ["/mode plan", "suggest"],
   ] as const;
 
   for (const [command, expectedValue] of cases) {
@@ -149,6 +148,16 @@ test("resolves canonical and aliased /mode commands", () => {
     assert.equal(result?.action, "mode", command);
     assert.equal(result?.value, expectedValue, command);
   }
+});
+
+test("uses /mode without an overlay and supports plan directly", () => {
+  const status = runCommand("/mode");
+  assert.equal(status?.action, "mode");
+  assert.match(status?.message ?? "", /Shift\+Tab to rotate modes/);
+
+  const plan = runCommand("/mode plan");
+  assert.equal(plan?.action, "plan_mode");
+  assert.equal(plan?.value, "on");
 });
 
 test("opens the reasoning picker when /reasoning has no argument", () => {
@@ -509,7 +518,7 @@ test("documents runtime commands in help", () => {
   assert.match(result?.message ?? "", /\/setting busy-loader \[true\|false\]/i);
   assert.match(result?.message ?? "", /\/mouse\s+Toggle SGR mouse capture for in-app wheel scroll/i);
   assert.match(result?.message ?? "", /Current plan mode: Disabled/i);
-  assert.match(result?.message ?? "", /Shift\+Tab\s+Toggle plan mode/i);
+  assert.match(result?.message ?? "", /Shift\+Tab\s+Rotate Plan.*Read-only.*Auto.*Full Access/i);
   assert.match(result?.message ?? "", /Ctrl\+Y\s+Cycle execution mode/i);
   assert.match(result?.message ?? "", /Ctrl\+Alt\+P\s+Open provider picker/i);
 });
@@ -677,4 +686,3 @@ test("parses /update, /update check, and /update status commands", () => {
   assert.equal(resultStatus?.action, "update");
   assert.equal(resultStatus?.value, "status");
 });
-
