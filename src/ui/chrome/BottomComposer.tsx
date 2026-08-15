@@ -49,6 +49,8 @@ const BACKTAB_ESCAPE_SEQUENCE = /\u001b\[Z/;
 const CTRL_M_ESCAPE_SEQUENCE = /^\u001b\[(?:109|13);5u$/;
 const CTRL_ALT_P_ESCAPE_SEQUENCE = /(?:\x1b\x10|\x1b\[112;[78]u)/;
 const MAX_VISIBLE_INPUT_ROWS = 5;
+const PASTE_CHUNK_CANDIDATE_MIN = 64;
+const PASTE_CHUNK_SETTLE_MS = 12;
 
 function resolveDeleteIntentFromRawInput(raw: string): DeleteIntent | null {
   if (raw === "\b" || raw === "\x08" || raw === "\u007f" || raw === "\u001b\u007f") {
@@ -494,6 +496,8 @@ export function BottomComposer({
   const lastPropsValueRef = useRef(value);
   const lastPropsCursorRef = useRef(cursor);
   const pasteBufferRef = useRef<string | null>(null);
+  const pasteChunkBufferRef = useRef<string | null>(null);
+  const pasteChunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deleteIntentRef = useRef<DeleteIntent | null>(null);
   const backtabEventTickRef = useRef(false);
   const ctrlMEventTickRef = useRef(false);
@@ -559,6 +563,7 @@ export function BottomComposer({
       if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
       if (ctrlMEventTimeoutRef.current) clearTimeout(ctrlMEventTimeoutRef.current);
       if (mouseEventTimeoutRef.current) clearTimeout(mouseEventTimeoutRef.current);
+      if (pasteChunkTimerRef.current) clearTimeout(pasteChunkTimerRef.current);
     };
   }, [stdin]);
 
@@ -644,6 +649,19 @@ export function BottomComposer({
     insertText(pastedText);
   };
 
+  const flushPasteChunks = () => {
+    const buffered = pasteChunkBufferRef.current;
+    pasteChunkBufferRef.current = null;
+    pasteChunkTimerRef.current = null;
+    if (buffered) insertPaste(buffered);
+  };
+
+  const bufferPasteChunk = (text: string) => {
+    pasteChunkBufferRef.current = `${pasteChunkBufferRef.current ?? ""}${text}`;
+    if (pasteChunkTimerRef.current) clearTimeout(pasteChunkTimerRef.current);
+    pasteChunkTimerRef.current = setTimeout(flushPasteChunks, PASTE_CHUNK_SETTLE_MS);
+  };
+
   const handlePastedInput = (chunk: string) => {
     let remaining = chunk;
 
@@ -666,9 +684,14 @@ export function BottomComposer({
       const startMatch = BRACKETED_PASTE_START.exec(remaining);
       if (!startMatch) {
         // Ink/readline may consume bracketed-paste delimiters and deliver the
-        // complete payload as one input event. Treat a large event as a paste
-        // even when the terminal markers are no longer present.
-        insertPaste(remaining);
+        // payload as one or more input events. Coalesce burst chunks before
+        // applying the large-paste threshold so multi-kilobyte pastes cannot
+        // leak into the composer as several smaller raw fragments.
+        if (pasteChunkBufferRef.current !== null || remaining.length >= PASTE_CHUNK_CANDIDATE_MIN) {
+          bufferPasteChunk(remaining);
+        } else {
+          insertText(normalizeInputText(remaining));
+        }
         return;
       }
 

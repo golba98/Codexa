@@ -744,6 +744,30 @@ test("large bracketed paste renders as a compact content marker", async () => {
   }
 });
 
+test("multi-chunk 8264-character paste is coalesced into one compact marker", async () => {
+  const harness = createInkHarness(<PasteComposerHarness />);
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[200~");
+    const chunks = [
+      "x".repeat(2_048),
+      "x".repeat(2_048),
+      "x".repeat(2_048),
+      "x".repeat(2_120),
+    ];
+    for (const chunk of chunks) harness.stdin.write(chunk);
+    harness.stdin.write("\u001b[201~");
+    await sleep(120);
+
+    const output = harness.getOutput();
+    assert.match(output, /\[Pasted Content 8,264 chars\]/);
+    assert.match(output, /registered:8264/);
+    assert.doesNotMatch(output, /x{100}/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test("ctrl+j inserts a newline without submitting the composer", async () => {
   const harness = createInkHarness(<PasteComposerHarness />);
 
