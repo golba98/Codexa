@@ -6,6 +6,18 @@ No changes yet.
 
 ---
 
+## [1.0.13] — 2026-08-15 — One-Key Update Restart
+
+### Added
+
+- **Successful updates can close Codexa immediately** — the completion panel now provides a focused `Restart now` button; pressing Enter exits the current process cleanly so the newly installed version can be launched.
+
+### Tests
+
+- Added update-completion keyboard coverage for the restart action and its visible instructions.
+
+---
+
 ## [1.0.12] — 2026-08-15 — Update Overlay Stability
 
 ### Fixed

@@ -3,6 +3,13 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v1.0.13 — 2026-08-15
+
+After Codexa installs an update, the success panel now includes a focused
+Restart now button. Press Enter to close the current Codexa process cleanly,
+then launch Codexa again to use the newly installed version. Press Esc to stay
+in the current session.
+
 ## v1.0.12 — 2026-08-15
 
 This patch restores the complete Codexa home screen after closing the startup
