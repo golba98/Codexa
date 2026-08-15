@@ -78,11 +78,13 @@ test("Update prompt owns the visible update notice so the header card is not dup
   assert.match(appSource, /screen === "update-prompt"[\s\S]*?<UpdatePromptPanel/);
 });
 
-test("startup update checks fetch npm on every launch and defer the modal until main is idle", () => {
-  assert.match(appSource, /fetches npm on every interactive startup/);
+test("startup update checks run before the composer can accept input", () => {
+  assert.match(appSource, /Check npm on every interactive startup before enabling the composer/);
   assert.doesNotMatch(appSource, /isCacheValid\(cache, ucSettings\.intervalHours/);
-  assert.match(appSource, /startupUpdateDismissed \|\| busy \|\| screen !== "main"/);
-  assert.match(appSource, /setStartupUpdateDismissed\(true\)/);
+  assert.match(appSource, /startupUpdateEnabled\.current \? "update-prompt" : "main"/);
+  assert.match(appSource, /initialUpdateCheckResult/);
+  assert.doesNotMatch(appSource, /startupUpdateDismissed \|\| busy \|\| screen !== "main"/);
+  assert.match(appSource, /handleSkipUpdateForSession[\s\S]*?setScreen\("main"\)/);
   assert.match(appSource, /isCacheForRunningVersion\(cache, APP_VERSION\)/);
 });
 

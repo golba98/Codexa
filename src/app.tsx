@@ -415,6 +415,24 @@ export function App({ launchArgs }: AppProps) {
     ? projectInstructionsLoad.instructions
     : null;
   const initialSettings = useRef(loadSettings());
+  const startupUpdateEnabled = useRef(shouldRunStartupUpdateCheck(
+    process.env,
+    (initialSettings.current.updateCheck ?? DEFAULT_UPDATE_CHECK_SETTINGS).enabled,
+  ));
+  const initialUpdateCheckResult = useRef<UpdateCheckResult | null>((() => {
+    if (!startupUpdateEnabled.current) return null;
+    const cache = loadUpdateCheckCache();
+    if (!cache?.updateAvailable || !cache.latestVersion || !isCacheForRunningVersion(cache, APP_VERSION)) {
+      return null;
+    }
+    return {
+      status: "update-available",
+      currentVersion: cache.currentVersion,
+      latestVersion: cache.latestVersion,
+      checkedAt: cache.lastChecked,
+      source: "cache",
+    };
+  })());
   const initialProviderWorkspaceConfig = useRef<ProviderWorkspaceConfig>(loadProviderWorkspaceConfig(workspaceRoot));
   const initialLayeredConfig = useRef<LayeredConfigResult | null>(null);
   if (initialLayeredConfig.current === null) {
@@ -480,7 +498,12 @@ export function App({ launchArgs }: AppProps) {
   const [themeNotice, setThemeNotice] = useState<string | null>(null);
   const [customTheme, setCustomTheme] = useState(initialSettings.current.ui.customTheme);
   const [headerConfig] = useState(initialSettings.current.header);
-  const [screen, setScreen] = useState<Screen>("main");
+  // Hold the first interactive frame behind the update check. A cached update
+  // opens immediately; an uncached launch shows a short checking panel instead
+  // of allowing input and interrupting the user a moment later.
+  const [screen, setScreen] = useState<Screen>(
+    startupUpdateEnabled.current ? "update-prompt" : "main",
+  );
   const [pendingImport, setPendingImport] = useState<{
     prompt: string;
     providerPrompt: string;
@@ -576,8 +599,7 @@ export function App({ launchArgs }: AppProps) {
   const [verboseMode, setVerboseMode] = useState(false);
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
   const [initialRevisionText, setInitialRevisionText] = useState("");
-  const [updateCheckResult, setUpdateCheckResult] = useState<UpdateCheckResult | null>(null);
-  const [startupUpdateDismissed, setStartupUpdateDismissed] = useState(false);
+  const [updateCheckResult, setUpdateCheckResult] = useState<UpdateCheckResult | null>(initialUpdateCheckResult.current);
   // Launcher path is fixed for the process lifetime, so detect once.
   const globalPackageManager = useMemo(() => detectGlobalPackageManager(), []);
   // Transcript mode leaves mouse reporting off so wheel/trackpad input scrolls
@@ -1736,10 +1758,9 @@ export function App({ launchArgs }: AppProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProviderRoute.providerId, workspaceRoot]);
 
-  // Non-blocking background update check — fetches npm on every interactive startup.
+  // Check npm on every interactive startup before enabling the composer.
   useEffect(() => {
-    const ucSettings = initialSettings.current.updateCheck ?? DEFAULT_UPDATE_CHECK_SETTINGS;
-    if (!shouldRunStartupUpdateCheck(process.env, ucSettings.enabled)) return;
+    if (!startupUpdateEnabled.current) return;
 
     void (async () => {
       const cache = loadUpdateCheckCache();
@@ -1756,6 +1777,8 @@ export function App({ launchArgs }: AppProps) {
               checkedAt: cache.lastChecked,
               source: "cache",
             });
+          } else {
+            setScreen("main");
           }
           return;
         }
@@ -1767,8 +1790,14 @@ export function App({ launchArgs }: AppProps) {
           latestVersion: result.latestVersion,
           updateAvailable: result.status === "update-available",
         });
+        if (result.status !== "update-available") {
+          setScreen("main");
+        }
       } catch {
         // Never crash the TUI on a failed update check.
+        if (!initialUpdateCheckResult.current) {
+          setScreen("main");
+        }
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1808,15 +1837,6 @@ export function App({ launchArgs }: AppProps) {
     resetInkOutputForFreshFrame({ instance: inkInstance, columns: stdout.columns });
     bumpStaticRepaintGeneration((tick) => tick + 1);
   }, [authPreference, customTheme, headerConfig, inkInstance, showBusyLoader, stdout.columns, terminalControl, terminalMouseMode, terminalTitleMode, workspaceDisplayMode]);
-
-  // A startup update prompt must not interrupt an active run or another panel.
-  // Keep the result until the user returns to the idle main screen instead.
-  useEffect(() => {
-    if (startupUpdateDismissed || busy || screen !== "main") return;
-    if (updateCheckResult?.status === "update-available" && updateCheckResult.latestVersion) {
-      setScreen("update-prompt");
-    }
-  }, [busy, screen, startupUpdateDismissed, updateCheckResult]);
 
   // Track clear epoch to suppress stale command result events
   useEffect(() => {
@@ -2320,7 +2340,6 @@ export function App({ launchArgs }: AppProps) {
   }, [applyWorkspaceDisplayMode, showBusyLoader, terminalMouseMode, terminalTitleMode, workspaceDisplayMode]);
 
   const handleSkipUpdateForSession = useCallback(() => {
-    setStartupUpdateDismissed(true);
     setScreen("main");
   }, []);
 
@@ -5298,6 +5317,18 @@ export function App({ launchArgs }: AppProps) {
                 packageManager={globalPackageManager}
                 onSkip={handleSkipUpdateForSession}
               />
+            )}
+            {screen === "update-prompt" && updateCheckResult === null && (
+              <Box
+                borderStyle="round"
+                borderColor={activeTheme.borderFocused}
+                paddingX={2}
+                paddingY={1}
+                width="100%"
+                marginTop={1}
+              >
+                <Text color={activeTheme.textMuted}>Checking for Codexa updates...</Text>
+              </Box>
             )}
             </>
           }
