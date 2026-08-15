@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Box, Text, useFocus, useInput } from "ink";
+import { Box, Text, useFocus, useInput, useStdin } from "ink";
 import { useTheme } from "../theme.js";
 import { CODEXA_NPM_PACKAGE, formatVersionLabel } from "../../core/version/updateCheck.js";
 import {
@@ -23,6 +23,14 @@ const MENU_ITEMS = [
   { label: "Later" },
 ] as const;
 
+type HorizontalDirection = "left" | "right";
+
+export function getHorizontalArrowDirection(raw: string): HorizontalDirection | null {
+  if (/(?:\u001b\[(?:D|1(?:;\d+)?D|57361(?:;\d+)?u)|\u001bOD)/.test(raw)) return "left";
+  if (/(?:\u001b\[(?:C|1(?:;\d+)?C|57362(?:;\d+)?u)|\u001bOC)/.test(raw)) return "right";
+  return null;
+}
+
 interface UpdatePromptPanelProps {
   focusId: string;
   currentVersion: string;
@@ -31,6 +39,7 @@ interface UpdatePromptPanelProps {
   /** Test seam — defaults to the real cross-platform runner. */
   runUpdate?: RunUpdateFn;
   onSkip: () => void;
+  onRestart: () => void;
 }
 
 export function UpdatePromptPanel({
@@ -40,8 +49,10 @@ export function UpdatePromptPanel({
   packageManager,
   runUpdate,
   onSkip,
+  onRestart,
 }: UpdatePromptPanelProps) {
   const theme = useTheme();
+  const { stdin } = useStdin();
   const { isFocused } = useFocus({ id: focusId, autoFocus: true });
 
   const [phase, setPhase] = useState<Phase>("menu");
@@ -50,6 +61,19 @@ export function UpdatePromptPanel({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const runStartedRef = useRef(false);
+  const rawArrowRef = useRef<HorizontalDirection | null>(null);
+
+  useEffect(() => {
+    const handleRawInput = (chunk: Buffer | string) => {
+      rawArrowRef.current = getHorizontalArrowDirection(
+        typeof chunk === "string" ? chunk : chunk.toString(),
+      );
+    };
+    stdin.on("data", handleRawInput);
+    return () => {
+      stdin.off("data", handleRawInput);
+    };
+  }, [stdin]);
 
   useInput((input, key) => {
     if (key.escape) {
@@ -57,11 +81,13 @@ export function UpdatePromptPanel({
       return;
     }
     if (phase === "menu") {
-      if (key.leftArrow || input === "h") {
+      const rawArrow = rawArrowRef.current;
+      rawArrowRef.current = null;
+      if (key.leftArrow || rawArrow === "left" || input === "h") {
         setSelectedIndex((i) => Math.max(0, i - 1));
         return;
       }
-      if (key.rightArrow || input === "l") {
+      if (key.rightArrow || rawArrow === "right" || input === "l") {
         setSelectedIndex((i) => Math.min(MENU_ITEMS.length - 1, i + 1));
         return;
       }
@@ -73,7 +99,11 @@ export function UpdatePromptPanel({
         }
         return;
       }
-    } else if (phase === "done" || phase === "error") {
+    } else if (phase === "done") {
+      if (key.return) {
+        onRestart();
+      }
+    } else if (phase === "error") {
       if (key.return) {
         onSkip();
       }
@@ -121,6 +151,8 @@ export function UpdatePromptPanel({
 
   const footerText = phase === "menu"
     ? "←/→ to choose · Enter to confirm · Esc to close"
+    : phase === "done"
+      ? "Enter to restart · Esc to stay in Codexa"
     : "Esc to close";
 
   return (
@@ -165,7 +197,7 @@ export function UpdatePromptPanel({
                   color={index === selectedIndex ? theme.text : theme.textMuted}
                   bold={index === selectedIndex}
                 >
-                  {`[ ${item.label} ]${index === 0 ? "  " : ""}`}
+                  {`${index === selectedIndex ? "❯ " : "  "}[ ${item.label} ]${index === 0 ? "  " : ""}`}
                 </Text>
               ))}
             </Box>
@@ -185,6 +217,9 @@ export function UpdatePromptPanel({
           <>
             <Text color={theme.success}>{`Codexa ${formatVersionLabel(latestVersion)} installed successfully.`}</Text>
             <Text color={theme.textMuted}>{"Restart Codexa to use the new version."}</Text>
+            <Box marginTop={1}>
+              <Text color={theme.text} bold>{"❯ [ Restart now ]"}</Text>
+            </Box>
           </>
         )}
 

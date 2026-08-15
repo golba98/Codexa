@@ -6,6 +6,31 @@ No changes yet.
 
 ---
 
+## [1.0.13] — 2026-08-15 — One-Key Update Restart
+
+### Added
+
+- **Successful updates can close Codexa immediately** — the completion panel now provides a focused `Restart now` button; pressing Enter exits the current process cleanly so the newly installed version can be launched.
+
+### Tests
+
+- Added update-completion keyboard coverage for the restart action and its visible instructions.
+
+---
+
+## [1.0.12] — 2026-08-15 — Update Overlay Stability
+
+### Fixed
+
+- **Returning from the update prompt restores the full home screen** — the overlay exit now resets the Ink frame cache and repaints the static Codexa header instead of leaving a large blank area above the composer.
+- **Horizontal update selection is visible and terminal-compatible** — the selected action has an explicit `❯` marker, with raw VTE, application-cursor, xterm, and Kitty arrow sequences supported.
+
+### Tests
+
+- Added raw arrow-protocol and overlay-exit repaint ownership coverage.
+
+---
+
 ## [1.0.11] — 2026-08-15 — Update Menu Navigation
 
 ### Changed
@@ -15,7 +40,7 @@ No changes yet.
 
 ### Tests
 
-- Updated update-prompt navigation and startup-render coverage for horizontal selection and pre-composer update checks.
+- Updated update-prompt navigation and startup-render coverage for horizontal selection and pre-composer checks.
 
 ---
 
