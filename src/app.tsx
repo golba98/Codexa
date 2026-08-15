@@ -68,6 +68,7 @@ function readDiagnosticString(
   return null;
 }
 import { Box, Text, useApp, useFocusManager, useInput, useStdin, useStdout } from "ink";
+import { expandPastedContent, type PastedContentRegistry } from "./ui/input/pastedContent.js";
 import { handleCommand } from "./commands/handler.js";
 import {
   applyLayeredRuntimeOverride,
@@ -190,7 +191,12 @@ import {
 import { loadProjectInstructions } from "./core/workspace/projectInstructions.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
-import type { BackendProgressUpdate, BackendProvider } from "./core/providers/types.js";
+import type {
+  BackendProgressUpdate,
+  BackendProvider,
+  ToolApprovalDecision,
+  ToolApprovalRequest,
+} from "./core/providers/types.js";
 import { commandExistsOnPath, launchProviderCli } from "./core/providerLauncher/launcher.js";
 import { buildProviderRegistry, findProvider, getActiveRouteProviderId } from "./core/providerLauncher/registry.js";
 import type { ProviderId, ProviderPickerAction, ProviderWorkspaceConfig } from "./core/providerLauncher/types.js";
@@ -277,6 +283,7 @@ import { ProviderPicker } from "./ui/panels/ProviderPicker.js";
 import { ProviderSetupPrompt } from "./ui/panels/ProviderSetupPrompt.js";
 import { ReasoningPicker } from "./ui/panels/ReasoningPicker.js";
 import { AttachmentImportPanel, type PendingImportFile } from "./ui/panels/AttachmentImportPanel.js";
+import { ToolApprovalPanel } from "./ui/panels/ToolApprovalPanel.js";
 import { SelectionPanel } from "./ui/panels/SelectionPanel.js";
 import { SettingsPanel } from "./ui/panels/SettingsPanel.js";
 import { UpdatePromptPanel } from "./ui/panels/UpdatePromptPanel.js";
@@ -386,6 +393,7 @@ interface PromptRunLifecycle {
   approvedPlan?: string;
   submitTiming?: PromptRunTiming;
   commitPrompt?: boolean;
+  runIntent?: "normal" | "plan" | "approved-execution";
   onCompleted?: (result: { response: string; turnId: number; runId: number }) => void;
   onFailed?: (result: { message: string; turnId: number; runId: number }) => void;
   onCanceled?: (result: { turnId: number; runId: number }) => void;
@@ -475,9 +483,13 @@ export function App({ launchArgs }: AppProps) {
   const [screen, setScreen] = useState<Screen>("main");
   const [pendingImport, setPendingImport] = useState<{
     prompt: string;
+    providerPrompt: string;
     files: PendingImportFile[];
     attachmentsDir: string;
   } | null>(null);
+  const pastedContentRegistryRef = useRef<PastedContentRegistry>(new Map());
+  const [toolApproval, setToolApproval] = useState<ToolApprovalRequest | null>(null);
+  const toolApprovalResolverRef = useRef<((decision: ToolApprovalDecision) => void) | null>(null);
   const [registryNonce, setRegistryNonce] = useState(0);
   const screenRef = useRef<Screen>("main");
   screenRef.current = screen;
@@ -1314,6 +1326,7 @@ export function App({ launchArgs }: AppProps) {
             localConfig: activeProviderRoute.providerId === "local"
               ? providerWorkspaceConfig.providers?.local
               : undefined,
+            runIntent: options.runIntent,
           }, handlers) ?? (() => undefined);
         }
         : undefined,
@@ -1958,6 +1971,7 @@ export function App({ launchArgs }: AppProps) {
     updateRuntimeConfig((current) => ({
       ...current,
       mode: nextMode,
+      planMode: false,
     }));
     setScreen("main");
     appendSystemEvent("Mode updated", `Execution mode switched to ${formatModeLabel(nextMode)}.`);
@@ -3371,6 +3385,11 @@ export function App({ launchArgs }: AppProps) {
     dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(nextCursor, safeValue.length) });
   }, [dispatchSession]);
 
+  const handleRegisterPaste = useCallback((label: string, content: string) => {
+    const current = pastedContentRegistryRef.current.get(label) ?? [];
+    pastedContentRegistryRef.current.set(label, [...current, content]);
+  }, []);
+
   const handleChangeValue = useCallback((value: string) => {
     const safeValue = sanitizeTerminalInput(value);
     dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(cursorRef.current, safeValue.length) });
@@ -3786,7 +3805,7 @@ export function App({ launchArgs }: AppProps) {
       perf.mark("provider_run_start");
       stopProviderRun = runProvider(
           safeProviderPrompt,
-          { runtime: runtimeForTurn, workspaceRoot, projectInstructions },
+          { runtime: runtimeForTurn, workspaceRoot, projectInstructions, runIntent: lifecycle.runIntent ?? "normal" },
           {
         onAssistantDelta: (chunk) => {
           const geminiBoundary = activeProviderRoute.providerId === "google";
@@ -3861,6 +3880,12 @@ export function App({ launchArgs }: AppProps) {
             }
           }
         },
+        onToolApproval: (request) => new Promise<ToolApprovalDecision>((resolve) => {
+          toolApprovalResolverRef.current?.("deny");
+          toolApprovalResolverRef.current = resolve;
+          setToolApproval(request);
+          setScreen("tool-approval");
+        }),
         onResponse: (response) => {
           const geminiBoundary = activeProviderRoute.providerId === "google";
           appDiagLog(`onResponse: provider=${activeProviderRoute.providerId} response.length=${response?.length ?? 0}`);
@@ -4055,10 +4080,10 @@ export function App({ launchArgs }: AppProps) {
         appendErrorEvent("Import failed", `Could not import ${path.basename(file.srcPath)}: ${err.message}`);
       }
     }
-    const rewrittenPrompt = rewritePromptWithImportedPaths(pendingImport.prompt, replacements);
+    const rewrittenPrompt = rewritePromptWithImportedPaths(pendingImport.providerPrompt, replacements);
     setPendingImport(null);
     setScreen("main");
-    startPromptRun(rewrittenPrompt, rewrittenPrompt, { submitTiming: createPromptRunTiming(), commitPrompt: true });
+    startPromptRun(pendingImport.prompt, rewrittenPrompt, { submitTiming: createPromptRunTiming(), commitPrompt: true });
   }, [pendingImport, workspaceRoot, startPromptRun, appendErrorEvent]);
 
   const handleImportCancel = useCallback(() => {
@@ -4090,6 +4115,7 @@ export function App({ launchArgs }: AppProps) {
         disableModeAutoUpgrade: true,
         parseActionRequired: false,
         responsePresentation: "plan",
+        runIntent: "plan",
         submitTiming,
         commitPrompt,
         onCompleted: ({ response }) => {
@@ -4130,6 +4156,7 @@ export function App({ launchArgs }: AppProps) {
       }),
       {
         approvedPlan: state.currentPlan,
+        runIntent: "approved-execution",
         submitTiming,
         runtimeOverride: {
           mode: state.executionMode,
@@ -4647,6 +4674,7 @@ export function App({ launchArgs }: AppProps) {
     }
 
     // ========== NORMAL PROMPT SUBMISSION (after command routing) ==========
+    const providerValue = expandPastedContent(value, pastedContentRegistryRef.current);
     // Check for follow-up answer submission
     if (uiState.kind === "AWAITING_USER_ACTION") {
       const originalUserEvent = findUserPromptForTurn(uiState.turnId);
@@ -4660,7 +4688,7 @@ export function App({ launchArgs }: AppProps) {
       startPromptRun(value, buildFollowUpPrompt({
         originalPrompt: originalUserEvent.prompt,
         assistantQuestion: uiState.question,
-        userAnswer: value,
+        userAnswer: providerValue,
       }), { submitTiming, commitPrompt: true });
       return;
     }
@@ -4671,7 +4699,7 @@ export function App({ launchArgs }: AppProps) {
     }
 
     // Validate workspace access for normal prompts
-    const { violations: outsideViolations, skippedExternalPaths } = findOutsideWorkspacePaths(value, workspaceRoot, allowedWritableRoots);
+    const { violations: outsideViolations, skippedExternalPaths } = findOutsideWorkspacePaths(providerValue, workspaceRoot, allowedWritableRoots);
 
     if (skippedExternalPaths.length > 0) {
       for (const skipped of skippedExternalPaths) {
@@ -4688,11 +4716,11 @@ export function App({ launchArgs }: AppProps) {
           destFilename: path.basename(v.normalizedPath),
           isImage: isImageFile(v.normalizedPath),
         }));
-        setPendingImport({ prompt: value, files: importFiles, attachmentsDir });
+        setPendingImport({ prompt: value, providerPrompt: providerValue, files: importFiles, attachmentsDir });
         setScreen("import-confirmation");
         return;
       }
-      const workspaceGuardMessage = getPromptWorkspaceGuardMessage(value, workspaceRoot, allowedWritableRoots);
+      const workspaceGuardMessage = getPromptWorkspaceGuardMessage(providerValue, workspaceRoot, allowedWritableRoots);
       if (workspaceGuardMessage) {
         appendErrorEvent("Workspace boundary", workspaceGuardMessage);
         return;
@@ -4701,12 +4729,12 @@ export function App({ launchArgs }: AppProps) {
 
     // Submit to provider or plan mode
     if (planMode) {
-      const nextPlanState = startPlanGeneration(value, mode);
+      const nextPlanState = startPlanGeneration(providerValue, mode);
       setPlanFlow(nextPlanState);
       runPlanGeneration(nextPlanState, value, submitTiming, true);
       return;
     }
-    startPromptRun(value, value, { submitTiming, commitPrompt: true });
+    startPromptRun(value, providerValue, { submitTiming, commitPrompt: true });
   }, [
     allowedWritableRoots,
     appendErrorEvent,
@@ -4841,6 +4869,7 @@ export function App({ launchArgs }: AppProps) {
         value={inputValue}
         cursor={cursor}
         onChangeInput={handleChangeInput}
+        onRegisterPaste={handleRegisterPaste}
         onSubmit={handleSubmit}
         onCancel={handleCancel}
         onChangeValue={handleChangeValue}
@@ -4885,6 +4914,7 @@ export function App({ launchArgs }: AppProps) {
     inputValue,
     cursor,
     handleChangeInput,
+    handleRegisterPaste,
     handleSubmit,
     handleChangeValue,
     handleChangeCursor,
@@ -5028,7 +5058,14 @@ export function App({ launchArgs }: AppProps) {
             {screen === "mode-picker" && (
               <ModePicker
                 currentMode={mode}
-                onSelect={(value) => setModeWithNotice(value as AvailableMode)}
+                planMode={planMode}
+                onSelect={(value) => {
+                  if (value === "plan") {
+                    setPlanModeWithNotice(true);
+                    setScreen("main");
+                  }
+                  else setModeWithNotice(value as AvailableMode);
+                }}
                 onCancel={() => setScreen("main")}
               />
             )}
@@ -5212,6 +5249,28 @@ export function App({ launchArgs }: AppProps) {
                 modelSupportsVision={activeRouteProvider?.capabilityProfile?.supportsVision ?? null}
                 onConfirm={() => { void handleImportConfirm(); }}
                 onCancel={handleImportCancel}
+              />
+            )}
+
+            {screen === "tool-approval" && toolApproval && (
+              <ToolApprovalPanel
+                focusId={FOCUS_IDS.toolApprovalPanel}
+                request={toolApproval}
+                onSelect={(decision) => {
+                  const resolve = toolApprovalResolverRef.current;
+                  toolApprovalResolverRef.current = null;
+                  setToolApproval(null);
+                  setScreen("main");
+                  resolve?.(decision);
+                }}
+                onCancelRun={() => {
+                  const resolve = toolApprovalResolverRef.current;
+                  toolApprovalResolverRef.current = null;
+                  setToolApproval(null);
+                  setScreen("main");
+                  resolve?.("deny");
+                  handleCancel();
+                }}
               />
             )}
 

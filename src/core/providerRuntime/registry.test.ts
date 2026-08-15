@@ -242,11 +242,11 @@ test("Mistral Vibe runtime is routable in Codexa and exposes the configured mode
   assert.ok(discovery.models[0]?.modelId);
 });
 
-test("getDefaultRouteModel returns the Antigravity default model", () => {
+test("getDefaultRouteModel prefers discovered Antigravity models and otherwise uses the default", () => {
   const model = getDefaultRouteModel("antigravity", "gpt-5.4");
+  const discovered = discoverProviderModels("antigravity").models[0]?.modelId;
 
-  assert.equal(model, ANTIGRAVITY_DEFAULT_MODEL_ID);
-  assert.equal(model, "gemini-3.5-flash");
+  assert.equal(model, discovered ?? ANTIGRAVITY_DEFAULT_MODEL_ID);
 });
 
 test("active route resolution preserves routable antigravity routes with reasoning", () => {

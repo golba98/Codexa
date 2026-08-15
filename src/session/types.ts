@@ -25,6 +25,7 @@ export type Screen =
   | "permissions-add-writable-root"
   | "permissions-remove-writable-root"
   | "import-confirmation"
+  | "tool-approval"
   | "update-prompt";
 
 // ─── Provider readiness ───────────────────────────────────────────────────────

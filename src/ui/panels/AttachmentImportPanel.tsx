@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
 import path from "node:path";
 import { useTheme } from "../theme.js";
@@ -31,16 +31,20 @@ export function AttachmentImportPanel({
 }: AttachmentImportPanelProps) {
   const theme = useTheme();
   const { isFocused } = useFocus({ id: focusId, autoFocus: true });
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
-  useInput((_, key) => {
+  useInput((input, key) => {
     if (key.escape) {
       onCancel();
       return;
     }
     if (key.return) {
-      onConfirm();
+      if (selectedIndex === 0) onConfirm();
+      else onCancel();
       return;
     }
+    if (key.upArrow || key.leftArrow || input === "k") setSelectedIndex(0);
+    if (key.downArrow || key.rightArrow || key.tab || input === "j") setSelectedIndex(1);
   }, { isActive: isFocused });
 
   const relativeAttachmentsDir = path.relative(workspaceRoot, attachmentsDir).replace(/\\/g, "/");
@@ -90,8 +94,23 @@ export function AttachmentImportPanel({
           </Box>
         )}
 
+        <Box marginTop={1} flexDirection="column">
+          <Text color={selectedIndex === 0 ? theme.accent : theme.textMuted} bold={selectedIndex === 0}>
+            {selectedIndex === 0 ? "› " : "  "}Import once
+          </Text>
+          <Text color={selectedIndex === 1 ? theme.accent : theme.textMuted} bold={selectedIndex === 1}>
+            {selectedIndex === 1 ? "› " : "  "}Cancel
+          </Text>
+        </Box>
+
         <Box marginTop={1}>
-          <Text color={theme.textDim}>Esc to close · Enter to confirm</Text>
+          <Text color={theme.textMuted}>
+            This copies only the listed {fileLabel}; it does not grant folder or workspace access.
+          </Text>
+        </Box>
+
+        <Box marginTop={1}>
+          <Text color={theme.textDim}>↑/↓ or j/k to navigate · Enter to select · Esc to cancel</Text>
         </Box>
       </Box>
     </Box>

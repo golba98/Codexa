@@ -85,6 +85,15 @@ Inside Codexa, common slash commands include:
 Use `Esc` to close a panel. Use `Ctrl+O` or `Ctrl+M` to open model selection,
 and `Ctrl+T` to choose a theme.
 
+Large terminal pastes (1,000 characters or more) appear as compact
+`[Pasted Content … chars]` entries. Codexa still sends the complete pasted
+content to the selected model.
+
+Choose **Plan** from the mode picker, run `/plan on`, or press Shift+Tab to
+have any provider—including a local model—inspect the workspace without
+changing it. Approving the resulting plan restores the execution mode that
+was active before planning.
+
 ## Configuration
 
 Codexa stores user data outside the project workspace. Project-specific
@@ -99,6 +108,13 @@ Common configuration areas include:
 - writable roots
 - workspace display and busy-loader preferences
 - named profiles
+
+For normal local-model coding, use **Workspace write** with **On request**.
+Codexa automatically allows inspection tools and asks before local models run
+shell commands or change files. Plan mode is always read-only. These are
+Codexa policy guards, not an operating-system sandbox; `Danger full access`
+is not needed for ordinary workspace changes. Importing an outside file is a
+one-time copy into Codexa attachment storage and does not grant folder access.
 
 Run `/settings` or `codexa --help` for the supported options. Existing legacy
 `.codexa/providers.json` files are read as a migration fallback and are not

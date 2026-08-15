@@ -158,6 +158,20 @@ test("AttachmentImportPanel Esc key calls onCancel", async () => {
   }
 });
 
+test("AttachmentImportPanel can navigate to Cancel with arrows", async () => {
+  const harness = createInkHarness(<AttachmentImportPanelHarness />);
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[B");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+    assert.match(harness.getOutput(), /cancelled:1/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 test("AttachmentImportPanel shows vision warning when modelSupportsVision is false and file is image", async () => {
   const harness = createInkHarness(
     <AttachmentImportPanelHarness modelSupportsVision={false} />,
