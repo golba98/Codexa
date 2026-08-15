@@ -1993,10 +1993,6 @@ export function App({ launchArgs }: AppProps) {
     if (!next.planMode) {
       setPlanFlow(resetPlanFlow());
     }
-    appendSystemEvent(
-      "Mode updated",
-      `Mode switched to ${next.planMode ? "Plan" : formatModeLabel(next.mode)}.`,
-    );
   }, [appendSystemEvent, busy, mode, planMode, updateRuntimeConfig]);
 
   const setReasoningWithNotice = useCallback((nextReasoningLevel: ReasoningLevel) => {
