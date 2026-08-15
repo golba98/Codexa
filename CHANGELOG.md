@@ -13,9 +13,14 @@ No changes yet.
 - **Update actions follow their visual layout** — the horizontal Update now and Later choices use Left/Right navigation and show the matching keyboard hint.
 - **Startup updates appear before chat input** — Codexa opens a cached update immediately or briefly checks npm before enabling the composer, preventing a delayed prompt from interrupting typing.
 
+### Fixed
+
+- **Returning from the update prompt restores the full home screen** — the overlay exit now resets the Ink frame cache and repaints the static Codexa header instead of leaving a large blank area above the composer.
+- **Horizontal update selection is visible and terminal-compatible** — the selected action has an explicit `❯` marker, with raw VTE, application-cursor, xterm, and Kitty arrow sequences supported.
+
 ### Tests
 
-- Updated update-prompt navigation and startup-render coverage for horizontal selection and pre-composer update checks.
+- Updated update-prompt navigation and startup-render coverage for horizontal selection, raw arrow protocols, pre-composer checks, and overlay-exit repaint ownership.
 
 ---
 

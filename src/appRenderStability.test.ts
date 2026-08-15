@@ -86,6 +86,8 @@ test("startup update checks run before the composer can accept input", () => {
   assert.doesNotMatch(appSource, /startupUpdateDismissed \|\| busy \|\| screen !== "main"/);
   assert.match(appSource, /handleSkipUpdateForSession[\s\S]*?setScreen\("main"\)/);
   assert.match(appSource, /isCacheForRunningVersion\(cache, APP_VERSION\)/);
+  assert.match(appSource, /returnFromUpdateOverlay[\s\S]*?clearViewport\("src\/app\.tsx:updateOverlay:viewportClear"\)/);
+  assert.match(appSource, /returnFromUpdateOverlay[\s\S]*?bumpStaticRepaintGeneration/);
 });
 
 test("Startup provider migration notice is seeded before the first composer frame", () => {
@@ -222,10 +224,12 @@ test("Ink render-cache reset is owned by repaint paths, never wired into out-of-
   // called from the out-of-band resize paths (index.tsx onResize / ui/layout.ts),
   // where a clear/reset would blank the screen until the next React commit.
   assert.match(clearBoundarySource, /resetInkOutputForFreshFrame/, "render-path wrapper owns the cache reset");
-  // app.tsx references it in the /clear fallback and the explicit theme repaint.
+  // app.tsx references it in the /clear fallback, explicit theme repaint, and
+  // the update-overlay return boundary that remounts the flushed static header.
   const appResetCalls = appSource.match(/resetInkOutputForFreshFrame\(/g) ?? [];
-  assert.equal(appResetCalls.length, 2, "app.tsx resets only for clear fallback and committed theme repaint");
+  assert.equal(appResetCalls.length, 3, "app.tsx resets only at explicit repaint boundaries");
   assert.match(appSource, /clearViewport\("src\/app\.tsx:theme:viewportClear"\)/);
+  assert.match(appSource, /clearViewport\("src\/app\.tsx:updateOverlay:viewportClear"\)/);
   assert.doesNotMatch(indexSource, /resetInkOutputForFreshFrame/);
   assert.doesNotMatch(layoutSource, /resetInkOutputForFreshFrame/);
 });

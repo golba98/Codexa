@@ -1496,6 +1496,17 @@ export function App({ launchArgs }: AppProps) {
     focusManager.focus(FOCUS_IDS.composer);
   }, [focusManager, getInputDebugSnapshot]);
 
+  const returnFromUpdateOverlay = useCallback(() => {
+    setScreen("main");
+    focusManager.focus(FOCUS_IDS.composer);
+    // The update overlay owns a separate non-static tree. Reset Ink's output
+    // cache and remount the transcript static subtree so returning to chat
+    // cannot leave only the composer/footer visible with a blank header.
+    terminalControl.clearViewport("src/app.tsx:updateOverlay:viewportClear");
+    resetInkOutputForFreshFrame({ instance: inkInstance, columns: stdout.columns });
+    bumpStaticRepaintGeneration((tick) => tick + 1);
+  }, [focusManager, inkInstance, stdout.columns, terminalControl]);
+
   const appendStaticEvent = useCallback((event: TimelineEvent) => {
     dispatchSession({ type: "APPEND_STATIC_EVENT", event });
   }, [dispatchSession]);
@@ -1778,7 +1789,7 @@ export function App({ launchArgs }: AppProps) {
               source: "cache",
             });
           } else {
-            setScreen("main");
+            returnFromUpdateOverlay();
           }
           return;
         }
@@ -1791,12 +1802,12 @@ export function App({ launchArgs }: AppProps) {
           updateAvailable: result.status === "update-available",
         });
         if (result.status !== "update-available") {
-          setScreen("main");
+          returnFromUpdateOverlay();
         }
       } catch {
         // Never crash the TUI on a failed update check.
         if (!initialUpdateCheckResult.current) {
-          setScreen("main");
+          returnFromUpdateOverlay();
         }
       }
     })();
@@ -2340,8 +2351,8 @@ export function App({ launchArgs }: AppProps) {
   }, [applyWorkspaceDisplayMode, showBusyLoader, terminalMouseMode, terminalTitleMode, workspaceDisplayMode]);
 
   const handleSkipUpdateForSession = useCallback(() => {
-    setScreen("main");
-  }, []);
+    returnFromUpdateOverlay();
+  }, [returnFromUpdateOverlay]);
 
   const setApprovalPolicyWithNotice = useCallback((nextValue: RuntimeApprovalPolicy) => {
     const gate = guardConfigMutation("mode", busy);

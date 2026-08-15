@@ -4,7 +4,7 @@ import React from "react";
 import { PassThrough } from "node:stream";
 import { render } from "ink";
 import { ThemeProvider } from "../theme.js";
-import { UpdatePromptPanel, type RunUpdateFn } from "./UpdatePromptPanel.js";
+import { getHorizontalArrowDirection, UpdatePromptPanel, type RunUpdateFn } from "./UpdatePromptPanel.js";
 import type { CommandResult } from "../../core/process/CommandRunner.js";
 import type { GlobalPackageManager } from "../../core/version/packageManager.js";
 
@@ -45,6 +45,13 @@ function makeResult(overrides: Partial<CommandResult> = {}): CommandResult {
     ...overrides,
   };
 }
+
+test("recognizes VTE, application-cursor, and Kitty horizontal arrows", () => {
+  assert.equal(getHorizontalArrowDirection("\u001b[D"), "left");
+  assert.equal(getHorizontalArrowDirection("\u001bOC"), "right");
+  assert.equal(getHorizontalArrowDirection("\u001b[57361;1u"), "left");
+  assert.equal(getHorizontalArrowDirection("\u001b[57362;1u"), "right");
+});
 
 interface Harness {
   stdin: TestInput;
@@ -102,7 +109,7 @@ test("prompt shows exact versions, actions, and the detected package manager com
 
   assert.match(harness.output(), /Update available: Codexa 1\.0\.5/);
   assert.match(harness.output(), /Current version: 1\.0\.4/);
-  assert.match(harness.output(), /\[ Update now \]\s+\[ Later \]/);
+  assert.match(harness.output(), /❯ \[ Update now \]\s+\[ Later \]/);
   assert.match(harness.output(), /←\/→ to choose · Enter to confirm · Esc to close/);
   assert.match(harness.output(), /bun add -g @golba98\/codexa@latest/);
   assert.doesNotMatch(harness.output(), /npm install -g/);
@@ -178,6 +185,7 @@ test("Right arrow selects Later and Esc also skips without running an update", a
   await sleep();
   skipHarness.stdin.write("[C"); // right to "Later"
   await sleep(20);
+  assert.match(skipHarness.output(), /\[ Update now \]\s+❯ \[ Later \]/);
   skipHarness.stdin.write("\r");
   await sleep(20);
   skipHarness.cleanup();

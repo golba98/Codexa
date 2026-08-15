@@ -9,6 +9,9 @@ This patch makes the update prompt match its horizontal layout. Use Left and
 Right to move between Update now and Later, then press Enter to confirm.
 Update checks now finish before chat input becomes available, so an update
 prompt cannot suddenly interrupt text entered just after Codexa opens.
+The selected update action now has a visible pointer, additional terminal arrow
+encodings are supported, and closing the prompt restores the complete Codexa
+header instead of leaving a blank upper screen.
 
 ## v1.0.10 — 2026-08-15
 
