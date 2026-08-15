@@ -5,10 +5,10 @@ import { PassThrough } from "node:stream";
 import { Box, Text, render, useFocus, useFocusManager } from "ink";
 import { handleCommand } from "../../commands/handler.js";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
-import type { AvailableModel, ReasoningLevel } from "../../config/settings.js";
+import { getNextRotatingMode, type AvailableMode, type AvailableModel, type ReasoningLevel } from "../../config/settings.js";
 import { createFallbackModelCapabilities, getSelectableModelCapabilities } from "../../core/models/codexModelCapabilities.js";
 import { buildProviderRegistry } from "../../core/providerLauncher/registry.js";
-import { BottomComposer } from "../chrome/BottomComposer.js";
+import { BottomComposer, isBacktabSequence } from "../chrome/BottomComposer.js";
 import { getFocusTargetForScreen } from "./focus.js";
 import { ModelPickerScreen } from "../panels/ModelPickerScreen.js";
 import { PlanActionPicker } from "../panels/PlanActionPicker.js";
@@ -41,6 +41,13 @@ class TestInput extends PassThrough {
     return this;
   }
 }
+
+test("recognizes legacy, xterm, Kitty CSI-u, and modifyOtherKeys Shift+Tab", () => {
+  for (const sequence of ["\u001b[Z", "\u001b[1;2Z", "\u001b[9;2u", "\u001b[27;2;9~"]) {
+    assert.equal(isBacktabSequence(sequence), true, JSON.stringify(sequence));
+  }
+  assert.equal(isBacktabSequence("\t"), false);
+});
 
 class TestOutput extends PassThrough {
   readonly isTTY = true;
@@ -307,6 +314,7 @@ function PasteComposerHarness() {
 
 function PlanToggleComposerHarness() {
   const [planMode, setPlanMode] = React.useState(false);
+  const [mode, setMode] = React.useState<AvailableMode>("full-auto");
   const [value, setValue] = React.useState("");
   const [cursor, setCursor] = React.useState(0);
   const [submitCount, setSubmitCount] = React.useState(0);
@@ -317,6 +325,7 @@ function PlanToggleComposerHarness() {
         <BottomComposer
           layout={TEST_LAYOUT}
           uiState={{ kind: "IDLE" }}
+          mode={mode}
           value={value}
           cursor={cursor}
           planMode={planMode}
@@ -339,10 +348,15 @@ function PlanToggleComposerHarness() {
           onOpenAuthPanel={() => {}}
           onTogglePlanMode={() => setPlanMode((current) => !current)}
           onClear={() => {}}
-          onCycleMode={() => {}}
+          onCycleMode={() => {
+            const next = getNextRotatingMode(mode, planMode);
+            setMode(next.mode);
+            setPlanMode(next.planMode);
+          }}
           onQuit={() => {}}
         />
         <Text>{`plan:${planMode ? "on" : "off"}`}</Text>
+        <Text>{`mode:${mode}`}</Text>
         <Text>{`submit:${submitCount}`}</Text>
         <Text>{`value:${JSON.stringify(value)}`}</Text>
       </Box>
@@ -790,7 +804,7 @@ test("ctrl+j inserts a newline without submitting the composer", async () => {
   }
 });
 
-test("shift+tab toggles plan mode without submitting or mutating the input", async () => {
+test("shift+tab rotates plan and safety modes without submitting or mutating the input", async () => {
   const harness = createInkHarness(<PlanToggleComposerHarness />);
 
   try {
@@ -805,6 +819,7 @@ test("shift+tab toggles plan mode without submitting or mutating the input", asy
     const output = harness.getOutput();
     assert.match(output, /plan:on/);
     assert.match(output, /plan:off/);
+    assert.match(output, /mode:suggest/);
     assert.match(output, /submit:0/);
     assert.equal(getLastComposerValue(output), "a");
   } finally {

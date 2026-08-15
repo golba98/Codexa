@@ -196,7 +196,6 @@ export const MODE_COMMAND_ALIASES = {
   ask: "suggest",
   add: "auto-edit",
   auto: "auto-edit",
-  plan: "suggest",
 } as const;
 
 export type ModeCommandAlias = keyof typeof MODE_COMMAND_ALIASES;
@@ -237,7 +236,7 @@ export function resolveModeCommand(mode: string): AvailableMode | null {
 }
 
 export function formatModeCommandHelp(): string {
-  return "suggest, auto-edit, full-auto; aliases: default, ask, add, auto, plan";
+  return "plan, suggest, auto-edit, full-auto; aliases: default, ask, add, auto";
 }
 
 export function getNextMode(mode: AvailableMode): AvailableMode {
@@ -247,6 +246,26 @@ export function getNextMode(mode: AvailableMode): AvailableMode {
   }
 
   return AVAILABLE_MODES[(currentIndex + 1) % AVAILABLE_MODES.length].key;
+}
+
+export interface RotatingModeState {
+  mode: AvailableMode;
+  planMode: boolean;
+}
+
+/**
+ * Shift+Tab uses one predictable loop for planning and execution safety.
+ * Plan is deliberately separate from `mode`: it forces a read-only planning
+ * turn, while the selected execution mode is persisted for later runs.
+ */
+export function getNextRotatingMode(mode: AvailableMode, planMode: boolean): RotatingModeState {
+  if (planMode) {
+    return { mode: "suggest", planMode: false };
+  }
+  if (mode === "full-auto") {
+    return { mode, planMode: true };
+  }
+  return { mode: getNextMode(mode), planMode: false };
 }
 
 export function formatBackendLabel(backend: string): string {

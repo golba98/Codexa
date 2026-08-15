@@ -13,6 +13,14 @@ import {
   resolveActiveProviderRoute,
   getDefaultRouteModel,
 } from "./registry.js";
+
+test("every supported external provider exposes the shared planning run path", () => {
+  for (const providerId of ["openai", "anthropic", "mistral", "antigravity", "local"] as const) {
+    const runtime = getProviderRuntime(providerId);
+    assert.equal(runtime.routeAvailable, true, `${providerId} must remain routable for plan mode`);
+    assert.equal(typeof runtime.run, "function", `${providerId} must accept shared plan requests`);
+  }
+});
 import { resetGeminiRouteValidationCacheForTests } from "./gemini.js";
 import { resetAnthropicRouteValidationCacheForTests, validateAnthropicRoute } from "./anthropic.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "./local.js";

@@ -16,6 +16,7 @@ import {
   getCodexHome,
   getCodexaTrustStoreFile,
   getNextMode,
+  getNextRotatingMode,
   normalizeReasoningForModel,
 } from "./settings.js";
 
@@ -38,6 +39,13 @@ test("cycles modes in the same order as Ctrl+Y", () => {
   assert.equal(getNextMode("suggest"), "auto-edit");
   assert.equal(getNextMode("auto-edit"), "full-auto");
   assert.equal(getNextMode("full-auto"), "suggest");
+});
+
+test("Shift+Tab rotation includes plan and every safety mode", () => {
+  assert.deepEqual(getNextRotatingMode("full-auto", false), { mode: "full-auto", planMode: true });
+  assert.deepEqual(getNextRotatingMode("full-auto", true), { mode: "suggest", planMode: false });
+  assert.deepEqual(getNextRotatingMode("suggest", false), { mode: "auto-edit", planMode: false });
+  assert.deepEqual(getNextRotatingMode("auto-edit", false), { mode: "full-auto", planMode: false });
 });
 
 test("defaults to full-auto mode", () => {

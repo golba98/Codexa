@@ -45,7 +45,7 @@ type DeleteIntent = "backspace" | "delete";
 const BRACKETED_PASTE_START = /(?:\u001B)?\[200~/;
 const BRACKETED_PASTE_END = /(?:\u001B)?\[201~/;
 const DELETE_ESCAPE_SEQUENCE = /^\u001b\[3(?:;\d+)?~$/;
-const BACKTAB_ESCAPE_SEQUENCE = /\u001b\[Z/;
+const BACKTAB_ESCAPE_SEQUENCE = /(?:\u001b\[Z|\u001b\[1;2Z|\u001b\[9;2u|\u001b\[27;2;9~)/;
 const CTRL_M_ESCAPE_SEQUENCE = /^\u001b\[(?:109|13);5u$/;
 const CTRL_ALT_P_ESCAPE_SEQUENCE = /(?:\x1b\x10|\x1b\[112;[78]u)/;
 const MAX_VISIBLE_INPUT_ROWS = 5;
@@ -151,6 +151,10 @@ export interface BottomComposerMeasureParams {
   modelSpec?: ModelSpec;
   value: string;
   cursor: number;
+}
+
+export function isBacktabSequence(raw: string): boolean {
+  return BACKTAB_ESCAPE_SEQUENCE.test(raw);
 }
 
 export interface CommandSuggestionState {
@@ -516,7 +520,7 @@ export function BottomComposer({
         deleteIntentRef.current = intent;
       }
 
-      if (BACKTAB_ESCAPE_SEQUENCE.test(raw)) {
+      if (isBacktabSequence(raw)) {
         backtabEventTickRef.current = true;
         if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
         backtabEventTimeoutRef.current = setTimeout(() => {
@@ -716,7 +720,16 @@ export function BottomComposer({
         clearTimeout(backtabEventTimeoutRef.current);
         backtabEventTimeoutRef.current = null;
       }
-      onTogglePlanMode();
+      onCycleMode();
+      return;
+    }
+
+
+    // Ink exposes Shift+Tab directly on terminals whose parser understands the
+    // active keyboard protocol. Keep this path in addition to raw-sequence
+    // detection so the shortcut works in VTE, Kitty, and Windows terminals.
+    if (key.tab && key.shift) {
+      onCycleMode();
       return;
     }
 
@@ -776,9 +789,7 @@ export function BottomComposer({
         case "p":
           if (key.meta) {
             onOpenProviderPicker();
-            return;
           }
-          onOpenModePicker();
           return;
         case "m": onOpenModelPicker(); return;
         case "o":
@@ -1034,7 +1045,13 @@ export function BottomComposer({
       <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
         <Box flexGrow={1} flexShrink={1} overflow="hidden" flexDirection="row">
           {renderFooterRuntime(footerRuntimeDisplay, theme)}
-          {planMode && <Text color={theme.accent}>{"  · PLAN"}</Text>}
+          {planMode ? (
+            <Text color={theme.accent}>{"  · PLAN"}</Text>
+          ) : mode ? (
+            <Text color={getModeDisplaySpec(mode, theme).ringColor}>
+              {`  · ${getModeDisplaySpec(mode, theme).label}`}
+            </Text>
+          ) : null}
         </Box>
         <Box flexShrink={0}>
           {contextDisplay ? (
