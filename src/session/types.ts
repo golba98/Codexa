@@ -13,6 +13,7 @@ export type Screen =
   | "mode-picker"
   | "backend-picker"
   | "provider-picker"
+  | "provider-setup"
   | "auth-panel"
   | "reasoning-picker"
   | "theme-picker"
@@ -24,6 +25,7 @@ export type Screen =
   | "permissions-add-writable-root"
   | "permissions-remove-writable-root"
   | "import-confirmation"
+  | "tool-approval"
   | "update-prompt";
 
 // ─── Provider readiness ───────────────────────────────────────────────────────

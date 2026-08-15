@@ -34,6 +34,17 @@ const AGY_MODELS_OUTPUT = [
   "GPT-OSS 120B (Medium)",
 ].join("\n");
 const DISCOVERED_AGY_MODELS = parseAgyModelsOutput(AGY_MODELS_OUTPUT);
+const CURRENT_AGY_MODELS_OUTPUT = [
+  "gemini-3.7-flash-high  Gemini 3.7 Flash (High)",
+  "gemini-3.7-flash-medium  Gemini 3.7 Flash (Medium)",
+  "gemini-3.7-flash-low  Gemini 3.7 Flash (Low)",
+  "gemini-3.6-flash-high  Gemini 3.6 Flash (High)",
+  "gemini-3.6-flash-medium  Gemini 3.6 Flash (Medium)",
+  "gemini-3.6-flash-low  Gemini 3.6 Flash (Low)",
+  "claude-sonnet-4-6  Claude Sonnet 4.6 (Thinking)",
+  "claude-opus-4-6-thinking  Claude Opus 4.6 (Thinking)",
+  "gpt-oss-120b-medium  GPT-OSS 120B (Medium)",
+].join("\n");
 
 function commandResult(overrides: Partial<CommandResult>): CommandResult {
   return {
@@ -103,6 +114,30 @@ test("parseAgyModelsOutput preserves the full discovered catalog", () => {
   assert.ok(labels.includes("Claude Sonnet 4.6 (Thinking)"), "missing Claude Sonnet 4.6 (Thinking)");
   assert.ok(labels.includes("Claude Opus 4.6 (Thinking)"), "missing Claude Opus 4.6 (Thinking)");
   assert.ok(labels.includes("GPT-OSS 120B (Medium)"), "missing GPT-OSS 120B (Medium)");
+});
+
+test("parseAgyModelsOutput groups Gemini rows from the current two-column agy format", () => {
+  const models = parseAgyModelsOutput(CURRENT_AGY_MODELS_OUTPUT);
+  assert.deepEqual(models.map((model) => model.id), [
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6-thinking",
+    "gpt-oss-120b-medium",
+  ]);
+  assert.deepEqual(models[0]?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high"]);
+  assert.equal(getAgyModelSelector("gemini-3.7-flash", "high", models), "gemini-3.7-flash-high");
+});
+
+test("current agy format leaves Claude and GPT-OSS as native models without intelligence levels", () => {
+  const models = parseAgyModelsOutput(CURRENT_AGY_MODELS_OUTPUT);
+  for (const id of ["claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium"]) {
+    const model = models.find((item) => item.id === id);
+    assert.ok(model, `${id} not found`);
+    assert.equal(model.supportedReasoningLevels, null);
+  }
+  assert.equal(getAgyModelSelector("claude-sonnet-4-6", null, models), "claude-sonnet-4-6");
+  assert.equal(getAgyModelSelector("gpt-oss-120b-medium", null, models), "gpt-oss-120b-medium");
 });
 
 test("Gemini 3.5 Flash supports Low/Medium/High reasoning (3 levels)", () => {

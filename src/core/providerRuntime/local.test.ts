@@ -508,7 +508,9 @@ test("Local provider executes unterminated text tool calls before final answer",
     const text = await runLocalOpenAiCompatible(
       buildRequest({
         workspaceRoot,
-        runtime: resolveRuntimeConfig(normalizeRuntimeConfig({ policy: { sandboxMode: "danger-full-access" } })),
+        runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
+          policy: { sandboxMode: "danger-full-access", approvalPolicy: "never" },
+        })),
         localConfig: { baseUrl: "http://local.test/v1" },
       }),
       {
@@ -558,7 +560,9 @@ test("Local provider executes OpenAI-style tool_calls before final answer", asyn
     const text = await runLocalOpenAiCompatible(
       buildRequest({
         workspaceRoot,
-        runtime: resolveRuntimeConfig(normalizeRuntimeConfig({ policy: { sandboxMode: "danger-full-access" } })),
+        runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
+          policy: { sandboxMode: "danger-full-access", approvalPolicy: "never" },
+        })),
         localConfig: { baseUrl: "http://local.test/v1" },
       }),
       {

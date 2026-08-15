@@ -95,10 +95,7 @@ export function ProviderPicker({
     ? Math.max(0, providers.findIndex((p) => p.id === initialProviderId))
     : 0;
   const [providerIndex, setProviderIndex] = useState(initialIndex);
-  const [mode, setMode] = useState<"providers" | "actions">(
-    initialProviderId ? "actions" : "providers",
-  );
-  const [actionIndex, setActionIndex] = useState(0);
+  const mode = "providers" as const;
   const [scrollOffset, setScrollOffset] = useState(0);
 
   const contextLayout = useActivePanelLayout();
@@ -164,9 +161,7 @@ export function ProviderPicker({
   const streamWidth = cols.stream;
   const statusWidth = cols.status;
 
-  const helpText = isCompactLayout
-    ? "Enter select | U use | S default | Esc close"
-    : "Enter = select, U = use, S = set default, Esc = cancel";
+  const helpText = "Enter use · Esc close";
 
   const actions = useMemo<ProviderActionItem[]>(() => {
     const routeUnavailable = selectedProvider?.routeMode === "in-codexa";
@@ -197,7 +192,7 @@ export function ProviderPicker({
       downArrow: Boolean(key.downArrow),
       mode,
       providerIndex,
-      actionIndex,
+      actionIndex: null,
     });
 
     if (key.ctrl && (input === "c" || input === "q")) {
@@ -206,11 +201,6 @@ export function ProviderPicker({
     }
 
     if (key.escape) {
-      if (mode === "actions") {
-        setMode("providers");
-        setActionIndex(0);
-        return;
-      }
       onCancel();
       return;
     }
@@ -240,33 +230,18 @@ export function ProviderPicker({
         setProviderIndex((current) => clampIndex(current + 1, providers.length));
         return;
       }
-      if (input.toLowerCase() === "s" && selectedProvider) {
-        onAction(selectedProvider.id, "set-default");
-        return;
-      }
       if (input.toLowerCase() === "u" && selectedProvider) {
         onAction(selectedProvider.id, "use-in-codexa");
         return;
       }
+      if (input.toLowerCase() === "s" && selectedProvider) {
+        onAction(selectedProvider.id, "set-default");
+        return;
+      }
       if (key.return && selectedProvider) {
-        setMode("actions");
-        setActionIndex(0);
+        onAction(selectedProvider.id, "use-in-codexa");
       }
       return;
-    }
-
-    if (key.upArrow || input === "k") {
-      setActionIndex((current) => clampIndex(current - 1, actions.length));
-      return;
-    }
-    if (key.downArrow || input === "j") {
-      setActionIndex((current) => clampIndex(current + 1, actions.length));
-      return;
-    }
-    if (key.return && selectedProvider) {
-      const action = actions[actionIndex];
-      if (action?.disabledReason) return;
-      onAction(selectedProvider.id, action?.value ?? "cancel");
     }
   }, { isActive: isFocused });
 
@@ -278,9 +253,8 @@ export function ProviderPicker({
     if (mode !== "providers") return null;
     const showBorder = availableRows >= 3;
     const showTitle = availableRows >= 2;
-    const useCompactRows = resolvedPanelLayout.mode === "compact"
-      || (resolvedPanelLayout.mode === "expanded" && providers.length <= 6);
-    const showHeaders = !useCompactRows && availableRows >= 7;
+    const useCompactRows = true;
+    const showHeaders = false;
     const chromeRows = (showTitle ? 1 : 0) + (showHeaders ? 1 : 0);
     let viewport = calculateResponsivePickerViewport({
       itemCount: providers.length,
@@ -330,85 +304,23 @@ export function ProviderPicker({
     return providers.slice(windowResult.start, windowResult.end);
   }, [mode, providers, windowResult]);
 
-  const titleText = mode === "actions" && selectedProvider
-    ? `Provider action: ${selectedProvider.displayName}`
-    : (windowResult?.showRange)
+  const titleText = (windowResult?.showRange)
       ? `Providers · ${windowResult.selectedIndex + 1}/${providers.length}`
-      : providers.length > 0 ? `Providers · ${providers.length} available` : "Providers";
-  const showCurrent = mode === "providers" && windowResult?.reserveCurrent && activeRouteIndex >= 0;
+      : "Providers";
+  const showCurrent = false;
 
   const body = useMemo(() => {
-    if (mode === "actions" && selectedProvider) {
-      const inCodexaAvailable = selectedProvider.routeMode === "in-codexa";
-      const isConfigured = inCodexaAvailable && !selectedProvider.routeUnavailableReason;
-      const inCodexaStatusText = !inCodexaAvailable ? "Unavailable" : isConfigured ? "Available" : "Needs configuration";
-      const inCodexaStatusColor = !inCodexaAvailable ? theme.error : isConfigured ? theme.success : theme.warning;
-
-      if (isCompactLayout) {
-        const statusText = selectedProvider.routeUnavailableReason ?? "Ready";
-        const metadataLine = `Status: ${statusText} · Backend: ${selectedProvider.backendType} · Codexa: ${inCodexaStatusText}`;
-        return (
-          <Box flexDirection="column">
-            <Box marginBottom={1} flexDirection="row" paddingX={2} overflow="hidden">
-              <Text color={theme.textDim} wrap="truncate">
-                {clampVisualText(metadataLine, innerWidth - 4)}
-              </Text>
-            </Box>
-            {actions.map((action, index) => (
-              <ActionRow
-                key={action.value}
-                label={action.label}
-                disabledReason={action.disabledReason}
-                isHighlighted={index === actionIndex}
-                width={innerWidth}
-              />
-            ))}
-          </Box>
-        );
-      }
-
-      return (
-        <Box flexDirection="column">
-          <Box marginBottom={1} flexDirection="column" paddingX={2}>
-            <Text color={theme.textDim}>Status: <Text color={theme.text}>{selectedProvider.routeUnavailableReason ?? "Ready"}</Text></Text>
-            <Text color={theme.textDim}>Backend: <Text color={theme.text}>{selectedProvider.backendType}</Text></Text>
-            <Text color={theme.textDim}>Use in Codexa: <Text color={inCodexaStatusColor}>{inCodexaStatusText}</Text></Text>
-          </Box>
-          {actions.map((action, index) => (
-            <ActionRow
-              key={action.value}
-              label={action.label}
-              disabledReason={action.disabledReason}
-              isHighlighted={index === actionIndex}
-              width={innerWidth}
-            />
-          ))}
-        </Box>
-      );
-    }
-
-    if (isCompactLayout) {
-      return visibleProviders.map((provider, index) => (
-        <ProviderRowCompact
-          key={provider.id}
-          provider={provider}
-          isHighlighted={(windowResult!.start + index) === providerIndex}
-          widths={compactWidths}
-        />
-      ));
-    }
-
     return visibleProviders.map((provider, index) => (
-      <ProviderRow
+      <ProviderRowSimple
         key={provider.id}
         provider={provider}
         isHighlighted={(windowResult!.start + index) === providerIndex}
-        widths={{ providerNameWidth, modelWidth, contextWidth, toolsWidth, streamWidth, statusWidth }}
+        width={innerWidth}
       />
     ));
-  }, [actionIndex, actions, contextWidth, innerWidth, mode, modelWidth, providerIndex, providerNameWidth, visibleProviders, windowResult?.start, windowResult?.renderMode, streamWidth, toolsWidth, statusWidth, theme, selectedProvider, isCompactLayout, compactWidths]);
+  }, [innerWidth, providerIndex, visibleProviders, windowResult?.start]);
 
-  const showBorder = mode === "actions" ? (availableRows >= actions.length + 7) : (windowResult?.showBorder ?? true);
+  const showBorder = windowResult?.showBorder ?? true;
 
   return (
     <Box flexDirection="column" width={panelWidth} flexShrink={0}>
@@ -583,6 +495,31 @@ function ProviderRowCompact({
       <Text> </Text>
       <Box width={widths.statusWidth} flexShrink={0} overflow="hidden">
         <Text color={statusColor}>{clampVisualText(compactStatus, widths.statusWidth)}</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function ProviderRowSimple({
+  provider,
+  isHighlighted,
+}: {
+  provider: ProviderConfig;
+  isHighlighted: boolean;
+  width: number;
+}) {
+  const theme = useTheme();
+  const markerWidth = 2;
+
+  return (
+    <Box width="100%" overflow="hidden" flexDirection="row" flexShrink={0}>
+      <Box width={markerWidth} flexShrink={0}>
+        <Text color={isHighlighted ? theme.accent : theme.textDim}>{isHighlighted ? ">" : " "}</Text>
+      </Box>
+      <Box flexGrow={1} overflow="hidden">
+        <Text color={isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted}>
+          {provider.displayName}
+        </Text>
       </Box>
     </Box>
   );

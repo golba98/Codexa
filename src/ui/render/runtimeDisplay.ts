@@ -80,7 +80,11 @@ export function buildActiveRuntimeDisplay({
   const rawReasoning = route.providerId === "antigravity"
     ? route.reasoning
     : route.reasoning ?? reasoningLevel;
-  const reasoning = rawReasoning ? formatReasoningLabel(rawReasoning) : null;
+  // Local runtimes own their reasoning behavior; Codexa cannot adjust it.
+  // Do not present the global fallback as if it were an active Local setting.
+  const reasoning = route.providerId !== "local" && rawReasoning
+    ? formatReasoningLabel(rawReasoning)
+    : null;
   const modelLabel = getModelLabel(route, modelCapability);
   const validContextMetadata = isContextForRoute(contextMetadata, route) ? contextMetadata : null;
   const contextDisplay = validContextMetadata?.contextLength != null

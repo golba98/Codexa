@@ -161,6 +161,25 @@ test("provider label system recognizes Mistral Vibe CLI", () => {
   assert.equal(display.footerModelDisplay, "Mistral Vibe CLI / mistral-medium-3.5");
 });
 
+test("Local route omits the non-adjustable reasoning suffix", () => {
+  const route: ActiveProviderRoute = {
+    providerId: "local",
+    modelId: "qwen/qwen3.8-27b",
+    backendKind: "local-openai-compatible",
+  };
+  const display = buildActiveRuntimeDisplay({
+    route,
+    reasoningLevel: "low",
+    mode: "full-auto",
+    tokensUsed: 0,
+    contextMetadata: context(route, null),
+  });
+
+  assert.equal(display.modelDisplay, "Local / qwen/qwen3.8-27b");
+  assert.equal(display.footerModelDisplay, "Local / qwen/qwen3.8-27b");
+  assert.doesNotMatch(display.footerModelDisplay, /\(Low\)/);
+});
+
 test("Antigravity route footer reflects reasoning separately from model label", () => {
   const route: ActiveProviderRoute = {
     providerId: "antigravity",

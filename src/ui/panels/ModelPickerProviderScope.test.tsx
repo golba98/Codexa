@@ -399,10 +399,10 @@ test("model picker shows alias-resolved Claude package source and versioned labe
 });
 
 // ---------------------------------------------------------------------------
-// ProviderPicker initialProviderId — lands in actions panel for that provider
+// ProviderPicker initialProviderId — selects that provider in the direct-use list
 // ---------------------------------------------------------------------------
 
-test("ProviderPicker with initialProviderId=anthropic starts in actions mode showing anthropic actions", async () => {
+test("ProviderPicker with initialProviderId=anthropic selects Anthropic in the provider list", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
@@ -453,17 +453,12 @@ test("ProviderPicker with initialProviderId=anthropic starts in actions mode sho
   try {
     await sleep(100);
     const stripped = stripAnsi(output);
-    // Should be in actions mode for Anthropic — shows action items, not the provider list
     assert.ok(
       stripped.includes("Anthropic") || stripped.includes("anthropic"),
       "ProviderPicker should show Anthropic context when initialProviderId=anthropic",
     );
-    // Should NOT be stuck on OpenAI's panel
-    assert.ok(
-      !stripped.includes("Select model") || stripped.includes("Anthropic"),
-      "Actions panel should be scoped to Anthropic",
-    );
-    assert.ok(stripped.includes("Refresh Claude capabilities"), "Anthropic action should refresh Claude capabilities");
+    assert.match(stripped, />\s*Anthropic/);
+    assert.doesNotMatch(stripped, /Refresh Claude capabilities/);
   } finally {
     cleanup();
   }

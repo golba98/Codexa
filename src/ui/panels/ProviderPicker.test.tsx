@@ -213,7 +213,7 @@ test("provider picker renders compact aligned provider rows", async () => {
     const providerNames = visibleProviderNames(buildProviderRegistry({ activeModel: "gpt-5.4" }));
 
     assert.match(frame, /Providers/);
-    assert.match(frame, /Enter select \| U use \| S default \| Esc close/);
+    assert.match(frame, /Enter use · Esc close/);
     for (const providerName of providerNames) {
       assert.match(frame, new RegExp(providerName));
     }
@@ -222,7 +222,7 @@ test("provider picker renders compact aligned provider rows", async () => {
     assert.doesNotMatch(frame, /Context/);
     assert.doesNotMatch(frame, /Tool/);
     assert.doesNotMatch(frame, /Strm/);
-    assert.match(frame, /Off/);
+    assert.doesNotMatch(frame, /Ready|Active|Off|Config/);
     assert.doesNotMatch(frame, /0\/unknown/);
   } finally {
     await harness.cleanup();
@@ -252,7 +252,7 @@ test("provider picker stays readable in a cramped terminal layout", async () => 
     assert.doesNotMatch(output, /Google/);
     assert.match(output, /Local/);
     assert.match(output, /Antigra/);
-    assert.match(output, /Off/);
+    assert.doesNotMatch(output, /Ready|Active|Off|Config/);
     assert.doesNotMatch(output, /undefined/);
   } finally {
     await harness.cleanup();
@@ -301,7 +301,7 @@ test("provider picker supports setting default with S", async () => {
   }
 });
 
-test("provider picker opens action menu and selects launch", async () => {
+test("provider picker Enter uses the selected provider directly in Codexa", async () => {
   const harness = createInkHarness(<ProviderPickerHarness />);
 
   try {
@@ -310,19 +310,8 @@ test("provider picker opens action menu and selects launch", async () => {
     await sleep(40);
     harness.stdin.write("\r");
     await sleep(40);
-    assert.match(harness.getOutput(), /Provider action: Anthropic/);
-    assert.match(harness.getOutput(), /Use in Codexa/);
-    assert.match(harness.getOutput(), /Launch external CLI/);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\r");
-    await sleep(80);
-
-    assert.match(harness.getOutput(), /action:anthropic:launch/);
+    assert.match(harness.getOutput(), /action:anthropic:use-in-codexa/);
+    assert.doesNotMatch(harness.getOutput(), /Provider action|Launch external CLI/);
   } finally {
     await harness.cleanup();
   }
@@ -334,8 +323,6 @@ test("provider picker reports Anthropic in-Codexa route actions without launchin
   try {
     await sleep(80);
     harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\r");
     await sleep(40);
     harness.stdin.write("\r");
     await sleep(80);
@@ -357,18 +344,14 @@ test("provider picker reports Mistral Vibe in-Codexa route actions without launc
     await sleep(40);
     harness.stdin.write("\r");
     await sleep(40);
-    assert.match(harness.getOutput(), /Provider action: Mistral Vibe CLI/);
-    assert.doesNotMatch(harness.getOutput(), /Use in Codexa unavailable/);
-    harness.stdin.write("\r");
-    await sleep(80);
-
     assert.match(harness.getOutput(), /action:mistral:use-in-codexa/);
+    assert.doesNotMatch(harness.getOutput(), /Provider action/);
   } finally {
     await harness.cleanup();
   }
 });
 
-test("provider picker exposes Local diagnostics action", async () => {
+test("provider picker Enter uses Local directly in Codexa", async () => {
   const harness = createInkHarness(<ProviderPickerHarness />);
   const localIndex = buildProviderRegistry({ activeModel: "gpt-5.4" })
     .findIndex((provider) => provider.id === "local");
@@ -380,19 +363,10 @@ test("provider picker exposes Local diagnostics action", async () => {
       await sleep(40);
     }
     harness.stdin.write("\r");
-    await sleep(40);
-    assert.match(harness.getOutput(), /Provider action: Local/);
-    assert.match(harness.getOutput(), /Run Local diagnostics/);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\u001b[B");
-    await sleep(40);
-    harness.stdin.write("\r");
     await sleep(80);
 
-    assert.match(harness.getOutput(), /action:local:run-diagnostics/);
+    assert.match(harness.getOutput(), /action:local:use-in-codexa/);
+    assert.doesNotMatch(harness.getOutput(), /Provider action|diagnostics/);
   } finally {
     await harness.cleanup();
   }
@@ -459,7 +433,7 @@ function buildMockProvider(override: Partial<ProviderConfig>): ProviderConfig {
   };
 }
 
-test("provider picker table rendering - normal width", async () => {
+test("provider picker renders provider names only at normal width", async () => {
   const providers = [
     buildMockProvider({ id: "openai", displayName: "OpenAI", currentModel: "gpt-5.4-mini" }),
     buildMockProvider({ id: "anthropic", displayName: "Anthropic", currentModel: "claude-3-opus" }),
@@ -478,18 +452,16 @@ test("provider picker table rendering - normal width", async () => {
   try {
     await sleep(80);
     const output = harness.getOutput();
-    assert.match(output, /Provider/);
-    assert.match(output, /Model/);
-    assert.match(output, /Status/);
+    assert.match(output, /Providers/);
+    assert.doesNotMatch(output, /Status|Context|Tool|Strm/);
     assert.match(output, /OpenAI/);
-    assert.match(output, /gpt-5.4-mini/);
-    assert.doesNotMatch(output, /OpenAIer Model/);
+    assert.doesNotMatch(output, /gpt-5\.4-mini|claude-3-opus/);
   } finally {
     await harness.cleanup();
   }
 });
 
-test("provider picker table rendering - narrow width (dropped columns)", async () => {
+test("provider picker keeps provider-only rows at narrow widths", async () => {
   const providers = [
     buildMockProvider({ id: "openai", displayName: "OpenAI" }),
   ];
@@ -509,7 +481,9 @@ test("provider picker table rendering - narrow width (dropped columns)", async (
   try {
     await sleep(80);
     const output60 = harness60.getOutput();
-    assert.match(output60, /Context/);
+    assert.match(output60, /OpenAI/);
+    assert.doesNotMatch(output60, /gpt-5\.4-mini/);
+    assert.doesNotMatch(output60, /Context/);
     assert.doesNotMatch(output60, /Tool/);
     assert.doesNotMatch(output60, /Strm/);
   } finally {
@@ -540,7 +514,7 @@ test("provider picker table rendering - narrow width (dropped columns)", async (
   }
 });
 
-test("provider picker table rendering - maximized width uses more than 100 columns and caps model gaps", async () => {
+test("provider picker at maximized width still omits model names", async () => {
   const providers = [
     buildMockProvider({ id: "openai", displayName: "OpenAI", currentModel: "gpt-5.4-mini" }),
   ];
@@ -561,13 +535,14 @@ test("provider picker table rendering - maximized width uses more than 100 colum
     const borderLine = output.split("\n").find(line => line.includes("╭"));
     assert(borderLine, "Should find top border line");
     assert(borderLine.length > 100, `Border line length should be > 100, got ${borderLine.length}`);
-    assert.doesNotMatch(output, /gpt-5\.4-mini {65,}/);
+    assert.match(output, /OpenAI/);
+    assert.doesNotMatch(output, /gpt-5\.4-mini/);
   } finally {
     await harness.cleanup();
   }
 });
 
-test("provider picker table rendering - selected/default/current markers stay separate", async () => {
+test("provider picker renders only the selection marker", async () => {
   const providers = [
     buildMockProvider({
       id: "openai",
@@ -590,7 +565,8 @@ test("provider picker table rendering - selected/default/current markers stay se
   try {
     await sleep(80);
     const output = harness.getOutput();
-    assert.match(output, /> \* @OpenAI/);
+    assert.match(output, /> OpenAI/);
+    assert.doesNotMatch(output, /\*|@OpenAI/);
   } finally {
     await harness.cleanup();
   }
@@ -622,7 +598,7 @@ test("getTableLayout calculations for wide/maximized terminals", () => {
   assert(cols.trailingPadding >= 0, `Should have trailingPadding >= 0, got ${cols.trailingPadding}`);
 });
 
-test("provider picker table rendering - wide layout status column is not huge and model is wide", async () => {
+test("provider picker wide layout still renders only provider names", async () => {
   const providers = [
     buildMockProvider({ id: "openai", displayName: "OpenAI", currentModel: "gpt-5.4-mini" }),
   ];
@@ -646,14 +622,9 @@ test("provider picker table rendering - wide layout status column is not huge an
     assert(borderLine, "Should find top border line");
     assert(borderLine.length > 100, `Border line length should be > 100, got ${borderLine.length}`);
 
-    // Data line containing OpenAI and gpt-5.4-mini
-    const dataLine = output.split("\n").find(line => line.includes("OpenAI") && line.includes("gpt-5.4-mini"));
+    const dataLine = output.split("\n").find(line => line.includes("OpenAI"));
     assert(dataLine, "Should find data line");
-
-    // Status column should not absorb huge whitespace
-    // Status text is "Enabled" which has 7 chars. Capped status <= 22 means <= 15 trailing spaces.
-    // So there should not be 30 or more spaces after "Enabled".
-    assert.doesNotMatch(dataLine, /Enabled {30,}/);
+    assert.doesNotMatch(dataLine, /gpt-5\.4-mini|Enabled/);
   } finally {
     await harness.cleanup();
   }
@@ -987,7 +958,7 @@ test("sliced provider order is contiguous and does not skip Anthropic", async ()
   }
 });
 
-test("active provider is shown in a Current line when outside the visible slice", async () => {
+test("provider picker omits extra current-provider metadata outside the visible slice", async () => {
   const providers = [
     buildMockProvider({ id: "openai", displayName: "ProviderOne" }),
     buildMockProvider({ id: "anthropic", displayName: "ProviderTwo" }),
@@ -1014,7 +985,7 @@ test("active provider is shown in a Current line when outside the visible slice"
   try {
     await sleep(80);
     const output = harness.getOutput();
-    assert.match(output, /Current: ProviderTen \/ gpt-5.4-mini/);
+    assert.doesNotMatch(output, /Current:/);
   } finally {
     await harness.cleanup();
   }

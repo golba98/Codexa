@@ -54,7 +54,8 @@ function getInitialCursor(models: readonly CodexModelCapability[], currentModel:
     const index = models.findIndex((m) => m.id === familyId);
     if (index >= 0) return index;
   }
-  const index = models.findIndex((model) => model.model === currentModel || model.id === currentModel);
+  const index = models.findIndex((model) =>
+    model.model === currentModel || model.id === currentModel || getVariantModelIds(model).includes(currentModel));
   return Math.max(0, index);
 }
 
@@ -64,6 +65,83 @@ function getModelName(model: CodexModelCapability): string {
 
 function getReasoningLevels(model: CodexModelCapability | undefined): readonly ReasoningEffortCapability[] {
   return model?.supportedReasoningLevels ?? [];
+}
+
+const GEMINI_EFFORT_IDS = new Set(["low", "medium", "high", "xhigh", "max"]);
+
+function collapseGeminiEffortVariants(models: readonly CodexModelCapability[]): readonly CodexModelCapability[] {
+  const groups = new Map<string, CodexModelCapability>();
+  const variantIds = new Map<string, string[]>();
+  const variantLevels = new Map<string, Set<string>>();
+
+  for (const model of models) {
+    const match = model.model.match(/^(.*?)-(low|medium|high|xhigh|max)$/i);
+    if (!match || !GEMINI_EFFORT_IDS.has(match[2]!.toLowerCase())) {
+      groups.set(model.id, model);
+      continue;
+    }
+
+    const familyId = match[1]!;
+    const existing = groups.get(familyId);
+    const level = match[2]!.toLowerCase();
+    const ids = variantIds.get(familyId) ?? [];
+    ids.push(model.model);
+    variantIds.set(familyId, ids);
+    const levels = variantLevels.get(familyId) ?? new Set<string>();
+    levels.add(level);
+    variantLevels.set(familyId, levels);
+
+    const label = model.label.replace(/\s*\((?:low|medium|high|xhigh|max)\)\s*$/i, "");
+    if (!existing) {
+      groups.set(familyId, {
+        ...model,
+        id: familyId,
+        model: familyId,
+        label,
+        description: `Select the intelligence level for ${label}.`,
+        defaultReasoningLevel: level,
+        supportedReasoningLevels: [{ id: level, label: formatReasoningLabel(level), description: null }],
+        reasoningLevelCount: 1,
+        raw: { ...(model.raw && typeof model.raw === "object" ? model.raw : {}), variantIds: ids },
+      });
+    } else {
+      const orderedLevels = ["low", "medium", "high", "xhigh", "max"].filter((id) => levels.has(id));
+      groups.set(familyId, {
+        ...existing,
+        supportedReasoningLevels: orderedLevels.map((id) => ({ id, label: formatReasoningLabel(id), description: null })),
+        reasoningLevelCount: orderedLevels.length,
+        raw: { ...(existing.raw && typeof existing.raw === "object" ? existing.raw : {}), variantIds: ids },
+      });
+    }
+  }
+
+  return [...groups.values()].map((model) => {
+    const ids = variantIds.get(model.model);
+    if (!ids) return model;
+    return {
+      ...model,
+      raw: { ...(model.raw && typeof model.raw === "object" ? model.raw : {}), variantIds: ids },
+    };
+  });
+}
+
+function getVariantModelIds(model: CodexModelCapability): readonly string[] {
+  const raw = model.raw;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  const ids = (raw as { variantIds?: unknown }).variantIds;
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
+}
+
+function getVariantReasoning(model: CodexModelCapability | undefined, modelId: string): string | null {
+  if (!model) return null;
+  const variant = getVariantModelIds(model).find((id) => id === modelId);
+  const match = variant?.match(/-(low|medium|high|xhigh|max)$/i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function resolveVariantModelId(model: CodexModelCapability, reasoning: string): string {
+  const variantIds = getVariantModelIds(model);
+  return variantIds.find((id) => id.endsWith(`-${reasoning.toLowerCase()}`)) ?? model.model;
 }
 
 function getModelSourceMarker(models: readonly CodexModelCapability[], activeProviderLabel: string): string | null {
@@ -158,9 +236,11 @@ export function ModelPickerScreen({
 }: ModelPickerScreenProps) {
   const theme = useTheme();
   const isGoogle = activeProviderLabel === "Google";
+  const isAntigravity = activeProviderLabel.toLowerCase().includes("antigravity");
 
   const models = useMemo(() => {
-    if (!isGoogle) return baseModels;
+    const collapsedModels = isAntigravity ? collapseGeminiEffortVariants(baseModels) : baseModels;
+    if (!isGoogle) return collapsedModels;
 
     const autoModels: CodexModelCapability[] = [
       {
@@ -193,20 +273,22 @@ export function ModelPickerScreen({
       },
     ];
 
-    const manualModels = baseModels.map((m) => ({
+    const manualModels = collapsedModels.map((m) => ({
       ...m,
       label: `Manual: ${m.label}`,
       raw: { kind: "manual", modelId: m.model },
     }));
 
     return [...autoModels, ...manualModels];
-  }, [baseModels, isGoogle]);
+  }, [baseModels, isAntigravity, isGoogle]);
 
   const { isFocused } = useFocus({ id: FOCUS_IDS.modelPicker, autoFocus: true });
-  const [draftSelectedModel, setDraftSelectedModel] = useState(() => getInitialCursor(models, currentModel, currentGeminiSelection));
-  const [draftReasoning, setDraftReasoning] = useState(() =>
-    normalizeDraftReasoning(models[getInitialCursor(models, currentModel, currentGeminiSelection)], currentReasoning)
-  );
+  const initialModelIndex = getInitialCursor(models, currentModel, currentGeminiSelection);
+  const [draftSelectedModel, setDraftSelectedModel] = useState(initialModelIndex);
+  const [draftReasoning, setDraftReasoning] = useState(() => normalizeDraftReasoning(
+    models[initialModelIndex],
+    getVariantReasoning(models[initialModelIndex], currentModel) ?? currentReasoning,
+  ));
   const [scrollOffset, setScrollOffset] = useState(0);
 
   const selectedModel = models[draftSelectedModel];
@@ -236,10 +318,13 @@ export function ModelPickerScreen({
     setDraftSelectedModel((current) => {
       const nextCursor = Math.min(Math.max(0, current), models.length - 1);
       const nextModel = models[nextCursor];
-      setDraftReasoning((reasoning) => normalizeDraftReasoning(nextModel, reasoning));
+      setDraftReasoning((reasoning) => normalizeDraftReasoning(
+        nextModel,
+        getVariantReasoning(nextModel, currentModel) ?? reasoning,
+      ));
       return nextCursor;
     });
-  }, [currentReasoning, models]);
+  }, [currentModel, currentReasoning, models]);
 
   const moveModel = (direction: -1 | 1) => {
     setDraftSelectedModel((current) => {
@@ -298,7 +383,8 @@ export function ModelPickerScreen({
           return;
         }
         const geminiSelection = isGoogle ? (model.raw as GeminiModelSelection) : undefined;
-        onSelect(model.model, normalizeDraftReasoning(model, draftReasoning), geminiSelection);
+        const normalizedReasoning = normalizeDraftReasoning(model, draftReasoning);
+        onSelect(resolveVariantModelId(model, normalizedReasoning), normalizedReasoning, geminiSelection);
         return;
       }
 
@@ -376,18 +462,16 @@ export function ModelPickerScreen({
   const availableRows = resolvedPanelLayout.availableRows;
   const innerWidth = Math.max(1, Math.min(resolvedPanelLayout.availableCols, panelWidth - 4));
   const help = resolvedPanelLayout.mode === "compact"
-    ? "↑↓ · ←→ · Enter · Esc"
+    ? "↑↓ model · ←→ intelligence · Enter · Esc"
     : "↑↓ model · ←→ reasoning · Enter select · Esc cancel";
   const aOrAn = /^[aeiou]/i.test(activeProviderLabel) ? "an" : "a";
   const routeText = routeTextOverride ?? `Choose ${aOrAn} ${activeProviderLabel} model to use inside Codexa.`;
-  const reasoningText = reasoningUnavailable
-    ? (models.length === 0 ? "Reasoning: current/default" : "Reasoning: unavailable")
-    : `Reasoning: ${formatReasoningLabel(draftReasoning)}`;
   const sourceMarker = getModelSourceMarker(models, activeProviderLabel);
 
   const appLayoutBudget = useAppLayoutBudget();
   
-  const activeModelIndex = models.findIndex((model) => model.model === currentModel || model.id === currentModel);
+  const activeModelIndex = models.findIndex((model) =>
+    model.model === currentModel || model.id === currentModel || getVariantModelIds(model).includes(currentModel));
   const hasSourceMarker = !!sourceMarker;
 
   // ─── Layout & Windowing ───────────────────────────────────────────────────
@@ -397,7 +481,7 @@ export function ModelPickerScreen({
 
     // availableRows is already the shell's border-safe panel body. Only rows
     // rendered inside that body belong in this calculation.
-    const fullChrome = 3 + (hasSourceMarker ? 1 : 0);
+    const fullChrome = 5 + (hasSourceMarker ? 1 : 0);
     if (allowFull && models.length + fullChrome <= availableRows) {
       return {
         ...calculateResponsivePickerViewport({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: fullChrome, scrollOffset }),
@@ -410,7 +494,7 @@ export function ModelPickerScreen({
     }
 
     // Try fitting without source marker
-    if (allowFull && models.length + 3 <= availableRows) {
+    if (allowFull && models.length + 5 <= availableRows) {
       return {
         ...calculateResponsivePickerViewport({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 3, scrollOffset }),
         mode: "full" as const,
@@ -421,8 +505,8 @@ export function ModelPickerScreen({
       };
     }
 
-    // Try compact with reasoning
-    if (models.length + 2 <= availableRows) {
+    // Try compact with the dedicated intelligence control
+    if (models.length + 4 <= availableRows) {
       return {
         ...calculateResponsivePickerViewport({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 2, scrollOffset }),
         mode: "compact" as const,
@@ -434,7 +518,7 @@ export function ModelPickerScreen({
     }
 
     // Try minimal compact
-    if (models.length + 1 <= availableRows) {
+    if (models.length + 2 <= availableRows) {
       return {
         ...calculateResponsivePickerViewport({ itemCount: models.length, selectedIndex: draftSelectedModel, availableRows, chromeRows: 1, scrollOffset }),
         mode: "compact" as const,
@@ -493,6 +577,7 @@ export function ModelPickerScreen({
     innerWidth,
   );
 
+
   return (
     <Box flexDirection="column" width={panelWidth}>
       <Box
@@ -516,7 +601,14 @@ export function ModelPickerScreen({
         {windowResult.showReasoningText && (
           <Box width="100%" overflow="hidden">
             <Text color={reasoningUnavailable ? theme.textDim : theme.textMuted}>
-              {clampVisualText(reasoningText, innerWidth)}
+              {clampVisualText(
+                models.length === 0
+                  ? "Reasoning: current/default"
+                  : reasoningUnavailable
+                  ? (isAntigravity ? "Uses this model's native AGY configuration" : "Reasoning: unavailable · Intelligence: unavailable")
+                  : `Reasoning: ${formatReasoningLabel(draftReasoning)} · Intelligence: ${formatReasoningLabel(draftReasoning)}`,
+                innerWidth,
+              )}
             </Text>
           </Box>
         )}
@@ -558,12 +650,20 @@ export function ModelPickerScreen({
                   currentModel={currentModel}
                   currentGeminiSelection={currentGeminiSelection}
                   isHighlighted={actualIndex === draftSelectedModel}
-                  selectedReasoning={actualIndex === draftSelectedModel ? draftReasoning : normalizeDraftReasoning(model, currentReasoning)}
                 />
               );
             })
           )}
         </Box>
+
+        {models.length > 0 && windowResult.mode !== "windowed" && (!isAntigravity || !reasoningUnavailable) && (
+          <IntelligenceSlider
+            levels={selectedReasoningLevels}
+            selected={draftReasoning}
+            width={innerWidth}
+            unavailable={reasoningUnavailable}
+          />
+        )}
 
       </Box>
     </Box>
@@ -578,14 +678,12 @@ function ModelPickerRow({
   currentModel,
   currentGeminiSelection,
   isHighlighted,
-  selectedReasoning,
 }: {
   model: CodexModelCapability;
   width: number;
   currentModel: string;
   currentGeminiSelection?: GeminiModelSelection;
   isHighlighted: boolean;
-  selectedReasoning: string;
 }) {
   const theme = useTheme();
 
@@ -595,18 +693,13 @@ function ModelPickerRow({
   } else if (currentGeminiSelection?.kind === "manual") {
     isCurrent = (model.raw as GeminiModelSelection)?.kind === "manual" && (model.raw as any).modelId === currentGeminiSelection.modelId;
   } else {
-    isCurrent = model.model === currentModel || model.id === currentModel;
+    isCurrent = model.model === currentModel || model.id === currentModel || getVariantModelIds(model).includes(currentModel);
   }
 
-  const levels = getReasoningLevels(model);
   const markerWidth = 2;
   const checkWidth = 2;
-  const reasoningPill = levels.length > 0 ? `[${formatReasoningLabel(selectedReasoning)}]` : "";
-  const pillWidth = isHighlighted && width >= 48 ? Math.min(reasoningPill.length, 14) : 0;
-  const gapWidth = pillWidth > 0 ? 2 : 0;
-  const nameWidth = Math.max(8, width - markerWidth - checkWidth - pillWidth - gapWidth);
-  const name = clampVisualText(getModelName(model), nameWidth);
-  const pillText = pillWidth > 0 ? clampVisualText(reasoningPill, pillWidth) : "";
+  const nameWidth = Math.max(8, width - markerWidth - checkWidth);
+  const name = clampVisualText(isHighlighted ? getModelName(model) : getCompactModelName(model), nameWidth);
 
   return (
     <Box width="100%" overflow="hidden">
@@ -621,18 +714,48 @@ function ModelPickerRow({
       <Box width={checkWidth} flexShrink={0}>
         <Text color={theme.textDim}>{isCurrent ? "✓" : " "}</Text>
       </Box>
-      {pillWidth > 0 && (
-        <>
-          <Box width={gapWidth} flexShrink={0}>
-            <Text>  </Text>
-          </Box>
-          <Box width={pillWidth} flexShrink={0} overflow="hidden">
-            <Text color={theme.accent} bold wrap="truncate">
-              {pillText}
-            </Text>
-          </Box>
-        </>
-      )}
+    </Box>
+  );
+}
+
+function getCompactModelName(model: CodexModelCapability): string {
+  return model.label || model.model;
+}
+
+function IntelligenceSlider({
+  levels,
+  selected,
+  width,
+  unavailable,
+}: {
+  levels: readonly ReasoningEffortCapability[];
+  selected: string;
+  width: number;
+  unavailable: boolean;
+}) {
+  const theme = useTheme();
+  if (unavailable) {
+    return (
+      <Box marginTop={1} width="100%" overflow="hidden">
+        <Text color={theme.textDim}>Intelligence  unavailable for this model</Text>
+      </Box>
+    );
+  }
+
+  const selectedIndex = Math.max(0, levels.findIndex((level) => level.id === selected));
+  const trackWidth = Math.max(5, Math.min(24, width - 26));
+  const thumbPosition = levels.length <= 1
+    ? 0
+    : Math.round((selectedIndex / (levels.length - 1)) * (trackWidth - 1));
+  const track = Array.from({ length: trackWidth }, (_, index) => index === thumbPosition ? "●" : "─").join("");
+  const low = formatReasoningLabel(levels[0]?.id ?? "low");
+  const high = formatReasoningLabel(levels[levels.length - 1]?.id ?? "high");
+  const value = formatReasoningLabel(levels[selectedIndex]?.id ?? selected);
+  const sliderText = `Intelligence  ${low} ${track} ${high}  ${value}`;
+
+  return (
+    <Box marginTop={1} width="100%" overflow="hidden">
+      <Text color={theme.textMuted} wrap="truncate">{clampVisualText(sliderText, width)}</Text>
     </Box>
   );
 }

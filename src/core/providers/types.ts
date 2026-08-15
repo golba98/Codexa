@@ -9,6 +9,15 @@ export interface BackendProgressUpdate {
   text: string;
 }
 
+export type ToolApprovalDecision = "allow-once" | "allow-for-run" | "deny";
+
+export interface ToolApprovalRequest {
+  tool: string;
+  signature: string;
+  command?: string;
+  paths: string[];
+}
+
 export type BackendAuthState = "delegated" | "api-key-required" | "coming-soon";
 
 export interface BackendRunHandlers {
@@ -22,6 +31,8 @@ export interface BackendRunHandlers {
   onFinalAnswerObserved?: (response: string) => void;
   /** Called when the backend starts or finishes a tool/shell action during a run. */
   onToolActivity?: (activity: RunToolActivity) => void;
+  /** Requests consent before a local model performs a mutating action. */
+  onToolApproval?: (request: ToolApprovalRequest) => Promise<ToolApprovalDecision>;
   /** Called around backend child-process lifecycle boundaries. */
   onProcessLifecycle?: (event: "before-spawn" | "spawned" | "exit" | "error" | "cleanup") => void;
   /** Lightweight hooks used only by headless benchmark diagnostics. */
@@ -53,6 +64,7 @@ export interface BackendProvider {
       workspaceRoot: string;
       projectInstructions?: ProjectInstructions | null;
       promptPolicy?: "raw" | "wrapped";
+      runIntent?: "normal" | "plan" | "approved-execution";
     },
     handlers: BackendRunHandlers,
   ) => () => void;

@@ -264,6 +264,7 @@ function PasteComposerHarness() {
   const [value, setValue] = React.useState("");
   const [cursor, setCursor] = React.useState(0);
   const [submitCount, setSubmitCount] = React.useState(0);
+  const [registeredChars, setRegisteredChars] = React.useState(0);
 
   return (
     <ThemeProvider theme="purple">
@@ -277,6 +278,7 @@ function PasteComposerHarness() {
             setValue(nextValue);
             setCursor(nextCursor);
           }}
+          onRegisterPaste={(_label, content) => setRegisteredChars(Array.from(content).length)}
           onSubmit={() => {
             setSubmitCount((count) => count + 1);
           }}
@@ -297,6 +299,7 @@ function PasteComposerHarness() {
         />
         <Text>{`submit:${submitCount}`}</Text>
         <Text>{`value:${JSON.stringify(value)}`}</Text>
+        <Text>{`registered:${registeredChars}`}</Text>
       </Box>
     </ThemeProvider>
   );
@@ -721,6 +724,45 @@ test("bracketed multi-line paste stays in the composer and preserves layout", as
     assert.match(output, /value:"alpha\\nbeta"/);
     assert.match(output, /alpha/);
     assert.match(output, /beta/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("large bracketed paste renders as a compact content marker", async () => {
+  const harness = createInkHarness(<PasteComposerHarness />);
+  try {
+    await sleep();
+    harness.stdin.write(`\u001b[200~${"x".repeat(1_000)}\u001b[201~`);
+    await sleep(100);
+    const output = harness.getOutput();
+    assert.match(output, /\[Pasted Content 1,000 chars\]/);
+    assert.match(output, /registered:1000/);
+    assert.doesNotMatch(output, /x{100}/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("multi-chunk 8264-character paste is coalesced into one compact marker", async () => {
+  const harness = createInkHarness(<PasteComposerHarness />);
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[200~");
+    const chunks = [
+      "x".repeat(2_048),
+      "x".repeat(2_048),
+      "x".repeat(2_048),
+      "x".repeat(2_120),
+    ];
+    for (const chunk of chunks) harness.stdin.write(chunk);
+    harness.stdin.write("\u001b[201~");
+    await sleep(120);
+
+    const output = harness.getOutput();
+    assert.match(output, /\[Pasted Content 8,264 chars\]/);
+    assert.match(output, /registered:8264/);
+    assert.doesNotMatch(output, /x{100}/);
   } finally {
     await harness.cleanup();
   }

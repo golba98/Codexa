@@ -86,6 +86,7 @@ export interface ProviderChatRequest {
   workspaceRoot: string;
   projectInstructions?: ProjectInstructions | null;
   localConfig?: ProviderWorkspaceOverride | null;
+  runIntent?: "normal" | "plan" | "approved-execution";
 }
 
 export interface ProviderChatResponse {

@@ -5,6 +5,7 @@ export const FOCUS_IDS = {
   planReviewPanel: "plan-review-panel",
   backendPicker: "backend-picker",
   providerPicker: "provider-picker",
+  providerSetup: "provider-setup",
   modelPicker: "model-picker",
   modePicker: "mode-picker",
   reasoningPicker: "reasoning-picker",
@@ -18,6 +19,7 @@ export const FOCUS_IDS = {
   permissionsAddWritableRoot: "permissions-add-writable-root",
   permissionsRemoveWritableRoot: "permissions-remove-writable-root",
   importConfirmationPanel: "import-confirmation",
+  toolApprovalPanel: "tool-approval",
   updatePrompt: "update-prompt",
 } as const;
 
@@ -29,6 +31,8 @@ export function getFocusTargetForScreen(screen: Screen): FocusTargetId {
       return FOCUS_IDS.backendPicker;
     case "provider-picker":
       return FOCUS_IDS.providerPicker;
+    case "provider-setup":
+      return FOCUS_IDS.providerSetup;
     case "model-picker":
       return FOCUS_IDS.modelPicker;
     case "mode-picker":
@@ -55,6 +59,8 @@ export function getFocusTargetForScreen(screen: Screen): FocusTargetId {
       return FOCUS_IDS.permissionsRemoveWritableRoot;
     case "import-confirmation":
       return FOCUS_IDS.importConfirmationPanel;
+    case "tool-approval":
+      return FOCUS_IDS.toolApprovalPanel;
     case "update-prompt":
       return FOCUS_IDS.updatePrompt;
     case "main":
