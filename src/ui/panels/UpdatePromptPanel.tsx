@@ -57,11 +57,11 @@ export function UpdatePromptPanel({
       return;
     }
     if (phase === "menu") {
-      if (key.upArrow || input === "k") {
+      if (key.leftArrow || input === "h") {
         setSelectedIndex((i) => Math.max(0, i - 1));
         return;
       }
-      if (key.downArrow || input === "j") {
+      if (key.rightArrow || input === "l") {
         setSelectedIndex((i) => Math.min(MENU_ITEMS.length - 1, i + 1));
         return;
       }
@@ -120,7 +120,7 @@ export function UpdatePromptPanel({
   }, [phase, packageManager, runUpdate]);
 
   const footerText = phase === "menu"
-    ? "Esc to close · Enter to confirm"
+    ? "←/→ to choose · Enter to confirm · Esc to close"
     : "Esc to close";
 
   return (

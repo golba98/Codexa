@@ -17,6 +17,9 @@ the composer footer without opening a mode panel or adding notices to chat.
 Planning is read-only, and local writes, patches, and shell commands obey the
 configured approval policy with an interactive permission prompt.
 
+The update prompt is easier to navigate: use Left and Right to move between
+the horizontal Update now and Later actions, then press Enter to confirm.
+
 ## v1.0.9 — 2026-08-14
 
 This was the previous patch release.

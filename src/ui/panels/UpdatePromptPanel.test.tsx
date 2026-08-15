@@ -103,6 +103,7 @@ test("prompt shows exact versions, actions, and the detected package manager com
   assert.match(harness.output(), /Update available: Codexa 1\.0\.5/);
   assert.match(harness.output(), /Current version: 1\.0\.4/);
   assert.match(harness.output(), /\[ Update now \]\s+\[ Later \]/);
+  assert.match(harness.output(), /←\/→ to choose · Enter to confirm · Esc to close/);
   assert.match(harness.output(), /bun add -g @golba98\/codexa@latest/);
   assert.doesNotMatch(harness.output(), /npm install -g/);
 });
@@ -168,14 +169,14 @@ test("non-permission failure surfaces the runner's user message", async () => {
   assert.match(harness.output(), /network request failed/);
 });
 
-test("Later and Esc both invoke onSkip without running an update", async () => {
+test("Right arrow selects Later and Esc also skips without running an update", async () => {
   const runUpdate: RunUpdateFn = () => {
     throw new Error("runner must not be invoked for skip");
   };
 
   const skipHarness = renderPanel({ runUpdate });
   await sleep();
-  skipHarness.stdin.write("[B"); // down to "Skip"
+  skipHarness.stdin.write("[C"); // right to "Later"
   await sleep(20);
   skipHarness.stdin.write("\r");
   await sleep(20);
