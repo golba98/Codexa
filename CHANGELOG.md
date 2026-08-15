@@ -6,6 +6,19 @@ No changes yet.
 
 ---
 
+## [1.0.11] — 2026-08-15 — Update Menu Navigation
+
+### Changed
+
+- **Update actions follow their visual layout** — the horizontal Update now and Later choices use Left/Right navigation and show the matching keyboard hint.
+- **Startup updates appear before chat input** — Codexa opens a cached update immediately or briefly checks npm before enabling the composer, preventing a delayed prompt from interrupting typing.
+
+### Tests
+
+- Updated update-prompt navigation and startup-render coverage for horizontal selection and pre-composer update checks.
+
+---
+
 ## [1.0.10] — 2026-08-15 — Local Planning and Permission Controls
 
 ### Added
@@ -18,7 +31,6 @@ No changes yet.
 
 - **Large pastes stay compact** — bracketed pastes of 1,000 or more characters render as `[Pasted Content … chars]` while the complete content is retained for the provider.
 - **Outside-file imports explain their scope** — the confirmation panel now provides keyboard-navigable Import once and Cancel actions and makes clear that no folder access is granted.
-- **Update actions follow their visual layout** — the horizontal Update now and Later choices use Left/Right navigation and show the matching keyboard hint.
 
 ### Fixed
 

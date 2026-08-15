@@ -3,6 +3,13 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v1.0.11 — 2026-08-15
+
+This patch makes the update prompt match its horizontal layout. Use Left and
+Right to move between Update now and Later, then press Enter to confirm.
+Update checks now finish before chat input becomes available, so an update
+prompt cannot suddenly interrupt text entered just after Codexa opens.
+
 ## v1.0.10 — 2026-08-15
 
 This is the current patch release.
@@ -16,9 +23,6 @@ workflow. Shift+Tab rotates Plan, Read-only, Auto, and Full Access directly in
 the composer footer without opening a mode panel or adding notices to chat.
 Planning is read-only, and local writes, patches, and shell commands obey the
 configured approval policy with an interactive permission prompt.
-
-The update prompt is easier to navigate: use Left and Right to move between
-the horizontal Update now and Later actions, then press Enter to confirm.
 
 ## v1.0.9 — 2026-08-14
 
