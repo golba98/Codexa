@@ -8,7 +8,7 @@ import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runti
 import { getNextRotatingMode, type AvailableMode, type AvailableModel, type ReasoningLevel } from "../../config/settings.js";
 import { createFallbackModelCapabilities, getSelectableModelCapabilities } from "../../core/models/codexModelCapabilities.js";
 import { buildProviderRegistry } from "../../core/providerLauncher/registry.js";
-import { BottomComposer } from "../chrome/BottomComposer.js";
+import { BottomComposer, isBacktabSequence } from "../chrome/BottomComposer.js";
 import { getFocusTargetForScreen } from "./focus.js";
 import { ModelPickerScreen } from "../panels/ModelPickerScreen.js";
 import { PlanActionPicker } from "../panels/PlanActionPicker.js";
@@ -41,6 +41,13 @@ class TestInput extends PassThrough {
     return this;
   }
 }
+
+test("recognizes legacy, xterm, Kitty CSI-u, and modifyOtherKeys Shift+Tab", () => {
+  for (const sequence of ["\u001b[Z", "\u001b[1;2Z", "\u001b[9;2u", "\u001b[27;2;9~"]) {
+    assert.equal(isBacktabSequence(sequence), true, JSON.stringify(sequence));
+  }
+  assert.equal(isBacktabSequence("\t"), false);
+});
 
 class TestOutput extends PassThrough {
   readonly isTTY = true;
