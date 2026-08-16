@@ -3,6 +3,11 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v1.0.14 — 2026-08-15
+
+This maintenance release simplifies the repository landing page and refreshes
+the public release documentation. Runtime behavior is unchanged from v1.0.13.
+
 ## v1.0.13 — 2026-08-15
 
 After Codexa installs an update, the success panel now includes a focused
@@ -23,8 +28,6 @@ Right to move between Update now and Later, then press Enter to confirm.
 Update checks now finish before chat input becomes available, so an update
 prompt cannot suddenly interrupt text entered just after Codexa opens.
 ## v1.0.10 — 2026-08-15
-
-This is the current patch release.
 
 Large pastes now stay readable as compact content markers while the full text
 still reaches the model. Outside-file imports have clear, keyboard-navigable
