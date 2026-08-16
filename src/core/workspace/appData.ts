@@ -32,6 +32,10 @@ export function resolveCodexaWorkspaceDataDir(workspaceRoot: string): string {
   return join(resolveCodexaDataDir(), "workspaces", workspaceStorageKey(workspaceRoot));
 }
 
+export function resolveCodexaConversationDir(workspaceRoot: string): string {
+  return join(resolveCodexaWorkspaceDataDir(workspaceRoot), "conversations");
+}
+
 export function resolveCodexaAttachmentDir(workspaceRoot: string, configuredDir: string): string {
   if (isAbsolute(configuredDir)) return configuredDir;
 

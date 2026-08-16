@@ -344,7 +344,7 @@ test("Local provider sends prompt to configured OpenAI-compatible base URL", asy
     assert.equal(calls[1]?.url, "http://lmstudio.test/v1/chat/completions");
     const body = calls[1]?.body as { model?: string; messages?: Array<{ role: string; content: string }>; stream?: boolean };
     assert.equal(body.model, "google/gemma-4-26b-a4b");
-    assert.equal(body.stream, false);
+    assert.equal(body.stream, true);
     assert.deepEqual(body.messages?.map((message) => message.role), ["system", "user"]);
     assert.equal(body.messages?.at(-1)?.content, "hi");
     assert.deepEqual(deltas, ["Hello there"]);
@@ -467,7 +467,7 @@ test("Local request payload uses refreshed LM Studio active loaded model", async
   });
 });
 
-test("Local provider uses non-streaming agent chat completion", async () => {
+test("Local provider requests streaming by default to avoid long-generation header timeouts", async () => {
   await withLocalEnv({}, async () => {
     const streamValues: boolean[] = [];
     const fetchImpl = (async (_input, init) => {
@@ -486,7 +486,37 @@ test("Local provider uses non-streaming agent chat completion", async () => {
     );
 
     assert.equal(text, "Fallback response");
-    assert.deepEqual(streamValues, [false]);
+    assert.deepEqual(streamValues, [true]);
+  });
+});
+
+test("Local provider reconstructs streamed text and OpenAI tool-call arguments", async () => {
+  await withTempWorkspace(async (workspaceRoot) => {
+    let chatCount = 0;
+    const fetchImpl = (async () => {
+      chatCount += 1;
+      const records = chatCount === 1
+        ? [
+          { choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "list_", arguments: "{\"pa" } }] } }] },
+          { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "files", arguments: "th\":\".\"}" } }] } }] },
+        ]
+        : [
+          { choices: [{ delta: { content: "Listed " } }] },
+          { choices: [{ delta: { content: "the workspace." } }] },
+        ];
+      return new Response(`${records.map((record) => `data: ${JSON.stringify(record)}\n\n`).join("")}data: [DONE]\n\n`, {
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }) as typeof fetch;
+
+    const text = await runLocalOpenAiCompatible(
+      buildRequest({ workspaceRoot, localConfig: { baseUrl: "http://local.test/v1" } }),
+      { onResponse: () => undefined, onError: assert.fail },
+      { fetchImpl },
+    );
+
+    assert.equal(text, "Listed the workspace.");
+    assert.equal(chatCount, 2);
   });
 });
 
@@ -812,7 +842,7 @@ test("resetLocalProviderStateForTests clears capability profile cache for test i
       { onResponse: () => undefined, onError: assert.fail },
       { fetchImpl },
     );
-    assert.equal(calls[0], false, "agent loop uses non-streaming completions so tool calls stay hidden");
+    assert.equal(calls[0], true, "unknown capability defaults to streaming for long local generations");
   });
 });
 

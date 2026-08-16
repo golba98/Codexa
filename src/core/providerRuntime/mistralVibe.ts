@@ -10,6 +10,7 @@ import { launchProviderCli, type LaunchProviderCliOptions, type ProviderLaunchRe
 import type { ProviderConfig } from "../providerLauncher/types.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { ProviderChatRequest, ProviderModel, ProviderModelDiscoveryResult, ProviderRouteValidationResult, ProviderRuntime } from "./types.js";
+import { formatConversationHistory } from "../../session/conversation.js";
 
 const VIBE_LOOKUP_TIMEOUT_MS = 5_000;
 const VIBE_RUN_TIMEOUT_MS = 600_000;
@@ -517,6 +518,9 @@ export function runMistralVibe(
       spawnEnv.VIBE_ACTIVE_MODEL = modelId;
     }
 
+    const prompt = !resumeSessionId && request.conversationHistory?.length
+      ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
+      : request.prompt;
     const parser = createVibeStreamParser(
       handlers,
       resumeSessionId ? { startAfterUserPrompt: request.prompt } : undefined,
@@ -529,7 +533,7 @@ export function runMistralVibe(
         cwd: workspaceRoot,
         env: spawnEnv,
         timeoutMs: VIBE_RUN_TIMEOUT_MS,
-        stdinData: request.prompt,
+        stdinData: prompt,
       },
       {
         onStdout: (chunk) => {

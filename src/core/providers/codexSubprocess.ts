@@ -14,6 +14,7 @@ import {
   stripNonPrintableControls,
 } from "./codexTranscript.js";
 import type { BackendProvider } from "./types.js";
+import { formatConversationHistory } from "../../session/conversation.js";
 
 // Detects CLI error messages that indicate --experimental-json is not supported.
 // When this fires the provider retries in legacy transcript mode.
@@ -335,11 +336,15 @@ export const codexSubprocessProvider: BackendProvider = {
           });
 
           const promptPolicy = options.promptPolicy ?? "wrapped";
-          const providerPrompt = promptPolicy === "raw"
+          const history = options.conversationHistory?.length
+            ? `Previous conversation:\n${formatConversationHistory(options.conversationHistory)}\n\n`
+            : "";
+          const baseProviderPrompt = promptPolicy === "raw"
             ? prompt
             : buildCodexPrompt(prompt, options.runtime, undefined, {
                 projectInstructions: options.projectInstructions,
               });
+          const providerPrompt = history ? `${history}${baseProviderPrompt}` : baseProviderPrompt;
           handlers.benchmarkHooks?.onProviderPromptPrepared?.({
             policy: promptPolicy,
             characterCount: providerPrompt.length,

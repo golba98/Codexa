@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
+import os from "node:os";
 import path from "node:path";
 import { useTheme } from "../theme.js";
 
@@ -18,6 +19,15 @@ interface AttachmentImportPanelProps {
   modelSupportsVision: boolean | null;
   onConfirm: () => void;
   onCancel: () => void;
+}
+
+export function compactHomePath(value: string, homeDir = os.homedir()): string {
+  const normalizedValue = value.replace(/\\/g, "/");
+  const normalizedHome = homeDir.replace(/\\/g, "/").replace(/\/$/, "");
+  if (!normalizedHome || normalizedValue === normalizedHome) return normalizedValue;
+  return normalizedValue.startsWith(`${normalizedHome}/`)
+    ? `~/${normalizedValue.slice(normalizedHome.length + 1)}`
+    : normalizedValue;
 }
 
 export function AttachmentImportPanel({
@@ -43,12 +53,14 @@ export function AttachmentImportPanel({
       else onCancel();
       return;
     }
-    if (key.upArrow || key.leftArrow || input === "k") setSelectedIndex(0);
-    if (key.downArrow || key.rightArrow || key.tab || input === "j") setSelectedIndex(1);
+    if (key.leftArrow) setSelectedIndex(0);
+    if (key.rightArrow || key.tab) setSelectedIndex(1);
   }, { isActive: isFocused });
 
   const relativeAttachmentsDir = path.relative(workspaceRoot, attachmentsDir).replace(/\\/g, "/");
-  const displayedAttachmentsDir = relativeAttachmentsDir.startsWith("..") ? attachmentsDir : relativeAttachmentsDir;
+  const displayedAttachmentsDir = relativeAttachmentsDir.startsWith("..")
+    ? compactHomePath(attachmentsDir)
+    : relativeAttachmentsDir;
   const hasImages = files.some((f) => f.isImage);
   const showVisionWarning = hasImages && modelSupportsVision === false;
   const fileLabel = files.length === 1 ? "file" : "files";
@@ -78,8 +90,8 @@ export function AttachmentImportPanel({
         flexDirection="column"
       >
         {files.map((file, i) => (
-          <Box key={i} flexDirection="column" marginBottom={i < files.length - 1 ? 1 : 0}>
-            <Text color={theme.text}>{path.basename(file.srcPath)}</Text>
+          <Box key={i} marginBottom={i < files.length - 1 ? 1 : 0}>
+            <Text color={theme.text}>{path.basename(file.srcPath)} </Text>
             <Text color={theme.textDim}>
               {"→ "}{displayedAttachmentsDir}/{file.destFilename}
             </Text>
@@ -94,10 +106,11 @@ export function AttachmentImportPanel({
           </Box>
         )}
 
-        <Box marginTop={1} flexDirection="column">
+        <Box marginTop={1}>
           <Text color={selectedIndex === 0 ? theme.accent : theme.textMuted} bold={selectedIndex === 0}>
             {selectedIndex === 0 ? "› " : "  "}Import once
           </Text>
+          <Text color={theme.textDim}>  ·  </Text>
           <Text color={selectedIndex === 1 ? theme.accent : theme.textMuted} bold={selectedIndex === 1}>
             {selectedIndex === 1 ? "› " : "  "}Cancel
           </Text>
@@ -110,7 +123,7 @@ export function AttachmentImportPanel({
         </Box>
 
         <Box marginTop={1}>
-          <Text color={theme.textDim}>↑/↓ or j/k to navigate · Enter to select · Esc to cancel</Text>
+          <Text color={theme.textDim}>←/→ to navigate · Enter to select · Esc to cancel</Text>
         </Box>
       </Box>
     </Box>

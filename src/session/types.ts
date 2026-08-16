@@ -9,6 +9,7 @@ import type { RunActivitySummary, RunFileActivity } from "../core/workspace/work
 
 export type Screen =
   | "main"
+  | "resume-picker"
   | "model-picker"
   | "mode-picker"
   | "backend-picker"

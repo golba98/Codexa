@@ -3,7 +3,11 @@ import test from "node:test";
 import React from "react";
 import { PassThrough } from "node:stream";
 import { Box, Text, render } from "ink";
-import { AttachmentImportPanel, type PendingImportFile } from "./AttachmentImportPanel.js";
+import {
+  AttachmentImportPanel,
+  compactHomePath,
+  type PendingImportFile,
+} from "./AttachmentImportPanel.js";
 import { ThemeProvider } from "../theme.js";
 
 class TestInput extends PassThrough {
@@ -85,6 +89,16 @@ const TEST_FILE: PendingImportFile = {
 const ATTACHMENTS_DIR = "C:\\Users\\jorda\\AppData\\Local\\Codexa\\workspaces\\example\\attachments";
 const WORKSPACE_ROOT = "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal";
 
+test("compactHomePath abbreviates attachment paths below the home directory", () => {
+  assert.equal(
+    compactHomePath(
+      "/home/k9-vortex/.local/share/codexa/workspaces/example/attachments",
+      "/home/k9-vortex",
+    ),
+    "~/.local/share/codexa/workspaces/example/attachments",
+  );
+});
+
 interface HarnessState {
   confirmed: number;
   cancelled: number;
@@ -158,7 +172,31 @@ test("AttachmentImportPanel Esc key calls onCancel", async () => {
   }
 });
 
-test("AttachmentImportPanel can navigate to Cancel with arrows", async () => {
+test("AttachmentImportPanel keeps both import actions on one row", async () => {
+  const harness = createInkHarness(<AttachmentImportPanelHarness />);
+  try {
+    await sleep();
+    assert.match(harness.getOutput(), /› Import once\s+·\s+Cancel/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("AttachmentImportPanel navigates horizontally to Cancel", async () => {
+  const harness = createInkHarness(<AttachmentImportPanelHarness />);
+  try {
+    await sleep();
+    harness.stdin.write("\u001b[C");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+    assert.match(harness.getOutput(), /cancelled:1/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("AttachmentImportPanel ignores vertical navigation", async () => {
   const harness = createInkHarness(<AttachmentImportPanelHarness />);
   try {
     await sleep();
@@ -166,7 +204,8 @@ test("AttachmentImportPanel can navigate to Cancel with arrows", async () => {
     await sleep(40);
     harness.stdin.write("\r");
     await sleep(80);
-    assert.match(harness.getOutput(), /cancelled:1/);
+    assert.match(harness.getOutput(), /confirmed:1/);
+    assert.match(harness.getOutput(), /cancelled:0/);
   } finally {
     await harness.cleanup();
   }

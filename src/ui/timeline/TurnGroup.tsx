@@ -33,6 +33,7 @@ import {
 import { normalizeCommand, getFriendlyActionLabel } from "../input/commandNormalize.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
 import { normalizePlanReviewMarkdown } from "../../core/workspace/planStorage.js";
+import { AgentBlock } from "./AgentBlock.js";
 
 export type TurnOpacity = "active" | "recent" | "dim";
 
@@ -591,6 +592,20 @@ export function TurnGroup({
             opacity={opacity}
             verboseMode={verboseMode}
             workspaceRoot={workspaceRoot}
+          />
+        </Box>
+      )}
+
+      {!run && assistant && (
+        <Box marginTop={1}>
+          <AgentBlock
+            cols={cols}
+            turnIndex={turnIndex}
+            assistant={assistant}
+            run={null}
+            streaming={false}
+            dim={opacity === "dim"}
+            runPhase="final"
           />
         </Box>
       )}

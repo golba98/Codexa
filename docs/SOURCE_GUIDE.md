@@ -220,7 +220,7 @@ Each runtime must report truthful availability, validation, models, reasoning, a
 | `src/core/providerRuntime/reasoning.ts` | Normalizes provider reasoning levels and selects valid defaults for discovered models. |
 | `src/core/providerRuntime/registry.test.ts` | Verifies registry behavior and regression contracts in the core/providerRuntime area. |
 | `src/core/providerRuntime/registry.ts` | Registers provider runtimes and resolves discovery, activation validation, migrations, defaults, and active routes. |
-| `src/core/providerRuntime/types.ts` | Defines the multi-provider runtime, route, discovery, model, validation, and chat request contracts. |
+| `src/core/providerRuntime/types.ts` | Defines the multi-provider runtime, route, discovery, model, validation, and chat request contracts, including restored conversation history. |
 
 ### `src/core/providers/` — Low-level backend and Codex subprocess I/O
 
@@ -236,7 +236,7 @@ Preserve the BackendProvider callback contract, structured stream ordering, canc
 | `src/core/providers/codexTranscript.ts` | Parses human/legacy Codex transcript output and filters noise while preserving response and activity ordering. |
 | `src/core/providers/openaiNative.ts` | Declares the placeholder native OpenAI backend record without exposing unsupported execution. |
 | `src/core/providers/registry.ts` | Registers low-level backends, resolves the configured/default backend, and formats backend summaries. |
-| `src/core/providers/types.ts` | Defines BackendProvider, run options, progress updates, callbacks, and benchmark lifecycle hooks. |
+| `src/core/providers/types.ts` | Defines BackendProvider, run options, conversation history, progress updates, callbacks, and benchmark lifecycle hooks. |
 
 ### `src/core/shared/` — Cross-cutting runtime utilities
 
@@ -299,7 +299,9 @@ Normalize paths consistently, keep mutable Codexa state outside projects, honor 
 | File | Purpose |
 | --- | --- |
 | `src/core/workspace/appData.test.ts` | Verifies app Data behavior and regression contracts in the core/workspace area. |
-| `src/core/workspace/appData.ts` | Resolves platform-specific Codexa data, workspace, cache, attachment, and debug paths. |
+| `src/core/workspace/appData.ts` | Resolves platform-specific Codexa data, workspace, conversation, cache, attachment, and debug paths. |
+| `src/core/workspace/conversationStore.test.ts` | Verifies conversation creation, sorting, malformed-record isolation, and atomic persistence. |
+| `src/core/workspace/conversationStore.ts` | Persists workspace-scoped conversation metadata and canonical messages with atomic JSON writes. |
 | `src/core/workspace/launchContext.test.ts` | Verifies launch Context behavior and regression contracts in the core/workspace area. |
 | `src/core/workspace/launchContext.ts` | Describes installed/dev launch context and builds guarded workspace relaunch commands. |
 | `src/core/workspace/planStorage.test.ts` | Verifies plan Storage behavior and regression contracts in the core/workspace area. |
@@ -332,6 +334,8 @@ Reducers are the lifecycle source of truth. Preserve run/turn identity, stream o
 | --- | --- |
 | `src/session/appSession.test.ts` | Verifies app Session behavior and regression contracts in the session area. |
 | `src/session/appSession.ts` | Defines the aggregate session reducer and hook for transcript events, input history, active runs, clear epochs, and UI lifecycle. |
+| `src/session/conversation.test.ts` | Verifies restored timeline events, bounded context selection, and provider history formatting. |
+| `src/session/conversation.ts` | Converts durable dialogue into timeline events and bounded provider request context. |
 | `src/session/chatLifecycle.test.ts` | Verifies chat Lifecycle behavior and regression contracts in the session area. |
 | `src/session/chatLifecycle.ts` | Implements pure lifecycle/event reducers for progress, thinking, tools, response segments, plans, completion, failure, and cancellation. |
 | `src/session/liveRenderScheduler.test.ts` | Verifies live Render Scheduler behavior and regression contracts in the session area. |
@@ -443,6 +447,7 @@ Use shared selection/panel primitives, inject available-row budgets, preserve ke
 | `src/ui/panels/PlanReviewPanel.tsx` | Normalizes and displays a completed plan for review within terminal row limits. |
 | `src/ui/panels/ProviderPicker.test.tsx` | Verifies Provider Picker behavior and regression contracts in the ui/panels area. |
 | `src/ui/panels/ProviderPicker.tsx` | Displays provider availability, current/default route state, models, and provider actions. |
+| `src/ui/panels/ResumePicker.tsx` | Lists workspace conversations by metadata and handles keyboard resume/cancel navigation. |
 | `src/ui/panels/ProviderShortcut.test.tsx` | Verifies Provider Shortcut behavior and regression contracts in the ui/panels area. |
 | `src/ui/panels/ReasoningPicker.tsx` | Selects Codex reasoning effort for the active model. |
 | `src/ui/panels/SelectionPanel.tsx` | Provides the reusable keyboard-driven selection list with visible-window management. |

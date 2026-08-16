@@ -3,6 +3,21 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v1.0.16 — 2026-08-16
+
+Codexa now saves conversations per workspace and lets you reopen them with
+`/resume`. Restored chats keep their user and assistant messages and continue
+with bounded history for the selected provider. The Local file-import panel is
+also more compact: long home paths are shortened, its actions remain visible,
+and Import/Cancel navigation follows the horizontal Left/Right layout.
+
+## v1.0.15 — 2026-08-15
+
+Long responses from Local models such as Qwen now keep their LM Studio
+connection alive while the model reasons. Codexa also reconstructs streamed
+tool calls correctly, while models that explicitly do not support streaming
+continue using the compatible non-streaming path.
+
 ## v1.0.13 — 2026-08-15
 
 After Codexa installs an update, the success panel now includes a focused

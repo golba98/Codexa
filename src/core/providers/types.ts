@@ -2,6 +2,7 @@ import type { AvailableBackend } from "../../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
 import type { ProjectInstructions } from "../workspace/projectInstructions.js";
 import type { RunProgressSource, RunToolActivity } from "../../session/types.js";
+import type { ConversationMessage } from "../workspace/conversationStore.js";
 
 export interface BackendProgressUpdate {
   id: string;
@@ -65,6 +66,7 @@ export interface BackendProvider {
       projectInstructions?: ProjectInstructions | null;
       promptPolicy?: "raw" | "wrapped";
       runIntent?: "normal" | "plan" | "approved-execution";
+      conversationHistory?: readonly ConversationMessage[];
     },
     handlers: BackendRunHandlers,
   ) => () => void;

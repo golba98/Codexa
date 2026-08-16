@@ -47,6 +47,7 @@ import { dumpRenderCounts } from "../core/perf/renderDebug.js";
 export type CommandAction =
   | "exit"
   | "clear"
+  | "resume"
   | "login"
   | "logout"
   | "auth_status"
@@ -346,6 +347,7 @@ function buildHelpMessage(context: CommandContext): string {
     "Commands:",
     "  /exit, /quit       Quit the application and cancel active run",
     "  /clear             Clear the chat window and cancel the active run",
+    "  /resume            Resume a previous conversation",
     "  /diagnose github|providers   Run diagnostics",
     "  /backend [name]    Switch backend (no arg opens picker)",
     "  /providers         Open provider picker (/provider alias)",
@@ -814,6 +816,9 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
 
       case "copy":
         return { action: "copy" };
+
+      case "resume":
+        return { action: "resume" };
 
       case "themes":
         return { action: "open_theme_picker" };
