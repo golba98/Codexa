@@ -39,6 +39,15 @@ No changes yet.
 
 ---
 
+## [1.0.14] — 2026-08-15 — Repository Cleanup
+
+### Changed
+
+- **The project landing page is easier to scan** — installation, providers, core controls, and development links are presented without duplicated operational detail.
+- **Release documentation identifies the current package correctly** — stale current-version wording was removed and the publishing guide now targets `1.0.14`.
+
+---
+
 ## [1.0.13] — 2026-08-15 — One-Key Update Restart
 
 ### Added
