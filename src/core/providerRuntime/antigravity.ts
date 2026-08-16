@@ -16,6 +16,7 @@ import {
   resetAgyExecutableCacheForTests,
 } from "../executables/antigravityExecutable.js";
 import { buildSpawnSpec } from "../executables/executableResolver.js";
+import { formatConversationHistory } from "../../session/conversation.js";
 
 export { resetAgyExecutableCacheForTests };
 
@@ -402,7 +403,10 @@ export function runAntigravityWithRunner(
     );
     return () => undefined;
   }
-  const spawnSpec = buildSpawnSpec(executable, ["--model", selector, "-p", request.prompt], platform);
+  const prompt = request.conversationHistory?.length
+    ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
+    : request.prompt;
+  const spawnSpec = buildSpawnSpec(executable, ["--model", selector, "-p", prompt], platform);
 
   const runner = runCommandImpl(
     {

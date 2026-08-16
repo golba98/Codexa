@@ -4,6 +4,7 @@ import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { GEMINI_DEFAULT_MODEL_ID, GEMINI_FALLBACK_MODELS, normalizeGeminiModelId } from "./models.js";
 import type { ProviderBackendKind, ProviderChatRequest, ProviderRouteValidationResult, ProviderRuntime, ResolvedRuntimeConfig } from "./types.js";
+import { formatConversationHistory } from "../../session/conversation.js";
 import { resolveGeminiExecutable } from "../executables/geminiExecutable.js";
 
 // ─── Diagnostics ─────────────────────────────────────────────────────────────
@@ -318,7 +319,9 @@ async function runGeminiApi(request: ProviderChatRequest): Promise<string> {
       contents: [
         {
           role: "user",
-          parts: [{ text: request.prompt }],
+          parts: [{ text: request.conversationHistory?.length
+            ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
+            : request.prompt }],
         },
       ],
     }),
@@ -388,7 +391,9 @@ async function runGeminiCliAttempt(
   const command = await buildGeminiCommand({
     cwd: request.workspaceRoot,
     mode: "prompt",
-    prompt: request.prompt,
+    prompt: request.conversationHistory?.length
+      ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
+      : request.prompt,
     model: modelId,
     reasoning: request.route.reasoning,
     runtime: request.runtime,

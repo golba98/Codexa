@@ -563,29 +563,60 @@ function emptyResponseError(config: LocalProviderConfig, model: string, diagnost
   ].join("\n"));
 }
 
-function parseStreamDelta(line: string): string | null {
+interface StreamingToolCallAccumulator {
+  id?: string;
+  name: string;
+  arguments: string;
+}
+
+interface StreamingCompletionAccumulator {
+  content: string;
+  reasoning: string;
+  toolCalls: Map<number, StreamingToolCallAccumulator>;
+}
+
+function applyStreamDelta(line: string, accumulator: StreamingCompletionAccumulator): void {
   const trimmed = line.trim();
-  if (!trimmed || !trimmed.startsWith("data:")) return null;
+  if (!trimmed || !trimmed.startsWith("data:")) return;
   const data = trimmed.slice("data:".length).trim();
-  if (!data || data === "[DONE]") return null;
+  if (!data || data === "[DONE]") return;
   try {
-    const parsed = JSON.parse(data) as {
-      choices?: Array<{ delta?: { content?: string }; text?: string }>;
-    };
-    return parsed.choices
-      ?.map((choice) => choice.delta?.content ?? choice.text ?? "")
-      .join("") || null;
+    const parsed = JSON.parse(data) as { choices?: unknown[] };
+    for (const rawChoice of parsed.choices ?? []) {
+      if (!isRecord(rawChoice)) continue;
+      const delta = isRecord(rawChoice.delta) ? rawChoice.delta : rawChoice;
+      accumulator.content += textFromContent(delta.content) || textFromContent(rawChoice.text);
+      accumulator.reasoning += textFromContent(delta.reasoning_content)
+        || textFromContent(delta.reasoning)
+        || textFromContent(delta.analysis);
+      if (!Array.isArray(delta.tool_calls)) continue;
+      for (let position = 0; position < delta.tool_calls.length; position += 1) {
+        const rawCall = delta.tool_calls[position];
+        if (!isRecord(rawCall)) continue;
+        const index = typeof rawCall.index === "number" ? rawCall.index : position;
+        const current = accumulator.toolCalls.get(index) ?? { name: "", arguments: "" };
+        const fn = isRecord(rawCall.function) ? rawCall.function : null;
+        if (typeof rawCall.id === "string") current.id = rawCall.id;
+        if (fn && typeof fn.name === "string") current.name += fn.name;
+        if (fn && typeof fn.arguments === "string") current.arguments += fn.arguments;
+        accumulator.toolCalls.set(index, current);
+      }
+    }
   } catch {
-    return null;
+    // Ignore keepalive or malformed SSE records; later valid records remain usable.
   }
 }
 
-async function readStreamingResponse(response: Response, handlers: BackendRunHandlers): Promise<string> {
-  if (!response.body) return "";
+async function readStreamingResponse(response: Response): Promise<AgentChatResponse> {
+  if (!response.body) return { text: "" };
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let accumulated = "";
+  const accumulated: StreamingCompletionAccumulator = {
+    content: "",
+    reasoning: "",
+    toolCalls: new Map(),
+  };
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -593,19 +624,21 @@ async function readStreamingResponse(response: Response, handlers: BackendRunHan
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() ?? "";
     for (const line of lines) {
-      const delta = parseStreamDelta(line);
-      if (delta) {
-        accumulated += delta;
-        handlers.onAssistantDelta?.(delta);
-      }
+      applyStreamDelta(line, accumulated);
     }
   }
-  const tail = parseStreamDelta(buffer);
-  if (tail) {
-    accumulated += tail;
-    handlers.onAssistantDelta?.(tail);
-  }
-  return accumulated.trim();
+  applyStreamDelta(buffer, accumulated);
+  const toolCalls = [...accumulated.toolCalls.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, call]) => parseOpenAiToolCalls([{ id: call.id, type: "function", function: {
+      name: call.name,
+      arguments: call.arguments,
+    } }]))
+    .flat();
+  return {
+    text: (accumulated.content.trim() ? accumulated.content : accumulated.reasoning).trim(),
+    ...(toolCalls.length > 0 ? { toolCalls } : {}),
+  };
 }
 
 async function postLocalChatCompletion(options: {
@@ -651,8 +684,12 @@ async function postLocalChatCompletion(options: {
     throw new Error(`Local OpenAI-compatible request failed (${response.status}): ${sanitized}`);
   }
 
-  if (options.stream) {
-    return { text: await readStreamingResponse(response, options.handlers) };
+  if (options.stream && response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
+    const streamed = await readStreamingResponse(response);
+    if (!streamed.text.trim() && (streamed.toolCalls?.length ?? 0) === 0) {
+      throw new Error("Local OpenAI-compatible API returned an empty streaming response.");
+    }
+    return streamed;
   }
 
   const parsed = JSON.parse(await response.text()) as unknown;
@@ -695,7 +732,10 @@ export async function runLocalOpenAiCompatible(
         request,
         config,
         messages,
-        stream: false,
+        // Streaming makes the server commit response headers immediately. A
+        // long local generation can otherwise exceed the HTTP client's header
+        // timeout even while the model is actively producing tokens.
+        stream: capProfile.supportsStreaming !== false,
         fetchImpl,
         signal: options.signal,
         handlers,

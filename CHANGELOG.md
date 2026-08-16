@@ -6,6 +6,39 @@ No changes yet.
 
 ---
 
+## [1.0.16] — 2026-08-16 — Resumable Conversations and Compact Imports
+
+### Added
+
+- **Workspace-scoped conversation history** — Codexa stores durable conversation metadata and messages outside the project, restores previous chats through `/resume`, and carries bounded history into supported provider routes.
+- **Responsive resume picker** — previous conversations can be selected from a keyboard-driven panel that adapts to the available terminal rows.
+
+### Fixed
+
+- **Local import confirmation no longer clips its primary action** — long attachment paths are shortened below the home directory, file details are compacted, and the horizontal Import/Cancel choices now use matching Left/Right navigation.
+- **Restored conversations render complete assistant turns** — resumed timeline events retain both user and assistant content before the next prompt.
+
+### Maintenance
+
+- Removed unused conversation-route state and an unconsumed conversation-title export found during the release audit.
+- Updated architecture and source documentation for conversation persistence and resume flow.
+
+---
+
+## [1.0.15] — 2026-08-15 — Reliable Long Local Responses
+
+### Fixed
+
+- **Long Local-model generations no longer fail at the HTTP header timeout** — Codexa requests streaming completions by default, allowing LM Studio to establish the response immediately while large models continue reasoning.
+- **Streaming remains compatible with the Local agent loop** — fragmented assistant text, reasoning-only output, and OpenAI-style tool-call names and arguments are reconstructed before execution without exposing tool protocol markup in chat.
+- **Explicit non-streaming models keep their supported path** — models reporting `supports_streaming: false` continue using ordinary JSON completions.
+
+### Tests
+
+- Added Local-provider regression coverage for default streaming, SSE text reconstruction, fragmented tool calls, and the non-streaming capability fallback.
+
+---
+
 ## [1.0.14] — 2026-08-15 — Repository Cleanup
 
 ### Changed

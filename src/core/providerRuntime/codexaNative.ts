@@ -12,6 +12,7 @@ import type {
   ProviderRouteValidationResult,
   ProviderRuntime,
 } from "./types.js";
+import { formatConversationHistory } from "../../session/conversation.js";
 
 export const CODEXA_NATIVE_MODEL_ID = "codexa-1b-sft-v2-native";
 const BRIDGE_START_TIMEOUT_MS = 60_000;
@@ -275,7 +276,10 @@ export const codexaNativeRuntime: ProviderRuntime = {
       source: "stdout",
       text: bridge ? "Using loaded Codexa Native model" : "Loading Codexa Native checkpoint",
     });
-    sendPrompt(request.prompt, handlers)
+    const prompt = request.conversationHistory?.length
+      ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
+      : request.prompt;
+    sendPrompt(prompt, handlers)
       .then((text) => {
         if (canceled) return;
         handlers.onAssistantDelta?.(text);

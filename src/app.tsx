@@ -183,6 +183,7 @@ import {
 import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots } from "./core/workspace/workspaceActivity.js";
 import { resolveWorkspaceRoot } from "./core/workspace/workspaceRoot.js";
 import { resolveCodexaAttachmentDir } from "./core/workspace/appData.js";
+import { ConversationStore, type ConversationListEntry, type ConversationMessage, type ConversationRecord } from "./core/workspace/conversationStore.js";
 import {
   importExternalFile,
   isImageFile,
@@ -198,7 +199,7 @@ import type {
   ToolApprovalRequest,
 } from "./core/providers/types.js";
 import { commandExistsOnPath, launchProviderCli } from "./core/providerLauncher/launcher.js";
-import { buildProviderRegistry, findProvider, getActiveRouteProviderId } from "./core/providerLauncher/registry.js";
+import { buildProviderRegistry, findProvider, getActiveRouteProviderId, isKnownProviderId } from "./core/providerLauncher/registry.js";
 import type { ProviderId, ProviderPickerAction, ProviderWorkspaceConfig } from "./core/providerLauncher/types.js";
 import {
   discoverProviderModels,
@@ -257,6 +258,7 @@ import {
   isCurrentRun,
 } from "./session/chatLifecycle.js";
 import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
+import { conversationMessagesToTimeline, selectConversationContext } from "./session/conversation.js";
 import { createLiveRenderScheduler, type LiveRenderUpdate } from "./session/liveRenderScheduler.js";
 import { hasFinalizedTranscriptPlan } from "./session/planTranscript.js";
 import { schedulePromptRunStartAfterVisibleCommit } from "./session/promptRunSchedule.js";
@@ -287,6 +289,7 @@ import { ToolApprovalPanel } from "./ui/panels/ToolApprovalPanel.js";
 import { SelectionPanel } from "./ui/panels/SelectionPanel.js";
 import { SettingsPanel } from "./ui/panels/SettingsPanel.js";
 import { UpdatePromptPanel } from "./ui/panels/UpdatePromptPanel.js";
+import { ResumePicker } from "./ui/panels/ResumePicker.js";
 import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/panels/TextEntryPanel.js";
 import { ThemePicker } from "./ui/panels/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/input/focus.js";
@@ -536,6 +539,15 @@ export function App({ launchArgs }: AppProps) {
       providerWorkspaceConfig: initialProviderWorkspaceConfig.current,
     });
   });
+  const conversationStore = useMemo(
+    () => new ConversationStore(workspaceRoot, {
+      onDiagnostic: (message) => appDiagLog(`CONVERSATION_STORE: ${message}`),
+    }),
+    [workspaceRoot],
+  );
+  const activeConversationRef = useRef<ConversationRecord | null>(null);
+  const [conversationRouteOverride, setConversationRouteOverride] = useState<import("./core/providerRuntime/types.js").ProviderRoute | null>(null);
+  const [resumeConversations, setResumeConversations] = useState<ConversationListEntry[]>([]);
   const [authStatus, setAuthStatus] = useState<CodexAuthProbeResult>(createInitialAuthStatus());
   const [authStatusBusy, setAuthStatusBusy] = useState(false);
   // Running character total across the conversation — used to estimate token usage
@@ -712,7 +724,7 @@ export function App({ launchArgs }: AppProps) {
     // the actual run uses the CLI model instead of whatever is persisted in providers.json.
     // The providers.json entry is left unchanged so it survives this session.
     const cliModel = launchArgs.modelOverride;
-    const configuredRoute = providerWorkspaceConfig.activeRoute;
+    const configuredRoute = conversationRouteOverride ?? providerWorkspaceConfig.activeRoute;
     const effectiveRoute = cliModel && configuredRoute
       ? { ...configuredRoute, modelId: cliModel }
       : configuredRoute;
@@ -721,7 +733,7 @@ export function App({ launchArgs }: AppProps) {
       currentModel: model,
       currentReasoning: reasoningLevel,
     });
-  }, [launchArgs.modelOverride, model, providerWorkspaceConfig.activeRoute, reasoningLevel, registryNonce]);
+  }, [conversationRouteOverride, launchArgs.modelOverride, model, providerWorkspaceConfig.activeRoute, reasoningLevel, registryNonce]);
   const activeProviderRuntime = useMemo(
     () => getProviderRuntime(activeProviderRoute.providerId),
     [activeProviderRoute.providerId],
@@ -1349,6 +1361,7 @@ export function App({ launchArgs }: AppProps) {
               ? providerWorkspaceConfig.providers?.local
               : undefined,
             runIntent: options.runIntent,
+            conversationHistory: options.conversationHistory,
           }, handlers) ?? (() => undefined);
         }
         : undefined,
@@ -1534,6 +1547,99 @@ export function App({ launchArgs }: AppProps) {
       content: safeContent,
     });
   }, [appendStaticEvent]);
+
+  const saveActiveConversation = useCallback(() => {
+    const current = activeConversationRef.current;
+    if (!current || current.messages.length === 0) return;
+    const next: ConversationRecord = {
+      ...current,
+      metadata: {
+        ...current.metadata,
+        providerId: activeProviderRoute.providerId,
+        modelId: activeProviderRoute.modelId,
+        backendKind: activeProviderRoute.backendKind,
+        ...(activeProviderRoute.reasoning ? { reasoning: activeProviderRoute.reasoning } : {}),
+      },
+    };
+    activeConversationRef.current = next;
+    try {
+      conversationStore.save(next);
+    } catch (error) {
+      appDiagLog(`CONVERSATION_STORE: save failed: ${error instanceof Error ? error.message : "filesystem error"}`);
+    }
+  }, [activeProviderRoute, conversationStore]);
+
+  const appendConversationMessage = useCallback((message: ConversationMessage) => {
+    const current = activeConversationRef.current ?? conversationStore.createConversation({
+      providerId: activeProviderRoute.providerId,
+      modelId: activeProviderRoute.modelId,
+      backendKind: activeProviderRoute.backendKind,
+      reasoning: activeProviderRoute.reasoning,
+    });
+    const next: ConversationRecord = { ...current, messages: [...current.messages, message] };
+    activeConversationRef.current = next;
+    try {
+      conversationStore.save(next);
+    } catch (error) {
+      appDiagLog(`CONVERSATION_STORE: message save failed: ${error instanceof Error ? error.message : "filesystem error"}`);
+    }
+  }, [activeProviderRoute, conversationStore]);
+
+  const openResumePicker = useCallback(() => {
+    if (busy) {
+      appendSystemEvent("Resume unavailable", "Finish the active run before switching conversations.");
+      return;
+    }
+    saveActiveConversation();
+    setResumeConversations(conversationStore.list());
+    setScreen("resume-picker");
+  }, [appendSystemEvent, busy, conversationStore, saveActiveConversation]);
+
+  const resumeConversation = useCallback((id: string) => {
+    const loaded = conversationStore.load(id);
+    if (!loaded) {
+      appendErrorEvent("Resume failed", "That conversation could not be loaded.");
+      setScreen("main");
+      return;
+    }
+    activeConversationRef.current = loaded;
+    setConversationChars(loaded.messages.reduce((total, message) => total + message.content.length, 0));
+    dispatchSession({
+      type: "CLEAR_TRANSCRIPT",
+      seedEvents: conversationMessagesToTimeline(loaded.messages, createEventId),
+    });
+    const routeProvider = typeof loaded.metadata.providerId === "string" && isKnownProviderId(loaded.metadata.providerId)
+      ? loaded.metadata.providerId
+      : null;
+    if (routeProvider) {
+      const discovery = discoverProviderModels(routeProvider);
+      const modelUnavailable = discovery.status === "ready"
+        && discovery.models.length > 0
+        && !discovery.models.some((model) => model.modelId === loaded.metadata.modelId || model.id === loaded.metadata.modelId);
+      const route = {
+        providerId: routeProvider,
+        modelId: loaded.metadata.modelId,
+        backendKind: loaded.metadata.backendKind && loaded.metadata.backendKind !== "unavailable"
+          ? loaded.metadata.backendKind as import("./core/providerRuntime/types.js").ProviderBackendKind
+          : getProviderRuntime(routeProvider).backendKind,
+        ...(loaded.metadata.reasoning ? { reasoning: loaded.metadata.reasoning } : {}),
+      } satisfies import("./core/providerRuntime/types.js").ProviderRoute;
+      setConversationRouteOverride(modelUnavailable ? null : route);
+      if (!isProviderRoutableInCodexa(routeProvider) || modelUnavailable) {
+        const reason = !isProviderRoutableInCodexa(routeProvider)
+          ? `${routeProvider} is not currently available`
+          : `${loaded.metadata.modelId} is not currently available`;
+        appendSystemEvent("Original route unavailable", `Restored the conversation, but ${reason}. Codexa will use the current route when you send the next message.`);
+        setConversationRouteOverride(null);
+      }
+    } else {
+      appendSystemEvent("Original route unavailable", "Restored the conversation history; continuing with the current provider route.");
+    }
+    setScreen("main");
+    dispatchSession({ type: "RESET_INPUT" });
+    intendedFocusTargetRef.current = FOCUS_IDS.composer;
+    focusManager.focus(FOCUS_IDS.composer);
+  }, [appendErrorEvent, appendSystemEvent, conversationStore, dispatchSession, focusManager]);
 
   useEffect(() => {
     const notice = providerWorkspaceConfig.migrationNotice;
@@ -1889,6 +1995,7 @@ export function App({ launchArgs }: AppProps) {
     modelSelection?: import("./core/providerRuntime/types.js").GeminiModelSelection,
   ) => {
     try {
+      setConversationRouteOverride(null);
       const runtime = getProviderRuntime(providerId);
       let nextConfig = setProviderActiveRoute(providerWorkspaceConfig, {
         providerId,
@@ -3190,6 +3297,9 @@ export function App({ launchArgs }: AppProps) {
         ? extractAssistantActionRequired(safeResponse)
         : { content: safeResponse, question: null as string | null }
       : { content: safeResponse, question: null as string | null };
+    if (status === "completed" && parsed.content?.trim()) {
+      appendConversationMessage({ role: "assistant", content: parsed.content });
+    }
     appDiagLog([
       "FINALIZE_RUN_PAYLOAD:",
       `provider=${activeProviderRoute.providerId}`,
@@ -3247,7 +3357,7 @@ export function App({ launchArgs }: AppProps) {
     }
 
     return true;
-  }, [activeProviderRoute.providerId, dispatchSession, focusManager]);
+  }, [activeProviderRoute.providerId, appendConversationMessage, dispatchSession, focusManager]);
 
   const cancelActiveRun = useCallback((retainHistory = true) => {
     const runId = activeRunIdRef.current;
@@ -3339,9 +3449,10 @@ export function App({ launchArgs }: AppProps) {
   }, [appendSystemEvent, busy, cancelActiveRun, dispatchSession, planFlow.kind, resetComposer, uiState.kind]);
 
   const handleQuit = useCallback(() => {
+    saveActiveConversation();
     cancelActiveRun(false);
     exit();
-  }, [cancelActiveRun, exit]);
+  }, [cancelActiveRun, exit, saveActiveConversation]);
 
   const handleCopy = useCallback(async () => {
     // Build a full conversation transcript from all user prompts and assistant
@@ -3453,6 +3564,9 @@ export function App({ launchArgs }: AppProps) {
       liveInkInstanceResolved: Boolean(inkInstance),
     });
     cancelActiveRun(false);
+    saveActiveConversation();
+    activeConversationRef.current = null;
+    setConversationRouteOverride(null);
     activeTurnIdRef.current = null;
     activeRunLifecycleRef.current = null;
     activeRunTimingRef.current = null;
@@ -3474,7 +3588,7 @@ export function App({ launchArgs }: AppProps) {
         liveInkInstanceResolved: Boolean(inkInstance),
       });
     }
-  }, [cancelActiveRun, clearFrameBoundaryController, inkInstance, launchContext, providerWorkspaceConfig, resetToHomeScreen, sessionState.clearEpoch, stdout.columns, terminalControl, workspaceRoot]);
+  }, [cancelActiveRun, clearFrameBoundaryController, inkInstance, launchContext, providerWorkspaceConfig, resetToHomeScreen, saveActiveConversation, sessionState.clearEpoch, stdout.columns, terminalControl, workspaceRoot]);
 
   const handleShellExecute = useCallback((command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();
@@ -3715,6 +3829,10 @@ export function App({ launchArgs }: AppProps) {
     }
 
     const turnId = createTurnId();
+    const conversationHistory = selectConversationContext(
+      activeConversationRef.current?.messages ?? [],
+      activeContextMetadata?.contextLength ? activeContextMetadata.contextLength * 4 : undefined,
+    );
     const userEvent: UserPromptEvent = {
       id: createEventId(),
       type: "user",
@@ -3722,6 +3840,7 @@ export function App({ launchArgs }: AppProps) {
       prompt: safeDisplayPrompt,
       turnId,
     };
+    appendConversationMessage({ role: "user", content: safeDisplayPrompt });
     setConversationChars((count) => count + safeProviderPrompt.length);
 
     const runId = createEventId();
@@ -3849,7 +3968,13 @@ export function App({ launchArgs }: AppProps) {
       perf.mark("provider_run_start");
       stopProviderRun = runProvider(
           safeProviderPrompt,
-          { runtime: runtimeForTurn, workspaceRoot, projectInstructions, runIntent: lifecycle.runIntent ?? "normal" },
+          {
+            runtime: runtimeForTurn,
+            workspaceRoot,
+            projectInstructions,
+            runIntent: lifecycle.runIntent ?? "normal",
+            conversationHistory,
+          },
           {
         onAssistantDelta: (chunk) => {
           const geminiBoundary = activeProviderRoute.providerId === "google";
@@ -4098,6 +4223,8 @@ export function App({ launchArgs }: AppProps) {
 
     return true;
   }, [
+    activeContextMetadata,
+    appendConversationMessage,
     appendErrorEvent,
     appendSystemEvent,
     authStatus.state,
@@ -4362,6 +4489,9 @@ export function App({ launchArgs }: AppProps) {
           return;
         case "clear":
           handleClear();
+          return;
+        case "resume":
+          openResumePicker();
           return;
         case "backend":
           if (commandResult.value) {
@@ -4808,6 +4938,7 @@ export function App({ launchArgs }: AppProps) {
     openModePicker,
     openModelPicker,
     openPermissionsPanel,
+    openResumePicker,
     openReasoningPicker,
     openSettingsPanel,
     planMode,
@@ -5034,6 +5165,14 @@ export function App({ launchArgs }: AppProps) {
                 <BackendPicker
                   currentBackend={backend}
                   onSelect={(value) => setBackendWithNotice(value as AvailableBackend)}
+                  onCancel={() => setScreen("main")}
+                />
+              )}
+
+              {screen === "resume-picker" && (
+                <ResumePicker
+                  conversations={resumeConversations}
+                  onSelect={resumeConversation}
                   onCancel={() => setScreen("main")}
                 />
               )}

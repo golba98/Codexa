@@ -555,6 +555,11 @@ test("parses /clear command", () => {
   assert.equal(result?.action, "clear");
 });
 
+test("parses /resume command", () => {
+  const result = runCommand("/resume");
+  assert.equal(result?.action, "resume");
+});
+
 test("parses /model without args as open_model_picker", () => {
   const result = runCommand("/model");
   assert.equal(result?.action, "open_model_picker");

@@ -86,11 +86,13 @@ function buildInitialMessages(request: ProviderChatRequest, includeSystemPrompt:
   if (includeSystemPrompt) {
     return [
       { role: "system", content: systemPrompt },
+      ...(request.conversationHistory ?? []).map((message) => ({ role: message.role, content: message.content })),
       { role: "user", content: request.prompt },
     ];
   }
 
   return [
+    ...(request.conversationHistory ?? []).map((message) => ({ role: message.role, content: message.content })),
     { role: "user", content: `${systemPrompt}\n\nUser request:\n${request.prompt}` },
   ];
 }

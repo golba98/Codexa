@@ -257,7 +257,9 @@ flowchart LR
   CLI --> Effective[Effective runtime config]
 ```
 
-Untrusted project configuration is reported but not applied. User settings, trust state, update caches, provider model caches, plans, attachments, and workspace provider state use the platform-specific Codexa data directory. Legacy project-local provider state may be read for migration, but new state must not dirty the user's project.
+Untrusted project configuration is reported but not applied. User settings, trust state, update caches, provider model caches, plans, attachments, workspace provider state, and workspace-scoped conversations use the platform-specific Codexa data directory. Legacy project-local provider state may be read for migration, but new state must not dirty the user's project.
+
+Conversation history is stored below workspaces/<workspace-key>/conversations/<conversation-id>/ as versioned metadata.json and canonical messages.json files. Metadata-only listing powers /resume; complete messages are loaded only after selection. Messages and metadata use temporary-file replacement, and a partial or corrupt conversation is skipped without deleting it. The active conversation ID remains stable across resume and continuation. /clear clears the visible transcript and begins a new non-destructive conversation lifecycle.
 
 ## Workspace and safety boundaries
 
@@ -266,7 +268,7 @@ Untrusted project configuration is reported but not applied. User settings, trus
 - `projectInstructions.ts` loads repository instructions with explicit status reporting.
 - `workspaceGuard.ts` recognizes paths outside the workspace and dependency paths before commands or diagnostics are accepted.
 - `workspaceActivity.ts` snapshots and diffs files so the timeline can report what a run changed.
-- `appData.ts` centralizes platform-specific data paths; new persistent state should use it rather than inventing project-local folders.
+- `appData.ts` centralizes platform-specific data paths; new persistent state, including workspace-scoped conversation history, should use it rather than inventing project-local folders.
 
 ## Maintenance playbooks
 

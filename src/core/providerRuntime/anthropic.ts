@@ -3,6 +3,7 @@ import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
 import type { ProviderBackendKind, ProviderChatRequest, ProviderModel, ProviderModelDiscoveryResult, ProviderRouteValidationResult, ProviderRuntime } from "./types.js";
+import { formatConversationHistory } from "../../session/conversation.js";
 import { buildClaudeSpawnSpec, resetClaudeExecutableCacheForTests } from "../executables/claudeExecutable.js";
 import {
   claudeCodeModelsToProviderModels,
@@ -67,7 +68,9 @@ function buildClaudeCodeBaseArgs(request: ProviderChatRequest): string[] {
     ...(request.route.modelId ? ["--model", mapModelIdToClaudeArg(request.route.modelId)] : []),
     ...(supportedEffort ? ["--effort", supportedEffort] : []),
     "--permission-mode", "default",
-    request.prompt,
+    request.conversationHistory?.length
+      ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
+      : request.prompt,
   ];
 }
 
@@ -161,12 +164,9 @@ async function runAnthropicApi(request: ProviderChatRequest): Promise<string> {
       model: request.route.modelId,
       max_tokens: ANTHROPIC_MAX_TOKENS,
       ...(request.projectInstructions?.content ? { system: request.projectInstructions.content } : {}),
-      messages: [
-        {
-          role: "user",
-          content: request.prompt,
-        },
-      ],
+      messages: request.conversationHistory?.length
+        ? [...request.conversationHistory.map((message) => ({ role: message.role, content: message.content })), { role: "user", content: request.prompt }]
+        : [{ role: "user", content: request.prompt }],
     }),
   });
 
