@@ -22,6 +22,8 @@ No changes yet.
 
 - Removed unused conversation-route state and an unconsumed conversation-title export found during the release audit.
 - Updated architecture and source documentation for conversation persistence and resume flow.
+- Removed the duplicate root documentation file; `docs/DOCUMENTATION.md` is now the single technical documentation guide.
+- Updated package metadata for the `1.0.16` patch release.
 
 ---
 
