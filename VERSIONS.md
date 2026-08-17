@@ -10,6 +10,8 @@ Codexa now saves conversations per workspace and lets you reopen them with
 with bounded history for the selected provider. The Local file-import panel is
 also more compact: long home paths are shortened, its actions remain visible,
 and Import/Cancel navigation follows the horizontal Left/Right layout.
+This patch also removes the duplicate root documentation file and keeps the
+package metadata aligned at version `1.0.16`.
 
 ## v1.0.15 — 2026-08-15
 
