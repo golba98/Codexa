@@ -249,5 +249,5 @@ test("Codexa Native displays the canonical 1B model name for legacy 900M routes"
     contextMetadata: context(route, null),
   });
 
-  assert.equal(display.footerModelDisplay, "codexa-native / codexa-1b-sft-v2-native (Low)");
+  assert.equal(display.footerModelDisplay, "codexa-PyTorch / codexa-1b-sft-v2-native (Low)");
 });

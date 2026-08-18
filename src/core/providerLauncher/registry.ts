@@ -20,19 +20,20 @@ import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "../providerRuntime/antigravity.js"
 import { discoverMistralVibeModels } from "../providerRuntime/mistralVibe.js";
 import { setLocalProviderConfig } from "../providerRuntime/local.js";
 import { CODEXA_NATIVE_MODEL_ID, discoverCodexaNativeModels } from "../providerRuntime/codexaNative.js";
+import { CODEXA_CUPY_MODEL_ID, discoverCodexaCupyModels } from "../providerRuntime/codexaCupy.js";
 import { formatContextLength, resolveModelContextLengthCached } from "../providerRuntime/contextMetadata.js";
 import { resolveModelCapabilityProfileCached } from "../providerRuntime/capabilityProfile.js";
 
 // Google/Gemini remains a recognized legacy config value so existing workspace
 // files can be migrated, but it is no longer a selectable Codexa provider.
-const ALL_PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "mistral", "codexa-native", "local", "antigravity"];
-const KNOWN_PROVIDER_IDS: readonly ProviderId[] = ["openai", "anthropic", "google", "mistral", "local", "codexa-native", "antigravity"];
+const ALL_PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "mistral", "codexa-native", "codexa-cupy", "local", "antigravity"];
+const KNOWN_PROVIDER_IDS: readonly ProviderId[] = ["openai", "anthropic", "google", "mistral", "local", "codexa-native", "codexa-cupy", "antigravity"];
 
 export function getProviderOrder(env: NodeJS.ProcessEnv = process.env): readonly ProviderId[] {
   if (isLocalDevChannel(env)) {
     return ALL_PROVIDER_ORDER;
   }
-  return ALL_PROVIDER_ORDER.filter((id) => id !== "codexa-native");
+  return ALL_PROVIDER_ORDER.filter((id) => id !== "codexa-native" && id !== "codexa-cupy");
 }
 
 const DEFAULT_PROVIDER_ID: ProviderId = "openai";
@@ -90,7 +91,7 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
   },
   "codexa-native": {
     id: "codexa-native",
-    displayName: "Codexa Native",
+    displayName: "codexa-PyTorch",
     currentModel: () => CODEXA_NATIVE_MODEL_ID,
     backendType: "codexa-native-pytorch",
     routeMode: "in-codexa",
@@ -98,6 +99,17 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
     launchCommand: null,
     isActiveRoute: false,
     routeUnavailableReason: "Codexa Native is only available on codexa-dev.",
+  },
+  "codexa-cupy": {
+    id: "codexa-cupy",
+    displayName: "CuPy",
+    currentModel: () => CODEXA_CUPY_MODEL_ID,
+    backendType: "codexa-cupy",
+    routeMode: "in-codexa",
+    enabled: false,
+    launchCommand: null,
+    isActiveRoute: false,
+    routeUnavailableReason: "CuPy is only available on codexa-dev.",
   },
   mistral: {
     id: "mistral",
@@ -221,6 +233,8 @@ export function buildProviderRegistry(options: {
       ? discoverMistralVibeModels(options.workspaceRoot ?? process.cwd())
       : id === "codexa-native"
       ? discoverCodexaNativeModels(undefined, env)
+      : id === "codexa-cupy"
+      ? discoverCodexaCupyModels(undefined, env)
       : runtime.discoverModels();
 
     const activeRoute = options.workspaceConfig?.activeRoute;
@@ -281,7 +295,7 @@ export function buildProviderRegistry(options: {
             ?? getProviderRouteSetupMessage(id)))
       : runtime.routeStatus;
 
-    const enabled = id === "codexa-native"
+    const enabled = id === "codexa-native" || id === "codexa-cupy"
       ? isLocalDevChannel(env)
       : id === "local"
       ? discovery.status === "ready"
@@ -314,7 +328,7 @@ export function buildProviderRegistry(options: {
       // Keep the provider's stable backend identity even when discovery reports
       // missing local model files. Availability is represented separately by
       // statusLabel and routeUnavailableReason.
-      backendType: id === "codexa-native"
+      backendType: id === "codexa-native" || id === "codexa-cupy"
         ? defaults.backendType
         : discovery.backendKind as ProviderBackendType,
       routeMode: runtime.routeAvailable ? "in-codexa" : "launch-only",

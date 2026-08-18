@@ -32,6 +32,8 @@ const PROVIDER_DISPLAY: Record<string, string> = {
   google: "Gemini CLI",
   mistral: "Mistral Vibe CLI",
   local: "Local",
+  "codexa-native": "codexa-PyTorch",
+  "codexa-cupy": "CuPy",
   antigravity: "Antigravity CLI",
 };
 
@@ -64,6 +66,9 @@ function getModelLabel(route: ActiveProviderRoute, capability?: CodexModelCapabi
     // Older persisted routes may still contain the 900M checkpoint directory
     // name; the user-facing Codexa Native model is the canonical 1B SFT v2 ID.
     return CODEXA_NATIVE_MODEL_ID;
+  }
+  if (route.providerId === "codexa-cupy") {
+    return route.modelId;
   }
   return route.modelId;
 }

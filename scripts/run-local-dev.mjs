@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const currentFile = fileURLToPath(import.meta.url);
 const repoRoot = dirname(dirname(currentFile));
 const forwardArgs = process.argv.slice(2);
+export const DEFAULT_NATIVE_MODEL_ROOT = join(homedir(), "Development", "2-Python", "31-LLM (PyTorch)");
 
 /**
  * Resolves which local-repo source file the dev launcher runs, and the args to
@@ -34,7 +35,7 @@ export function resolveLocalDevEntry(root, args) {
 /** Resolve the native Codexa model chat command used by `codexa-dev native`. */
 export function resolveNativeChatCommand(env = process.env) {
   const modelRoot = env.CODEXA_NATIVE_MODEL_ROOT?.trim()
-    || join(homedir(), "Development", "2-Python", "31-LLM (Codexa v1)");
+    || DEFAULT_NATIVE_MODEL_ROOT;
   const executable = env.CODEXA_NATIVE_PYTHON?.trim()
     || join(modelRoot, ".venv", "bin", "python");
   const script = join(modelRoot, "scripts", "chat_native.py");
@@ -56,8 +57,28 @@ export function resolveNativeChatCommand(env = process.env) {
   };
 }
 
+/** Resolve the NumPy Codexa checkpoint chat command used by `codexa-dev numpy`. */
+export function resolveNumpyChatCommand(env = process.env) {
+  const modelRoot = env.CODEXA_NUMPY_MODEL_ROOT?.trim()
+    || join(homedir(), "Development", "2-Python", "32-LLM (NumPy)");
+  const executable = env.CODEXA_NUMPY_PYTHON?.trim() || "python3";
+  const script = join(modelRoot, "scripts", "chat_codexa.py");
+  const checkpoint = env.CODEXA_NUMPY_CHECKPOINT?.trim()
+    || join(modelRoot, "runs", "pretraining", "pretrain_250m_fineweb_followup_10m", "target_final.npz");
+  const tokenizer = env.CODEXA_NUMPY_TOKENIZER?.trim()
+    || join(modelRoot, "data", "tokenized", "general-fineweb-10m-v1", "tokenizer.json");
+  const device = env.CODEXA_NUMPY_DEVICE?.trim() || "auto";
+  return {
+    executable,
+    cwd: modelRoot,
+    requiredPaths: [script, checkpoint, tokenizer],
+    args: [script, "--checkpoint", checkpoint, "--tokenizer", tokenizer, "--device", device],
+  };
+}
+
 const { isHeadlessMode, isHeadlessBenchmark, entry, entryArgs } = resolveLocalDevEntry(repoRoot, forwardArgs);
 const isNativeChat = forwardArgs[0] === "native";
+const isNumpyChat = forwardArgs[0] === "numpy";
 const bunExecutable = process.env.CODEXA_BUN_EXECUTABLE?.trim()
   || (process.platform === "win32" ? "bun.exe" : "bun");
 
@@ -92,6 +113,7 @@ function printHelp() {
 Usage:
   codexa-dev
   codexa-dev native
+  codexa-dev numpy
   codexa-dev "explain this repo"
   codexa-dev exec "print the current directory"
   codexa-dev [options] [prompt]
@@ -101,6 +123,7 @@ It does not replace or modify the published codexa command.
 
 codexa-dev native talks directly to the local Codexa 900M SFT checkpoint
 through native PyTorch inference. It does not use LM Studio or GGUF.
+codexa-dev numpy talks directly to the local NumPy 250M checkpoint.
 `);
 }
 
@@ -137,6 +160,34 @@ function launch() {
     });
     child.on("error", (error) => {
       console.error(`Failed to launch Codexa native chat: ${error.message}`);
+      process.exit(1);
+    });
+    child.on("close", (code, signal) => {
+      if (signal) {
+        process.kill(process.pid, signal);
+        return;
+      }
+      process.exit(code ?? 0);
+    });
+    return;
+  }
+
+  if (isNumpyChat) {
+    const numpy = resolveNumpyChatCommand();
+    const missing = numpy.requiredPaths.filter((path) => !existsSync(path));
+    if (missing.length > 0) {
+      console.error("Codexa NumPy chat is not available because required files are missing:");
+      for (const path of missing) console.error(`  ${path}`);
+      console.error("Set CODEXA_NUMPY_MODEL_ROOT if the model repository moved.");
+      process.exit(1);
+    }
+    const child = spawn(numpy.executable, [...numpy.args, ...forwardArgs.slice(1)], {
+      cwd: numpy.cwd,
+      stdio: "inherit",
+      env: { ...process.env, CODEXA_CHANNEL: "local-dev-numpy" },
+    });
+    child.on("error", (error) => {
+      console.error(`Failed to launch Codexa NumPy chat: ${error.message}`);
       process.exit(1);
     });
     child.on("close", (code, signal) => {

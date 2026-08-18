@@ -29,7 +29,8 @@ function providerLabel(providerId: string | null): string {
     case "anthropic": return "Anthropic";
     case "google": return "Google";
     case "mistral": return "Mistral";
-    case "codexa-native": return "Codexa Native";
+    case "codexa-native": return "codexa-PyTorch";
+    case "codexa-cupy": return "CuPy";
     case "antigravity": return "Antigravity";
     case "openai": return "OpenAI";
     default: return "Unavailable";
