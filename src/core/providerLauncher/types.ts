@@ -1,4 +1,4 @@
-export type ProviderId = "openai" | "anthropic" | "google" | "mistral" | "local" | "codexa-native" | "antigravity";
+export type ProviderId = "openai" | "anthropic" | "google" | "mistral" | "local" | "codexa-native" | "codexa-cupy" | "antigravity";
 
 export type ProviderBackendType =
   | "codex-cli-auth"
@@ -11,6 +11,7 @@ export type ProviderBackendType =
   | "anthropic-api-key"
   | "local-openai-compatible"
   | "codexa-native-pytorch"
+  | "codexa-cupy"
   | "unavailable";
 
 export type ProviderLaunchAction = "launch" | "set-default" | "cancel";

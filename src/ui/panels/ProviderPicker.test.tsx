@@ -807,7 +807,7 @@ test("ProviderPicker keeps each selected provider visible at normal size", async
   }
 });
 
-test("ProviderPicker cursor remains visible on Codexa Native, Local, and Antigravity", async () => {
+test("ProviderPicker cursor remains visible on codexa-PyTorch, Local, and Antigravity", async () => {
   const providers = buildProviderRegistry({
     activeModel: "gpt-5.4-mini",
     workspaceConfig: { workspaceDefaultProviderId: "openai" },
@@ -818,7 +818,7 @@ test("ProviderPicker cursor remains visible on Codexa Native, Local, and Antigra
     providers,
     selectedIndex: providers.findIndex((provider) => provider.id === "codexa-native"),
   });
-  assertSelectedProviderLine(nativeFrame, "Codexa Native");
+  assertSelectedProviderLine(nativeFrame, "codexa-PyTorch");
 
   const localFrame = await renderProviderPickerAtIndex({
     providers,

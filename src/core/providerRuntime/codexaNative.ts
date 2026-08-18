@@ -15,6 +15,7 @@ import type {
 import { formatConversationHistory } from "../../session/conversation.js";
 
 export const CODEXA_NATIVE_MODEL_ID = "codexa-1b-sft-v2-native";
+export const DEFAULT_CODEXA_NATIVE_MODEL_ROOT = join(homedir(), "Development", "2-Python", "31-LLM (PyTorch)");
 const BRIDGE_START_TIMEOUT_MS = 60_000;
 
 export interface CodexaNativeConfig {
@@ -62,7 +63,7 @@ export function buildCodexaNativePrompt(prompt: string): string {
 
 export function resolveCodexaNativeConfig(env: NodeJS.ProcessEnv = process.env): CodexaNativeConfig {
   const modelRoot = env.CODEXA_NATIVE_MODEL_ROOT?.trim()
-    || join(homedir(), "Development", "2-Python", "31-LLM (Codexa v1)");
+    || DEFAULT_CODEXA_NATIVE_MODEL_ROOT;
   return {
     modelRoot,
     python: env.CODEXA_NATIVE_PYTHON?.trim() || join(modelRoot, ".venv", "bin", "python"),
