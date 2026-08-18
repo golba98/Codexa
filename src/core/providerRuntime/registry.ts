@@ -8,6 +8,7 @@ import { anthropicRuntime } from "./anthropic.js";
 import { geminiRuntime } from "./gemini.js";
 import { localRuntime } from "./local.js";
 import { codexaNativeRuntime, CODEXA_NATIVE_MODEL_ID } from "./codexaNative.js";
+import { codexaCupyRuntime } from "./codexaCupy.js";
 import { antigravityRuntime, ANTIGRAVITY_DEFAULT_MODEL_ID, migrateAntigravityLegacyModelId } from "./antigravity.js";
 import { mistralVibeRuntime } from "./mistralVibe.js";
 import {
@@ -83,6 +84,7 @@ const PROVIDER_RUNTIMES: Record<ProviderId, ProviderRuntime> = {
   mistral: mistralVibeRuntime,
   local: localRuntime,
   "codexa-native": codexaNativeRuntime,
+  "codexa-cupy": codexaCupyRuntime,
   antigravity: antigravityRuntime,
 };
 
@@ -94,7 +96,7 @@ export function isProviderRoutableInCodexa(
   providerId: ProviderId,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  if (providerId === "codexa-native" && !isLocalDevChannel(env)) {
+  if ((providerId === "codexa-native" || providerId === "codexa-cupy") && !isLocalDevChannel(env)) {
     return false;
   }
   return getProviderRuntime(providerId).routeAvailable;

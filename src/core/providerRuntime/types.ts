@@ -18,6 +18,7 @@ export type ProviderBackendKind =
   | "anthropic-api-key"
   | "local-openai-compatible"
   | "codexa-native-pytorch"
+  | "codexa-cupy"
   | "unavailable";
 
 export interface ProviderModel {

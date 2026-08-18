@@ -8,6 +8,7 @@ import {
   buildCodexaNativePrompt,
   CODEXA_NATIVE_MODEL_ID,
   codexaNativeRuntime,
+  DEFAULT_CODEXA_NATIVE_MODEL_ROOT,
   discoverCodexaNativeModels,
   resolveCodexaNativeConfig,
 } from "./codexaNative.js";
@@ -33,6 +34,14 @@ test("Codexa Native resolves explicit model paths", () => {
   assert.equal(config.checkpoint, "/checkpoint.pt");
   assert.equal(config.tokenizer, "/tokenizer.json");
   assert.equal(config.device, "cpu");
+});
+
+test("Codexa Native defaults to the canonical PyTorch checkout", () => {
+  const config = resolveCodexaNativeConfig({});
+  assert.equal(config.modelRoot, DEFAULT_CODEXA_NATIVE_MODEL_ROOT);
+  assert.equal(config.bridgeScript, join(DEFAULT_CODEXA_NATIVE_MODEL_ROOT, "scripts", "native_chat_bridge.py"));
+  assert.equal(config.checkpoint, join(DEFAULT_CODEXA_NATIVE_MODEL_ROOT, "checkpoints", "codexa-900m-sft-v2", "latest.pt"));
+  assert.equal(config.tokenizer, join(DEFAULT_CODEXA_NATIVE_MODEL_ROOT, "checkpoints", "tokenizer-base-v1", "tokenizer.json"));
 });
 
 test("Codexa Native discovery returns not-configured in production channel", () => {

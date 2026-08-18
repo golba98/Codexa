@@ -13,7 +13,7 @@ import { runCommand } from "../process/CommandRunner.js";
 
 test("provider registry exposes Codexa Native in local-dev channel and excludes it in production", () => {
   const devProviders = buildProviderRegistry({ activeModel: "gpt-5.4", env: { CODEXA_CHANNEL: "local-dev" } });
-  assert.deepEqual(devProviders.map((provider) => provider.id), ["openai", "anthropic", "mistral", "codexa-native", "local", "antigravity"]);
+  assert.deepEqual(devProviders.map((provider) => provider.id), ["openai", "anthropic", "mistral", "codexa-native", "codexa-cupy", "local", "antigravity"]);
   assert.equal(devProviders[0]?.displayName, "OpenAI");
   assert.equal(devProviders[0]?.currentModel, "gpt-5.4");
   assert.deepEqual(devProviders[0]?.launchCommand, { executable: "codex", args: [] });
@@ -23,16 +23,19 @@ test("provider registry exposes Codexa Native in local-dev channel and excludes 
   assert.equal(devProviders[2]?.routeMode, "in-codexa");
   assert.equal(devProviders[2]?.statusLabel, "Enabled");
   assert.deepEqual(devProviders[2]?.launchCommand, { executable: "vibe", args: [] });
-  assert.equal(devProviders[3]?.displayName, "Codexa Native");
+  assert.equal(devProviders[3]?.displayName, "codexa-PyTorch");
   assert.equal(devProviders[3]?.backendType, "codexa-native-pytorch");
+  assert.equal(devProviders[4]?.displayName, "CuPy");
+  assert.equal(devProviders[4]?.backendType, "codexa-cupy");
   assert.equal(devProviders[3]?.launchCommand, null);
-  assert.equal(devProviders[4]?.enabled, false);
+  assert.equal(devProviders[4]?.enabled, true);
   assert.equal(devProviders[4]?.launchCommand, null);
-  assert.deepEqual(devProviders[5]?.launchCommand, { executable: "agy", args: [] });
+  assert.deepEqual(devProviders[6]?.launchCommand, { executable: "agy", args: [] });
 
   const prodProviders = buildProviderRegistry({ activeModel: "gpt-5.4", env: { CODEXA_CHANNEL: "published" } });
   assert.deepEqual(prodProviders.map((provider) => provider.id), ["openai", "anthropic", "mistral", "local", "antigravity"]);
   assert.equal(prodProviders.find((p) => p.id === "codexa-native"), undefined);
+  assert.equal(prodProviders.find((p) => p.id === "codexa-cupy"), undefined);
 });
 
 test("Codexa Native remains a known provider ID so workspace config preserves overrides when saved", () => {

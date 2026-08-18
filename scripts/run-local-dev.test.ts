@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { resolveLocalDevEntry, resolveNativeChatCommand } from "./run-local-dev.mjs";
+import { DEFAULT_NATIVE_MODEL_ROOT, resolveLocalDevEntry, resolveNativeChatCommand, resolveNumpyChatCommand } from "./run-local-dev.mjs";
 import { createCodexaDevShim, SHIM_NAMES } from "./install-local-dev-bin.mjs";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
@@ -52,6 +52,35 @@ test("resolveNativeChatCommand targets the native SFT v2 checkpoint", () => {
     join(modelRoot, "scripts", "chat_native.py"),
     "--checkpoint", join(modelRoot, "checkpoints", "codexa-900m-sft-v2", "latest.pt"),
     "--tokenizer", join(modelRoot, "checkpoints", "tokenizer-base-v1", "tokenizer.json"),
+    "--device", "cpu",
+  ]);
+});
+
+test("resolveNativeChatCommand defaults to the canonical PyTorch checkout", () => {
+  const resolved = resolveNativeChatCommand({});
+  assert.equal(resolved.cwd, DEFAULT_NATIVE_MODEL_ROOT);
+  assert.equal(resolved.executable, join(DEFAULT_NATIVE_MODEL_ROOT, ".venv", "bin", "python"));
+  assert.deepEqual(resolved.requiredPaths, [
+    join(DEFAULT_NATIVE_MODEL_ROOT, ".venv", "bin", "python"),
+    join(DEFAULT_NATIVE_MODEL_ROOT, "scripts", "chat_native.py"),
+    join(DEFAULT_NATIVE_MODEL_ROOT, "checkpoints", "codexa-900m-sft-v2", "latest.pt"),
+    join(DEFAULT_NATIVE_MODEL_ROOT, "checkpoints", "tokenizer-base-v1", "tokenizer.json"),
+  ]);
+});
+
+test("resolveNumpyChatCommand targets the trained NumPy follow-up checkpoint", () => {
+  const modelRoot = join(tmpdir(), "NumPy model");
+  const resolved = resolveNumpyChatCommand({
+    CODEXA_NUMPY_MODEL_ROOT: modelRoot,
+    CODEXA_NUMPY_DEVICE: "cpu",
+  });
+
+  assert.equal(resolved.cwd, modelRoot);
+  assert.equal(resolved.executable, "python3");
+  assert.deepEqual(resolved.args, [
+    join(modelRoot, "scripts", "chat_codexa.py"),
+    "--checkpoint", join(modelRoot, "runs", "pretraining", "pretrain_250m_fineweb_followup_10m", "target_final.npz"),
+    "--tokenizer", join(modelRoot, "data", "tokenized", "general-fineweb-10m-v1", "tokenizer.json"),
     "--device", "cpu",
   ]);
 });
