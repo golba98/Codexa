@@ -40,12 +40,15 @@ export const codexSubprocessProvider: BackendProvider = {
     let proc: ReturnType<typeof spawn> | null = null;
     let procExited = false;
     let currentRawOutput = "";
+    // CLI diagnostics only; stdout carries tool output and must not be
+    // classified (e.g. as an auth failure) when the run errors.
+    let currentRawStderr = "";
     let finalAnswerObserved = false;
 
     const finishError = (message: string) => {
       if (done) return;
       done = true;
-      handlers.onError(message, currentRawOutput);
+      handlers.onError(message, currentRawStderr);
     };
 
     const finishSuccess = (response: string) => {
@@ -225,6 +228,7 @@ export const codexSubprocessProvider: BackendProvider = {
           const ingestStderrText = (text: string) => {
             if (!text) return;
             currentRawOutput += text;
+            currentRawStderr += text;
             rawStderr += text;
 
             if (mode === "legacy") {
@@ -307,6 +311,7 @@ export const codexSubprocessProvider: BackendProvider = {
               && looksLikeUnsupportedStructuredOutput(`${rawStdout}\n${rawStderr}`)
             ) {
               currentRawOutput = "";
+              currentRawStderr = "";
               startAttempt(false, true);
               return;
             }
@@ -360,6 +365,7 @@ export const codexSubprocessProvider: BackendProvider = {
     };
 
     currentRawOutput = "";
+    currentRawStderr = "";
     startAttempt(true);
 
     return () => {

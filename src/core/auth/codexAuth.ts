@@ -36,15 +36,18 @@ const UNAUTHENTICATED_PATTERNS = [
   "token expired",
 ] as const;
 
-const AUTH_FAILURE_PATTERNS = [
+const AUTH_FAILURE_PHRASES = [
   ...UNAUTHENTICATED_PATTERNS,
-  "unauthorized",
-  "forbidden",
   "invalid token",
   "invalid grant",
-  "access denied",
-  "401",
-  "403",
+] as const;
+
+// Status codes only count with HTTP context: bare "401"/"403" substrings match
+// line numbers, durations, and ids in ordinary command output.
+const AUTH_FAILURE_STATUS_PATTERNS = [
+  /\b(?:http|status|code|error)\W{0,3}40[13]\b/i,
+  /\b40[13]\s+(?:unauthorized|forbidden)\b/i,
+  /\b(?:unauthorized|forbidden)\s*\(?40[13]\)?/i,
 ] as const;
 
 export function getAuthStateLabel(state: CodexAuthState): string {
@@ -173,7 +176,8 @@ export function inferAuthStateFromProbe(
 
 export function isLikelyAuthFailure(message: string): boolean {
   const lower = message.toLowerCase();
-  return AUTH_FAILURE_PATTERNS.some((pattern) => lower.includes(pattern));
+  return AUTH_FAILURE_PHRASES.some((phrase) => lower.includes(phrase))
+    || AUTH_FAILURE_STATUS_PATTERNS.some((pattern) => pattern.test(message));
 }
 
 export async function probeCodexAuthStatus(): Promise<CodexAuthProbeResult> {

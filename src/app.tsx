@@ -1832,15 +1832,6 @@ export function App({ launchArgs }: AppProps) {
     return promise;
   }, [persistProviderDiscovery, providerWorkspaceConfig.providers, refreshModelCapabilities, workspaceRoot]);
 
-  const setRuntimeUnauthenticated = useCallback((summary: string) => {
-    setAuthStatus({
-      state: "unauthenticated",
-      checkedAt: Date.now(),
-      rawSummary: summary,
-      recommendedAction: "Run `codex login` and retry.",
-    });
-  }, []);
-
   const refreshAuthStatus = useCallback(async (announce: boolean) => {
     setAuthStatusBusy(true);
     setAuthStatus((prev) => ({ ...prev, state: "checking" }));
@@ -4363,7 +4354,10 @@ export function App({ launchArgs }: AppProps) {
             const safeMessage = sanitizeTerminalOutput(message);
             const safeRawOutput = sanitizeTerminalOutput(rawOutput ?? "");
             const combinedOutput = [safeMessage, safeRawOutput].filter(Boolean).join("\n");
-            const errorMessage = isLikelyAuthFailure(combinedOutput)
+            // The recovery hint is Codex-specific; other providers report their own auth errors.
+            const codexAuthFailure = activeProviderRoute.providerId === "openai"
+              && isLikelyAuthFailure(combinedOutput);
+            const errorMessage = codexAuthFailure
               ? [
                 "Ubume reported an authentication/session error.",
                 "Recovery:",
@@ -4373,8 +4367,10 @@ export function App({ launchArgs }: AppProps) {
               ].join("\n")
               : safeMessage;
 
-            if (isLikelyAuthFailure(combinedOutput)) {
-              setRuntimeUnauthenticated("Auth/session failure detected in neural link.");
+            if (codexAuthFailure) {
+              // Re-probe instead of assuming signed-out: a misclassified error
+              // must not block every later run behind the auth gate.
+              void refreshAuthStatus(false);
             }
 
             traceLiveRunDiagnostics("failed");
@@ -4483,7 +4479,7 @@ export function App({ launchArgs }: AppProps) {
     provider,
     projectInstructions,
     dispatchSession,
-    setRuntimeUnauthenticated,
+    refreshAuthStatus,
     runtimeConfig,
     workspaceRoot,
   ]);

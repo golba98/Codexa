@@ -59,6 +59,31 @@ test("detects runtime auth failure messages", () => {
   assert.equal(detected, true);
 });
 
+test("detects auth failures that carry HTTP context or explicit login phrases", () => {
+  for (const message of [
+    "HTTP 401 Unauthorized",
+    "status: 403 Forbidden",
+    "unexpected status 401 Unauthorized: Missing bearer",
+    "Not logged in. Run codex login",
+    "Your session expired",
+  ]) {
+    assert.equal(isLikelyAuthFailure(message), true, message);
+  }
+});
+
+test("ignores 401/403 digits and generic denials in ordinary output", () => {
+  for (const message of [
+    "duration_ms: 1403",
+    "src/world.js:401:  const h = noise(x, z);",
+    "Process exited with code 1",
+    "Permission denied",
+    "access denied to /tmp/x",
+    "stream disconnected before completion",
+  ]) {
+    assert.equal(isLikelyAuthFailure(message), false, message);
+  }
+});
+
 test("getAuthStateLabel returns Checking for checking state", () => {
   assert.equal(getAuthStateLabel("checking"), "Checking");
 });
