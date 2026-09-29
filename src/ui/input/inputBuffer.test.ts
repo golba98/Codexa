@@ -13,6 +13,9 @@ import {
   stripMouseEscapes,
   wrapInputRows,
 } from "./inputBuffer.js";
+import { createImageAttachmentToken } from "./imageAttachments.js";
+import { moveAcrossPastedContent } from "./pastedContent.js";
+import { splitTextAtColumn } from "../render/textLayout.js";
 
 test("normalizes windows line endings for the composer buffer", () => {
   assert.equal(normalizeInputText("a\r\nb\rc"), "a\nb\nc");
@@ -155,4 +158,22 @@ test("robustness: rapid sequential typing and deletion", () => {
   // Simulate forward delete of "l"
   state = deleteInputForward(state);
   assert.deepEqual(state, { value: "hep", cursorOffset: 3 });
+});
+
+test("cursor highlight tracks the real character when moving right past an image token", () => {
+  const token = createImageAttachmentToken({ path: "/tmp/a.png", name: "clipboard-image.png", mediaType: "image/png", bytes: 1 });
+  const value = `look at ${token} please`;
+  let cursor = "look at ".length;
+  const highlighted: string[] = [];
+
+  while (cursor < value.length) {
+    cursor = moveAcrossPastedContent(value, cursor, "right") ?? moveCursorRight(value, cursor);
+    const viewport = createInputViewport({ text: value, cursorOffset: cursor, width: 80, maxVisibleRows: 5 });
+    const row = viewport.visibleRows[viewport.cursorRow - viewport.scrollRow]!;
+    const { current } = splitTextAtColumn(row.text, viewport.cursorColumn);
+    assert.equal(current, value[cursor] ?? "", `cursor ${cursor}`);
+    highlighted.push(current);
+  }
+
+  assert.deepEqual(highlighted, [" ", "p", "l", "e", "a", "s", "e", ""]);
 });

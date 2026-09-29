@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { wrapCommandText, wrapPlainText, wrapTextRows, getTextWidth } from "./textLayout.js";
+import { wrapCommandText, wrapPlainText, wrapTextRows, getTextWidth, getTextUnits, splitTextAtColumn } from "./textLayout.js";
 
 test("wrapCommandText breaks on spaces and indents continuation lines", () => {
   const result = wrapCommandText("if (Get-Command rg) { rg --files } else { Get-ChildItem -Recurse -File }", 40);
@@ -49,4 +49,15 @@ test("wrapTextRows preserves source offsets when a soft-wrap separator is hidden
 
 test("wrapPlainText only character-splits an individually overlong word", () => {
   assert.deepEqual(wrapPlainText("supercalifragilistic", 5), ["super", "calif", "ragil", "istic"]);
+});
+
+test("atomic token ID markers measure zero columns, matching getTextWidth", () => {
+  const token = "[Image: a.png]\u2063\uFE01\u2063";
+  const units = getTextUnits(token);
+  assert.deepEqual(units.slice(-3).map((unit) => unit.width), [0, 0, 0]);
+  assert.equal(units.reduce((total, unit) => total + unit.width, 0), getTextWidth(token));
+});
+
+test("splitTextAtColumn highlights the visible character after an atomic token", () => {
+  assert.equal(splitTextAtColumn("[Image: a.png]\u2063\uFE01\u2063 x", 14).current, " ");
 });
