@@ -3,6 +3,23 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.2 — 2026-09-29
+
+Ubume now tells you what is really going on during a run. The status bar no
+longer says it is still waiting for Codex, Claude, or Gemini while the model
+is already running commands or replying. Failed runs show their real error
+instead of a false "authentication/session error", and a false alarm can no
+longer block your next prompt. After attaching an image, the arrow keys move
+the cursor normally again.
+
+## v0.1.1 — 2026-09-13
+
+Ubume no longer adds files to your project on its own. Local chats used to
+create an empty `.ubume/scratch` folder in the workspace every turn, even when
+nothing was put in it. That folder now only appears if the agent actually saves
+a throwaway test or debug file there, and it is removed again when it ends up
+empty.
+
 ## v0.1.0 — 2026-09-13
 
 Initial pre-1.0 release of **Ubume CLI** (`ubume`).

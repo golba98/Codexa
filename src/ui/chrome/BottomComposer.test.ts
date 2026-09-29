@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  areBottomComposerPropsEqual,
+  type BottomComposerProps,
   getCommandSuggestionState,
   getComposerToFooterGapRows,
   getComposerPersona,
@@ -682,3 +684,65 @@ test("measures the transient status row while input is locked even for a slash-c
   assert.equal(getVisibleComposerStatusLine({ uiState: busy, value: "/model", allowCommands: true }), "");
   assert.equal(commandDraft, plainDraft);
 });
+
+function composerProps(overrides: Partial<BottomComposerProps> = {}): BottomComposerProps {
+  const noop = () => undefined;
+  return {
+    layout: createLayoutSnapshot(100, 30),
+    uiState: { kind: "THINKING", turnId: 1 },
+    value: "",
+    cursor: 0,
+    onChangeInput: noop,
+    onSubmit: noop,
+    onCancel: noop,
+    onChangeValue: noop,
+    onChangeCursor: noop,
+    onHistoryUp: noop,
+    onHistoryDown: noop,
+    onOpenBackendPicker: noop,
+    onOpenModelPicker: noop,
+    onOpenModePicker: noop,
+    onOpenThemePicker: noop,
+    onOpenAuthPanel: noop,
+    onTogglePlanMode: noop,
+    onClear: noop,
+    onCycleMode: noop,
+    onQuit: noop,
+    activeProviderId: "openai",
+    externalCliStatus: "starting",
+    ...overrides,
+  };
+}
+
+test("memoized composer re-renders when a busy run moves from THINKING to RESPONDING", () => {
+  const prev = composerProps();
+  const next = composerProps({ layout: prev.layout, uiState: { kind: "RESPONDING", turnId: 1 } });
+  assert.equal(areBottomComposerPropsEqual(prev, next), false);
+});
+
+test("memoized composer re-renders when the provider CLI becomes ready", () => {
+  const prev = composerProps();
+  const next = composerProps({ layout: prev.layout, uiState: prev.uiState, externalCliStatus: "ready" });
+  assert.equal(areBottomComposerPropsEqual(prev, next), false);
+});
+
+test("memoized composer skips re-render for unchanged busy props", () => {
+  const prev = composerProps();
+  const next = composerProps({ layout: prev.layout, uiState: { kind: "THINKING", turnId: 1 } });
+  assert.equal(areBottomComposerPropsEqual(prev, next), true);
+});
+
+for (const [providerId, label] of [["openai", "Codex CLI"], ["anthropic", "Claude Code"], ["google", "Gemini CLI"]] as const) {
+  test(`reports ${label} as waiting only until it produces output`, () => {
+    const uiState = { kind: "THINKING", turnId: 1 } as const;
+    const base = { uiState, value: "", allowCommands: true, activeProviderId: providerId, runElapsedSeconds: 30 };
+    assert.equal(
+      getVisibleComposerStatusLine({ ...base, externalCliStatus: "starting" }),
+      `Still waiting for ${label}  00:30`,
+    );
+    assert.equal(
+      getVisibleComposerStatusLine({ ...base, externalCliStatus: "ready" }),
+      "✧ Ubume is thinking",
+    );
+  });
+}

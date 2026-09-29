@@ -6,6 +6,64 @@ No changes yet.
 
 ---
 
+## [0.1.2] — 2026-09-29 — Honest Status and Error Reporting
+
+### Fixed
+
+- **Composer no longer says "Still waiting for <CLI>" while the provider is
+  working** — `MemoizedBottomComposer` compared only a collapsed "busy" persona
+  key and ignored `externalCliStatus`, so once a run started it kept rendering
+  the stale THINKING/"starting" label with a running timer. The comparator
+  (`areBottomComposerPropsEqual` in `src/ui/chrome/BottomComposer.tsx`) now
+  re-renders on `uiState.kind` and provider-readiness changes, and
+  `src/app.tsx` marks the provider ready on its first tool call or reasoning
+  update as well as assistant text. Applies to every provider route.
+- **Arrow keys work again after attaching an image** — atomic `[Image: …]` and
+  `[Pasted Content …]` tokens end in an invisible `U+2063`/`U+FE0x` ID.
+  `getTextUnits` measured those characters as one column while
+  `getTextWidth` measured zero, so the drawn cursor lagged three characters
+  behind the real one and disappeared for three presses after a token. The
+  markers now measure zero width (`src/ui/render/textLayout.ts`).
+- **Failed runs are no longer misreported as authentication errors** —
+  `isLikelyAuthFailure` matched bare `401`/`403` substrings and was fed the
+  whole Codex stdout stream, so tool output such as `duration_ms: 1403` or a
+  `:401:` grep hit turned any failure into "Ubume reported an
+  authentication/session error" and marked Codex signed out, blocking later
+  runs. Status codes now need HTTP context, generic "forbidden"/"access
+  denied" no longer match, only Codex stderr is classified
+  (`src/core/providers/codexSubprocess.ts`), the login hint is limited to the
+  Codex route, and Ubume re-probes `codex login status` instead of forcing the
+  signed-out state.
+- **Tests**: added composer memo/status-line coverage, cursor-highlight
+  regression coverage across image tokens, and auth-classifier true/false
+  positive cases.
+
+---
+
+## [0.1.1] — 2026-09-13 — No Unrequested Workspace Files
+
+### Fixed
+
+- **Local agent no longer litters the project with `.ubume/scratch`** — every
+  writable Local Harness turn eagerly created `.ubume/scratch/<session>/` and a
+  `.gitignore` inside the workspace, even when the agent never wrote a
+  throwaway file, so an empty `.ubume` folder showed up next to the user's
+  files. The session scratch path is now only described in the prompt; the
+  folder and its `.gitignore` are created when a mutating tool call's path or
+  command actually targets `.ubume/scratch`
+  (`src/core/providerRuntime/localHarness/runtime.ts`), and when the run
+  completes or fails an empty session folder is removed along with any
+  `.ubume/scratch` and `.ubume` folders it leaves empty
+  (`removeUnusedSessionScratchDir` in `src/core/workspace/scratchDir.ts`).
+  Scratch still lives in the workspace because Harness's bwrap sandbox mounts a
+  fresh tmpfs over `/tmp` per command.
+- **Tests**: added `scratchDir.test.ts` coverage for side-effect-free
+  description, scratch-target detection, and unused-folder removal; updated the
+  Local Harness runtime tests to assert nothing is created at session open and
+  that the folder appears only when a tool targets it.
+
+---
+
 ## [0.1.0] — 2026-09-13 — Project Rename to Ubume CLI
 
 ### Changed

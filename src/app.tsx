@@ -1832,15 +1832,6 @@ export function App({ launchArgs }: AppProps) {
     return promise;
   }, [persistProviderDiscovery, providerWorkspaceConfig.providers, refreshModelCapabilities, workspaceRoot]);
 
-  const setRuntimeUnauthenticated = useCallback((summary: string) => {
-    setAuthStatus({
-      state: "unauthenticated",
-      checkedAt: Date.now(),
-      rawSummary: summary,
-      recommendedAction: "Run `codex login` and retry.",
-    });
-  }, []);
-
   const refreshAuthStatus = useCallback(async (announce: boolean) => {
     setAuthStatusBusy(true);
     setAuthStatus((prev) => ({ ...prev, state: "checking" }));
@@ -4113,6 +4104,14 @@ export function App({ launchArgs }: AppProps) {
       });
     };
 
+    // Any provider output (text, tool calls, reasoning) proves the CLI is up,
+    // so the composer stops reporting "Still waiting for <CLI>".
+    const markExternalCliReady = () => {
+      if (externalCliStatusRef.current === "ready") return;
+      externalCliStatusRef.current = "ready";
+      dispatchSession({ type: "SET_EXTERNAL_CLI_STATUS", status: "ready" });
+    };
+
     let stopProviderRun: (() => void) | undefined;
     let cancelScheduledProviderStart: (() => void) | null = null;
     let providerStartCancelled = false;
@@ -4177,7 +4176,7 @@ export function App({ launchArgs }: AppProps) {
             return;
           }
           appDiagLog(`onAssistantDelta: ASSISTANT_APPEND_PATH reached — queuing ${safeChunk.length} chars (liveScheduler→RUN_APPLY_LIVE_UPDATES→assistantEvent in activeEvents→FINALIZE_RUN→staticEvents)`);
-          dispatchSession({ type: "SET_EXTERNAL_CLI_STATUS", status: "ready" });
+          markExternalCliReady();
           liveScheduler.enqueue({
             type: lifecycle.responsePresentation === "plan" ? "plan" : "assistant",
             chunk: safeChunk,
@@ -4218,6 +4217,7 @@ export function App({ launchArgs }: AppProps) {
         },
         onToolActivity: (activity) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+          markExternalCliReady();
           if (activeRunCaptureRef.current?.runId === runId) activeRunCaptureRef.current.tools.set(activity.id, activity.command);
           if (lifecycle.responsePresentation === "plan" && !planSeenToolIds.has(activity.id)) {
             // First sight of a tool: mirrors the reducer's insert-only demotion.
@@ -4354,7 +4354,10 @@ export function App({ launchArgs }: AppProps) {
             const safeMessage = sanitizeTerminalOutput(message);
             const safeRawOutput = sanitizeTerminalOutput(rawOutput ?? "");
             const combinedOutput = [safeMessage, safeRawOutput].filter(Boolean).join("\n");
-            const errorMessage = isLikelyAuthFailure(combinedOutput)
+            // The recovery hint is Codex-specific; other providers report their own auth errors.
+            const codexAuthFailure = activeProviderRoute.providerId === "openai"
+              && isLikelyAuthFailure(combinedOutput);
+            const errorMessage = codexAuthFailure
               ? [
                 "Ubume reported an authentication/session error.",
                 "Recovery:",
@@ -4364,8 +4367,10 @@ export function App({ launchArgs }: AppProps) {
               ].join("\n")
               : safeMessage;
 
-            if (isLikelyAuthFailure(combinedOutput)) {
-              setRuntimeUnauthenticated("Auth/session failure detected in neural link.");
+            if (codexAuthFailure) {
+              // Re-probe instead of assuming signed-out: a misclassified error
+              // must not block every later run behind the auth gate.
+              void refreshAuthStatus(false);
             }
 
             traceLiveRunDiagnostics("failed");
@@ -4384,6 +4389,7 @@ export function App({ launchArgs }: AppProps) {
           if (!safeText) return;
           if (isNoiseLine(safeText)) return;
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+          markExternalCliReady();
           const safeUpdate: BackendProgressUpdate = {
             id: update.id?.trim() ? update.id : `legacy-progress-${++legacyProgressSequence}`,
             source: update.source,
@@ -4473,7 +4479,7 @@ export function App({ launchArgs }: AppProps) {
     provider,
     projectInstructions,
     dispatchSession,
-    setRuntimeUnauthenticated,
+    refreshAuthStatus,
     runtimeConfig,
     workspaceRoot,
   ]);

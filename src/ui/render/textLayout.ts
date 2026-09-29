@@ -25,6 +25,12 @@ export function getCharWidth(char: string): number {
   return Math.max(1, stringWidth(char));
 }
 
+// Invisible ID suffix of atomic composer tokens (see createAtomicContentToken):
+// U+2063 separators around U+FE00–U+FE09 digits. They draw zero columns, so
+// units must measure them as 0 to agree with getTextWidth; otherwise the
+// composer cursor lands on an invisible cell after an image/paste token.
+const ATOMIC_TOKEN_MARKER = /^[⁣︀-︉]$/;
+
 export function normalizeLineBreaks(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
@@ -39,7 +45,7 @@ export function getTextUnits(text: string): TextUnit[] {
       text: char,
       start: offset,
       end: offset + length,
-      width: getCharWidth(char),
+      width: ATOMIC_TOKEN_MARKER.test(char) ? 0 : getCharWidth(char),
     });
     offset += length;
   }

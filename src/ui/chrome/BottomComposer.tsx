@@ -102,7 +102,7 @@ export function getTokenBarDisplay(tokensUsed: number, modelSpec: ModelSpec) {
   };
 }
 
-interface BottomComposerProps {
+export interface BottomComposerProps {
   layout: Layout;
   uiState: UIState;
   themeName?: string;
@@ -1097,13 +1097,19 @@ function getUiStateKey(uiState: UIState): string {
 
 // ─── Memoized export ─────────────────────────────────────────────────────────
 
-// Memoize to prevent re-renders during streaming when props haven't meaningfully changed
-export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
+// Skips re-renders during streaming when props haven't meaningfully changed.
+export function areBottomComposerPropsEqual(prev: BottomComposerProps, next: BottomComposerProps): boolean {
   // Always re-render if the uiState kind changes to a different persona
   const prevKey = getUiStateKey(prev.uiState);
   const nextKey = getUiStateKey(next.uiState);
   if (prevKey !== nextKey) return false;
-  
+
+  // Busy kinds share a persona but drive different status lines
+  // (e.g. THINKING "Still waiting…" vs RESPONDING "ready"). Kind changes
+  // happen a few times per run, not per delta, so this stays cheap.
+  if (prev.uiState.kind !== next.uiState.kind) return false;
+  if (prev.externalCliStatus !== next.externalCliStatus) return false;
+
   // Re-render if input-related props change
   if (prev.value !== next.value) return false;
   if (prev.cursor !== next.cursor) return false;
@@ -1130,6 +1136,8 @@ export const MemoizedBottomComposer = memo(BottomComposer, (prev, next) => {
   // Re-render if active provider changes (affects status line text)
   if (prev.activeProviderId !== next.activeProviderId) return false;
 
-  // Skip re-render - streaming updates within RESPONDING don't affect composer
+  // Skip re-render - streaming updates within the same uiState kind don't affect composer
   return true;
-});
+}
+
+export const MemoizedBottomComposer = memo(BottomComposer, areBottomComposerPropsEqual);
