@@ -4113,6 +4113,14 @@ export function App({ launchArgs }: AppProps) {
       });
     };
 
+    // Any provider output (text, tool calls, reasoning) proves the CLI is up,
+    // so the composer stops reporting "Still waiting for <CLI>".
+    const markExternalCliReady = () => {
+      if (externalCliStatusRef.current === "ready") return;
+      externalCliStatusRef.current = "ready";
+      dispatchSession({ type: "SET_EXTERNAL_CLI_STATUS", status: "ready" });
+    };
+
     let stopProviderRun: (() => void) | undefined;
     let cancelScheduledProviderStart: (() => void) | null = null;
     let providerStartCancelled = false;
@@ -4177,7 +4185,7 @@ export function App({ launchArgs }: AppProps) {
             return;
           }
           appDiagLog(`onAssistantDelta: ASSISTANT_APPEND_PATH reached — queuing ${safeChunk.length} chars (liveScheduler→RUN_APPLY_LIVE_UPDATES→assistantEvent in activeEvents→FINALIZE_RUN→staticEvents)`);
-          dispatchSession({ type: "SET_EXTERNAL_CLI_STATUS", status: "ready" });
+          markExternalCliReady();
           liveScheduler.enqueue({
             type: lifecycle.responsePresentation === "plan" ? "plan" : "assistant",
             chunk: safeChunk,
@@ -4218,6 +4226,7 @@ export function App({ launchArgs }: AppProps) {
         },
         onToolActivity: (activity) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+          markExternalCliReady();
           if (activeRunCaptureRef.current?.runId === runId) activeRunCaptureRef.current.tools.set(activity.id, activity.command);
           if (lifecycle.responsePresentation === "plan" && !planSeenToolIds.has(activity.id)) {
             // First sight of a tool: mirrors the reducer's insert-only demotion.
@@ -4384,6 +4393,7 @@ export function App({ launchArgs }: AppProps) {
           if (!safeText) return;
           if (isNoiseLine(safeText)) return;
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+          markExternalCliReady();
           const safeUpdate: BackendProgressUpdate = {
             id: update.id?.trim() ? update.id : `legacy-progress-${++legacyProgressSequence}`,
             source: update.source,
