@@ -6,6 +6,29 @@ No changes yet.
 
 ---
 
+## [0.1.8] — 2026-09-30 — Local Server Stall Handling
+
+### Fixed
+
+- A Local server that stops streaming no longer causes a ~35-minute silent hang. Previously, when context compaction timed out, the Harness re-sent the next request five more times, each waiting out the 300-second stream-idle timeout. The Local Harness profile now keeps that timeout explicit and removes `TIMEOUT` from the Local provider's retryable codes. `EMPTY_RESPONSE`, `RATE_LIMIT`, `SERVER` and `TRANSPORT` still retry. The worst case is now about 10 minutes (compaction, then one request) before a clear error.
+- A failed compaction is reported as failed ("could not compact the conversation (…); continuing with the full context") instead of "compacted the conversation", and no longer marks the context meter as compacted.
+- Harness model retries are visible in the transcript as "Local model request failed (…); retrying N/5…" instead of running silently.
+- A stream-idle timeout explains the likely cause: the server is overloaded because RAM is exhausted and model weights page from disk, or a very large uncached prompt is still being processed. It names llama.cpp's `--cache-ram` and `--parallel 1`. It no longer suggests checking tool-calling and chat-template support, which misdiagnosed this case.
+- The Harness bridge now forwards the `compaction/end` error, the `turn/end` error code and `llm/retry` events that it previously dropped.
+
+### Background
+
+The failure was diagnosed on a llama.cpp server (via Unsloth Studio) running a 21.9 GB `qwen35moe` model on a 16 GB GPU with 31 GB RAM. llama.cpp's default 8 GiB host prompt cache filled RAM and swap, so memory-mapped expert weights were read back from disk and generation stalled. Compaction triggered it because its summary request cannot reuse the server's prompt cache and forces a large uncached prefill. This is server configuration; Ubume now fails fast and says so.
+
+### Validation
+
+- All 1,868 tests, TypeScript, the 17-check capability audit, and `npm audit` (zero findings) passed.
+- New tests cover the profile retry policy, bridge projection, compaction failure reporting, retry progress, and the stall message.
+- Against a mock server through the real Harness: a server that never responds fails once after 301 seconds with no timeout retries and shows the stall message. A server returning HTTP 500 once is retried with visible progress and completes.
+- The packed tarball installed into a clean prefix and passed version, `doctor --json`, and packaged Harness mock inference on 3 consecutive runs.
+
+---
+
 ## [0.1.7] — 2026-09-30 — Native Sessions in /resume
 
 ### Added
