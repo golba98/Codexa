@@ -434,3 +434,29 @@ test("forces planMode off while preserving other runtime settings", async () => 
   assert.equal(capturedRuntime.policy.serviceTier, "fast");
   assert.equal(capturedRuntime.policy.personality, "pragmatic");
 });
+
+test("final response supplies an unstreamed suffix and waits for provider teardown", async () => {
+  const io = createIo();
+  let stopped = false;
+  let cleaned = false;
+  const provider = createProvider((_prompt, _options, handlers) => {
+    handlers.onRunControl?.({ stopped: new Promise<void>((resolve) => setTimeout(() => { stopped = true; resolve(); }, 30)) });
+    handlers.onAssistantDelta?.("Hello"); handlers.onResponse("Hello world");
+    return () => { cleaned = true; };
+  });
+  const result = await runHeadlessExec({ prompt: "Prompt", launchArgs: createLaunchArgs(), workspaceRoot: "C:\\Repo" }, io, { resolveLayeredConfig: () => createLayeredConfig(), getBackendProvider: () => provider });
+  assert.equal(result.exitCode, 0); assert.equal(io.stdoutText(), "Hello world"); assert(stopped); assert(cleaned);
+});
+
+test("abort saves partial result and ignores late provider callbacks", async () => {
+  const io = createIo(); const controller = new AbortController();
+  let stopped = false;
+  const provider = createProvider((_prompt, _options, handlers) => {
+    let end!: () => void;
+    handlers.onRunControl?.({ stopped: new Promise<void>((resolve) => { end = resolve; }) });
+    handlers.onAssistantDelta?.("partial"); setTimeout(() => controller.abort(), 10);
+    return () => { setTimeout(() => { handlers.onResponse("late answer"); stopped = true; end(); }, 20); };
+  });
+  const result = await runHeadlessExec({ prompt: "Prompt", launchArgs: createLaunchArgs(), workspaceRoot: "C:\\Repo", signal: controller.signal }, io, { resolveLayeredConfig: () => createLayeredConfig(), getBackendProvider: () => provider });
+  assert.equal(result.exitCode, 130); assert.equal(result.text, "partial"); assert.equal(io.stdoutText(), "partial"); assert(stopped);
+});

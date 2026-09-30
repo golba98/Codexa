@@ -133,10 +133,10 @@ test("TranscriptShell commits history natively and keeps only mutable rows live"
 });
 
 test("/clear and conversation resume drop the timeline row caches", () => {
-  const clearBody = appSource.match(/const handleClear = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[/);
+  const clearBody = appSource.match(/const handleClear = useCallback\((?:async )?\(\) => \{([\s\S]*?)\n  \}, \[/);
   assert.ok(clearBody, "handleClear should exist");
   assert.match(clearBody[1]!, /resetTimelineMeasureCaches\(\)/);
-  const resumeBody = appSource.match(/const resumeConversation = useCallback\(\(id: string\) => \{([\s\S]*?)\n  \}, \[/);
+  const resumeBody = appSource.match(/const resumeConversation = useCallback\((?:async )?\(id: string\) => \{([\s\S]*?)\n  \}, \[/);
   assert.ok(resumeBody, "resumeConversation should exist");
   assert.match(resumeBody[1]!, /resetTimelineMeasureCaches\(\)/);
 });
@@ -224,7 +224,7 @@ test("/clear arms a fresh render generation before transcript reset", () => {
   const armMatch = appSource.match(/const armTranscriptReplacement = useCallback\(\(source: string\) => \{([\s\S]*?)\n  \}, \[/);
   assert.ok(armMatch, "shared transcript-replacement arming should exist");
   assert.ok((armMatch[1] ?? "").includes("beginClearGeneration(clearGeneration)"), "arming should begin a clear generation");
-  const handleClearMatch = appSource.match(/const handleClear = useCallback\(\(\) => \{([\s\S]*?)\n  \}, \[/);
+  const handleClearMatch = appSource.match(/const handleClear = useCallback\((?:async )?\(\) => \{([\s\S]*?)\n  \}, \[/);
   assert.ok(handleClearMatch, "handleClear callback should exist");
   const body = handleClearMatch[1] ?? "";
   const armBoundaryIndex = body.indexOf('armTranscriptReplacement("src/app.tsx:handleClear")');
@@ -242,18 +242,18 @@ test("/clear arms a fresh render generation before transcript reset", () => {
 });
 
 test("/resume arms the clear boundary before swapping the transcript so the logo is not printed twice", () => {
-  const resumeMatch = appSource.match(/const resumeConversation = useCallback\(\(id: string\) => \{([\s\S]*?)\n  \}, \[/);
+  const resumeMatch = appSource.match(/const resumeConversation = useCallback\((?:async )?\(id: string\) => \{([\s\S]*?)\n  \}, \[/);
   assert.ok(resumeMatch, "resumeConversation callback should exist");
   const body = resumeMatch[1] ?? "";
   const armIndex = body.indexOf('armTranscriptReplacement("src/app.tsx:resumeConversation")');
-  const swapIndex = body.indexOf('type: "CLEAR_TRANSCRIPT"');
+  const swapIndex = body.indexOf('type: "RESTORE_SESSION"');
   const finishIndex = body.indexOf("replacement.finish()");
   assert.ok(armIndex >= 0, "resume should arm the clear boundary");
   assert.ok(swapIndex > armIndex, "the clear must be armed before the transcript swap");
   assert.ok(finishIndex > swapIndex, "the fallback check runs after the transcript swap");
 });
 
-test("Ink render-cache reset is reserved for explicit transcript clear", () => {
+test("Ink render-cache reset is reserved for explicit clear and redraw", () => {
   // The repaint authority is clearFrameBoundary's wrapped renderInteractiveFrame:
   // it resets caches both on the /clear boundary AND on width-changing resizes,
   // atomically with the very frame it writes (no transient blank). It must NOT be
@@ -261,7 +261,7 @@ test("Ink render-cache reset is reserved for explicit transcript clear", () => {
   // where a clear/reset would blank the screen until the next React commit.
   assert.match(clearBoundarySource, /resetInkOutputForFreshFrame/, "render-path wrapper owns the cache reset");
   const appResetCalls = appSource.match(/resetInkOutputForFreshFrame\(/g) ?? [];
-  assert.equal(appResetCalls.length, 1, "app.tsx resets only for the /clear fallback");
+  assert.equal(appResetCalls.length, 2, "app.tsx resets for clear fallback and explicit redraw");
   assert.doesNotMatch(appSource, /theme:viewportClear|updateOverlay:viewportClear/);
   assert.doesNotMatch(indexSource, /resetInkOutputForFreshFrame/);
   assert.doesNotMatch(layoutSource, /resetInkOutputForFreshFrame/);

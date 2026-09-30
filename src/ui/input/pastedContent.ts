@@ -2,9 +2,9 @@ export const LARGE_PASTE_THRESHOLD = 1_000;
 
 export const PASTED_CONTENT_PATTERN = /\[Pasted Content ([\d,]+) chars\](?:\u2063[\uFE00-\uFE09]+\u2063)?/g;
 export const IMAGE_ATTACHMENT_PATTERN = /\[Image: ([^\]\n]+)\](?:\u2063[\uFE00-\uFE09]+\u2063)?/g;
-const ATOMIC_CONTENT_PATTERN = /(?:\[Pasted Content [\d,]+ chars\]|\[Image: [^\]\n]+\])(?:\u2063[\uFE00-\uFE09]+\u2063)?/g;
+const ATOMIC_CONTENT_PATTERN = /(?:\[Pasted Content [\d,]+ chars\]|\[(?:Image|File): [^\]\n]+\])(?:\u2063[\uFE00-\uFE09]+\u2063)?/g;
 
-let nextPasteId = 1;
+let nextPasteId = Date.now() * 1000;
 
 export function countCharacters(value: string): number {
   return Array.from(value).length;
@@ -72,4 +72,21 @@ export function deleteAdjacentPastedContent(value: string, cursor: number, direc
     }
   }
   return null;
+}
+
+/** Validate chips before expansion, so literal chip-like text inside files is safe. */
+export function assertAttachedContent(value: string, pastes: PastedContentRegistry, images: ReadonlyMap<string, unknown>, files: ReadonlyMap<string, unknown>): void {
+  const counts = new Map<string, number>();
+  for (const match of value.matchAll(new RegExp(ATOMIC_CONTENT_PATTERN.source, "g"))) {
+    const token = match[0];
+    if (token.startsWith("[Image:")) {
+      if (!images.has(token)) throw new Error("An image attachment is unresolved. Reattach it before sending.");
+    } else if (token.startsWith("[File:")) {
+      if (!files.has(token)) throw new Error("A file attachment is unresolved. Reattach it before sending.");
+    } else {
+      const count = counts.get(token) ?? 0;
+      if (pastes.get(token)?.[count] === undefined) throw new Error("Pasted content is unresolved. Paste it again before sending.");
+      counts.set(token, count + 1);
+    }
+  }
 }

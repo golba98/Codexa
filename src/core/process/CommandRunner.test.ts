@@ -130,3 +130,19 @@ test("generic command runner does not expose shell mode", () => {
   assert.equal(source.includes("shell?: boolean"), false);
   assert.equal(source.includes("spec.shell"), false);
 });
+
+test("cancel waits for an ignoring descendant even after the group leader closes", { skip: process.platform === "win32" }, async () => {
+  const { mkdtempSync, existsSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os"); const { join } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "ubume-group-")); const marker = join(root, "writes");
+  const descendant = `const fs=require('fs');process.on('SIGTERM',()=>{});setInterval(()=>fs.writeFileSync(${JSON.stringify(marker)},String(Date.now())),20)`;
+  const parent = `require('child_process').spawn('node',['-e',${JSON.stringify(descendant)}],{stdio:'ignore'});process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000)`;
+  const runner = runCommand({ executable: "node", args: ["-e", parent], cwd: root });
+  try {
+    const deadline = Date.now() + 5000;
+    while (!existsSync(marker)) { if (Date.now() > deadline) throw new Error("Descendant did not start."); await new Promise((r) => setTimeout(r, 20)); }
+    runner.cancel(); await runner.stopped;
+    const final = readFileSync(marker, "utf8"); await new Promise((r) => setTimeout(r, 100));
+    assert.equal(readFileSync(marker, "utf8"), final, "descendant kept writing after stopped resolved");
+  } finally { try { process.kill(-runner.child.pid!, "SIGKILL"); } catch { /* Already stopped. */ } rmSync(root, { recursive: true, force: true }); }
+});

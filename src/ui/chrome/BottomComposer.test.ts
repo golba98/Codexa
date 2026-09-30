@@ -675,7 +675,7 @@ test("getTokenBarDisplay with isEstimated: false uses comma format (regression g
   assert.equal(display.isEstimatedLimit, false);
 });
 
-test("measures the transient status row while input is locked even for a slash-command draft", () => {
+test("keeps busy composer height stable while entering an exact slash command", () => {
   const layout = createLayoutSnapshot(100, 30);
   const busy = { kind: "THINKING", turnId: 1 } as const;
   const plainDraft = measureBottomComposerRows({ layout, uiState: busy, value: "hello", cursor: 5 });
@@ -728,7 +728,7 @@ test("memoized composer re-renders when the provider CLI becomes ready", () => {
 
 test("memoized composer skips re-render for unchanged busy props", () => {
   const prev = composerProps();
-  const next = composerProps({ layout: prev.layout, uiState: { kind: "THINKING", turnId: 1 } });
+  const next = { ...prev, uiState: { kind: "THINKING", turnId: 1 } as const };
   assert.equal(areBottomComposerPropsEqual(prev, next), true);
 });
 

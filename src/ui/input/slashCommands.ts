@@ -27,6 +27,11 @@ export const SLASH_COMMANDS = [
   { cmd: "/copy", desc: "Copy the full conversation transcript to clipboard" },
   { cmd: "/paste-image", desc: "Attach the image currently on the clipboard" },
   { cmd: "/update", desc: "Check for updates and install the latest Ubume" },
+  { cmd: "/queue", desc: "Manage queued instructions" },
+  { cmd: "/transcript", desc: "Inspect tool activity and output" },
+  { cmd: "/diff", desc: "Review session or turn changes" },
+  { cmd: "/rewind", desc: "Preview conversation and file recovery" },
+  { cmd: "/send-now", desc: "Interrupt and send queued instructions" },
   { cmd: "/exit", desc: "Quit the application" },
 ] as const satisfies readonly SlashCommandSuggestion[];
 

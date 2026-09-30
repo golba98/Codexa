@@ -37,15 +37,6 @@ export type UIStateAction =
   | { type: "SHELL_STARTED"; shellId: number }
   | { type: "SHELL_FINISHED"; shellId: number };
 
-const BUSY_NOTICE_BY_KIND: Record<ConfigMutationKind, string> = {
-  backend: "Finish the current run before changing the backend.",
-  model: "Finish the current run before changing the model.",
-  mode: "Finish the current run before changing the mode.",
-  reasoning: "Finish the current run before changing the reasoning level.",
-  permissions: "Finish the current run before changing permissions.",
-  theme: "Finish the current run before changing the theme.",
-};
-
 // ─── Agent question detection ─────────────────────────────────────────────────
 // Called on the final response text after a run completes.
 // Returns the question string if detected, null otherwise.
@@ -985,8 +976,8 @@ export function trimStaticEvents(events: TimelineEvent[]): TimelineEvent[] {
 }
 
 export function guardConfigMutation(kind: ConfigMutationKind, busy: boolean): { allowed: boolean; message?: string } {
-  if (!busy) return { allowed: true };
-  return { allowed: false, message: BUSY_NOTICE_BY_KIND[kind] };
+  // Runs own an immutable runtime snapshot; composer settings apply to the next run.
+  return { allowed: true };
 }
 
 export function isCurrentRun(activeRunId: number | null, runId: number): boolean {

@@ -9,6 +9,7 @@ let cachedExecutable: string | null = null;
 let resolveInFlight: Promise<string> | null = null;
 
 interface SpawnOptions {
+  detached?: boolean;
   stdio: ["ignore" | "pipe", "pipe", "pipe"];
 }
 

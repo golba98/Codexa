@@ -107,8 +107,9 @@ test("ConversationStore ignores malformed Local context checkpoints", () => {
   conversations.save(created);
 
   const rootDir = (conversations as unknown as { rootDir: string }).rootDir;
-  const metadataPath = join(rootDir, created.metadata.id, "metadata.json");
-  const metadata = JSON.parse(readFileSync(metadataPath, "utf8")) as Record<string, unknown>;
+  const metadataPath = join(rootDir, created.metadata.id, "snapshot.json");
+  const snapshot = JSON.parse(readFileSync(metadataPath, "utf8"));
+  const metadata = snapshot.metadata as Record<string, unknown>;
   metadata.localContextCheckpoint = {
     version: 1,
     modelId: "ornith",
@@ -118,7 +119,7 @@ test("ConversationStore ignores malformed Local context checkpoints", () => {
     summary: "Invalid checkpoint",
     updatedAt: "2026-08-16T10:00:00.000Z",
   };
-  writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+  writeFileSync(metadataPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
 
   assert.equal(conversations.load(created.metadata.id)?.metadata.localContextCheckpoint, undefined);
 });
@@ -171,4 +172,22 @@ test("ConversationStore round-trips assistant activity summaries and loads messa
     { role: "user", content: "Thanks" },
   ]);
   assert.equal("activitySummary" in (loaded?.messages[0] ?? {}), false);
+});
+
+test("atomic snapshots preserve submitted context and ignore stale legacy dialogue", () => {
+  const conversations = store("2026-09-30T12:00:00Z", "snapshot");
+  const record = conversations.createConversation({ providerId: "openai", modelId: "gpt-5.4", backendKind: "cli-delegated" });
+  record.messages.push({ role: "user", content: "[Pasted Content 2000 chars]", submittedContent: "exact immutable source", turnId: 12 });
+  record.session = { version: 1, events: [], uiState: { kind: "IDLE" }, plan: { kind: "idle" }, draft: "unsent", cursor: 6, history: [], pastes: [], images: [], files: [], queue: [], checkpoints: [] };
+  conversations.save(record);
+  const root = (conversations as unknown as { rootDir: string }).rootDir;
+  writeFileSync(join(root, record.metadata.id, "messages.json"), JSON.stringify([{ role: "user", content: "stale" }]));
+  const restored = conversations.load(record.metadata.id);
+  assert.equal(restored?.messages[0]?.submittedContent, "exact immutable source");
+  assert.equal(restored?.session?.draft, "unsent");
+  const snapshotPath = join(root, record.metadata.id, "snapshot.json");
+  const snapshot = JSON.parse(readFileSync(snapshotPath, "utf8")); snapshot.session.queue = [null];
+  writeFileSync(snapshotPath, JSON.stringify(snapshot));
+  assert.equal(conversations.load(record.metadata.id)?.session, undefined);
+  assert.equal(conversations.load(record.metadata.id)?.messages[0]?.submittedContent, "exact immutable source");
 });

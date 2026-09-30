@@ -50,7 +50,7 @@ function RunFooter({ uiState, showBusyLoader = true }: RunFooterProps) {
           <AnimatedStatusText baseText={getRunFooterStatus(uiState)} isActive={isActive} />
         </Box>
         <Box flexShrink={0}>
-          <Text color={theme.textDim}>Esc cancel  Ctrl+C quit</Text>
+          <Text color={theme.textDim}>Esc / Ctrl+C stop</Text>
         </Box>
       </Box>
     </Box>

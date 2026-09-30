@@ -5,9 +5,12 @@ import {
   readFileSync,
   renameSync,
   writeFileSync,
+  unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { acquireOwnership, type OwnershipLease } from "./ownership.js";
+import { parseWorkbench, type WorkbenchSnapshot } from "../../session/workbench.js";
 import type { ProviderBackendKind } from "../providerRuntime/types.js";
 import type { ProviderId } from "../providerLauncher/types.js";
 import type { LocalBackendId } from "../providerLauncher/types.js";
@@ -20,6 +23,9 @@ export interface ConversationMessage {
   content: string;
   /** Files changed / commands run during the run that produced this reply. */
   activitySummary?: string;
+  submittedContent?: string;
+  turnId?: number;
+  createdAt?: number;
 }
 
 export interface ConversationContextCheckpoint {
@@ -58,17 +64,21 @@ export interface ConversationMetadata {
   localContextCheckpoint?: ConversationContextCheckpoint;
   localHarnessSession?: LocalHarnessSessionMetadata;
   messageCount: number;
+  parentConversationId?: string;
+  parentCheckpointId?: string;
 }
 
 export interface ConversationRecord {
   metadata: ConversationMetadata;
   messages: ConversationMessage[];
+  session?: WorkbenchSnapshot;
 }
 
 export interface ConversationListEntry extends ConversationMetadata {}
 
 interface ConversationStoreOptions {
   rootDir?: string;
+  ownership?: boolean;
   now?: () => Date;
   idFactory?: () => string;
   onDiagnostic?: (message: string) => void;
@@ -152,7 +162,11 @@ function parseMessages(value: unknown): ConversationMessage[] | null {
     const activitySummary = typeof item.activitySummary === "string" && item.activitySummary.trim()
       ? item.activitySummary
       : null;
-    messages.push({ role, content, ...(activitySummary ? { activitySummary } : {}) });
+    messages.push({ role, content, ...(activitySummary ? { activitySummary } : {}),
+      ...(typeof item.submittedContent === "string" ? { submittedContent: item.submittedContent } : {}),
+      ...(Number.isInteger(item.turnId) ? { turnId: item.turnId as number } : {}),
+      ...(typeof item.createdAt === "number" ? { createdAt: item.createdAt } : {}),
+    });
   }
   return messages;
 }
@@ -183,6 +197,8 @@ function parseMetadata(value: unknown, fallbackId: string): ConversationMetadata
     ...(localContextCheckpoint ? { localContextCheckpoint } : {}),
     ...(localHarnessSession ? { localHarnessSession } : {}),
     messageCount,
+    ...(typeof value.parentConversationId === "string" && isSafeConversationId(value.parentConversationId) ? { parentConversationId: value.parentConversationId } : {}),
+    ...(typeof value.parentCheckpointId === "string" ? { parentCheckpointId: value.parentCheckpointId } : {}),
   };
 }
 
@@ -194,9 +210,13 @@ function titleFromMessages(messages: ConversationMessage[]): string {
 }
 
 function atomicWriteJson(filePath: string, value: unknown): void {
-  const temporaryPath = `${filePath}.tmp`;
-  writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  renameSync(temporaryPath, filePath);
+  const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    renameSync(temporaryPath, filePath);
+  } finally {
+    if (existsSync(temporaryPath)) unlinkSync(temporaryPath);
+  }
 }
 
 function isSafeConversationId(id: string): boolean {
@@ -205,16 +225,30 @@ function isSafeConversationId(id: string): boolean {
 
 export class ConversationStore {
   private readonly rootDir: string;
+  private lease?: { id: string; value: OwnershipLease };
+  private readonly ownership: boolean;
+  private readonly workspace: string;
   private readonly now: () => Date;
   private readonly idFactory: () => string;
   private readonly onDiagnostic: (message: string) => void;
 
   constructor(workspaceRoot: string, options: ConversationStoreOptions = {}) {
+    this.workspace = workspaceRoot;
+    this.ownership = options.ownership ?? false;
     this.rootDir = options.rootDir ?? resolveUbumeConversationDir(workspaceRoot);
     this.now = options.now ?? (() => new Date());
     this.idFactory = options.idFactory ?? (() => randomUUID());
     this.onDiagnostic = options.onDiagnostic ?? (() => undefined);
   }
+
+  acquire(id: string): void {
+    if (!this.ownership || this.lease?.id === id) return;
+    this.conversationDir(id);
+    const value = acquireOwnership(this.workspace, id);
+    this.release();
+    this.lease = { id, value };
+  }
+  release(): void { this.lease?.value.release(); this.lease = undefined; }
 
   private conversationDir(id: string): string {
     if (!isSafeConversationId(id)) throw new Error("Invalid conversation id.");
@@ -252,12 +286,16 @@ export class ConversationStore {
   }
 
   save(record: ConversationRecord): void {
+    this.acquire(record.metadata.id);
     const dir = this.conversationDir(record.metadata.id);
     mkdirSync(dir, { recursive: true });
     const messages = record.messages.map((message) => ({
       role: message.role,
       content: message.content,
       ...(message.activitySummary ? { activitySummary: message.activitySummary } : {}),
+      ...(message.submittedContent === undefined ? {} : { submittedContent: message.submittedContent }),
+      ...(message.turnId === undefined ? {} : { turnId: message.turnId }),
+      ...(message.createdAt === undefined ? {} : { createdAt: message.createdAt }),
     }));
     const metadata: ConversationMetadata = {
       ...record.metadata,
@@ -265,18 +303,21 @@ export class ConversationStore {
       updatedAt: this.now().toISOString(),
       messageCount: messages.length,
     };
-    atomicWriteJson(join(dir, "messages.json"), messages);
-    atomicWriteJson(join(dir, "metadata.json"), metadata);
+    // One authoritative generation; legacy files are read-only migration inputs.
+    atomicWriteJson(join(dir, "snapshot.json"), { version: 2, metadata, messages, session: record.session });
   }
 
   load(id: string): ConversationRecord | null {
     try {
       const dir = this.conversationDir(id);
-      const messages = parseMessages(JSON.parse(readFileSync(join(dir, "messages.json"), "utf8")));
+      const snapshotPath = join(dir, "snapshot.json");
+      const snapshot = existsSync(snapshotPath) ? JSON.parse(readFileSync(snapshotPath, "utf8")) : null;
+      if (snapshot && snapshot.version !== 2) throw new Error("Unsupported conversation snapshot version");
+      const messages = parseMessages(snapshot ? snapshot.messages : JSON.parse(readFileSync(join(dir, "messages.json"), "utf8")));
       if (!messages) throw new Error("messages.json is not a valid conversation message array");
-      let metadata: ConversationMetadata | null = null;
+      let metadata: ConversationMetadata | null = snapshot ? parseMetadata(snapshot.metadata, id) : null;
       const metadataPath = join(dir, "metadata.json");
-      if (existsSync(metadataPath)) {
+      if (!snapshot && existsSync(metadataPath)) {
         metadata = parseMetadata(JSON.parse(readFileSync(metadataPath, "utf8")), id);
       }
       const timestamp = this.now().toISOString();
@@ -292,7 +333,9 @@ export class ConversationStore {
         messageCount: messages.length,
       };
       metadata = { ...metadata, messageCount: messages.length };
-      return { metadata, messages };
+      const session = snapshot ? parseWorkbench(snapshot.session) : undefined;
+      if (snapshot?.session && !session) this.onDiagnostic(`Conversation ${id}: auxiliary session data is invalid; restored dialogue only.`);
+      return { metadata, messages, ...(session ? { session } : {}) };
     } catch (error) {
       this.onDiagnostic(`Skipped conversation ${id}: ${error instanceof Error ? error.message : "invalid data"}`);
       return null;
@@ -313,6 +356,11 @@ export class ConversationStore {
       if (!entry.isDirectory() || !isSafeConversationId(entry.name)) continue;
       const dir = join(this.rootDir, entry.name);
       try {
+        if (existsSync(join(dir, "snapshot.json"))) {
+          const record = this.load(entry.name);
+          if (record) entries.push(record.metadata);
+          continue;
+        }
         const metadataPath = join(dir, "metadata.json");
         if (existsSync(metadataPath)) {
           const metadata = parseMetadata(JSON.parse(readFileSync(metadataPath, "utf8")), entry.name);

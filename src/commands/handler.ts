@@ -48,6 +48,11 @@ export type CommandAction =
   | "exit"
   | "clear"
   | "resume"
+  | "queue"
+  | "transcript"
+  | "diff"
+  | "rewind"
+  | "send_now"
   | "login"
   | "logout"
   | "auth_status"
@@ -347,7 +352,12 @@ function buildHelpMessage(context: CommandContext): string {
     "Commands:",
     "  /exit, /quit       Quit the application and cancel active run",
     "  /clear             Clear the chat window and cancel the active run",
-    "  /resume            Resume a previous conversation",
+    "  /resume [id]       Resume a previous conversation",
+    "  /queue             Inspect, edit, reorder, or continue queued prompts",
+    "  /transcript        Inspect detailed tool activity",
+    "  /diff              Review session or turn changes",
+    "  /rewind            Preview conversation/file recovery",
+    "  /send-now          Interrupt and send queued instructions",
     "  /diagnose github|providers   Run diagnostics",
     "  /backend [name]    Switch backend (no arg opens picker)",
     "  /providers         Open provider picker (/provider alias)",
@@ -401,17 +411,20 @@ function buildHelpMessage(context: CommandContext): string {
     "  ubume-dev                Run this repo without replacing ubume",
     "",
     "Shortcuts:",
-    "  Ctrl+B    Open backend picker",
-    "  Ctrl+O    Open model picker",
+    "  Ctrl+B/F  Move cursor left/right",
+    "  Ctrl+O    Inspect transcript · Alt+P choose model",
     "  Shift+Tab Rotate Plan → Read-only → Auto → Full Access",
     "  Ctrl+Alt+P Open provider picker",
-    "  Ctrl+A    Open auth panel",
+    "  Ctrl+A/E  Move to line start/end",
     "  Ctrl+V    Attach clipboard image (when forwarded by the terminal)",
-    "  Ctrl+L    Clear chat and cancel active run",
+    "  Ctrl+L    Redraw screen without clearing history",
     "  Esc       Cancel active run or shell command",
-    "  Ctrl+Y    Cycle execution mode",
-    "  Ctrl+C / Ctrl+Q    Quit",
-    "  ↑ / ↓    Navigate input history",
+    "  Ctrl+Y    Restore deleted text · Shift+Tab cycle mode",
+    "  Ctrl+C    Stop active run or clear draft · Ctrl+Q quit",
+    "  ↑ / ↓    Move within prompt, then navigate history",
+    "  Ctrl+R    Search history · Ctrl+_ undo input",
+    "  Ctrl+G    Edit prompt in VISUAL/EDITOR",
+    "  Ctrl+X Ctrl+S Send queued instructions now",
   ].join("\n");
 }
 
@@ -821,6 +834,11 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       case "paste-image":
         return { action: "paste_image" };
 
+      case "queue": return { action: "queue" };
+      case "transcript": return { action: "transcript" };
+      case "diff": return { action: "diff" };
+      case "rewind": return { action: "rewind" };
+      case "send-now": return { action: "send_now" };
       case "resume":
         return { action: "resume" };
 

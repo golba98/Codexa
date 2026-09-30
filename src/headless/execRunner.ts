@@ -1,3 +1,7 @@
+import { resolveExecutionContext } from "./context.js";
+import type { BackendRunHandlers, ProviderRunControl } from "../core/providers/types.js";
+import type { ConversationRecord } from "../core/workspace/conversationStore.js";
+import { toProviderConversationHistory } from "../session/conversation.js";
 import {
   resolveLayeredConfig,
   type LayeredConfigResult,
@@ -33,10 +37,17 @@ export interface HeadlessExecOptions {
   workspaceRoot?: string;
   benchmarkDiagnostics?: HeadlessExecTiming;
   promptPolicy?: "raw" | "wrapped";
+  providerId?: string;
+  saved?: ConversationRecord;
+  signal?: AbortSignal;
+  handlers?: Partial<BackendRunHandlers>;
+  context?: ReturnType<typeof resolveExecutionContext>;
 }
 
 export interface HeadlessExecResult {
   exitCode: number;
+  text?: string;
+  error?: string;
 }
 
 export interface HeadlessExecDependencies {
@@ -177,13 +188,14 @@ export async function runHeadlessExec(
   diagnostics?.mark("run_headless_start");
   const workspaceRoot = options.workspaceRoot ?? deps.resolveWorkspaceRoot();
   diagnostics?.mark("workspace_resolved", { workspace_root: workspaceRoot });
-  const layeredConfig = deps.resolveLayeredConfig({
+  const context = options.context ?? (dependencies.getBackendProvider ? undefined : resolveExecutionContext(workspaceRoot, options.launchArgs, { providerId: options.providerId, saved: options.saved }));
+  const layeredConfig = context?.layered ?? deps.resolveLayeredConfig({
     workspaceRoot,
     launchArgs: options.launchArgs,
   });
   diagnostics?.mark("layered_config_loaded");
   const runtimeConfig = mergeRuntimeConfig(layeredConfig.runtime, { planMode: false });
-  const runtime = deps.resolveRuntimeConfig(runtimeConfig);
+  const runtime = context?.runtime ?? deps.resolveRuntimeConfig(runtimeConfig);
   diagnostics?.mark("runtime_config_resolved", {
     effective_model: runtime.model,
     effective_reasoning_effort: runtime.reasoningLevel,
@@ -202,7 +214,7 @@ export async function runHeadlessExec(
     project_instructions_character_count: projectInstructions?.content.length ?? 0,
   });
 
-  const provider = deps.getBackendProvider(runtime.provider);
+  const provider = context?.provider ?? deps.getBackendProvider(runtime.provider);
   diagnostics?.mark("provider_created", {
     provider_id: provider.id,
     provider_label: provider.label,
@@ -223,36 +235,60 @@ export async function runHeadlessExec(
     return { exitCode: HEADLESS_EXEC_PROVIDER_UNAVAILABLE };
   }
 
-  return await new Promise<HeadlessExecResult>((resolve) => {
+  let control: ProviderRunControl | undefined;
+  let cleanup: (() => void) | undefined;
+  let interrupt: () => void = () => undefined;
+  const result = await new Promise<HeadlessExecResult>((resolve) => {
     let settled = false;
-    const settle = (exitCode: number) => {
+    let streamedText = "";
+    let finalText = "";
+    const settle = (exitCode: number, error?: string) => {
       if (settled) return;
       settled = true;
-      resolve({ exitCode });
+      resolve({ exitCode, text: finalText || streamedText, ...(error ? { error } : {}) });
     };
 
+    interrupt = () => { if (settled) return; cleanup?.(); settle(130, "Run interrupted."); };
+    options.signal?.addEventListener("abort", interrupt, { once: true });
+    if (options.signal?.aborted) { interrupt(); return; }
     try {
-      let streamedAssistantChars = 0;
       const toolActivityIds = new Set<string>();
 
-      provider.run!(
+      const cancel = provider.run!(
         options.prompt,
-        { runtime, workspaceRoot, projectInstructions, promptPolicy },
+        { runtime, workspaceRoot, projectInstructions, promptPolicy,
+          conversationHistory: options.saved ? toProviderConversationHistory(options.saved.messages, { includeActivitySummaries: context?.route.providerId !== "local" }) : undefined,
+          localContextCheckpoint: options.saved?.metadata.localContextCheckpoint,
+        },
         {
+          onRunControl: (value) => { control = value; options.handlers?.onRunControl?.(value); },
+          onToolApproval: async (request) => {
+            const decision = await options.handlers?.onToolApproval?.(request) ?? "deny";
+            if (decision === "deny") { const message = "This tool requires interactive approval. Use the TUI or configure an explicit approval policy."; writeDiagnostic(io.stderr, "approval", message); settle(3, message); cleanup?.(); }
+            return decision;
+          },
+          onLocalContextCheckpoint: options.handlers?.onLocalContextCheckpoint,
+          onLocalHarnessSession: options.handlers?.onLocalHarnessSession,
           onAssistantDelta: (chunk) => {
             const safeChunk = sanitizeTerminalOutput(chunk, { preserveTabs: false, tabSize: 2 });
             if (shouldSuppressAssistantChunk(safeChunk)) return;
             if (!safeChunk) return;
-            streamedAssistantChars += safeChunk.length;
+            if (settled) return;
+            streamedText += safeChunk;
+            options.handlers?.onAssistantDelta?.(safeChunk);
             io.stdout.write(safeChunk);
           },
           onProgress: (update) => {
+            if (settled) return;
+            options.handlers?.onProgress?.(update);
             const safeText = formatDiagnosticText(update.text);
             if (!safeText || isNoiseLine(safeText) || isProcessTerminationNoise(safeText)) return;
             if (update.source === "tool" && toolActivityIds.has(update.id)) return;
             writeDiagnostic(io.stderr, update.source, safeText);
           },
           onToolActivity: (activity) => {
+            if (settled) return;
+            options.handlers?.onToolActivity?.(activity);
             toolActivityIds.add(activity.id);
             writeDiagnostic(io.stderr, "tool", formatToolActivity(activity));
           },
@@ -262,16 +298,18 @@ export async function runHeadlessExec(
             });
           },
           onResponse: (response) => {
+            if (settled) return;
             const safeResponse = sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 });
-            if (streamedAssistantChars === 0 && safeResponse) {
-              io.stdout.write(safeResponse);
-            }
+            finalText = safeResponse;
+            if (safeResponse.startsWith(streamedText)) io.stdout.write(safeResponse.slice(streamedText.length));
+            else if (safeResponse && safeResponse !== streamedText) io.stdout.write(`${streamedText ? "\n" : ""}${safeResponse}`);
+            options.handlers?.onResponse?.(safeResponse);
             settle(0);
           },
           onError: (message, rawOutput) => {
             const details = [message, rawOutput].filter((value) => value?.trim()).join("\n");
             writeDiagnostic(io.stderr, "error", details || "Provider run failed.");
-            settle(HEADLESS_EXEC_RUN_FAILED);
+            settle(HEADLESS_EXEC_RUN_FAILED, details || "Provider run failed.");
           },
           benchmarkHooks: diagnostics?.enabled
             ? {
@@ -296,9 +334,17 @@ export async function runHeadlessExec(
             : undefined,
         },
       );
+      let canceled = false;
+      cleanup = () => { if (canceled) return; canceled = true; cancel(); };
+      if (options.signal?.aborted) cleanup();
     } catch (error) {
       writeDiagnostic(io.stderr, "error", error instanceof Error ? error.message : String(error));
-      settle(HEADLESS_EXEC_RUN_FAILED);
+      settle(HEADLESS_EXEC_RUN_FAILED, error instanceof Error ? error.message : String(error));
     }
   });
+  try {
+    cleanup?.();
+    if (control) await control.stopped;
+    return result;
+  } finally { options.signal?.removeEventListener("abort", interrupt); }
 }

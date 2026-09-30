@@ -100,6 +100,8 @@ export interface ProviderRouteValidationResult {
 
 export interface ProviderChatRequest {
   prompt: string;
+  promptPolicy?: "raw" | "wrapped";
+  claudeCommandPath?: string;
   imageAttachments?: readonly ProviderImageAttachment[];
   route: ProviderRoute;
   runtime: ResolvedRuntimeConfig;

@@ -52,6 +52,7 @@ const openAiRuntime: ProviderRuntime = {
         runtime: request.runtime,
         workspaceRoot: request.workspaceRoot,
         projectInstructions: request.projectInstructions,
+        promptPolicy: request.promptPolicy,
         conversationHistory: request.conversationHistory,
         imageAttachments: request.imageAttachments,
       },

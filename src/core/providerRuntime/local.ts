@@ -1,3 +1,4 @@
+import { createRunControl } from "../providers/runControl.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { LocalBackendId, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
@@ -735,12 +736,13 @@ export const localRuntime: ProviderRuntime = {
   },
   run: (request, handlers) => {
     const controller = new AbortController();
+    const control = createRunControl(handlers);
     handlers.onProgress?.({
       id: "local-route",
       source: "stdout",
       text: "Starting Local agent harness",
     });
-    resolveLocalAgentConfig(request, controller.signal)
+    const work = resolveLocalAgentConfig(request, controller.signal)
       .then((resolvedLocalAgentConfig) => {
         if (controller.signal.aborted) throw new DOMException("Local request cancelled.", "AbortError");
         return runLocalHarness({ ...request, resolvedLocalAgentConfig }, handlers, controller.signal);
@@ -761,7 +763,9 @@ export const localRuntime: ProviderRuntime = {
           ].join("\n");
         handlers.onError(message);
       });
-    return () => controller.abort();
+    control.track(work);
+    void work.finally(() => control.finish());
+    return () => { controller.abort(); control.finish(); };
   },
 };
 

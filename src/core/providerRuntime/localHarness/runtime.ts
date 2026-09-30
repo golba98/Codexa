@@ -778,6 +778,7 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
         status: failed ? "failed" : "completed",
         startedAt: Date.now(),
         completedAt: Date.now(),
+        output: textFromContent(data.message.content),
         summary: textFromContent(data.message.content).slice(0, 2_000) || (failed ? "Tool failed" : "Tool completed"),
       });
       state.toolEventCount += 1;
@@ -1062,6 +1063,8 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     }
   }
 
+  async waitForCleanup(): Promise<void> { await this.failedSessionCleanup; }
+
   async closeSession(sessionId: string): Promise<void> {
     if (!this.transport || !sessionId) return;
     await this.transport.request("session/close", { sessionId });
@@ -1084,8 +1087,10 @@ export function resetLocalHarnessProcessForTests(processOverride: LocalHarnessRu
   sharedProcess = processOverride;
 }
 
-export function runLocalHarness(request: ProviderChatRequest, handlers: BackendRunHandlers, signal: AbortSignal): Promise<string> {
-  return sharedProcess.run(request, handlers, signal);
+export async function runLocalHarness(request: ProviderChatRequest, handlers: BackendRunHandlers, signal: AbortSignal): Promise<string> {
+  const runner = sharedProcess;
+  try { return await runner.run(request, handlers, signal); }
+  finally { if (runner instanceof LocalHarnessProcess) await runner.waitForCleanup(); }
 }
 
 export function shutdownLocalHarness(): Promise<void> {

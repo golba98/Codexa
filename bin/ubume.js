@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn } from "child_process";
-import { appendFileSync, mkdirSync, readFileSync } from "fs";
+import { appendFileSync, mkdirSync, readFileSync, realpathSync, statSync } from "fs";
 import { homedir } from "os";
-import { dirname, join } from "path";
+import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 
 process.title = "UBUME";
@@ -29,8 +29,27 @@ function resolveLauncherDebugDir() {
 
 const currentFile = fileURLToPath(import.meta.url);
 const packageRoot = dirname(dirname(currentFile));
-const forwardArgs = process.argv.slice(2);
-const workspaceRoot = process.cwd();
+const forwardArgs = [];
+let workspaceRoot = process.cwd();
+const originalArgs = process.argv.slice(2);
+let literalArgs = false;
+for (let i = 0; i < originalArgs.length; i++) {
+  const arg = originalArgs[i];
+  if (arg === "--") literalArgs = true;
+  if (!literalArgs && (arg === "--cwd" || arg.startsWith("--cwd="))) {
+    const value = arg === "--cwd" ? originalArgs[++i] : arg.slice(6);
+    try {
+      if (!value || value.startsWith("--")) throw new Error("Missing value for --cwd.");
+      workspaceRoot = realpathSync(resolve(process.cwd(), value));
+      if (!statSync(workspaceRoot).isDirectory()) throw new Error("--cwd must select a directory.");
+    } catch (error) {
+      const message = `Invalid --cwd: ${error.message}`;
+      if (originalArgs.includes("--json")) process.stdout.write(JSON.stringify({ schemaVersion: 1, command: originalArgs.find((item) => ["exec", "doctor", "status", "config", "providers", "models", "sessions"].includes(item)) ?? "exec", ok: false, data: null, error: { code: "USAGE", message } }) + "\n");
+      else process.stderr.write(message + "\n");
+      process.exit(2);
+    }
+  } else forwardArgs.push(arg);
+}
 const launcherStartTimeMs = Number(process.env.UBUME_EXEC_TIMING_EPOCH_MS || process.env.CODEXA_EXEC_TIMING_EPOCH_MS) || Date.now();
 let launcherPreviousElapsedMs = 0;
 let intendedTerminalTitle = "Ubume";
@@ -165,6 +184,11 @@ Usage:
   ubume
   ubume "explain this repo"
   ubume exec "print the current directory"
+  ubume doctor [--probe]
+  ubume status | config | providers | models
+  ubume sessions list | show <id> | transcript <id> | diff <id>
+  ubume exec --resume <id> "next instruction"
+  ubume exec --stdin
   ubume --headless-benchmark "print the current directory"
   ubume [options] [prompt]
 
@@ -173,6 +197,11 @@ Options:
   -v, --version           Show the installed Ubume version and exit.
       --headless-benchmark
                            Run Ubume through the headless benchmark path.
+      --cwd <directory>   Select the workspace.
+      --json              Machine-readable output for terminal commands.
+      --provider <id>     Select a provider for exec/models.
+      --no-save           Run exec without saving a conversation.
+      --file <path>       Attach a project text file to exec (repeatable).
       --profile <name>    Load a profile from config.
   -m, --model <name>      Select the model for this launch.
       --reasoning <effort>
@@ -187,9 +216,10 @@ Inside Ubume:
 `);
 }
 
-const isHeadlessExec = forwardArgs[0] === "exec";
-const isHeadlessBenchmark = forwardArgs[0] === "--headless-benchmark";
-const isHeadlessMode = isHeadlessExec || isHeadlessBenchmark;
+const commandName = forwardArgs[0] === "--json" ? forwardArgs[1] : forwardArgs[0];
+const isHeadlessExec = commandName === "exec";
+const isHeadlessBenchmark = commandName === "--headless-benchmark";
+const isHeadlessMode = isHeadlessExec || isHeadlessBenchmark || ["doctor", "status", "config", "providers", "models", "sessions"].includes(commandName);
 const execTimingEnabled = isHeadlessMode
   && (
     process.env.UBUME_EXEC_TIMING === "1"
@@ -283,13 +313,13 @@ const bunExecutable = process.env.UBUME_BUN_EXECUTABLE?.trim()
   || (process.platform === "win32" ? "bun.exe" : "bun");
 
 const appEntry = join(packageRoot, "src", "index.tsx");
-const execEntry = join(packageRoot, "src", "exec.ts");
+const execEntry = join(packageRoot, "src", "cli.ts");
 const bunEntry = isHeadlessMode ? execEntry : appEntry;
-const bunForwardArgs = isHeadlessMode ? forwardArgs.slice(1) : forwardArgs;
+const bunForwardArgs = forwardArgs;
 
 // Detect if parent process has a real TTY
 const childStdio = isHeadlessMode
-  ? ["ignore", "inherit", "inherit"]
+  ? ["inherit", "inherit", "inherit"]
   : parentHasTTY
     ? ["inherit", "inherit", "inherit"]
     : ["pipe", "pipe", "pipe"];
@@ -332,6 +362,12 @@ const child = spawn(
     },
   },
 );
+
+const forwardInterrupt = (signal) => { if (child.exitCode === null && child.signalCode === null) child.kill(signal); };
+const onSigint = () => forwardInterrupt("SIGINT");
+const onSigterm = () => forwardInterrupt("SIGTERM");
+process.on("SIGINT", onSigint);
+process.on("SIGTERM", onSigterm);
 
 child.once("spawn", () => {
   if (!isHeadlessMode && parentHasTTY) {
@@ -379,12 +415,14 @@ child.on("error", (error) => {
     recordIntendedTitle("bun-spawn-error-disabled");
   }
   markExecTiming("bun_spawn_error", { message: error.message });
+  if (isHeadlessMode && forwardArgs.includes("--json")) process.stdout.write(JSON.stringify({ schemaVersion: 1, command: commandName, ok: false, data: null, error: { code: "RUNTIME_UNAVAILABLE", message: `Failed to launch Bun: ${error.message}` } }) + "\n");
   console.error(`Failed to launch Bun: ${error.message}`);
   console.error("Bun is required to launch ubume. Install Bun, then run this command again.");
   process.exit(1);
 });
 
 child.on("close", (code, signal) => {
+  process.off("SIGINT", onSigint); process.off("SIGTERM", onSigterm);
   if (!isHeadlessMode && parentHasTTY) {
     recordIntendedTitle("bun-close-disabled");
   }

@@ -519,7 +519,7 @@ test("documents runtime commands in help", () => {
   assert.doesNotMatch(result?.message ?? "", /\/mouse/);
   assert.match(result?.message ?? "", /Current plan mode: Disabled/i);
   assert.match(result?.message ?? "", /Shift\+Tab\s+Rotate Plan.*Read-only.*Auto.*Full Access/i);
-  assert.match(result?.message ?? "", /Ctrl\+Y\s+Cycle execution mode/i);
+  assert.match(result?.message ?? "", /Ctrl\+Y\s+Restore deleted text/i);
   assert.match(result?.message ?? "", /Ctrl\+Alt\+P\s+Open provider picker/i);
 });
 

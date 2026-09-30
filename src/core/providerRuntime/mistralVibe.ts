@@ -1,3 +1,4 @@
+import { createRunControl } from "../providers/runControl.js";
 import { existsSync, readFileSync } from "fs";
 import { readdir, readFile } from "fs/promises";
 import { homedir } from "os";
@@ -395,6 +396,7 @@ export function createVibeStreamParser(
           status: "completed",
           startedAt: running.startedAt,
           completedAt: Date.now(),
+          output: extractVibeText(message.content),
           summary: truncateForActivity(extractVibeText(message.content)) || null,
         });
       }
@@ -474,7 +476,7 @@ export function createVibeStreamParser(
 type VibeCommandRunner = (
   spec: CommandSpec,
   handlers: CommandStreamHandlers,
-) => { result: Promise<CommandResult>; cancel: () => void };
+) => { result: Promise<CommandResult>; cancel: () => void; stopped?: Promise<void> };
 
 export interface RunMistralVibeDeps {
   runCommandImpl?: VibeCommandRunner;
@@ -493,6 +495,7 @@ export function runMistralVibe(
   handlers: BackendRunHandlers,
   deps: RunMistralVibeDeps = {},
 ): () => void {
+  const control = createRunControl(handlers);
   let cancelled = false;
   let currentCancel: (() => void) | null = null;
   const now = deps.now ?? Date.now;
@@ -545,17 +548,20 @@ export function runMistralVibe(
       },
     );
     currentCancel = runner.cancel;
+    control.track(runner.stopped ?? runner.result.then(() => undefined));
 
     runner.result.then((result) => {
-      if (cancelled || result.status === "canceled") return;
+      if (cancelled || result.status === "canceled") { control.finish(); return; }
       parser.flush();
 
       if (result.status !== "completed" || result.exitCode !== 0) {
         if (isVibeAuthFailure(result.stderr)) {
+          control.finish();
           handlers.onError(MISTRAL_VIBE_AUTH_MESSAGE, result.stderr);
           return;
         }
         if (result.status === "spawn_error" && result.errorCode === "ENOENT") {
+          control.finish();
           handlers.onError(MISTRAL_VIBE_MISSING_MESSAGE);
           return;
         }
@@ -569,6 +575,7 @@ export function runMistralVibe(
           runAttempt(executable, null);
           return;
         }
+        control.finish();
         handlers.onError(
           result.userMessage || "Mistral Vibe execution failed.",
           result.stderr.trim() || undefined,
@@ -580,6 +587,7 @@ export function runMistralVibe(
       if (!parser.assistantText() && finalText) {
         handlers.onAssistantDelta?.(finalText);
       }
+      control.finish();
       handlers.onFinalAnswerObserved?.(finalText);
       handlers.onResponse(finalText);
 
@@ -589,6 +597,7 @@ export function runMistralVibe(
         })
         .catch(() => undefined);
     }).catch((error) => {
+      control.finish();
       if (cancelled) return;
       handlers.onError(error instanceof Error ? error.message : "Mistral Vibe execution failed.");
     });
@@ -596,17 +605,19 @@ export function runMistralVibe(
 
   void (async () => {
     const executable = await resolveExecutable(workspaceRoot);
-    if (cancelled) return;
+    if (cancelled) { control.finish(); return; }
     if (!executable) {
+      control.finish();
       handlers.onError(MISTRAL_VIBE_MISSING_MESSAGE);
       return;
     }
     runAttempt(executable, getMistralVibeSessionId(workspaceRoot));
-  })();
+  })().catch((error) => { control.finish(); if (!cancelled) handlers.onError(error instanceof Error ? error.message : "Mistral Vibe launch failed."); });
 
   return () => {
     cancelled = true;
     currentCancel?.();
+    control.finish();
   };
 }
 

@@ -64,13 +64,14 @@ export function writeTerminalControl(
     || sequence.includes("\x1b[3J")
     || sequence.includes("\x1bc")
     || sequence.includes("\x1b[H");
+  const isExplicitRedraw = source === "user:redraw";
   const isStartupWrite = source.includes(":startup");
   const isTranscriptClear = source.includes(":transcriptClear");
   const isViewportClear = source.includes(":viewportClear");
 
   // Aggressively block any clearing or reset sequences after startup,
   // especially during active states, to prevent the UI from disappearing.
-  if (containsClearOrReset && !isStartupWrite && !isTranscriptClear && !isViewportClear) {
+  if (containsClearOrReset && !isExplicitRedraw && !isStartupWrite && !isTranscriptClear && !isViewportClear) {
     renderDebug.traceEvent("terminal", "blockedPostStartupClearOrReset", {
       source,
       uiStateKind: currentUIStateKind,
@@ -87,6 +88,7 @@ export function writeTerminalControl(
   // even if it claims to be from startup (which shouldn't happen).
   if (
     (currentUIStateKind === "RESPONDING" || currentUIStateKind === "THINKING")
+    && !isExplicitRedraw
     && (sequence.includes("\x1b[2J") || sequence.includes("\x1b[3J"))
   ) {
     renderDebug.traceEvent("terminal", "unexpectedClearDuringStreaming", {
@@ -96,7 +98,7 @@ export function writeTerminalControl(
       isStartupWrite,
     });
 
-    if (!isStartupWrite && !isTranscriptClear) {
+    if (!isExplicitRedraw && !isStartupWrite && !isTranscriptClear) {
       return true;
     }
   }

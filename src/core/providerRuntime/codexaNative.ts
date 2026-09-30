@@ -1,3 +1,4 @@
+import { createRunControl } from "../providers/runControl.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -396,13 +397,14 @@ export const codexaNativeRuntime: ProviderRuntime = {
   discoverModels: discoverCodexaNativeModels,
   refreshModels: async () => discoverCodexaNativeModels(),
   run: (request: ProviderChatRequest, handlers: BackendRunHandlers) => {
+    const control = createRunControl(handlers);
     let canceled = false;
     handlers.onProgress?.({
       id: "codexa-native-route",
       source: "stdout",
       text: bridge ? "Using loaded Codexa Native model" : "Loading Codexa Native checkpoint",
     });
-    runCodexaNativeRollover({
+    const work = runCodexaNativeRollover({
       request,
       handlers,
       send: (prompt, announceReady) => sendPrompt(prompt, handlers, announceReady),
@@ -417,7 +419,10 @@ export const codexaNativeRuntime: ProviderRuntime = {
         if (canceled) return;
         handlers.onError(error instanceof Error ? error.message : "Codexa Native failed.");
       });
+    control.track(work);
+    void work.finally(() => control.finish());
     return () => {
+      control.finish();
       canceled = true;
       stopBridge("Codexa Native request canceled.");
     };
