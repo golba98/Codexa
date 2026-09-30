@@ -3,6 +3,10 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.9 — 2026-09-30
+
+Fixes the misaligned side border in `/resume` for conversations that start with a pasted-content or attachment label. The existing layout and saved conversations stay the same. This patch also retains the Local server stall fixes from 0.1.8.
+
 ## v0.1.8 — 2026-09-30
 
 Local models no longer hang silently for over half an hour when the inference server stops responding. This most often happens during context compaction on a machine that is short of RAM. Ubume now gives up after about 10 minutes with an error that explains the likely cause and what to change on the server. Retries and failed compactions show up in the transcript instead of happening invisibly, and a failed compaction is no longer reported as successful.

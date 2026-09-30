@@ -6,6 +6,20 @@ No changes yet.
 
 ---
 
+## [0.1.9] — 2026-09-30 — Resume Border Fix
+
+### Fixed
+
+- `/resume` keeps its side border aligned when a conversation title contains a pasted-content or attachment label. Invisible composer attachment IDs are removed from display titles before terminal rendering; saved conversations and the existing panel design are preserved.
+
+### Verification
+
+- 1,870 Bun tests pass, including regression coverage for attachment IDs, visible Unicode, and border alignment at 60, 80, 100, and 120 columns. TypeScript checks pass.
+- The terminal fixture verifies selection, section switching, and resizing; recording: `docs/recordings/resume-border-fix.cast`.
+- Release validation includes the capability audit, npm audit, isolated terminal smoke, clean tarball installation, headless CLI checks, and packaged Harness inference against a local fixture endpoint.
+
+---
+
 ## [0.1.8] — 2026-09-30 — Local Server Stall Handling
 
 ### Fixed
