@@ -10,9 +10,10 @@ interface AnimatedStatusTextProps {
   isActive: boolean;
   isError?: boolean;
   animationFrame?: string;
+  animationStyle?: "dots" | "flow";
 }
 
-function useLocalBusyStatusFrame(isActive: boolean, label: string): string {
+function useLocalBusyStatusFrame(isActive: boolean, label: string, flow: boolean): number {
   const [frameIndex, setFrameIndex] = useState(0);
   const staticStatus = process.env.UBUME_DEBUG_STATIC_STATUS === "1";
 
@@ -29,22 +30,25 @@ function useLocalBusyStatusFrame(isActive: boolean, label: string): string {
         renderDebug.traceStatusTick({ owner: "Status", label, frameIndex: next });
         return next;
       });
-    }, BUSY_STATUS_FRAME_MS);
+    }, flow ? 120 : BUSY_STATUS_FRAME_MS);
     timer.unref?.();
 
     return () => {
       clearInterval(timer);
     };
-  }, [isActive, label, staticStatus]);
+  }, [isActive, label, staticStatus, flow]);
 
   if (isActive && staticStatus) {
-    return BUSY_STATUS_FRAMES[BUSY_STATUS_FRAMES.length - 1]!;
+    return BUSY_STATUS_FRAMES.length - 1;
   }
-  return getBusyStatusFrame(frameIndex);
+  return frameIndex;
 }
 
-export function AnimatedStatusText({ baseText, isActive, isError = false, animationFrame }: AnimatedStatusTextProps) {
-  const localFrame = useLocalBusyStatusFrame(isActive, baseText);
+export function AnimatedStatusText({ baseText, isActive, isError = false, animationFrame, animationStyle = "dots" }: AnimatedStatusTextProps) {
+  const flow = animationStyle === "flow";
+  const animate = isActive && (!flow || !process.env.NO_COLOR);
+  const frameIndex = useLocalBusyStatusFrame(animate && animationFrame === undefined, baseText, flow);
+  const localFrame = getBusyStatusFrame(frameIndex);
   renderDebug.useRenderDebug("Status", {
     baseText,
     isActive,
@@ -59,11 +63,15 @@ export function AnimatedStatusText({ baseText, isActive, isError = false, animat
 
   const theme = useTheme();
   const renderedText = sanitizeTerminalOutput(baseText);
-  const suffix = isActive ? animationFrame ?? localFrame : "";
+  const suffix = animate && !flow ? animationFrame ?? localFrame : "";
+  const characters = Array.from(renderedText);
+  const highlight = frameIndex % (characters.length + 3);
 
   return (
     <Text color={isError ? theme.error : theme.info} wrap="truncate">
-      {renderedText}{suffix}
+      {flow && animate ? characters.map((character, index) => (
+        <Text key={index} color={index >= highlight - 2 && index <= highlight ? theme.accent : theme.info} bold={index >= highlight - 2 && index <= highlight}>{character}</Text>
+      )) : renderedText}{suffix}
     </Text>
   );
 }

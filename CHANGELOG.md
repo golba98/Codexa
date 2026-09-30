@@ -6,6 +6,25 @@ No changes yet.
 
 ---
 
+## [0.1.5] — 2026-09-30 — Local Runtime and Terminal Controls
+
+### Fixed
+
+- Local backend selection shares concurrent validation and reuses successful checks for five seconds. Picker checks have a three-second deadline; timeouts are shown separately from stopped servers, and previous models remain visible while checking.
+- Unsloth key validation returns the model metadata, removing the duplicate model-list request. Inference still checks the active model before starting a turn.
+- Harness initialization and session opening support cancellation and a ten-second deadline. Session disconnects report their phase and redacted stderr, invalidate failed transports, and do not automatically resend a failed turn. Shutdown escalates to SIGKILL and waits for the owned child.
+- Ctrl+C has one App handler across screens, including plan actions. It preserves active drafts, shows cleanup status, and a second interrupt during cleanup requests exit.
+- Completed and resumed plans show **Implement in Auto** and **Redo plan**. Implementation turns off plan mode and uses Auto; redo starts immediately with the original task, current plan, and constraints. Repeated actions cannot launch overlapping runs.
+- Active providers show **is working** instead of **ready**, including while a command draft is being typed. A fixed-width highlight flows through the status text every 120 ms, without rerendering the timeline. Disabled loaders, static debug mode, and no-color terminals remain supported.
+
+### Validation
+
+- Added shared-discovery, timeout, canceled Harness startup/session-open, redacted disconnect, actual packaged Harness inference, and actual App plan-action regression tests.
+- All **1,823 tests** and TypeScript checks passed, along with the 17-check capability audit and terminal PTY smoke test. A fresh tarball installation passed version, diagnostics, headless execution, and packaged Harness inference checks.
+- The packaged Harness was checked against a mock Unsloth inference server. A live Unsloth server was unavailable on this machine.
+
+---
+
 ## [0.1.4] — 2026-09-30 — Reliable npm Updates
 
 ### Fixed

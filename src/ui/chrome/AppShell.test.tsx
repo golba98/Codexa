@@ -548,7 +548,7 @@ test("larger terminals keep the composer metadata row", async () => {
 test("cramped busy state uses the run footer in app composition", async () => {
   const output = await renderShell(80, 24, { kind: "THINKING", turnId: 1 });
 
-  assert.match(output, /Ubume is thinking/i);
+  assert.match(output, /Ubume is working/i);
   assert.doesNotMatch(output, /UBUME\s+\|\s+gpt-5\.4/i);
   assert.doesNotMatch(output, /UBUME AGENT/);
 });
@@ -556,7 +556,7 @@ test("cramped busy state uses the run footer in app composition", async () => {
 test("cramped streaming state avoids response-labelled footer text", async () => {
   const output = await renderShell(80, 24, { kind: "RESPONDING", turnId: 1 });
 
-  assert.match(output, /Ubume is thinking/i);
+  assert.match(output, /Ubume is working/i);
   assert.doesNotMatch(output, /Ubume is streaming/i);
   assert.doesNotMatch(output, /Streaming response/i);
 });
@@ -884,8 +884,8 @@ test("main screen keeps the transcript visible while showing the plan action pic
   assert.match(frame, /Rootcauselookslikealayoutguttermismatchduringresize\./);
   // Assert action picker is visible
   assert.match(frame, /Planready/);
-  assert.match(frame, /\[I\]Implementchanges/);
-  assert.match(frame, /\[U\]Updateplan/);
+  assert.match(frame, /\[I\]ImplementinAuto/);
+  assert.match(frame, /\[R\]Redoplan/);
   assert.doesNotMatch(frame, /╭──Planready/);
   assert.doesNotMatch(frame, /Requestchanges/);
   assert.doesNotMatch(frame, /Addconstraints/);

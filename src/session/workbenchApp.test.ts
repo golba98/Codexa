@@ -35,3 +35,5 @@ test("actual App queues during runs and interrupts without overlapping cleanup o
 test("saved conversation continues from TUI to terminal commands and back", () => scenarios(["save", "headless", "resume"]));
 
 test("interrupt during checkpoint preparation does not start provider or leak execution lease", () => scenarios(["cancel-start"]));
+
+test("actual App redraws plans immediately and implements directly in Auto", { timeout: 15000 }, () => scenarios(["plan-actions"]));

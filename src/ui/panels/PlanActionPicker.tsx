@@ -7,8 +7,8 @@ import { useTheme } from "../theme.js";
 export type PlanActionValue = "implement" | "revise" | "cancel";
 
 const ACTION_ROWS: Array<{ key: string; label: string; value: PlanActionValue }> = [
-  { key: "I", label: "Implement changes", value: "implement" },
-  { key: "U", label: "Update plan", value: "revise" },
+  { key: "I", label: "Implement in Auto", value: "implement" },
+  { key: "R", label: "Redo plan", value: "revise" },
 ];
 const VERTICAL_LAYOUT_BREAKPOINT = 56;
 /**
@@ -142,10 +142,10 @@ export function PlanActionPicker({
       return;
     }
 
-    if (input.length === 1 && !key.meta) {
+    if (input.length === 1 && !key.meta && !key.ctrl) {
       const lower = input.toLowerCase();
       if (lower === "i") { onSelect("implement"); return; }
-      if (lower === "u") { onSelect("revise"); return; }
+      if (lower === "r" || lower === "u") { onSelect("revise"); return; }
     }
   }, { isActive: isFocused });
 

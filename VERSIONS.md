@@ -3,6 +3,12 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.5 — 2026-09-30
+
+Local backend selection responds sooner and distinguishes a slow check from a stopped server. Local Harness startup can be interrupted and disconnected sessions give actionable errors. Ctrl+C works across panels and plan actions while preserving your active draft.
+
+After a plan, choose **Implement in Auto** or **Redo plan** directly. While a model is working, its status says so and shows a flowing highlight; typing another command keeps that status visible.
+
 ## v0.1.4 — 2026-09-30
 
 The built-in npm updater now refreshes registry metadata before installing.

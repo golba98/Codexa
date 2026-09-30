@@ -22,6 +22,7 @@ export interface UnslothConnection {
   baseUrl: string;
   apiKey: string;
   authSource: "environment" | "agent-cache";
+  models: UnslothModelInfo[];
 }
 
 export interface UnslothModelInfo {
@@ -150,16 +151,16 @@ function cachedKeysForServer(rootUrl: string, env: NodeJS.ProcessEnv): string[] 
   }
 }
 
-async function keyAccepted(rootUrl: string, apiKey: string, fetchImpl: FetchImpl, signal?: AbortSignal): Promise<boolean> {
+async function keyAccepted(rootUrl: string, apiKey: string, fetchImpl: FetchImpl, signal?: AbortSignal): Promise<UnslothModelInfo[] | null> {
   const response = await fetchImpl(`${rootUrl}/v1/models`, {
     method: "GET",
     headers: { Authorization: `Bearer ${apiKey}` },
     redirect: "manual",
     signal,
   });
-  if (response.status === 401 || response.status === 403) return false;
+  if (response.status === 401 || response.status === 403) return null;
   if (!response.ok) throw new Error(`Unsloth returned HTTP ${response.status} while checking its API key.`);
-  return true;
+  return parseUnslothModels(await response.json());
 }
 
 export async function resolveUnslothConnection(options: {
@@ -173,10 +174,11 @@ export async function resolveUnslothConnection(options: {
   const rootUrl = resolveUnslothRootUrl(env);
   const explicitKey = env.UNSLOTH_API_KEY?.trim();
   if (explicitKey) {
-    if (!await keyAccepted(rootUrl, explicitKey, fetchImpl, options.signal)) {
+    const models = await keyAccepted(rootUrl, explicitKey, fetchImpl, options.signal);
+    if (!models) {
       throw new Error("UNSLOTH_API_KEY was rejected by the configured Unsloth server.");
     }
-    return { rootUrl, baseUrl: `${rootUrl}/v1`, apiKey: explicitKey, authSource: "environment" };
+    return { rootUrl, baseUrl: `${rootUrl}/v1`, apiKey: explicitKey, authSource: "environment", models };
   }
 
   const identityVerified = await verifyUnslothIdentity({
@@ -191,8 +193,9 @@ export async function resolveUnslothConnection(options: {
   }
 
   for (const apiKey of cachedKeysForServer(rootUrl, env)) {
-    if (await keyAccepted(rootUrl, apiKey, fetchImpl, options.signal)) {
-      return { rootUrl, baseUrl: `${rootUrl}/v1`, apiKey, authSource: "agent-cache" };
+    const models = await keyAccepted(rootUrl, apiKey, fetchImpl, options.signal);
+    if (models) {
+      return { rootUrl, baseUrl: `${rootUrl}/v1`, apiKey, authSource: "agent-cache", models };
     }
   }
   throw new Error("No valid Unsloth agent API key was found. Set UNSLOTH_API_KEY or create an API key in Unsloth Settings > API.");

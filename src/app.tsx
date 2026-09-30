@@ -222,7 +222,7 @@ import {
   validateProviderRouteActivation,
 } from "./core/providerRuntime/registry.js";
 import { hasGeminiApiKey, runGeminiDiagnostics } from "./core/providerRuntime/gemini.js";
-import { discoverLocalModels, checkLocalProvider, runLocalDiagnostics, setLocalProviderConfig } from "./core/providerRuntime/local.js";
+import { discoverLocalModels, checkLocalProvider, validateLocalProvider, runLocalDiagnostics, setLocalProviderConfig } from "./core/providerRuntime/local.js";
 import { closeLocalHarnessSession, shutdownLocalHarness } from "./core/providerRuntime/localHarness/runtime.js";
 import {
   detectVibeActiveModel,
@@ -273,7 +273,6 @@ import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
 import { buildResumedProviderRoute, conversationMessagesToTimeline, toProviderConversationHistory, selectConversationContext } from "./session/conversation.js";
 import { buildPersistedAssistantMessage, type PersistedFileActivity, type PersistedRunStatus } from "./session/persistedResponse.js";
 import { createLiveRenderScheduler, type LiveRenderUpdate } from "./session/liveRenderScheduler.js";
-import { hasFinalizedTranscriptPlan } from "./session/planTranscript.js";
 import { schedulePromptRunStartAfterVisibleCommit } from "./session/promptRunSchedule.js";
 import {
   approvePlanExecution,
@@ -579,6 +578,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   const restoredFileBoundaryRef = useRef<import("./core/workspace/checkpoints.js").FileBoundary | undefined>(undefined);
   const workspaceLeaseRef = useRef<OwnershipLease | undefined>(undefined);
   const stoppingRef = useRef<Promise<void>>(Promise.resolve());
+  const [interruptStopping, setInterruptStopping] = useState(false);
   const submissionRef = useRef(false);
   const recoveryRef = useRef(false);
   const pendingQuitRef = useRef<(() => void) | null>(null);
@@ -1156,12 +1156,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     [staticEvents, activeEvents],
   );
 
-  const hasVisibleTranscriptPlan = useMemo(
-    () => planFlow.kind === "awaiting_action"
-      && hasFinalizedTranscriptPlan(staticEvents, planFlow.currentPlan),
-    [planFlow, staticEvents],
-  );
-
   // Refs for mutable state values — used by stable callbacks below so they
   // always read the latest value without being listed as deps (which would
   // recreate the callbacks on every keystroke and defeat memoisation).
@@ -1187,13 +1181,14 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   modelCapabilitiesBusyRef.current = modelCapabilitiesBusy;
   const composerRows = useMemo(() => {
     if (planFlow.kind === "awaiting_action") {
-      return hasVisibleTranscriptPlan ? measurePlanActionPickerRows(terminalLayout.cols) : 1;
+      return measurePlanActionPickerRows(terminalLayout.cols);
     }
     if (planFlow.kind === "collecting_feedback") {
       return measureTextEntryPanelRows();
     }
     return measureBottomComposerRows({
       queueCount: promptQueue.items.length,
+      stopping: interruptStopping,
       layout: terminalLayout,
       uiState,
       mode,
@@ -1209,11 +1204,11 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     currentModelSpec,
     cursor,
     inputValue,
+    interruptStopping,
     mode,
     model,
     planFlow.kind,
     workbenchVersion,
-    hasVisibleTranscriptPlan,
     reasoningLevel,
     terminalLayout,
     uiState,
@@ -1276,6 +1271,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     activeEvents,
     activeEventsLength: activeEvents.length,
     inputValue,
+    interruptStopping,
     cursor,
     busy,
     composerRows,
@@ -1993,7 +1989,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     void (async () => {
       try {
         markProviderAvailability("local", "checking", "startup-probe");
-        const result = await checkLocalProvider({ override: providerWorkspaceConfig.providers?.local });
+        const result = await validateLocalProvider({ override: providerWorkspaceConfig.providers?.local });
         if (result.diagnostics) {
           providerDiagnosticsRef.current["local"] = result.diagnostics as Record<string, string | number | boolean | null>;
         }
@@ -2737,9 +2733,9 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
     setLocalBackendStatuses((current) => ({
       ...current,
-      [localBackend]: { state: "checking", label: "Checking…" },
+      [localBackend]: { state: "checking", label: current[localBackend]?.state === "ready" ? `Last seen: ${current[localBackend]?.label} · Checking…` : "Checking…" },
     }));
-    const promise = checkLocalProvider({
+    const promise = validateLocalProvider({
       override: { ...providerWorkspaceConfig.providers?.local, localBackend },
       localBackend,
     }).then((validation) => {
@@ -2752,6 +2748,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         ? { state: "ready", label: selectedModel || "Model loaded" }
         : endpointResult === "no-models" || /no model is loaded|no models were returned/i.test(message)
           ? { state: "no-model", label: "No model loaded" }
+          : /timed out/i.test(message)
+            ? { state: "timeout", label: "Check timed out" }
           : /api key|authentication|authenticate|identity/i.test(message)
             ? { state: "auth-required", label: "Authentication required" }
             : { state: "not-running", label: "Not running" };
@@ -2885,7 +2883,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
       if (providerId === "local") {
         const localBackend = selectedLocalBackend ?? providerWorkspaceConfig.providers?.local?.localBackend ?? "lm-studio";
-        if (localBackendCheckInFlightRef.current.has(localBackend)) return;
         const preferredConfig = setLocalBackendPreference(providerWorkspaceConfig, localBackend);
         saveProviderWorkspaceConfig(workspaceRoot, preferredConfig);
         setProviderWorkspaceConfig(preferredConfig);
@@ -4691,9 +4688,17 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     bumpStaticRepaintGeneration((value) => value + 1);
   }, [terminalControl, inkInstance, stdout]);
   const quitHintTime = useRef(0);
+  const interruptCleanupRef = useRef(false);
   const handleInterrupt = useCallback(() => {
     promptQueue.paused = true;
-    if (activeRunIdRef.current !== null) { handleCancel(); return; }
+    if (interruptCleanupRef.current) { handleQuit(); return; }
+    if (activeRunIdRef.current !== null) {
+      interruptCleanupRef.current = true;
+      setInterruptStopping(true);
+      handleCancel();
+      void stoppingRef.current.finally(() => { interruptCleanupRef.current = false; if (isMountedRef.current) setInterruptStopping(false); });
+      return;
+    }
     if (submissionRef.current) { pipelineGenerationRef.current++; return; }
     if (getSessionState().inputValue) { resetComposer(); return; }
     const now = Date.now();
@@ -4703,9 +4708,11 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   useInput((input, key) => {
     if (!key.ctrl) return;
     if (input === "c") handleInterrupt();
-    else if (input === "q") handleQuit();
-    else if (input === "l") handleRedraw();
-  }, { isActive: screen !== "main" });
+    else if (screen !== "main" || planFlow.kind === "awaiting_action" || planFlow.kind === "collecting_feedback") {
+      if (input === "q") handleQuit();
+      else if (input === "l") handleRedraw();
+    }
+  });
 
   const handleExternalEditor = useCallback(async () => {
     if (submissionRef.current) return;
@@ -4883,17 +4890,11 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         constraints: state.constraints,
       }),
       {
-        // No `approvedPlan` here on purpose: it would seed a second, completed
-        // plan block on the execution run and re-print the whole plan directly
-        // under the "Plan approved" line. This path is only reachable from
-        // PlanActionPicker, which mounts only when hasFinalizedTranscriptPlan
-        // already found this exact plan in the transcript, so the echo is
-        // always a duplicate. The provider still receives it via
-        // buildPlanExecutionPrompt above.
+        // The approved plan is sent to the provider without duplicating its transcript block.
         runIntent: "approved-execution",
         submitTiming,
         runtimeOverride: {
-          mode: state.executionMode,
+          mode: "auto-edit",
           planMode: false,
         },
         onCompleted: () => {
@@ -4919,27 +4920,38 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     // through setPlanModeWithNotice, which would reset planFlow mid-run.
     updateRuntimeConfig((current) => ({
       ...current,
-      mode: state.executionMode,
+      mode: "auto-edit",
       planMode: false,
     }));
-    saveRuntimeModePreference(state.executionMode, false);
+    saveRuntimeModePreference("auto-edit", false);
     appendSystemEvent(
       "Plan mode",
-      `Plan approved. Plan mode off · ${formatModeLabel(state.executionMode)}.`,
+      `Plan approved. Plan mode off · ${formatModeLabel("auto-edit")}.`,
     );
   }, [appendSystemEvent, startPromptRun, updateRuntimeConfig]);
 
+  const planActionInFlightRef = useRef(false);
+  useEffect(() => { planActionInFlightRef.current = false; }, [planFlow]);
   const handlePlanAction = useCallback((action: PlanActionValue) => {
-    if (planFlow.kind !== "awaiting_action") {
+    if (planFlow.kind !== "awaiting_action" || planActionInFlightRef.current) {
       return;
     }
+    planActionInFlightRef.current = true;
 
     switch (action) {
       case "implement":
         startApprovedPlanExecution(planFlow);
         return;
       case "revise":
-        setPlanFlow(beginPlanFeedback(planFlow, "revise"));
+        const feedback = "Redo the plan. Review the original task and constraints, correct gaps and mistakes, and produce a complete revised plan.";
+        const nextState = submitPlanFeedback(beginPlanFeedback(planFlow, "revise"), feedback);
+        if (nextState.kind === "generating") {
+          setPlanFlow(nextState);
+          if (!runPlanGeneration(nextState, feedback, createPromptRunTiming())) {
+            setPlanFlow(planFlow);
+            planActionInFlightRef.current = false;
+          }
+        }
         return;
       case "cancel":
         setPlanFlow(resetPlanFlow());
@@ -4948,7 +4960,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       default:
         return;
     }
-  }, [appendSystemEvent, planFlow, startApprovedPlanExecution]);
+  }, [appendSystemEvent, planFlow, runPlanGeneration, startApprovedPlanExecution]);
 
   const handlePlanFeedbackSubmit = useCallback((value: string) => {
     if (planFlow.kind !== "collecting_feedback") {
@@ -5542,6 +5554,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     handlePlanFeedbackSubmit,
     handleWorkspaceRelaunch,
     inputValue,
+    interruptStopping,
     layeredRuntimeConfig,
     modelCapabilities,
     mode,
@@ -5609,13 +5622,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   // timeline + footer) to re-render on every 25ms streaming flush.
   const composerElement = useMemo(() => {
     if (planFlow.kind === "awaiting_action") {
-      if (!hasVisibleTranscriptPlan) {
-        return (
-          <Text color={activeTheme.textMuted}>
-            Plan could not be displayed. Please ask Ubume to regenerate the plan.
-          </Text>
-        );
-      }
       return (
         <PlanActionPicker
           cols={terminalLayout.cols}
@@ -5657,6 +5663,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         contextDisplay={activeRuntimeDisplay.contextDisplay}
         planMode={planMode}
         showBusyLoader={showBusyLoader}
+        stopping={interruptStopping}
         tokensUsed={estimateTokens(conversationChars)}
         modelSpec={currentModelSpec}
         value={inputValue}
@@ -5665,7 +5672,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         onRegisterPaste={handleRegisterPaste}
         onPasteImage={() => { void handlePasteImage(); }}
         onSubmit={() => { void handleSubmit(); }}
-        onInterrupt={handleInterrupt}
         onRedraw={handleRedraw}
         onTranscript={() => openWorkbench("transcript")}
         onExternalEditor={() => { void handleExternalEditor(); }}
@@ -5700,7 +5706,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     handlePlanAction,
     handleCancel,
     handlePlanFeedbackSubmit,
-    hasVisibleTranscriptPlan,
     activeTheme.textMuted,
     composerInstanceKey,
     terminalLayout,
@@ -5716,6 +5721,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     conversationChars,
     currentModelSpec,
     inputValue,
+    interruptStopping,
     cursor,
     handleChangeInput,
     handleRegisterPaste,

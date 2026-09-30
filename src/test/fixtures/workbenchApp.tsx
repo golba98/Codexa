@@ -17,7 +17,7 @@ class Input extends PassThrough {
 }
 class Output extends PassThrough { isTTY = true; columns = 100; rows = 32; }
 let cleanupPending = false;
-const runs: { prompt: string; handlers: BackendRunHandlers; stopped: () => void; history: readonly { content: string }[] }[] = [];
+const runs: { prompt: string; handlers: BackendRunHandlers; stopped: () => void; history: readonly { content: string }[]; mode: string; planMode: boolean }[] = [];
 const provider: BackendProvider = {
   id: "codex-subprocess", label: "Test", description: "test", authState: "delegated", authLabel: "test", statusMessage: "test", supportsModels: () => true,
   run(prompt, options, handlers) {
@@ -25,7 +25,7 @@ const provider: BackendProvider = {
     let stop!: () => void; let ended = false;
     const stopped = new Promise<void>((resolve) => { stop = () => { ended = true; resolve(); }; });
     handlers.onRunControl?.({ stopped });
-    runs.push({ prompt, handlers, stopped: stop, history: options.conversationHistory ?? [] });
+    runs.push({ prompt, handlers, stopped: stop, history: options.conversationHistory ?? [], mode: options.runtime.mode, planMode: options.runtime.planMode });
     return () => { if (ended) return; cleanupPending = true; setTimeout(() => { cleanupPending = false; stop(); }, 50); };
   },
 };
@@ -48,7 +48,25 @@ const scenario = process.argv[2];
 if (scenario === "cancel-start") for (let i = 0; i < 800; i++) writeFileSync(`file-${i}.txt`, "checkpoint fixture");
 const terminal = mount();
 await delay(350);
-if (scenario === "save") {
+if (scenario === "plan-actions") {
+  terminal.stdin.write("/plan on"); await delay(); terminal.stdin.write("\r"); await delay(200);
+  terminal.stdin.write("Plan a safe fix"); await delay(); terminal.stdin.write("\r");
+  await until(() => runs.length === 1, "planning run");
+  runs[0]!.stopped(); runs[0]!.handlers.onResponse("1. Inspect the code.\n2. Fix the error.\n3. Run tests.");
+  await until(() => terminal.output().includes("[R] Redo plan"), "plan actions");
+  terminal.stdin.write("r");
+  await until(() => runs.length === 2, "redo without feedback modal");
+  assert.equal(runs[1]!.mode, "suggest");
+  assert.match(runs[1]!.prompt, /Plan a safe fix/);
+  assert.match(runs[1]!.prompt, /Redo the plan/);
+  runs[1]!.stopped(); runs[1]!.handlers.onResponse("1. Inspect.\n2. Correct the error with tests."); await delay(200);
+  terminal.stdin.write("i"); await delay(30); terminal.stdin.write("i");
+  await until(() => runs.length === 3, "implement in Auto");
+  assert.equal(runs[2]!.mode, "auto-edit"); assert.equal(runs[2]!.planMode, false);
+  terminal.stdin.write("\x03"); await delay(200);
+  assert.equal(runs.length, 3, "double action must not start twice");
+  terminal.instance.unmount(); await delay(); process.exit(0);
+} else if (scenario === "save") {
   terminal.stdin.write("first instruction"); await delay(); terminal.stdin.write("\r");
   await until(() => runs.length === 1, "first run");
   runs[0]!.handlers.onAssistantDelta?.("partial reply");

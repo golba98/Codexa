@@ -242,7 +242,7 @@ test("shows generic thinking status for unknown/local provider", () => {
       activeProviderId: "local",
       runElapsedSeconds: 10,
     }),
-    "✧ Ubume is thinking",
+    "✧ Ubume is working",
   );
 });
 
@@ -324,7 +324,7 @@ test("includes elapsed timer in Codex CLI status after first second", () => {
   );
 });
 
-test("shows Gemini ready status when RESPONDING with google provider", () => {
+test("shows Gemini is working status when RESPONDING with google provider", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "RESPONDING", turnId: 1 },
@@ -332,11 +332,11 @@ test("shows Gemini ready status when RESPONDING with google provider", () => {
       allowCommands: true,
       activeProviderId: "google",
     }),
-    "✧ Gemini ready",
+    "✧ Gemini is working",
   );
 });
 
-test("shows Claude ready status when RESPONDING with anthropic provider", () => {
+test("shows Claude is working status when RESPONDING with anthropic provider", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "RESPONDING", turnId: 1 },
@@ -344,11 +344,11 @@ test("shows Claude ready status when RESPONDING with anthropic provider", () => 
       allowCommands: true,
       activeProviderId: "anthropic",
     }),
-    "✧ Claude ready",
+    "✧ Claude is working",
   );
 });
 
-test("shows Codex ready status when RESPONDING with openai provider", () => {
+test("shows Codex is working status when RESPONDING with openai provider", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "RESPONDING", turnId: 1 },
@@ -356,7 +356,7 @@ test("shows Codex ready status when RESPONDING with openai provider", () => {
       allowCommands: true,
       activeProviderId: "openai",
     }),
-    "✧ Codex ready",
+    "✧ Codex is working",
   );
 });
 
@@ -368,7 +368,7 @@ test("shows generic thinking status when RESPONDING with unknown provider", () =
       allowCommands: true,
       activeProviderId: "local",
     }),
-    "✧ Ubume is thinking",
+    "✧ Ubume is working",
   );
 });
 
@@ -461,7 +461,7 @@ test("getTokenBarDisplay does not add ~ prefix for a documented verified context
 
 // ─── externalCliStatus: provider readiness gate ───────────────────────────────
 
-test("shows 'Ubume is thinking' (not startup message) when provider is ready and THINKING — google", () => {
+test("shows 'Ubume is working' (not startup message) when provider is ready and THINKING — google", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "THINKING", turnId: 2 },
@@ -471,11 +471,11 @@ test("shows 'Ubume is thinking' (not startup message) when provider is ready and
       runElapsedSeconds: 0,
       externalCliStatus: "ready",
     }),
-    "✧ Ubume is thinking",
+    "✧ Gemini is working",
   );
 });
 
-test("shows 'Ubume is thinking' even at 20 seconds elapsed when provider is ready — google", () => {
+test("shows 'Ubume is working' even at 20 seconds elapsed when provider is ready — google", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "THINKING", turnId: 2 },
@@ -485,11 +485,11 @@ test("shows 'Ubume is thinking' even at 20 seconds elapsed when provider is read
       runElapsedSeconds: 20,
       externalCliStatus: "ready",
     }),
-    "✧ Ubume is thinking",
+    "✧ Gemini is working",
   );
 });
 
-test("shows 'Ubume is thinking' (not startup message) when provider is ready and THINKING — anthropic", () => {
+test("shows 'Ubume is working' (not startup message) when provider is ready and THINKING — anthropic", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "THINKING", turnId: 2 },
@@ -499,11 +499,11 @@ test("shows 'Ubume is thinking' (not startup message) when provider is ready and
       runElapsedSeconds: 0,
       externalCliStatus: "ready",
     }),
-    "✧ Ubume is thinking",
+    "✧ Claude is working",
   );
 });
 
-test("shows 'Ubume is thinking' (not startup message) when provider is ready and THINKING — openai", () => {
+test("shows 'Ubume is working' (not startup message) when provider is ready and THINKING — openai", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "THINKING", turnId: 2 },
@@ -513,7 +513,7 @@ test("shows 'Ubume is thinking' (not startup message) when provider is ready and
       runElapsedSeconds: 0,
       externalCliStatus: "ready",
     }),
-    "✧ Ubume is thinking",
+    "✧ Codex is working",
   );
 });
 
@@ -675,14 +675,14 @@ test("getTokenBarDisplay with isEstimated: false uses comma format (regression g
   assert.equal(display.isEstimatedLimit, false);
 });
 
-test("keeps busy composer height stable while entering an exact slash command", () => {
+test("keeps the working row alongside command suggestions during a run", () => {
   const layout = createLayoutSnapshot(100, 30);
   const busy = { kind: "THINKING", turnId: 1 } as const;
   const plainDraft = measureBottomComposerRows({ layout, uiState: busy, value: "hello", cursor: 5 });
   const commandDraft = measureBottomComposerRows({ layout, uiState: busy, value: "/model", cursor: 6 });
 
-  assert.equal(getVisibleComposerStatusLine({ uiState: busy, value: "/model", allowCommands: true }), "");
-  assert.equal(commandDraft, plainDraft);
+  assert.equal(getVisibleComposerStatusLine({ uiState: busy, value: "/model", allowCommands: true }), "✧ Ubume is working");
+  assert.equal(commandDraft, plainDraft + 1);
 });
 
 function composerProps(overrides: Partial<BottomComposerProps> = {}): BottomComposerProps {
@@ -742,7 +742,11 @@ for (const [providerId, label] of [["openai", "Codex CLI"], ["anthropic", "Claud
     );
     assert.equal(
       getVisibleComposerStatusLine({ ...base, externalCliStatus: "ready" }),
-      "✧ Ubume is thinking",
+      `✧ ${providerId === "openai" ? "Codex" : providerId === "anthropic" ? "Claude" : "Gemini"} is working`,
     );
   });
 }
+
+test("stopping status stays truthful while a command draft is present", () => {
+  assert.equal(getVisibleComposerStatusLine({ uiState: { kind: "IDLE" }, value: "/model", allowCommands: true, stopping: true }), "✧ Stopping · Ctrl+C again to exit");
+});
