@@ -2,6 +2,7 @@ import type { Screen } from "../../session/types.js";
 
 export const FOCUS_IDS = {
   composer: "composer",
+  workbench: "workbench-panel",
   resumePicker: "resume-picker",
   planReviewPanel: "plan-review-panel",
   backendPicker: "backend-picker",
@@ -28,6 +29,8 @@ export type FocusTargetId = (typeof FOCUS_IDS)[keyof typeof FOCUS_IDS];
 
 export function getFocusTargetForScreen(screen: Screen): FocusTargetId {
   switch (screen) {
+    case "workbench-panel":
+      return FOCUS_IDS.workbench;
     case "resume-picker":
       return FOCUS_IDS.resumePicker;
     case "backend-picker":

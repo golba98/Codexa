@@ -10,6 +10,7 @@ import type { RunActivitySummary, RunFileActivity } from "../core/workspace/work
 export type Screen =
   | "main"
   | "resume-picker"
+  | "workbench-panel"
   | "model-picker"
   | "mode-picker"
   | "backend-picker"
@@ -104,6 +105,8 @@ export interface RunToolActivity {
   startedAt: number;
   completedAt?: number | null;
   summary?: string | null;
+  output?: string;
+  outputTruncated?: boolean;
   /** Turn-global ordering against thinking blocks and response segments. */
   streamSeq?: number;
 }

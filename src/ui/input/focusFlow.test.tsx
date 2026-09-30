@@ -267,7 +267,7 @@ function ModelPickerComposerHarness() {
   );
 }
 
-function PasteComposerHarness() {
+function PasteComposerHarness({ onInterrupt, onRedraw, onQuit }: { onInterrupt?: () => void; onRedraw?: () => void; onQuit?: () => void } = {}) {
   const [value, setValue] = React.useState("");
   const [cursor, setCursor] = React.useState(0);
   const [submitCount, setSubmitCount] = React.useState(0);
@@ -302,7 +302,10 @@ function PasteComposerHarness() {
           onTogglePlanMode={() => {}}
           onClear={() => {}}
           onCycleMode={() => {}}
-          onQuit={() => {}}
+          onInterrupt={onInterrupt}
+          onRedraw={onRedraw}
+          onQuit={onQuit ?? (() => {})}
+          history={["past prompt"]}
         />
         <Text>{`submit:${submitCount}`}</Text>
         <Text>{`value:${JSON.stringify(value)}`}</Text>
@@ -827,14 +830,14 @@ test("shift+tab rotates plan and safety modes without submitting or mutating the
   }
 });
 
-test("ctrl+o opens the existing model picker path without submitting", async () => {
+test("alt+p opens the existing model picker path without submitting", async () => {
   const harness = createInkHarness(<ShortcutModelPickerHarness />);
 
   try {
     await sleep();
     harness.stdin.write("a");
     await sleep(20);
-    harness.stdin.write("\x0F"); // Ctrl+O
+    harness.stdin.write("\x1bp"); // Alt+P
     await sleep(120);
     harness.stdin.write("\u001b[B");
     await sleep(40);
@@ -883,12 +886,12 @@ test("accepting the provider suggestion opens the provider picker and manual ali
   }
 });
 
-test("ctrl+o model reasoning picker returns to chat after escape and selection", async () => {
+test("alt+p model reasoning picker returns to chat after escape and selection", async () => {
   const harness = createInkHarness(<ShortcutModelReasoningPickerHarness />);
 
   try {
     await sleep();
-    harness.stdin.write("\x0F"); // Ctrl+O immediately after startup
+    harness.stdin.write("\x1bp"); // Alt+P immediately after startup
     await sleep(120);
     harness.stdin.write("\u001b");
     await sleep(120);
@@ -896,7 +899,7 @@ test("ctrl+o model reasoning picker returns to chat after escape and selection",
     await sleep(40);
     harness.stdin.write("\r");
     await sleep(120);
-    harness.stdin.write("\x0F");
+    harness.stdin.write("\x1bp");
     await sleep(120);
     harness.stdin.write("\u001b[B");
     await sleep(40);
@@ -918,12 +921,12 @@ test("ctrl+o model reasoning picker returns to chat after escape and selection",
   }
 });
 
-test("ctrl+o remains usable when startup model loading resolves while picker is open", async () => {
+test("alt+p remains usable when startup model loading resolves while picker is open", async () => {
   const harness = createInkHarness(<ShortcutModelReasoningPickerHarness delayedModels />);
 
   try {
     await sleep();
-    harness.stdin.write("\x0F"); // Ctrl+O immediately after startup
+    harness.stdin.write("\x1bp"); // Alt+P immediately after startup
     await sleep(180);
     harness.stdin.write("\u001b");
     await sleep(100);
@@ -979,7 +982,7 @@ test("ctrl+m opens the existing model picker path without submitting", async () 
   }
 });
 
-test("ctrl+m also opens the model picker when the terminal reports ctrl+enter as CSI-u", async () => {
+test("ctrl+enter does not open the model picker", async () => {
   const harness = createInkHarness(<ShortcutModelPickerHarness />);
 
   try {
@@ -992,8 +995,8 @@ test("ctrl+m also opens the model picker when the terminal reports ctrl+enter as
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /screen:model-picker/);
-    assert.match(output, /Select model/);
+    assert.doesNotMatch(output, /screen:model-picker/);
+
     assert.match(output, /screen:main/);
     assert.match(output, /submit:0/);
     assert.equal(getLastComposerValue(output), "a");
@@ -1192,4 +1195,14 @@ test("keeps ANSI delete (ESC[3~) as forward delete behavior", async () => {
   } finally {
     await harness.cleanup();
   }
+});
+
+test("global editing controls remain available during history search", async () => {
+  const calls: string[] = [];
+  const harness = createInkHarness(<PasteComposerHarness onInterrupt={() => calls.push("interrupt")} onRedraw={() => calls.push("redraw")} onQuit={() => calls.push("quit")} />);
+  try {
+    await sleep();
+    for (const key of ["\x12", "\x03", "\x0c", "\x11"]) { harness.stdin.write(key); await sleep(); }
+    assert.deepEqual(calls, ["interrupt", "redraw", "quit"]);
+  } finally { await harness.cleanup(); }
 });

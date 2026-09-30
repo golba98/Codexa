@@ -1,6 +1,6 @@
-import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { execSync, execFileSync } from "node:child_process";
+import { existsSync, accessSync, constants } from "node:fs";
+import { join, resolve } from "node:path";
 
 export interface RepoIdentity {
   owner: string;
@@ -72,7 +72,7 @@ export function parseRepoIdentity(remoteUrl: string | undefined | null): RepoIde
 
 export function getLocalGitRemoteUrl(): string | null {
   try {
-    return execSync("git remote get-url origin", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return execSync("git remote get-url origin", { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   } catch {
     return null;
   }
@@ -88,7 +88,7 @@ export function checkGhCli(): DiagnosticResult {
   };
 
   try {
-    const version = execSync("gh --version", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n")[0];
+    const version = execSync("gh --version", { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n")[0];
     result.evidence = version ?? "Unknown version";
   } catch {
     result.blocker = "gh CLI not installed or not in PATH";
@@ -97,7 +97,7 @@ export function checkGhCli(): DiagnosticResult {
 
   try {
     // gh auth status output format is not structured JSON; pattern-match on known strings.
-    const authStatus = execSync("gh auth status", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const authStatus = execSync("gh auth status", { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     result.evidence += " | Authenticated";
     if (authStatus.includes("Token scopes")) {
       const scopes = authStatus.match(/Token scopes: (.*)/)?.[1];
@@ -127,10 +127,10 @@ export function checkLocalGitRemote(): DiagnosticResult {
   };
 
   try {
-    const remote = execSync("git remote -v", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n")[0];
+    const remote = execSync("git remote -v", { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n")[0];
     result.evidence = remote ?? "No remote found";
 
-    execSync("git ls-remote origin HEAD", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    execSync("git ls-remote origin HEAD", { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     result.status = "PASS";
   } catch {
     result.blocker = "Cannot reach origin remote (check connectivity or remote URL)";
@@ -148,19 +148,17 @@ export function checkLocalGitWrite(): DiagnosticResult {
     recommendedUse: false,
   };
 
-  const indexLock = join(".git", "index.lock");
-  if (existsSync(indexLock)) {
-    result.blocker = ".git/index.lock exists (git process might be running)";
-    return result;
-  }
-
   try {
-    execSync("git update-ref refs/heads/ubume-diagnostic-lock-test HEAD", { stdio: "ignore" });
-    execSync("git update-ref -d refs/heads/ubume-diagnostic-lock-test", { stdio: "ignore" });
-    result.status = "PASS";
-    result.evidence = "Can create/delete refs";
+    const gitDir = execFileSync("git", ["rev-parse", "--absolute-git-dir"], { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (existsSync(join(gitDir, "index.lock"))) {
+      result.blocker = "Git index.lock exists (git process might be running)";
+      return result;
+    }
+    accessSync(resolve(gitDir), constants.W_OK);
+    result.status = "PARTIAL";
+    result.evidence = "Git directory is writable; ref and remote write capability were not tested.";
   } catch (error) {
-    result.blocker = "Failed to create/delete ref lock (permission denied?)";
+    result.blocker = "Git directory is unavailable or not writable.";
     result.evidence = error instanceof Error ? error.message : String(error);
   }
 
@@ -179,7 +177,7 @@ export function classifyDiagnostics(
 
   const ghCliOk = ghCli.status === "PASS";
   const gitRemoteOk = localGit.status === "PASS";
-  const gitWriteOk = localGitWrite.status === "PASS";
+  const gitWriteOk = localGitWrite.status === "PASS" || (localGitWrite.status === "PARTIAL" && localGitWrite.blocker === null);
   const connectorOk = connector.status === "PASS" || (connector.status === "PARTIAL" && !connector.blocker?.includes("auth"));
 
   if (ghCliOk && gitRemoteOk && gitWriteOk) {

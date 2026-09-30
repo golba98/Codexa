@@ -18,8 +18,8 @@ const DEPRECATED_ANTIGRAVITY_PROVIDER_ID = "antigravity";
 const DEPRECATED_ANTIGRAVITY_BACKENDS = new Set(["antigravity-cli-auth", "agy"]);
 const DEPRECATED_GOOGLE_PROVIDER_ID = "google";
 
-export function getProviderWorkspaceConfigFile(workspaceRoot: string): string {
-  return join(resolveUbumeWorkspaceDataDir(normalizeWorkspaceRoot(workspaceRoot)), "providers.json");
+export function getProviderWorkspaceConfigFile(workspaceRoot: string, options: { readOnly?: boolean } = {}): string {
+  return join(resolveUbumeWorkspaceDataDir(normalizeWorkspaceRoot(workspaceRoot), options), "providers.json");
 }
 
 export function getLegacyProviderWorkspaceConfigFile(workspaceRoot: string): string {
@@ -373,8 +373,8 @@ export function serializeProviderWorkspaceConfig(config: ProviderWorkspaceConfig
   };
 }
 
-export function loadProviderWorkspaceConfig(workspaceRoot: string): ProviderWorkspaceConfig {
-  const filePath = getProviderWorkspaceConfigFile(workspaceRoot);
+export function loadProviderWorkspaceConfig(workspaceRoot: string, options: { readOnly?: boolean } = {}): ProviderWorkspaceConfig {
+  const filePath = getProviderWorkspaceConfigFile(workspaceRoot, options);
   if (existsSync(filePath)) {
     try {
       return parseProviderWorkspaceConfig(JSON.parse(readFileSync(filePath, "utf-8")));

@@ -1,3 +1,4 @@
+import { createRunControl } from "../providers/runControl.js";
 import { runCommand } from "../process/CommandRunner.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
@@ -418,7 +419,10 @@ export function runAntigravityWithRunner(
     },
   );
 
+  const control = createRunControl(handlers);
+  control.track(runner.stopped ?? runner.result.then(() => undefined));
   runner.result.then((result) => {
+    control.finish();
     if (result.status === "canceled") return;
 
     if (result.status !== "completed" || result.exitCode !== 0) {
@@ -434,11 +438,12 @@ export function runAntigravityWithRunner(
     handlers.onFinalAnswerObserved?.(text);
     handlers.onResponse(text);
   }).catch((error) => {
+    control.finish();
     const message = error instanceof Error ? error.message : "Antigravity CLI execution failed.";
     handlers.onError(message);
   });
 
-  return runner.cancel;
+  return () => { runner.cancel(); control.finish(); };
 }
 
 // ---------------------------------------------------------------------------

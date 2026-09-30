@@ -154,3 +154,12 @@ test("preserves profile and repeated config overrides", () => {
     "--config=approval_policy=\"never\"",
   ]);
 });
+
+test("missing option values do not consume following flags", () => {
+  for (const flag of ["--model", "-m", "--reasoning", "--profile", "--prompt"]) {
+    const parsed = parseHeadlessExecArgs([flag, "--json", "hello"]);
+    assert.equal(parsed.ok, false);
+    if (!parsed.ok) assert.match(parsed.error, /Missing value/);
+  }
+  assert.equal(parseHeadlessExecArgs(["--prompt=--json"]).ok, true);
+});

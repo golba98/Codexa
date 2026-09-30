@@ -31,7 +31,13 @@ export interface ToolApprovalRequest {
 
 export type BackendAuthState = "delegated" | "api-key-required" | "coming-soon";
 
+export interface ProviderRunControl {
+  stopped: Promise<void>;
+  steer?: (prompt: string) => Promise<boolean>;
+}
+
 export interface BackendRunHandlers {
+  onRunControl?: (control: ProviderRunControl) => void;
   onResponse: (response: string) => void;
   onError: (message: string, rawOutput?: string) => void;
   /** Called with each new structured thinking/progress update while the process is still running. */

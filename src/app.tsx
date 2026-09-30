@@ -1,3 +1,5 @@
+import { createRoutedProvider } from "./core/providerRuntime/execution.js";
+import { acquireOwnership, type OwnershipLease } from "./core/workspace/ownership.js";
 import React, { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { spawn } from "child_process";
 import { existsSync } from "fs";
@@ -68,7 +70,13 @@ function readDiagnosticString(
   return null;
 }
 import { Box, Text, useApp, useFocusManager, useInput, useStdin, useStdout } from "ink";
-import { expandPastedContent, type PastedContentRegistry } from "./ui/input/pastedContent.js";
+import { ToolOutputBudget } from "./session/toolOutput.js";
+import { PromptQueue, queuedPrompt, restoredEvents, eventsBeforeTurn, type WorkbenchSnapshot, type FileAttachment } from "./session/workbench.js";
+import { expandFileAttachments } from "./core/workspace/workspaceFiles.js";
+import { CheckpointStore, assertFileRecoveryReady, type FileCheckpoint } from "./core/workspace/checkpoints.js";
+import { WorkbenchPanel, type WorkbenchView, type QueueAction, type RecoveryMode } from "./ui/panels/WorkbenchPanel.js";
+import { editExternalPrompt } from "./core/terminal/externalEditor.js";
+import { expandPastedContent, assertAttachedContent, type PastedContentRegistry } from "./ui/input/pastedContent.js";
 import { createImageAttachmentToken, selectImageAttachments, type ImageAttachmentRegistry } from "./ui/input/imageAttachments.js";
 import { useStdinRawModeLease } from "./ui/input/useStdinRawModeLease.js";
 import { handleCommand } from "./commands/handler.js";
@@ -387,6 +395,8 @@ function createInitialAuthStatus(): CodexAuthProbeResult {
 
 interface AppProps {
   launchArgs: LaunchArgs;
+  /** Embedded/testing runtime; never exposed as a CLI flag. */
+  providerOverride?: BackendProvider;
 }
 
 interface PromptRunTiming {
@@ -402,6 +412,8 @@ interface PromptRunLifecycle {
   approvedPlan?: string;
   submitTiming?: PromptRunTiming;
   commitPrompt?: boolean;
+  preserveInput?: boolean;
+  queuedPromptIds?: readonly string[];
   runIntent?: "normal" | "plan" | "approved-execution";
   imageAttachments?: readonly import("./core/providerRuntime/types.js").ProviderImageAttachment[];
   onCompleted?: (result: { response: string; turnId: number; runId: number }) => void;
@@ -416,8 +428,8 @@ function createPromptRunTiming(): PromptRunTiming {
   };
 }
 
-export function App({ launchArgs }: AppProps) {
-  const { exit } = useApp();
+export function App({ launchArgs, providerOverride }: AppProps) {
+  const { exit, suspendTerminal } = useApp();
   const focusManager = useFocusManager();
   const workspaceRoot = useMemo(() => resolveWorkspaceRoot(), []);
   const projectInstructionsLoad = useMemo(() => loadProjectInstructions(workspaceRoot), [workspaceRoot]);
@@ -427,7 +439,7 @@ export function App({ launchArgs }: AppProps) {
   const initialSettings = useRef(loadSettings());
   const startupUpdateEnabled = useRef(shouldRunStartupUpdateCheck(
     process.env,
-    (initialSettings.current.updateCheck ?? DEFAULT_UPDATE_CHECK_SETTINGS).enabled,
+    !providerOverride && (initialSettings.current.updateCheck ?? DEFAULT_UPDATE_CHECK_SETTINGS).enabled,
   ));
   const initialUpdateCheckResult = useRef<UpdateCheckResult | null>((() => {
     if (!startupUpdateEnabled.current) return null;
@@ -546,20 +558,43 @@ export function App({ launchArgs }: AppProps) {
   // Bumped purely to force one extra React commit when the /clear boundary needs
   // the authoritative post-clear frame flushed (see the syncRenderState effect).
   const [, bumpPostClearRepaint] = useState(0);
-  const { state: sessionState, dispatch: dispatchSession } = useAppSessionState(() => {
+  const { state: sessionState, dispatch: dispatchSession, getState: getSessionState } = useAppSessionState(() => {
     return createStartupStaticEvents({
       providerWorkspaceConfig: initialProviderWorkspaceConfig.current,
     });
   });
   const conversationStore = useMemo(
     () => new ConversationStore(workspaceRoot, {
+      ownership: true,
       onDiagnostic: (message) => appDiagLog(`CONVERSATION_STORE: ${message}`),
     }),
     [workspaceRoot],
   );
   const activeConversationRef = useRef<ConversationRecord | null>(null);
+  const promptQueue = useRef(new PromptQueue()).current;
+  const [workbenchVersion, bumpWorkbench] = useState(0);
+  const [workbenchView, setWorkbenchView] = useState<WorkbenchView>("transcript");
+  const fileAttachmentRegistryRef = useRef(new Map<string, FileAttachment>());
+  const checkpointsRef = useRef<FileCheckpoint[]>([]);
+  const restoredFileBoundaryRef = useRef<import("./core/workspace/checkpoints.js").FileBoundary | undefined>(undefined);
+  const workspaceLeaseRef = useRef<OwnershipLease | undefined>(undefined);
+  const stoppingRef = useRef<Promise<void>>(Promise.resolve());
+  const submissionRef = useRef(false);
+  const recoveryRef = useRef(false);
+  const pendingQuitRef = useRef<(() => void) | null>(null);
+  const snapshotRef = useRef<(() => WorkbenchSnapshot) | null>(null);
+  const lastSaveErrorRef = useRef<string | null>(null);
+  const saveWorkbenchRef = useRef<(() => void) | null>(null);
+  const captureFinalRef = useRef<((runId: number) => void) | null>(null);
+  const activeCheckpointRef = useRef<{ runId: number; checkpoint: FileCheckpoint; store: CheckpointStore } | null>(null);
+  const pendingCaptureRef = useRef<Promise<void>>(Promise.resolve());
+  const deferredRouteCloseRef = useRef<string | undefined>(undefined);
+  const runControlRef = useRef<import("./core/providers/types.js").ProviderRunControl | null>(null);
+  const processStoppedRef = useRef<Promise<void>>(Promise.resolve());
+  const pipelineGenerationRef = useRef(0);
   // What the active run has produced so far, saved with its reply even when the
   // run is canceled, fails, or the app quits mid-run (so /resume keeps it).
+  const finalFlushRef = useRef<{ runId: number; flush: () => void } | null>(null);
   const activeRunCaptureRef = useRef<{
     runId: number;
     text: string;
@@ -611,6 +646,10 @@ export function App({ launchArgs }: AppProps) {
   );
   const [verboseMode, setVerboseMode] = useState(false);
   const [planFlow, setPlanFlow] = useState<PlanFlowState>(createInitialPlanFlowState);
+  snapshotRef.current = () => {
+    const state = getSessionState();
+    return { version: 1, events: [...state.staticEvents, ...state.activeEvents], uiState: state.uiState, plan: planFlow, draft: state.inputValue, cursor: state.cursor, history: state.history, pastes: [...pastedContentRegistryRef.current], images: [...imageAttachmentRegistryRef.current], files: [...fileAttachmentRegistryRef.current], queue: [...promptQueue.items], checkpoints: [...checkpointsRef.current], restoredFileBoundary: restoredFileBoundaryRef.current };
+  };
   const [initialRevisionText, setInitialRevisionText] = useState("");
   const [updateCheckResult, setUpdateCheckResult] = useState<UpdateCheckResult | null>(initialUpdateCheckResult.current);
   // Launcher path is fixed for the process lifetime, so detect once.
@@ -729,7 +768,9 @@ export function App({ launchArgs }: AppProps) {
       || previous.modelId !== activeProviderRoute.modelId
       || previous.localBackend !== activeProviderRoute.localBackend;
     if (changed && previous.providerId === "local") {
-      void closeLocalHarnessSession(activeConversationRef.current?.metadata.localHarnessSession?.sessionId);
+      const sessionId = activeConversationRef.current?.metadata.localHarnessSession?.sessionId;
+      if (activeRunIdRef.current !== null) deferredRouteCloseRef.current = sessionId;
+      else stoppingRef.current = stoppingRef.current.then(() => closeLocalHarnessSession(sessionId));
     }
     previousProviderRouteRef.current = activeProviderRoute;
   }, [activeProviderRoute]);
@@ -1152,6 +1193,7 @@ export function App({ launchArgs }: AppProps) {
       return measureTextEntryPanelRows();
     }
     return measureBottomComposerRows({
+      queueCount: promptQueue.items.length,
       layout: terminalLayout,
       uiState,
       mode,
@@ -1170,6 +1212,7 @@ export function App({ launchArgs }: AppProps) {
     mode,
     model,
     planFlow.kind,
+    workbenchVersion,
     hasVisibleTranscriptPlan,
     reasoningLevel,
     terminalLayout,
@@ -1330,45 +1373,9 @@ export function App({ launchArgs }: AppProps) {
 
   const backendProvider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
   const provider: BackendProvider = useMemo(() => {
-    if (activeProviderRoute.providerId === "openai") {
-      return backendProvider;
-    }
-
-    const routeRuntime = getProviderRuntime(activeProviderRoute.providerId);
-    return {
-      id: backend,
-      label: routeRuntime.label,
-      description: routeRuntime.routeStatus,
-      authState: routeRuntime.routeAvailable ? "delegated" : "coming-soon",
-      authLabel: routeRuntime.routeAvailable ? "Configured" : "Not configured",
-      statusMessage: routeRuntime.routeStatus,
-      supportsModels: (candidateModel) => candidateModel === activeProviderRoute.modelId,
-      run: routeRuntime.run
-        ? (prompt, options, handlers) => {
-          const geminiCommandPath = activeProviderRoute.providerId === "google"
-            ? providerWorkspaceConfig.providers?.google?.geminiCommandPath ?? options.runtime.geminiCommandPath
-            : options.runtime.geminiCommandPath;
-          return routeRuntime.run?.({
-            prompt,
-            route: activeProviderRoute,
-            runtime: geminiCommandPath ? { ...options.runtime, geminiCommandPath } : options.runtime,
-            workspaceRoot: options.workspaceRoot,
-            projectInstructions: options.projectInstructions,
-            localConfig: activeProviderRoute.providerId === "local"
-              ? providerWorkspaceConfig.providers?.local
-              : undefined,
-            runIntent: options.runIntent,
-            conversationHistory: options.conversationHistory,
-            localContextCheckpoint: options.localContextCheckpoint,
-            imageAttachments: options.imageAttachments,
-            localHarnessSession: activeProviderRoute.providerId === "local"
-              ? activeConversationRef.current?.metadata.localHarnessSession
-              : undefined,
-          }, handlers) ?? (() => undefined);
-        }
-        : undefined,
-    };
-  }, [activeProviderRoute, backend, backendProvider, providerWorkspaceConfig.providers]);
+    if (providerOverride) return providerOverride;
+    return createRoutedProvider(activeProviderRoute, backendProvider, providerWorkspaceConfig, () => activeConversationRef.current?.metadata.localHarnessSession);
+  }, [activeProviderRoute, backend, backendProvider, providerWorkspaceConfig.providers, providerOverride]);
 
   const getInputDebugSnapshot = useCallback((extra: Record<string, unknown> = {}) => {
     const currentScreen = screenRef.current;
@@ -1379,8 +1386,8 @@ export function App({ launchArgs }: AppProps) {
       screen: currentScreen,
       mode: intendedInputModeRef.current,
       modelPickerOpen: currentScreen === "model-picker",
-      composerEnabled: currentScreen === "main" && !currentBusy,
-      inputLocked: currentBusy,
+      composerEnabled: currentScreen === "main",
+      inputLocked: false,
       busy: currentBusy,
       modelLoading: currentModelLoading,
       modelSelection: modelSelectionInFlightRef.current,
@@ -1395,6 +1402,7 @@ export function App({ launchArgs }: AppProps) {
   }, [baseLayeredConfig.runtime]);
 
   useEffect(() => {
+    if (providerOverride) return;
     saveSettings({
       ui: {
         layoutStyle: initialSettings.current.ui.layoutStyle,
@@ -1410,7 +1418,7 @@ export function App({ launchArgs }: AppProps) {
       header: headerConfig,
       updateCheck: initialSettings.current.updateCheck,
     });
-  }, [authPreference, customTheme, showBusyLoader, terminalTitleMode, themeSelection.committedTheme, workspaceDisplayMode]);
+  }, [authPreference, customTheme, showBusyLoader, terminalTitleMode, themeSelection.committedTheme, workspaceDisplayMode, providerOverride]);
 
   useEffect(() => {
     return () => {
@@ -1546,9 +1554,10 @@ export function App({ launchArgs }: AppProps) {
 
   const saveActiveConversation = useCallback(() => {
     const current = activeConversationRef.current;
-    if (!current || current.messages.length === 0) return;
+    if (!current) return;
     const next: ConversationRecord = {
       ...current,
+      session: snapshotRef.current?.(),
       metadata: {
         ...current.metadata,
         providerId: activeProviderRoute.providerId,
@@ -1560,11 +1569,56 @@ export function App({ launchArgs }: AppProps) {
     };
     activeConversationRef.current = next;
     try {
-      conversationStore.save(next);
+      conversationStore.save({ ...next, session: snapshotRef.current?.() });
+      lastSaveErrorRef.current = null;
     } catch (error) {
-      appDiagLog(`CONVERSATION_STORE: save failed: ${error instanceof Error ? error.message : "filesystem error"}`);
+      const message = error instanceof Error ? error.message : "Filesystem error";
+      if (lastSaveErrorRef.current !== message) appendErrorEvent("Session save failed", message);
+      lastSaveErrorRef.current = message;
     }
   }, [activeProviderRoute, conversationStore]);
+
+  const saveWorkbench = useCallback(() => {
+    if (!activeConversationRef.current) {
+      const state = getSessionState();
+      if (!state.inputValue && !promptQueue.items.length && !state.activeEvents.length) return;
+      activeConversationRef.current = conversationStore.createConversation({ providerId: activeProviderRoute.providerId, modelId: activeProviderRoute.modelId, backendKind: activeProviderRoute.backendKind, localBackend: activeProviderRoute.localBackend, reasoning: activeProviderRoute.reasoning });
+    }
+    saveActiveConversation();
+  }, [activeProviderRoute, conversationStore, getSessionState, promptQueue, saveActiveConversation]);
+  saveWorkbenchRef.current = saveWorkbench;
+  useEffect(() => {
+    const timer = setTimeout(saveWorkbench, 300);
+    return () => clearTimeout(timer);
+  }, [inputValue, cursor, workbenchVersion, planFlow, saveWorkbench]);
+  useEffect(() => {
+    if (!busy) { saveWorkbench(); return; }
+    const interval = setInterval(saveWorkbench, 1000);
+    return () => clearInterval(interval);
+  }, [busy, saveWorkbench]);
+  useEffect(() => {
+    const flush = () => saveWorkbenchRef.current?.();
+    process.on("beforeExit", flush);
+    return () => { flush(); process.off("beforeExit", flush); void stoppingRef.current.finally(() => { workspaceLeaseRef.current?.release(); workspaceLeaseRef.current = undefined; conversationStore.release(); }); };
+  }, []);
+  captureFinalRef.current = (runId) => {
+    const capture = activeCheckpointRef.current;
+    if (!capture || capture.runId !== runId) return;
+    activeCheckpointRef.current = null;
+    const stopped = processStoppedRef.current;
+    const original = activeConversationRef.current;
+    const originalSnapshot = snapshotRef.current?.();
+    const lease = workspaceLeaseRef.current;
+    workspaceLeaseRef.current = undefined;
+    const work = pendingCaptureRef.current.then(async () => {
+      await stopped;
+      if (deferredRouteCloseRef.current) { const id = deferredRouteCloseRef.current; deferredRouteCloseRef.current = undefined; await closeLocalHarnessSession(id); }
+      capture.checkpoint.after = await capture.store.capture();
+      if (original && activeConversationRef.current?.metadata.id !== original.metadata.id) conversationStore.save({ ...original, session: originalSnapshot });
+      else saveWorkbenchRef.current?.();
+    }).catch((error) => { appendErrorEvent("Checkpoint unavailable", (error as Error).message); }).finally(() => lease?.release());
+    stoppingRef.current = work;
+  };
 
   const appendConversationMessage = useCallback((message: ConversationMessage) => {
     const current = activeConversationRef.current ?? conversationStore.createConversation({
@@ -1577,9 +1631,12 @@ export function App({ launchArgs }: AppProps) {
     const next: ConversationRecord = { ...current, messages: [...current.messages, message] };
     activeConversationRef.current = next;
     try {
-      conversationStore.save(next);
+      conversationStore.save({ ...next, session: snapshotRef.current?.() });
+      lastSaveErrorRef.current = null;
     } catch (error) {
-      appDiagLog(`CONVERSATION_STORE: message save failed: ${error instanceof Error ? error.message : "filesystem error"}`);
+      const message = error instanceof Error ? error.message : "Filesystem error";
+      if (lastSaveErrorRef.current !== message) appendErrorEvent("Session save failed", message);
+      lastSaveErrorRef.current = message;
     }
   }, [activeProviderRoute, conversationStore]);
 
@@ -1640,54 +1697,92 @@ export function App({ launchArgs }: AppProps) {
     setScreen("resume-picker");
   }, [appendSystemEvent, busy, conversationStore, saveActiveConversation]);
 
-  const resumeConversation = useCallback((id: string) => {
-    const loaded = conversationStore.load(id);
-    if (!loaded) {
-      appendErrorEvent("Resume failed", "That conversation could not be loaded.");
-      setScreen("main");
-      return;
-    }
-    const previousHarnessSessionId = activeConversationRef.current?.metadata.localHarnessSession?.sessionId;
-    if (previousHarnessSessionId && previousHarnessSessionId !== loaded.metadata.localHarnessSession?.sessionId) {
-      void closeLocalHarnessSession(previousHarnessSessionId);
-    }
-    const replacement = armTranscriptReplacement("src/app.tsx:resumeConversation");
-    activeConversationRef.current = loaded;
-    setConversationChars(loaded.messages.reduce((total, message) => total + message.content.length, 0));
-    resetTimelineMeasureCaches();
-    dispatchSession({
-      type: "CLEAR_TRANSCRIPT",
-      seedEvents: conversationMessagesToTimeline(loaded.messages, createEventId, createTurnId),
-    });
-    replacement.finish();
-    const routeProvider = typeof loaded.metadata.providerId === "string" && isKnownProviderId(loaded.metadata.providerId)
-      ? loaded.metadata.providerId
-      : null;
-    if (routeProvider) {
-      const route = buildResumedProviderRoute(loaded.metadata, routeProvider, getProviderRuntime(routeProvider).backendKind);
-      // Local discovery is per backend; checking the default backend would mark
-      // an Unsloth-served model unavailable and drop the saved route.
-      const discovery = routeProvider === "local"
-        ? discoverLocalModels(undefined, route.localBackend)
-        : discoverProviderModels(routeProvider);
-      const modelUnavailable = discovery.status === "ready"
-        && discovery.models.length > 0
-        && !discovery.models.some((model) => model.modelId === loaded.metadata.modelId || model.id === loaded.metadata.modelId);
-      setConversationRouteOverride(modelUnavailable ? null : route);
-      if (!isProviderRoutableInUbume(routeProvider) || modelUnavailable) {
-        const reason = !isProviderRoutableInUbume(routeProvider)
-          ? `${routeProvider} is not currently available`
-          : `${loaded.metadata.modelId} is not currently available`;
-        appendSystemEvent("Original route unavailable", `Restored the conversation, but ${reason}. Ubume will use the current route when you send the next message.`);
-        setConversationRouteOverride(null);
+  const resumeConversation = useCallback(async (id: string) => {
+    if (activeRunIdRef.current !== null || submissionRef.current || recoveryRef.current) { appendSystemEvent("Resume unavailable", "Stop the active operation before switching sessions."); return; }
+    recoveryRef.current = true;
+    try {
+      await stoppingRef.current;
+      saveWorkbenchRef.current?.();
+      let loaded = conversationStore.load(id);
+      if (loaded) {
+        try { conversationStore.acquire(id); loaded = conversationStore.load(id); }
+        catch (error) { appendErrorEvent("Resume unavailable", (error as Error).message); return; }
       }
-    } else {
-      appendSystemEvent("Original route unavailable", "Restored the conversation history; continuing with the current provider route.");
-    }
-    setScreen("main");
-    dispatchSession({ type: "RESET_INPUT" });
-    intendedFocusTargetRef.current = FOCUS_IDS.composer;
-    focusManager.focus(FOCUS_IDS.composer);
+      if (!loaded) {
+        appendErrorEvent("Resume failed", "That conversation could not be loaded.");
+        setScreen("main");
+        return;
+      }
+      const previousHarnessSessionId = activeConversationRef.current?.metadata.localHarnessSession?.sessionId;
+      if (previousHarnessSessionId && previousHarnessSessionId !== loaded.metadata.localHarnessSession?.sessionId) {
+        stoppingRef.current = stoppingRef.current.then(() => closeLocalHarnessSession(previousHarnessSessionId));
+      }
+      const replacement = armTranscriptReplacement("src/app.tsx:resumeConversation");
+      activeConversationRef.current = loaded;
+      setConversationChars(loaded.messages.reduce((total, message) => total + message.content.length, 0));
+      resetTimelineMeasureCaches();
+      pipelineGenerationRef.current++;
+      runControlRef.current = null;
+      activeRunCaptureRef.current = null;
+      activeRunLifecycleRef.current = null;
+      activeRunTimingRef.current = null;
+      activeTurnIdRef.current = null;
+      toolApprovalResolverRef.current?.("deny");
+      toolApprovalResolverRef.current = null;
+      setToolApproval(null);
+      const saved = loaded.session;
+      const events = saved ? restoredEvents(saved.events) : conversationMessagesToTimeline(loaded.messages, createEventId, createTurnId);
+      for (const event of events) { nextEventId = Math.max(nextEventId, event.id + 1); if ("turnId" in event) nextTurnId = Math.max(nextTurnId, event.turnId + 1); }
+      if (saved && loaded.messages.at(-1)?.role === "user") {
+        const partial = [...saved.events].reverse().find((event) => event.type === "assistant");
+        const lastRun = [...saved.events].reverse().find((event) => event.type === "run");
+        if (lastRun?.type === "run" && lastRun.status === "running" && partial?.type === "assistant" && partial.turnId === lastRun.turnId) {
+          loaded.messages.push({ role: "assistant", content: `${partial.contentChunks.join("") || partial.content}\n\n[Run interrupted before session closed]` });
+        }
+      }
+      pastedContentRegistryRef.current = new Map(saved?.pastes ?? []);
+      imageAttachmentRegistryRef.current = new Map(saved?.images ?? []);
+      fileAttachmentRegistryRef.current = new Map(saved?.files ?? []);
+      checkpointsRef.current = saved?.checkpoints ?? [];
+      restoredFileBoundaryRef.current = saved?.restoredFileBoundary;
+      promptQueue.restore(saved?.queue ?? []);
+      setPlanFlow(saved?.plan ?? createInitialPlanFlowState());
+      dispatchSession({ type: "RESTORE_SESSION", events, value: saved?.draft ?? "", cursor: saved?.cursor ?? 0, history: saved?.history ?? loaded.messages.filter((item) => item.role === "user").map((item) => item.content).reverse().slice(0, 50), uiState: saved?.uiState });
+      const lease = acquireOwnership(workspaceRoot, "execution");
+      try { if (await new CheckpointStore(workspaceRoot, id).recover()) appendSystemEvent("File recovery", "Rolled back an interrupted restoration."); }
+      finally { lease.release(); }
+      bumpWorkbench((value) => value + 1);
+      replacement.finish();
+      const routeProvider = typeof loaded.metadata.providerId === "string" && isKnownProviderId(loaded.metadata.providerId)
+        ? loaded.metadata.providerId
+        : null;
+      if (routeProvider) {
+        const route = buildResumedProviderRoute(loaded.metadata, routeProvider, getProviderRuntime(routeProvider).backendKind);
+        // Local discovery is per backend; checking the default backend would mark
+        // an Unsloth-served model unavailable and drop the saved route.
+        const discovery = routeProvider === "local"
+          ? discoverLocalModels(undefined, route.localBackend)
+          : discoverProviderModels(routeProvider);
+        const modelUnavailable = discovery.status === "ready"
+          && discovery.models.length > 0
+          && !discovery.models.some((model) => model.modelId === loaded.metadata.modelId || model.id === loaded.metadata.modelId);
+        setConversationRouteOverride(modelUnavailable ? null : route);
+        if (!isProviderRoutableInUbume(routeProvider) || modelUnavailable) {
+          const reason = !isProviderRoutableInUbume(routeProvider)
+            ? `${routeProvider} is not currently available`
+            : `${loaded.metadata.modelId} is not currently available`;
+          appendSystemEvent("Original route unavailable", `Restored the conversation, but ${reason}. Ubume will use the current route when you send the next message.`);
+          setConversationRouteOverride(null);
+        }
+      } else {
+        appendSystemEvent("Original route unavailable", "Restored the conversation history; continuing with the current provider route.");
+      }
+      setScreen("main");
+
+      intendedFocusTargetRef.current = FOCUS_IDS.composer;
+      focusManager.focus(FOCUS_IDS.composer);
+    } catch (error) { appendErrorEvent("Resume failed", (error as Error).message); }
+    finally { recoveryRef.current = false; bumpWorkbench((value) => value + 1); const quit = pendingQuitRef.current; pendingQuitRef.current = null; quit?.(); }
   }, [appendErrorEvent, appendSystemEvent, armTranscriptReplacement, conversationStore, dispatchSession, focusManager]);
 
   useEffect(() => {
@@ -1718,6 +1813,7 @@ export function App({ launchArgs }: AppProps) {
   }, [appendErrorEvent, projectInstructionsLoad]);
 
   const refreshModelCapabilities = useCallback((forceRefresh = false, announce = false): Promise<CodexModelCapabilities> => {
+    if (providerOverride) { const capabilities = createFallbackModelCapabilities(null); setModelCapabilities(capabilities); return Promise.resolve(capabilities); }
     // Single-flight: concurrent requests share the same in-flight discovery
     // promise so we never spawn a duplicate discovery job or emit duplicate
     // transcript messages.
@@ -1833,6 +1929,7 @@ export function App({ launchArgs }: AppProps) {
   }, [persistProviderDiscovery, providerWorkspaceConfig.providers, refreshModelCapabilities, workspaceRoot]);
 
   const refreshAuthStatus = useCallback(async (announce: boolean) => {
+    if (providerOverride) { setAuthStatus({ state: "authenticated", checkedAt: Date.now(), rawSummary: "Embedded runtime", recommendedAction: "" }); return; }
     setAuthStatusBusy(true);
     setAuthStatus((prev) => ({ ...prev, state: "checking" }));
 
@@ -3365,6 +3462,7 @@ export function App({ launchArgs }: AppProps) {
       finalRenderMonotonicMs: finalMonotonicMs,
       elapsedWallMs: durationMs,
     });
+    if (finalFlushRef.current?.runId === runId) { finalFlushRef.current.flush(); finalFlushRef.current = null; }
     const cleanup = cleanupRef.current;
     cleanupRef.current = null;
     activeRunLifecycleRef.current = null;
@@ -3434,6 +3532,10 @@ export function App({ launchArgs }: AppProps) {
         turnId,
       }),
     });
+    if (status !== "completed" || parsed.question || lifecycle?.responsePresentation === "plan") promptQueue.paused = true;
+    captureFinalRef.current?.(runId);
+    saveWorkbenchRef.current?.();
+    bumpWorkbench((value) => value + 1);
     perf.mark("finalize_done");
     perf.setMeta("content_length", parsed.content?.length ?? 0);
     perf.setMeta("status", status);
@@ -3466,6 +3568,10 @@ export function App({ launchArgs }: AppProps) {
   const cancelActiveRun = useCallback((retainHistory = true) => {
     const runId = activeRunIdRef.current;
     if (runId === null) return false;
+    toolApprovalResolverRef.current?.("deny");
+    toolApprovalResolverRef.current = null;
+    setToolApproval(null);
+    if (screenRef.current === "tool-approval") setScreen("main");
     const promptTurnId = activeTurnIdRef.current;
 
     if (!isCurrentRun(activeRunIdRef.current, runId)) {
@@ -3534,6 +3640,9 @@ export function App({ launchArgs }: AppProps) {
   }, [activeEvents, dispatchSession, finalizePromptRun, focusManager, persistRunConversationMessage, uiState.kind]);
 
   const handleCancel = useCallback(() => {
+    if (submissionRef.current) pipelineGenerationRef.current++;
+    promptQueue.paused = true;
+    bumpWorkbench((value) => value + 1);
     if (busy) {
       cancelActiveRun(true);
       return;
@@ -3554,11 +3663,16 @@ export function App({ launchArgs }: AppProps) {
   }, [appendSystemEvent, busy, cancelActiveRun, dispatchSession, planFlow.kind, resetComposer, uiState.kind]);
 
   const handleQuit = useCallback(() => {
-    // Cancel first so the interrupted reply is part of the saved conversation.
-    cancelActiveRun(false);
-    saveActiveConversation();
-    exit();
-  }, [cancelActiveRun, exit, saveActiveConversation]);
+    const quit = () => {
+      pipelineGenerationRef.current++;
+      promptQueue.paused = true;
+      cancelActiveRun(true);
+      void stoppingRef.current.then(() => { saveWorkbenchRef.current?.(); conversationStore.release(); exit(); });
+    };
+    // Let journaled file transactions and session switches finish before exiting.
+    if (recoveryRef.current) pendingQuitRef.current = quit;
+    else quit();
+  }, [cancelActiveRun, conversationStore, exit, promptQueue]);
 
   const handleCopy = useCallback(async () => {
     // Build a full conversation transcript from all user prompts and assistant
@@ -3687,31 +3801,46 @@ export function App({ launchArgs }: AppProps) {
     dispatchSession({ type: "SET_INPUT", value: safeValue, cursor: Math.min(nextCursor, safeValue.length) });
   }, [dispatchSession]);
 
-  const handleClear = useCallback(() => {
+  const handleClear = useCallback(async () => {
+    if (submissionRef.current || recoveryRef.current) return;
+    pipelineGenerationRef.current++;
+    recoveryRef.current = true;
     const replacement = armTranscriptReplacement("src/app.tsx:handleClear");
-    cancelActiveRun(false);
-    saveActiveConversation();
-    void closeLocalHarnessSession(activeConversationRef.current?.metadata.localHarnessSession?.sessionId);
-    activeConversationRef.current = null;
-    setConversationRouteOverride(null);
-    activeTurnIdRef.current = null;
-    activeRunLifecycleRef.current = null;
-    activeRunTimingRef.current = null;
-    resetMistralVibeSession(workspaceRoot);
-    setPlanFlow(resetPlanFlow());
-    // Row caches are keyed by transcript item keys; drop them with the transcript.
-    resetTimelineMeasureCaches();
-    renderDebug.traceEvent("terminal", "clearReactStateRequested", {
-      clearGeneration: replacement.clearGeneration,
-      clearPending: replacement.clearBoundaryArmed,
-    });
-    resetToHomeScreen(createStartupStaticEvents({
-      providerWorkspaceConfig,
-    }));
-    replacement.finish();
+    try {
+      cancelActiveRun(true);
+      await stoppingRef.current;
+      saveActiveConversation();
+      const harnessSessionId = activeConversationRef.current?.metadata.localHarnessSession?.sessionId;
+      stoppingRef.current = stoppingRef.current.then(() => closeLocalHarnessSession(harnessSessionId)).then(() => undefined);
+      activeConversationRef.current = null;
+      conversationStore.release();
+      promptQueue.restore([]);
+      pastedContentRegistryRef.current.clear();
+      imageAttachmentRegistryRef.current.clear();
+      fileAttachmentRegistryRef.current.clear();
+      checkpointsRef.current = [];
+      restoredFileBoundaryRef.current = undefined;
+      bumpWorkbench((value) => value + 1);
+      setConversationRouteOverride(null);
+      activeTurnIdRef.current = null;
+      activeRunLifecycleRef.current = null;
+      activeRunTimingRef.current = null;
+      resetMistralVibeSession(workspaceRoot);
+      setPlanFlow(resetPlanFlow());
+      // Row caches are keyed by transcript item keys; drop them with the transcript.
+      resetTimelineMeasureCaches();
+      renderDebug.traceEvent("terminal", "clearReactStateRequested", {
+        clearGeneration: replacement.clearGeneration,
+        clearPending: replacement.clearBoundaryArmed,
+      });
+      resetToHomeScreen(createStartupStaticEvents({
+        providerWorkspaceConfig,
+      }));
+      replacement.finish();
+    } finally { recoveryRef.current = false; bumpWorkbench((value) => value + 1); const quit = pendingQuitRef.current; pendingQuitRef.current = null; quit?.(); }
   }, [armTranscriptReplacement, cancelActiveRun, launchContext, providerWorkspaceConfig, resetToHomeScreen, saveActiveConversation, workspaceRoot]);
 
-  const handleShellExecute = useCallback((command: string) => {
+  const handleShellExecute = useCallback(async (command: string) => {
     const safeCommand = sanitizeTerminalInput(command).trim();
     const guardMessage = getShellWorkspaceGuardMessage(safeCommand, workspaceRoot, allowedWritableRoots);
     if (guardMessage) {
@@ -3719,6 +3848,11 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
+    const generation = pipelineGenerationRef.current;
+    let lease: OwnershipLease;
+    try { lease = acquireOwnership(workspaceRoot, "execution"); try { await assertFileRecoveryReady(workspaceRoot); } catch (error) { lease.release(); throw error; } }
+    catch (error) { appendErrorEvent("Workspace busy", (error as Error).message); return; }
+    if (generation !== pipelineGenerationRef.current || activeRunIdRef.current !== null || recoveryRef.current) { lease.release(); return; }
     const shellId = createEventId();
     const startTime = Date.now();
 
@@ -3779,7 +3913,8 @@ export function App({ launchArgs }: AppProps) {
       }, LIVE_UPDATE_FLUSH_MS);
     };
 
-    const runner = runShellCommand(
+    let runner: ReturnType<typeof runShellCommand>;
+    try { runner = runShellCommand(
       safeCommand,
       { cwd: workspaceRoot },
       {
@@ -3800,7 +3935,11 @@ export function App({ launchArgs }: AppProps) {
       },
     );
 
+    } catch (error) { lease.release(); activeRunIdRef.current = null; dispatchSession({ type: "UI_ACTION", action: { type: "DISMISS_TRANSIENT" } }); appendErrorEvent("Shell command failed", (error as Error).message); return; }
+    processStoppedRef.current = (runner.stopped ?? runner.result.then(() => undefined)).finally(() => lease.release());
+    stoppingRef.current = processStoppedRef.current;
     cleanupRef.current = () => {
+      stoppingRef.current = processStoppedRef.current;
       if (shellFlushTimer) {
         clearTimeout(shellFlushTimer);
         shellFlushTimer = null;
@@ -3881,6 +4020,7 @@ export function App({ launchArgs }: AppProps) {
     providerPrompt: string,
     lifecycle: PromptRunLifecycle = {},
   ) => {
+    if (activeRunIdRef.current !== null || recoveryRef.current) return false;
     const submitTiming = lifecycle.submitTiming ?? createPromptRunTiming();
     const safeDisplayPrompt = sanitizeTerminalInput(displayPrompt).trim();
     const safeProviderPrompt = sanitizeTerminalInput(providerPrompt).trim();
@@ -3889,6 +4029,8 @@ export function App({ launchArgs }: AppProps) {
       return false;
     }
 
+    const guardMessage = getPromptWorkspaceGuardMessage(safeProviderPrompt, workspaceRoot, allowedWritableRoots);
+    if (guardMessage) { appendErrorEvent("Workspace boundary", guardMessage); return false; }
     const imageAttachments = lifecycle.imageAttachments ?? [];
     if (imageAttachments.length > 0) {
       const supportsImages = activeProviderRoute.providerId === "openai"
@@ -3949,7 +4091,7 @@ export function App({ launchArgs }: AppProps) {
     }
     const runProvider = provider.run;
 
-    if (activeProviderRoute.providerId === "openai" && backend === "codex-subprocess") {
+    if (!providerOverride && activeProviderRoute.providerId === "openai" && backend === "codex-subprocess") {
       const decision = getRunGateDecision(authStatus.state, {
         warnOnUnknown: authStatus.checkedAt > 0,
       });
@@ -3984,7 +4126,8 @@ export function App({ launchArgs }: AppProps) {
       prompt: safeDisplayPrompt,
       turnId,
     };
-    appendConversationMessage({ role: "user", content: safeDisplayPrompt });
+    for (const id of lifecycle.queuedPromptIds ?? []) promptQueue.remove(id);
+    appendConversationMessage({ role: "user", content: safeDisplayPrompt, submittedContent: safeProviderPrompt, turnId, createdAt: submitTiming.submitEpochMs });
     setConversationChars((count) => count + safeProviderPrompt.length);
 
     const runId = createEventId();
@@ -4006,6 +4149,7 @@ export function App({ launchArgs }: AppProps) {
     dispatchSession({
       type: "SUBMIT_PROMPT_RUN",
       historyValue: lifecycle.commitPrompt ? safeDisplayPrompt : undefined,
+      preserveInput: lifecycle.preserveInput,
       turnId,
       runId,
       events: [
@@ -4027,6 +4171,7 @@ export function App({ launchArgs }: AppProps) {
       ],
     });
 
+    const toolOutputBudget = new ToolOutputBudget();
     let streamedAssistantContent = "";
     // Plan runs: text streamed since the last tool call. The reducer demotes
     // pre-tool text to prose (chatLifecycle.demoteActivePlanToResponseSegment),
@@ -4086,6 +4231,8 @@ export function App({ launchArgs }: AppProps) {
       return liveScheduler.flushNow();
     };
 
+    finalFlushRef.current = { runId, flush: () => { flushLiveUpdates(); } };
+
     const traceLiveRunDiagnostics = (status: "completed" | "failed" | "canceled") => {
       const stats = liveScheduler.getStats();
       const now = performance.now();
@@ -4112,14 +4259,35 @@ export function App({ launchArgs }: AppProps) {
       dispatchSession({ type: "SET_EXTERNAL_CLI_STATUS", status: "ready" });
     };
 
+    let resolveStartup: () => void = () => undefined;
+    let startupBegan = false;
+    processStoppedRef.current = new Promise<void>((resolve) => { resolveStartup = resolve; });
+    runControlRef.current = null;
     let stopProviderRun: (() => void) | undefined;
     let cancelScheduledProviderStart: (() => void) | null = null;
     let providerStartCancelled = false;
 
-    const startProviderRun = () => {
+    const startProviderRun = async () => {
       if (providerStartCancelled || !isCurrentRun(activeRunIdRef.current, runId)) {
         return;
       }
+
+      try { workspaceLeaseRef.current = acquireOwnership(workspaceRoot, "execution"); await assertFileRecoveryReady(workspaceRoot); }
+      catch (error) { workspaceLeaseRef.current?.release(); workspaceLeaseRef.current = undefined; appendErrorEvent("Workspace busy", (error as Error).message); finalizePromptRun(runId, turnId, "failed", (error as Error).message); return; }
+      if (providerStartCancelled || !isCurrentRun(activeRunIdRef.current, runId)) { workspaceLeaseRef.current?.release(); workspaceLeaseRef.current = undefined; return; }
+      const conversation = activeConversationRef.current;
+      if (conversation) {
+        restoredFileBoundaryRef.current = undefined;
+        const checkpointStore = new CheckpointStore(workspaceRoot, conversation.metadata.id);
+        const checkpoint: FileCheckpoint = { id: String(runId), turnId, messageCount: conversation.messages.length - 1, prompt: safeDisplayPrompt, before: { files: {}, complete: false, skipped: [] } };
+        checkpointsRef.current.push(checkpoint);
+        activeCheckpointRef.current = { runId, checkpoint, store: checkpointStore };
+        const capture = checkpointStore.capture().then((boundary) => { checkpoint.before = boundary; });
+        pendingCaptureRef.current = capture;
+        try { await capture; } catch (error) { appendErrorEvent("Checkpoint unavailable", (error as Error).message); }
+        saveWorkbenchRef.current?.();
+      }
+      if (providerStartCancelled || !isCurrentRun(activeRunIdRef.current, runId)) return;
 
       // Capture the workspace state after the visible run has had a chance to
       // render, so first-prompt filesystem work cannot block initial progress.
@@ -4224,7 +4392,7 @@ export function App({ launchArgs }: AppProps) {
             planSeenToolIds.add(activity.id);
             planSectionContent = "";
           }
-          liveScheduler.enqueue({ type: "tool", activity });
+          liveScheduler.enqueue({ type: "tool", activity: toolOutputBudget.bound(activity) });
           if (activity.status === "running") {
             return;
           }
@@ -4242,6 +4410,8 @@ export function App({ launchArgs }: AppProps) {
         onToolApproval: (request) => new Promise<ToolApprovalDecision>((resolve) => {
           toolApprovalResolverRef.current?.("deny");
           toolApprovalResolverRef.current = resolve;
+          promptQueue.paused = true;
+          bumpWorkbench((value) => value + 1);
           setToolApproval(request);
           setScreen("tool-approval");
         }),
@@ -4410,7 +4580,7 @@ export function App({ launchArgs }: AppProps) {
           };
           activeConversationRef.current = next;
           try {
-            conversationStore.save(next);
+            conversationStore.save({ ...next, session: snapshotRef.current?.() });
           } catch (error) {
             appDiagLog(`CONVERSATION_STORE: checkpoint save failed: ${error instanceof Error ? error.message : "filesystem error"}`);
           }
@@ -4426,11 +4596,12 @@ export function App({ launchArgs }: AppProps) {
           };
           activeConversationRef.current = next;
           try {
-            conversationStore.save(next);
+            conversationStore.save({ ...next, session: snapshotRef.current?.() });
           } catch (error) {
             appDiagLog(`CONVERSATION_STORE: Local Harness save failed: ${error instanceof Error ? error.message : "filesystem error"}`);
           }
         },
+        onRunControl: (control) => { if (isCurrentRun(activeRunIdRef.current, runId)) { runControlRef.current = control; processStoppedRef.current = control.stopped; } },
         onContextUsage: (usage) => {
           if (!isCurrentRun(activeRunIdRef.current, runId)) return;
           // A failed turn can report zero usage; keep the known conversation size.
@@ -4441,11 +4612,13 @@ export function App({ launchArgs }: AppProps) {
       );
     };
 
-    cancelScheduledProviderStart = schedulePromptRunStartAfterVisibleCommit(startProviderRun);
+    cancelScheduledProviderStart = schedulePromptRunStartAfterVisibleCommit(() => { startupBegan = true; void startProviderRun().catch((error) => { finalizePromptRun(runId, turnId, "failed", (error as Error).message); }).finally(resolveStartup); });
 
     cleanupRef.current = () => {
       providerStartCancelled = true;
       cancelScheduledProviderStart?.();
+      if (!startupBegan) resolveStartup();
+      stoppingRef.current = processStoppedRef.current;
       flushLiveUpdates();
       // Do one final sync poll before stopping the tracker to capture
       // any last-moment file changes that were in-flight.
@@ -4468,6 +4641,7 @@ export function App({ launchArgs }: AppProps) {
     return true;
   }, [
     activeProviderRoute,
+    allowedWritableRoots, providerOverride,
     activeRouteProvider,
     activeContextMetadata,
     appendConversationMessage,
@@ -4483,6 +4657,137 @@ export function App({ launchArgs }: AppProps) {
     runtimeConfig,
     workspaceRoot,
   ]);
+
+  const openWorkbench = useCallback((view: WorkbenchView) => { setWorkbenchView(view); setScreen("workbench-panel"); }, []);
+  const handleQueueAction = useCallback((action: QueueAction, id?: string) => {
+    if (action === "pause") promptQueue.paused = !promptQueue.paused;
+    else if (action === "continue") promptQueue.paused = false;
+    else if (id && action === "remove") promptQueue.remove(id);
+    else if (id && (action === "up" || action === "down")) promptQueue.move(id, action === "up" ? -1 : 1);
+    else if (id && action === "edit") {
+      if (getSessionState().inputValue.trim()) { appendSystemEvent("Draft retained", "Clear or submit the current draft before editing a queued instruction."); return; }
+      const item = promptQueue.items.find((item) => item.id === id);
+      if (item) {
+        // Editing uses the immutable expanded file context. Reattach image chips
+        // so subsequent submission cannot silently lose queued images.
+        let draft = item.submitted;
+        for (const [token, image] of imageAttachmentRegistryRef.current) {
+          if (item.images.some((attachment) => attachment.path === image.path)) draft = draft.split(token).join("");
+        }
+        const tokens = item.images.map((image) => {
+          const token = createImageAttachmentToken(image);
+          imageAttachmentRegistryRef.current.set(token, image);
+          return token;
+        });
+        dispatchSession({ type: "SET_INPUT", value: [draft, ...tokens].join("\n") });
+        promptQueue.remove(id); setScreen("main");
+      }
+    }
+    saveWorkbenchRef.current?.(); bumpWorkbench((value) => value + 1);
+  }, [appendSystemEvent, dispatchSession, getSessionState, promptQueue]);
+  const handleRedraw = useCallback(() => {
+    terminalControl.write("\x1b[2J\x1b[H", "user:redraw");
+    resetInkOutputForFreshFrame({ instance: inkInstance, columns: stdout.columns });
+    bumpStaticRepaintGeneration((value) => value + 1);
+  }, [terminalControl, inkInstance, stdout]);
+  const quitHintTime = useRef(0);
+  const handleInterrupt = useCallback(() => {
+    promptQueue.paused = true;
+    if (activeRunIdRef.current !== null) { handleCancel(); return; }
+    if (submissionRef.current) { pipelineGenerationRef.current++; return; }
+    if (getSessionState().inputValue) { resetComposer(); return; }
+    const now = Date.now();
+    if (now - quitHintTime.current < 1000) handleQuit();
+    else { quitHintTime.current = now; appendSystemEvent("Exit", "Press Ctrl+C again to exit, or keep working."); }
+  }, [appendSystemEvent, getSessionState, handleCancel, handleQuit, promptQueue, resetComposer]);
+  useInput((input, key) => {
+    if (!key.ctrl) return;
+    if (input === "c") handleInterrupt();
+    else if (input === "q") handleQuit();
+    else if (input === "l") handleRedraw();
+  }, { isActive: screen !== "main" });
+
+  const handleExternalEditor = useCallback(async () => {
+    if (submissionRef.current) return;
+    submissionRef.current = true;
+    try {
+      const state = getSessionState();
+      const text = await expandFileAttachments(expandPastedContent(state.inputValue, pastedContentRegistryRef.current), fileAttachmentRegistryRef.current, workspaceRoot);
+      const edited = await editExternalPrompt(text, (action) => suspendTerminal(action));
+      dispatchSession({ type: "SET_INPUT", value: edited });
+    } catch (error) { appendErrorEvent("External editor", (error as Error).message); }
+    finally { submissionRef.current = false; handleRedraw(); }
+  }, [appendErrorEvent, dispatchSession, getSessionState, handleRedraw, suspendTerminal, workspaceRoot]);
+  const handleSendNow = useCallback(async () => {
+    if (submissionRef.current || recoveryRef.current || planFlow.kind !== "idle" || screenRef.current === "tool-approval") return;
+    submissionRef.current = true;
+    const generation = pipelineGenerationRef.current;
+    try {
+      const state = getSessionState();
+      const draft = state.inputValue.trim();
+      if (draft && !draft.startsWith("/")) {
+        assertAttachedContent(draft, pastedContentRegistryRef.current, imageAttachmentRegistryRef.current, fileAttachmentRegistryRef.current);
+        const submitted = await expandFileAttachments(expandPastedContent(draft, pastedContentRegistryRef.current), fileAttachmentRegistryRef.current, workspaceRoot);
+        const images = selectImageAttachments(draft, imageAttachmentRegistryRef.current);
+        for (const image of images) if (!existsSync(image.path)) throw new Error(`Image attachment is missing: ${image.name}`);
+        promptQueue.push(queuedPrompt(draft, submitted, images));
+        resetComposer();
+      }
+      if (!promptQueue.items.length) return;
+      const control = runControlRef.current;
+      const batch = [...promptQueue.items];
+      if (control?.steer && await control.steer(batch.map((item) => item.submitted).join("\n\n"))) {
+        batch.forEach((item) => promptQueue.remove(item.id));
+      } else {
+        promptQueue.paused = true;
+        cancelActiveRun(true);
+        await stoppingRef.current;
+        if (generation !== pipelineGenerationRef.current) return;
+        const merged = queuedPrompt(batch.map((item) => item.display).join("\n\n"), batch.map((item) => item.submitted).join("\n\n"), batch.flatMap((item) => item.images));
+        const started = startPromptRun(merged.display, merged.submitted, { commitPrompt: true, preserveInput: true, queuedPromptIds: batch.map((item) => item.id), imageAttachments: merged.images });
+        if (started) batch.forEach((item) => promptQueue.remove(item.id));
+      }
+    } catch (error) { appendErrorEvent("Send now failed", (error as Error).message); }
+    finally { submissionRef.current = false; saveWorkbenchRef.current?.(); bumpWorkbench((value) => value + 1); }
+  }, [appendErrorEvent, cancelActiveRun, getSessionState, planFlow.kind, promptQueue, resetComposer, startPromptRun, workspaceRoot]);
+  const handleRewind = useCallback(async (checkpoint: FileCheckpoint, recoveryMode: RecoveryMode, operations: import("./core/workspace/checkpoints.js").RestoreOperation[]) => {
+    if (activeRunIdRef.current !== null || submissionRef.current) throw new Error("Stop the current operation before rewinding.");
+    const current = activeConversationRef.current;
+    if (!current) throw new Error("No conversation to rewind.");
+    recoveryRef.current = true;
+    let lease: OwnershipLease | undefined;
+    try {
+      await stoppingRef.current;
+      lease = acquireOwnership(workspaceRoot, "execution");
+      await assertFileRecoveryReady(workspaceRoot);
+      saveWorkbenchRef.current?.();
+      if (recoveryMode !== "conversation") {
+        const store = new CheckpointStore(workspaceRoot, current.metadata.id);
+        await store.restore(operations);
+        restoredFileBoundaryRef.current = await store.capture();
+        // Old file chains describe a workspace that has now been superseded.
+        checkpointsRef.current = checkpointsRef.current.map((point) => ({ ...point, recoveryInvalidated: true }));
+        appendSystemEvent("File recovery", "Restored supported file edits. Earlier checkpoints remain available for conversation rewind.");
+      }
+      if (recoveryMode !== "files") {
+        const branchEvents = snapshotRef.current?.()?.events;
+        const branch = conversationStore.createConversation(current.metadata);
+        branch.messages = current.messages.slice(0, checkpoint.messageCount);
+        branch.metadata.parentConversationId = current.metadata.id;
+        branch.metadata.parentCheckpointId = checkpoint.id;
+        const replacement = armTranscriptReplacement("user:rewind");
+        activeConversationRef.current = branch;
+        pipelineGenerationRef.current++;
+        promptQueue.restore([]);
+        checkpointsRef.current = [];
+        restoredFileBoundaryRef.current = undefined;
+        setPlanFlow(createInitialPlanFlowState());
+        dispatchSession({ type: "RESTORE_SESSION", events: branchEvents ? restoredEvents(eventsBeforeTurn(branchEvents, checkpoint.turnId)) : conversationMessagesToTimeline(branch.messages, createEventId, createTurnId), value: current.messages[checkpoint.messageCount]?.submittedContent ?? checkpoint.prompt, cursor: (current.messages[checkpoint.messageCount]?.submittedContent ?? checkpoint.prompt).length, history: branch.messages.filter((message) => message.role === "user").map((message) => message.content).reverse() });
+        replacement.finish();
+      }
+      saveWorkbenchRef.current?.();
+    } finally { lease?.release(); recoveryRef.current = false; bumpWorkbench((value) => value + 1); const quit = pendingQuitRef.current; pendingQuitRef.current = null; quit?.(); }
+  }, [armTranscriptReplacement, conversationStore, dispatchSession, promptQueue, workspaceRoot]);
 
   const handleImportConfirm = useCallback(async () => {
     if (!pendingImport) return;
@@ -4516,6 +4821,8 @@ export function App({ launchArgs }: AppProps) {
     submitTiming?: PromptRunTiming,
     commitPrompt = false,
     imageAttachments: readonly import("./core/providerRuntime/types.js").ProviderImageAttachment[] = [],
+    preserveInput = false,
+    queuedPromptIds?: readonly string[],
   ) => {
     const started = startPromptRun(
       displayPrompt,
@@ -4536,6 +4843,8 @@ export function App({ launchArgs }: AppProps) {
         runIntent: "plan",
         submitTiming,
         commitPrompt,
+        preserveInput,
+        queuedPromptIds,
         imageAttachments,
         onCompleted: ({ response }) => {
           const nextPlan = response.trim();
@@ -4700,10 +5009,25 @@ export function App({ launchArgs }: AppProps) {
     workspaceRoot,
   ]);
 
-  const handleSubmit = useCallback(() => {
+  const queueDispatchRef = useRef({ startPromptRun, runPlanGeneration, planMode, mode, planFlow });
+  queueDispatchRef.current = { startPromptRun, runPlanGeneration, planMode, mode, planFlow };
+  useEffect(() => {
+    if (busy || screen !== "main" || planFlow.kind !== "idle" || uiState.kind !== "IDLE" || recoveryRef.current) return;
+    const generation = pipelineGenerationRef.current;
+    void promptQueue.drain((item) => {
+      const current = queueDispatchRef.current;
+      if (current.planMode) { const nextPlan = startPlanGeneration(item.submitted, current.mode); setPlanFlow(nextPlan); return current.runPlanGeneration(nextPlan, item.display, createPromptRunTiming(), true, item.images, true, [item.id]); }
+      return current.startPromptRun(item.display, item.submitted, { commitPrompt: true, preserveInput: true, queuedPromptIds: [item.id], imageAttachments: item.images });
+    }, async () => {
+      await stoppingRef.current;
+      return generation === pipelineGenerationRef.current && activeRunIdRef.current === null && !submissionRef.current && !recoveryRef.current && screenRef.current === "main" && getSessionState().uiState.kind === "IDLE" && queueDispatchRef.current.planFlow.kind === "idle";
+    }).then((started) => { if (started) { saveWorkbenchRef.current?.(); bumpWorkbench((value) => value + 1); } }).catch((error) => { appendErrorEvent("Queue paused", (error as Error).message); saveWorkbenchRef.current?.(); bumpWorkbench((value) => value + 1); });
+  }, [busy, screen, planFlow.kind, uiState.kind, workbenchVersion, promptQueue, startPromptRun, planMode, mode, runPlanGeneration]);
+  const handleSubmit = useCallback(async () => {
     const submitTiming = createPromptRunTiming();
     perf.mark("submit");
-    const value = sanitizeTerminalInput(inputValue).trim();
+    if (submissionRef.current || recoveryRef.current) return;
+    const value = sanitizeTerminalInput(getSessionState().inputValue).trim();
     if (!value) return;
 
     // Special perf debug command (not routed through handleCommand)
@@ -4718,15 +5042,25 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
+    if (["/queue", "/transcript", "/diff", "/rewind"].includes(value)) { resetComposer(); openWorkbench(value.slice(1) as WorkbenchView); return; }
+    if (value === "/send-now") { resetComposer(); await handleSendNow(); return; }
+    if (value.startsWith("/resume ")) { if (!busy) resumeConversation(value.slice(8).trim()); return; }
+
     // ========== COMMAND ROUTING (before AWAITING_USER_ACTION) ==========
     // Shell execution: ! prefix routes directly to the terminal
     if (value.startsWith("!")) {
       if (busy) return;
       const shellCmd = value.slice(1).trim();
       if (!shellCmd) return;
-      dispatchSession({ type: "PUSH_HISTORY", value });
-      resetComposer();
-      handleShellExecute(shellCmd);
+      submissionRef.current = true;
+      const generation = pipelineGenerationRef.current;
+      try {
+        await stoppingRef.current;
+        if (generation !== pipelineGenerationRef.current || activeRunIdRef.current !== null) return;
+        dispatchSession({ type: "PUSH_HISTORY", value });
+        resetComposer();
+        await handleShellExecute(shellCmd);
+      } finally { submissionRef.current = false; }
       return;
     }
 
@@ -5112,7 +5446,17 @@ export function App({ launchArgs }: AppProps) {
     }
 
     // ========== NORMAL PROMPT SUBMISSION (after command routing) ==========
-    const providerValue = expandPastedContent(value, pastedContentRegistryRef.current);
+    submissionRef.current = true;
+    const generation = pipelineGenerationRef.current;
+    let providerValue: string;
+    try {
+      assertAttachedContent(value, pastedContentRegistryRef.current, imageAttachmentRegistryRef.current, fileAttachmentRegistryRef.current);
+      providerValue = await expandFileAttachments(expandPastedContent(value, pastedContentRegistryRef.current), fileAttachmentRegistryRef.current, workspaceRoot);
+      for (const attachment of selectImageAttachments(value, imageAttachmentRegistryRef.current)) { if (!existsSync(attachment.path)) throw new Error(`Image attachment is missing: ${attachment.name}`); }
+      if (generation !== pipelineGenerationRef.current) return;
+      await stoppingRef.current;
+    } catch (error) { appendErrorEvent("Prompt unavailable", (error as Error).message); return; }
+    finally { submissionRef.current = false; }
     const imageAttachments = selectImageAttachments(value, imageAttachmentRegistryRef.current);
     // Check for follow-up answer submission
     if (uiState.kind === "AWAITING_USER_ACTION") {
@@ -5132,8 +5476,13 @@ export function App({ launchArgs }: AppProps) {
       return;
     }
 
+    if (generation !== pipelineGenerationRef.current) return;
     // Check if app is busy for normal prompts
-    if (!isCommand && busy) {
+    if (!isCommand && activeRunIdRef.current !== null) {
+      promptQueue.push(queuedPrompt(value, providerValue, imageAttachments));
+      dispatchSession({ type: "PUSH_HISTORY", value });
+      resetComposer();
+      saveWorkbenchRef.current?.(); bumpWorkbench((value) => value + 1);
       return;
     }
 
@@ -5209,6 +5558,7 @@ export function App({ launchArgs }: AppProps) {
     refreshAuthStatus,
     repaintCommittedTheme,
     resetComposer,
+    getSessionState, openWorkbench, handleSendNow, resumeConversation,
     resolvedRuntimeConfig,
     runPlanGeneration,
     runtimeConfig,
@@ -5238,6 +5588,8 @@ export function App({ launchArgs }: AppProps) {
   ]);
 
   const modelDisplayName = activeRuntimeDisplay.modelDisplay;
+  const currentCheckpointStore = activeConversationRef.current ? new CheckpointStore(workspaceRoot, activeConversationRef.current.metadata.id) : null;
+  const recoveryCheckpoints = checkpointsRef.current.length ? checkpointsRef.current : (activeConversationRef.current?.messages ?? []).flatMap((message, index): FileCheckpoint[] => message.role === "user" ? [{ id: `legacy-${index}`, turnId: message.turnId ?? index, messageCount: index, prompt: message.submittedContent ?? message.content, before: { files: {}, complete: false, skipped: [] } }] : []);
   const composerReasoningLevel = "";
   const headerRuntimeSummary = useMemo(
     () => runtimeDisplayToSummary(activeRuntimeDisplay, runtimeSummary),
@@ -5312,7 +5664,17 @@ export function App({ launchArgs }: AppProps) {
         onChangeInput={handleChangeInput}
         onRegisterPaste={handleRegisterPaste}
         onPasteImage={() => { void handlePasteImage(); }}
-        onSubmit={handleSubmit}
+        onSubmit={() => { void handleSubmit(); }}
+        onInterrupt={handleInterrupt}
+        onRedraw={handleRedraw}
+        onTranscript={() => openWorkbench("transcript")}
+        onExternalEditor={() => { void handleExternalEditor(); }}
+        onSendNow={() => { void handleSendNow(); }}
+        onRegisterFile={(token, filePath) => { fileAttachmentRegistryRef.current.set(token, { path: filePath }); }}
+        workspaceRoot={workspaceRoot}
+        history={sessionState.history}
+        queueCount={promptQueue.items.length}
+        queuePaused={promptQueue.paused}
         onCancel={handleCancel}
         onChangeValue={handleChangeValue}
         onChangeCursor={handleChangeCursor}
@@ -5359,6 +5721,7 @@ export function App({ launchArgs }: AppProps) {
     handleRegisterPaste,
     handlePasteImage,
     handleSubmit,
+    handleInterrupt, handleRedraw, openWorkbench, handleExternalEditor, handleSendNow, workbenchVersion, sessionState.history, workspaceRoot,
     handleChangeValue,
     handleChangeCursor,
     handleHistoryUp,
@@ -5434,6 +5797,9 @@ export function App({ launchArgs }: AppProps) {
                 />
               )}
 
+              {screen === "workbench-panel" && (
+                <WorkbenchPanel key={workbenchView} view={workbenchView} events={[...staticEvents, ...activeEvents]} queue={promptQueue.items} paused={promptQueue.paused} checkpoints={recoveryCheckpoints} restoredFileBoundary={restoredFileBoundaryRef.current} store={currentCheckpointStore} onQueueAction={handleQueueAction} onRewind={handleRewind} onClose={() => setScreen("main")} />
+              )}
               {screen === "resume-picker" && (
                 <ResumePicker
                   conversations={resumeConversations}

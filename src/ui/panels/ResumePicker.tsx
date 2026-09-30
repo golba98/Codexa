@@ -37,7 +37,10 @@ function providerLabel(providerId: string | null): string {
   }
 }
 
-export function ResumePicker({ conversations, onSelect, onCancel }: ResumePickerProps) {
+export function ResumePicker({ conversations: allConversations, onSelect, onCancel }: ResumePickerProps) {
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const conversations = useMemo(() => allConversations.filter((item) => `${item.title} ${item.modelId} ${item.id}`.toLowerCase().includes(query.toLowerCase())), [allConversations, query]);
   const theme = useTheme();
   const panelLayout = usePanelLayout();
   const { isFocused } = useFocus({ id: "resume-picker", autoFocus: true });
@@ -58,6 +61,15 @@ export function ResumePicker({ conversations, onSelect, onCancel }: ResumePicker
 
   const move = (index: number) => setSelectedIndex(Math.max(0, Math.min(index, conversations.length - 1)));
   useInput((input, key) => {
+    if (searching) {
+      if (key.escape) { setSearching(false); setQuery(""); return; }
+      if (key.return) { setSearching(false); return; }
+      if (key.backspace) setQuery((text) => text.slice(0, -1));
+      else if (!key.ctrl && input) setQuery((text) => text + input);
+      setSelectedIndex(0);
+      return;
+    }
+    if (input === "/") { setSearching(true); return; }
     if (key.escape) return onCancel();
     if (key.return) {
       const selected = conversations[selectedIndex];
@@ -74,7 +86,7 @@ export function ResumePicker({ conversations, onSelect, onCancel }: ResumePicker
 
   return (
     <Box borderStyle={availableRows >= 3 ? "round" : undefined} borderColor={theme.borderFocused} paddingX={availableRows >= 3 ? 1 : 0} width="100%" flexDirection="column" overflow="hidden">
-      {availableRows >= 3 && <Text color={theme.accent} bold>Resume Conversation{conversations.length > 0 ? ` · ${selectedIndex + 1}/${conversations.length}` : ""}</Text>}
+      {availableRows >= 3 && <Text color={theme.accent} bold>Resume Conversation{searching ? ` · Search: ${query}` : conversations.length > 0 ? ` · ${selectedIndex + 1}/${conversations.length}` : ""}</Text>}
       {conversations.length === 0 && <Text color={theme.textMuted}>No previous conversations found.</Text>}
       {conversations.slice(viewport.start, viewport.end).map((conversation, offset) => {
         const index = viewport.start + offset;
@@ -84,7 +96,7 @@ export function ResumePicker({ conversations, onSelect, onCancel }: ResumePicker
           {selected ? "> " : "  "}{clampVisualText(`${conversation.title} — ${metadata}`, Math.max(1, width - 2))}
         </Text>;
       })}
-      {availableRows >= 3 && <Text color={theme.textDim}>↑↓ navigate · Enter resume · Esc cancel</Text>}
+      {availableRows >= 3 && <Text color={theme.textDim}>↑↓ navigate · / search · Enter resume · Esc cancel</Text>}
     </Box>
   );
 }

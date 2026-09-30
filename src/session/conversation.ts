@@ -76,8 +76,8 @@ export function toProviderConversationHistory(
   return messages.map((message) => ({
     role: message.role,
     content: options.includeActivitySummaries && message.activitySummary
-      ? `${message.content}\n\n${message.activitySummary}`
-      : message.content,
+      ? `${(message.submittedContent ?? message.content)}\n\n${message.activitySummary}`
+      : message.submittedContent ?? message.content,
   }));
 }
 

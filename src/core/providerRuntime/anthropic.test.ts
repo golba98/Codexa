@@ -9,6 +9,7 @@ import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 import { buildClaudeSpawnSpec, resetClaudeExecutableCacheForTests } from "../executables/claudeExecutable.js";
 import {
   ANTHROPIC_ROUTE_SETUP_MESSAGE,
+  createClaudeToolParser,
   anthropicRuntime,
   buildClaudeCodeArgs,
   buildClaudeCodePlainTextArgs,
@@ -1146,4 +1147,15 @@ test("malformed stream-json lines do not crash (no throw)", () => {
 
   assert.equal(tryParseStreamJsonDelta("   "), null);
   assert.equal(tryParseStreamJsonDelta("\n"), null);
+});
+
+test("Claude tool transcript captures commands, full results and failures", () => {
+  const activities: import("../../session/types.js").RunToolActivity[] = [];
+  const parse = createClaudeToolParser({ onResponse() {}, onError() {}, onToolActivity(activity) { activities.push(activity); } });
+  parse("not json");
+  parse(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "call-1", name: "Bash", input: { command: "cat example.ts" } }] } }));
+  parse(JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "call-1", content: [{ text: "line one" }, { text: "line two" }], is_error: true }] } }));
+  assert.equal(activities.length, 2); assert.equal(activities[0]?.status, "running");
+  assert.equal(activities[1]?.command, "cat example.ts"); assert.equal(activities[1]?.status, "failed");
+  assert.equal(activities[1]?.output, "line one\nline two");
 });

@@ -1,3 +1,4 @@
+import { createRunControl } from "./runControl.js";
 import { spawn } from "child_process";
 import { formatCodexLaunchError, spawnCodexProcess } from "../executables/codexExecutable.js";
 import { prepareCodexExecLaunch } from "../codex/codexLaunch.js";
@@ -35,6 +36,7 @@ export const codexSubprocessProvider: BackendProvider = {
   statusMessage: "Authentication is managed via Ubume.",
   supportsModels: () => true,
   run: (prompt, options, handlers) => {
+    const control = createRunControl(handlers);
     let done = false;
     let cancelled = false;
     let proc: ReturnType<typeof spawn> | null = null;
@@ -48,12 +50,14 @@ export const codexSubprocessProvider: BackendProvider = {
     const finishError = (message: string) => {
       if (done) return;
       done = true;
+      control.finish();
       handlers.onError(message, currentRawStderr);
     };
 
     const finishSuccess = (response: string) => {
       if (done) return;
       done = true;
+      control.finish();
       handlers.onResponse(response);
     };
 
@@ -248,7 +252,8 @@ export const codexSubprocessProvider: BackendProvider = {
           };
 
           handlers.onProcessLifecycle?.("before-spawn");
-          proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"] });
+          proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
+          control.track(new Promise<void>((resolve) => { proc!.once("close", resolve); }));
           procExited = false;
           handlers.onProcessLifecycle?.("spawned");
           handlers.benchmarkHooks?.onCodexProcessSpawned?.({
@@ -374,10 +379,33 @@ export const codexSubprocessProvider: BackendProvider = {
       handlers.benchmarkHooks?.onCleanupStart?.();
       handlers.onProcessLifecycle?.("cleanup");
       if (!proc || procExited || proc.killed) {
+        control.finish();
         handlers.benchmarkHooks?.onCleanupComplete?.({ skipped: true });
         return;
       }
-      proc.kill();
+      const stopping = proc;
+      const kill = (signal: NodeJS.Signals) => {
+        try {
+          if (process.platform !== "win32" && stopping.pid) process.kill(-stopping.pid, signal);
+          else if (process.platform === "win32" && stopping.pid) spawn("taskkill", ["/pid", String(stopping.pid), "/T", "/F"], { stdio: "ignore", shell: false }).on("error", () => stopping.kill(signal));
+          else stopping.kill(signal);
+        } catch { try { stopping.kill(signal); } catch { /* Already stopped. */ } }
+      };
+      const shutdown = new Promise<void>((resolve) => {
+        let closed = false;
+        const groupAlive = () => {
+          if (process.platform === "win32" || !stopping.pid) return false;
+          try { process.kill(-stopping.pid, 0); return true; } catch { return false; }
+        };
+        const escalation = setTimeout(() => { kill("SIGKILL"); if (closed) resolve(); }, 1500);
+        stopping.once("close", () => {
+          closed = true;
+          if (!groupAlive()) { clearTimeout(escalation); resolve(); }
+        });
+        kill("SIGTERM");
+      });
+      control.track(shutdown);
+      control.finish();
       handlers.benchmarkHooks?.onCleanupComplete?.({ skipped: false });
     };
   },

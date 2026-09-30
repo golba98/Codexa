@@ -53,11 +53,19 @@ Useful commands inside Ubume:
 /permissions Configure safety
 /settings    Open settings
 /update      Check for updates
+/queue       Manage instructions queued during runs
+/transcript  Inspect commands and tool output
+/diff        Review file changes
+/rewind      Preview recovery or branch a conversation
+/resume      Restore a saved session
 ```
 
 Press Shift+Tab to rotate Plan, Read-only, Auto, and Full Access without
 opening a panel. Large pastes are displayed as `[Pasted Content … chars]`
-while their complete content is sent to the model.
+while their complete content is sent to the model. You can keep typing during
+runs; Enter queues the next instruction. Ctrl+C interrupts, and Ctrl+L redraws.
+See the [terminal workbench guide](docs/TERMINAL_WORKBENCH.md) for editing keys,
+file attachments, change review, recovery, and resume behavior.
 
 ## Development
 
@@ -86,3 +94,7 @@ Developer references:
 
 Read [VERSIONS.md](VERSIONS.md) for a plain-language explanation of each
 release. [CHANGELOG.md](CHANGELOG.md) contains the detailed technical record.
+
+### Terminal commands without the TUI
+
+Use `ubume doctor`, `ubume status --json`, `ubume providers`, and `ubume sessions list` to diagnose and inspect Ubume from a shell. `ubume exec "prompt"` saves a session by default; continue it with `ubume exec --resume <id> "next instruction"`, or use `--no-save` for a transient run. Pipe prompts with `ubume exec --stdin`. See [terminal command usage](docs/TERMINAL_COMMANDS.md) for JSON output, file attachments, diagnostics, and session diffs.

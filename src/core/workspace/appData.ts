@@ -75,9 +75,12 @@ export function workspaceStorageKey(workspaceRoot: string): string {
   return createHash("sha256").update(workspaceRoot).digest("hex").slice(0, 16);
 }
 
-export function resolveUbumeWorkspaceDataDir(workspaceRoot: string): string {
-  maybeMigrateLegacyData();
-  return join(resolveUbumeDataDir(), "workspaces", workspaceStorageKey(workspaceRoot));
+export function resolveUbumeWorkspaceDataDir(workspaceRoot: string, options: { readOnly?: boolean } = {}): string {
+  if (!options.readOnly) maybeMigrateLegacyData();
+  const current = resolveUbumeDataDir();
+  const legacy = resolveLegacyCodexaDataDir();
+  const root = options.readOnly && !existsSync(current) && existsSync(legacy) ? legacy : current;
+  return join(root, "workspaces", workspaceStorageKey(workspaceRoot));
 }
 
 export function resolveUbumeConversationDir(workspaceRoot: string): string {

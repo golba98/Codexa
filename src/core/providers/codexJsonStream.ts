@@ -35,6 +35,7 @@ type CodexThreadItem =
     tool: string;
     status: "in_progress" | "completed" | "failed";
     error?: { message?: string };
+    result?: unknown;
   }
   | {
     id: string;
@@ -136,6 +137,7 @@ function mapToolActivity(item: Extract<CodexThreadItem, {
       startedAt,
       completedAt: status === "running" ? null : Date.now(),
       summary: status === "running" ? undefined : summarizeCommandExecution(item),
+      ...(item.aggregated_output === undefined ? {} : { output: item.aggregated_output }),
     };
   }
 
@@ -146,6 +148,7 @@ function mapToolActivity(item: Extract<CodexThreadItem, {
       status: item.status === "in_progress" ? "running" : item.status,
       startedAt,
       completedAt: item.status === "in_progress" ? null : Date.now(),
+      ...(item.result === undefined ? {} : { output: typeof item.result === "string" ? item.result : JSON.stringify(item.result) }),
       summary: item.status === "failed"
         ? item.error?.message ?? "Failed"
         : item.status === "completed"

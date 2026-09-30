@@ -37,7 +37,7 @@ test("codex subprocess cleanup skips kill after process close", () => {
   const exitedIndex = source.indexOf("procExited = true", closeIndex);
   const cleanupIndex = source.indexOf("return () =>", exitedIndex);
   const skipIndex = source.indexOf("!proc || procExited || proc.killed", cleanupIndex);
-  const killIndex = source.indexOf("proc.kill()", cleanupIndex);
+  const killIndex = source.indexOf('kill("SIGTERM")', cleanupIndex);
 
   assert.notEqual(closeIndex, -1);
   assert.notEqual(exitedIndex, -1);

@@ -1,3 +1,4 @@
+import { createRunControl } from "../providers/runControl.js";
 import { appendFileSync } from "fs";
 import { runCommand, type CommandResult, type CommandStreamHandlers } from "../process/CommandRunner.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
@@ -305,7 +306,7 @@ async function executeGeminiCommand(
   return result;
 }
 
-async function runGeminiApi(request: ProviderChatRequest): Promise<string> {
+async function runGeminiApi(request: ProviderChatRequest, signal?: AbortSignal): Promise<string> {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
     throw new Error(GEMINI_ROUTE_SETUP_MESSAGE);
@@ -314,6 +315,7 @@ async function runGeminiApi(request: ProviderChatRequest): Promise<string> {
   const modelId = normalizeGeminiModelId(request.route.modelId);
   const response = await fetch(`${GEMINI_API_BASE_URL}/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
     method: "POST",
+    signal,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [
@@ -716,6 +718,17 @@ export const geminiRuntime: ProviderRuntime = {
     models: GEMINI_FALLBACK_MODELS,
   }),
   run: (request, handlers: BackendRunHandlers) => {
+    const control = createRunControl(handlers);
+    const controller = new AbortController();
+    const pending = new Set<() => void>();
+    const commandRunner: CommandRunner = (spec, streamHandlers) => {
+      if (controller.signal.aborted) throw new Error("Gemini run canceled.");
+      const runner = runCommand(spec, streamHandlers);
+      pending.add(runner.cancel);
+      control.track(runner.stopped ?? runner.result.then(() => undefined));
+      void runner.result.finally(() => pending.delete(runner.cancel));
+      return runner;
+    };
     let cancelled = false;
 
     diagLog(`=== RUN START: route=${JSON.stringify(request.route)} cwd=${request.workspaceRoot} geminiCommandPath=${request.runtime.geminiCommandPath ?? "unset"} geminiCliHeadlessValidated=${geminiCliHeadlessValidated} hasApiKey=${hasGeminiApiKey()}`);
@@ -754,12 +767,12 @@ export const geminiRuntime: ProviderRuntime = {
     diagLog(`EXEC PATH: geminiCliHeadlessValidated=${geminiCliHeadlessValidated} → ${execPath}`);
 
     const runGemini = geminiCliHeadlessValidated
-      ? runGeminiCli(request, childHandlers)
+      ? runGeminiCliWithRunner(request, commandRunner, childHandlers)
       : hasGeminiApiKey()
-        ? runGeminiApi(request)
-        : runGeminiCli(request, childHandlers);
+        ? runGeminiApi(request, controller.signal)
+        : runGeminiCliWithRunner(request, commandRunner, childHandlers);
 
-    runGemini
+    const work = runGemini
       .then((text) => {
         diagLog(`RESOLVED: text.length=${text.length} cancelled=${cancelled}`);
         if (!text) {
@@ -781,7 +794,12 @@ export const geminiRuntime: ProviderRuntime = {
         handlers.onError(message);
       });
 
+    control.track(work);
+    void work.finally(() => control.finish());
     return () => {
+      controller.abort();
+      for (const cancel of pending) cancel();
+      control.finish();
       diagLog(`CANCEL CALLED`);
       cancelled = true;
     };

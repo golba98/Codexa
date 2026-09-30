@@ -1,3 +1,4 @@
+import { createRunControl } from "../providers/runControl.js";
 import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
@@ -143,11 +144,34 @@ export function tryParseStreamJsonDelta(line: string): string | null | false {
   return text || null;
 }
 
+export function createClaudeToolParser(handlers: BackendRunHandlers): (line: string) => void {
+  const tools = new Map<string, { command: string; startedAt: number }>();
+  return (line) => {
+    let event: any;
+    try { event = JSON.parse(line); } catch { return; }
+    const blocks = event?.message?.content;
+    if (!Array.isArray(blocks)) return;
+    for (const block of blocks) {
+      if (block?.type === "tool_use" && typeof block.id === "string") {
+        const command = typeof block.input?.command === "string" ? block.input.command : `${block.name ?? "tool"} ${JSON.stringify(block.input ?? {})}`;
+        const tool = { command, startedAt: tools.get(block.id)?.startedAt ?? Date.now() };
+        tools.set(block.id, tool);
+        handlers.onToolActivity?.({ id: block.id, ...tool, status: "running" });
+      } else if (block?.type === "tool_result" && typeof block.tool_use_id === "string") {
+        const tool = tools.get(block.tool_use_id) ?? { command: "Claude tool", startedAt: Date.now() };
+        const output = typeof block.content === "string" ? block.content : Array.isArray(block.content) ? block.content.map((entry: any) => entry.text ?? JSON.stringify(entry)).join("\n") : "";
+        handlers.onToolActivity?.({ id: block.tool_use_id, ...tool, status: block.is_error ? "failed" : "completed", completedAt: Date.now(), output, summary: output.split("\n")[0]?.slice(0, 200) });
+        tools.delete(block.tool_use_id);
+      }
+    }
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Anthropic Messages API
 // ---------------------------------------------------------------------------
 
-async function runAnthropicApi(request: ProviderChatRequest): Promise<string> {
+async function runAnthropicApi(request: ProviderChatRequest, signal?: AbortSignal): Promise<string> {
   const apiKey = getAnthropicApiKey();
   if (!apiKey) {
     throw new Error(ANTHROPIC_ROUTE_SETUP_MESSAGE);
@@ -155,6 +179,7 @@ async function runAnthropicApi(request: ProviderChatRequest): Promise<string> {
 
   const response = await fetch(ANTHROPIC_MESSAGES_URL, {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
       "x-api-key": apiKey,
@@ -242,8 +267,9 @@ export function runClaudeCodeWithRunner(
   request: ProviderChatRequest,
   handlers: BackendRunHandlers,
   runCommandImpl: CommandRunner = runCommand,
-  executable: string = resolvedClaudeExecutable,
+  executable: string = request.claudeCommandPath ?? process.env.CLAUDE_EXECUTABLE?.trim() ?? resolvedClaudeExecutable,
 ): () => void {
+  const control = createRunControl(handlers);
   let currentCancel: (() => void) | null = null;
   let canceled = false;
 
@@ -260,6 +286,7 @@ export function runClaudeCodeWithRunner(
     let accumulatedText = "";
     let streamingFailed = false;
     let lineBuf = "";
+    const parseTools = createClaudeToolParser(handlers);
 
     const runner = runCommandImpl(
       {
@@ -275,6 +302,7 @@ export function runClaudeCodeWithRunner(
           const lines = lineBuf.split("\n");
           lineBuf = lines.pop() ?? "";
           for (const line of lines) {
+            parseTools(line);
             const delta = tryParseStreamJsonDelta(line);
             if (delta === false) {
               streamingFailed = true;
@@ -290,8 +318,9 @@ export function runClaudeCodeWithRunner(
     );
 
     currentCancel = runner.cancel;
+    control.track(runner.stopped ?? runner.result.then(() => undefined));
     runner.result.then((result) => {
-      if (canceled || result.status === "canceled") return;
+      if (canceled || result.status === "canceled") { control.finish(); return; }
       if (result.status !== "completed" || result.exitCode !== 0) {
         const diagnostic = formatClaudeCommandDiagnostic(spawnSpec.executable, spawnSpec.args, request.prompt);
         if (mode === "stream-json" && isClaudeStreamJsonRequiresVerboseError(result)) {
@@ -329,6 +358,7 @@ export function runClaudeCodeWithRunner(
         }
 
         const message = result.userMessage || result.stderr || "Claude Code execution failed.";
+        control.finish();
         handlers.onError(message, diagnostic);
         return;
       }
@@ -341,9 +371,11 @@ export function runClaudeCodeWithRunner(
           handlers.onAssistantDelta?.(finalText);
         }
       }
+      control.finish();
       handlers.onFinalAnswerObserved?.(finalText);
       handlers.onResponse(finalText);
     }).catch((error) => {
+      control.finish();
       if (canceled) return;
       const message = error instanceof Error ? error.message : "Claude Code execution failed.";
       handlers.onError(message);
@@ -355,6 +387,7 @@ export function runClaudeCodeWithRunner(
   return () => {
     canceled = true;
     currentCancel?.();
+    control.finish();
   };
 }
 
@@ -560,7 +593,9 @@ export const anthropicRuntime: ProviderRuntime = {
 
     if (getAnthropicApiKey()) {
       let cancelled = false;
-      runAnthropicApi(request)
+      const controller = new AbortController();
+      const control = createRunControl(handlers);
+      const work = runAnthropicApi(request, controller.signal)
         .then((text) => {
           if (cancelled) return;
           handlers.onAssistantDelta?.(text);
@@ -572,7 +607,9 @@ export const anthropicRuntime: ProviderRuntime = {
           const message = error instanceof Error ? error.message : "Anthropic/Claude in-Ubume routing failed.";
           handlers.onError(message);
         });
-      return () => { cancelled = true; };
+      control.track(work);
+      void work.finally(() => control.finish());
+      return () => { cancelled = true; controller.abort(); control.finish(); };
     }
 
     return runClaudeCode(request, handlers);

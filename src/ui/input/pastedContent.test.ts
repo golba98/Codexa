@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertAttachedContent,
+  createAtomicContentToken,
   createPastedContentLabel,
   createPastedContentToken,
   deleteAdjacentPastedContent,
@@ -44,4 +46,11 @@ test("cursor movement and deletion treat image attachment chips atomically", () 
     value: "before  after",
     cursorOffset: tokenStart,
   });
+});
+
+test("unresolved attachments are rejected before expansion while attached literal labels remain valid", () => {
+  const token = createAtomicContentToken("[File: example.ts]");
+  assert.throws(() => assertAttachedContent(token, new Map(), new Map(), new Map()), /unresolved/);
+  assert.doesNotThrow(() => assertAttachedContent(token, new Map(), new Map(), new Map([[token, { content: "[File: literal]" }]])));
+  assert.throws(() => assertAttachedContent("[Image: missing.png]", new Map(), new Map(), new Map()), /image attachment/);
 });

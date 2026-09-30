@@ -127,7 +127,7 @@ export function summarizeCommandResult(command: string, result: Pick<CommandResu
 export function runCommand(
   spec: CommandSpec,
   handlers: CommandStreamHandlers = {},
-): { child: ChildProcess; result: Promise<CommandResult>; cancel: () => void } {
+): { child: ChildProcess; result: Promise<CommandResult>; stopped?: Promise<void>; cancel: () => void } {
   return runProcess(spec, handlers);
 }
 
@@ -135,7 +135,7 @@ export function runShellCommand(
   command: string,
   options: Pick<CommandSpec, "cwd" | "env" | "timeoutMs">,
   handlers: CommandStreamHandlers = {},
-): { child: ChildProcess; result: Promise<CommandResult>; cancel: () => void } {
+): { child: ChildProcess; result: Promise<CommandResult>; stopped?: Promise<void>; cancel: () => void } {
   const shellSpec = process.platform === "win32"
     ? { executable: "cmd.exe", args: ["/d", "/s", "/c", command] }
     : { executable: "/bin/sh", args: ["-c", command] };
@@ -151,7 +151,7 @@ export function runShellCommand(
 function runProcess(
   spec: InternalCommandSpec,
   handlers: CommandStreamHandlers,
-): { child: ChildProcess; result: Promise<CommandResult>; cancel: () => void } {
+): { child: ChildProcess; result: Promise<CommandResult>; stopped?: Promise<void>; cancel: () => void } {
   const startedAt = Date.now();
   const executable = validateExecutableForSpawn(spec.executable, {
     label: "Command executable",
@@ -175,6 +175,7 @@ function runProcess(
 
   handlers.onProcessLifecycle?.("before-spawn");
   const child = spawn(executable, spec.args, {
+    detached: process.platform !== "win32",
     cwd: spec.cwd,
     env: spec.env,
     shell: false,
@@ -192,6 +193,35 @@ function runProcess(
     }
   }
 
+  let resolveStopped: () => void = () => undefined;
+  const stopped = new Promise<void>((resolve) => { resolveStopped = resolve; });
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
+  let closed = false;
+  let stopping = false;
+  const groupAlive = () => {
+    if (process.platform === "win32" || !child.pid) return false;
+    try { process.kill(-child.pid, 0); return true; }
+    catch (error) { return (error as NodeJS.ErrnoException).code !== "ESRCH"; }
+  };
+  child.once("close", () => {
+    closed = true;
+    // A leader can exit while a detached descendant ignores SIGTERM.
+    if (!stopping || !groupAlive()) { if (killTimer) clearTimeout(killTimer); resolveStopped(); }
+  });
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    const kill = (signal: NodeJS.Signals) => {
+      try {
+        if (process.platform !== "win32" && child.pid) process.kill(-child.pid, signal);
+        else if (process.platform === "win32" && child.pid) spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", shell: false }).on("error", () => child.kill(signal));
+        else child.kill(signal);
+      } catch { try { child.kill(signal); } catch { /* Already stopped. */ } }
+    };
+    kill("SIGTERM");
+    killTimer = setTimeout(() => { kill("SIGKILL"); if (closed) resolveStopped(); }, 1500);
+    // Keep the escalation alive even after the group leader closes its stdio.
+  };
   const result = new Promise<CommandResult>((resolve) => {
     const finish = (partial: Omit<CommandResult, "stdout" | "stderr" | "startedAt" | "endedAt" | "durationMs" | "userMessage"> & { endedAt?: number }) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -251,7 +281,7 @@ function runProcess(
     if (spec.timeoutMs && spec.timeoutMs > 0) {
       timeoutHandle = setTimeout(() => {
         if (child.killed) return;
-        child.kill();
+        stop();
         finish({
           status: "timeout",
           exitCode: null,
@@ -265,12 +295,13 @@ function runProcess(
   return {
     child,
     result,
+    stopped,
     cancel: () => {
       canceled = true;
       handlers.onProcessLifecycle?.("cancel");
       if (!child.killed) {
         try {
-          child.kill();
+          stop();
         } catch {
           // ignore cancellation failures
         }

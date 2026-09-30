@@ -34,6 +34,7 @@ export interface SessionState {
   cursor: number;
   history: string[];
   historyIndex: number;
+  historyDraft: { value: string; cursor: number } | null;
   clearCount: number;
   clearEpoch: number; // Incremented on each /clear to suppress stale async events
 }
@@ -43,8 +44,9 @@ export type SessionAction =
   | { type: "APPEND_STATIC_EVENTS"; events: TimelineEvent[] }
   | { type: "SET_INPUT"; value: string; cursor?: number }
   | { type: "RESET_INPUT" }
+  | { type: "RESTORE_SESSION"; events: TimelineEvent[]; value: string; cursor: number; history: string[]; uiState?: UIState }
   | { type: "PUSH_HISTORY"; value: string }
-  | { type: "SUBMIT_PROMPT_RUN"; historyValue?: string; events: TimelineEvent[]; turnId: number; runId: number }
+  | { type: "SUBMIT_PROMPT_RUN"; historyValue?: string; preserveInput?: boolean; events: TimelineEvent[]; turnId: number; runId: number }
   | { type: "HISTORY_UP" }
   | { type: "HISTORY_DOWN" }
   | { type: "CLEAR_TRANSCRIPT"; seedEvents?: TimelineEvent[] }
@@ -108,6 +110,7 @@ export function createInitialSessionState(options: { staticEvents?: TimelineEven
     cursor: 0,
     history: [],
     historyIndex: -1,
+    historyDraft: null,
     clearCount: 0,
     clearEpoch: 0,
   };
@@ -284,7 +287,9 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         cursor: Math.max(0, Math.min(action.cursor ?? action.value.length, action.value.length)),
       };
     case "RESET_INPUT":
-      return { ...state, inputValue: "", cursor: 0, historyIndex: -1 };
+      return { ...state, inputValue: "", cursor: 0, historyIndex: -1, historyDraft: null };
+    case "RESTORE_SESSION":
+      return { ...state, staticEvents: action.events, activeEvents: [], uiState: action.uiState ?? { kind: "IDLE" }, externalCliStatus: "idle", inputValue: action.value, cursor: action.cursor, history: action.history, historyIndex: -1, historyDraft: null, clearCount: state.clearCount + 1, clearEpoch: state.clearEpoch + 1 };
     case "PUSH_HISTORY":
       return {
         ...state,
@@ -303,8 +308,9 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
           { type: "PROMPT_RUN_STARTED", turnId: action.turnId },
           { reason: "SUBMIT_PROMPT_RUN", runId: action.runId },
         ),
-        inputValue: "",
-        cursor: 0,
+        inputValue: action.preserveInput ? state.inputValue : "",
+        cursor: action.preserveInput ? state.cursor : 0,
+        historyDraft: null,
         history: nextHistory,
         historyIndex: -1,
       };
@@ -313,11 +319,11 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       if (state.history.length === 0) return state;
       const nextIndex = Math.min(state.historyIndex + 1, state.history.length - 1);
       const nextValue = state.history[nextIndex] ?? "";
-      return { ...state, historyIndex: nextIndex, inputValue: nextValue, cursor: nextValue.length };
+      return { ...state, historyDraft: state.historyIndex === -1 ? { value: state.inputValue, cursor: state.cursor } : state.historyDraft, historyIndex: nextIndex, inputValue: nextValue, cursor: nextValue.length };
     }
     case "HISTORY_DOWN": {
       if (state.historyIndex <= 0) {
-        return { ...state, historyIndex: -1, inputValue: "", cursor: 0 };
+        return { ...state, historyIndex: -1, inputValue: state.historyDraft?.value ?? "", cursor: state.historyDraft?.cursor ?? 0, historyDraft: null };
       }
       const nextIndex = state.historyIndex - 1;
       const nextValue = state.history[nextIndex] ?? "";
@@ -706,10 +712,12 @@ export function useAppSessionState(initialStaticEvents?: () => TimelineEvent[]) 
   const [state, setState] = useState<SessionState>(() =>
     createInitialSessionState({ staticEvents: initialStaticEvents?.() ?? [] }),
   );
+  const liveStateRef = useRef(state);
   const queueRef = useRef<SessionAction[]>([]);
   const scheduledRef = useRef(false);
 
   const dispatch = useCallback((action: SessionAction) => {
+    liveStateRef.current = reduceSessionState(liveStateRef.current, action);
     queueRef.current.push(action);
     if (scheduledRef.current) return;
 
@@ -724,7 +732,7 @@ export function useAppSessionState(initialStaticEvents?: () => TimelineEvent[]) 
         actionTypes: queued.map((item) => item.type),
       });
       setState((current) => {
-        const next = queued.reduce(reduceSessionState, current);
+        const next = liveStateRef.current;
         const previousCount = eventCount(current);
         const nextCount = eventCount(next);
         if (
@@ -767,5 +775,6 @@ export function useAppSessionState(initialStaticEvents?: () => TimelineEvent[]) 
     });
   }, []);
 
-  return { state, dispatch };
+  const getState = useCallback(() => liveStateRef.current, []);
+  return { state, dispatch, getState };
 }
