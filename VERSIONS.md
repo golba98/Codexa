@@ -3,6 +3,20 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.10 — 2026-09-30 (prepared)
+
+Typing after a `[Pasted Content …]` label keeps the text and cursor inside the input border. The editor uses the space its container actually provides, including the prompt, padding, and cursor. Unicode display widths and resizing stay aligned, and pasted attachment IDs remain intact when you edit or send a prompt. This patch retains the Local stall and resume-border fixes from 0.1.9.
+
+This version is prepared but has not been published to npm.
+
+## v0.1.9 — 2026-09-30
+
+Fixes the misaligned side border in `/resume` for conversations that start with a pasted-content or attachment label. The existing layout and saved conversations stay the same. This patch also retains the Local server stall fixes from 0.1.8.
+
+## v0.1.8 — 2026-09-30
+
+Local models no longer hang silently for over half an hour when the inference server stops responding. This most often happens during context compaction on a machine that is short of RAM. Ubume now gives up after about 10 minutes with an error that explains the likely cause and what to change on the server. Retries and failed compactions show up in the transcript instead of happening invisibly, and a failed compaction is no longer reported as successful.
+
 ## v0.1.7 — 2026-09-30
 
 `/resume` now lists your Claude Code, Codex, and Antigravity sessions next to Ubume's own conversations. Use Left/Right to switch sections and `a` to see every project instead of just the current folder. Press Enter to scroll through a session's transcript. Press `o` to reopen it in its own CLI, or `c` to continue it inside Ubume. Ubume only reads those CLIs' session files and never changes them.

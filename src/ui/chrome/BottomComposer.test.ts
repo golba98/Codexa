@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import React from "react";
+import { Box, render, renderToString } from "ink";
+import { PassThrough } from "node:stream";
+import { createAtomicContentToken } from "../input/pastedContent.js";
+import { getComposerRowLayout, createInputRowWindow, createInputViewport } from "../input/inputBuffer.js";
+import { getTextWidth } from "../render/textLayout.js";
+import { getContentWidth } from "../layout.js";
 import {
+  BottomComposer,
   areBottomComposerPropsEqual,
   type BottomComposerProps,
   getCommandSuggestionState,
@@ -749,4 +757,114 @@ for (const [providerId, label] of [["openai", "Codex CLI"], ["anthropic", "Claud
 
 test("stopping status stays truthful while a command draft is present", () => {
   assert.equal(getVisibleComposerStatusLine({ uiState: { kind: "IDLE" }, value: "/model", allowCommands: true, stopping: true }), "✧ Stopping · Ctrl+C again to exit");
+});
+
+
+test("memoized composer re-renders when its container width changes without a terminal resize", () => {
+  const props = composerProps({ width: 120 });
+  assert.equal(areBottomComposerPropsEqual(props, { ...props, width: 115 }), false);
+});
+
+test("rendered composer rows fit the supplied width including pasted content and cursor", () => {
+  const token = createAtomicContentToken("[Pasted Content 22,703 chars]");
+  const layout = createLayoutSnapshot(120, 24);
+  for (const width of [20, 40, getContentWidth(layout.cols), layout.cols]) {
+    const editorWidth = getComposerRowLayout(width).editorWidth;
+    const cases = ["", "hello", token + " short", token + " " + "abcdefghij".repeat(20), "x".repeat(editorWidth), "字".repeat(editorWidth), "e\u0301👩‍💻字".repeat(10)];
+    for (const value of cases) {
+      for (const cursor of [0, Math.floor(value.length / 2), value.length]) {
+        const props = composerProps({ layout, width, uiState: { kind: "IDLE" }, value, cursor });
+        const frame = renderToString(React.createElement(Box, { width }, React.createElement(BottomComposer, props)), { columns: layout.cols });
+        const plain = frame.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
+        const lines = plain.split("\n");
+        const top = lines.findIndex((line) => line.startsWith("╭"));
+        const bottom = lines.findIndex((line, index) => index > top && line.startsWith("╰"));
+        assert.ok(top >= 0 && bottom > top);
+        for (const line of lines.slice(top, bottom + 1)) {
+          assert.equal(getTextWidth(line), width, JSON.stringify({ width, value, cursor, line }));
+          assert.ok(/[│╮╯]$/.test(line), `right boundary missing: ${line}`);
+        }
+        assert.equal(lines[top + 1]!.startsWith("│ ❯ "), true);
+        assert.equal(bottom - top + 1 + 1, measureBottomComposerRows(props), "measurement must match prompt and metadata rows");
+        if (value) {
+          const viewport = createInputViewport({ text: value, cursorOffset: cursor, width: editorWidth, maxVisibleRows: 5 });
+          const rowIndex = viewport.cursorRow - viewport.scrollRow;
+          const row = viewport.visibleRows[rowIndex]!;
+          const window = createInputRowWindow(row.text, editorWidth, viewport.cursorColumn);
+          const expected = ((rowIndex === 0 ? "│ ❯ " : "│   ") + window.before + window.current + window.after)
+            .replace(/[\u2063\uFE00-\uFE09]/g, "");
+          assert.ok(lines[top + 1 + rowIndex]!.startsWith(expected), JSON.stringify({ expected, actual: lines[top + 1 + rowIndex] }));
+        }
+      }
+    }
+  }
+});
+
+
+test("focused input retains pasted tokens, typed text and submission through terminal resize", async () => {
+  class Input extends PassThrough {
+    isTTY = true;
+    setRawMode() { return this; }
+    ref() { return this; }
+    unref() { return this; }
+  }
+  class Output extends PassThrough {
+    isTTY = true;
+    columns = 120;
+    rows = 24;
+  }
+  const stdin = new Input();
+  const stdout = new Output();
+  let output = "";
+  stdout.on("data", (chunk) => { output += chunk.toString() + "\n"; });
+  const token = createAtomicContentToken("[Pasted Content 22,703 chars]");
+  let draft = token + " ";
+  let submitted = "";
+  function Editor({ width }: { width: number }) {
+    const [value, setValue] = React.useState(draft);
+    const [cursor, setCursor] = React.useState(draft.length);
+    return React.createElement(BottomComposer, composerProps({
+      layout: createLayoutSnapshot(stdout.columns, stdout.rows), width,
+      uiState: { kind: "IDLE" }, value, cursor,
+      onChangeInput: (nextValue, nextCursor) => {
+        draft = nextValue;
+        setValue(nextValue);
+        setCursor(nextCursor);
+      },
+      onSubmit: () => { submitted = value; },
+    }));
+  }
+  const instance = render(React.createElement(Editor, { width: stdout.columns }), {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: true, patchConsole: false, exitOnCtrlC: false,
+  });
+  try {
+    await instance.waitUntilRenderFlush();
+    for (const columns of [120, 40, 20, 80, 120]) {
+      output = "";
+      stdout.columns = columns;
+      stdout.emit("resize");
+      instance.rerender(React.createElement(Editor, { width: columns }));
+      await instance.waitUntilRenderFlush();
+      stdin.write("xyz");
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      await instance.waitUntilRenderFlush();
+      const plain = output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
+      const lines = plain.split("\n");
+      const top = lines.findLastIndex((line) => line.startsWith("╭"));
+      const bottom = lines.findIndex((line, index) => index > top && line.startsWith("╰"));
+      assert.ok(top >= 0 && bottom > top);
+      for (const line of lines.slice(top, bottom + 1)) assert.equal(getTextWidth(line), columns);
+      assert.ok(draft.startsWith(token), "display filtering must preserve the token's invisible ID");
+      assert.ok(lines.slice(top, bottom).some((line) => line.includes("xyz")), JSON.stringify({ columns, draft, frame: lines.slice(top, bottom + 1) }));
+    }
+    assert.equal(draft, token + " " + "xyz".repeat(5));
+    stdin.write("\r");
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(submitted, draft);
+  } finally {
+    instance.cleanup();
+  }
 });

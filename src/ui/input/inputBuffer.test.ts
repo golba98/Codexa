@@ -3,6 +3,9 @@ import test from "node:test";
 import {
   clampScrollToCursor,
   createInputViewport,
+  createInputRowWindow,
+  getComposerRowLayout,
+  COMPOSER_ROW_CHROME,
   deleteInputBackward,
   deleteInputForward,
   insertInputText,
@@ -14,8 +17,8 @@ import {
   wrapInputRows,
 } from "./inputBuffer.js";
 import { createImageAttachmentToken } from "./imageAttachments.js";
-import { moveAcrossPastedContent } from "./pastedContent.js";
-import { splitTextAtColumn } from "../render/textLayout.js";
+import { createAtomicContentToken, deleteAdjacentPastedContent, moveAcrossPastedContent } from "./pastedContent.js";
+import { getTextWidth, splitTextAtColumn } from "../render/textLayout.js";
 
 test("normalizes windows line endings for the composer buffer", () => {
   assert.equal(normalizeInputText("a\r\nb\rc"), "a\nb\nc");
@@ -176,4 +179,93 @@ test("cursor highlight tracks the real character when moving right past an image
   }
 
   assert.deepEqual(highlighted, [" ", "p", "l", "e", "a", "s", "e", ""]);
+});
+
+
+test("composer geometry accounts for the border, padding and measured prompt", () => {
+  for (const width of [20, 80, 115, 120, 240]) {
+    const row = getComposerRowLayout(width);
+    const chrome = COMPOSER_ROW_CHROME;
+    assert.equal(row.editorWidth + row.promptWidth + chrome.paddingLeft + chrome.paddingRight
+      + chrome.borderLeft + chrome.borderRight, width);
+    assert.equal(row.promptWidth, getTextWidth(chrome.prompt));
+  }
+  assert.equal(getComposerRowLayout(115).editorWidth, 109);
+  assert.equal(getComposerRowLayout(5).editorWidth, 0);
+});
+
+test("row windows reserve the cursor at full-width boundaries without losing its character", () => {
+  assert.deepEqual(createInputRowWindow("", 4, 0), { before: "", current: " ", after: "", cursorColumn: 0 });
+  assert.deepEqual(createInputRowWindow("abcd", 4, 4), { before: "bcd", current: " ", after: "", cursorColumn: 3 });
+  assert.deepEqual(createInputRowWindow("abcdefgh", 4, 0), { before: "", current: "a", after: "bcd", cursorColumn: 0 });
+  assert.deepEqual(createInputRowWindow("abcdefgh", 4, 4), { before: "bcd", current: "e", after: "", cursorColumn: 3 });
+  assert.deepEqual(createInputRowWindow("abcdefgh", 4, 8), { before: "fgh", current: " ", after: "", cursorColumn: 3 });
+  assert.equal(createInputRowWindow("abcdefgh", 4).before, "abcd");
+});
+
+test("pasted content and following input share the bounded viewport at every cursor position", () => {
+  const token = createAtomicContentToken("[Pasted Content 22,703 chars]");
+  for (const width of [20, 40, 80, 115, 120]) {
+    const { editorWidth } = getComposerRowLayout(width);
+    for (const value of ["", "hello", `${token} short`, `${token} ${"abcdefghij".repeat(20)}`]) {
+      for (const cursor of [0, token.length, Math.floor(value.length / 2), value.length]) {
+        const viewport = createInputViewport({ text: value, cursorOffset: Math.min(cursor, value.length), width: editorWidth, maxVisibleRows: 5 });
+        viewport.visibleRows.forEach((row, index) => {
+          const active = index === viewport.cursorRow - viewport.scrollRow;
+          const window = createInputRowWindow(row.text, editorWidth, active ? viewport.cursorColumn : undefined);
+          assert.ok(getTextWidth(window.before + window.current + window.after) <= editorWidth);
+          if (active) {
+            assert.ok(getTextWidth(window.current) > 0);
+            assert.ok(window.cursorColumn + getTextWidth(window.current) <= editorWidth);
+            const expected = splitTextAtColumn(row.text, viewport.cursorColumn).current || " ";
+            assert.equal(window.current, expected);
+          }
+        });
+      }
+    }
+  }
+});
+
+test("deleting a pasted token immediately restores room for editable text", () => {
+  const token = createAtomicContentToken("[Pasted Content 22,703 chars]");
+  const value = `${token} hello`;
+  const width = getComposerRowLayout(40).editorWidth;
+  const initial = createInputViewport({ text: value, cursorOffset: value.length, width, maxVisibleRows: 5 });
+  const deleted = deleteAdjacentPastedContent(value, token.length, "backward")!;
+  const next = createInputViewport({ text: deleted.value, cursorOffset: deleted.value.length, width, maxVisibleRows: 5 });
+  assert.ok(initial.rows.length > next.rows.length);
+  assert.equal(next.rows[0]?.text, " hello");
+  assert.equal(createInputRowWindow(next.rows[0]!.text, width, next.cursorColumn).before, " hello");
+});
+
+test("row windows handle display cells and indivisible graphemes", () => {
+  for (const text of ["字字字", "e\u0301e\u0301e\u0301", "👩‍💻👩‍💻👩‍💻", "😀abc", "\u2063\uFE01\u2063abc"]) {
+    for (const width of [1, 2, 3, 4, 8]) {
+      for (const cursor of [0, getTextWidth(text) / 2, getTextWidth(text)]) {
+        const window = createInputRowWindow(text, width, cursor);
+        assert.ok(getTextWidth(window.before + window.current + window.after) <= width);
+        assert.ok(window.cursorColumn + getTextWidth(window.current) <= width);
+        assert.ok(getTextWidth(window.current) > 0);
+      }
+    }
+  }
+  assert.deepEqual(createInputRowWindow("字", 1, 0), { before: "", current: " ", after: "", cursorColumn: 0 });
+  assert.equal(createInputRowWindow("e\u0301x", 2, 0).current, "e\u0301");
+  assert.equal(createInputRowWindow("👩‍💻x", 3, 0).current, "👩‍💻");
+});
+
+test("resize reclamps rendered cursor windows and vertical scrolling together", () => {
+  const value = createAtomicContentToken("[Pasted Content 22,703 chars]") + " " + "abcdefghij".repeat(20);
+  let scrollRow = 0;
+  for (const width of [120, 20, 80, 40, 240]) {
+    const { editorWidth } = getComposerRowLayout(width);
+    const viewport = createInputViewport({ text: value, cursorOffset: value.length, width: editorWidth, maxVisibleRows: 5, scrollRow });
+    scrollRow = viewport.scrollRow;
+    const row = viewport.visibleRows[viewport.cursorRow - scrollRow]!;
+    const window = createInputRowWindow(row.text, editorWidth, viewport.cursorColumn);
+    assert.equal(window.current, " ");
+    assert.ok(window.cursorColumn < editorWidth);
+    assert.ok(getTextWidth(window.before + window.current + window.after) <= editorWidth);
+  }
+  assert.equal(scrollRow, 0);
 });

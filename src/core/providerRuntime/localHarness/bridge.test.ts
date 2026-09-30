@@ -50,3 +50,41 @@ test("bridge stops when pending stdout exceeds its 16 MiB buffer", () => {
   assert.deepEqual(sent, ["session.event", "session.event"]);
   assert.deepEqual(exits, [86]);
 });
+
+test("bridge forwards compaction failures, turn error codes, and retry progress", () => {
+  assert.deepEqual(projectHarnessEvent({ type: "compaction/start", data: { compactionId: "c-1", turn: 1 } }), { type: "compaction/start" });
+  assert.deepEqual(projectHarnessEvent({ type: "compaction/end", data: { compactionId: "c-1", turn: 1 } }), { type: "compaction/end" });
+  const failedCompaction = projectHarnessEvent({
+    type: "compaction/end",
+    data: { compactionId: "c-2", turn: 1, error: `pi-ai stream idle timeout after 300000ms${"x".repeat(10_000)}` },
+  });
+  assert.equal(failedCompaction.type, "compaction/end");
+  assert.match(failedCompaction.data.error, /^pi-ai stream idle timeout after 300000ms/);
+  assert.equal(failedCompaction.data.error.length, 4_000);
+
+  const turnEnd = projectHarnessEvent({
+    type: "turn/end",
+    data: { turn: 1, reason: { kind: "error", error: { message: "pi-ai stream idle timeout after 300000ms", code: "TIMEOUT" } } },
+  });
+  assert.deepEqual(turnEnd.data.reason.error, { message: "pi-ai stream idle timeout after 300000ms", code: "TIMEOUT" });
+
+  const retry = projectHarnessEvent({
+    type: "llm/retry",
+    data: {
+      retryId: "r-1",
+      turn: 1,
+      step: 57,
+      provider: "ubume-local",
+      mode: "normal",
+      policyKey: "[\"normal\",5]",
+      retry: 2,
+      maxRetries: 5,
+      delayMs: 989.3,
+      failure: { message: "503 Service Unavailable", code: "SERVER" },
+    },
+  });
+  assert.deepEqual(retry, {
+    type: "llm/retry",
+    data: { retry: 2, maxRetries: 5, delayMs: 989.3, failure: { message: "503 Service Unavailable", code: "SERVER" } },
+  });
+});
