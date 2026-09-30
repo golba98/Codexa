@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildProviderLaunchSpec, commandExistsOnPath, launchProviderCli } from "./launcher.js";
+import { buildProviderLaunchSpec, commandExistsOnPath, launchCliCommand, launchProviderCli } from "./launcher.js";
 import type { ProviderConfig } from "./types.js";
 
 function makeProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
@@ -287,4 +287,37 @@ test("launch restores terminal state after child spawn error", async () => {
 
   assert.equal(result.status, "spawn-error");
   assert.deepEqual(events, ["before", "raw-off", "spawn", "raw-on", "after"]);
+});
+
+test("launchCliCommand hands the terminal to an arbitrary command in its own folder", async () => {
+  const child = new EventEmitter();
+  const rawModes: boolean[] = [];
+  let observed: { executable: string; args: string[]; cwd?: string } | null = null;
+  const spawnImpl = ((executable: string, args: string[], options: { cwd?: string }) => {
+    observed = { executable, args, cwd: options.cwd };
+    queueMicrotask(() => child.emit("close", 0, null));
+    return child;
+  }) as unknown as typeof import("child_process").spawn;
+
+  const result = await launchCliCommand("Claude Code", { executable: "claude", args: ["--resume", "abc-123"], cwd: "/work/app" }, {
+    stdin: { isRaw: true, setRawMode(enabled) { rawModes.push(enabled); } },
+    commandExists: () => true,
+    spawnImpl,
+  });
+
+  assert.equal(result.status, "completed");
+  assert.match(result.message, /^Claude Code launch finished with exit code 0/);
+  assert.deepEqual(observed, { executable: "claude", args: ["--resume", "abc-123"], cwd: "/work/app" });
+  assert.deepEqual(rawModes, [false, true]);
+});
+
+test("launchCliCommand reports a missing executable without touching raw mode", async () => {
+  const rawModes: boolean[] = [];
+  const result = await launchCliCommand("Codex", { executable: "codex", args: ["resume", "x"], cwd: "/work" }, {
+    stdin: { isRaw: true, setRawMode(enabled) { rawModes.push(enabled); } },
+    commandExists: () => false,
+  });
+  assert.equal(result.status, "missing-command");
+  assert.match(result.message, /Codex could not be launched because `codex`/);
+  assert.deepEqual(rawModes, []);
 });

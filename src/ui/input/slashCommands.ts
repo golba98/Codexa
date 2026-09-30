@@ -7,7 +7,7 @@ export interface SlashCommandSuggestion {
 export const SLASH_COMMANDS = [
   { cmd: "/help", desc: "Show available commands" },
   { cmd: "/clear", desc: "Clear chat and cancel active run" },
-  { cmd: "/resume", desc: "Resume a previous conversation" },
+  { cmd: "/resume", desc: "Resume a conversation, or a Claude Code / Codex / Antigravity session" },
   { cmd: "/providers", desc: "Open AI provider picker", aliases: ["/provider"] },
   { cmd: "/model", desc: "Change active model" },
   { cmd: "/models", desc: "Open model picker" },

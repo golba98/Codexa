@@ -4,6 +4,7 @@ export const FOCUS_IDS = {
   composer: "composer",
   workbench: "workbench-panel",
   resumePicker: "resume-picker",
+  externalSessionViewer: "external-session-viewer",
   planReviewPanel: "plan-review-panel",
   backendPicker: "backend-picker",
   providerPicker: "provider-picker",
@@ -33,6 +34,8 @@ export function getFocusTargetForScreen(screen: Screen): FocusTargetId {
       return FOCUS_IDS.workbench;
     case "resume-picker":
       return FOCUS_IDS.resumePicker;
+    case "external-session-viewer":
+      return FOCUS_IDS.externalSessionViewer;
     case "backend-picker":
       return FOCUS_IDS.backendPicker;
     case "provider-picker":

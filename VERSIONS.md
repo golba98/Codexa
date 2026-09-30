@@ -3,6 +3,12 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.7 — 2026-09-30
+
+`/resume` now lists your Claude Code, Codex, and Antigravity sessions next to Ubume's own conversations. Use Left/Right to switch sections and `a` to see every project instead of just the current folder. Press Enter to scroll through a session's transcript. Press `o` to reopen it in its own CLI, or `c` to continue it inside Ubume. Ubume only reads those CLIs' session files and never changes them.
+
+Starting Ubume no longer leaves empty "Untitled conversation" entries in `/resume`. A chat is saved once you send your first prompt.
+
 ## v0.1.6 — 2026-09-30
 
 Includes the 0.1.5 terminal fixes and pins the compatible Harness dependencies so local inference works in a fresh installation. Upgrade to this version rather than 0.1.5, whose clean-install Harness startup failed.

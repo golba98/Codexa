@@ -126,11 +126,11 @@ export async function commandExistsOnPath(executable: string): Promise<boolean> 
   return false;
 }
 
-function formatSpawnError(provider: ProviderConfig, executable: string, error: NodeJS.ErrnoException): ProviderLaunchResult {
+function formatSpawnError(displayName: string, executable: string, error: NodeJS.ErrnoException): ProviderLaunchResult {
   if (error.code === "ENOENT") {
     return {
       status: "missing-command",
-      message: `${provider.displayName} could not be launched because \`${executable}\` is not installed or not available on PATH.`,
+      message: `${displayName} could not be launched because \`${executable}\` is not installed or not available on PATH.`,
     };
   }
 
@@ -138,14 +138,14 @@ function formatSpawnError(provider: ProviderConfig, executable: string, error: N
     return {
       status: "spawn-error",
       errorCode: error.code,
-      message: `${provider.displayName} could not be launched because permission was denied for \`${executable}\`.`,
+      message: `${displayName} could not be launched because permission was denied for \`${executable}\`.`,
     };
   }
 
   return {
     status: "spawn-error",
     errorCode: error.code,
-    message: `${provider.displayName} could not be launched. ${error.message}`,
+    message: `${displayName} could not be launched. ${error.message}`,
   };
 }
 
@@ -155,14 +155,25 @@ export async function launchProviderCli(
 ): Promise<ProviderLaunchResult> {
   const spec = buildProviderLaunchSpec(provider, options.cwd);
   if ("status" in spec) return spec;
+  return launchCliCommand(provider.displayName, spec, options);
+}
 
+/**
+ * Suspends raw mode and gives the terminal to `spec` until it exits. Used for
+ * provider launches and for resuming native Claude Code / Codex / agy sessions.
+ */
+export async function launchCliCommand(
+  displayName: string,
+  spec: ProviderLaunchSpec,
+  options: Omit<LaunchProviderCliOptions, "cwd">,
+): Promise<ProviderLaunchResult> {
   const spawnImpl = options.spawnImpl ?? spawn;
   const commandExists = options.commandExists ?? commandExistsOnPath;
   const available = await commandExists(spec.executable);
   if (!available) {
     return {
       status: "missing-command",
-      message: `${provider.displayName} could not be launched because \`${spec.executable}\` is not installed or not available on PATH.`,
+      message: `${displayName} could not be launched because \`${spec.executable}\` is not installed or not available on PATH.`,
     };
   }
 
@@ -185,12 +196,12 @@ export async function launchProviderCli(
           stdio: "inherit",
         });
       } catch (error) {
-        resolve(formatSpawnError(provider, spec.executable, error as NodeJS.ErrnoException));
+        resolve(formatSpawnError(displayName, spec.executable, error as NodeJS.ErrnoException));
         return;
       }
 
       child.once("error", (error: NodeJS.ErrnoException) => {
-        resolve(formatSpawnError(provider, spec.executable, error));
+        resolve(formatSpawnError(displayName, spec.executable, error));
       });
 
       child.once("close", (exitCode, signal) => {
@@ -198,7 +209,7 @@ export async function launchProviderCli(
           status: "completed",
           exitCode,
           signal,
-          message: `${provider.displayName} launch finished${exitCode === null ? "" : ` with exit code ${exitCode}`}.`,
+          message: `${displayName} launch finished${exitCode === null ? "" : ` with exit code ${exitCode}`}.`,
         });
       });
     });

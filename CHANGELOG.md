@@ -6,6 +6,40 @@ No changes yet.
 
 ---
 
+## [0.1.7] — 2026-09-30 — Native Sessions in /resume
+
+### Added
+
+- `/resume` has Ubume, Claude Code, Codex, and Antigravity sections. Left/Right or 1–4 switch sections. Native sections list sessions started in the current folder, and `a` toggles all projects.
+- A read-only transcript viewer shows prompts and replies, with tool calls folded until expanded. Keys: Enter or `e` expand, PgUp/PgDn scroll, `/` searches.
+- From the list or the viewer:
+  - `o` resumes the session in its own CLI (`claude --resume`, `codex resume`, `agy --conversation`) in the session's folder. Ubume suspends until that CLI exits.
+  - `c` imports the history once into an Ubume conversation on the matching provider and continues it there. Imported history keeps the newest turns within about 200,000 characters.
+- Sessions are read from each CLI's own store without modifying it:
+  - Claude Code: `~/.claude/projects`, or `CLAUDE_CONFIG_DIR`.
+  - Codex: the `state_*.sqlite` thread index (or `CODEX_HOME`), with a rollout-file fallback.
+  - Antigravity CLI: `conversation_summaries.db` and per-conversation step databases.
+- Antigravity transcripts are a labeled best-effort extraction from its binary format; older conversations show prompts only.
+- Ubume's own headless runs (`codex exec`, `claude -p`), subagent conversations, and sessions without a prompt are not listed.
+
+### Fixed
+
+- Starting Ubume no longer creates an empty "Untitled conversation" in `/resume`. A conversation is saved from its first sent prompt, so typing a draft or a command without sending it no longer persists anything.
+- Conversations with no messages are hidden from `/resume` and `ubume sessions list`; existing ones stay on disk and still load by id.
+
+### Validation
+
+- All 1,862 tests, TypeScript, the 17-check capability audit, the terminal PTY smoke, and `npm audit` (zero findings) passed.
+- The packed tarball installed into a clean prefix and passed version, `doctor --json`, and fixture-provider headless execution.
+- Packaged Harness mock inference passed on 3 consecutive runs. The very first run after installation timed out at the script's 25-second limit while Bun compiled the freshly installed sources.
+- The listing and transcript readers were checked against real local stores:
+  - Claude Code: 84 sessions.
+  - Codex: 491 threads.
+  - Antigravity: 292 conversations.
+- The live TUI was driven through all sections and viewers. The provider-backed `smoke:terminal-bench` was not run.
+
+---
+
 ## [0.1.6] — 2026-09-30 — Fresh Install Harness Compatibility
 
 ### Fixed

@@ -10,6 +10,7 @@ import type { RunActivitySummary, RunFileActivity } from "../core/workspace/work
 export type Screen =
   | "main"
   | "resume-picker"
+  | "external-session-viewer"
   | "workbench-panel"
   | "model-picker"
   | "mode-picker"

@@ -30,6 +30,7 @@ function scenarios(steps: string[]) {
 }
 
 test("actual App resumes after process restart with partial transcript, draft and paused queue", () => scenarios(["save", "resume"]));
+test("actual App does not persist a new conversation until the first prompt is sent", () => scenarios(["draft-only"]));
 test("actual App queues during runs and interrupts without overlapping cleanup or losing draft", () => scenarios(["flow"]));
 
 test("saved conversation continues from TUI to terminal commands and back", () => scenarios(["save", "headless", "resume"]));

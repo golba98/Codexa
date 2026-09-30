@@ -50,6 +50,12 @@ export interface LocalHarnessSessionMetadata {
   updatedAt: string;
 }
 
+/** Native CLI session a conversation was imported from via /resume. */
+export interface ConversationImportSource {
+  source: string;
+  sessionId: string;
+}
+
 export interface ConversationMetadata {
   version: 1;
   id: string;
@@ -66,6 +72,7 @@ export interface ConversationMetadata {
   messageCount: number;
   parentConversationId?: string;
   parentCheckpointId?: string;
+  importedFrom?: ConversationImportSource;
 }
 
 export interface ConversationRecord {
@@ -151,6 +158,13 @@ function parseLocalHarnessSession(value: unknown): LocalHarnessSessionMetadata |
   };
 }
 
+function parseImportSource(value: unknown): ConversationImportSource | null {
+  if (!isRecord(value)) return null;
+  const source = safeString(value.source);
+  const sessionId = safeString(value.sessionId);
+  return source && sessionId ? { source, sessionId } : null;
+}
+
 function parseMessages(value: unknown): ConversationMessage[] | null {
   if (!Array.isArray(value)) return null;
   const messages: ConversationMessage[] = [];
@@ -183,6 +197,7 @@ function parseMetadata(value: unknown, fallbackId: string): ConversationMetadata
     : 0;
   const localContextCheckpoint = parseContextCheckpoint(value.localContextCheckpoint);
   const localHarnessSession = parseLocalHarnessSession(value.localHarnessSession);
+  const importedFrom = parseImportSource(value.importedFrom);
   return {
     version: 1,
     id,
@@ -199,6 +214,7 @@ function parseMetadata(value: unknown, fallbackId: string): ConversationMetadata
     messageCount,
     ...(typeof value.parentConversationId === "string" && isSafeConversationId(value.parentConversationId) ? { parentConversationId: value.parentConversationId } : {}),
     ...(typeof value.parentCheckpointId === "string" ? { parentCheckpointId: value.parentCheckpointId } : {}),
+    ...(importedFrom ? { importedFrom } : {}),
   };
 }
 
@@ -375,7 +391,8 @@ export class ConversationStore {
         this.onDiagnostic(`Skipped conversation ${entry.name}: ${error instanceof Error ? error.message : "invalid metadata"}`);
       }
     }
-    return entries.sort((left, right) => {
+    // A conversation that never received a message is not resumable history.
+    return entries.filter((entry) => entry.messageCount > 0).sort((left, right) => {
       const updated = right.updatedAt.localeCompare(left.updatedAt);
       return updated !== 0 ? updated : right.id.localeCompare(left.id);
     });
