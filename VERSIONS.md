@@ -7,7 +7,7 @@ details and test notes, see the [changelog](CHANGELOG.md).
 
 `/resume` brings every provider into one history picker. Local chats have their own section with LM Studio, Unsloth and model filters. Ubume owns the saved chats in its user data folder, restores the original workspace and route, and durably saves the local agent session before completing a turn. Older histories migrate without deleting their originals. Antigravity uses the `agy` CLI; Mistral Vibe continuation belongs to each chat.
 
-This version is prepared for packed-package verification and npm publication.
+The package passed packed-install verification and npm accepted the `0.1.11` upload. Public registry availability is pending npm processing.
 
 ## v0.1.10 — 2026-09-30 (prepared)
 
