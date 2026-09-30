@@ -28,7 +28,7 @@ delete, reorder, pause, or continue pending instructions.
 | Inspect tool activity | Ctrl+O or `/transcript` |
 | Review file changes | `/diff` |
 | Preview recovery | `/rewind` |
-| Resume | `/resume` picker, or `/resume <id>` |
+| Resume | `/resume` picker (Ubume, Claude Code, Codex, Antigravity), or `/resume <id>` |
 | Clear conversation | `/clear` |
 | Exit | Ctrl+Q or `/exit`; idle Ctrl+C twice also exits |
 
@@ -83,10 +83,36 @@ visible and available to the next provider request. Resumed queues always start
 paused. Missing image files or unresolved attachment chips produce a visible
 error before submission.
 
-Resume restores Ubume's state. It does not promise to reattach native Claude or
-Codex sessions; their next invocation receives saved Ubume conversation context.
-The chosen route is restored when available and otherwise falls back with a
-notice. Native Local Harness session metadata retains its existing validation.
+A new conversation is saved from its first sent prompt. Starting Ubume and
+quitting, or typing a draft without sending it, does not create a `/resume`
+entry, and conversations with no messages are not listed.
+
+Resume restores Ubume's state. Resuming an Ubume conversation does not reattach
+the native Claude or Codex session that served it; the next invocation receives
+saved Ubume conversation context. The chosen route is restored when available and
+otherwise falls back with a notice. Native Local Harness session metadata retains
+its existing validation.
+
+### Native CLI sessions
+
+`/resume` has sections for Ubume, Claude Code, Codex, and Antigravity. Left/Right
+(or 1–4) switch sections. Native sections list sessions started in the current
+folder; `a` toggles all projects. Ubume reads those CLIs' own session stores
+read-only and never modifies them.
+
+| Key | In the list | In the transcript viewer |
+|---|---|---|
+| Enter | Open the transcript viewer | Expand or collapse the selected entry |
+| `o` | Resume natively (`claude --resume`, `codex resume`, `agy --conversation`) in the session's folder; Ubume suspends until that CLI exits | Same |
+| `c` | Continue inside Ubume: the history is imported once into an Ubume conversation on the matching provider | Same |
+| `/` | Search | Search entries |
+| `e` | — | Expand or collapse all tool calls |
+| Esc | Close | Back to the list |
+
+Ubume's own headless runs (`codex exec`, `claude -p`) are not listed. Antigravity
+stores conversations in a binary format, so its transcripts are a best-effort text
+extraction; older Antigravity conversations show your prompts only. Imported
+history is capped at about 200,000 characters, keeping the newest turns.
 
 ## Verification
 

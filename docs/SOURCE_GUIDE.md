@@ -127,6 +127,29 @@ Diagnostics must default to no-op, avoid user-visible output, redact sensitive v
 | `src/core/debug/localStreamDebug.ts` | Emits privacy-aware Local streaming diagnostics when explicitly enabled. |
 | `src/core/debug/modelStateDebug.ts` | Emits environment-gated model/provider state snapshots for picker and routing diagnosis. |
 
+### `src/core/externalSessions/` — Native CLI session stores (read-only)
+
+Reads the session stores of Claude Code, Codex and the Antigravity CLI for the `/resume` native sections. These stores belong to other tools: open them read-only (SQLite via `sqlite.ts`), tolerate missing or unfamiliar formats by returning nothing, and never write to them. Tests build fixture stores under temporary homes.
+
+| File | Purpose |
+| --- | --- |
+| `src/core/externalSessions/antigravitySessions.test.ts` | Verifies Antigravity listing filters, workspace matching, step extraction, and the prompt-history fallback. |
+| `src/core/externalSessions/antigravitySessions.ts` | Lists Antigravity CLI conversations from `conversation_summaries.db` and extracts prompts, replies, and tool calls from step payloads, falling back to `history.jsonl`. |
+| `src/core/externalSessions/claudeSessions.test.ts` | Verifies Claude Code project-folder encoding, title precedence, headless-run filtering, and transcript tool pairing. |
+| `src/core/externalSessions/claudeSessions.ts` | Lists Claude Code sessions from `~/.claude/projects` (head/tail reads) and streams a session JSONL into transcript entries. |
+| `src/core/externalSessions/codexSessions.test.ts` | Verifies the Codex thread-index listing, rollout fallback, injected-context filtering, and tool output pairing. |
+| `src/core/externalSessions/codexSessions.ts` | Lists Codex threads from `state_*.sqlite` (rollout scan fallback) and parses rollout JSONL into transcript entries. |
+| `src/core/externalSessions/importTranscript.test.ts` | Verifies provider mapping, reply merging, tool-activity folding, and size-bounded history. |
+| `src/core/externalSessions/importTranscript.ts` | Converts a native transcript into Ubume conversation messages for "continue in Ubume". |
+| `src/core/externalSessions/index.ts` | Routes listing and transcript reads to the store for each source. |
+| `src/core/externalSessions/protobufText.test.ts` | Verifies schemaless protobuf text extraction on nested, binary, and malformed input. |
+| `src/core/externalSessions/protobufText.ts` | Walks protobuf wire format without a schema and returns its text fields. |
+| `src/core/externalSessions/resumeLaunch.test.ts` | Verifies native resume arguments per CLI and missing-folder refusals. |
+| `src/core/externalSessions/resumeLaunch.ts` | Builds the `claude --resume` / `codex resume` / `agy --conversation` launch in the session's folder. |
+| `src/core/externalSessions/sessionIo.ts` | Shared JSONL head/tail/stream readers, bounded-concurrency mapping, and title helpers. |
+| `src/core/externalSessions/sqlite.ts` | Opens another tool's SQLite store read-only (with an immutable fallback for WAL databases). |
+| `src/core/externalSessions/types.ts` | Session source, scope, summary, and transcript types plus display labels. |
+
 ### `src/core/executables/` — External executable discovery
 
 Keep PATH, environment override, platform extension, and explicit configured-path handling centralized and covered by resolution tests.
@@ -188,7 +211,7 @@ Separate launch availability from in-Ubume routing. Persist workspace state thro
 | File | Purpose |
 | --- | --- |
 | `src/core/providerLauncher/launcher.test.ts` | Verifies launcher behavior and regression contracts in the core/providerLauncher area. |
-| `src/core/providerLauncher/launcher.ts` | Builds and launches external provider CLI commands in the inherited terminal with safe hand-off and restoration. |
+| `src/core/providerLauncher/launcher.ts` | Builds and launches external provider CLI commands (and arbitrary resume commands via `launchCliCommand`) in the inherited terminal with safe hand-off and restoration. |
 | `src/core/providerLauncher/registry.test.ts` | Verifies registry behavior and regression contracts in the core/providerLauncher area. |
 | `src/core/providerLauncher/registry.ts` | Builds provider-picker records from runtime truth, workspace overrides, discovery, and active/default route state. |
 | `src/core/providerLauncher/types.ts` | Defines provider IDs, workspace configuration, launch commands, picker actions, and persisted route types. |
@@ -459,7 +482,12 @@ Use shared selection/panel primitives, inject available-row budgets, preserve ke
 | `src/ui/panels/PlanActionPicker.tsx` | Offers execute, revise, or cancel actions after a plan is produced. |
 | `src/ui/panels/ProviderPicker.test.tsx` | Verifies Provider Picker behavior and regression contracts in the ui/panels area. |
 | `src/ui/panels/ProviderPicker.tsx` | Displays provider availability, current/default route state, models, and provider actions. |
-| `src/ui/panels/ResumePicker.tsx` | Lists workspace conversations by metadata and handles keyboard resume/cancel navigation. |
+| `src/ui/panels/ExternalSessionViewer.test.tsx` | Verifies transcript rendering, tool expansion, search, notices, and open/continue/back keys. |
+| `src/ui/panels/ExternalSessionViewer.tsx` | Read-only, scrollable transcript of a native Claude Code / Codex / Antigravity session with open-natively and continue-in-Ubume actions. |
+| `src/ui/panels/ResumePicker.test.tsx` | Verifies Ubume resume, native section loading/empty/error states, scope toggling, and position restore. |
+| `src/ui/panels/ResumePicker.tsx` | Tabbed `/resume` picker: Ubume conversations plus Claude Code, Codex, and Antigravity sessions for this folder or all projects. |
+| `src/ui/panels/resumePickerRows.test.ts` | Verifies picker row text, activity labels, search matching, and section cycling. |
+| `src/ui/panels/resumePickerRows.ts` | Pure row/label formatting and section types for the resume picker. |
 | `src/ui/panels/ProviderShortcut.test.tsx` | Verifies Provider Shortcut behavior and regression contracts in the ui/panels area. |
 | `src/ui/panels/ReasoningPicker.tsx` | Selects Codex reasoning effort for the active model. |
 | `src/ui/panels/SelectionPanel.tsx` | Provides the reusable keyboard-driven selection list with visible-window management. |

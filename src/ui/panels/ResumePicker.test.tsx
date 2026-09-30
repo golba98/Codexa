@@ -74,3 +74,118 @@ test("ResumePicker lists metadata and resumes the selected conversation", async 
     await sleep(20);
   }
 });
+
+type PickerProps = React.ComponentProps<typeof ResumePicker>;
+
+function mountPicker(props: Partial<PickerProps>) {
+  const stdin = new TestInput();
+  const stdout = new TestOutput();
+  let output = "";
+  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  const instance = render(
+    <ThemeProvider theme="purple">
+      <PanelLayoutContext.Provider value={{ mode: "compact", availableRows: 12, availableCols: 96 }}>
+        <ResumePicker conversations={[]} onSelect={() => {}} onCancel={() => {}} {...props} />
+      </PanelLayoutContext.Provider>
+    </ThemeProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
+  return {
+    stdin,
+    // Debug mode appends every frame; the last frame is what is on screen.
+    lastFrame: () => {
+      const text = output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
+      return text.slice(text.lastIndexOf("Resume"));
+    },
+    cleanup: async () => { instance.cleanup(); await sleep(20); },
+  };
+}
+
+const RIGHT = "\u001B[C";
+const here = { source: "claude" as const, id: "here-1", title: "Fix flaky test", cwd: "/work/app", updatedAt: "2026-09-30T10:00:00.000Z", model: "claude-opus-5-5" };
+const elsewhere = { source: "claude" as const, id: "far-2", title: "Movie app subtitles", cwd: "/work/movies", updatedAt: "2026-09-30T11:00:00.000Z" };
+
+test("ResumePicker browses native CLI sessions by folder, then every project", async () => {
+  const calls: string[] = [];
+  const opened: string[] = [];
+  const picker = mountPicker({
+    loadExternalSessions: async (source, scope) => { calls.push(`${source}:${scope}`); return scope === "all" ? [elsewhere, here] : [here]; },
+    onOpenExternal: (summary) => opened.push(`view:${summary.id}`),
+    onResumeExternalNative: (summary) => opened.push(`native:${summary.id}`),
+    onContinueExternal: (summary) => opened.push(`continue:${summary.id}`),
+  });
+  try {
+    await sleep();
+    assert.match(picker.lastFrame(), /Ubume.*Claude Code.*Codex.*Antigravity/);
+    picker.stdin.write(RIGHT);
+    await sleep();
+    assert.deepEqual(calls, ["claude:workspace"]);
+    assert.match(picker.lastFrame(), /This folder/);
+    assert.match(picker.lastFrame(), /Fix flaky test — .*claude-opus-5-5/);
+    assert.doesNotMatch(picker.lastFrame(), /Movie app subtitles/);
+
+    picker.stdin.write("a");
+    await sleep();
+    assert.deepEqual(calls, ["claude:workspace", "claude:all"]);
+    assert.match(picker.lastFrame(), /All projects/);
+    assert.match(picker.lastFrame(), /Movie app subtitles — .*movies/);
+
+    picker.stdin.write("\r"); await sleep();
+    picker.stdin.write("o"); await sleep();
+    picker.stdin.write("j"); await sleep();
+    picker.stdin.write("c"); await sleep();
+    assert.deepEqual(opened, ["view:far-2", "native:far-2", "continue:here-1"]);
+  } finally {
+    await picker.cleanup();
+  }
+});
+
+test("ResumePicker shows loading, empty and error states for native sections", async () => {
+  let finish!: (value: never[]) => void;
+  const picker = mountPicker({
+    loadExternalSessions: (source) => source === "codex"
+      ? new Promise((resolve) => { finish = resolve; })
+      : Promise.reject(new Error("store locked")),
+  });
+  try {
+    await sleep();
+    picker.stdin.write("3");
+    await sleep();
+    assert.match(picker.lastFrame(), /Loading Codex sessions/);
+    finish([]);
+    await sleep();
+    assert.match(picker.lastFrame(), /No Codex sessions in this folder — press a for all projects/);
+    picker.stdin.write(RIGHT);
+    await sleep();
+    assert.match(picker.lastFrame(), /Could not read Antigravity sessions: store locked/);
+  } finally {
+    await picker.cleanup();
+  }
+});
+
+test("ResumePicker restores its section, scope and selection and reports changes", async () => {
+  const positions: string[] = [];
+  let opened: string | null = null;
+  const picker = mountPicker({
+    position: { tab: "claude", scope: "all", selectedId: "here-1" },
+    loadExternalSessions: async () => [elsewhere, here],
+    onOpenExternal: (summary) => { opened = summary.id; },
+    onPositionChange: (position) => positions.push(`${position.tab}:${position.scope}:${position.selectedId}`),
+  });
+  try {
+    await sleep();
+    picker.stdin.write("\r");
+    await sleep();
+    assert.equal(opened, "here-1");
+    assert.equal(positions.at(-1), "claude:all:here-1");
+  } finally {
+    await picker.cleanup();
+  }
+});

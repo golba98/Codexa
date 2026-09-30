@@ -276,6 +276,10 @@ Untrusted project configuration is reported but not applied. User settings, trus
 
 Conversation history is stored below workspaces/<workspace-key>/conversations/<conversation-id>/ as versioned metadata.json and canonical messages.json files. Metadata-only listing powers /resume; complete messages are loaded only after selection. Messages and metadata use temporary-file replacement, and a partial or corrupt conversation is skipped without deleting it. The active conversation ID remains stable across resume and continuation. /clear clears the visible transcript and begins a new non-destructive conversation lifecycle.
 
+A conversation is created by its first sent prompt; drafts alone never create one, and conversations with no messages are hidden from /resume (they stay on disk and remain loadable by id).
+
+The /resume picker also lists native Claude Code, Codex, and Antigravity CLI sessions through `src/core/externalSessions/`. Those stores belong to the other CLIs and are strictly read-only inputs: JSONL files are read in bounded head/tail windows or streamed, SQLite stores are opened read-only, and an unfamiliar or missing store yields an empty list. Ubume's own headless provider runs (`codex exec`, `claude -p`) are filtered out because they already exist as Ubume conversations. Opening a session natively hands the terminal to `claude --resume`, `codex resume`, or `agy --conversation` through the same launcher as provider launches, after the overlay frame has been written; continuing in Ubume imports the transcript once into a new conversation tagged with `importedFrom`.
+
 ## Workspace and safety boundaries
 
 - `workspaceRoot.ts` establishes the normalized workspace used throughout a run.

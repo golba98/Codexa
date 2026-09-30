@@ -19,6 +19,7 @@ folders-only — every file lives in a domain folder so the directory stays scan
 | `process/` | Generic process spawning (`CommandRunner`) and executable-path validation. |
 | `terminal/` | Terminal I/O: ANSI sanitize, raw mode / cursor, title sequences, capability detection, and the `/clear` + resize repaint boundary (`clearFrameBoundary`, `inkRenderReset`). |
 | `workspace/` | Workspace resolution and state: `workspaceRoot`, `workspaceGuard`, `workspaceActivity`, `projectInstructions`, `planStorage`, `launchContext`. |
+| `externalSessions/` | **Read-only** readers for Claude Code, Codex, and Antigravity CLI session stores (listing, transcripts, native resume commands, import into Ubume) behind `/resume`. |
 | `version/` | Build channel / version branding (`channel`) and update checking (`updateCheck`). |
 | `shared/` | Small cross-cutting utilities: `clipboard`, `cleanupFastFail`, `githubDiagnostics`, `attachments`, `hollowResponseFormat`. |
 | `perf/` | Performance + render instrumentation (`profiler`, `renderDebug`). |

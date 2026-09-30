@@ -191,3 +191,32 @@ test("atomic snapshots preserve submitted context and ignore stale legacy dialog
   assert.equal(conversations.load(record.metadata.id)?.session, undefined);
   assert.equal(conversations.load(record.metadata.id)?.messages[0]?.submittedContent, "exact immutable source");
 });
+
+test("ConversationStore list hides conversations that never received a message", () => {
+  const conversations = store("2026-09-30T10:00:00.000Z", "empty");
+  conversations.save(conversations.createConversation({ providerId: "openai", modelId: "gpt", backendKind: "codex-cli-auth" }));
+
+  const withMessage = new ConversationStore("/workspace", {
+    rootDir: (conversations as unknown as { rootDir: string }).rootDir,
+    now: () => new Date("2026-09-30T11:00:00.000Z"),
+    idFactory: () => "real",
+  });
+  const real = withMessage.createConversation({ providerId: "openai", modelId: "gpt", backendKind: "codex-cli-auth" });
+  real.messages.push({ role: "user", content: "Hello" });
+  withMessage.save(real);
+
+  assert.deepEqual(withMessage.list().map((entry) => entry.id), ["chat_real"]);
+  // Hidden, not deleted: an explicit resume by id still loads it.
+  assert.equal(withMessage.load("chat_empty")?.metadata.messageCount, 0);
+});
+
+test("ConversationStore round-trips the external session a conversation was imported from", () => {
+  const conversations = store("2026-09-30T10:00:00.000Z", "imported");
+  const created = conversations.createConversation({ providerId: "anthropic", modelId: "sonnet", backendKind: "anthropic-cli-auth" });
+  created.metadata.importedFrom = { source: "claude", sessionId: "8b442d14-cec1-417d-b1de-917c24801914" };
+  created.messages.push({ role: "user", content: "Imported" });
+  conversations.save(created);
+
+  assert.deepEqual(conversations.load(created.metadata.id)?.metadata.importedFrom, { source: "claude", sessionId: "8b442d14-cec1-417d-b1de-917c24801914" });
+  assert.deepEqual(conversations.list()[0]?.importedFrom, { source: "claude", sessionId: "8b442d14-cec1-417d-b1de-917c24801914" });
+});

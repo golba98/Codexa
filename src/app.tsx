@@ -208,7 +208,17 @@ import type {
   ToolApprovalDecision,
   ToolApprovalRequest,
 } from "./core/providers/types.js";
-import { commandExistsOnPath, launchProviderCli } from "./core/providerLauncher/launcher.js";
+import { commandExistsOnPath, launchCliCommand, launchProviderCli } from "./core/providerLauncher/launcher.js";
+import {
+  buildExternalResumeLaunch,
+  externalProviderId,
+  externalSourceLabel,
+  externalTranscriptToConversationMessages,
+  listExternalSessions,
+  readExternalTranscript,
+  type ExternalSessionSource,
+  type ExternalSessionSummary,
+} from "./core/externalSessions/index.js";
 import { buildProviderRegistry, findProvider, getActiveRouteProviderId, isKnownProviderId } from "./core/providerLauncher/registry.js";
 import type { LocalBackendId, ProviderId, ProviderPickerAction, ProviderWorkspaceConfig } from "./core/providerLauncher/types.js";
 import {
@@ -302,6 +312,8 @@ import { SelectionPanel } from "./ui/panels/SelectionPanel.js";
 import { SettingsPanel } from "./ui/panels/SettingsPanel.js";
 import { UpdatePromptPanel } from "./ui/panels/UpdatePromptPanel.js";
 import { ResumePicker } from "./ui/panels/ResumePicker.js";
+import { ExternalSessionViewer } from "./ui/panels/ExternalSessionViewer.js";
+import type { ExternalListScope, ResumePickerPosition } from "./ui/panels/resumePickerRows.js";
 import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/panels/TextEntryPanel.js";
 import { ThemePicker } from "./ui/panels/ThemePicker.js";
 import { getFocusTargetForScreen, FOCUS_IDS } from "./ui/input/focus.js";
@@ -339,6 +351,10 @@ let nextTurnId = 0;
 // churn during streaming/action updates.
 const LIVE_UPDATE_FLUSH_MS = 50;
 const PROGRESS_ONLY_FLUSH_MS = 175;
+// Ink throttles frame writes (~34 ms at 30 fps). Leaving an overlay exits the
+// alternate screen inside that write, so a child CLI waits this long before it
+// takes the terminal.
+const OVERLAY_EXIT_SETTLE_MS = 80;
 
 function formatWritableRootsMessage(roots: readonly string[]): string {
   return roots.length > 0
@@ -603,6 +619,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   } | null>(null);
   const [conversationRouteOverride, setConversationRouteOverride] = useState<import("./core/providerRuntime/types.js").ProviderRoute | null>(null);
   const [resumeConversations, setResumeConversations] = useState<ConversationListEntry[]>([]);
+  // /resume native sections: listing cache for one picker session, the picker's
+  // section/scope/selection (restored when returning from the viewer), and the
+  // session shown in the transcript viewer.
+  const externalSessionListsRef = useRef(new Map<string, Promise<ExternalSessionSummary[]>>());
+  const resumePickerPositionRef = useRef<ResumePickerPosition | undefined>(undefined);
+  const [externalViewerSession, setExternalViewerSession] = useState<ExternalSessionSummary | null>(null);
   const [authStatus, setAuthStatus] = useState<CodexAuthProbeResult>(createInitialAuthStatus());
   const [authStatusBusy, setAuthStatusBusy] = useState(false);
   // Running character total across the conversation — used to estimate token usage
@@ -626,6 +648,18 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   // stdin reader; see useStdinRawModeLease.
   useStdinRawModeLease();
   const terminalControl = useMemo(() => createTerminalModeController((chunk) => stdout.write(chunk)), [stdout]);
+  // Shared by provider launches and native session resumes: the external CLI
+  // owns the terminal, with mouse reporting off, until it exits.
+  const externalCliLaunchHooks = useMemo(() => ({
+    stdin,
+    beforeLaunch: () => {
+      terminalControl.setMouseReporting(false, "src/app.tsx:externalCliLaunch.disableMouse");
+      stdout.write("\n");
+    },
+    afterLaunch: () => {
+      terminalControl.setMouseReporting(false, "src/app.tsx:externalCliLaunch.keepMouseNative");
+    },
+  }), [stdin, stdout, terminalControl]);
   // Live Ink instance behind this stdout, used to reset Ink's frame caches on
   // the /clear boundary so the next frame is authoritative (see handleClear).
   const inkInstance = useMemo(() => resolveInkRenderInstance(stdout), [stdout]);
@@ -1574,14 +1608,11 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     }
   }, [activeProviderRoute, conversationStore]);
 
+  // A conversation is created by its first sent prompt (appendConversationMessage);
+  // autosave never creates one, so a draft alone does not become a /resume entry.
   const saveWorkbench = useCallback(() => {
-    if (!activeConversationRef.current) {
-      const state = getSessionState();
-      if (!state.inputValue && !promptQueue.items.length && !state.activeEvents.length) return;
-      activeConversationRef.current = conversationStore.createConversation({ providerId: activeProviderRoute.providerId, modelId: activeProviderRoute.modelId, backendKind: activeProviderRoute.backendKind, localBackend: activeProviderRoute.localBackend, reasoning: activeProviderRoute.reasoning });
-    }
     saveActiveConversation();
-  }, [activeProviderRoute, conversationStore, getSessionState, promptQueue, saveActiveConversation]);
+  }, [saveActiveConversation]);
   saveWorkbenchRef.current = saveWorkbench;
   useEffect(() => {
     const timer = setTimeout(saveWorkbench, 300);
@@ -1690,8 +1721,69 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     }
     saveActiveConversation();
     setResumeConversations(conversationStore.list());
+    externalSessionListsRef.current.clear();
+    resumePickerPositionRef.current = undefined;
     setScreen("resume-picker");
   }, [appendSystemEvent, busy, conversationStore, saveActiveConversation]);
+
+  const loadExternalSessions = useCallback((source: ExternalSessionSource, scope: ExternalListScope) => {
+    const key = `${source}:${scope}`;
+    let pending = externalSessionListsRef.current.get(key);
+    if (!pending) {
+      pending = listExternalSessions(source, scope === "workspace" ? { kind: "workspace", root: workspaceRoot } : { kind: "all" });
+      externalSessionListsRef.current.set(key, pending);
+      pending.catch(() => externalSessionListsRef.current.delete(key));
+    }
+    return pending;
+  }, [workspaceRoot]);
+
+  const rememberResumePickerPosition = useCallback((position: ResumePickerPosition) => {
+    resumePickerPositionRef.current = position;
+  }, []);
+
+  const openExternalSession = useCallback((summary: ExternalSessionSummary) => {
+    setExternalViewerSession(summary);
+    setScreen("external-session-viewer");
+  }, []);
+
+  const loadExternalTranscript = useCallback(
+    () => externalViewerSession ? readExternalTranscript(externalViewerSession) : Promise.reject(new Error("No session selected.")),
+    [externalViewerSession],
+  );
+
+  const returnToResumePicker = useCallback(() => {
+    setExternalViewerSession(null);
+    setScreen("resume-picker");
+  }, []);
+
+  const resumeExternalSessionNative = useCallback(async (summary: ExternalSessionSummary) => {
+    if (busyRef.current || activeRunIdRef.current !== null) {
+      appendSystemEvent("Resume unavailable", "Finish the active run before opening another CLI.");
+      return;
+    }
+    // Leave the overlay first: its alternate screen is exited inside the next
+    // (throttled) frame write, which must land before the child owns the terminal.
+    setExternalViewerSession(null);
+    setScreen("main");
+    await new Promise((resolve) => setTimeout(resolve, OVERLAY_EXIT_SETTLE_MS));
+    const label = externalSourceLabel(summary.source);
+    try {
+      const prepared = await buildExternalResumeLaunch(summary, { fallbackCwd: workspaceRoot });
+      if (!isMountedRef.current) return;
+      if (!prepared.ok) {
+        appendErrorEvent(`${label} resume unavailable`, prepared.message);
+        return;
+      }
+      const { launch } = prepared;
+      appendSystemEvent("Resume in native CLI", `Suspending Ubume and resuming "${summary.title}" in ${label} (${launch.cwd}). Ubume will resume when ${label} exits.`);
+      const result = await launchCliCommand(launch.displayName, launch, externalCliLaunchHooks);
+      if (!isMountedRef.current) return;
+      if (result.status === "completed") appendSystemEvent("Resume in native CLI", result.message);
+      else appendErrorEvent(`${label} resume failed`, result.message);
+    } catch (error) {
+      if (isMountedRef.current) appendErrorEvent(`${label} resume failed`, error instanceof Error ? error.message : "Launch failed.");
+    }
+  }, [appendErrorEvent, appendSystemEvent, externalCliLaunchHooks, workspaceRoot]);
 
   const resumeConversation = useCallback(async (id: string) => {
     if (activeRunIdRef.current !== null || submissionRef.current || recoveryRef.current) { appendSystemEvent("Resume unavailable", "Stop the active operation before switching sessions."); return; }
@@ -1780,6 +1872,42 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     } catch (error) { appendErrorEvent("Resume failed", (error as Error).message); }
     finally { recoveryRef.current = false; bumpWorkbench((value) => value + 1); const quit = pendingQuitRef.current; pendingQuitRef.current = null; quit?.(); }
   }, [appendErrorEvent, appendSystemEvent, armTranscriptReplacement, conversationStore, dispatchSession, focusManager]);
+
+  // Imports a native session's history into a Ubume conversation (once per
+  // session; later picks reuse that conversation) and resumes it.
+  const continueExternalSession = useCallback(async (summary: ExternalSessionSummary) => {
+    const label = externalSourceLabel(summary.source);
+    try {
+      let id = conversationStore.list().find((entry) => entry.importedFrom?.source === summary.source && entry.importedFrom.sessionId === summary.id)?.id;
+      if (!id) {
+        const messages = externalTranscriptToConversationMessages(await readExternalTranscript(summary));
+        if (messages.length === 0) {
+          setScreen("main");
+          appendErrorEvent("Continue unavailable", `This ${label} session has no readable messages to import.`);
+          return;
+        }
+        const providerId = externalProviderId(summary.source);
+        const record = conversationStore.createConversation({
+          providerId,
+          modelId: summary.model ?? findProvider(providerRegistry, providerId)?.currentModel ?? activeProviderRoute.modelId,
+          backendKind: getProviderRuntime(providerId).backendKind,
+        });
+        record.metadata.title = summary.title;
+        record.metadata.importedFrom = { source: summary.source, sessionId: summary.id };
+        record.messages.push(...messages);
+        conversationStore.save(record);
+        id = record.metadata.id;
+      }
+      setExternalViewerSession(null);
+      await resumeConversation(id);
+      if (activeConversationRef.current?.metadata.id === id) {
+        appendSystemEvent("Continuing in Ubume", `Imported "${summary.title}" from ${label}. Your next prompt continues it through Ubume with this history.`);
+      }
+    } catch (error) {
+      setScreen("main");
+      appendErrorEvent("Continue failed", error instanceof Error ? error.message : "Could not import this session.");
+    }
+  }, [activeProviderRoute.modelId, appendErrorEvent, appendSystemEvent, conversationStore, providerRegistry, resumeConversation]);
 
   useEffect(() => {
     const notice = providerWorkspaceConfig.migrationNotice;
@@ -3121,17 +3249,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       `Suspending Ubume and launching ${provider.displayName}${providerId === "mistral" ? ` / ${provider.currentModel}` : ""}. Ubume will resume when the external CLI exits.`,
     );
 
-    const launchOptions = {
-      cwd: workspaceRoot,
-      stdin,
-      beforeLaunch: () => {
-        terminalControl.setMouseReporting(false, "src/app.tsx:providerLaunch.disableMouse");
-        stdout.write("\n");
-      },
-      afterLaunch: () => {
-        terminalControl.setMouseReporting(false, "src/app.tsx:providerLaunch.keepMouseNative");
-      },
-    };
+    const launchOptions = { cwd: workspaceRoot, ...externalCliLaunchHooks };
     const launchPromise = providerId === "mistral"
       ? launchMistralVibeCli(provider, launchOptions)
       : launchProviderCli(provider, launchOptions);
@@ -3163,9 +3281,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     resolvedRuntimeConfig,
     runtimeConfig.geminiCommandPath,
     setWorkspaceDefaultProviderWithNotice,
-    stdin,
-    stdout,
-    terminalControl,
+    externalCliLaunchHooks,
     workspaceRoot,
   ]);
 
@@ -5811,6 +5927,21 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                   conversations={resumeConversations}
                   onSelect={resumeConversation}
                   onCancel={() => setScreen("main")}
+                  loadExternalSessions={loadExternalSessions}
+                  onOpenExternal={openExternalSession}
+                  onResumeExternalNative={resumeExternalSessionNative}
+                  onContinueExternal={continueExternalSession}
+                  position={resumePickerPositionRef.current}
+                  onPositionChange={rememberResumePickerPosition}
+                />
+              )}
+              {screen === "external-session-viewer" && externalViewerSession && (
+                <ExternalSessionViewer
+                  summary={externalViewerSession}
+                  loadTranscript={loadExternalTranscript}
+                  onBack={returnToResumePicker}
+                  onOpenNative={resumeExternalSessionNative}
+                  onContinue={continueExternalSession}
                 />
               )}
 

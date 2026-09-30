@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { inspectOwnership } from "../../core/workspace/ownership.js";
 import assert from "node:assert/strict";
 import React from "react";
@@ -7,6 +7,7 @@ import { render } from "ink";
 import { App } from "../../app.js";
 import { parseLaunchArgs } from "../../config/launchArgs.js";
 import { ConversationStore } from "../../core/workspace/conversationStore.js";
+import { resolveUbumeConversationDir } from "../../core/workspace/appData.js";
 import type { BackendProvider, BackendRunHandlers } from "../../core/providers/types.js";
 
 class Input extends PassThrough {
@@ -83,6 +84,15 @@ if (scenario === "plan-actions") {
   assert.equal(loaded.messages[0]?.submittedContent, "first instruction");
   assert(loaded.session.events.some((event) => event.type === "assistant" && event.contentChunks.join("").includes("partial reply")));
   // Abrupt exit exercises resume of a snapshot captured during a live run.
+  process.exit(0);
+} else if (scenario === "draft-only") {
+  // A fresh start that never sends a prompt must not leave a /resume entry.
+  terminal.stdin.write("/model"); await delay(); terminal.stdin.write("\u0001"); await delay(); terminal.stdin.write("\u000b"); await delay();
+  terminal.stdin.write("unsent draft only"); await delay(1100);
+  terminal.instance.unmount(); await delay(350);
+  const conversationDir = resolveUbumeConversationDir(process.cwd());
+  assert.deepEqual(existsSync(conversationDir) ? readdirSync(conversationDir) : [], []);
+  assert.equal(store.list().length, 0);
   process.exit(0);
 } else if (scenario === "cancel-start") {
   terminal.stdin.write("cancel during preparation"); await delay(); terminal.stdin.write("\r");
