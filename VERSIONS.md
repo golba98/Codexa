@@ -3,6 +3,31 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.4 — 2026-09-30
+
+The built-in npm updater now refreshes registry metadata before installing.
+This fixes updates failing with "No matching version found" just after a new
+release when npm has cached an older package listing. To upgrade from an older
+version that lacks the fix, run `npm install -g ubume@latest --prefer-online`,
+then restart Ubume.
+
+## v0.1.3 — 2026-09-30
+
+You can keep typing while the agent works, queue your next instructions, and
+manage them with `/queue`. Terminal editing supports familiar shortcuts,
+multiline navigation, history search, undo, and an external editor. Interrupting
+preserves your draft and conversation.
+
+Use `@` to attach files, `/transcript` to inspect tool activity, `/diff` to review
+changes, and `/rewind` to preview conversation or supported file recovery.
+Resume restores partial replies, drafts, attachments, and queued instructions;
+resumed queues stay paused until you continue them.
+
+The new terminal commands let you run prompts, diagnose setup, inspect models
+and providers, and read saved sessions without opening the TUI. `ubume exec`
+saves automatically, and `ubume exec --resume <id> "next instruction"` continues
+the same conversation with its saved context and route.
+
 ## v0.1.2 — 2026-09-29
 
 Ubume now tells you what is really going on during a run. The status bar no
