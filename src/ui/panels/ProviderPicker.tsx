@@ -21,7 +21,7 @@ import { useTheme } from "../theme.js";
 // ─── Types & helpers ─────────────────────────────────────────────────────────
 
 export interface LocalBackendStatus {
-  state: "idle" | "checking" | "ready" | "no-model" | "not-running" | "auth-required";
+  state: "idle" | "checking" | "ready" | "no-model" | "not-running" | "auth-required" | "timeout";
   label: string;
 }
 

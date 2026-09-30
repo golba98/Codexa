@@ -6,6 +6,46 @@ No changes yet.
 
 ---
 
+## [0.1.6] — 2026-09-30 — Fresh Install Harness Compatibility
+
+### Fixed
+
+- Pinned the compatible Cordis/HMR dependency family used by the Harness. Fresh installs otherwise resolved newer transitive versions whose HMR service lacks the API expected by Harness 0.1.1-rc.2, causing session startup to close its JSON-RPC input. The clean installed package now completes mock inference.
+- Avoided wrapping an already detailed session-open error as a second prompt-disconnect error.
+- Made the Harness’s required peer service providers explicit dependencies so legacy peer mode does not omit modules needed at startup.
+- Shipped a consumer shrinkwrap aligned with the tested Bun graph. The updater and displayed npm upgrade command use `--legacy-peer-deps` to avoid npm repeatedly expanding the Harness’s cyclic plugin peers; fresh global npm installation passes Harness inference with this flag.
+- Updated vulnerable `fast-uri` and `ip-address` transitive versions within their compatible release lines; the locked npm runtime audit reports zero findings.
+- Updated npm and Bun lockfiles, package version, generated version metadata, and release notes together. Added `sync:npm-lock` and a fresh-install Harness smoke script to make release checks repeatable.
+
+### Validation
+
+- All 1,823 tests, TypeScript, the capability audit, terminal PTY smoke, locked `npm ci`, and fresh global npm installation passed. The globally installed package passed version, diagnostics, headless execution, and mock Harness inference. The locked runtime npm audit reports zero findings. Live Ornith inference was unavailable.
+
+### Release correction
+
+- 0.1.5 was published before the fresh-install Harness result was checked. Its source integration passed but its clean installation failed. Use 0.1.6, which includes the terminal/runtime changes below and the dependency correction.
+
+---
+
+## [0.1.5] — 2026-09-30 — Local Runtime and Terminal Controls
+
+### Fixed
+
+- Local backend selection shares concurrent validation and reuses successful checks for five seconds. Picker checks have a three-second deadline; timeouts are shown separately from stopped servers, and previous models remain visible while checking.
+- Unsloth key validation returns the model metadata, removing the duplicate model-list request. Inference still checks the active model before starting a turn.
+- Harness initialization and session opening support cancellation and a ten-second deadline. Session disconnects report their phase and redacted stderr, invalidate failed transports, and do not automatically resend a failed turn. Shutdown escalates to SIGKILL and waits for the owned child.
+- Ctrl+C has one App handler across screens, including plan actions. It preserves active drafts, shows cleanup status, and a second interrupt during cleanup requests exit.
+- Completed and resumed plans show **Implement in Auto** and **Redo plan**. Implementation turns off plan mode and uses Auto; redo starts immediately with the original task, current plan, and constraints. Repeated actions cannot launch overlapping runs.
+- Active providers show **is working** instead of **ready**, including while a command draft is being typed. A fixed-width highlight flows through the status text every 120 ms, without rerendering the timeline. Disabled loaders, static debug mode, and no-color terminals remain supported.
+
+### Validation
+
+- Added shared-discovery, timeout, canceled Harness startup/session-open, redacted disconnect, actual packaged Harness inference, and actual App plan-action regression tests.
+- All **1,823 tests** and TypeScript checks passed, along with the 17-check capability audit and terminal PTY smoke test. Its fresh tarball installation passed version, diagnostics, and headless execution, but Harness inference failed; see the 0.1.6 correction.
+- The packaged Harness was checked against a mock Unsloth inference server. A live Unsloth server was unavailable on this machine.
+
+---
+
 ## [0.1.4] — 2026-09-30 — Reliable npm Updates
 
 ### Fixed

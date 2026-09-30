@@ -18,7 +18,7 @@ const PACKAGE_SPEC = `${UBUME_NPM_PACKAGE}@latest`;
 // don't produce the global launcher paths we detect, so Classic is the only case.
 const UPDATE_ARGV: Record<GlobalPackageManager, readonly string[]> = {
   // Refresh registry metadata: freshly published tags can outpace cached manifests.
-  npm: ["npm", "install", "-g", PACKAGE_SPEC, "--prefer-online"],
+  npm: ["npm", "install", "-g", PACKAGE_SPEC, "--prefer-online", "--legacy-peer-deps"],
   pnpm: ["pnpm", "add", "-g", PACKAGE_SPEC],
   yarn: ["yarn", "global", "add", PACKAGE_SPEC],
   bun: ["bun", "add", "-g", PACKAGE_SPEC],

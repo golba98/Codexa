@@ -232,6 +232,57 @@ describe("Local Harness provider routing", () => {
     }
   });
 
+  for (const phase of ["initialize", "session/open"]) {
+    test(`canceling stalled ${phase} tears down the child and allows a fresh run`, async () => {
+      const dir = mkdtempSync(join(tmpdir(), "ubume-harness-cancel-"));
+      const stub = join(dir, "bridge.js");
+      const previous = process.env.UBUME_NODE_PATH;
+      writeFileSync(stub, `#!/usr/bin/env node
+const readline = require("node:readline");
+readline.createInterface({input:process.stdin}).on("line", line => {
+ const m = JSON.parse(line);
+ if (m.method === ${JSON.stringify(phase)}) return;
+ process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:m.id,result:{}})+"\\n");
+ if (m.method === "shutdown") process.exit(0);
+});
+`);
+      chmodSync(stub, 0o755); process.env.UBUME_NODE_PATH = stub;
+      const runner = new LocalHarnessProcess(); const controller = new AbortController();
+      try {
+        const work = runner.run({ ...request("fixture"), workspaceRoot: dir }, { onResponse() {}, onError() {} }, controller.signal);
+        setTimeout(() => controller.abort(), 150);
+        await assert.rejects(work, /cancel|abort/i);
+        assert.equal((runner as unknown as { child: unknown }).child, null);
+      } finally {
+        await runner.shutdown();
+        if (previous === undefined) delete process.env.UBUME_NODE_PATH; else process.env.UBUME_NODE_PATH = previous;
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test("session/open disconnect includes redacted stderr and starts no prompt", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ubume-harness-disconnect-")); const stub = join(dir, "bridge.js");
+    const previous = process.env.UBUME_NODE_PATH;
+    writeFileSync(stub, `#!/usr/bin/env node
+require("node:readline").createInterface({input:process.stdin}).on("line", line => {
+ const m = JSON.parse(line);
+ if (m.method === "initialize") process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:m.id,result:{}})+"\\n");
+ else { process.stderr.write("backend crashed test-key"); process.exit(7); }
+});
+`);
+    chmodSync(stub, 0o755); process.env.UBUME_NODE_PATH = stub;
+    const runner = new LocalHarnessProcess();
+    try {
+      await assert.rejects(runner.run({ ...request("fixture"), workspaceRoot: dir }, { onResponse() {}, onError() {} }, new AbortController().signal), (error: Error) => {
+        assert.match(error.message, /session\/open failed/); assert.match(error.message, /backend crashed/); assert.match(error.message, /\[redacted\]/); assert.doesNotMatch(error.message, /test-key/); return true;
+      });
+    } finally {
+      await runner.shutdown(); if (previous === undefined) delete process.env.UBUME_NODE_PATH; else process.env.UBUME_NODE_PATH = previous;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("a fingerprint change restarts the Harness without the old child clobbering the new one", async () => {
     const stubDir = mkdtempSync(join(tmpdir(), "ubume-harness-stub-"));
     const stubPath = join(stubDir, "stub-bridge.js");

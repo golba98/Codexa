@@ -272,7 +272,9 @@ function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
-test("status dot ticks do not invalidate timeline rendering", async () => {
+test("status flow ticks do not invalidate timeline rendering", async () => {
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
   const logPath = join(tmpdir(), `ubume-status-isolation-${process.pid}.jsonl`);
   rmSync(logPath, { force: true });
   renderDebug.configureRenderDebug({
@@ -298,13 +300,14 @@ test("status dot ticks do not invalidate timeline rendering", async () => {
     const afterTick = readRecords(logPath);
     const tickWindow = afterTick.slice(beforeTick.length);
 
-    assert.equal(countMatching(tickWindow, (record) => record.kind === "status" && record.event === "tick"), 1);
+    assert.ok(countMatching(tickWindow, (record) => record.kind === "status" && record.event === "tick") >= 5);
     assert(countMatching(tickWindow, (record) => record.kind === "render" && record.component === "Status") >= 1);
     assert.equal(countMatching(tickWindow, (record) => record.kind === "render" && record.component === "Timeline"), 0);
     assert.equal(countMatching(tickWindow, (record) => record.kind === "timeline" && record.event === "rowGeneration"), 0);
     assert.equal(countMatching(tickWindow, (record) => record.kind === "viewport" && record.event === "slice"), 0);
     assert.equal(countMatching(tickWindow, (record) => record.kind === "render" && record.component === "ActionLog"), 0);
   } finally {
+    if (previousNoColor !== undefined) process.env.NO_COLOR = previousNoColor;
     instance.unmount();
     renderDebug.configureRenderDebug({});
     rmSync(logPath, { force: true });
@@ -386,7 +389,7 @@ test("first action activity keeps the shell frame mounted and visible", async ()
     const frame = stripAnsi(output);
     assert.match(frame, /workspace/);
     assert.match(frame, /What is the point of 5-Date Verification/);
-    assert.match(frame, /Ubume is thinking/i);
+    assert.match(frame, /Ubume is working/i);
     assert.match(frame, /Get-Content README\.md/);
 
     const records = readRecords(logPath);

@@ -448,21 +448,37 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     const config = resolveHarnessConfig(request);
     const fingerprint = routeFingerprint(config, request);
     const processFingerprint = `${fingerprint}:${secretFingerprint(config.apiKey)}`;
-    await this.ensureStarted(request, config, processFingerprint, handlers);
+    try {
+      await this.ensureStarted(request, config, processFingerprint, handlers, signal);
+    } catch (error) {
+      await this.shutdown();
+      throw error;
+    }
     const metadata = request.localHarnessSession;
     const canResume = metadata?.routeFingerprint === fingerprint
       && metadata.throughMessageCount === (request.conversationHistory?.length ?? 0)
       && metadata.transcriptHash === transcriptHash(request);
     if (metadata && !canResume) {
-      await this.transport!.request("session/close", { sessionId: metadata.sessionId }).catch(() => undefined);
+      await this.closeSession(metadata.sessionId);
+      if (!this.transport) throw new Error("Local Harness disconnected while closing the previous session. Retry to start a fresh session.");
     }
     const sessionId = canResume ? metadata.sessionId : randomUUID();
     const scratchNote = prepareSessionScratch(request, sessionId, canResume);
     traceLocalStream("harness.session.open", { sessionId, model: config.model, resumed: canResume, endpoint: sanitizedEndpoint(config.baseUrl) });
-    await this.transport!.request("session/open", {
-      sessionId,
-      resume: canResume,
-    }, signal);
+    try {
+      await this.requestBounded("session/open", { sessionId, resume: canResume }, signal);
+    } catch (error) {
+      const child = this.child;
+      await this.shutdown();
+      if (signal.aborted) throw new DOMException("Local request cancelled.", "AbortError");
+      const stderr = this.redactions.reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr).trim();
+      throw new Error(`Local Harness session/open failed: ${error instanceof Error ? error.message : String(error)}\nExit: ${child?.exitCode ?? child?.signalCode ?? "unknown"}${stderr ? `\n${stderr}` : ""}\nYour next prompt will start a fresh Harness session.`);
+    }
+
+    if (signal.aborted) {
+      await this.shutdown();
+      throw new DOMException("Local request cancelled.", "AbortError");
+    }
 
     const sessionMetadata: LocalHarnessSessionMetadata = {
       version: 1,
@@ -533,9 +549,10 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     });
   }
 
-  private async ensureStarted(request: ProviderChatRequest, config: HarnessConfig, fingerprint: string, handlers: BackendRunHandlers): Promise<void> {
+  private async ensureStarted(request: ProviderChatRequest, config: HarnessConfig, fingerprint: string, handlers: BackendRunHandlers, signal: AbortSignal = new AbortController().signal): Promise<void> {
     if (this.child && this.transport && this.fingerprint === fingerprint) return;
     await this.shutdown();
+    if (signal.aborted) throw new DOMException("Local request cancelled.", "AbortError");
     handlers.onProcessLifecycle?.("before-spawn");
     const dshHome = ensureProfile(request.workspaceRoot, config);
     this.dshHome = dshHome;
@@ -580,7 +597,8 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     // terminate() null `this.child` before the outgoing child can emit, so a
     // stale generation must never mutate state owned by its replacement.
     child.stderr.on("data", (chunk) => {
-      if (this.child !== child) return;
+      // Drain outgoing stderr during shutdown, but never mix generations.
+      if (this.child && this.child !== child) return;
       this.stderr = `${this.stderr}${String(chunk)}`.slice(-12_000);
     });
     child.once("spawn", () => handlers.onProcessLifecycle?.("spawned"));
@@ -616,19 +634,20 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     transport.start();
     try {
       await Promise.race([
-        transport.request("initialize", {
+        this.requestBounded("initialize", {
           cwd: request.workspaceRoot,
           provider: INTERNAL_PROVIDER,
           model: config.model,
           maxTokens: config.maxTokens,
-        }),
+        }, signal),
         startupFailure,
       ]);
       startupSettled = true;
       this.fingerprint = fingerprint;
     } catch (error) {
       startupSettled = true;
-      this.terminate();
+      await this.shutdown();
+      if (signal.aborted) throw new DOMException("Local request cancelled.", "AbortError");
       const message = error instanceof Error ? error.message : String(error);
       const safeStderr = this.redactions.reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr).trim();
       throw new Error(`Local Harness startup failed.\n\nModel: ${config.model}\nEndpoint: ${sanitizedEndpoint(config.baseUrl)}\n\n${message}${safeStderr ? `\n${safeStderr}` : ""}`);
@@ -1040,6 +1059,7 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     this.fingerprint = "";
     this.dshHome = "";
     if (!child) return;
+    if (!child.pid) { transport?.close(); return; }
     traceLocalStream("harness.shutdown", {});
     try {
       await Promise.race([
@@ -1059,22 +1079,56 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
           resolveWait(true);
         });
       });
-      if (!exited) child.kill("SIGKILL");
+      if (!exited) {
+        const killed = new Promise<void>((resolveWait) => child.once("exit", () => resolveWait()));
+        child.kill("SIGKILL");
+        await killed;
+      }
     }
   }
 
   async waitForCleanup(): Promise<void> { await this.failedSessionCleanup; }
 
+  failureDetails(): string {
+    return this.redactions.reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr).trim();
+  }
+
+  private async requestBounded(method: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+    const transport = this.transport;
+    if (!transport) throw new Error(`Local Harness disconnected during ${method}.`);
+    const controller = new AbortController();
+    const abort = () => controller.abort(signal?.reason);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    const timer = setTimeout(() => controller.abort(new Error(`Local Harness ${method} timed out after 10 seconds.`)), 10_000);
+    try {
+      return await transport.request(method, params, controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted && !signal?.aborted) throw controller.signal.reason;
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+    }
+  }
+
   async closeSession(sessionId: string): Promise<void> {
     if (!this.transport || !sessionId) return;
-    await this.transport.request("session/close", { sessionId });
+    try { await this.requestBounded("session/close", { sessionId }); }
+    catch { await this.shutdown(); }
   }
 
   terminate(): void {
     this.stopMemoryPoll();
     this.transport?.close();
     this.transport = null;
-    if (this.child?.exitCode === null && this.child.signalCode === null) this.child.kill("SIGTERM");
+    const child = this.child;
+    if (child?.exitCode === null && child.signalCode === null) {
+      child.kill("SIGTERM");
+      const timer = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }, 2_000);
+      timer.unref?.();
+      child.once?.("exit", () => clearTimeout(timer));
+    }
     this.child = null;
     this.fingerprint = "";
   }
@@ -1090,7 +1144,20 @@ export function resetLocalHarnessProcessForTests(processOverride: LocalHarnessRu
 export async function runLocalHarness(request: ProviderChatRequest, handlers: BackendRunHandlers, signal: AbortSignal): Promise<string> {
   const runner = sharedProcess;
   try { return await runner.run(request, handlers, signal); }
-  finally { if (runner instanceof LocalHarnessProcess) await runner.waitForCleanup(); }
+  catch (error) {
+    if (!signal.aborted && runner instanceof LocalHarnessProcess && /^JSON-RPC.*(?:closed|disconnect)/i.test(error instanceof Error ? error.message : String(error))) {
+      await runner.shutdown();
+      const detail = runner.failureDetails();
+      throw new Error(`Local Harness disconnected during session/prompt. ${error instanceof Error ? error.message : String(error)}${detail ? `\n${detail}` : ""}\nYour next prompt will start a fresh Harness session. The failed turn was not retried.`);
+    }
+    throw error;
+  }
+  finally {
+    if (runner instanceof LocalHarnessProcess) {
+      await runner.waitForCleanup();
+      if (signal.aborted) await runner.shutdown();
+    }
+  }
 }
 
 export function shutdownLocalHarness(): Promise<void> {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createRunControl } from "../providers/runControl.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type { BackendRunHandlers } from "../providers/types.js";
@@ -14,7 +15,7 @@ import { resolveModelCapabilityProfileCached, clearModelCapabilityProfileCache }
 import { resolveDefaultMaxOutputTokens } from "./localOutputBudget.js";
 import { clearModelContextMetadataCache, resolveModelContextLengthCached } from "./contextMetadata.js";
 import { deriveLmStudioApiRoot, fetchLmStudioModels, type LmStudioModelInfo, type LmStudioModelList } from "./lmstudio.js";
-import { parseUnslothModels, resolveUnslothConnection } from "./unsloth.js";
+import { resolveUnslothConnection } from "./unsloth.js";
 import { runLocalHarness } from "./localHarness/runtime.js";
 
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:1234/v1";
@@ -69,6 +70,8 @@ export function setLocalProviderConfig(override: ProviderWorkspaceOverride | nul
 export function resetLocalProviderStateForTests(): void {
   configuredOverride = null;
   discoveryCaches.clear();
+  validationInFlight.clear();
+  warmValidations.clear();
   clearModelCapabilityProfileCache();
   clearModelContextMetadataCache();
 }
@@ -276,11 +279,36 @@ export function discoverLocalModels(
   return notConfiguredResult(config, LOCAL_ROUTE_SETUP_MESSAGE);
 }
 
+type LocalCheckOptions = Parameters<typeof checkLocalProvider>[0];
+const validationInFlight = new Map<string, Promise<ProviderRouteValidationResult>>();
+const warmValidations = new Map<string, { checkedAt: number; result: ProviderRouteValidationResult }>();
+
+/** A short-lived validation shared by startup, the picker, and route activation. */
+export function validateLocalProvider(options: LocalCheckOptions = {}, force = false): Promise<ProviderRouteValidationResult> {
+  if (force) warmValidations.clear();
+  const backend = options.localBackend ?? options.override?.localBackend ?? configuredOverride?.localBackend ?? "lm-studio";
+  const config = resolveLocalProviderConfig(options.override ?? configuredOverride, process.env, backend);
+  const key = createHash("sha256").update(JSON.stringify({ config, url: process.env.UNSLOTH_STUDIO_URL, key: process.env.UNSLOTH_API_KEY })).digest("hex");
+  if (!force && !options.signal && !options.fetchImpl) {
+    const cached = warmValidations.get(key);
+    if (cached && Date.now() - cached.checkedAt < 5_000) return Promise.resolve(cached.result);
+    const pending = validationInFlight.get(key);
+    if (pending) return pending;
+  }
+  const promise = checkLocalProvider({ ...options, timeoutMs: options.timeoutMs ?? 3_000 }).then((result) => {
+    if (result.status === "ready" && !options.signal?.aborted && !options.fetchImpl) warmValidations.set(key, { checkedAt: Date.now(), result });
+    return result;
+  }).finally(() => { if (validationInFlight.get(key) === promise) validationInFlight.delete(key); });
+  if (!force && !options.signal && !options.fetchImpl) validationInFlight.set(key, promise);
+  return promise;
+}
+
 export async function checkLocalProvider(options: {
   override?: ProviderWorkspaceOverride | null;
   localBackend?: LocalBackendId;
   fetchImpl?: FetchImpl;
   signal?: AbortSignal;
+  timeoutMs?: number;
 } = {}): Promise<ProviderRouteValidationResult> {
   const localBackend = options.localBackend ?? options.override?.localBackend ?? configuredOverride?.localBackend ?? "lm-studio";
   if (localBackend === "unsloth") return checkUnslothProvider({ ...options, localBackend });
@@ -318,9 +346,10 @@ export async function checkLocalProvider(options: {
 
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), LOCAL_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(new Error("Local backend check timed out.")), options.timeoutMs ?? LOCAL_TIMEOUT_MS);
   const abort = () => controller.abort();
   options.signal?.addEventListener("abort", abort, { once: true });
+  if (options.signal?.aborted) controller.abort(options.signal.reason);
   try {
     const response = await fetchImpl(`${config.baseUrl}/models`, {
       method: "GET",
@@ -454,9 +483,9 @@ export async function checkLocalProvider(options: {
       diagnostics: result.diagnostics,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = controller.signal.aborted && !options.signal?.aborted ? "Local backend check timed out." : error instanceof Error ? error.message : String(error);
     const message = [
-      "Local provider unavailable",
+      errorMessage.includes("timed out") ? "Local backend check timed out." : "Local provider unavailable",
       `Could not reach ${config.baseUrl}`,
       "Start LM Studio, load a model, and enable the local server.",
     ].join("\n");
@@ -474,6 +503,7 @@ async function checkUnslothProvider(options: {
   localBackend: "unsloth";
   fetchImpl?: FetchImpl;
   signal?: AbortSignal;
+  timeoutMs?: number;
 }): Promise<ProviderRouteValidationResult> {
   const initialConfig = resolveLocalProviderConfig(options.override ?? configuredOverride, process.env, "unsloth");
   clearModelCapabilityProfileCache();
@@ -485,18 +515,16 @@ async function checkUnslothProvider(options: {
   }
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), LOCAL_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(new Error("Local backend check timed out.")), options.timeoutMs ?? LOCAL_TIMEOUT_MS);
   const abort = () => controller.abort();
   options.signal?.addEventListener("abort", abort, { once: true });
+  if (options.signal?.aborted) controller.abort(options.signal.reason);
   try {
     const connection = await resolveUnslothConnection({ fetchImpl, signal: controller.signal });
     const config: LocalProviderConfig = { ...initialConfig, baseUrl: connection.baseUrl, apiKey: connection.apiKey };
     const key = localConfigKey(config);
     const previous = discoveryCaches.get("unsloth");
-    const response = await fetchImpl(`${config.baseUrl}/models`, { headers: { Authorization: `Bearer ${config.apiKey}` }, redirect: "manual", signal: controller.signal });
-    const text = await response.text();
-    if (!response.ok) throw new Error(sanitizeTerminalOutput(text).slice(0, 300) || `HTTP ${response.status}`);
-    const unslothModels = parseUnslothModels(text.trim() ? JSON.parse(text) as unknown : {});
+    const unslothModels = connection.models;
     const loadedModels = unslothModels.filter((model) => model.loaded === true);
     let status: Record<string, unknown> = {};
     try {
@@ -536,7 +564,7 @@ async function checkUnslothProvider(options: {
     discoveryCaches.set("unsloth", { configKey: key, result, selectedModel, checkedAt: Date.now(), resolvedConfig: config });
     return { status: "ready", providerId: "local", backendKind: "local-openai-compatible", message: result.message, diagnostics: result.diagnostics };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = controller.signal.aborted && !options.signal?.aborted ? "Local backend check timed out." : error instanceof Error ? error.message : String(error);
     const message = ["Unsloth provider unavailable", "Start Unsloth Studio and load a model.", errorMessage].join("\n");
     const result = notConfiguredResult(initialConfig, message, "unavailable", errorMessage);
     discoveryCaches.set("unsloth", { configKey: localConfigKey(initialConfig), result, selectedModel: null, checkedAt: Date.now(), resolvedConfig: initialConfig });
@@ -719,9 +747,10 @@ export const localRuntime: ProviderRuntime = {
   routeSetupMessage: LOCAL_ROUTE_SETUP_MESSAGE,
   launchAvailable: false,
   isRouteConfigured: () => discoverLocalModels().status === "ready",
-  validateRoute: async ({ route, localConfig, localBackend }) => checkLocalProvider({ override: localConfig ?? configuredOverride, localBackend: localBackend ?? route.localBackend }),
+  validateRoute: async ({ route, localConfig, localBackend }) => validateLocalProvider({ override: localConfig ?? configuredOverride, localBackend: localBackend ?? route.localBackend }),
   discoverModels: discoverLocalModels,
   refreshModels: async ({ localConfig, localBackend }) => {
+    warmValidations.clear();
     const backend = localBackend ?? localConfig?.localBackend ?? configuredOverride?.localBackend ?? "lm-studio";
     const validation = await checkLocalProvider({ override: localConfig ?? configuredOverride, localBackend: backend });
     return {

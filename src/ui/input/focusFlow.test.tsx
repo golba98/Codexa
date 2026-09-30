@@ -1095,7 +1095,7 @@ test("plan action picker moves the selection on a whole arrow sequence", async (
     await sleep(120);
 
     const output = harness.getOutput();
-    assert.match(output, /›\s*\[U\] Update plan/);
+    assert.match(output, /›\s*\[R\] Redo plan/);
     assert.match(output, /selection:\s*none/);
     assert.match(output, /cancel:\s*0/);
   } finally {
@@ -1118,7 +1118,7 @@ test("plan action picker does not cancel when an arrow arrives split across read
     const output = harness.getOutput();
     assert.match(output, /cancel:\s*0/);
     assert.match(output, /selection:\s*none/);
-    assert.match(output, /›\s*\[U\] Update plan/);
+    assert.match(output, /›\s*\[R\] Redo plan/);
   } finally {
     await harness.cleanup();
   }

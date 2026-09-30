@@ -3,6 +3,18 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.6 — 2026-09-30
+
+Includes the 0.1.5 terminal fixes and pins the compatible Harness dependencies so local inference works in a fresh installation. Upgrade to this version rather than 0.1.5, whose clean-install Harness startup failed.
+
+Run `npm install -g ubume@latest --prefer-online --legacy-peer-deps` to avoid npm’s slow cyclic peer resolution. This version’s updater uses that flag automatically.
+
+## v0.1.5 — 2026-09-30
+
+Local backend selection responds sooner and distinguishes a slow check from a stopped server. Local Harness startup can be interrupted and disconnected sessions give actionable errors. Ctrl+C works across panels and plan actions while preserving your active draft.
+
+After a plan, choose **Implement in Auto** or **Redo plan** directly. While a model is working, its status says so and shows a flowing highlight; typing another command keeps that status visible.
+
 ## v0.1.4 — 2026-09-30
 
 The built-in npm updater now refreshes registry metadata before installing.

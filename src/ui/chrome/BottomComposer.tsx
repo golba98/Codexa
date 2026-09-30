@@ -108,6 +108,7 @@ export function getTokenBarDisplay(tokensUsed: number, modelSpec: ModelSpec) {
 export interface BottomComposerProps {
   layout: Layout;
   uiState: UIState;
+  stopping?: boolean;
   themeName?: string;
   mode?: string;
   model?: string;
@@ -156,6 +157,7 @@ export interface BottomComposerProps {
 export interface BottomComposerMeasureParams {
   layout: Layout;
   uiState: UIState;
+  stopping?: boolean;
   mode?: string;
   model?: string;
   reasoningLevel?: string;
@@ -237,6 +239,7 @@ export function measureBottomComposerRows({
   value,
   cursor,
   queueCount = 0,
+  stopping = false,
 }: BottomComposerMeasureParams): number {
   if (shouldRenderBusyFooter(layout, uiState)) {
     return measureRunFooterRows();
@@ -267,6 +270,7 @@ export function measureBottomComposerRows({
   const footerGapRows = getComposerToFooterGapRows(layout);
   const visibleStatusLine = getVisibleComposerStatusLine({
     uiState,
+    stopping,
     value: normalizedValue,
     allowCommands,
   });
@@ -317,12 +321,12 @@ function getStatusLine(
       if (elapsed >= 5) return `${cliLabel} is still starting. The upstream CLI can take a moment${timerStr}`;
       return `Starting ${cliLabel}${timerStr}`;
     }
-    return "✧ Ubume is thinking";
+    return `✧ ${getProviderReadyLabel(activeProviderId ?? "") ?? "Ubume"} is working`;
   }
   if (uiState.kind === "RESPONDING") {
     const readyLabel = activeProviderId ? getProviderReadyLabel(activeProviderId) : null;
-    if (readyLabel) return `✧ ${readyLabel} ready`;
-    return "✧ Ubume is thinking";
+    if (readyLabel) return `✧ ${readyLabel} is working`;
+    return `✧ ${getProviderReadyLabel(activeProviderId ?? "") ?? "Ubume"} is working`;
   }
   if (uiState.kind === "ANSWER_VISIBLE") return "✧ Ubume response complete";
   if (uiState.kind === "SHELL_RUNNING") return "✧ Ubume is running command";
@@ -338,19 +342,22 @@ export function getVisibleComposerStatusLine({
   activeProviderId,
   runElapsedSeconds,
   externalCliStatus,
+  stopping = false,
 }: {
   uiState: UIState;
+  stopping?: boolean;
   value: string;
   allowCommands: boolean;
   activeProviderId?: string;
   runElapsedSeconds?: number;
   externalCliStatus?: ExternalCliStatus;
 }): string {
+  if (stopping) return "✧ Stopping · Ctrl+C again to exit";
   const persona = getComposerPersona(uiState);
   const rawStatusLine = getStatusLine(uiState, activeProviderId, runElapsedSeconds, externalCliStatus) ?? "";
   const isCommandDraft = allowCommands && value.startsWith("/");
 
-  if (rawStatusLine.length === 0 || persona === "answer" || isCommandDraft) {
+  if (rawStatusLine.length === 0 || persona === "answer" || (isCommandDraft && persona !== "busy")) {
     return "";
   }
 
@@ -422,6 +429,7 @@ export function BottomComposer({
   contextDisplay,
   planMode = false,
   showBusyLoader = true,
+  stopping = false,
   tokensUsed = 0,
   modelSpec = FALLBACK_MODEL_SPEC,
   value,
@@ -629,7 +637,7 @@ export function BottomComposer({
     .map((suggestion, index) => `${index === selectedIndex ? "›" : "·"} ${suggestion.cmd}`)
     .join("   ");
 
-  const rawStatusLine = getVisibleComposerStatusLine({ uiState, value, allowCommands, activeProviderId, runElapsedSeconds, externalCliStatus });
+  const rawStatusLine = getVisibleComposerStatusLine({ uiState, value, allowCommands, activeProviderId, runElapsedSeconds, externalCliStatus, stopping });
   const showStatusLine = rawStatusLine.length > 0;
   const showTransientStatusRow = showStatusLine || inputLocked;
   const footerGapRows = getComposerToFooterGapRows(layout);
@@ -1051,7 +1059,8 @@ export function BottomComposer({
               )}
               <AnimatedStatusText
                 baseText={rawStatusLine}
-                isActive={!getExternalCliLabel(activeProviderId ?? "") && persona === "busy" && showBusyLoader}
+                isActive={!stopping && persona === "busy" && showBusyLoader}
+                animationStyle="flow"
                 isError={persona === "error"}
               />
             </Box>
@@ -1148,7 +1157,7 @@ export function areBottomComposerPropsEqual(prev: BottomComposerProps, next: Bot
   if (prev.reasoningLevel !== next.reasoningLevel) return false;
   if (prev.contextDisplay !== next.contextDisplay) return false;
   if (prev.planMode !== next.planMode) return false;
-  if (prev.showBusyLoader !== next.showBusyLoader) return false;
+  if (prev.showBusyLoader !== next.showBusyLoader || prev.stopping !== next.stopping) return false;
   if (prev.tokensUsed !== next.tokensUsed) return false;
   
   // Re-render if layout changes
