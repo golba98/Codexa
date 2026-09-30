@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
 import { PassThrough } from "node:stream";
-import { render } from "ink";
-import { PanelLayoutContext } from "../layout.js";
+import { render, renderToString } from "ink";
+import { getVisualWidth, PanelLayoutContext } from "../layout.js";
+import { createAtomicContentToken } from "../input/pastedContent.js";
 import { ThemeProvider } from "../theme.js";
 import { ResumePicker } from "./ResumePicker.js";
 
@@ -25,6 +26,39 @@ class TestOutput extends PassThrough {
 function sleep(ms = 60): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+test("ResumePicker keeps its side borders aligned for pasted titles at different widths", () => {
+  const conversations = [{
+    version: 1 as const,
+    id: "chat_paste",
+    title: createAtomicContentToken("[Pasted Content 22,703 chars]"),
+    createdAt: "",
+    updatedAt: "not a date",
+    providerId: "local",
+    modelId: "Ornith-1.5-35B-A3B-Q4_K_M",
+    backendKind: null,
+    messageCount: 9,
+  }];
+  for (const columns of [60, 80, 100, 120]) {
+    const frame = renderToString(
+      <ThemeProvider theme="purple">
+        <PanelLayoutContext.Provider value={{ mode: "compact", availableRows: 12, availableCols: columns - 4 }}>
+          <ResumePicker conversations={conversations} onSelect={() => {}} onCancel={() => {}} loadExternalSessions={async () => []} />
+        </PanelLayoutContext.Provider>
+      </ThemeProvider>,
+      { columns },
+    );
+    const lines = frame.split("\n");
+    assert.equal(lines.length, 5);
+    assert.match(frame, /\[Pasted Content 22,703 chars\]/);
+    assert.doesNotMatch(frame, /\u2063[\uFE00-\uFE09]+\u2063/);
+    for (const line of lines) assert.equal(getVisualWidth(line), columns, `misaligned border at ${columns} columns: ${line}`);
+    for (const line of lines.slice(1, -1)) {
+      assert.ok(line.startsWith("│ "));
+      assert.ok(line.endsWith(" │"));
+    }
+  }
+});
 
 test("ResumePicker lists metadata and resumes the selected conversation", async () => {
   const stdin = new TestInput();
