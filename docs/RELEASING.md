@@ -3,18 +3,22 @@
 This guide documents how to publish the npm package `ubume` to the
 public npm registry.
 
-## Prepare version 0.1.2
+## Prepare an unpublished version
 
 Run these commands from the repository root. NPM versions are immutable, so
 never reuse a version that has already been published.
 
 ```bash
-npm version 0.1.2 --no-git-tag-version
+read -r -p "Unpublished release version: " release_version
+npm version "$release_version" --no-git-tag-version --ignore-scripts
 npm run gen-build-info
 npm pkg get name version
 ```
 
-Continue only after the printed version is `0.1.2`.
+Continue only after the printed version matches `$release_version`. Update
+`CHANGELOG.md` and `VERSIONS.md` with the release date, user-visible changes,
+fixes, and verification results before publishing. Keep `package.json`,
+`package-lock.json`, and generated `src/config/buildInfo.ts` in sync.
 
 ## Validate the release
 
@@ -53,24 +57,31 @@ runs the TypeScript typecheck, and runs the full Bun test suite.
 ## Verify the published package
 
 ```bash
-npm view ubume@0.1.2 version --registry=https://registry.npmjs.org
-npm install -g ubume@0.1.2 --registry=https://registry.npmjs.org
+npm view "ubume@$release_version" version --registry=https://registry.npmjs.org
+npm install -g "ubume@$release_version" --registry=https://registry.npmjs.org --prefer-online
 ubume --version
 ```
 
 After npm's `latest` tag has propagated, verify the tagged package:
 
 ```bash
-npm view ubume dist-tags --json --registry=https://registry.npmjs.org
-npm install -g ubume@latest --registry=https://registry.npmjs.org
+npm view ubume dist-tags --json --registry=https://registry.npmjs.org --prefer-online
+npm install -g ubume@latest --registry=https://registry.npmjs.org --prefer-online
 ubume --version
 ```
+
+Wait for npm processing to finish and verify that the published version is
+listed and `latest` points to it. A successful upload can precede registry
+availability.
 
 ## Commit and tag the release
 
 ```bash
-git add -A
-git commit -m "release: prepare Ubume v0.1.2"
-git tag v0.1.2
-git push origin release/ubume-v0-1-1 --follow-tags
+git add package.json package-lock.json bun.lock src/config/buildInfo.ts CHANGELOG.md VERSIONS.md
+git commit -m "release: prepare Ubume v$release_version"
+git tag -a "v$release_version" -m "Ubume v$release_version"
+git push -u origin HEAD --follow-tags
 ```
+
+Ensure the release commit is included in the merged PR; merge alone does not
+include commits pushed to a branch after its PR was already merged.

@@ -6,6 +6,68 @@ No changes yet.
 
 ---
 
+## [0.1.4] — 2026-09-30 — Reliable npm Updates
+
+### Fixed
+
+- **Updates refresh npm registry metadata** — the updater and displayed npm
+  command now use `--prefer-online`. After publication, npm could read a new
+  `latest` tag from one cached response and an older full manifest from another,
+  then fail with `ETARGET` because that manifest did not list the new version.
+- **Tests**: updated command-generation and subprocess argument assertions;
+  all 1,814 tests and TypeScript checks passed. The packed installation was
+  checked for the refresh flag, diagnostics, and non-interactive execution.
+
+---
+
+## [0.1.3] — 2026-09-30 — Terminal Workbench and Headless Commands
+
+### Added
+
+- **Compose during runs** — type the next instruction while the agent works;
+  queue instructions and edit, remove, reorder, pause, or continue them with
+  `/queue`. `/send-now` interrupts and continues after provider cleanup.
+- **Terminal editing controls** — conventional line and word navigation,
+  deletion, history search, input undo, multiline navigation, and an external
+  editor shortcut. Ctrl+C stops the active run while preserving the draft;
+  Ctrl+L redraws and `/clear` explicitly clears the conversation.
+- **Inspect and review work** — `/transcript` expands tool commands, output,
+  errors, and activity; `@` attaches workspace text files with ignore rules;
+  `/diff` shows recorded file changes.
+- **Previewed recovery** — `/rewind` branches conversation history or restores
+  supported text-file checkpoints, with previews, conflict checks, bounded
+  snapshots, and crash-recovery journals.
+- **Commands without opening the TUI** — `exec`, `doctor`, `status`, `config`,
+  `providers`, `models`, and `sessions` support explicit workspaces and JSON
+  output. Exec accepts stdin and file attachments, saves by default, and can
+  continue a saved conversation with `--resume`.
+
+### Fixed
+
+- **Resume preserves the workbench** — saved history, partial replies,
+  drafts/cursors, attachments, plan state, and queued instructions survive
+  restart and TUI/CLI continuation. Resumed queues remain paused.
+- **Provider and model routing** — shared execution honors saved provider/model
+  routes, explicit overrides, and configured executable paths. Headless runs
+  report unavailable providers rather than silently selecting another one.
+- **Run and recovery races** — queue dispatch waits for shutdown and checkpoints;
+  session/workspace ownership prevents concurrent writes; stale callbacks from
+  canceled runs cannot replace the next turn's output.
+- **Input and output bounds** — attachment expansion counts repeated content;
+  tool output is bounded; final answer suffixes are retained; subprocess
+  cancellation waits for stubborn descendants. Missing option values no longer
+  consume following flags, and custom stdin streams can be canceled while idle.
+
+### Maintenance
+
+- Added fresh-process App resume tests, CLI integration coverage, checkpoint and
+  editing regressions, and a recorded PTY workbench smoke test. All 1,814 tests,
+  typecheck, the 17-check capability audit, and terminal smoke checks passed.
+- Live-provider authentication/inference and Windows/macOS terminal behavior
+  were not verified by the fixture-based release checks.
+
+---
+
 ## [0.1.2] — 2026-09-29 — Honest Status and Error Reporting
 
 ### Fixed
