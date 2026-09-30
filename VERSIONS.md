@@ -3,6 +3,12 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.10 — 2026-09-30 (prepared)
+
+Typing after a `[Pasted Content …]` label keeps the text and cursor inside the input border. The editor uses the space its container actually provides, including the prompt, padding, and cursor. Unicode display widths and resizing stay aligned, and pasted attachment IDs remain intact when you edit or send a prompt. This patch retains the Local stall and resume-border fixes from 0.1.9.
+
+This version is prepared but has not been published to npm.
+
 ## v0.1.9 — 2026-09-30
 
 Fixes the misaligned side border in `/resume` for conversations that start with a pasted-content or attachment label. The existing layout and saved conversations stay the same. This patch also retains the Local server stall fixes from 0.1.8.

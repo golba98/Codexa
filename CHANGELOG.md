@@ -6,6 +6,26 @@ No changes yet.
 
 ---
 
+## [0.1.10] — 2026-09-30 — Input Viewport Fix (prepared)
+
+### Fixed
+
+- Typing after a pasted-content label stays inside the input box, and the cursor remains visible at the right edge. Measurement and rendering now share the actual container width, border, padding, and prompt dimensions.
+- Full rows scroll horizontally when needed to show the cursor. Existing multiline wrapping, navigation, shortcuts, paste handling, focus, and submission are preserved.
+- Invisible pasted-content and attachment IDs no longer reach Ink's output writer, where they consumed cells and shifted subsequent text. IDs remain intact in the draft and submitted prompt.
+- Terminal display widths now follow complete graphemes, including combining accents and emoji sequences. Narrow layouts and terminal resizing recalculate the viewport without moving the border into editable text.
+
+### Verification
+
+- All 1,880 tests, TypeScript checks, the 17-check capability audit, npm audit (zero vulnerabilities), and the isolated fixture-provider PTY smoke passed.
+- Added rendered-row and live input regressions for pasted labels, cursor positions and full-row boundaries, Unicode, token deletion, narrow widths, resizing, and submission with intact token IDs.
+- Terminal recording: `docs/recordings/input-viewport-fix.cast`.
+- `npm run prepublishOnly` passed. The clean tarball installation passed version, `doctor --json`, fixture-provider headless execution, and packaged Harness inference against a local mock endpoint. Package contents and SHA-512 integrity were verified.
+- The terminal bench passed with the fixture provider in an isolated workspace; no paid provider request was made.
+- npm publication is pending; the version is prepared for review.
+
+---
+
 ## [0.1.9] — 2026-09-30 — Resume Border Fix
 
 ### Fixed
