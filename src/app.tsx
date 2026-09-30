@@ -298,7 +298,7 @@ import {
 import { AuthPanel } from "./ui/panels/AuthPanel.js";
 import { BackendPicker } from "./ui/panels/BackendPicker.js";
 import { measureBottomComposerRows, MemoizedBottomComposer } from "./ui/chrome/BottomComposer.js";
-import { resolveStartupHeaderMode, useTerminalViewport } from "./ui/layout.js";
+import { getContentWidth, resolveStartupHeaderMode, useTerminalViewport } from "./ui/layout.js";
 import { ModelPickerScreen } from "./ui/panels/ModelPickerScreen.js";
 import { ModePicker } from "./ui/panels/ModePicker.js";
 import { PlanActionPicker, type PlanActionValue, measurePlanActionPickerRows } from "./ui/panels/PlanActionPicker.js";
@@ -1213,6 +1213,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const modelCapabilitiesBusyRef = useRef(modelCapabilitiesBusy);
   modelCapabilitiesBusyRef.current = modelCapabilitiesBusy;
+  const composerWidth = screen === "main" ? terminalLayout.cols : getContentWidth(terminalLayout.cols);
   const composerRows = useMemo(() => {
     if (planFlow.kind === "awaiting_action") {
       return measurePlanActionPickerRows(terminalLayout.cols);
@@ -1224,6 +1225,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       queueCount: promptQueue.items.length,
       stopping: interruptStopping,
       layout: terminalLayout,
+      width: composerWidth,
       uiState,
       mode,
       model,
@@ -1234,6 +1236,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       cursor,
     });
   }, [
+    composerWidth,
     conversationChars,
     currentModelSpec,
     cursor,
@@ -5770,6 +5773,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       <MemoizedBottomComposer
         key={composerInstanceKey}
         layout={terminalLayout}
+        width={composerWidth}
         uiState={uiState}
         mode={mode}
         model={modelDisplayName}
@@ -5824,6 +5828,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     handlePlanFeedbackSubmit,
     activeTheme.textMuted,
     composerInstanceKey,
+    composerWidth,
     terminalLayout,
     uiState,
     mode,

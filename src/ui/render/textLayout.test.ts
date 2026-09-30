@@ -61,3 +61,16 @@ test("atomic token ID markers measure zero columns, matching getTextWidth", () =
 test("splitTextAtColumn highlights the visible character after an atomic token", () => {
   assert.equal(splitTextAtColumn("[Image: a.png]\u2063\uFE01\u2063 x", 14).current, " ");
 });
+
+
+test("text units match terminal cell width for combining marks and emoji clusters", () => {
+  for (const text of ["e\u0301", "👩‍💻", "🇿🇦", "字", "[Pasted Content 22,703 chars]\u2063\uFE01\u2063"]) {
+    const units = getTextUnits(text);
+    assert.equal(units.reduce((sum, unit) => sum + unit.width, 0), getTextWidth(text));
+    assert.equal(units.map((unit) => unit.text).join(""), text);
+    for (const unit of units) assert.equal(text.slice(unit.start, unit.end), unit.text);
+  }
+  assert.equal(getTextUnits("e\u0301").length, 1);
+  assert.equal(getTextUnits("👩‍💻").length, 1);
+  assert.deepEqual(wrapTextRows("e\u0301👩‍💻字", 2).map((row) => row.text), ["e\u0301", "👩‍💻", "字"]);
+});
