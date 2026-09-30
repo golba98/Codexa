@@ -18,7 +18,7 @@ export interface SavedExecOptions extends HeadlessExecOptions { noSave?: boolean
 export async function runSavedExec(options: SavedExecOptions, io: HeadlessExecIo): Promise<HeadlessExecResult & { sessionId?: string }> {
   const workspace = options.workspaceRoot!;
   const dataRoot = resolveUbumeWorkspaceDataDir(workspace, { readOnly: options.noSave ?? false });
-  const store = new ConversationStore(workspace, { ownership: true, rootDir: join(dataRoot, "conversations"), onDiagnostic: (message) => io.stderr.write(`${message}\n`) });
+  const store = new ConversationStore(workspace, { ownership: true, onDiagnostic: (message) => io.stderr.write(`${message}\n`) });
   let execution: ReturnType<typeof acquireOwnership> | undefined;
   let record: ConversationRecord | undefined;
   let harnessToClose: string | undefined;
@@ -103,6 +103,10 @@ export async function runSavedExec(options: SavedExecOptions, io: HeadlessExecIo
           scheduleSave();
         },
         onLocalContextCheckpoint: (checkpoint) => { if (record) record.metadata.localContextCheckpoint = checkpoint; scheduleSave(); },
+        onNativeSession: (reference) => {
+          if (record) record.metadata.nativeSessions = [...(record.metadata.nativeSessions ?? []).filter((previous) => previous.source !== reference.source || previous.sessionId !== reference.sessionId), reference];
+          scheduleSave();
+        },
         onLocalHarnessSession: (metadata, id) => {
           harnessToClose = id;
           if (record) { if (metadata) record.metadata.localHarnessSession = metadata; else delete record.metadata.localHarnessSession; }

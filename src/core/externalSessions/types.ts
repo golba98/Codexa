@@ -1,7 +1,7 @@
 /** Native CLI whose saved sessions /resume can browse. */
-export type ExternalSessionSource = "claude" | "codex" | "antigravity";
+export type ExternalSessionSource = "claude" | "codex" | "antigravity" | "vibe";
 
-export const EXTERNAL_SESSION_SOURCES: readonly ExternalSessionSource[] = ["claude", "codex", "antigravity"];
+export const EXTERNAL_SESSION_SOURCES: readonly ExternalSessionSource[] = ["claude", "codex", "antigravity", "vibe"];
 
 export type ExternalSessionScope =
   | { kind: "workspace"; root: string }
@@ -16,6 +16,7 @@ export interface ExternalSessionSummary {
   /** ISO timestamp of the last activity. */
   updatedAt: string;
   model?: string;
+  messageCount?: number;
   /** Session file the transcript is read from, when the store has one. */
   filePath?: string;
 }
@@ -48,5 +49,6 @@ export function externalSourceLabel(source: ExternalSessionSource): string {
     case "claude": return "Claude Code";
     case "codex": return "Codex";
     case "antigravity": return "Antigravity";
+    case "vibe": return "Mistral Vibe";
   }
 }

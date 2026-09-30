@@ -59,15 +59,11 @@ async function summarizeSessionFile(path: string): Promise<ExternalSessionSummar
   const info = await stat(path);
   const head = await readHeadJsonLines(path, info.size, HEAD_BYTES);
   let cwd: string | null = null;
-  let entrypoint: string | null = null;
   let prompt: string | null = null;
   for (const record of head) {
     cwd ??= stringField(record, "cwd");
-    entrypoint ??= stringField(record, "entrypoint");
     if (!prompt && record.type === "user" && isTranscriptRecord(record)) prompt = userPromptText(record);
   }
-  // `claude -p` runs (Ubume's own Claude route) are already Ubume conversations.
-  if (entrypoint?.startsWith("sdk")) return null;
   if (!prompt && info.size <= HEAD_BYTES) return null;
 
   let model: string | null = null;

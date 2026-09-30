@@ -183,6 +183,8 @@ function printHelp() {
 Usage:
   ubume
   ubume "explain this repo"
+  ubume --resume <id>
+  ubume --import-session <source>:<id>
   ubume exec "print the current directory"
   ubume doctor [--probe]
   ubume status | config | providers | models
@@ -202,6 +204,9 @@ Options:
       --provider <id>     Select a provider for exec/models.
       --no-save           Run exec without saving a conversation.
       --file <path>       Attach a project text file to exec (repeatable).
+      --resume <id>       Open a saved chat without sending a prompt.
+      --import-session <source>:<id>
+                           Import native history (claude, codex, vibe, antigravity).
       --profile <name>    Load a profile from config.
   -m, --model <name>      Select the model for this launch.
       --reasoning <effort>

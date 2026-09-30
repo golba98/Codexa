@@ -10,7 +10,7 @@ test("resume rows hide attachment IDs without changing visible titles or stored 
     const title = `${createAtomicContentToken(label)} · café ❤️`;
     const conversation = { version: 1 as const, id: "chat_a", title, createdAt: "", updatedAt: "not a date", providerId: "local", modelId: "qwen", backendKind: null, messageCount: 9 };
     assert.equal(ubumeRowText(conversation, now), `${label} · café ❤️ — Unknown time · qwen · Local · 9 messages`);
-    assert.equal(externalRowText({ source: "claude", id: "abc", title, cwd: "/work/app", updatedAt: "not a date" }, "workspace", now), `${label} · café ❤️ — Unknown time`);
+    assert.equal(externalRowText({ source: "claude", id: "abc", title, cwd: "/work/app", updatedAt: "not a date" }, "workspace", now), `${label} · café ❤️ — Unknown time · Claude Code`);
     assert.equal(conversation.title, title);
   }
 });
@@ -29,8 +29,8 @@ test("ubumeRowText shows route, size and where an imported conversation came fro
 
 test("externalRowText adds the folder name only when listing every project", () => {
   const summary = { source: "claude" as const, id: "abc", title: "Rename package", cwd: "/work/my app", updatedAt: "not a date", model: "claude-opus-5-5" };
-  assert.equal(externalRowText(summary, "workspace", now), "Rename package — Unknown time · claude-opus-5-5");
-  assert.equal(externalRowText({ ...summary, model: undefined }, "all", now), "Rename package — Unknown time · my app");
+  assert.equal(externalRowText(summary, "workspace", now), "Rename package — Unknown time · Claude Code · claude-opus-5-5");
+  assert.equal(externalRowText({ ...summary, model: undefined }, "all", now), "Rename package — Unknown time · Claude Code · my app");
 });
 
 test("matchesQuery is case-insensitive across every field", () => {
@@ -40,7 +40,7 @@ test("matchesQuery is case-insensitive across every field", () => {
 });
 
 test("nextResumeTab wraps in both directions", () => {
-  assert.equal(nextResumeTab("ubume", 1), "claude");
-  assert.equal(nextResumeTab("antigravity", 1), "ubume");
-  assert.equal(nextResumeTab("ubume", -1), "antigravity");
+  assert.equal(nextResumeTab("all", 1), "openai");
+  assert.equal(nextResumeTab("antigravity", 1), "all");
+  assert.equal(nextResumeTab("all", -1), "antigravity");
 });

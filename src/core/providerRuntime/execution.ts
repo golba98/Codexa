@@ -1,7 +1,7 @@
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
 import type { BackendProvider } from "../providers/types.js";
 import type { ProviderWorkspaceConfig } from "../providerLauncher/types.js";
-import type { LocalHarnessSessionMetadata } from "../workspace/conversationStore.js";
+import type { LocalHarnessSessionMetadata, NativeSessionReference } from "../workspace/conversationStore.js";
 import type { ProviderRoute } from "./types.js";
 import { getProviderRuntime } from "./registry.js";
 
@@ -11,6 +11,7 @@ export function createRoutedProvider(
   backend: BackendProvider,
   config: ProviderWorkspaceConfig,
   localHarnessSession?: () => LocalHarnessSessionMetadata | undefined,
+  nativeSessions?: () => readonly NativeSessionReference[] | undefined,
 ): BackendProvider {
   const override = config.providers?.[route.providerId];
   if (route.providerId === "openai") return {
@@ -31,6 +32,8 @@ export function createRoutedProvider(
       workspaceRoot: options.workspaceRoot, projectInstructions: options.projectInstructions,
       promptPolicy: options.promptPolicy,
       claudeCommandPath: override?.claudeCommandPath,
+      antigravityCommandPath: override?.antigravityCommandPath,
+      nativeSessions: nativeSessions?.(),
       localConfig: route.providerId === "local" ? override : undefined,
       runIntent: options.runIntent, conversationHistory: options.conversationHistory,
       localContextCheckpoint: options.localContextCheckpoint, imageAttachments: options.imageAttachments,

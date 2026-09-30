@@ -10,6 +10,7 @@ export function externalProviderId(source: ExternalSessionSource): ProviderId {
     case "claude": return "anthropic";
     case "codex": return "openai";
     case "antigravity": return "antigravity";
+    case "vibe": return "mistral";
   }
 }
 

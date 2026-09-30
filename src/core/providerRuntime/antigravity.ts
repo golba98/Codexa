@@ -500,6 +500,20 @@ export const antigravityRuntime: ProviderRuntime = {
       source: "stdout",
       text: "Starting Antigravity CLI",
     });
-    return runAntigravityWithRunner(request, handlers);
+    const control = createRunControl(handlers);
+    let cancelled = false;
+    let cancelChild: (() => void) | undefined;
+    const lookup = resolveAgyExecutable({ cwd: request.workspaceRoot, configuredPath: request.antigravityCommandPath }).then((executable) => {
+      if (cancelled) { control.finish(); return; }
+      if (!executable) { control.finish(); handlers.onError(ANTIGRAVITY_ROUTE_SETUP_MESSAGE); return; }
+      cancelChild = runAntigravityWithRunner(request, {
+        ...handlers,
+        onRunControl: (child) => { control.track(child.stopped); },
+        onResponse: (text) => { control.finish(); handlers.onResponse(text); },
+        onError: (message, detail) => { control.finish(); handlers.onError(message, detail); },
+      }, runCommand, executable);
+    }).catch((error) => { control.finish(); if (!cancelled) handlers.onError(error instanceof Error ? error.message : String(error)); });
+    control.track(lookup);
+    return () => { cancelled = true; cancelChild?.(); control.finish(); };
   },
 };

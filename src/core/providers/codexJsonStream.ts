@@ -60,6 +60,7 @@ type CodexThreadItem =
   };
 
 export interface CodexJsonStreamHandlers {
+  onThreadStarted?: (id: string) => void;
   onAssistantDelta?: (chunk: string) => void;
   onFinalAnswerObserved?: (response: string) => void;
   onProgress?: (update: BackendProgressUpdate) => void;
@@ -272,6 +273,9 @@ export function createCodexJsonStreamParser(handlers: CodexJsonStreamHandlers) {
       sawEvent = true;
 
       switch (event.type) {
+        case "thread.started":
+          if (typeof event.thread_id === "string") handlers.onThreadStarted?.(event.thread_id);
+          break;
         case "item.started":
         case "item.updated":
         case "item.completed":

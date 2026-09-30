@@ -84,7 +84,16 @@ export function resolveUbumeWorkspaceDataDir(workspaceRoot: string, options: { r
 }
 
 export function resolveUbumeConversationDir(workspaceRoot: string): string {
-  return join(resolveUbumeWorkspaceDataDir(workspaceRoot), "conversations");
+  return join(resolveUbumeChatWorkspaceDir(workspaceRoot), "conversations");
+}
+
+/** Chat artifacts are user data, never files in the project being edited. */
+export function resolveUbumeChatWorkspaceDir(workspaceRoot: string): string {
+  return join(resolveUbumeDataDir(), "chats", workspaceStorageKey(workspaceRoot));
+}
+
+export function resolveLegacyConversationDir(workspaceRoot: string): string {
+  return join(resolveUbumeWorkspaceDataDir(workspaceRoot, { readOnly: true }), "conversations");
 }
 
 export function resolveUbumeAttachmentDir(workspaceRoot: string, configuredDir: string): string {

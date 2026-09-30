@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createRunControl } from "../providers/runControl.js";
 import { existsSync, readFileSync } from "fs";
 import { readdir, readFile } from "fs/promises";
@@ -11,6 +12,7 @@ import { launchProviderCli, type LaunchProviderCliOptions, type ProviderLaunchRe
 import type { ProviderConfig } from "../providerLauncher/types.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import type { ProviderChatRequest, ProviderModel, ProviderModelDiscoveryResult, ProviderRouteValidationResult, ProviderRuntime } from "./types.js";
+import { vibeSessionDir } from "../externalSessions/vibeSessions.js";
 import { formatConversationHistory } from "../../session/conversation.js";
 
 const VIBE_LOOKUP_TIMEOUT_MS = 5_000;
@@ -221,6 +223,8 @@ export async function resolveVibeExecutable(options: {
   const cwd = options.cwd ?? process.cwd();
   const platform = options.platform ?? process.platform;
   let candidate: string | null;
+  const configured = process.env.VIBE_EXECUTABLE?.trim();
+  if (configured) return normalizeExecutableValue(configured, { label: "Mistral Vibe executable", cwd, allowBareExecutable: true });
 
   if (platform === "win32") {
     const runner = (options.runCommandImpl ?? runCommand as DirectCommandRunner)({
@@ -273,20 +277,6 @@ export async function launchMistralVibeCli(
 // Vibe persists every programmatic run as a session directory; passing the last
 // session id back via --resume keeps conversation context across Ubume turns.
 
-const activeVibeSessions = new Map<string, string>();
-
-export function getMistralVibeSessionId(workspaceRoot: string): string | null {
-  return activeVibeSessions.get(resolve(workspaceRoot)) ?? null;
-}
-
-export function resetMistralVibeSession(workspaceRoot?: string): void {
-  if (workspaceRoot === undefined) {
-    activeVibeSessions.clear();
-    return;
-  }
-  activeVibeSessions.delete(resolve(workspaceRoot));
-}
-
 export async function findLatestVibeSession(options: {
   workspaceRoot: string;
   sinceMs: number;
@@ -296,15 +286,13 @@ export async function findLatestVibeSession(options: {
   try {
     const env = options.env ?? process.env;
     const homeDirectory = options.homeDirectory ?? homedir();
-    const vibeHome = env.VIBE_HOME?.trim() || join(homeDirectory, ".vibe");
-    const sessionRoot = join(vibeHome, "logs", "session");
+    const sessionRoot = await vibeSessionDir({ env, home: homeDirectory });
     const workspaceRoot = resolve(options.workspaceRoot);
     const entries = await readdir(sessionRoot);
 
     let latestStart = -Infinity;
     let latestSessionId: string | null = null;
     for (const entry of entries) {
-      if (!entry.startsWith("session_")) continue;
       try {
         const meta = JSON.parse(await readFile(join(sessionRoot, entry, "meta.json"), "utf-8")) as {
           session_id?: unknown;
@@ -550,7 +538,7 @@ export function runMistralVibe(
     currentCancel = runner.cancel;
     control.track(runner.stopped ?? runner.result.then(() => undefined));
 
-    runner.result.then((result) => {
+    runner.result.then(async (result) => {
       if (cancelled || result.status === "canceled") { control.finish(); return; }
       parser.flush();
 
@@ -565,8 +553,7 @@ export function runMistralVibe(
           handlers.onError(MISTRAL_VIBE_MISSING_MESSAGE);
           return;
         }
-        if (resumeSessionId && /session|not found|resume/i.test(result.stderr)) {
-          resetMistralVibeSession(workspaceRoot);
+        if (resumeSessionId && /(?:session[^\n]*(?:not found|does not exist|unsupported)|(?:not found|does not exist)[^\n]*session)/i.test(result.stderr)) {
           handlers.onProgress?.({
             id: "vibe-resume-retry",
             source: "stderr",
@@ -587,15 +574,15 @@ export function runMistralVibe(
       if (!parser.assistantText() && finalText) {
         handlers.onAssistantDelta?.(finalText);
       }
+      const sessionId = resumeSessionId ?? await findSessionImpl({ workspaceRoot, sinceMs: spawnedAt, env }).catch(() => null);
+      if (cancelled) { control.finish(); return; }
+      if (sessionId) handlers.onNativeSession?.({ source: "vibe", sessionId, modelId: request.route.modelId,
+        throughMessageCount: (request.conversationHistory?.length ?? 0) + 2,
+        transcriptHash: createHash("sha256").update(JSON.stringify([...(request.conversationHistory ?? []), { role: "user", content: request.prompt }, { role: "assistant", content: finalText }].map(({ role, content }) => ({ role, content })))).digest("hex"),
+      });
       control.finish();
       handlers.onFinalAnswerObserved?.(finalText);
       handlers.onResponse(finalText);
-
-      void findSessionImpl({ workspaceRoot, sinceMs: spawnedAt, env })
-        .then((sessionId) => {
-          if (sessionId) activeVibeSessions.set(resolve(workspaceRoot), sessionId);
-        })
-        .catch(() => undefined);
     }).catch((error) => {
       control.finish();
       if (cancelled) return;
@@ -611,7 +598,11 @@ export function runMistralVibe(
       handlers.onError(MISTRAL_VIBE_MISSING_MESSAGE);
       return;
     }
-    runAttempt(executable, getMistralVibeSessionId(workspaceRoot));
+    const reference = [...(request.nativeSessions ?? [])].reverse().find((session) => session.source === "vibe");
+    const historyHash = createHash("sha256").update(JSON.stringify((request.conversationHistory ?? []).map(({ role, content }) => ({ role, content })))).digest("hex");
+    const compatible = reference?.modelId === request.route.modelId && reference.throughMessageCount === (request.conversationHistory?.length ?? 0) && reference.transcriptHash === historyHash;
+    if (reference && !compatible) handlers.onProgress?.({ id: "vibe-recovery", source: "transcript", text: "Saved Vibe state does not match this chat and model; recovering its transcript into a fresh session." });
+    runAttempt(executable, compatible ? reference.sessionId : null);
   })().catch((error) => { control.finish(); if (!cancelled) handlers.onError(error instanceof Error ? error.message : "Mistral Vibe launch failed."); });
 
   return () => {

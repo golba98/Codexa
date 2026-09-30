@@ -187,3 +187,15 @@ test("--no-clear can be combined with other flags", () => {
   assert.equal(parsed.value.profile, "fast");
   assert.equal(parsed.value.initialPrompt, "do something");
 });
+
+
+test("startup resume and import targets are exclusive and never replay as a prompt or relaunch argument", () => {
+  for (const args of [["--resume", "chat_abc"], ["--import-session=vibe:native_1"]]) {
+    const parsed = parseLaunchArgs(args); assert(parsed.ok);
+    assert.equal(parsed.value.initialPrompt, null); assert.deepEqual(parsed.value.passthroughArgs, []);
+  }
+  assert.equal(parseLaunchArgs(["--resume", "chat_abc", "--import-session", "codex:native"]).ok, false);
+  assert.equal(parseLaunchArgs(["--resume=../escape"]).ok, false);
+  assert.equal(parseLaunchArgs(["--import-session=gemini:native"]).ok, false);
+  assert.equal(parseLaunchArgs(["--resume", "chat_abc", "execute this"]).ok, false);
+});

@@ -76,3 +76,5 @@ Diffs describe supported text files captured during saved runs; missing/corrupt
 checkpoint blobs produce a clear error. File restoration remains a previewed TUI
 operation. Legacy conversations containing only dialogue can be resumed, but do
 not have a historical tool transcript or file diff.
+
+Interactive startup also accepts `ubume --resume chat_ID` and `ubume --import-session source:SESSION_ID` (sources: `claude`, `codex`, `vibe`, `antigravity`). These restore history without sending a prompt and cannot be combined with an initial prompt. `sessions show` reports the actual snapshot location; `status` exposes `chatStorage` alongside the existing workspace `storage` path. Chats are stored under the user data root's `chats/<workspace-key>/conversations/`; legacy histories remain readable and migrate non-destructively when saved.

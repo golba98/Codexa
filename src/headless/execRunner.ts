@@ -257,7 +257,7 @@ export async function runHeadlessExec(
       const cancel = provider.run!(
         options.prompt,
         { runtime, workspaceRoot, projectInstructions, promptPolicy,
-          conversationHistory: options.saved ? toProviderConversationHistory(options.saved.messages, { includeActivitySummaries: context?.route.providerId !== "local" }) : undefined,
+          conversationHistory: options.saved ? toProviderConversationHistory(options.saved.messages, { includeActivitySummaries: context?.route.providerId !== "local" && context?.route.providerId !== "mistral" }) : undefined,
           localContextCheckpoint: options.saved?.metadata.localContextCheckpoint,
         },
         {
@@ -269,6 +269,7 @@ export async function runHeadlessExec(
           },
           onLocalContextCheckpoint: options.handlers?.onLocalContextCheckpoint,
           onLocalHarnessSession: options.handlers?.onLocalHarnessSession,
+          onNativeSession: options.handlers?.onNativeSession,
           onAssistantDelta: (chunk) => {
             const safeChunk = sanitizeTerminalOutput(chunk, { preserveTabs: false, tabSize: 2 });
             if (shouldSuppressAssistantChunk(safeChunk)) return;

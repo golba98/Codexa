@@ -56,7 +56,7 @@ function listFromThreadIndex(path: string, scope: ExternalSessionScope): Externa
     const rows = database.query(
       `SELECT ${[...REQUIRED_THREAD_COLUMNS, ...optional].join(", ")} FROM threads`
       // `exec` threads are Ubume's own Codex route runs; they already exist as Ubume conversations.
-      + ` WHERE archived = 0 AND source != 'exec' AND ${hasFirstMessage ? "first_user_message" : "title"} != ''`,
+      + ` WHERE archived = 0 AND ${hasFirstMessage ? "first_user_message" : "title"} != ''`,
     ).all() as JsonRecord[];
     return rows.flatMap((row): ExternalSessionSummary[] => {
       const id = stringField(row, "id");
@@ -140,7 +140,7 @@ async function summarizeRollout(path: string, names: Map<string, string>): Promi
   const meta = records.find((record) => record.type === "session_meta");
   const payload = meta ? payloadOf(meta) : null;
   const id = payload ? stringField(payload, "id") : null;
-  if (!payload || !id || payload.source === "exec") return null;
+  if (!payload || !id) return null;
   let prompt: string | null = null;
   for (const record of records) {
     const item = payloadOf(record);

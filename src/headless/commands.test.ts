@@ -14,11 +14,12 @@ const provider = fileURLToPath(new URL("../test/fixtures/headlessProvider.mjs", 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "ubume-cli-test-")); const workspace = join(root, "workspace"); mkdirSync(workspace);
   const key = createHash("sha256").update(workspace).digest("hex").slice(0, 16);
+  const chatRoot = join(root, "data/chats", key);
   const dataRoot = join(root, "data/workspaces", key); mkdirSync(dataRoot, { recursive: true });
   writeFileSync(join(workspace, "demo.ts"), "export const result = 0;\n");
   const env: NodeJS.ProcessEnv = { ...process.env, UBUME_DATA_DIR: join(root, "data"), CODEXA_DATA_DIR: join(root, "legacy"), CODEX_HOME: join(root, "codex"), UBUME_DEV_MODE: "0", CODEX_EXECUTABLE: provider, UBUME_TEST_PROMPT_LOG: join(root, "prompts.jsonl"), UBUME_TEST_PID_FILE: join(root, "pid"), UBUME_EXEC_TIMING: "0" };
   const run = (args: string[], input?: string) => spawnSync("node", [launcher, ...args], { cwd: workspace, env, encoding: "utf8", input, timeout: 20000 });
-  return { root, workspace, dataRoot, env, run, close: () => rmSync(root, { recursive: true, force: true }) };
+  return { root, workspace, dataRoot, chatRoot, env, run, close: () => rmSync(root, { recursive: true, force: true }) };
 }
 function tree(path: string): Record<string, string> {
   const files: Record<string, string> = {};
@@ -58,7 +59,7 @@ test("exec saves, resumes across processes, exposes transcript/diff and preserve
     assert.equal(first.status, 0, first.stderr);
     const result = JSON.parse(first.stdout); assert.equal(result.data.text, "fixture final answer");
     const id = result.data.sessionId as string;
-    const snapshotPath = join(f.dataRoot, "conversations", id, "snapshot.json");
+    const snapshotPath = join(f.chatRoot, "conversations", id, "snapshot.json");
     const saved = JSON.parse(readFileSync(snapshotPath, "utf8"));
     saved.session.draft = "unsent draft"; saved.session.cursor = 3;
     saved.session.queue = [{ id: "queued", display: "queued draft", submitted: "queued draft", images: [], createdAt: 1 }];
@@ -75,7 +76,7 @@ test("exec saves, resumes across processes, exposes transcript/diff and preserve
     const prompts = readFileSync(join(f.root, "prompts.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
     assert.equal(prompts.length, 2); assert.match(prompts[1], /Previous conversation:/); assert.match(prompts[1], /fixture final answer/);
     const transient = f.run(["exec", "--stdin", "--no-save", "--json"], "stdin instruction"); assert.equal(transient.status, 0, transient.stderr); assert.equal(JSON.parse(transient.stdout).data.sessionId, null);
-    assert.equal(readdirSync(join(f.dataRoot, "conversations")).length, 1);
+    assert.equal(readdirSync(join(f.chatRoot, "conversations")).length, 1);
     const legacy = spawnSync("node", [resolve(launcher, "../codexa.js"), "status", "--json"], { cwd: f.workspace, env: f.env, encoding: "utf8", timeout: 20000 }); assert.equal(legacy.status, 0); assert.equal(JSON.parse(legacy.stdout).ok, true);
   } finally { f.close(); }
 });
@@ -103,7 +104,7 @@ test("interrupt through installed launcher stops provider and saves partial answ
     const pid = Number(readFileSync(join(f.root, "pid"), "utf8"));
     child.kill("SIGINT"); assert.equal(await completed, 130, stderr);
     const result = JSON.parse(stdout); assert.equal(result.error.code, "INTERRUPTED"); assert.equal(result.data.text, "partial reply");
-    const saved = JSON.parse(readFileSync(join(f.dataRoot, "conversations", result.data.sessionId, "snapshot.json"), "utf8"));
+    const saved = JSON.parse(readFileSync(join(f.chatRoot, "conversations", result.data.sessionId, "snapshot.json"), "utf8"));
     assert.equal(saved.session.events.find((event: { type: string }) => event.type === "run").status, "canceled");
     assert.match(saved.messages.at(-1).content, /partial reply/);
     assert.throws(() => process.kill(pid, 0));
@@ -116,7 +117,7 @@ test("busy session/workspace refuse writes; dead local ownership can be reclaime
   try {
     const first = f.run(["exec", "hello", "--json"]); assert.equal(first.status, 0, first.stderr);
     const id = JSON.parse(first.stdout).data.sessionId;
-    const snapshot = join(f.dataRoot, "conversations", id, "snapshot.json");
+    const snapshot = join(f.chatRoot, "conversations", id, "snapshot.json");
     const before = readFileSync(snapshot, "utf8");
     const locks = join(f.dataRoot, "locks");
     const owner = { pid: process.pid, host: hostname(), token: "owner", createdAt: new Date().toISOString() };

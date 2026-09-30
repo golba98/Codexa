@@ -30,6 +30,7 @@ export function providerExecutable(id: ProviderId, config: ProviderWorkspaceConf
   const override = config.providers?.[id];
   if (id === "openai") return override?.codexCommandPath ?? process.env.CODEX_EXECUTABLE ?? "codex";
   if (id === "anthropic") return override?.claudeCommandPath ?? process.env.CLAUDE_EXECUTABLE ?? "claude";
+  if (id === "antigravity") return override?.antigravityCommandPath ?? process.env.AGY_EXECUTABLE ?? "agy";
   if (id === "mistral") return typeof override?.command === "string" ? override.command : override?.command?.executable ?? process.env.VIBE_EXECUTABLE ?? "vibe";
   return null;
 }

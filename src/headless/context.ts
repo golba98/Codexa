@@ -21,8 +21,11 @@ export function resolveExecutionContext(workspaceRoot: string, launchArgs: Launc
   const selectedId = options.providerId ?? options.saved?.metadata.providerId ?? config.activeRoute?.providerId ?? config.workspaceDefaultProviderId ?? "openai";
   if (!isKnownProviderId(selectedId)) throw new CommandError(`Unknown saved or selected provider: ${selectedId}. Select a supported provider explicitly.`);
   const provider = getProviderRuntime(selectedId);
-  if (!options.inspect && (selectedId === "google" || selectedId === "antigravity" || !isProviderRoutableInUbume(selectedId) || !provider.run || config.providers?.[selectedId]?.enabled === false)) {
+  if (!options.inspect && (selectedId === "google" || !isProviderRoutableInUbume(selectedId) || !provider.run || config.providers?.[selectedId]?.enabled === false)) {
     throw new CommandError(`${provider.label} is unavailable for execution. ${provider.routeSetupMessage ?? provider.routeStatus}`);
+  }
+  if (!options.inspect && options.saved?.metadata.providerId === "local" && !options.saved.metadata.localBackend && !options.providerId) {
+    throw new CommandError("This older Local chat has no recorded backend. Select a Local backend explicitly before continuing.");
   }
   const savedRoute = options.saved && !options.providerId
     ? buildResumedProviderRoute(options.saved.metadata, selectedId, provider.backendKind) : undefined;
@@ -33,7 +36,7 @@ export function resolveExecutionContext(workspaceRoot: string, launchArgs: Launc
   const route: ProviderRoute = {
     providerId: selectedId,
     modelId: modelExplicit ? base.model : savedRoute?.modelId ?? workspaceRoute?.modelId ?? override?.currentModel ?? getDefaultRouteModel(selectedId, base.model),
-    backendKind: provider.backendKind,
+    backendKind: savedRoute?.backendKind ?? provider.backendKind,
     reasoning: reasoningExplicit ? base.reasoningLevel : savedRoute?.reasoning ?? workspaceRoute?.reasoning ?? override?.currentReasoning ?? base.reasoningLevel,
     ...(selectedId === "local" ? { localBackend: savedRoute?.localBackend ?? workspaceRoute?.localBackend ?? override?.localBackend ?? "lm-studio" } : {}),
   };
@@ -42,5 +45,5 @@ export function resolveExecutionContext(workspaceRoot: string, launchArgs: Launc
     const command = selectedId === "openai" ? runtime.codexCommandPath ?? providerExecutable(selectedId, config) : providerExecutable(selectedId, config);
     if (command && !findExecutable(command, workspaceRoot) && !(selectedId === "anthropic" && process.env.ANTHROPIC_API_KEY?.trim())) throw new CommandError(`${provider.label} executable is unavailable: ${command}. Install it or configure its explicit path.`);
   }
-  return { layered, config, route, runtime, provider: createRoutedProvider(route, getBackendProvider(runtime.provider), config, () => options.saved?.metadata.localHarnessSession) };
+  return { layered, config, route, runtime, provider: createRoutedProvider(route, getBackendProvider(runtime.provider), config, () => options.saved?.metadata.localHarnessSession, () => options.saved?.metadata.nativeSessions) };
 }

@@ -39,7 +39,7 @@ function writeStateDb(home: string, rows: Array<Record<string, unknown>>): void 
   database.close();
 }
 
-test("listCodexSessions reads the thread index, hiding Ubume exec runs, archived and empty threads", async () => {
+test("listCodexSessions reads the thread index, including exec runs while hiding archived and empty threads", async () => {
   const home = codexHome();
   writeStateDb(home, [
     { id: "t-named", cwd: workspace, title: "Fix the build", name: "Build fix", first_user_message: "Fix the build", model: "gpt-6.1", updated_at_ms: Date.parse("2026-09-30T12:00:00.000Z") },
@@ -52,13 +52,14 @@ test("listCodexSessions reads the thread index, hiding Ubume exec runs, archived
 
   const here = await listCodexSessions({ kind: "workspace", root: workspace }, { env: { CODEX_HOME: home } });
   assert.deepEqual(here.map((session) => [session.id, session.title, session.updatedAt]), [
+    ["t-exec", "Ubume run", "2026-09-30T13:00:00.000Z"],
     ["t-named", "Build fix", "2026-09-30T12:00:00.000Z"],
     ["t-plain", "Explain the parser", "2026-09-30T11:00:00.000Z"],
   ]);
-  assert.equal(here[0]?.model, "gpt-6.1");
+  assert.equal(here[1]?.model, "gpt-6.1");
 
   const all = await listCodexSessions({ kind: "all" }, { env: { CODEX_HOME: home } });
-  assert.deepEqual(all.map((session) => session.id), ["t-other", "t-named", "t-plain"]);
+  assert.deepEqual(all.map((session) => session.id), ["t-other", "t-exec", "t-named", "t-plain"]);
 });
 
 test("listCodexSessions falls back to rollout files when the thread index is unusable", async () => {
@@ -75,7 +76,7 @@ test("listCodexSessions falls back to rollout files when the thread index is unu
   writeFileSync(join(home, "session_index.jsonl"), `${JSON.stringify({ id: "bbb", thread_name: "Rename pass", updated_at: "2026-09-30T11:00:00Z" })}\n`);
 
   const sessions = await listCodexSessions({ kind: "workspace", root: workspace }, { env: { CODEX_HOME: home } });
-  assert.deepEqual(sessions.map((session) => [session.id, session.title]), [["bbb", "Rename pass"], ["aaa", "Add a settings page"]]);
+  assert.deepEqual(sessions.map((session) => [session.id, session.title]), [["bbb", "Rename pass"], ["exec", "Ubume run"], ["aaa", "Add a settings page"]]);
 });
 
 test("listCodexSessions returns nothing without a Codex store", async () => {
