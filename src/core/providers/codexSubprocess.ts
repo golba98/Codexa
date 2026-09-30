@@ -159,6 +159,7 @@ export const codexSubprocessProvider: BackendProvider = {
             origin: "codex-cli",
           });
           const jsonParser = createCodexJsonStreamParser({
+            onThreadStarted: (sessionId) => handlers.onNativeSession?.({ source: "codex", sessionId }),
             onProgress: (update) => handlers.onProgress?.(update),
             onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
             onFinalAnswerObserved: emitFinalAnswerObserved,

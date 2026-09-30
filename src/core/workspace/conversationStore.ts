@@ -6,15 +6,20 @@ import {
   renameSync,
   writeFileSync,
   unlinkSync,
+  statSync,
+  openSync,
+  closeSync,
+  fsyncSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { acquireOwnership, type OwnershipLease } from "./ownership.js";
 import { parseWorkbench, type WorkbenchSnapshot } from "../../session/workbench.js";
 import type { ProviderBackendKind } from "../providerRuntime/types.js";
 import type { ProviderId } from "../providerLauncher/types.js";
 import type { LocalBackendId } from "../providerLauncher/types.js";
-import { resolveUbumeConversationDir } from "./appData.js";
+import { resolveUbumeConversationDir, resolveLegacyConversationDir, resolveLegacyCodexaDataDir, workspaceStorageKey } from "./appData.js";
+import type { ExternalSessionSource } from "../externalSessions/types.js";
 
 export type ConversationMessageRole = "user" | "assistant";
 
@@ -50,6 +55,14 @@ export interface LocalHarnessSessionMetadata {
   updatedAt: string;
 }
 
+export interface NativeSessionReference {
+  source: ExternalSessionSource;
+  sessionId: string;
+  modelId?: string;
+  throughMessageCount?: number;
+  transcriptHash?: string;
+}
+
 /** Native CLI session a conversation was imported from via /resume. */
 export interface ConversationImportSource {
   source: string;
@@ -73,6 +86,8 @@ export interface ConversationMetadata {
   parentConversationId?: string;
   parentCheckpointId?: string;
   importedFrom?: ConversationImportSource;
+  workspaceRoot?: string;
+  nativeSessions?: NativeSessionReference[];
 }
 
 export interface ConversationRecord {
@@ -81,10 +96,15 @@ export interface ConversationRecord {
   session?: WorkbenchSnapshot;
 }
 
-export interface ConversationListEntry extends ConversationMetadata {}
+export interface ConversationListEntry extends ConversationMetadata {
+  /** Storage key remains available when legacy history has no recorded folder. */
+  storageWorkspaceKey?: string;
+}
 
 interface ConversationStoreOptions {
   rootDir?: string;
+  legacyRootDir?: string;
+  legacyRootDirs?: readonly string[];
   ownership?: boolean;
   now?: () => Date;
   idFactory?: () => string;
@@ -212,6 +232,8 @@ function parseMetadata(value: unknown, fallbackId: string): ConversationMetadata
     ...(localContextCheckpoint ? { localContextCheckpoint } : {}),
     ...(localHarnessSession ? { localHarnessSession } : {}),
     messageCount,
+    ...(safeString(value.workspaceRoot) ? { workspaceRoot: value.workspaceRoot as string } : {}),
+    ...(Array.isArray(value.nativeSessions) ? { nativeSessions: value.nativeSessions.filter(isNativeSessionReference) } : {}),
     ...(typeof value.parentConversationId === "string" && isSafeConversationId(value.parentConversationId) ? { parentConversationId: value.parentConversationId } : {}),
     ...(typeof value.parentCheckpointId === "string" ? { parentCheckpointId: value.parentCheckpointId } : {}),
     ...(importedFrom ? { importedFrom } : {}),
@@ -225,14 +247,32 @@ function titleFromMessages(messages: ConversationMessage[]): string {
   return title.length > 72 ? `${title.slice(0, 69).trimEnd()}...` : title;
 }
 
+export function isNativeSessionReference(value: unknown): value is NativeSessionReference {
+  return isRecord(value) && ["claude", "codex", "antigravity", "vibe"].includes(String(value.source))
+    && !!safeString(value.sessionId)
+    && (value.throughMessageCount === undefined || isNonNegativeInteger(value.throughMessageCount))
+    && (value.transcriptHash === undefined || !!safeString(value.transcriptHash));
+}
+
 function atomicWriteJson(filePath: string, value: unknown): void {
   const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
   try {
-    writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    const file = openSync(temporaryPath, "wx", 0o600);
+    try { writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8"); fsyncSync(file); }
+    finally { closeSync(file); }
     renameSync(temporaryPath, filePath);
+    if (process.platform !== "win32") {
+      const directory = openSync(dirname(filePath), "r");
+      try { fsyncSync(directory); } finally { closeSync(directory); }
+    }
   } finally {
     if (existsSync(temporaryPath)) unlinkSync(temporaryPath);
   }
+}
+
+function snapshotRevision(path: string): string {
+  const stat = statSync(path, { bigint: true });
+  return `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
 }
 
 function isSafeConversationId(id: string): boolean {
@@ -241,6 +281,8 @@ function isSafeConversationId(id: string): boolean {
 
 export class ConversationStore {
   private readonly rootDir: string;
+  private readonly legacyRootDirs: readonly string[];
+  private readonly managedRoot: boolean;
   private lease?: { id: string; value: OwnershipLease };
   private readonly ownership: boolean;
   private readonly workspace: string;
@@ -252,6 +294,8 @@ export class ConversationStore {
     this.workspace = workspaceRoot;
     this.ownership = options.ownership ?? false;
     this.rootDir = options.rootDir ?? resolveUbumeConversationDir(workspaceRoot);
+    this.managedRoot = options.rootDir === undefined;
+    this.legacyRootDirs = options.legacyRootDirs ?? (options.legacyRootDir ? [options.legacyRootDir] : this.managedRoot ? [resolveLegacyConversationDir(workspaceRoot), join(resolveLegacyCodexaDataDir(), "workspaces", workspaceStorageKey(workspaceRoot), "conversations")] : []);
     this.now = options.now ?? (() => new Date());
     this.idFactory = options.idFactory ?? (() => randomUUID());
     this.onDiagnostic = options.onDiagnostic ?? (() => undefined);
@@ -272,7 +316,8 @@ export class ConversationStore {
   }
 
   private ensureRoot(): void {
-    mkdirSync(this.rootDir, { recursive: true });
+    mkdirSync(this.rootDir, { recursive: true, mode: 0o700 });
+    if (this.managedRoot && !existsSync(join(dirname(this.rootDir), "workspace.json"))) atomicWriteJson(join(dirname(this.rootDir), "workspace.json"), { version: 1, workspaceRoot: this.workspace });
   }
 
   createConversation(route: {
@@ -295,16 +340,18 @@ export class ConversationStore {
       modelId: route.modelId,
       backendKind: route.backendKind,
       ...(route.reasoning ? { reasoning: route.reasoning } : {}),
-      ...(route.localBackend ? { localBackend: route.localBackend } : {}),
+      ...(route.providerId === "local" ? { localBackend: route.localBackend ?? "lm-studio" } : {}),
       messageCount: 0,
+      workspaceRoot: this.workspace,
     };
     return { metadata, messages: [] };
   }
 
   save(record: ConversationRecord): void {
     this.acquire(record.metadata.id);
+    this.ensureRoot();
     const dir = this.conversationDir(record.metadata.id);
-    mkdirSync(dir, { recursive: true });
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
     const messages = record.messages.map((message) => ({
       role: message.role,
       content: message.content,
@@ -318,20 +365,26 @@ export class ConversationStore {
       title: record.metadata.title === "Untitled conversation" ? titleFromMessages(record.messages) : record.metadata.title,
       updatedAt: this.now().toISOString(),
       messageCount: messages.length,
+      workspaceRoot: this.workspace,
     };
     // One authoritative generation; legacy files are read-only migration inputs.
-    atomicWriteJson(join(dir, "snapshot.json"), { version: 2, metadata, messages, session: record.session });
+    const snapshotPath = join(dir, "snapshot.json");
+    atomicWriteJson(snapshotPath, { version: 2, metadata, messages, session: record.session });
+    // A cache failure must not turn a successful canonical save into a failure.
+    try { atomicWriteJson(join(dir, "summary.json"), { version: 1, revision: snapshotRevision(snapshotPath), metadata }); }
+    catch (error) { this.onDiagnostic(`Summary cache unavailable: ${error instanceof Error ? error.message : "filesystem error"}`); }
   }
 
   load(id: string): ConversationRecord | null {
     try {
-      const dir = this.conversationDir(id);
+      const dir = this.readDirectory(id);
       const snapshotPath = join(dir, "snapshot.json");
       const snapshot = existsSync(snapshotPath) ? JSON.parse(readFileSync(snapshotPath, "utf8")) : null;
       if (snapshot && snapshot.version !== 2) throw new Error("Unsupported conversation snapshot version");
       const messages = parseMessages(snapshot ? snapshot.messages : JSON.parse(readFileSync(join(dir, "messages.json"), "utf8")));
       if (!messages) throw new Error("messages.json is not a valid conversation message array");
       let metadata: ConversationMetadata | null = snapshot ? parseMetadata(snapshot.metadata, id) : null;
+      if (snapshot && !metadata) throw new Error("Invalid authoritative conversation metadata");
       const metadataPath = join(dir, "metadata.json");
       if (!snapshot && existsSync(metadataPath)) {
         metadata = parseMetadata(JSON.parse(readFileSync(metadataPath, "utf8")), id);
@@ -348,7 +401,8 @@ export class ConversationStore {
         backendKind: null,
         messageCount: messages.length,
       };
-      metadata = { ...metadata, messageCount: messages.length };
+      if (metadata.id !== id) throw new Error("Conversation identity does not match its directory");
+      metadata = { ...metadata, messageCount: messages.length, ...(this.managedRoot ? { workspaceRoot: this.workspace } : {}) };
       const session = snapshot ? parseWorkbench(snapshot.session) : undefined;
       if (snapshot?.session && !session) this.onDiagnostic(`Conversation ${id}: auxiliary session data is invalid; restored dialogue only.`);
       return { metadata, messages, ...(session ? { session } : {}) };
@@ -358,43 +412,45 @@ export class ConversationStore {
     }
   }
 
+  private readDirectory(id: string): string {
+    const current = this.conversationDir(id);
+    return [current, ...this.legacyRootDirs.map((root) => join(root, id))].find((dir) => existsSync(join(dir, "snapshot.json")) || existsSync(join(dir, "messages.json"))) ?? current;
+  }
+
+  /** Absolute location of the authoritative generation, including legacy reads. */
+  location(id: string): string {
+    const dir = this.readDirectory(id);
+    return join(dir, existsSync(join(dir, "snapshot.json")) ? "snapshot.json" : "messages.json");
+  }
+
   list(): ConversationListEntry[] {
-    if (!existsSync(this.rootDir)) return [];
-    const entries: ConversationListEntry[] = [];
-    let directoryEntries;
-    try {
-      directoryEntries = readdirSync(this.rootDir, { withFileTypes: true });
-    } catch (error) {
-      this.onDiagnostic(`Unable to list conversations: ${error instanceof Error ? error.message : "filesystem error"}`);
-      return [];
-    }
-    for (const entry of directoryEntries) {
-      if (!entry.isDirectory() || !isSafeConversationId(entry.name)) continue;
-      const dir = join(this.rootDir, entry.name);
+    const ids = new Set<string>();
+    for (const root of [this.rootDir, ...this.legacyRootDirs]) {
+      if (!root || !existsSync(root)) continue;
       try {
-        if (existsSync(join(dir, "snapshot.json"))) {
-          const record = this.load(entry.name);
-          if (record) entries.push(record.metadata);
-          continue;
+        for (const entry of readdirSync(root, { withFileTypes: true })) {
+          if (entry.isDirectory() && isSafeConversationId(entry.name)) ids.add(entry.name);
         }
-        const metadataPath = join(dir, "metadata.json");
-        if (existsSync(metadataPath)) {
-          const metadata = parseMetadata(JSON.parse(readFileSync(metadataPath, "utf8")), entry.name);
-          if (metadata) {
-            entries.push(metadata);
-            continue;
-          }
-        }
-        const record = this.load(entry.name);
-        if (record) entries.push(record.metadata);
-      } catch (error) {
-        this.onDiagnostic(`Skipped conversation ${entry.name}: ${error instanceof Error ? error.message : "invalid metadata"}`);
-      }
+      } catch (error) { this.onDiagnostic(`Unable to list conversations: ${error instanceof Error ? error.message : "filesystem error"}`); }
     }
-    // A conversation that never received a message is not resumable history.
-    return entries.filter((entry) => entry.messageCount > 0).sort((left, right) => {
-      const updated = right.updatedAt.localeCompare(left.updatedAt);
-      return updated !== 0 ? updated : right.id.localeCompare(left.id);
-    });
+    const entries: ConversationListEntry[] = [];
+    for (const id of ids) {
+      const dir = this.readDirectory(id);
+      let metadata: ConversationMetadata | null = null;
+      try {
+        const snapshotPath = join(dir, "snapshot.json");
+        if (existsSync(snapshotPath)) {
+          try {
+            const cached = JSON.parse(readFileSync(join(dir, "summary.json"), "utf8"));
+            if (cached.version === 1 && cached.revision === snapshotRevision(snapshotPath)) metadata = parseMetadata(cached.metadata, id);
+          } catch { /* Missing or stale cache: use the authoritative snapshot. */ }
+        }
+        metadata ??= this.load(id)?.metadata ?? null;
+        if (metadata?.id === id && metadata.messageCount > 0) entries.push({
+          ...metadata, ...(this.managedRoot ? { workspaceRoot: this.workspace } : {}),
+        });
+      } catch (error) { this.onDiagnostic(`Skipped conversation ${id}: ${error instanceof Error ? error.message : "invalid metadata"}`); }
+    }
+    return entries.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id));
   }
 }

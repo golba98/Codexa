@@ -5,7 +5,7 @@ import { getProviderRuntime, discoverProviderModels } from "../core/providerRunt
 import { isKnownProviderId } from "../core/providerLauncher/registry.js";
 import { discoverLocalModels } from "../core/providerRuntime/local.js";
 import { resolveWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
-import { resolveUbumeWorkspaceDataDir } from "../core/workspace/appData.js";
+import { resolveUbumeWorkspaceDataDir, resolveUbumeConversationDir } from "../core/workspace/appData.js";
 import { ConversationStore } from "../core/workspace/conversationStore.js";
 import { inspectOwnership } from "../core/workspace/ownership.js";
 import { CheckpointStore, pendingFileRecoveries } from "../core/workspace/checkpoints.js";
@@ -134,16 +134,16 @@ export async function runTerminalCommand(argv: readonly string[], io: HeadlessEx
     if (flags.has("--help") || flags.has("-h")) return emit({ help: terminalHelp }, 0, null, terminalHelp.trimEnd());
     const workspace = commandWorkspace(values.get("--cwd"));
     const dataRoot = resolveUbumeWorkspaceDataDir(workspace, { readOnly: true });
-    const store = new ConversationStore(workspace, { rootDir: join(dataRoot, "conversations"), onDiagnostic: (message) => io.stderr.write(`${message}\n`) });
+    const store = new ConversationStore(workspace, { onDiagnostic: (message) => io.stderr.write(`${message}\n`) });
     if (command === "sessions") {
       const [action, id, ...rest] = positional;
       if (rest.length || !["list", "show", "transcript", "diff"].includes(action ?? "") || (action === "list" ? !!id : !id)) throw new CommandError("Use sessions list, show ID, transcript ID, or diff ID.", 2, "USAGE");
       if (action !== "diff" && (values.has("--turn") || values.has("--file"))) throw new CommandError("--turn and --file apply only to sessions diff.", 2, "USAGE");
-      if (action === "list") { const sessions = store.list(); return emit(sessions, 0, null, sessions.length ? sessions.map((s) => `${s.id}  ${s.updatedAt}  ${s.providerId}/${s.modelId}  ${s.title}`).join("\n") : "No saved sessions."); }
+      if (action === "list") { const sessions = store.list(); return emit(sessions, 0, null, sessions.length ? sessions.map((s) => `${s.id}  ${s.updatedAt}  ${s.providerId}${s.localBackend ? `:${s.localBackend}` : ""}/${s.modelId}  ${s.title}`).join("\n") : "No saved sessions."); }
       if (!/^chat_[A-Za-z0-9-]+$/.test(id!)) throw new CommandError("Invalid session ID.", 2, "USAGE");
       const record = store.load(id!);
       if (!record) throw new CommandError(`Session ${id} could not be loaded.`);
-      if (action === "show") return emit({ ...record.metadata, draft: record.session?.draft ?? "", queuedPrompts: record.session?.queue.length ?? 0, checkpoints: record.session?.checkpoints.length ?? 0, ownership: inspectOwnership(workspace, id!), pendingRecovery: existsSync(join(dataRoot, "checkpoints", id!, "restore.json")) });
+      if (action === "show") return emit({ ...record.metadata, storage: store.location(id!), draft: record.session?.draft ?? "", queuedPrompts: record.session?.queue.length ?? 0, checkpoints: record.session?.checkpoints.length ?? 0, ownership: inspectOwnership(workspace, id!), pendingRecovery: existsSync(join(dataRoot, "checkpoints", id!, "restore.json")) });
       if (action === "transcript") {
         const entries = record.session ? inspectionEntries(record.session.events) : record.messages.map((message, i) => ({ id: String(i), title: message.role, details: [message.content, message.activitySummary].filter(Boolean).join("\n") }));
         return emit(entries, 0, null, entries.map((e) => `${e.title}\n${e.details}`).join("\n\n"));
@@ -168,7 +168,7 @@ export async function runTerminalCommand(argv: readonly string[], io: HeadlessEx
     extraSecrets = Object.values(context.config.providers ?? {}).flatMap((provider) => provider?.apiKey ? [provider.apiKey] : []);
     if (command === "config") return emit({ runtime: context.runtime, providers: context.config, diagnostics: context.layered.diagnostics });
     if (command === "providers") return emit(listProviderStatus(context.config, workspace));
-    if (command === "status") return emit({ version: packageVersion(), workspace, route: context.route, storage: dataRoot, execution: inspectOwnership(workspace, "execution"), pendingRecoverySessions: await pendingFileRecoveries(workspace), sessions: store.list().map((s) => ({ id: s.id, ownership: inspectOwnership(workspace, s.id), pendingRecovery: existsSync(join(dataRoot, "checkpoints", s.id, "restore.json")) })) });
+    if (command === "status") return emit({ version: packageVersion(), workspace, route: context.route, storage: dataRoot, chatStorage: resolveUbumeConversationDir(workspace), execution: inspectOwnership(workspace, "execution"), pendingRecoverySessions: await pendingFileRecoveries(workspace), sessions: store.list().map((s) => ({ id: s.id, ownership: inspectOwnership(workspace, s.id), pendingRecovery: existsSync(join(dataRoot, "checkpoints", s.id, "restore.json")) })) });
     if (command === "doctor") {
       const checks = await doctor(workspace, context.config, context.route.providerId, flags.has("--probe"));
       const pending = await pendingFileRecoveries(workspace);

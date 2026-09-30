@@ -113,55 +113,20 @@ test("parses provider workspace config from Ubume-owned JSON", () => {
   assert.equal(config.migrationNotice?.deprecatedProviderId, "google");
 });
 
-test("legacy Antigravity active/default config falls back to OpenAI and drops provider override", () => {
-  const config = parseProviderWorkspaceConfig({
-    workspaceDefaultProviderId: "antigravity",
-    activeRoute: {
-      providerId: "antigravity",
-      modelId: "external-antigravity-default",
-      backendKind: "antigravity-cli-auth",
-      reasoning: "medium",
-    },
-    providers: {
-      antigravity: {
-        current_model: "external-antigravity-default",
-        current_reasoning: "medium",
-      },
-      openai: {
-        current_model: "gpt-5.4-mini",
-        current_reasoning: "low",
-      },
-    },
-  });
-
-  assert.deepEqual(config.activeRoute, {
-    providerId: "openai",
-    modelId: "gpt-5.4-mini",
-    backendKind: "codex-cli-auth",
-    reasoning: "low",
-  });
-  assert.equal(config.workspaceDefaultProviderId, "openai");
-  assert.equal(config.providers?.openai?.currentModel, "gpt-5.4-mini");
-  assert.equal((config.providers as Record<string, unknown> | undefined)?.antigravity, undefined);
-  assert.deepEqual(config.migrationNotice, {
-    deprecatedProviderId: "antigravity",
-    revertedProviderId: "openai",
-  });
-  assert.doesNotMatch(JSON.stringify(serializeProviderWorkspaceConfig(config)), /antigravity/i);
+test("Antigravity routes, defaults and explicit command paths survive configuration round trips", () => {
+  const config = parseProviderWorkspaceConfig({ workspaceDefaultProviderId: "antigravity", activeRoute: { providerId: "antigravity", modelId: "claude-sonnet-4.6-thinking", reasoning: "medium", backendKind: "antigravity-cli-auth" }, providers: { antigravity: { current_model: "claude-sonnet-4.6-thinking", antigravity_command_path: "/custom/agy" } } });
+  assert.equal(config.workspaceDefaultProviderId, "antigravity");
+  assert.equal(config.activeRoute?.providerId, "antigravity");
+  assert.equal(config.providers?.antigravity?.antigravityCommandPath, "/custom/agy");
+  assert.equal(config.migrationNotice, undefined);
+  assert.deepEqual(parseProviderWorkspaceConfig(serializeProviderWorkspaceConfig(config)), config);
 });
 
-test("legacy Antigravity backend aliases are treated as deprecated routes", () => {
-  const config = parseProviderWorkspaceConfig({
-    active_route: {
-      provider_id: "openai",
-      model_id: "external-antigravity-default",
-      backend_kind: "agy",
-    },
-  });
-
-  assert.equal(config.activeRoute?.providerId, "openai");
-  assert.equal(config.activeRoute?.backendKind, "codex-cli-auth");
-  assert.equal(config.migrationNotice?.revertedProviderId, "openai");
+test("legacy agy backend alias normalizes to Antigravity CLI", () => {
+  const config = parseProviderWorkspaceConfig({ active_route: { provider_id: "openai", model_id: "claude-sonnet-4.6-thinking", backend_kind: "agy" } });
+  assert.equal(config.activeRoute?.providerId, "antigravity");
+  assert.equal(config.activeRoute?.backendKind, "antigravity-cli-auth");
+  assert.equal(config.migrationNotice, undefined);
 });
 
 test("serializes and persists provider workspace defaults", () => {

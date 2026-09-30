@@ -103,7 +103,7 @@ if (scenario === "plan-actions") {
 } else if (scenario === "flow") {
   const send = async (value: string) => { terminal.stdin.write(value); await delay(); terminal.stdin.write("\r"); await delay(); };
   await send("first"); await until(() => runs.length === 1, "first running");
-  await send("second"); terminal.stdin.write("independent draft"); await delay();
+  await send("second"); await until(() => store.load(store.list()[0]!.id)?.session?.queue.length === 1 && store.load(store.list()[0]!.id)?.session?.draft === "", "second queued and composer reset"); terminal.stdin.write("independent draft"); await delay();
   assert.equal(runs.length, 1);
   runs[0]!.stopped(); runs[0]!.handlers.onResponse("first response");
   await until(() => runs.length === 2, "FIFO automatic continuation");
@@ -111,7 +111,7 @@ if (scenario === "plan-actions") {
   await delay(350);
   assert.equal(store.load(store.list()[0]!.id)?.session?.draft, "independent draft");
   terminal.stdin.write("\u0001"); await delay(); terminal.stdin.write("\u000b"); await delay();
-  await send("third"); terminal.stdin.write("fourth"); await delay();
+  await send("third"); await until(() => store.load(store.list()[0]!.id)?.session?.queue.length === 1 && store.load(store.list()[0]!.id)?.session?.draft === "", "third queued and composer reset"); terminal.stdin.write("fourth"); await delay();
   terminal.stdin.write("\u0018"); await delay(); terminal.stdin.write("\u0013");
   await until(() => runs.length === 3, "interrupt and continue");
   assert.equal(runs[2]?.prompt, "third\n\nfourth");
@@ -129,12 +129,12 @@ if (scenario === "plan-actions") {
   terminal.instance.unmount(); await delay(); process.exit(0);
 } else {
   const original = store.list()[0]; assert(original);
-  terminal.stdin.write(`/resume ${original.id}`); await delay(); terminal.stdin.write("\r"); await delay(500);
+  terminal.stdin.write(`/resume ${original.id}`); await delay(); terminal.stdin.write("\r"); await until(() => terminal.output().includes("Conversation resumed"), "resume ready");
   assert.equal(runs.length, 0, "resuming must not dispatch queued work");
   const restored = store.load(original.id); assert.equal(restored?.session?.draft, "unsent draft");
   assert(terminal.output().includes("partial reply"));
   terminal.stdin.write("\u0001"); await delay(); terminal.stdin.write("\u000b"); await delay(); // clear restored draft with conventional editing
-  terminal.stdin.write("/queue"); await delay(); terminal.stdin.write("\r"); await delay();
+  terminal.stdin.write("/queue"); await delay(); terminal.stdin.write("\r"); await until(() => terminal.output().includes("QUEUE · paused"), "queue panel ready"); await delay();
   terminal.stdin.write("s");
   await until(() => runs.length === 1, "continued queue");
   assert.equal(runs[0]?.prompt, "queued instruction");

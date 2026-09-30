@@ -9,14 +9,16 @@ const options = { fallbackCwd: "/current", resolveExecutable: async (source: str
 test("buildExternalResumeLaunch resumes each CLI by session id in the session's folder", async () => {
   assert.deepEqual(await buildExternalResumeLaunch(summary("claude", "/work"), options), { ok: true, launch: { displayName: "Claude Code", executable: "/bin/claude-cli", args: ["--resume", "abc-123"], cwd: "/work" } });
   assert.deepEqual(await buildExternalResumeLaunch(summary("codex", "/work"), options), { ok: true, launch: { displayName: "Codex", executable: "/bin/codex-cli", args: ["resume", "abc-123"], cwd: "/work" } });
-  assert.deepEqual(await buildExternalResumeLaunch(summary("antigravity", null), options), { ok: true, launch: { displayName: "Antigravity", executable: "/bin/antigravity-cli", args: ["--conversation", "abc-123"], cwd: "/current" } });
+  assert.deepEqual(await buildExternalResumeLaunch(summary("antigravity", "/work"), options), { ok: true, launch: { displayName: "Antigravity", executable: "/bin/antigravity-cli", args: ["--conversation", "abc-123"], cwd: "/work" } });
 });
 
-test("buildExternalResumeLaunch refuses when the session folder is gone or unknown for Claude Code", async () => {
+test("buildExternalResumeLaunch refuses when the session folder is gone or unknown for every CLI", async () => {
   const gone = await buildExternalResumeLaunch(summary("codex", "/gone"), options);
   assert.equal(gone.ok, false);
   assert.match(gone.ok ? "" : gone.message, /no longer exists: \/gone/);
-  const unknown = await buildExternalResumeLaunch(summary("claude", null), options);
-  assert.equal(unknown.ok, false);
-  assert.match(unknown.ok ? "" : unknown.message, /original folder/);
+  for (const source of ["claude", "codex", "antigravity", "vibe"] as const) {
+    const unknown = await buildExternalResumeLaunch(summary(source, null), options);
+    assert.equal(unknown.ok, false);
+    assert.match(unknown.ok ? "" : unknown.message, /original folder/);
+  }
 });

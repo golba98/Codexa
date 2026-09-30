@@ -452,7 +452,7 @@ describe("Harness event projection and policy", () => {
     (fixture.process as unknown as { transport: unknown }).transport = {
       request: async (method: string, params: Record<string, unknown>) => {
         requests.push({ method, params });
-        return {};
+        return method === "session/flush" ? { durable: true } : {};
       },
       close: () => undefined,
     };
@@ -644,7 +644,25 @@ describe("Harness event projection and policy", () => {
     assert.deepEqual(observedFinalAnswers, []);
   });
 
-  test("multiple productive output windows accumulate into one final response", () => {
+  test("completion waits for durable persistence before publishing a continuation watermark", async () => {
+    const answers: string[] = [];
+    const watermarks: number[] = [];
+    const fixture = activeProcess({ onLocalHarnessSession: (metadata) => { if (metadata) watermarks.push(metadata.throughMessageCount); } });
+    (fixture.process as unknown as { active: { resolve: (text: string) => void } }).active.resolve = (text) => answers.push(text);
+    let flush!: (value: { durable: boolean }) => void;
+    (fixture.process as unknown as { transport: unknown }).transport = { request: async (method: string) => {
+      assert.equal(method, "session/flush"); return await new Promise((resolve) => { flush = resolve; });
+    }, close: () => undefined };
+    const notify = notifier(fixture);
+    notify("session.event", { sessionId: "session-1", event: { seq: 1, type: "assistant/chunk", data: { chunk: { type: "text-delta", text: "saved reply" } } } });
+    notify("session.event", { sessionId: "session-1", event: { seq: 2, type: "turn/end", data: { reason: { kind: "completed" } } } });
+    notify("session.status", { sessionId: "session-1", status: "idle" });
+    assert.deepEqual(answers, []); assert.deepEqual(watermarks, []);
+    flush({ durable: true }); await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(answers, ["saved reply"]); assert.deepEqual(watermarks, [2]);
+  });
+
+  test("multiple productive output windows accumulate into one final response", async () => {
     const resolved: string[] = [];
     const observedFinalAnswers: string[] = [];
     const finalMetadata: Array<{ throughMessageCount: number; transcriptHash: string }> = [];
@@ -670,7 +688,9 @@ describe("Harness event projection and policy", () => {
     notify("session.event", { sessionId: "session-1", event: { seq: 8, type: "turn/end", data: { reason: { kind: "completed" } } } });
     notify("session.status", { sessionId: "session-1", status: "idle" });
 
-    assert.equal(requests.length, 2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(requests.filter((entry) => entry.method === "session/prompt").length, 2);
+    assert.equal(requests.filter((entry) => entry.method === "session/flush").length, 1);
     assert.deepEqual(fixture.deltas, ["part one ", "part two ", "done"]);
     assert.deepEqual(resolved, ["part one part two done"]);
     assert.deepEqual(observedFinalAnswers, ["part one part two done"]);

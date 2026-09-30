@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, scryptSync } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +10,7 @@ import type { BackendRunHandlers, ToolApprovalDecision } from "../../providers/t
 import type { ProviderChatRequest } from "../types.js";
 import { resolveDefaultMaxOutputTokens } from "../localOutputBudget.js";
 import type { LocalHarnessSessionMetadata } from "../../workspace/conversationStore.js";
-import { resolveUbumeWorkspaceDataDir } from "../../workspace/appData.js";
+import { resolveUbumeChatWorkspaceDir, resolveUbumeWorkspaceDataDir, resolveLegacyCodexaDataDir, workspaceStorageKey } from "../../workspace/appData.js";
 import { getShellWorkspaceGuardMessage, isPathInsideAllowedRoots } from "../../workspace/workspaceGuard.js";
 import {
   describeSessionScratchDir,
@@ -112,6 +112,7 @@ interface HarnessRunState {
   text: string;
   runningSeen: boolean;
   settled: boolean;
+  completing?: boolean;
   toolArguments: Map<string, { tool: string; arguments: Record<string, unknown> }>;
   reasoningText: Map<string, string>;
   approvals: Set<string>;
@@ -192,7 +193,8 @@ function transcriptHash(request: ProviderChatRequest): string {
 
 function routeFingerprint(config: HarnessConfig, request: ProviderChatRequest): string {
   return createHash("sha256").update(JSON.stringify({
-    baseUrl: config.baseUrl,
+    baseUrl: sanitizedEndpoint(config.baseUrl),
+    localBackend: request.route.localBackend ?? request.localConfig?.localBackend ?? "lm-studio",
     model: config.model,
     contextWindow: config.contextWindow,
     maxTokens: config.maxTokens,
@@ -360,7 +362,14 @@ function profilePatch(supportsVision: boolean, reasoningEffortEnabled = false): 
 }
 
 function ensureProfile(workspaceRoot: string, config: HarnessConfig): string {
-  const home = join(resolveUbumeWorkspaceDataDir(workspaceRoot), "local-harness", `v-${HARNESS_VERSION}`);
+  const home = join(resolveUbumeChatWorkspaceDir(workspaceRoot), "local-harness", `v-${HARNESS_VERSION}`);
+  const legacy = [resolveUbumeWorkspaceDataDir(workspaceRoot, { readOnly: true }), join(resolveLegacyCodexaDataDir(), "workspaces", workspaceStorageKey(workspaceRoot))].map((root) => join(root, "local-harness", `v-${HARNESS_VERSION}`)).find(existsSync);
+  if (!existsSync(home) && legacy) {
+    const temporary = `${home}.migration-${randomUUID()}`;
+    mkdirSync(dirname(home), { recursive: true, mode: 0o700 });
+    try { cpSync(legacy, temporary, { recursive: true, errorOnExist: true, force: false }); renameSync(temporary, home); }
+    finally { rmSync(temporary, { recursive: true, force: true }); }
+  }
   const profileDir = join(home, "profiles", PROFILE_NAME);
   mkdirSync(profileDir, { recursive: true });
   writeFileSync(join(profileDir, "package.json"), `${JSON.stringify({
@@ -465,18 +474,24 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       throw error;
     }
     const metadata = request.localHarnessSession;
-    const canResume = metadata?.routeFingerprint === fingerprint
+    let canResume = metadata?.harnessVersion === HARNESS_VERSION && metadata.routeFingerprint === fingerprint
       && metadata.throughMessageCount === (request.conversationHistory?.length ?? 0)
       && metadata.transcriptHash === transcriptHash(request);
     if (metadata && !canResume) {
       await this.closeSession(metadata.sessionId);
       if (!this.transport) throw new Error("Local Harness disconnected while closing the previous session. Retry to start a fresh session.");
     }
-    const sessionId = canResume ? metadata.sessionId : randomUUID();
-    const scratchNote = prepareSessionScratch(request, sessionId, canResume);
+    let sessionId = canResume && metadata ? metadata.sessionId : randomUUID();
+
     traceLocalStream("harness.session.open", { sessionId, model: config.model, resumed: canResume, endpoint: sanitizedEndpoint(config.baseUrl) });
     try {
-      await this.requestBounded("session/open", { sessionId, resume: canResume }, signal);
+      const opened = await this.requestBounded("session/open", { sessionId, resume: canResume }, signal) as { resumeUnavailable?: string };
+      if (opened.resumeUnavailable === "missing" || opened.resumeUnavailable === "incompatible") {
+        canResume = false;
+        sessionId = randomUUID();
+        handlers.onProgress?.({ id: "local-harness-recovery", source: "transcript", text: `Saved Local Harness state is ${opened.resumeUnavailable}; recovering the saved conversation into a fresh session.` });
+        await this.requestBounded("session/open", { sessionId, resume: false }, signal);
+      }
     } catch (error) {
       const child = this.child;
       await this.shutdown();
@@ -490,6 +505,7 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       throw new DOMException("Local request cancelled.", "AbortError");
     }
 
+    const scratchNote = prepareSessionScratch(request, sessionId, canResume);
     const sessionMetadata: LocalHarnessSessionMetadata = {
       version: 1,
       sessionId,
@@ -693,7 +709,7 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       if (params.status === "idle" && state.runningSeen) {
         if (state.turnFailure) this.failActive(new Error(state.turnFailure));
         else if (this.tryRecoverExhaustedTurn(state)) return;
-        else this.completeActive();
+        else void this.completeActive();
       }
       return;
     }
@@ -979,9 +995,10 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     return true;
   }
 
-  private completeActive(): void {
+  private async completeActive(): Promise<void> {
     const state = this.active;
-    if (!state || state.settled) return;
+    if (!state || state.settled || state.completing) return;
+    state.completing = true;
     if (!state.text.trim()) {
       const backendLines = [
         `Backend: ${state.request.resolvedLocalAgentConfig?.localBackend ?? state.request.route.localBackend ?? "local"}`,
@@ -1021,6 +1038,14 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       ].join("\n")));
       return;
     }
+    try {
+      const flushed = await this.requestBounded("session/flush", { sessionId: state.sessionId }) as { durable?: boolean };
+      if (flushed.durable !== true) throw new Error("Local Harness did not acknowledge durable session storage.");
+    } catch (error) {
+      if (this.active === state && !state.settled) this.failActive(new Error(`Local chat checkpoint could not be saved: ${error instanceof Error ? error.message : String(error)}`));
+      return;
+    }
+    if (this.active !== state || state.settled) return;
     state.settled = true;
     state.abortCleanup();
     this.active = null;
@@ -1142,7 +1167,7 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
   async closeSession(sessionId: string): Promise<void> {
     if (!this.transport || !sessionId) return;
     try { await this.requestBounded("session/close", { sessionId }); }
-    catch { await this.shutdown(); }
+    catch (error) { await this.shutdown(); throw error; }
   }
 
   terminate(): void {

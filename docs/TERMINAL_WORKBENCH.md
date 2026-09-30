@@ -103,16 +103,26 @@ read-only and never modifies them.
 | Key | In the list | In the transcript viewer |
 |---|---|---|
 | Enter | Open the transcript viewer | Expand or collapse the selected entry |
-| `o` | Resume natively (`claude --resume`, `codex resume`, `agy --conversation`) in the session's folder; Ubume suspends until that CLI exits | Same |
+| `o` | Resume natively (`claude --resume`, `codex resume`, `vibe --resume`, `agy --conversation`) in the session's folder; Ubume suspends until that CLI exits | Same |
 | `c` | Continue inside Ubume: the history is imported once into an Ubume conversation on the matching provider | Same |
 | `/` | Search | Search entries |
 | `e` | — | Expand or collapse all tool calls |
 | Esc | Close | Back to the list |
 
-Ubume's own headless runs (`codex exec`, `claude -p`) are not listed. Antigravity
+Native sessions linked to an owned conversation are deduplicated by provider, session ID and workspace. Standalone programmatic sessions remain visible. Antigravity
 stores conversations in a binary format, so its transcripts are a best-effort text
 extraction; older Antigravity conversations show your prompts only. Imported
 history is capped at about 200,000 characters, keeping the newest turns.
+
+The picker starts on **All**, with sections for OpenAI, Anthropic, Mistral, Local and Antigravity. In Local, `b` cycles all backends, LM Studio and Unsloth; `m` cycles recorded models. `a` switches between this folder and all projects. Search and filter choices survive transcript navigation.
+
+Ubume saves chats under its user data folder: `chats/<workspace-key>/conversations/<id>/snapshot.json`, with the original folder in `workspace.json` and local agent journals under `local-harness/v-<version>/`. The default Linux root is `~/.local/share/ubume` (or `$XDG_DATA_HOME/ubume`); `UBUME_DATA_DIR` overrides it. Older histories are copied on their next save, leaving original files intact.
+
+Resuming another project reopens Ubume in that project's folder. Chats with missing folders can still be viewed; `c` locates their original folder. An unavailable saved model or backend requires an explicit choice through `/provider` or `/model` before sending. Restarting does not silently switch providers. Local agent sessions flush before completed-turn persistence and recover into a fresh session when older state is missing or incompatible.
+
+From a terminal, `ubume --resume chat_ID` opens a saved chat without sending a prompt. `ubume --import-session vibe:SESSION_ID` imports a native history in the current workspace. Supported native sources are `claude`, `codex`, `vibe` and `antigravity`.
+
+A deterministic [resume picker recording](recordings/provider-resume.cast) shows provider sections and Local backend/model filters; regenerate it with `bun scripts/record-resume-picker.tsx`.
 
 ## Verification
 

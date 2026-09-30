@@ -14,8 +14,6 @@ import type {
   ProviderWorkspaceOverride,
 } from "./types.js";
 
-const DEPRECATED_ANTIGRAVITY_PROVIDER_ID = "antigravity";
-const DEPRECATED_ANTIGRAVITY_BACKENDS = new Set(["antigravity-cli-auth", "agy"]);
 const DEPRECATED_GOOGLE_PROVIDER_ID = "google";
 
 export function getProviderWorkspaceConfigFile(workspaceRoot: string, options: { readOnly?: boolean } = {}): string {
@@ -28,16 +26,6 @@ export function getLegacyProviderWorkspaceConfigFile(workspaceRoot: string): str
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isDeprecatedAntigravityProviderId(value: unknown): boolean {
-  return value === DEPRECATED_ANTIGRAVITY_PROVIDER_ID;
-}
-
-function isDeprecatedAntigravityRoute(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  return isDeprecatedAntigravityProviderId(value.providerId ?? value.provider_id)
-    || DEPRECATED_ANTIGRAVITY_BACKENDS.has(String(value.backendKind ?? value.backend_kind));
 }
 
 function isDeprecatedGoogleRoute(value: unknown): boolean {
@@ -198,12 +186,15 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
     override.codexCommandPath = codexCommandPath.trim();
   }
 
+  const antigravityCommandPath = value.antigravityCommandPath ?? value.antigravity_command_path;
+  if (typeof antigravityCommandPath === "string" && antigravityCommandPath.trim()) override.antigravityCommandPath = antigravityCommandPath.trim();
   return override;
 }
 
 function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
   if (!isRecord(value)) return undefined;
-  const providerId = value.providerId ?? value.provider_id;
+  const rawProviderId = value.providerId ?? value.provider_id;
+  const providerId = (value.backendKind ?? value.backend_kind) === "agy" ? "antigravity" : rawProviderId;
   const modelId = value.modelId ?? value.model_id;
   const backendKind = value.backendKind ?? value.backend_kind;
   const reasoning = value.reasoning;
@@ -237,15 +228,10 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
 
   const config: ProviderWorkspaceConfig = {};
   const providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>> = {};
-  let foundDeprecatedAntigravity = false;
   let foundDeprecatedGoogle = false;
 
   if (isRecord(data.providers)) {
     for (const [id, value] of Object.entries(data.providers)) {
-      if (isDeprecatedAntigravityProviderId(id)) {
-        foundDeprecatedAntigravity = true;
-        continue;
-      }
       if (id === DEPRECATED_GOOGLE_PROVIDER_ID) {
         foundDeprecatedGoogle = true;
         continue;
@@ -264,9 +250,6 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
   if (defaultProvider === DEPRECATED_GOOGLE_PROVIDER_ID) {
     foundDeprecatedGoogle = true;
     config.workspaceDefaultProviderId = resolveDeprecatedProviderFallback(providers);
-  } else if (isDeprecatedAntigravityProviderId(defaultProvider)) {
-    foundDeprecatedAntigravity = true;
-    config.workspaceDefaultProviderId = resolveDeprecatedProviderFallback(providers);
   } else if (typeof defaultProvider === "string" && isKnownProviderId(defaultProvider)) {
     config.workspaceDefaultProviderId = defaultProvider;
   }
@@ -274,11 +257,6 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
   const rawActiveRoute = data.activeRoute ?? data.active_route;
   if (isDeprecatedGoogleRoute(rawActiveRoute)) {
     foundDeprecatedGoogle = true;
-    const fallbackProviderId = resolveDeprecatedProviderFallback(providers);
-    config.activeRoute = createFallbackActiveRoute(fallbackProviderId, providers);
-    config.workspaceDefaultProviderId ??= fallbackProviderId;
-  } else if (isDeprecatedAntigravityRoute(rawActiveRoute)) {
-    foundDeprecatedAntigravity = true;
     const fallbackProviderId = resolveDeprecatedProviderFallback(providers);
     config.activeRoute = createFallbackActiveRoute(fallbackProviderId, providers);
     config.workspaceDefaultProviderId ??= fallbackProviderId;
@@ -296,12 +274,12 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
     }
   }
 
-  if (foundDeprecatedGoogle || foundDeprecatedAntigravity) {
+  if (foundDeprecatedGoogle) {
     const revertedProviderId = config.activeRoute?.providerId
       ?? config.workspaceDefaultProviderId
       ?? resolveDeprecatedProviderFallback(providers);
     config.migrationNotice = {
-      deprecatedProviderId: foundDeprecatedGoogle ? DEPRECATED_GOOGLE_PROVIDER_ID : DEPRECATED_ANTIGRAVITY_PROVIDER_ID,
+      deprecatedProviderId: DEPRECATED_GOOGLE_PROVIDER_ID,
       revertedProviderId,
     };
   }
@@ -351,6 +329,7 @@ export function serializeProviderWorkspaceConfig(config: ProviderWorkspaceConfig
         ...(override.claudeCommandPath !== undefined ? { claude_command_path: override.claudeCommandPath } : {}),
         ...(override.geminiCommandPath !== undefined ? { gemini_command_path: override.geminiCommandPath } : {}),
         ...(override.codexCommandPath !== undefined ? { codex_command_path: override.codexCommandPath } : {}),
+        ...(override.antigravityCommandPath !== undefined ? { antigravity_command_path: override.antigravityCommandPath } : {}),
       },
     ]),
   );

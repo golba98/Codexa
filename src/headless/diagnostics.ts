@@ -30,6 +30,7 @@ export function providerExecutable(id: ProviderId, config: ProviderWorkspaceConf
   const override = config.providers?.[id];
   if (id === "openai") return override?.codexCommandPath ?? process.env.CODEX_EXECUTABLE ?? "codex";
   if (id === "anthropic") return override?.claudeCommandPath ?? process.env.CLAUDE_EXECUTABLE ?? "claude";
+  if (id === "antigravity") return override?.antigravityCommandPath ?? process.env.AGY_EXECUTABLE ?? "agy";
   if (id === "mistral") return typeof override?.command === "string" ? override.command : override?.command?.executable ?? process.env.VIBE_EXECUTABLE ?? "vibe";
   return null;
 }
@@ -51,7 +52,7 @@ export function listProviderStatus(config: ProviderWorkspaceConfig, cwd: string)
     const runtime = getProviderRuntime(id);
     const command = providerExecutable(id, config);
     const executable = command ? findExecutable(command, cwd) : null;
-    const routable = id !== "antigravity" && isProviderRoutableInUbume(id) && config.providers?.[id]?.enabled !== false;
+    const routable = isProviderRoutableInUbume(id) && config.providers?.[id]?.enabled !== false;
     return { id, label: runtime.label, backendKind: runtime.backendKind, routable, executable,
       configured: id === "local" ? !!(config.providers?.local?.baseUrl || process.env.UBUME_LOCAL_BASE_URL) : id === "anthropic" ? !!executable || !!process.env.ANTHROPIC_API_KEY : command ? !!executable : runtime.isRouteConfigured?.() ?? false,
       auth: id === "anthropic" && process.env.ANTHROPIC_API_KEY ? "API key present (unverified)" : id === "openai" && existsSync(join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "auth.json")) ? "Auth file present (unverified)" : "Not checked; use doctor --probe",

@@ -46,10 +46,10 @@ test("listClaudeSessions lists this folder's sessions with the best available ti
   writeSession(home, "/elsewhere", "ccc", [user("/elsewhere", "ccc", "Other project")], "2026-09-30T15:00:00.000Z");
 
   const sessions = await listClaudeSessions({ kind: "workspace", root: workspace }, { home, env: {} });
-  assert.deepEqual(sessions.map((session) => [session.id, session.title]), [["bbb", "My rename"], ["aaa", "Fix flaky resume test"]]);
-  assert.equal(sessions[1]?.model, "claude-opus-5-5");
-  assert.equal(sessions[1]?.cwd, workspace);
-  assert.equal(sessions[1]?.updatedAt, "2026-09-30T10:00:00.000Z");
+  assert.deepEqual(sessions.map((session) => [session.id, session.title]), [["print-run", "Ubume headless prompt"], ["bbb", "My rename"], ["aaa", "Fix flaky resume test"]]);
+  assert.equal(sessions[2]?.model, "claude-opus-5-5");
+  assert.equal(sessions[2]?.cwd, workspace);
+  assert.equal(sessions[2]?.updatedAt, "2026-09-30T10:00:00.000Z");
 });
 
 test("listClaudeSessions all-projects scope spans folders and honors CLAUDE_CONFIG_DIR", async () => {

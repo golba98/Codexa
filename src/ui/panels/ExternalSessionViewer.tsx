@@ -20,9 +20,19 @@ interface ExternalSessionViewerProps {
   onContinue: (summary: ExternalSessionSummary) => void;
 }
 
+interface SessionTranscriptViewerProps {
+  summary: { title: string; cwd: string | null; id?: string };
+  label: string;
+  loadTranscript: () => Promise<Pick<ExternalTranscript, "entries" | "notice">>;
+  onBack: () => void;
+  onOpenNative?: () => void;
+  onContinue?: () => void;
+  continueLabel?: string;
+}
+
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; transcript: ExternalTranscript }
+  | { status: "ready"; transcript: Pick<ExternalTranscript, "entries" | "notice"> }
   | { status: "error"; message: string };
 
 interface TranscriptRow {
@@ -43,7 +53,7 @@ function wrapEntryText(text: string, width: number): string[] {
 }
 
 /** Read-only transcript of a native Claude Code / Codex / Antigravity session. */
-export function ExternalSessionViewer({ summary, loadTranscript, onBack, onOpenNative, onContinue }: ExternalSessionViewerProps) {
+export function SessionTranscriptViewer({ summary, label, loadTranscript, onBack, onOpenNative, onContinue, continueLabel = "continue here" }: SessionTranscriptViewerProps) {
   const theme = useTheme();
   const layout = usePanelLayout();
   const { isFocused } = useFocus({ id: "external-session-viewer", autoFocus: true });
@@ -75,7 +85,6 @@ export function ExternalSessionViewer({ summary, loadTranscript, onBack, onOpenN
     return needle ? allEntries.filter((entry) => `${entry.title}\n${entry.text}`.toLowerCase().includes(needle)) : allEntries;
   }, [allEntries, query]);
 
-  const label = externalSourceLabel(summary.source);
   const notice = state.status === "ready" ? state.transcript.notice : undefined;
   const width = Math.max(8, (layout?.availableCols ?? 80) - 4);
   const height = Math.max(1, (layout?.availableRows ?? 20) - 5 - (notice ? 1 : 0));
@@ -126,8 +135,8 @@ export function ExternalSessionViewer({ summary, loadTranscript, onBack, onOpenN
       return;
     }
     if (key.escape) return onBack();
-    if (input === "o") return onOpenNative(summary);
-    if (input === "c") return onContinue(summary);
+    if (input === "o") return onOpenNative?.();
+    if (input === "c") return onContinue?.();
     if (input === "/") { setSearching(true); return; }
     if (key.upArrow || input === "k") return select(selectedIndex - 1);
     if (key.downArrow || input === "j") return select(selectedIndex + 1);
@@ -170,7 +179,7 @@ export function ExternalSessionViewer({ summary, loadTranscript, onBack, onOpenN
   return (
     <Box flexDirection="column" width="100%" borderStyle="round" borderColor={theme.borderFocused} paddingX={1}>
       <Text color={theme.accent} bold wrap="truncate">{sanitizeTerminalOutput(`${label} · ${summary.title}`)}</Text>
-      <Text color={theme.textDim} wrap="truncate">{sanitizeTerminalOutput(`${summary.cwd ?? "Unknown folder"} · ${summary.id}${counts}`)}</Text>
+      <Text color={theme.textDim} wrap="truncate">{sanitizeTerminalOutput(`${summary.cwd ?? "Unknown folder"} · ${summary.id ?? ""}${counts}`)}</Text>
       {notice && <Text color={theme.warning} wrap="truncate">{sanitizeTerminalOutput(notice)}</Text>}
       <Box flexDirection="column" height={height} overflow="hidden">
         {placeholder
@@ -183,8 +192,13 @@ export function ExternalSessionViewer({ summary, loadTranscript, onBack, onOpenN
           })}
       </Box>
       <Text color={theme.textDim} wrap="truncate">
-        {searching ? `Search: ${query}` : `↑↓ select · Enter expand · e tools · PgUp/PgDn · / search · o open in ${label} · c continue here · Esc back`}
+        {searching ? `Search: ${query}` : `↑↓ select · Enter expand · e tools · PgUp/PgDn · / search${onOpenNative ? ` · o open in ${label}` : ""}${onContinue ? ` · c ${continueLabel}` : ""} · Esc back`}
       </Text>
     </Box>
   );
+}
+
+export function ExternalSessionViewer({ summary, loadTranscript, onBack, onOpenNative, onContinue }: ExternalSessionViewerProps) {
+  return <SessionTranscriptViewer summary={summary} label={externalSourceLabel(summary.source)} loadTranscript={loadTranscript} onBack={onBack}
+    onOpenNative={() => onOpenNative(summary)} onContinue={() => onContinue(summary)} />;
 }

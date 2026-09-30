@@ -11,6 +11,8 @@ export type Screen =
   | "main"
   | "resume-picker"
   | "external-session-viewer"
+  | "saved-session-viewer"
+  | "resume-workspace"
   | "workbench-panel"
   | "model-picker"
   | "mode-picker"

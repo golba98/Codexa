@@ -1,3 +1,5 @@
+import { EXTERNAL_SESSION_SOURCES, type ExternalSessionSource } from "../core/externalSessions/types.js";
+
 const FLAG_HELP = "--help";
 const FLAG_HELP_SHORT = "-h";
 const FLAG_VERSION = "--version";
@@ -20,6 +22,8 @@ export interface LaunchArgs {
   modelOverride: string | null;
   /** True when --no-clear was passed. Suppresses the startup terminal clear. */
   noClear: boolean;
+  resumeId?: string;
+  importSession?: { source: ExternalSessionSource; sessionId: string };
 }
 
 export type LaunchArgsParseResult =
@@ -59,6 +63,8 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
   let noClear = false;
   let profile: string | null = null;
   let modelOverride: string | null = null;
+  let resumeId: string | undefined;
+  let importSession: LaunchArgs["importSession"];
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -66,6 +72,23 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       continue;
     }
 
+    if (arg === "--resume" || arg.startsWith("--resume=") || arg === "--import-session" || arg.startsWith("--import-session=")) {
+      const name = arg.split("=")[0]!;
+      const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : argv[++index];
+      if (!value || value.startsWith("--")) return { ok: false, error: `Missing value for ${name}.` };
+      if (resumeId || importSession) return { ok: false, error: "Choose only one --resume or --import-session target." };
+      if (name === "--resume") {
+        if (!/^chat_[A-Za-z0-9-]+$/.test(value)) return { ok: false, error: "Invalid conversation ID for --resume." };
+        resumeId = value;
+      } else {
+        const separator = value.indexOf(":");
+        const source = value.slice(0, separator) as ExternalSessionSource;
+        const sessionId = value.slice(separator + 1);
+        if (separator < 0 || !EXTERNAL_SESSION_SOURCES.includes(source) || !/^[A-Za-z0-9_-]+$/.test(sessionId)) return { ok: false, error: "Use --import-session source:session-id (claude, codex, vibe, antigravity)." };
+        importSession = { source, sessionId };
+      }
+      continue;
+    }
     if (arg === "--") {
       promptArgs.push(...argv.slice(index + 1));
       break;
@@ -180,6 +203,7 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
     .join(" ")
     .trim() || null;
 
+  if ((resumeId || importSession) && initialPrompt) return { ok: false, error: "Resume/import opens a conversation without running a startup prompt." };
   return {
     ok: true,
     value: {
@@ -191,6 +215,8 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       passthroughArgs,
       modelOverride,
       noClear,
+      ...(resumeId ? { resumeId } : {}),
+      ...(importSession ? { importSession } : {}),
     },
   };
 }

@@ -12,10 +12,8 @@ import {
   detectVibeActiveModel,
   discoverMistralVibeModels,
   findLatestVibeSession,
-  getMistralVibeSessionId,
   launchMistralVibeCli,
   listVibeConfiguredModels,
-  resetMistralVibeSession,
   resolveVibeExecutable,
   runMistralVibe,
   validateMistralVibeRoute,
@@ -372,93 +370,60 @@ test("findLatestVibeSession selects the newest matching workspace session after 
   }
 });
 
-test("runMistralVibe sends the prompt on stdin, streams once, and resumes the saved workspace session", async () => {
-  resetMistralVibeSession();
+test("Vibe resumes only the reference attached to this conversation, including after restart", async () => {
   const specs: CommandSpec[] = [];
-  const runImpl = (spec: CommandSpec, streamHandlers: CommandStreamHandlers) => {
-    specs.push(spec);
-    const text = specs.length === 1 ? "first response" : "second response";
-    streamHandlers.onStdout?.(`${JSON.stringify({ role: "assistant", content: text })}\n${text}\n`);
-    return { result: Promise.resolve(commandResult({ stdout: `${text}\n` })), cancel: () => undefined };
-  };
-
-  const runOnce = (prompt: string, findSessionImpl: typeof findLatestVibeSession) => new Promise<string>((resolve, reject) => {
-    runMistralVibe(buildRequest({ prompt }), {
-      onResponse: resolve,
-      onError: (message) => reject(new Error(message)),
+  let reference: import("../workspace/conversationStore.js").NativeSessionReference | undefined;
+  const run = (request: ProviderChatRequest) => new Promise<string>((resolve, reject) => {
+    runMistralVibe(request, {
+      onResponse: resolve, onError: (message) => reject(new Error(message)),
+      onNativeSession: (value) => { reference = value; },
     }, {
-      resolveExecutable: async () => "/home/test/.local/bin/vibe",
-      runCommandImpl: runImpl,
-      findSessionImpl,
-      env: { PATH: "/test/bin" },
-      now: () => 10_000,
+      resolveExecutable: async () => "/bin/vibe",
+      runCommandImpl: (spec, handlers) => {
+        specs.push(spec);
+        handlers.onStdout?.(`${JSON.stringify({ role: "user", content: request.prompt })}\n${JSON.stringify({ role: "assistant", content: "reply" })}\n`);
+        return { result: Promise.resolve(commandResult({ stdout: "reply" })), cancel: () => undefined };
+      },
+      findSessionImpl: async () => specs.length === 1 ? "chat-a-native" : null,
     });
   });
-
-  try {
-    assert.equal(await runOnce("first prompt", async () => "session-123"), "first response");
-    await tick();
-    assert.equal(getMistralVibeSessionId("/workspace/project"), "session-123");
-    assert.equal(await runOnce("second prompt", async () => null), "second response");
-
-    assert.deepEqual(specs[0]?.args, [
-      "-p", "--output", "streaming", "--trust", "--auto-approve", "--workdir", "/workspace/project",
-    ]);
-    assert.deepEqual(specs[1]?.args, [
-      "-p", "--output", "streaming", "--trust", "--auto-approve", "--workdir", "/workspace/project",
-      "--resume", "session-123",
-    ]);
-    assert.equal(specs[0]?.stdinData, "first prompt");
-    assert.equal(specs[1]?.stdinData, "second prompt");
-    assert.equal(specs[0]?.env?.VIBE_ACTIVE_MODEL, "mistral-medium-3.5");
-  } finally {
-    resetMistralVibeSession();
-  }
+  await run(buildRequest({ prompt: "first" }));
+  assert.equal(reference?.sessionId, "chat-a-native");
+  const saved = JSON.parse(JSON.stringify(reference));
+  await run(buildRequest({ prompt: "second", conversationHistory: [{ role: "user", content: "first" }, { role: "assistant", content: "reply" }], nativeSessions: [saved] }));
+  assert.ok(specs[1]?.args.includes("chat-a-native"));
+  assert.equal(reference?.sessionId, "chat-a-native");
+  await run(buildRequest({ prompt: "other chat" }));
+  assert.equal(specs[2]?.args.includes("--resume"), false);
+  assert.equal(specs[0]?.stdinData, "first");
+  assert.equal(specs[1]?.stdinData, "second");
 });
 
-test("runMistralVibe retries once without resume when the saved session is stale", async () => {
-  resetMistralVibeSession();
+test("Vibe retries a missing native session once using the saved dialogue", async () => {
   let calls = 0;
-  const seedResponse = new Promise<string>((resolve, reject) => {
-    runMistralVibe(buildRequest(), { onResponse: resolve, onError: (message) => reject(new Error(message)) }, {
+  const history = [{ role: "user" as const, content: "first" }, { role: "assistant" as const, content: "seed" }];
+  const { createHash } = await import("node:crypto");
+  const response = await new Promise<string>((resolve, reject) => {
+    runMistralVibe(buildRequest({ prompt: "retry", conversationHistory: history, nativeSessions: [{ source: "vibe", sessionId: "stale-session", modelId: "mistral-medium-3.5", throughMessageCount: 2, transcriptHash: createHash("sha256").update(JSON.stringify(history)).digest("hex") }] }), {
+      onResponse: resolve, onError: (message) => reject(new Error(message)),
+    }, {
       resolveExecutable: async () => "vibe",
-      runCommandImpl: (_spec, streamHandlers) => {
-        streamHandlers.onStdout?.(`${JSON.stringify({ role: "assistant", content: "seed" })}\n`);
-        return { result: Promise.resolve(commandResult({ stdout: "seed" })), cancel: () => undefined };
-      },
-      findSessionImpl: async () => "stale-session",
-    });
-  });
-  await seedResponse;
-  await tick();
-
-  const response = new Promise<string>((resolve, reject) => {
-    runMistralVibe(buildRequest({ prompt: "retry" }), { onResponse: resolve, onError: (message) => reject(new Error(message)) }, {
-      resolveExecutable: async () => "vibe",
-      runCommandImpl: (spec, streamHandlers) => {
+      runCommandImpl: (spec, handlers) => {
         calls += 1;
         if (calls === 1) {
           assert.ok(spec.args.includes("stale-session"));
-          return {
-            result: Promise.resolve(commandResult({ status: "failed", exitCode: 1, stderr: "session not found", userMessage: "failed" })),
-            cancel: () => undefined,
-          };
+          return { result: Promise.resolve(commandResult({ status: "failed", exitCode: 1, stderr: "session not found" })), cancel: () => undefined };
         }
         assert.equal(spec.args.includes("--resume"), false);
-        streamHandlers.onStdout?.(`${JSON.stringify({ role: "assistant", content: "fresh" })}\n`);
+        assert.match(spec.stdinData ?? "", /seed/);
+        handlers.onStdout?.(`${JSON.stringify({ role: "assistant", content: "fresh" })}\n`);
         return { result: Promise.resolve(commandResult({ stdout: "fresh" })), cancel: () => undefined };
       },
       findSessionImpl: async () => null,
     });
   });
-
-  try {
-    assert.equal(await response, "fresh");
-    assert.equal(calls, 2);
-    assert.equal(getMistralVibeSessionId("/workspace/project"), null);
-  } finally {
-    resetMistralVibeSession();
-  }
+  assert.equal(response, "fresh");
+  assert.equal(calls, 2);
 });
 
 test("runMistralVibe maps missing executable and authentication failures to setup guidance", async () => {

@@ -6,6 +6,30 @@ No changes yet.
 
 ---
 
+## [0.1.11] — 2026-10-01 — Provider Resume and Durable Local Chats (prepared)
+
+### Added
+
+- Unified `/resume` sections for all providers, including Mistral Vibe and Local backend/model filters for LM Studio and Unsloth.
+- User-level `chats/` storage with original workspace manifests, authoritative snapshots and derived summary caches. Legacy histories migrate on save without deleting their originals.
+- Durable Local Harness checkpoints and recovery across process restarts. Missing or incompatible state recovers saved dialogue; storage errors remain visible.
+- Original-workspace handoff, idempotent native imports, per-conversation Vibe session references, and interactive `--resume` / `--import-session` startup flags.
+
+### Fixed
+
+- Saved routes stay pinned and require an explicit choice when a provider, backend or model is unavailable or disabled.
+- Antigravity CLI (`agy`) configuration and executable paths are retained instead of being treated as deprecated.
+- Native history discovery isolates provider failures and deduplicates explicitly linked histories.
+
+### Verification
+
+- 1,893 tests and TypeScript checks passed, including complete process-restart and missing-state recovery tests for LM Studio and Unsloth.
+- Terminal recording: `docs/recordings/provider-resume.cast`.
+- The release hook passed all 1,893 full-suite tests; the additional Antigravity diagnostics regression passed separately. Capability audit: 17/17; npm audit: zero vulnerabilities.
+- The verified tarball installed in an isolated prefix and passed version, doctor, fixture-provider headless execution and packaged Harness inference. The isolated terminal benchmark passed. npm accepted the verified `0.1.11` tarball; public registry processing is pending.
+
+---
+
 ## [0.1.10] — 2026-09-30 — Input Viewport Fix (prepared)
 
 ### Fixed

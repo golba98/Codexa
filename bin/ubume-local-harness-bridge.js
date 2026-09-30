@@ -4,7 +4,7 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import { carrierKeyOf } from "@deepseek-ai/dsh-scope";
 
 export const name = "ubume-local-harness-bridge";
-export const inject = ["agents"];
+export const inject = ["agents", "sessions"];
 const MAX_PENDING_STDOUT_BYTES = 16 * 1024 * 1024;
 const MAX_TOOL_ARGUMENT_CHARS = 2_000;
 const MAX_TOOL_RESULT_CHARS = 2_000;
@@ -124,7 +124,7 @@ export function notifyBounded(transport, method, params, output = process.stdout
   if (output.writableLength > MAX_PENDING_STDOUT_BYTES) abort(86);
 }
 
-class UbumeHarnessServer {
+export class UbumeHarnessServer {
   constructor(ctx, transport) {
     this.ctx = ctx;
     this.transport = transport;
@@ -212,8 +212,14 @@ class UbumeHarnessServer {
   async open(params) {
     const sessionId = String(params.sessionId ?? "");
     if (!sessionId) throw new Error("session/open requires a sessionId");
-    const record = await this.getOrCreate(sessionId, params.resume === true, Array.isArray(params.seed) ? params.seed : undefined);
-    return { sessionId: String(record.handle.agent.id), resumed: record.resumed };
+    try {
+      const record = await this.getOrCreate(sessionId, params.resume === true, Array.isArray(params.seed) ? params.seed : undefined);
+      return { sessionId: String(record.handle.agent.id), resumed: record.resumed };
+    } catch (error) {
+      if (params.resume === true && error?.name === "SessionFormatUnsupportedError") return { resumeUnavailable: "incompatible" };
+      if (params.resume === true && /^session "[^"]+" not found$/.test(error?.message ?? "")) return { resumeUnavailable: "missing" };
+      throw error; // Permission, corruption and I/O failures are never masked as recovery.
+    }
   }
 
   async prompt(params) {
@@ -224,6 +230,14 @@ class UbumeHarnessServer {
     const message = createUserMessage({ content, source: { kind: "user" } });
     record.handle.agent.followup(message);
     return { messageId: String(message.id) };
+  }
+
+  async flush(params) {
+    const session = this.ctx.sessions.get(SessionId(String(params.sessionId ?? "")));
+    if (!session) throw new Error("No live Local Harness session to flush.");
+    const durable = await this.ctx.sessions.flush(session);
+    if (!durable) throw new Error("Local Harness has no session persistence backend.");
+    return { durable: true };
   }
 
   async cancel(params) {
@@ -252,7 +266,7 @@ class UbumeHarnessServer {
     if (pending) return pending;
     const creation = this.create(sessionId, resume, seed);
     this.creations.set(sessionId, creation);
-    creation.finally(() => this.creations.delete(sessionId));
+    void creation.then(() => this.creations.delete(sessionId), () => this.creations.delete(sessionId));
     return creation;
   }
 
@@ -269,7 +283,7 @@ class UbumeHarnessServer {
         handle = await this.ctx.agents.resume({ resumeSessionId: SessionId(sessionId), agentOptions });
         resumed = true;
       } catch (error) {
-        if (!seed) throw error;
+        if (!seed || (error?.name !== "SessionFormatUnsupportedError" && !/^session "[^\"]+" not found$/.test(error?.message ?? ""))) throw error;
       }
     }
     handle ??= await this.ctx.agents.create({
@@ -298,6 +312,7 @@ class UbumeHarnessServer {
     if (method === "initialize") return this.initialize(params);
     if (method === "session/open") return this.open(params);
     if (method === "session/prompt") return this.prompt(params);
+    if (method === "session/flush") return this.flush(params);
     if (method === "session/cancel") return this.cancel(params);
     if (method === "session/close") return this.close(params);
     if (method === "shutdown") return this.shutdown();

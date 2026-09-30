@@ -5,7 +5,7 @@ import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
 export type { ResolvedRuntimeConfig };
 import type { LocalBackendId, ProviderId } from "../providerLauncher/types.js";
 import type { ProviderWorkspaceOverride } from "../providerLauncher/types.js";
-import type { ConversationContextCheckpoint, ConversationMessage, LocalHarnessSessionMetadata } from "../workspace/conversationStore.js";
+import type { ConversationContextCheckpoint, ConversationMessage, LocalHarnessSessionMetadata, NativeSessionReference } from "../workspace/conversationStore.js";
 
 export type ProviderBackendKind =
   | "codex-cli-auth"
@@ -113,6 +113,8 @@ export interface ProviderChatRequest {
   conversationHistory?: readonly ConversationMessage[];
   localContextCheckpoint?: ConversationContextCheckpoint;
   localHarnessSession?: LocalHarnessSessionMetadata;
+  nativeSessions?: readonly NativeSessionReference[];
+  antigravityCommandPath?: string;
 }
 
 export interface ProviderImageAttachment {

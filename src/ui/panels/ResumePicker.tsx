@@ -1,28 +1,22 @@
+import { workspaceStorageKey } from "../../core/workspace/appData.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
-import { externalSourceLabel, type ExternalSessionSource, type ExternalSessionSummary } from "../../core/externalSessions/types.js";
+import type { ExternalSessionSummary } from "../../core/externalSessions/types.js";
 import type { ConversationListEntry } from "../../core/workspace/conversationStore.js";
-import { clampVisualText, usePanelLayout } from "../layout.js";
+import type { LocalBackendId } from "../../core/providerLauncher/types.js";
+import { isLocalDevChannel } from "../../core/version/channel.js";
+import { conversationSummary, filterSessionCatalog, type SessionCatalogResult, type SessionSummary } from "../../session/sessionCatalog.js";
+import { clampVisualText, getVisualWidth, usePanelLayout } from "../layout.js";
 import { useTheme } from "../theme.js";
 import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
-import {
-  RESUME_PICKER_TABS,
-  externalRowText,
-  matchesQuery,
-  nextResumeTab,
-  resumeTabLabel,
-  ubumeRowText,
-  type ExternalListScope,
-  type ResumePickerPosition,
-  type ResumePickerTab,
-} from "./resumePickerRows.js";
+import { RESUME_PICKER_TABS, nextResumeTab, resumeTabLabel, sessionRowText, type ExternalListScope, type ResumePickerPosition, type ResumePickerTab } from "./resumePickerRows.js";
 
 interface ResumePickerProps {
   conversations: readonly ConversationListEntry[];
   onSelect: (id: string) => void;
+  onSelectSession?: (session: SessionSummary) => void;
   onCancel: () => void;
-  /** Enables the Claude Code / Codex / Antigravity sections. */
-  loadExternalSessions?: (source: ExternalSessionSource, scope: ExternalListScope) => Promise<ExternalSessionSummary[]>;
+  loadSessions?: (scope: ExternalListScope) => Promise<SessionCatalogResult>;
   onOpenExternal?: (summary: ExternalSessionSummary) => void;
   onResumeExternalNative?: (summary: ExternalSessionSummary) => void;
   onContinueExternal?: (summary: ExternalSessionSummary) => void;
@@ -30,142 +24,105 @@ interface ResumePickerProps {
   onPositionChange?: (position: ResumePickerPosition) => void;
 }
 
-type ExternalListState =
-  | { status: "loading" }
-  | { status: "ready"; sessions: ExternalSessionSummary[] }
-  | { status: "error"; message: string };
+type ListState = { status: "loading" } | { status: "ready"; result: SessionCatalogResult } | { status: "error"; message: string };
+const BACKENDS: readonly (LocalBackendId | "all")[] = ["all", "lm-studio", "unsloth"];
 
-type PickerItem =
-  | { kind: "ubume"; id: string; text: string }
-  | { kind: "external"; id: string; text: string; summary: ExternalSessionSummary };
+/** Keep the active provider visible even when the complete section bar cannot fit. */
+export function visibleResumeTabs(tabs: readonly ResumePickerTab[], active: ResumePickerTab, width: number): readonly ResumePickerTab[] {
+  const selected = Math.max(0, tabs.indexOf(active));
+  let start = selected;
+  let end = selected + 1;
+  let used = getVisualWidth(resumeTabLabel(tabs[selected]!));
+  while (start > 0 && used + 2 + getVisualWidth(resumeTabLabel(tabs[start - 1]!)) <= width) {
+    used += 2 + getVisualWidth(resumeTabLabel(tabs[--start]!));
+  }
+  while (end < tabs.length && used + 2 + getVisualWidth(resumeTabLabel(tabs[end]!)) <= width) {
+    used += 2 + getVisualWidth(resumeTabLabel(tabs[end++]!));
+  }
+  return tabs.slice(start, end);
+}
 
-const listKey = (source: ExternalSessionSource, scope: ExternalListScope) => `${source}:${scope}`;
-
-export function ResumePicker({
-  conversations,
-  onSelect,
-  onCancel,
-  loadExternalSessions,
-  onOpenExternal,
-  onResumeExternalNative,
-  onContinueExternal,
-  position,
-  onPositionChange,
-}: ResumePickerProps) {
+export function ResumePicker({ conversations, onSelect, onSelectSession, onCancel, loadSessions, onOpenExternal, onResumeExternalNative, onContinueExternal, position, onPositionChange }: ResumePickerProps) {
   const theme = useTheme();
-  const panelLayout = usePanelLayout();
+  const layout = usePanelLayout();
   const { isFocused } = useFocus({ id: "resume-picker", autoFocus: true });
-  const externalEnabled = Boolean(loadExternalSessions);
-  const [tab, setTab] = useState<ResumePickerTab>(externalEnabled ? position?.tab ?? "ubume" : "ubume");
+  const [tab, setTab] = useState<ResumePickerTab>(position?.tab ?? "all");
   const [scope, setScope] = useState<ExternalListScope>(position?.scope ?? "workspace");
-  const [query, setQuery] = useState("");
+  const [backend, setBackend] = useState<LocalBackendId | "all">(position?.backend ?? "all");
+  const [model, setModel] = useState(position?.model ?? "");
+  const [query, setQuery] = useState(position?.query ?? "");
   const [searching, setSearching] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
-  const [lists, setLists] = useState<Record<string, ExternalListState>>({});
-  const pendingSelectionRef = useRef(position?.selectedId ?? null);
-  const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
-
-  const externalState = tab === "ubume" ? undefined : lists[listKey(tab, scope)];
-
+  const [lists, setLists] = useState<Partial<Record<ExternalListScope, ListState>>>({});
+  const pendingSelection = useRef(position?.selectedId ?? null);
+  const mounted = useRef(true);
+  const pendingLoads = useRef(new Set<ExternalListScope>());
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
-    if (tab === "ubume" || !loadExternalSessions) return;
-    const key = listKey(tab, scope);
-    if (lists[key]) return;
-    setLists((current) => ({ ...current, [key]: { status: "loading" } }));
-    loadExternalSessions(tab, scope).then(
-      (sessions) => { if (mountedRef.current) setLists((current) => ({ ...current, [key]: { status: "ready", sessions } })); },
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : "unknown error";
-        if (mountedRef.current) setLists((current) => ({ ...current, [key]: { status: "error", message } }));
-      },
-    );
-  }, [lists, loadExternalSessions, scope, tab]);
-
-  const items = useMemo((): PickerItem[] => {
-    if (tab === "ubume") {
-      return conversations
-        .filter((item) => matchesQuery([item.title, item.modelId, item.id], query))
-        .map((item) => ({ kind: "ubume", id: item.id, text: ubumeRowText(item) }));
+    if (!loadSessions || lists[scope] || pendingLoads.current.has(scope)) return;
+    pendingLoads.current.add(scope);
+    setLists((current) => ({ ...current, [scope]: { status: "loading" } }));
+    void loadSessions(scope).then((result) => {
+      if (mounted.current) setLists((current) => ({ ...current, [scope]: { status: "ready", result } }));
+    }, (error: unknown) => {
+      if (mounted.current) setLists((current) => ({ ...current, [scope]: { status: "error", message: error instanceof Error ? error.message : String(error) } }));
+    }).finally(() => pendingLoads.current.delete(scope));
+  }, [lists, loadSessions, scope]);
+  const state = lists[scope];
+  const sessions = useMemo(() => state?.status === "ready" ? state.result.sessions
+    : conversations.map((entry) => conversationSummary(entry, entry.workspaceRoot ?? null, entry.storageWorkspaceKey ?? (entry.workspaceRoot ? workspaceStorageKey(entry.workspaceRoot) : "current"))), [conversations, state]);
+  const tabs = useMemo(() => {
+    const result = [...RESUME_PICKER_TABS];
+    for (const provider of ["codexa-native", "codexa-cupy"] as const) {
+      if (isLocalDevChannel() || sessions.some((session) => session.providerId === provider)) result.push(provider);
     }
-    if (externalState?.status !== "ready") return [];
-    return externalState.sessions
-      .filter((summary) => matchesQuery([summary.title, summary.cwd, summary.id, summary.model], query))
-      .map((summary) => ({ kind: "external", id: summary.id, text: externalRowText(summary, scope), summary }));
-  }, [conversations, externalState, query, scope, tab]);
-
-  const availableRows = Math.max(1, panelLayout?.availableRows ?? 12);
-  const width = Math.max(1, (panelLayout?.availableCols ?? 80) - 2);
-  const viewport = useMemo(() => calculateResponsivePickerViewport({
-    itemCount: items.length,
-    selectedIndex,
-    availableRows,
-    chromeRows: availableRows >= 3 ? 2 : 0,
-    scrollOffset,
-  }), [availableRows, items.length, scrollOffset, selectedIndex]);
-
+    return result;
+  }, [sessions]);
+  const items = useMemo(() => filterSessionCatalog(sessions, { provider: tab, backend: tab === "local" ? backend : "all", model: tab === "local" ? model : "", query }), [sessions, tab, backend, model, query]);
+  const models = useMemo(() => [...new Set(filterSessionCatalog(sessions, { provider: "local", backend }).map((session) => session.modelId).filter((value): value is string => !!value))].sort(), [sessions, backend]);
+  const rows = Math.max(1, layout?.availableRows ?? 12);
+  const width = Math.max(1, (layout?.availableCols ?? 80) - 4);
+  const chromeRows = rows >= 4 ? 3 : rows >= 3 ? 2 : 0;
+  const viewport = useMemo(() => calculateResponsivePickerViewport({ itemCount: items.length, selectedIndex, availableRows: rows, chromeRows, scrollOffset }), [items.length, selectedIndex, rows, chromeRows, scrollOffset]);
   useEffect(() => {
-    const pending = pendingSelectionRef.current;
-    if (pending && items.length > 0) {
-      pendingSelectionRef.current = null;
-      const index = items.findIndex((item) => item.id === pending);
-      if (index >= 0) { setSelectedIndex(index); return; }
+    if (pendingSelection.current && items.length) {
+      const index = items.findIndex((item) => item.key === pendingSelection.current);
+      if (index >= 0) { pendingSelection.current = null; setSelectedIndex(index); return; }
     }
     setSelectedIndex((index) => Math.max(0, Math.min(index, items.length - 1)));
   }, [items]);
   useEffect(() => setScrollOffset(viewport.start), [viewport.start]);
-
   const selected = items[selectedIndex];
-  useEffect(() => {
-    onPositionChange?.({ tab, scope, selectedId: selected?.id ?? null });
-  }, [onPositionChange, scope, selected?.id, tab]);
-
-  const switchTab = (next: ResumePickerTab) => {
-    if (next === tab) return;
-    pendingSelectionRef.current = null;
-    setTab(next);
-    setQuery("");
-    setSearching(false);
-    setSelectedIndex(0);
-    setScrollOffset(0);
-  };
-
-  const move = (index: number) => setSelectedIndex(Math.max(0, Math.min(index, items.length - 1)));
+  useEffect(() => { onPositionChange?.({ tab, scope, selectedId: selected?.key ?? null, backend, model, query }); }, [onPositionChange, tab, scope, selected?.key, backend, model, query]);
+  const resetSelection = () => { pendingSelection.current = null; setSelectedIndex(0); setScrollOffset(0); };
+  const switchTab = (next: ResumePickerTab) => { setTab(next); setSearching(false); resetSelection(); };
   useInput((input, key) => {
     if (searching) {
       if (key.escape) { setSearching(false); setQuery(""); return; }
       if (key.return) { setSearching(false); return; }
-      if (key.backspace || key.delete) setQuery((text) => text.slice(0, -1));
-      else if (!key.ctrl && !key.meta && input) setQuery((text) => text + input);
-      setSelectedIndex(0);
-      return;
+      if (key.backspace || key.delete) setQuery((value) => value.slice(0, -1));
+      else if (!key.ctrl && !key.meta && input) setQuery((value) => value + input);
+      resetSelection(); return;
     }
-    if (input === "/") { setSearching(true); return; }
     if (key.escape) return onCancel();
-    if (externalEnabled) {
-      // Tab is Ink's focus-cycling key, so sections move with ←/→ or 1–4.
-      if (key.leftArrow) return switchTab(nextResumeTab(tab, -1));
-      if (key.rightArrow) return switchTab(nextResumeTab(tab, 1));
-      const numbered = RESUME_PICKER_TABS[Number(input) - 1];
-      if (/^[1-4]$/.test(input) && numbered) return switchTab(numbered);
-      if (input === "a" && tab !== "ubume") {
-        pendingSelectionRef.current = null;
-        setScope((current) => current === "workspace" ? "all" : "workspace");
-        setSelectedIndex(0);
-        setScrollOffset(0);
-        return;
-      }
+    if (input === "/") { setSearching(true); return; }
+    if (key.leftArrow) return switchTab(nextResumeTab(tab, -1, tabs));
+    if (key.rightArrow) return switchTab(nextResumeTab(tab, 1, tabs));
+    if (/^[1-9]$/.test(input) && tabs[Number(input) - 1]) return switchTab(tabs[Number(input) - 1]!);
+    if (input === "a") { setScope((value) => value === "workspace" ? "all" : "workspace"); resetSelection(); return; }
+    if (tab === "local" && input === "b") { setBackend(BACKENDS[(BACKENDS.indexOf(backend) + 1) % BACKENDS.length]!); setModel(""); resetSelection(); return; }
+    if (tab === "local" && input === "m") { const choices = ["", ...models]; setModel(choices[(choices.indexOf(model) + 1) % choices.length]!); resetSelection(); return; }
+    if (key.return && selected) {
+      if (onSelectSession) return onSelectSession(selected);
+      if (selected.native) return onOpenExternal?.(selected.native);
+      if (selected.ref.kind === "ubume") return onSelect(selected.ref.conversationId);
     }
-    if (key.return) {
-      if (selected?.kind === "ubume") onSelect(selected.id);
-      else if (selected?.kind === "external") onOpenExternal?.(selected.summary);
-      return;
+    if (selected?.native) {
+      if (input === "o") return onResumeExternalNative?.(selected.native);
+      if (input === "c") return onContinueExternal?.(selected.native);
     }
-    if (selected?.kind === "external") {
-      if (input === "o") return onResumeExternalNative?.(selected.summary);
-      if (input === "c") return onContinueExternal?.(selected.summary);
-    }
+    const move = (index: number) => setSelectedIndex(Math.max(0, Math.min(index, items.length - 1)));
     if (key.upArrow || input === "k") return move(selectedIndex - 1);
     if (key.downArrow || input === "j") return move(selectedIndex + 1);
     if (key.home) return move(0);
@@ -173,54 +130,26 @@ export function ResumePicker({
     if (key.pageUp) return move(selectedIndex - Math.max(1, viewport.capacity));
     if (key.pageDown) return move(selectedIndex + Math.max(1, viewport.capacity));
   }, { isActive: isFocused });
-
-  const status = searching
-    ? `Search: ${query}`
-    : [
-      ...(tab === "ubume" ? [] : [scope === "workspace" ? "This folder" : "All projects"]),
-      ...(query ? [`“${query}”`] : []),
-      ...(items.length > 0 ? [`${selectedIndex + 1}/${items.length}`] : []),
-    ].join(" · ");
-
-  let emptyMessage: string | null = null;
-  if (items.length === 0) {
-    if (tab === "ubume") emptyMessage = query ? "No conversations match your search." : "No previous conversations found.";
-    else {
-      const label = externalSourceLabel(tab);
-      if (!externalState || externalState.status === "loading") emptyMessage = `Loading ${label} sessions…`;
-      else if (externalState.status === "error") emptyMessage = `Could not read ${label} sessions: ${externalState.message}`;
-      else if (query) emptyMessage = "No sessions match your search.";
-      else emptyMessage = scope === "workspace" ? `No ${label} sessions in this folder — press a for all projects.` : `No ${label} sessions found.`;
-    }
-  }
-
-  const hint = tab === "ubume"
-    ? `↑↓ navigate · / search · Enter resume${externalEnabled ? " · ←→ section" : ""} · Esc cancel`
-    : `Enter view · o open in ${externalSourceLabel(tab)} · c continue here · a ${scope === "workspace" ? "all projects" : "this folder"} · / search · ←→ section · Esc close`;
-
-  return (
-    <Box borderStyle={availableRows >= 3 ? "round" : undefined} borderColor={theme.borderFocused} paddingX={availableRows >= 3 ? 1 : 0} width="100%" flexDirection="column" overflow="hidden">
-      {availableRows >= 3 && (externalEnabled ? (
-        <Text wrap="truncate">
-          <Text color={theme.accent} bold>Resume </Text>
-          {RESUME_PICKER_TABS.map((item, index) => (
-            <Text key={item} color={item === tab ? theme.accent : theme.textMuted} bold={item === tab} underline={item === tab}>
-              {index > 0 ? "  " : ""}{resumeTabLabel(item)}
-            </Text>
-          ))}
-          {status ? <Text color={theme.textMuted}>{`  · ${status}`}</Text> : null}
-        </Text>
-      ) : (
-        <Text color={theme.accent} bold>Resume Conversation{status ? ` · ${status}` : ""}</Text>
-      ))}
-      {emptyMessage && <Text color={externalState?.status === "error" ? theme.error : theme.textMuted} wrap="truncate">{emptyMessage}</Text>}
-      {items.slice(viewport.start, viewport.end).map((item, offset) => {
-        const isSelected = viewport.start + offset === selectedIndex;
-        return <Text key={`${item.kind}:${item.id}`} color={isSelected ? theme.accent : theme.textMuted} bold={isSelected} wrap="truncate">
-          {isSelected ? "> " : "  "}{clampVisualText(item.text, Math.max(1, width - 2))}
-        </Text>;
-      })}
-      {availableRows >= 3 && <Text color={theme.textDim} wrap="truncate">{hint}</Text>}
-    </Box>
-  );
+  const status = searching ? `Search: ${query}` : [scope === "workspace" ? "This folder" : "All projects",
+    ...(tab === "local" ? [backend === "all" ? "All backends" : backend === "unsloth" ? "Unsloth" : "LM Studio", model || "All models"] : []),
+    ...(query ? [`“${query}”`] : []), ...(items.length ? [`${selectedIndex + 1}/${items.length}`] : [])].join(" · ");
+  const warning = state?.status === "ready" ? state.result.errors[0] : state?.status === "error" ? state.message : null;
+  const empty = loadSessions && (!state || state.status === "loading") ? "Loading saved sessions…"
+    : warning ? `Could not read some sessions: ${warning}` : query ? "No sessions match your search."
+    : `No ${tab === "all" ? "saved" : resumeTabLabel(tab)} sessions ${scope === "workspace" ? "in this folder — press a for all projects" : "found"}.`;
+  const hint = `${tab === "local" ? "b backend · m model · " : ""}${selected?.native ? "Enter view · o native · c continue" : "Enter resume"} · a projects · / search · ←→ section · Esc close`;
+  const visibleTabs = visibleResumeTabs(tabs, tab, Math.max(1, width - 9));
+  return <Box borderStyle={rows >= 3 ? "round" : undefined} borderColor={theme.borderFocused} paddingX={rows >= 3 ? 1 : 0} width="100%" flexDirection="column" overflow="hidden">
+    {rows >= 3 && <Text wrap="truncate"><Text color={theme.accent} bold>Resume </Text>
+      {visibleTabs[0] !== tabs[0] && <Text color={theme.textDim}>‹ </Text>}
+      {visibleTabs.map((item, index) => <Text key={item} color={item === tab ? theme.accent : theme.textMuted} bold={item === tab} underline={item === tab}>{index ? "  " : ""}{resumeTabLabel(item)}</Text>)}
+      {visibleTabs.at(-1) !== tabs.at(-1) && <Text color={theme.textDim}> ›</Text>}
+    </Text>}
+    {rows >= 4 && <Text color={warning ? theme.error : theme.textDim} wrap="truncate">{warning ? `${status} · ${warning}` : status}</Text>}
+    {items.length === 0 && <Text color={warning ? theme.error : theme.textMuted} wrap="truncate">{empty}</Text>}
+    {items.slice(viewport.start, viewport.end).map((item, offset) => <Text key={item.key} color={viewport.start + offset === selectedIndex ? theme.accent : theme.textMuted} bold={viewport.start + offset === selectedIndex} wrap="truncate">
+      {viewport.start + offset === selectedIndex ? "> " : "  "}{clampVisualText(sessionRowText(item, scope), Math.max(1, width - 2))}
+    </Text>)}
+    {rows >= 3 && <Text color={theme.textDim} wrap="truncate">{hint}</Text>}
+  </Box>;
 }

@@ -1,3 +1,9 @@
+import { resolveAgyExecutable } from "./core/executables/antigravityExecutable.js";
+import { listSessionCatalog, sessionIsInWorkspace, type SessionCatalogResult, type SessionSummary } from "./session/sessionCatalog.js";
+import { assessSavedRoute, importNativeConversation, createSessionWorkspaceRelaunch } from "./session/resumeCoordinator.js";
+import { workspaceStorageKey } from "./core/workspace/appData.js";
+import { sameFolder } from "./core/externalSessions/sessionIo.js";
+import { SavedSessionViewer } from "./ui/panels/SavedSessionViewer.js";
 import { createRoutedProvider } from "./core/providerRuntime/execution.js";
 import { acquireOwnership, type OwnershipLease } from "./core/workspace/ownership.js";
 import React, { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -190,7 +196,7 @@ import {
   type ModelContextMetadata,
 } from "./core/providerRuntime/contextMetadata.js";
 import { captureWorkspaceSnapshot, createWorkspaceActivityTracker, diffWorkspaceSnapshots } from "./core/workspace/workspaceActivity.js";
-import { resolveWorkspaceRoot } from "./core/workspace/workspaceRoot.js";
+import { normalizeWorkspaceRoot, resolveWorkspaceRoot } from "./core/workspace/workspaceRoot.js";
 import { resolveUbumeAttachmentDir } from "./core/workspace/appData.js";
 import { ConversationStore, type ConversationListEntry, type ConversationMessage, type ConversationRecord } from "./core/workspace/conversationStore.js";
 import {
@@ -213,10 +219,8 @@ import {
   buildExternalResumeLaunch,
   externalProviderId,
   externalSourceLabel,
-  externalTranscriptToConversationMessages,
   listExternalSessions,
   readExternalTranscript,
-  type ExternalSessionSource,
   type ExternalSessionSummary,
 } from "./core/externalSessions/index.js";
 import { buildProviderRegistry, findProvider, getActiveRouteProviderId, isKnownProviderId } from "./core/providerLauncher/registry.js";
@@ -237,7 +241,6 @@ import { closeLocalHarnessSession, shutdownLocalHarness } from "./core/providerR
 import {
   detectVibeActiveModel,
   launchMistralVibeCli,
-  resetMistralVibeSession,
   resolveVibeExecutable,
 } from "./core/providerRuntime/mistralVibe.js";
 import { validateAnthropicRoute, ANTHROPIC_ROUTE_SETUP_MESSAGE } from "./core/providerRuntime/anthropic.js";
@@ -280,7 +283,7 @@ import {
   isCurrentRun,
 } from "./session/chatLifecycle.js";
 import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
-import { buildResumedProviderRoute, conversationMessagesToTimeline, toProviderConversationHistory, selectConversationContext } from "./session/conversation.js";
+import { conversationMessagesToTimeline, toProviderConversationHistory, selectConversationContext } from "./session/conversation.js";
 import { buildPersistedAssistantMessage, type PersistedFileActivity, type PersistedRunStatus } from "./session/persistedResponse.js";
 import { createLiveRenderScheduler, type LiveRenderUpdate } from "./session/liveRenderScheduler.js";
 import { schedulePromptRunStartAfterVisibleCommit } from "./session/promptRunSchedule.js";
@@ -618,11 +621,15 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     files: Map<string, PersistedFileActivity>;
   } | null>(null);
   const [conversationRouteOverride, setConversationRouteOverride] = useState<import("./core/providerRuntime/types.js").ProviderRoute | null>(null);
+  const preserveSavedRouteRef = useRef(false);
+  const routeChoiceRequiredRef = useRef<string | null>(null);
+  const startupResumeHandledRef = useRef(false);
+  const [savedViewerSession, setSavedViewerSession] = useState<SessionSummary | null>(null);
   const [resumeConversations, setResumeConversations] = useState<ConversationListEntry[]>([]);
   // /resume native sections: listing cache for one picker session, the picker's
   // section/scope/selection (restored when returning from the viewer), and the
   // session shown in the transcript viewer.
-  const externalSessionListsRef = useRef(new Map<string, Promise<ExternalSessionSummary[]>>());
+  const catalogListsRef = useRef(new Map<ExternalListScope, Promise<SessionCatalogResult>>());
   const resumePickerPositionRef = useRef<ResumePickerPosition | undefined>(undefined);
   const [externalViewerSession, setExternalViewerSession] = useState<ExternalSessionSummary | null>(null);
   const [authStatus, setAuthStatus] = useState<CodexAuthProbeResult>(createInitialAuthStatus());
@@ -785,7 +792,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     // the actual run uses the CLI model instead of whatever is persisted in providers.json.
     // The providers.json entry is left unchanged so it survives this session.
     const cliModel = launchArgs.modelOverride;
-    const configuredRoute = conversationRouteOverride ?? providerWorkspaceConfig.activeRoute;
+    if (conversationRouteOverride) return conversationRouteOverride;
+    const configuredRoute = providerWorkspaceConfig.activeRoute;
     const effectiveRoute = cliModel && configuredRoute
       ? { ...configuredRoute, modelId: cliModel }
       : configuredRoute;
@@ -1407,7 +1415,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   const backendProvider: BackendProvider = useMemo(() => getBackendProvider(backend), [backend]);
   const provider: BackendProvider = useMemo(() => {
     if (providerOverride) return providerOverride;
-    return createRoutedProvider(activeProviderRoute, backendProvider, providerWorkspaceConfig, () => activeConversationRef.current?.metadata.localHarnessSession);
+    return createRoutedProvider(activeProviderRoute, backendProvider, providerWorkspaceConfig, () => activeConversationRef.current?.metadata.localHarnessSession, () => activeConversationRef.current?.metadata.nativeSessions);
   }, [activeProviderRoute, backend, backendProvider, providerWorkspaceConfig.providers, providerOverride]);
 
   const getInputDebugSnapshot = useCallback((extra: Record<string, unknown> = {}) => {
@@ -1591,7 +1599,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     const next: ConversationRecord = {
       ...current,
       session: snapshotRef.current?.(),
-      metadata: {
+      metadata: preserveSavedRouteRef.current ? current.metadata : {
         ...current.metadata,
         providerId: activeProviderRoute.providerId,
         modelId: activeProviderRoute.modelId,
@@ -1724,21 +1732,44 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     }
     saveActiveConversation();
     setResumeConversations(conversationStore.list());
-    externalSessionListsRef.current.clear();
+    catalogListsRef.current.clear();
     resumePickerPositionRef.current = undefined;
     setScreen("resume-picker");
   }, [appendSystemEvent, busy, conversationStore, saveActiveConversation]);
 
-  const loadExternalSessions = useCallback((source: ExternalSessionSource, scope: ExternalListScope) => {
-    const key = `${source}:${scope}`;
-    let pending = externalSessionListsRef.current.get(key);
+  const loadResumeSessions = useCallback((scope: ExternalListScope) => {
+    let pending = catalogListsRef.current.get(scope);
     if (!pending) {
-      pending = listExternalSessions(source, scope === "workspace" ? { kind: "workspace", root: workspaceRoot } : { kind: "all" });
-      externalSessionListsRef.current.set(key, pending);
-      pending.catch(() => externalSessionListsRef.current.delete(key));
+      pending = listSessionCatalog(workspaceRoot, scope);
+      catalogListsRef.current.set(scope, pending);
+      pending.catch(() => catalogListsRef.current.delete(scope));
     }
     return pending;
   }, [workspaceRoot]);
+
+  const relaunchSavedSession = useCallback(async (target: string, resume: { conversationId: string } | { source: string; sessionId: string }) => {
+    if (activeRunIdRef.current !== null || submissionRef.current || recoveryRef.current) {
+      appendSystemEvent("Resume unavailable", "Stop the active operation before switching workspaces."); return;
+    }
+    const prepared = createSessionWorkspaceRelaunch(target, launchContext, resume);
+    if (!prepared.ok) { appendErrorEvent("Workspace unavailable", prepared.message); return; }
+    recoveryRef.current = true;
+    try {
+      await stoppingRef.current;
+      saveWorkbenchRef.current?.();
+      if (lastSaveErrorRef.current) throw new Error(`Current chat could not be saved: ${lastSaveErrorRef.current}`);
+      const harness = activeConversationRef.current?.metadata.localHarnessSession?.sessionId;
+      if (harness) await closeLocalHarnessSession(harness);
+      conversationStore.release();
+      workspaceLeaseRef.current?.release(); workspaceLeaseRef.current = undefined;
+      setScreen("main");
+      appendSystemEvent("Opening saved workspace", prepared.plan.targetWorkspaceRoot);
+      await new Promise((resolve) => setTimeout(resolve, OVERLAY_EXIT_SETTLE_MS));
+      const child = spawn(prepared.plan.executable, prepared.plan.args, { cwd: prepared.plan.cwd, env: prepared.plan.env, stdio: "inherit" });
+      child.once("error", (error) => { recoveryRef.current = false; appendErrorEvent("Workspace resume failed", error.message); });
+      child.once("spawn", () => exit());
+    } catch (error) { recoveryRef.current = false; appendErrorEvent("Workspace resume failed", error instanceof Error ? error.message : String(error)); }
+  }, [appendErrorEvent, appendSystemEvent, conversationStore, exit, launchContext]);
 
   const rememberResumePickerPosition = useCallback((position: ResumePickerPosition) => {
     resumePickerPositionRef.current = position;
@@ -1756,6 +1787,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const returnToResumePicker = useCallback(() => {
     setExternalViewerSession(null);
+    setSavedViewerSession(null);
     setScreen("resume-picker");
   }, []);
 
@@ -1771,7 +1803,11 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     await new Promise((resolve) => setTimeout(resolve, OVERLAY_EXIT_SETTLE_MS));
     const label = externalSourceLabel(summary.source);
     try {
-      const prepared = await buildExternalResumeLaunch(summary, { fallbackCwd: workspaceRoot });
+      saveWorkbenchRef.current?.();
+      if (lastSaveErrorRef.current) throw new Error(`Current chat could not be saved: ${lastSaveErrorRef.current}`);
+      const prepared = await buildExternalResumeLaunch(summary, { fallbackCwd: workspaceRoot,
+        resolveExecutable: summary.source === "antigravity" ? () => resolveAgyExecutable({ configuredPath: providerWorkspaceConfig.providers?.antigravity?.antigravityCommandPath, cwd: summary.cwd ?? workspaceRoot }) : undefined,
+      });
       if (!isMountedRef.current) return;
       if (!prepared.ok) {
         appendErrorEvent(`${label} resume unavailable`, prepared.message);
@@ -1786,7 +1822,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     } catch (error) {
       if (isMountedRef.current) appendErrorEvent(`${label} resume failed`, error instanceof Error ? error.message : "Launch failed.");
     }
-  }, [appendErrorEvent, appendSystemEvent, externalCliLaunchHooks, workspaceRoot]);
+  }, [appendErrorEvent, appendSystemEvent, externalCliLaunchHooks, workspaceRoot, providerWorkspaceConfig.providers]);
 
   const resumeConversation = useCallback(async (id: string) => {
     if (activeRunIdRef.current !== null || submissionRef.current || recoveryRef.current) { appendSystemEvent("Resume unavailable", "Stop the active operation before switching sessions."); return; }
@@ -1794,6 +1830,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     try {
       await stoppingRef.current;
       saveWorkbenchRef.current?.();
+      if (lastSaveErrorRef.current) throw new Error(`Current chat could not be saved: ${lastSaveErrorRef.current}`);
       let loaded = conversationStore.load(id);
       if (loaded) {
         try { conversationStore.acquire(id); loaded = conversationStore.load(id); }
@@ -1809,6 +1846,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         stoppingRef.current = stoppingRef.current.then(() => closeLocalHarnessSession(previousHarnessSessionId));
       }
       const replacement = armTranscriptReplacement("src/app.tsx:resumeConversation");
+      preserveSavedRouteRef.current = true;
       activeConversationRef.current = loaded;
       setConversationChars(loaded.messages.reduce((total, message) => total + message.content.length, 0));
       resetTimelineMeasureCaches();
@@ -1844,73 +1882,81 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       finally { lease.release(); }
       bumpWorkbench((value) => value + 1);
       replacement.finish();
-      const routeProvider = typeof loaded.metadata.providerId === "string" && isKnownProviderId(loaded.metadata.providerId)
-        ? loaded.metadata.providerId
-        : null;
-      if (routeProvider) {
-        const route = buildResumedProviderRoute(loaded.metadata, routeProvider, getProviderRuntime(routeProvider).backendKind);
-        // Local discovery is per backend; checking the default backend would mark
-        // an Unsloth-served model unavailable and drop the saved route.
-        const discovery = routeProvider === "local"
-          ? discoverLocalModels(undefined, route.localBackend)
-          : discoverProviderModels(routeProvider);
-        const modelUnavailable = discovery.status === "ready"
-          && discovery.models.length > 0
-          && !discovery.models.some((model) => model.modelId === loaded.metadata.modelId || model.id === loaded.metadata.modelId);
-        setConversationRouteOverride(modelUnavailable ? null : route);
-        if (!isProviderRoutableInUbume(routeProvider) || modelUnavailable) {
-          const reason = !isProviderRoutableInUbume(routeProvider)
-            ? `${routeProvider} is not currently available`
-            : `${loaded.metadata.modelId} is not currently available`;
-          appendSystemEvent("Original route unavailable", `Restored the conversation, but ${reason}. Ubume will use the current route when you send the next message.`);
-          setConversationRouteOverride(null);
-        }
-      } else {
-        appendSystemEvent("Original route unavailable", "Restored the conversation history; continuing with the current provider route.");
-      }
+      const routeProvider = typeof loaded.metadata.providerId === "string" && isKnownProviderId(loaded.metadata.providerId) ? loaded.metadata.providerId : null;
+      const discovery = routeProvider === "local"
+        ? discoverLocalModels(undefined, loaded.metadata.localBackend)
+        : routeProvider ? discoverProviderModels(routeProvider) : null;
+      const assessment = assessSavedRoute(loaded.metadata, providerOverride ? null : discovery, !!providerOverride || !routeProvider || providerWorkspaceConfig.providers?.[routeProvider]?.enabled !== false);
+      routeChoiceRequiredRef.current = assessment.status === "unavailable" ? assessment.message : null;
+      setConversationRouteOverride(assessment.route ?? null);
+      if (assessment.status === "unavailable") appendSystemEvent("Original route unavailable", `${assessment.message} History has been restored for viewing.`);
+      else appendSystemEvent("Conversation resumed", loaded.metadata.title);
       setScreen("main");
 
       intendedFocusTargetRef.current = FOCUS_IDS.composer;
       focusManager.focus(FOCUS_IDS.composer);
     } catch (error) { appendErrorEvent("Resume failed", (error as Error).message); }
     finally { recoveryRef.current = false; bumpWorkbench((value) => value + 1); const quit = pendingQuitRef.current; pendingQuitRef.current = null; quit?.(); }
-  }, [appendErrorEvent, appendSystemEvent, armTranscriptReplacement, conversationStore, dispatchSession, focusManager]);
+  }, [appendErrorEvent, appendSystemEvent, armTranscriptReplacement, conversationStore, dispatchSession, focusManager, providerOverride, providerWorkspaceConfig.providers]);
 
-  // Imports a native session's history into a Ubume conversation (once per
-  // session; later picks reuse that conversation) and resumes it.
   const continueExternalSession = useCallback(async (summary: ExternalSessionSummary) => {
-    const label = externalSourceLabel(summary.source);
-    try {
-      let id = conversationStore.list().find((entry) => entry.importedFrom?.source === summary.source && entry.importedFrom.sessionId === summary.id)?.id;
-      if (!id) {
-        const messages = externalTranscriptToConversationMessages(await readExternalTranscript(summary));
-        if (messages.length === 0) {
-          setScreen("main");
-          appendErrorEvent("Continue unavailable", `This ${label} session has no readable messages to import.`);
-          return;
-        }
-        const providerId = externalProviderId(summary.source);
-        const record = conversationStore.createConversation({
-          providerId,
-          modelId: summary.model ?? findProvider(providerRegistry, providerId)?.currentModel ?? activeProviderRoute.modelId,
-          backendKind: getProviderRuntime(providerId).backendKind,
-        });
-        record.metadata.title = summary.title;
-        record.metadata.importedFrom = { source: summary.source, sessionId: summary.id };
-        record.messages.push(...messages);
-        conversationStore.save(record);
-        id = record.metadata.id;
-      }
-      setExternalViewerSession(null);
-      await resumeConversation(id);
-      if (activeConversationRef.current?.metadata.id === id) {
-        appendSystemEvent("Continuing in Ubume", `Imported "${summary.title}" from ${label}. Your next prompt continues it through Ubume with this history.`);
-      }
-    } catch (error) {
-      setScreen("main");
-      appendErrorEvent("Continue failed", error instanceof Error ? error.message : "Could not import this session.");
+    if (activeRunIdRef.current !== null || submissionRef.current || recoveryRef.current) { appendSystemEvent("Resume unavailable", "Stop the active operation before importing history."); return; }
+    if (!summary.cwd) { appendErrorEvent("Original workspace unknown", "This session does not record its original folder. Open its transcript for viewing."); return; }
+    if (!sameFolder(summary.cwd, workspaceRoot)) {
+      await relaunchSavedSession(summary.cwd, { source: summary.source, sessionId: summary.id }); return;
     }
-  }, [activeProviderRoute.modelId, appendErrorEvent, appendSystemEvent, conversationStore, providerRegistry, resumeConversation]);
+    recoveryRef.current = true;
+    try {
+      saveWorkbenchRef.current?.();
+      if (lastSaveErrorRef.current) throw new Error(`Current chat could not be saved: ${lastSaveErrorRef.current}`);
+      const providerId = externalProviderId(summary.source);
+      const transcript = await readExternalTranscript(summary);
+      const record = importNativeConversation(conversationStore, transcript, findProvider(providerRegistry, providerId)?.currentModel ?? "unknown");
+      conversationStore.release();
+      setExternalViewerSession(null);
+      recoveryRef.current = false;
+      await resumeConversation(record.metadata.id);
+      if (activeConversationRef.current?.metadata.id === record.metadata.id) {
+        appendSystemEvent("Continuing in Ubume", `Imported “${summary.title}” from ${externalSourceLabel(summary.source)}.${transcript.notice ? ` ${transcript.notice}` : ""}`);
+      }
+    } catch (error) { appendErrorEvent("Continue failed", error instanceof Error ? error.message : String(error)); }
+    finally { recoveryRef.current = false; }
+  }, [appendErrorEvent, appendSystemEvent, conversationStore, providerRegistry, relaunchSavedSession, resumeConversation, workspaceRoot]);
+
+  const selectResumeSession = useCallback(async (session: SessionSummary) => {
+    if (session.native) { openExternalSession(session.native); return; }
+    if (session.ref.kind !== "ubume") return;
+    if (!session.workspaceRoot || !existsSync(session.workspaceRoot)) {
+      setSavedViewerSession(session); setScreen("saved-session-viewer"); return;
+    }
+    if (!sessionIsInWorkspace(session, workspaceRoot)) {
+      await relaunchSavedSession(session.workspaceRoot, { conversationId: session.ref.conversationId }); return;
+    }
+    await resumeConversation(session.ref.conversationId);
+  }, [openExternalSession, relaunchSavedSession, resumeConversation, workspaceRoot]);
+
+  const locateSavedWorkspace = useCallback(async (value: string) => {
+    const session = savedViewerSession;
+    if (!session || session.ref.kind !== "ubume") return;
+    const folder = normalizeWorkspaceRoot(value);
+    if (workspaceStorageKey(folder) !== session.ref.workspaceKey) {
+      appendErrorEvent("Workspace does not match", "Select the original project folder; its identity must match this saved chat."); return;
+    }
+    await selectResumeSession({ ...session, workspaceRoot: folder, ref: { ...session.ref, workspaceRoot: folder } });
+  }, [appendErrorEvent, savedViewerSession, selectResumeSession]);
+
+  useEffect(() => {
+    if (startupResumeHandledRef.current || (!launchArgs.resumeId && !launchArgs.importSession)) return;
+    startupResumeHandledRef.current = true;
+    void (async () => {
+      if (launchArgs.resumeId) { await resumeConversation(launchArgs.resumeId); return; }
+      const target = launchArgs.importSession!;
+      const sessions = await listExternalSessions(target.source, { kind: "workspace", root: workspaceRoot });
+      const summary = sessions.find((entry) => entry.id === target.sessionId);
+      if (!summary) throw new Error("The selected native session was not found in its original workspace.");
+      await continueExternalSession(summary);
+    })().catch((error) => appendErrorEvent("Startup resume failed", error instanceof Error ? error.message : String(error)));
+  }, [appendErrorEvent, continueExternalSession, launchArgs.importSession, launchArgs.resumeId, resumeConversation, workspaceRoot]);
 
   useEffect(() => {
     const notice = providerWorkspaceConfig.migrationNotice;
@@ -2272,7 +2318,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     localBackend?: LocalBackendId,
   ) => {
     try {
-      setConversationRouteOverride(null);
       const runtime = getProviderRuntime(providerId);
       let nextConfig = setProviderActiveRoute(providerWorkspaceConfig, {
         providerId,
@@ -2288,6 +2333,10 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         nextReasoning,
       );
       saveProviderWorkspaceConfig(workspaceRoot, nextConfig);
+      setConversationRouteOverride(null);
+      routeChoiceRequiredRef.current = null;
+      const current = activeConversationRef.current;
+      if (current && nextConfig.activeRoute) activeConversationRef.current = { ...current, metadata: { ...current.metadata, ...nextConfig.activeRoute } };
       setProviderWorkspaceConfig(nextConfig);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save active route.";
@@ -2315,7 +2364,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   // unavailable. Placed after persistActiveRoute / persistProviderDefaultModelAndReasoning
   // declarations because the effect calls persistActiveRoute (TDZ-safe from here).
   useEffect(() => {
-    if (activeProviderRoute.providerId !== "openai") {
+    if (preserveSavedRouteRef.current || activeProviderRoute.providerId !== "openai") {
       return;
     }
     if (modelCapabilities?.status !== "ready") {
@@ -2414,6 +2463,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   }, [appendSystemEvent, busy, mode, planMode, updateRuntimeConfig]);
 
   const setReasoningWithNotice = useCallback((nextReasoningLevel: ReasoningLevel) => {
+    if (routeChoiceRequiredRef.current) { appendErrorEvent("Select a route first", routeChoiceRequiredRef.current); return; }
     const gate = guardConfigMutation("reasoning", busy);
     if (!gate.allowed) {
       appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing the reasoning level.");
@@ -2673,10 +2723,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         model: nextModel,
         reasoningLevel: normalizedReasoning,
       }));
-      if (providerId === "mistral" && activeProviderRoute.providerId !== "mistral") {
-        // Switching to Vibe starts a fresh CLI conversation instead of resuming a stale one.
-        resetMistralVibeSession(workspaceRoot);
-      }
       persistActiveRoute(providerId, nextModel, normalizedReasoning, validation.backendKind, geminiSelection, localBackend);
       if (!modelPickerOpenRef.current) setPendingRouteProviderId(null);
       traceInputDebug("model_selection_app_success", getInputDebugSnapshot({
@@ -3929,6 +3975,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       const harnessSessionId = activeConversationRef.current?.metadata.localHarnessSession?.sessionId;
       stoppingRef.current = stoppingRef.current.then(() => closeLocalHarnessSession(harnessSessionId)).then(() => undefined);
       activeConversationRef.current = null;
+      preserveSavedRouteRef.current = false;
+      routeChoiceRequiredRef.current = null;
       conversationStore.release();
       promptQueue.restore([]);
       pastedContentRegistryRef.current.clear();
@@ -3941,7 +3989,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       activeTurnIdRef.current = null;
       activeRunLifecycleRef.current = null;
       activeRunTimingRef.current = null;
-      resetMistralVibeSession(workspaceRoot);
       setPlanFlow(resetPlanFlow());
       // Row caches are keyed by transcript item keys; drop them with the transcript.
       resetTimelineMeasureCaches();
@@ -4137,6 +4184,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     lifecycle: PromptRunLifecycle = {},
   ) => {
     if (activeRunIdRef.current !== null || recoveryRef.current) return false;
+    if (routeChoiceRequiredRef.current) { appendErrorEvent("Select a route first", routeChoiceRequiredRef.current); return false; }
     const submitTiming = lifecycle.submitTiming ?? createPromptRunTiming();
     const safeDisplayPrompt = sanitizeTerminalInput(displayPrompt).trim();
     const safeProviderPrompt = sanitizeTerminalInput(providerPrompt).trim();
@@ -4224,12 +4272,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     // Local Harness session reuse hashes the history, so local requests get the
     // exact saved reply text; other providers also see what earlier runs did.
     const storedConversation = toProviderConversationHistory(activeConversationRef.current?.messages ?? [], {
-      includeActivitySummaries: activeProviderRoute.providerId !== "local",
+      includeActivitySummaries: activeProviderRoute.providerId !== "local" && activeProviderRoute.providerId !== "mistral",
     });
     // Local models own request-window compaction so they can create a semantic
     // checkpoint before sliding old messages out. Other providers retain the
     // existing tail-selection behavior.
-    const conversationHistory = activeProviderRoute.providerId === "local"
+    const conversationHistory = activeProviderRoute.providerId === "local" || activeProviderRoute.providerId === "mistral"
       ? [...storedConversation]
       : selectConversationContext(
         storedConversation,
@@ -4698,8 +4746,14 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           try {
             conversationStore.save({ ...next, session: snapshotRef.current?.() });
           } catch (error) {
-            appDiagLog(`CONVERSATION_STORE: checkpoint save failed: ${error instanceof Error ? error.message : "filesystem error"}`);
+            appendErrorEvent("Context checkpoint save failed", error instanceof Error ? error.message : "Filesystem error");
           }
+        },
+        onNativeSession: (reference) => {
+          const current = activeConversationRef.current;
+          if (!current || !isCurrentRun(activeRunIdRef.current, runId)) return;
+          current.metadata.nativeSessions = [...(current.metadata.nativeSessions ?? []).filter((previous) => previous.source !== reference.source || previous.sessionId !== reference.sessionId), reference];
+          saveWorkbenchRef.current?.();
         },
         onLocalHarnessSession: (session, sessionId) => {
           const current = activeConversationRef.current;
@@ -4714,7 +4768,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           try {
             conversationStore.save({ ...next, session: snapshotRef.current?.() });
           } catch (error) {
-            appDiagLog(`CONVERSATION_STORE: Local Harness save failed: ${error instanceof Error ? error.message : "filesystem error"}`);
+            appendErrorEvent("Local chat save failed", error instanceof Error ? error.message : "Filesystem error");
+            lastSaveErrorRef.current = error instanceof Error ? error.message : "Filesystem error";
           }
         },
         onRunControl: (control) => { if (isCurrentRun(activeRunIdRef.current, runId)) { runControlRef.current = control; processStoppedRef.current = control.stopped; } },
@@ -5932,13 +5987,22 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                   conversations={resumeConversations}
                   onSelect={resumeConversation}
                   onCancel={() => setScreen("main")}
-                  loadExternalSessions={loadExternalSessions}
+                  loadSessions={loadResumeSessions}
+                  onSelectSession={selectResumeSession}
                   onOpenExternal={openExternalSession}
                   onResumeExternalNative={resumeExternalSessionNative}
                   onContinueExternal={continueExternalSession}
                   position={resumePickerPositionRef.current}
                   onPositionChange={rememberResumePickerPosition}
                 />
+              )}
+              {screen === "saved-session-viewer" && savedViewerSession && (
+                <SavedSessionViewer session={savedViewerSession} onBack={returnToResumePicker} onLocateWorkspace={() => setScreen("resume-workspace")} />
+              )}
+              {screen === "resume-workspace" && savedViewerSession && (
+                <TextEntryPanel focusId="resume-workspace" title="Locate Original Workspace" subtitle={savedViewerSession.workspaceRoot ?? "Enter the original project folder for this saved chat."}
+                  placeholder="/path/to/original/project" inputLabel="Folder" footerHint="Esc back · Enter locate"
+                  onSubmit={locateSavedWorkspace} onCancel={() => setScreen("saved-session-viewer")} />
               )}
               {screen === "external-session-viewer" && externalViewerSession && (
                 <ExternalSessionViewer

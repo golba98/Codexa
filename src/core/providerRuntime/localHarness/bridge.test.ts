@@ -88,3 +88,29 @@ test("bridge forwards compaction failures, turn error codes, and retry progress"
     data: { retry: 2, maxRetries: 5, delayMs: 989.3, failure: { message: "503 Service Unavailable", code: "SERVER" } },
   });
 });
+
+async function server(flush: () => Promise<boolean> = async () => true) {
+  const path = new URL("../../../../bin/ubume-local-harness-bridge.js", import.meta.url).href;
+  const { UbumeHarnessServer } = await import(path);
+  return new UbumeHarnessServer({ on: () => () => undefined, sessions: { get: () => ({ id: "session" }), flush } }, {});
+}
+
+test("bridge checkpoint requires a successful durable flush and propagates I/O errors", async () => {
+  let persisted = false;
+  const bridge = await server(async () => { persisted = true; return true; });
+  assert.deepEqual(await bridge.flush({ sessionId: "session" }), { durable: true }); assert.equal(persisted, true);
+  await assert.rejects((await server(async () => false)).flush({ sessionId: "session" }), /no session persistence/);
+  await assert.rejects((await server(async () => { throw new Error("EIO saving journal"); })).flush({ sessionId: "session" }), /EIO/);
+});
+
+test("bridge classifies only missing and unsupported sessions as recoverable", async () => {
+  const bridge = await server();
+  for (const [error, expected] of [[new Error('session "lost" not found'), "missing"], [Object.assign(new Error("version mismatch"), { name: "SessionFormatUnsupportedError" }), "incompatible"]] as const) {
+    bridge.getOrCreate = async () => { throw error; };
+    assert.deepEqual(await bridge.open({ sessionId: "lost", resume: true }), { resumeUnavailable: expected });
+  }
+  bridge.getOrCreate = async () => { throw new Error("EACCES reading journal"); };
+  await assert.rejects(bridge.open({ sessionId: "lost", resume: true }), /EACCES/);
+  bridge.getOrCreate = async () => { throw new Error("corrupt session journal"); };
+  await assert.rejects(bridge.open({ sessionId: "lost", resume: true }), /corrupt/);
+});

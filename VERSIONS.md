@@ -3,6 +3,12 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.11 — 2026-10-01 (prepared)
+
+`/resume` brings every provider into one history picker. Local chats have their own section with LM Studio, Unsloth and model filters. Ubume owns the saved chats in its user data folder, restores the original workspace and route, and durably saves the local agent session before completing a turn. Older histories migrate without deleting their originals. Antigravity uses the `agy` CLI; Mistral Vibe continuation belongs to each chat.
+
+The package passed packed-install verification and npm accepted the `0.1.11` upload. Public registry availability is pending npm processing.
+
 ## v0.1.10 — 2026-09-30 (prepared)
 
 Typing after a `[Pasted Content …]` label keeps the text and cursor inside the input border. The editor uses the space its container actually provides, including the prompt, padding, and cursor. Unicode display widths and resizing stay aligned, and pasted attachment IDs remain intact when you edit or send a prompt. This patch retains the Local stall and resume-border fixes from 0.1.9.

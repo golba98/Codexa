@@ -302,6 +302,10 @@ export function runClaudeCodeWithRunner(
           const lines = lineBuf.split("\n");
           lineBuf = lines.pop() ?? "";
           for (const line of lines) {
+            try {
+              const event = JSON.parse(line);
+              if (event.type === "system" && event.subtype === "init" && typeof event.session_id === "string") handlers.onNativeSession?.({ source: "claude", sessionId: event.session_id });
+            } catch { /* Malformed stream lines are handled by the existing parser. */ }
             parseTools(line);
             const delta = tryParseStreamJsonDelta(line);
             if (delta === false) {

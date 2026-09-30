@@ -2,7 +2,7 @@ import type { AvailableBackend } from "../../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
 import type { ProjectInstructions } from "../workspace/projectInstructions.js";
 import type { RunProgressSource, RunToolActivity } from "../../session/types.js";
-import type { ConversationContextCheckpoint, ConversationMessage, LocalHarnessSessionMetadata } from "../workspace/conversationStore.js";
+import type { ConversationContextCheckpoint, ConversationMessage, LocalHarnessSessionMetadata, NativeSessionReference } from "../workspace/conversationStore.js";
 import type { ProviderImageAttachment } from "../providerRuntime/types.js";
 
 export interface ProviderContextUsage {
@@ -53,6 +53,7 @@ export interface BackendRunHandlers {
   /** Persists invisible rolling memory used only by Local context-window rollover. */
   onLocalContextCheckpoint?: (checkpoint: ConversationContextCheckpoint) => void;
   /** Persists the opaque DeepSeek Harness session backing a Local conversation. */
+  onNativeSession?: (session: NativeSessionReference) => void;
   onLocalHarnessSession?: (session: LocalHarnessSessionMetadata | null, sessionId: string) => void;
   /** Reports authoritative provider token usage when available. */
   onContextUsage?: (usage: ProviderContextUsage) => void;

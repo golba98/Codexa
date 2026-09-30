@@ -1,3 +1,4 @@
+import { listVibeSessions, readVibeTranscript } from "./vibeSessions.js";
 import { listAntigravitySessions, readAntigravityTranscript } from "./antigravitySessions.js";
 import { listClaudeSessions, readClaudeTranscript } from "./claudeSessions.js";
 import { listCodexSessions, readCodexTranscript } from "./codexSessions.js";
@@ -23,6 +24,7 @@ export function listExternalSessions(
     case "claude": return listClaudeSessions(scope, options);
     case "codex": return listCodexSessions(scope, options);
     case "antigravity": return listAntigravitySessions(scope, options);
+    case "vibe": return listVibeSessions(scope, options);
   }
 }
 
@@ -31,5 +33,6 @@ export function readExternalTranscript(summary: ExternalSessionSummary, options:
     case "claude": return readClaudeTranscript(summary);
     case "codex": return readCodexTranscript(summary);
     case "antigravity": return readAntigravityTranscript(summary, options);
+    case "vibe": return readVibeTranscript(summary);
   }
 }
