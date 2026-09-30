@@ -11,7 +11,9 @@ import {
   createInputViewport,
   deleteInputBackward,
   deleteInputForward,
-  getComposerBodyWidth,
+  COMPOSER_ROW_CHROME,
+  createInputRowWindow,
+  getComposerRowLayout,
   insertInputText,
   moveCursorLeft,
   moveCursorRight,
@@ -22,8 +24,7 @@ import { getModeDisplaySpec } from "../render/modeDisplay.js";
 import { ActivityIndicator } from "./ActivityIndicator.js";
 import { measureRunFooterRows, MemoizedRunFooter } from "./RunFooter.js";
 import { THEMES, useTheme } from "../theme.js";
-import { clampVisualText, getShellWidth, type Layout } from "../layout.js";
-import { getTextWidth, splitTextAtColumn } from "../render/textLayout.js";
+import { clampVisualText, type Layout } from "../layout.js";
 import { useThrottledValue } from "../useThrottledValue.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import { getStdinDebugState, traceInputDebug } from "../../core/debug/inputDebug.js";
@@ -107,6 +108,7 @@ export function getTokenBarDisplay(tokensUsed: number, modelSpec: ModelSpec) {
 
 export interface BottomComposerProps {
   layout: Layout;
+  width?: number;
   uiState: UIState;
   stopping?: boolean;
   themeName?: string;
@@ -156,6 +158,7 @@ export interface BottomComposerProps {
 
 export interface BottomComposerMeasureParams {
   layout: Layout;
+  width?: number;
   uiState: UIState;
   stopping?: boolean;
   mode?: string;
@@ -235,6 +238,7 @@ export function getCommandSuggestionState({
 
 export function measureBottomComposerRows({
   layout,
+  width = layout.cols,
   uiState,
   value,
   cursor,
@@ -248,9 +252,7 @@ export function measureBottomComposerRows({
   const persona = getComposerPersona(uiState);
   const inputLocked = false;
   const allowCommands = persona !== "answer";
-  const composerWidth = getShellWidth(layout.cols);
-  const composerBodyWidth = getComposerBodyWidth(composerWidth);
-  const promptWidth = Math.max(4, composerBodyWidth - getTextWidth("❯ "));
+  const { editorWidth: promptWidth } = getComposerRowLayout(width);
   const normalizedValue = normalizeInputText(value);
   const normalizedCursor = normalizeCursorOffset(normalizedValue, cursor);
   const promptViewport = createInputViewport({
@@ -420,6 +422,7 @@ function renderFooterRuntime(displayStr: string, theme: any) {
 
 export function BottomComposer({
   layout,
+  width = layout.cols,
   uiState,
   themeName = "purple",
   mode = "",
@@ -494,7 +497,7 @@ export function BottomComposer({
   const theme = themeName === "custom"
     ? inheritedTheme
     : (THEMES[themeName] ?? inheritedTheme);
-  const { cols, mode: layoutMode } = layout;
+  const { mode: layoutMode } = layout;
   const crampedViewport = layout.rows <= 24;
   const { isFocused } = useFocus({ id: FOCUS_IDS.composer, autoFocus: true });
   const [cursorVisible, setCursorVisible] = useState(true);
@@ -536,10 +539,9 @@ export function BottomComposer({
   const inputLocked = false;
   const allowCommands = persona !== "answer";
   const allowHistory = persona !== "answer";
-  const promptPrefix = "❯ ";
-  const composerWidth = getShellWidth(cols);
-  const composerBodyWidth = getComposerBodyWidth(composerWidth);
-  const promptWidth = Math.max(4, composerBodyWidth - getTextWidth(promptPrefix));
+  const promptPrefix = COMPOSER_ROW_CHROME.prompt;
+  const rowLayout = getComposerRowLayout(width);
+  const promptWidth = rowLayout.editorWidth;
   const valueRef = useRef(value);
   const cursorRef = useRef(cursor);
   const lastPropsValueRef = useRef(value);
@@ -961,9 +963,11 @@ export function BottomComposer({
 
   // The prompt line is shared between bordered and non-bordered layouts.
   const promptLine = (
-    <Box flexDirection="row" width="100%">
-      <Text color={promptPrefixColor} bold={!inputLocked}>{promptPrefix}</Text>
-      <Box flexDirection="column" flexGrow={1}>
+    <Box flexDirection="row" width={rowLayout.bodyWidth}>
+      <Box width={rowLayout.promptWidth} flexShrink={0}>
+        <Text color={promptPrefixColor} bold={!inputLocked}>{promptPrefix}</Text>
+      </Box>
+      <Box flexDirection="column" width={promptWidth} flexShrink={0} overflow="hidden">
         {value.length === 0 && !inputLocked ? (
           <Box width="100%" overflow="hidden">
             <Text backgroundColor={cursorVisible && isFocused ? theme.text : undefined} color={cursorVisible && isFocused ? theme.surface : undefined}>{" "}</Text>
@@ -977,22 +981,21 @@ export function BottomComposer({
           promptViewport.visibleRows.map((row, index) => {
             const visibleCursorRow = promptViewport.cursorRow - promptViewport.scrollRow;
             const isCursorRow = index === visibleCursorRow;
-            const segments = isCursorRow
-              ? splitTextAtColumn(row.text, promptViewport.cursorColumn)
-              : null;
+            const segments = createInputRowWindow(row.text, promptWidth,
+              isCursorRow ? promptViewport.cursorColumn : undefined);
 
             return (
               <Box key={`${row.start}-${row.end}-${index}`} width="100%" overflow="hidden">
-                {isCursorRow && segments ? (
+                {isCursorRow ? (
                   <>
                     <Text color={theme.text}>{segments.before}</Text>
                     <Text backgroundColor={cursorVisible && isFocused ? theme.text : undefined} color={cursorVisible && isFocused ? theme.surface : undefined}>
-                      {segments.current || " "}
+                      {segments.current}
                     </Text>
                     <Text color={theme.text}>{segments.after}</Text>
                   </>
                 ) : (
-                  <Text color={theme.text}>{row.text || " "}</Text>
+                  <Text color={theme.text}>{segments.before || " "}</Text>
                 )}
               </Box>
             );
@@ -1007,13 +1010,14 @@ export function BottomComposer({
   }
 
   return (
-    <Box flexDirection="column" paddingBottom={layoutMode === "compact" ? 0 : 1} width="100%">
+    <Box flexDirection="column" paddingBottom={layoutMode === "compact" ? 0 : 1} width={width}>
       {isAnswerMode ? (
         // Answer mode: Highlighted prompt
         <Box
           flexDirection="column"
           width="100%"
-          paddingX={1}
+          paddingLeft={COMPOSER_ROW_CHROME.paddingLeft}
+          paddingRight={COMPOSER_ROW_CHROME.paddingRight}
           paddingY={0}
           borderStyle="round"
           borderColor={theme.warning}
@@ -1025,7 +1029,8 @@ export function BottomComposer({
         <Box
           flexDirection="column"
           width="100%"
-          paddingX={1}
+          paddingLeft={COMPOSER_ROW_CHROME.paddingLeft}
+          paddingRight={COMPOSER_ROW_CHROME.paddingRight}
           paddingY={0}
           borderStyle="round"
           borderColor={theme.border}
@@ -1161,6 +1166,7 @@ export function areBottomComposerPropsEqual(prev: BottomComposerProps, next: Bot
   if (prev.tokensUsed !== next.tokensUsed) return false;
   
   // Re-render if layout changes
+  if (prev.width !== next.width) return false;
   if (prev.layout.cols !== next.layout.cols) return false;
   if (prev.layout.rows !== next.layout.rows) return false;
   if (prev.layout.mode !== next.layout.mode) return false;

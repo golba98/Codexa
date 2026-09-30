@@ -22,14 +22,10 @@ export interface WrappedTextRow {
 // ─── Character measurement ───────────────────────────────────────────────────
 
 export function getCharWidth(char: string): number {
-  return Math.max(1, stringWidth(char));
+  return stringWidth(char);
 }
 
-// Invisible ID suffix of atomic composer tokens (see createAtomicContentToken):
-// U+2063 separators around U+FE00–U+FE09 digits. They draw zero columns, so
-// units must measure them as 0 to agree with getTextWidth; otherwise the
-// composer cursor lands on an invisible cell after an image/paste token.
-const ATOMIC_TOKEN_MARKER = /^[⁣︀-︉]$/;
+const textSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export function normalizeLineBreaks(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -37,17 +33,14 @@ export function normalizeLineBreaks(text: string): string {
 
 export function getTextUnits(text: string): TextUnit[] {
   const units: TextUnit[] = [];
-  let offset = 0;
-
-  for (const char of text) {
+  for (const { segment: char, index: offset } of textSegmenter.segment(text)) {
     const length = char.length;
     units.push({
       text: char,
       start: offset,
       end: offset + length,
-      width: ATOMIC_TOKEN_MARKER.test(char) ? 0 : getCharWidth(char),
+      width: getCharWidth(char),
     });
-    offset += length;
   }
 
   return units;

@@ -1,5 +1,5 @@
 import type { WrappedTextRow } from "../render/textLayout.js";
-import { getTextWidth, normalizeLineBreaks, wrapTextRows } from "../render/textLayout.js";
+import { getTextUnits, getTextWidth, normalizeLineBreaks, wrapTextRows } from "../render/textLayout.js";
 import { sanitizeTerminalInput } from "../../core/terminal/terminalSanitize.js";
 
 export type WrappedInputRow = WrappedTextRow;
@@ -198,6 +198,63 @@ export function createInputViewport(params: {
   };
 }
 
+// These values describe the actual bordered row and are shared with its JSX.
+export const COMPOSER_ROW_CHROME = {
+  borderLeft: 1,
+  borderRight: 1,
+  paddingLeft: 1,
+  paddingRight: 1,
+  prompt: "❯ ",
+} as const;
+
+export function getComposerRowLayout(totalWidth: number) {
+  const chrome = COMPOSER_ROW_CHROME;
+  const bodyWidth = Math.max(0, totalWidth - chrome.borderLeft - chrome.borderRight
+    - chrome.paddingLeft - chrome.paddingRight);
+  const promptWidth = getTextWidth(chrome.prompt);
+  return { bodyWidth, promptWidth, editorWidth: Math.max(0, bodyWidth - promptWidth) };
+}
+
 export function getComposerBodyWidth(totalWidth: number): number {
-  return Math.max(4, totalWidth - 4);
+  return getComposerRowLayout(totalWidth).bodyWidth;
+}
+
+/** Bound a wrapped row, including its highlighted character or trailing cursor. */
+export function createInputRowWindow(text: string, width: number, cursorColumn?: number) {
+  const safeWidth = Math.max(0, width);
+  if (safeWidth === 0) return { before: "", current: "", after: "", cursorColumn: 0 };
+  // Ink advances at least one cell per emitted grapheme, even for invisible
+  // token IDs. Keep zero-cell units in the buffer, but never send them to Ink.
+  const units = getTextUnits(text).filter((unit) => unit.width > 0);
+  let column = 0;
+  let cursorIndex = units.length;
+  const columns = units.map((unit, index) => {
+    const start = column;
+    if (cursorColumn !== undefined && cursorIndex === units.length
+      && unit.width > 0 && start + unit.width > cursorColumn) cursorIndex = index;
+    column += unit.width;
+    return start;
+  });
+  const hasCursor = cursorColumn !== undefined;
+  const cursorStart = columns[cursorIndex] ?? column;
+  const current = hasCursor ? units[cursorIndex]?.text ?? " " : "";
+  const cursorWidth = getTextWidth(current);
+  // A wide glyph cannot fit in a one-cell viewport: show a cursor cell instead.
+  if (cursorWidth > safeWidth) return { before: "", current: " ", after: "", cursorColumn: 0 };
+  let startIndex = 0;
+  if (hasCursor) {
+    const minimumStart = Math.max(0, cursorStart + cursorWidth - safeWidth);
+    while (startIndex < cursorIndex && (columns[startIndex] ?? column) < minimumStart) startIndex++;
+  }
+  let used = 0;
+  let before = "";
+  let after = "";
+  for (let index = startIndex; index < units.length; index++) {
+    const unit = units[index]!;
+    if (used + unit.width > safeWidth) break;
+    if (!hasCursor || index < cursorIndex) before += unit.text;
+    else if (index > cursorIndex) after += unit.text;
+    used += unit.width;
+  }
+  return { before, current, after, cursorColumn: getTextWidth(before) };
 }
