@@ -6,6 +6,27 @@ No changes yet.
 
 ---
 
+## [0.1.6] — 2026-09-30 — Fresh Install Harness Compatibility
+
+### Fixed
+
+- Pinned the compatible Cordis/HMR dependency family used by the Harness. Fresh installs otherwise resolved newer transitive versions whose HMR service lacks the API expected by Harness 0.1.1-rc.2, causing session startup to close its JSON-RPC input. The clean installed package now completes mock inference.
+- Avoided wrapping an already detailed session-open error as a second prompt-disconnect error.
+- Made the Harness’s required peer service providers explicit dependencies so legacy peer mode does not omit modules needed at startup.
+- Shipped a consumer shrinkwrap aligned with the tested Bun graph. The updater and displayed npm upgrade command use `--legacy-peer-deps` to avoid npm repeatedly expanding the Harness’s cyclic plugin peers; fresh global npm installation passes Harness inference with this flag.
+- Updated vulnerable `fast-uri` and `ip-address` transitive versions within their compatible release lines; the locked npm runtime audit reports zero findings.
+- Updated npm and Bun lockfiles, package version, generated version metadata, and release notes together. Added `sync:npm-lock` and a fresh-install Harness smoke script to make release checks repeatable.
+
+### Validation
+
+- All 1,823 tests, TypeScript, the capability audit, terminal PTY smoke, locked `npm ci`, and fresh global npm installation passed. The globally installed package passed version, diagnostics, headless execution, and mock Harness inference. The locked runtime npm audit reports zero findings. Live Ornith inference was unavailable.
+
+### Release correction
+
+- 0.1.5 was published before the fresh-install Harness result was checked. Its source integration passed but its clean installation failed. Use 0.1.6, which includes the terminal/runtime changes below and the dependency correction.
+
+---
+
 ## [0.1.5] — 2026-09-30 — Local Runtime and Terminal Controls
 
 ### Fixed
@@ -20,7 +41,7 @@ No changes yet.
 ### Validation
 
 - Added shared-discovery, timeout, canceled Harness startup/session-open, redacted disconnect, actual packaged Harness inference, and actual App plan-action regression tests.
-- All **1,823 tests** and TypeScript checks passed, along with the 17-check capability audit and terminal PTY smoke test. A fresh tarball installation passed version, diagnostics, headless execution, and packaged Harness inference checks.
+- All **1,823 tests** and TypeScript checks passed, along with the 17-check capability audit and terminal PTY smoke test. Its fresh tarball installation passed version, diagnostics, and headless execution, but Harness inference failed; see the 0.1.6 correction.
 - The packaged Harness was checked against a mock Unsloth inference server. A live Unsloth server was unavailable on this machine.
 
 ---

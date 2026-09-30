@@ -1145,7 +1145,7 @@ export async function runLocalHarness(request: ProviderChatRequest, handlers: Ba
   const runner = sharedProcess;
   try { return await runner.run(request, handlers, signal); }
   catch (error) {
-    if (!signal.aborted && runner instanceof LocalHarnessProcess && /JSON-RPC.*(?:closed|disconnect)/i.test(error instanceof Error ? error.message : String(error))) {
+    if (!signal.aborted && runner instanceof LocalHarnessProcess && /^JSON-RPC.*(?:closed|disconnect)/i.test(error instanceof Error ? error.message : String(error))) {
       await runner.shutdown();
       const detail = runner.failureDetails();
       throw new Error(`Local Harness disconnected during session/prompt. ${error instanceof Error ? error.message : String(error)}${detail ? `\n${detail}` : ""}\nYour next prompt will start a fresh Harness session. The failed turn was not retried.`);

@@ -3,7 +3,7 @@ import { isLocalDevChannel } from "./channel.js";
 
 export const UBUME_NPM_PACKAGE = "ubume";
 export const UBUME_NPM_REGISTRY_URL = "https://registry.npmjs.org/ubume";
-export const UBUME_UPDATE_COMMAND = `npm install -g ${UBUME_NPM_PACKAGE}@latest --prefer-online`;
+export const UBUME_UPDATE_COMMAND = `npm install -g ${UBUME_NPM_PACKAGE}@latest --prefer-online --legacy-peer-deps`;
 
 export const CODEXA_NPM_PACKAGE = UBUME_NPM_PACKAGE;
 export const CODEXA_NPM_REGISTRY_URL = UBUME_NPM_REGISTRY_URL;
