@@ -1,7 +1,7 @@
 {
   "name": "ubume",
-  "version": "0.1.6",
-  "description": "Terminal UI for Ubume \u2014 TypeScript + Bun + Ink",
+  "version": "0.1.7",
+  "description": "Terminal UI for Ubume — TypeScript + Bun + Ink",
   "type": "module",
   "bin": {
     "ubume": "bin/ubume.js",
