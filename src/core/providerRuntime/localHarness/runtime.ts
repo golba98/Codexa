@@ -39,6 +39,12 @@ const HARNESS_MAX_RSS_BYTES = 1024 * 1024 * 1024;
 const HARNESS_HEAP_LIMIT_MIB = 768;
 const HARNESS_MEMORY_POLL_MS = 500;
 const MAX_DISPLAY_REASONING_CHARS = 32_768;
+// pi-ai aborts a stream after this long without a chunk, including time to the
+// first token. A Local server that stalls this long is overloaded (commonly RAM
+// exhaustion paging model weights from disk), so the profile drops TIMEOUT from
+// the Harness retry codes: re-sending the same request to a stalled server only
+// adds more silent waits of the same length.
+const LOCAL_STREAM_IDLE_TIMEOUT_MS = 300_000;
 const REASONING_TRUNCATED_PREFIX = "… Earlier reasoning omitted for memory safety.\n";
 
 function readLinuxProcessRssBytes(pid: number): number | null {
@@ -298,6 +304,10 @@ function profilePatch(supportsVision: boolean, reasoningEffortEnabled = false): 
         defaultContextWindow: !!js Number(process.env.UBUME_DSH_CONTEXT_WINDOW)
         defaultMaxTokens: !!js Number(process.env.UBUME_DSH_MAX_TOKENS)
         defaultInput: ${input}${providerReasoning}
+        streamIdleTimeoutMs: ${LOCAL_STREAM_IDLE_TIMEOUT_MS}
+        retryPolicy:
+          mode: normal
+          retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TRANSPORT]
         models:
           - id: !!js process.env.UBUME_DSH_MODEL
             name: !!js process.env.UBUME_DSH_MODEL
@@ -691,14 +701,29 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     const event = params.event;
     const data = event.data ?? {};
     if (event.type?.startsWith("compaction/")) {
+      const ended = event.type.endsWith("/end");
+      const failure = ended && typeof data.error === "string" ? data.error : null;
       state.handlers.onProgress?.({
         id: "local-harness-compaction",
         source: "transcript",
-        text: event.type.endsWith("/end") ? "Local Harness compacted the conversation context." : "Local Harness is compacting conversation context.",
+        text: failure !== null
+          ? `Local Harness could not compact the conversation (${failure}); continuing with the full context.`
+          : ended ? "Local Harness compacted the conversation context." : "Local Harness is compacting conversation context.",
       });
-      if (event.type.endsWith("/end") && state.lastUsage) {
+      if (ended && failure === null && state.lastUsage) {
         state.handlers.onContextUsage?.({ ...state.lastUsage, compacted: true });
       }
+      return;
+    }
+    if (event.type === "llm/retry") {
+      const failure = isRecord(data.failure) && typeof data.failure.message === "string" ? data.failure.message : "model request failed";
+      const attempt = typeof data.retry === "number" ? data.retry : 1;
+      const limit = typeof data.maxRetries === "number" ? `/${data.maxRetries}` : "";
+      state.handlers.onProgress?.({
+        id: "local-harness-retry",
+        source: "transcript",
+        text: `Local model request failed (${failure}); retrying ${attempt}${limit}…`,
+      });
       return;
     }
     if (event.type === "turn/end" && isRecord(data.reason)) {
@@ -713,7 +738,9 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
           `Model: ${state.request.route.modelId}`,
           `Endpoint: ${sanitizedEndpoint(state.request.resolvedLocalAgentConfig?.baseUrl ?? state.request.localConfig?.baseUrl ?? "")}`,
           "",
-          "Verify that the server supports OpenAI-compatible streaming and native tool/function calling, and that the model's chat template has tool support enabled.",
+          failure.code === "TIMEOUT"
+            ? `The Local server sent no output for ${LOCAL_STREAM_IDLE_TIMEOUT_MS / 60_000} minutes. This usually means it is overloaded: system RAM is exhausted so model weights page from disk, or a very large uncached prompt (context compaction, restored history) is still being processed. Check the server's memory use; for llama.cpp, a smaller --cache-ram or --parallel 1 reduces RAM pressure.`
+            : "Verify that the server supports OpenAI-compatible streaming and native tool/function calling, and that the model's chat template has tool support enabled.",
         ].join("\n");
       } else if (reason.kind === "blocked") {
         state.turnFailure = "The Local Harness blocked this turn before completion.";

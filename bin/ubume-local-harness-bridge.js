@@ -61,13 +61,28 @@ function outputContent(blocks) {
 
 export function projectHarnessEvent(event) {
   const data = event?.data ?? {};
-  if (event?.type?.startsWith("compaction/")) return { type: event.type };
+  if (event?.type?.startsWith("compaction/")) {
+    return data.error === undefined
+      ? { type: event.type }
+      : { type: event.type, data: { error: String(data.error).slice(0, 4_000) } };
+  }
   if (event?.type === "turn/end") {
     const reason = data.reason ?? {};
     return { type: event.type, data: { reason: {
       kind: reason.kind,
-      ...(reason.error ? { error: { message: String(reason.error.message ?? "").slice(0, 4_000) } } : {}),
+      ...(reason.error ? { error: {
+        message: String(reason.error.message ?? "").slice(0, 4_000),
+        ...(typeof reason.error.code === "string" ? { code: reason.error.code } : {}),
+      } } : {}),
     } } };
+  }
+  if (event?.type === "llm/retry") {
+    return { type: event.type, data: {
+      retry: data.retry,
+      maxRetries: data.maxRetries,
+      delayMs: data.delayMs,
+      failure: { message: String(data.failure?.message ?? "").slice(0, 4_000), code: data.failure?.code },
+    } };
   }
   if (event?.type === "assistant/chunk") {
     const chunk = data.chunk;

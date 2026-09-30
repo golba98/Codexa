@@ -133,6 +133,9 @@ describe("Local Harness provider routing", () => {
     assert.match(patch, /defaultPreset: !!js process\.env\.UBUME_DSH_PERMISSION_PRESET/);
     assert.match(patch, /danger-full-access:\n        sandbox: danger-full-access\n        approval: never/);
     assert.match(patch, /session scratch directory under \.ubume\/scratch\//);
+    assert.match(patch, /\n        streamIdleTimeoutMs: 300000\n/);
+    assert.match(patch, /\n        retryPolicy:\n          mode: normal\n          retryableCodes: \[EMPTY_RESPONSE, RATE_LIMIT, SERVER, TRANSPORT\]\n/);
+    assert.doesNotMatch(patch, /retryableCodes: \[[^\]]*TIMEOUT/);
   });
 
   test("writable sessions get a scratch folder note without creating files; plan mode does not", () => {
@@ -506,6 +509,69 @@ describe("Harness event projection and policy", () => {
     assert.equal(errors.length, 1);
     assert.match(errors[0]!.message, /reasoning .* no answer|produced reasoning only/i);
     assert.doesNotMatch(errors[0]!.message, /output budget/);
+  });
+
+  test("a failed compaction is reported as a failure and does not mark the context compacted", () => {
+    const compacted: boolean[] = [];
+    const fixture = activeProcess({ onContextUsage: (event) => compacted.push(event.compacted === true) });
+    const notify = notifier(fixture);
+    notify("session.event", { sessionId: "session-1", event: { seq: 1, type: "assistant/chunk", data: { chunk: { type: "usage", usage: { inputTokens: 50_000, outputTokens: 3_000 } } } } });
+    notify("session.event", { sessionId: "session-1", event: { seq: 2, type: "compaction/start" } });
+    notify("session.event", { sessionId: "session-1", event: { seq: 3, type: "compaction/end", data: { error: "pi-ai stream idle timeout after 300000ms" } } });
+
+    assert.deepEqual(compacted, [false]);
+    assert.equal(fixture.progressIds.at(-1), "local-harness-compaction");
+    assert.match(fixture.progress.at(-1)!, /could not compact.*pi-ai stream idle timeout after 300000ms.*continuing with the full context/i);
+  });
+
+  test("a successful compaction marks the context compacted", () => {
+    const compacted: boolean[] = [];
+    const fixture = activeProcess({ onContextUsage: (event) => compacted.push(event.compacted === true) });
+    const notify = notifier(fixture);
+    notify("session.event", { sessionId: "session-1", event: { seq: 1, type: "assistant/chunk", data: { chunk: { type: "usage", usage: { inputTokens: 50_000, outputTokens: 3_000 } } } } });
+    notify("session.event", { sessionId: "session-1", event: { seq: 2, type: "compaction/end" } });
+
+    assert.deepEqual(compacted, [false, true]);
+    assert.equal(fixture.progress.at(-1), "Local Harness compacted the conversation context.");
+  });
+
+  test("Harness model retries are visible as progress", () => {
+    const fixture = activeProcess();
+    const notify = notifier(fixture);
+    notify("session.event", { sessionId: "session-1", event: { seq: 1, type: "llm/retry", data: { retry: 2, maxRetries: 5, delayMs: 989, failure: { message: "503 Service Unavailable", code: "SERVER" } } } });
+
+    assert.deepEqual(fixture.progressIds, ["local-harness-retry"]);
+    assert.match(fixture.progress[0]!, /503 Service Unavailable.*retrying 2\/5/i);
+  });
+
+  test("a stream idle timeout explains a stalled Local server instead of blaming tool support", () => {
+    const errors: Error[] = [];
+    const fixture = activeProcess();
+    (fixture.process as unknown as { active: { reject: (error: Error) => void } }).active.reject = (error) => errors.push(error);
+    const notify = notifier(fixture);
+    notify("session.event", { sessionId: "session-1", event: { seq: 1, type: "turn/end", data: { turn: 1, reason: { kind: "error", error: { message: "pi-ai stream idle timeout after 300000ms", code: "TIMEOUT" } } } } });
+    notify("session.status", { sessionId: "session-1", status: "idle" });
+
+    assert.equal(errors.length, 1);
+    assert.match(errors[0]!.message, /^Local agent request failed: pi-ai stream idle timeout after 300000ms/);
+    assert.match(errors[0]!.message, /Model: Qwen/);
+    assert.match(errors[0]!.message, /no output for 5 minutes/i);
+    assert.match(errors[0]!.message, /RAM/);
+    assert.match(errors[0]!.message, /--cache-ram/);
+    assert.doesNotMatch(errors[0]!.message, /chat template/i);
+  });
+
+  test("non-timeout model errors keep the streaming and tool-calling hint", () => {
+    const errors: Error[] = [];
+    const fixture = activeProcess();
+    (fixture.process as unknown as { active: { reject: (error: Error) => void } }).active.reject = (error) => errors.push(error);
+    const notify = notifier(fixture);
+    notify("session.event", { sessionId: "session-1", event: { seq: 1, type: "turn/end", data: { turn: 1, reason: { kind: "error", error: { message: "400: bad request", code: "BAD_REQUEST" } } } } });
+    notify("session.status", { sessionId: "session-1", status: "idle" });
+
+    assert.equal(errors.length, 1);
+    assert.match(errors[0]!.message, /chat template/i);
+    assert.doesNotMatch(errors[0]!.message, /--cache-ram/);
   });
 
   test("assistant/message output_text parts populate the final text", () => {
