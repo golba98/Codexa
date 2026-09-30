@@ -25,7 +25,8 @@ No changes yet.
 
 - 1,893 tests and TypeScript checks passed, including complete process-restart and missing-state recovery tests for LM Studio and Unsloth.
 - Terminal recording: `docs/recordings/provider-resume.cast`.
-- Publication is pending packed-package release validation.
+- The release hook passed all 1,893 full-suite tests; the additional Antigravity diagnostics regression passed separately. Capability audit: 17/17; npm audit: zero vulnerabilities.
+- The verified tarball installed in an isolated prefix and passed version, doctor, fixture-provider headless execution and packaged Harness inference. The isolated terminal benchmark passed. Publication is pending.
 
 ---
 
