@@ -60,7 +60,7 @@ test("detectGlobalPackageManager prefers the explicit override over the environm
 // --- commands ---
 
 test("getUpdateCommand returns the right command per package manager", () => {
-  assert.equal(getUpdateCommand("npm").displayCommand, "npm install -g ubume@latest");
+  assert.equal(getUpdateCommand("npm").displayCommand, "npm install -g ubume@latest --prefer-online");
   assert.equal(getUpdateCommand("pnpm").displayCommand, "pnpm add -g ubume@latest");
   assert.equal(getUpdateCommand("yarn").displayCommand, "yarn global add ubume@latest");
   assert.equal(getUpdateCommand("bun").displayCommand, "bun add -g ubume@latest");
@@ -128,7 +128,7 @@ test("runUpdateCommand uses argv spawn on POSIX", async () => {
   assert.equal(res.status, "completed");
   assert.equal(calls.length, 1);
   assert.equal(calls[0]!.executable, "npm");
-  assert.deepEqual(calls[0]!.args, ["install", "-g", "ubume@latest"]);
+  assert.deepEqual(calls[0]!.args, ["install", "-g", "ubume@latest", "--prefer-online"]);
   assert.equal(calls[0]!.timeoutMs, 300_000);
 });
 
