@@ -56,6 +56,12 @@ function importedLabel(source: string): string {
   return source === "claude" || source === "codex" || source === "antigravity" ? externalSourceLabel(source) : source;
 }
 
+function displayTitle(title: string): string {
+  // Composer attachment IDs are invisible, but Ink renders them as cells.
+  // Remove only their paired suffix so existing saved titles stay intact.
+  return title.replace(/\u2063[\uFE00-\uFE09]+\u2063/g, "");
+}
+
 export function ubumeRowText(conversation: ConversationListEntry, now = new Date()): string {
   const parts = [
     activityLabel(conversation.updatedAt, now),
@@ -64,7 +70,7 @@ export function ubumeRowText(conversation: ConversationListEntry, now = new Date
     `${conversation.messageCount} messages`,
     ...(conversation.importedFrom ? [`from ${importedLabel(conversation.importedFrom.source)}`] : []),
   ];
-  return `${conversation.title} — ${parts.join(" · ")}`;
+  return `${displayTitle(conversation.title)} — ${parts.join(" · ")}`;
 }
 
 export function externalRowText(summary: ExternalSessionSummary, scope: ExternalListScope, now = new Date()): string {
@@ -73,7 +79,7 @@ export function externalRowText(summary: ExternalSessionSummary, scope: External
     ...(summary.model ? [summary.model] : []),
     ...(scope === "all" && summary.cwd ? [basename(summary.cwd) || summary.cwd] : []),
   ];
-  return `${summary.title} — ${parts.join(" · ")}`;
+  return `${displayTitle(summary.title)} — ${parts.join(" · ")}`;
 }
 
 export function matchesQuery(fields: readonly (string | null | undefined)[], query: string): boolean {

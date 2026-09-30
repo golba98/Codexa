@@ -1,8 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { activityLabel, externalRowText, matchesQuery, nextResumeTab, ubumeRowText } from "./resumePickerRows.js";
+import { createAtomicContentToken } from "../input/pastedContent.js";
 
 const now = new Date(2026, 8, 30, 15, 0);
+
+test("resume rows hide attachment IDs without changing visible titles or stored metadata", () => {
+  for (const label of ["[Pasted Content 22,703 chars]", "[Image: photo.png]", "[File: notes.txt]"]) {
+    const title = `${createAtomicContentToken(label)} · café ❤️`;
+    const conversation = { version: 1 as const, id: "chat_a", title, createdAt: "", updatedAt: "not a date", providerId: "local", modelId: "qwen", backendKind: null, messageCount: 9 };
+    assert.equal(ubumeRowText(conversation, now), `${label} · café ❤️ — Unknown time · qwen · Local · 9 messages`);
+    assert.equal(externalRowText({ source: "claude", id: "abc", title, cwd: "/work/app", updatedAt: "not a date" }, "workspace", now), `${label} · café ❤️ — Unknown time`);
+    assert.equal(conversation.title, title);
+  }
+});
 
 test("activityLabel describes recent activity relative to now", () => {
   assert.match(activityLabel(new Date(2026, 8, 30, 9, 5).toISOString(), now), /^Today, /);
