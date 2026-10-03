@@ -2,6 +2,7 @@ import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { carrierKeyOf } from "@deepseek-ai/dsh-scope";
+import { browserDescription, isBrowserTool, registerBrowserTools } from "./ubume-local-browser-tools.js";
 
 export const name = "ubume-local-harness-bridge";
 export const inject = ["agents", "sessions"];
@@ -27,11 +28,12 @@ function contentPreview(blocks, limit = MAX_TOOL_RESULT_CHARS) {
   return result;
 }
 
-function toolDisplayArguments(raw) {
+function toolDisplayArguments(raw, tool) {
   try {
     if (typeof raw === "string" && raw.length > 1024 * 1024) return "{}";
     const args = typeof raw === "string" ? JSON.parse(raw) : raw;
     if (!args || typeof args !== "object") return "{}";
+    if (isBrowserTool(tool)) return JSON.stringify({ description: browserDescription(tool, args) });
     return JSON.stringify(Object.fromEntries(
       ["command", "path", "file_path"].filter((key) => typeof args[key] === "string")
         .map((key) => [key, args[key].slice(0, MAX_TOOL_ARGUMENT_CHARS)]),
@@ -41,8 +43,11 @@ function toolDisplayArguments(raw) {
   }
 }
 
-export function policyArguments(args) {
+export function policyArguments(args, tool) {
   if (!args || typeof args !== "object") return {};
+  // Full browser arguments travel only on private policy/execution RPCs. Never
+  // copy them into display events or diagnostics (typing can contain secrets).
+  if (isBrowserTool(tool)) return args;
   return Object.fromEntries(
     ["command", "path", "file_path", "old_path", "new_path"]
       .filter((key) => typeof args[key] === "string")
@@ -104,12 +109,12 @@ export function projectHarnessEvent(event) {
     return { type: event.type, seq: event.seq, data: {
       callId: data.callId,
       name: data.name,
-      arguments: toolDisplayArguments(data.arguments),
+      arguments: toolDisplayArguments(data.arguments, data.name),
     } };
   }
   if (event?.type === "tool/result") {
     return { type: event.type, seq: event.seq, data: {
-      message: { source: { callId: data.message?.source?.callId }, content: [{ type: "text", text: contentPreview(data.message?.content) }] },
+      message: { source: { callId: data.message?.source?.callId }, content: [{ type: "text", text: typeof data.meta?.browserSummary === "string" ? data.meta.browserSummary.slice(0, 500) : contentPreview(data.message?.content) }] },
       ...(data.error ? { error: { message: "Tool failed" } } : {}),
     } };
   }
@@ -170,7 +175,7 @@ export class UbumeHarnessServer {
         sessionId: String(agent.id),
         callId: execution.callId === undefined ? undefined : String(execution.callId),
         tool: execution.name,
-        arguments: policyArguments(execution.arguments),
+        arguments: policyArguments(execution.arguments, execution.name),
       });
       if (!result || typeof result !== "object") {
         return { kind: "deny", reason: "Ubume returned an invalid tool-policy decision." };
@@ -206,6 +211,8 @@ export class UbumeHarnessServer {
     this.maxTokens = Number.isSafeInteger(params.maxTokens) && params.maxTokens > 0
       ? params.maxTokens
       : undefined;
+    this.browserCapability = params.browserCapability;
+    this.supportsVision = params.supportsVision === true;
     return { serverInfo: { name: "ubume-local-harness-runtime", version: "1" } };
   }
 
@@ -271,6 +278,9 @@ export class UbumeHarnessServer {
   }
 
   async create(sessionId, resume, seed) {
+    const setup = (agentCtx) => {
+      if (this.browserCapability?.status === "available") registerBrowserTools(agentCtx, this.transport, sessionId, this.supportsVision);
+    };
     const agentOptions = {
       provider: this.provider,
       model: this.model,
@@ -280,7 +290,7 @@ export class UbumeHarnessServer {
     let resumed = false;
     if (resume) {
       try {
-        handle = await this.ctx.agents.resume({ resumeSessionId: SessionId(sessionId), agentOptions });
+        handle = await this.ctx.agents.resume({ resumeSessionId: SessionId(sessionId), agentOptions, setup });
         resumed = true;
       } catch (error) {
         if (!seed || (error?.name !== "SessionFormatUnsupportedError" && !/^session "[^\"]+" not found$/.test(error?.message ?? ""))) throw error;
@@ -291,6 +301,7 @@ export class UbumeHarnessServer {
       meta: { cwd: this.cwd, ...(seed ? { seedLength: seed.length } : {}) },
       ...(seed ? { seed } : {}),
       agentOptions,
+      setup,
     });
     const record = { handle, resumed };
     this.sessions.set(sessionId, record);

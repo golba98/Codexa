@@ -5,6 +5,7 @@ import { appendFileSync, mkdirSync, readFileSync, realpathSync, statSync } from 
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
+import { createRequire } from "module";
 
 process.title = "UBUME";
 
@@ -186,6 +187,7 @@ Usage:
   ubume --resume <id>
   ubume --import-session <source>:<id>
   ubume exec "print the current directory"
+  ubume browser install
   ubume doctor [--probe]
   ubume status | config | providers | models
   ubume sessions list | show <id> | transcript <id> | diff <id>
@@ -222,6 +224,18 @@ Inside Ubume:
 }
 
 const commandName = forwardArgs[0] === "--json" ? forwardArgs[1] : forwardArgs[0];
+if (commandName === "browser") {
+  if (forwardArgs.length !== 2 || forwardArgs[1] !== "install") {
+    process.stderr.write("Usage: ubume browser install\n"); process.exit(2);
+  }
+  const require = createRequire(import.meta.url);
+  const manifestPath = require.resolve("playwright/package.json");
+  const installer = spawn(process.execPath, [join(dirname(manifestPath), "cli.js"), "install", "chromium"], { stdio: "inherit" });
+  installer.once("error", (error) => { process.stderr.write(`Browser installation failed: ${error.message}\n`); process.exit(1); });
+  installer.once("exit", (code) => process.exit(code ?? 1));
+  // This installer command never launches the Ink application.
+  await new Promise(() => {});
+}
 const isHeadlessExec = commandName === "exec";
 const isHeadlessBenchmark = commandName === "--headless-benchmark";
 const isHeadlessMode = isHeadlessExec || isHeadlessBenchmark || ["doctor", "status", "config", "providers", "models", "sessions"].includes(commandName);

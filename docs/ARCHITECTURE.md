@@ -338,3 +338,9 @@ Local completion explicitly flushes the Harness session journal before publishin
 ## Documentation maintenance
 
 Update `docs/ARCHITECTURE.md` when a subsystem boundary, entry point, data flow, provider layer, persistence rule, or terminal invariant changes. Update `docs/SOURCE_GUIDE.md` whenever a file under `src/` is added, removed, renamed, or changes responsibility. Architectural descriptions must be verified against the current code rather than inferred from historical behavior or filenames.
+
+## Local browser computer use
+
+Local uses the DeepSeek Harness as the generic agent runtime for compatible local models. Agent-scoped structured browser tools join its existing tool registry; the same loop handles streaming calls, reasoning, approvals, results and sessions. `src/core/computerUse/` supervises a private Node/Playwright worker under `bin/`; this worker executes browser commands and owns no model client or agent loop. Browser environment availability is independent of model capability. Existing hosted search/fetch guards remain in place.
+
+The browser backend reuses an ephemeral context per live Harness session, provides bounded semantic snapshots and references, and supplies screenshots through Harness attachments. Session cleanup closes browsers; the supervisor also reaps owned processes after worker failure. See [Local browser setup, tools, permissions and lifecycle](LOCAL_BROWSER.md).

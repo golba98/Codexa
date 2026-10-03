@@ -563,3 +563,14 @@ When changing `src/`:
 - Re-check migrations and corrupted/missing data for persistence changes.
 - Re-check command arguments and executable resolution on supported platforms for provider/process changes.
 - Update this guide and, when architecture changed, `docs/ARCHITECTURE.md`.
+
+### Local browser execution
+
+- `src/core/computerUse/capability.ts`: browser runtime availability and desktop/headless defaults, separate from model profiles.
+- `src/core/computerUse/types.ts`: small backend-neutral browser request/result contracts.
+- `src/core/computerUse/browser.ts`: supervised Node worker lifecycle, RPC and owned-process cleanup.
+- `bin/ubume-local-browser-tools.js`: model-facing schemas and Harness registry adapter.
+- `bin/ubume-browser-backend.js`: Playwright semantic inspection, references, actions, privacy and browser lifecycle.
+- `bin/ubume-browser-worker.js`: bounded private execution RPC; no agent loop.
+- `bin/ubume-browser-proxy.js`: per-session HTTP(S)/WebSocket network policy, including redirects.
+- `bin/ubume-browser-url.js`: backend-independent URL validation; importing Local never loads the Playwright engine.

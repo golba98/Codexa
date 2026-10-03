@@ -129,3 +129,7 @@ This is an integration smoke, not an isolated unit test. It can contact an exter
 - Export pure resolution helpers and guard direct execution with `import.meta.url` when a script needs focused tests.
 - Add or update a colocated test whenever entry selection, shim names, path discovery, or audit evidence changes.
 - Never add provider-dependent smoke commands to the default unit-test path.
+
+## Local browser smoke
+
+`UBUME_BROWSER_MODE=headless bun scripts/smoke-local-browser.ts` runs an isolated localhost browser flow using the structured browser backend. Use `headed` to watch on a desktop. It requires installed Chromium, leaves screenshot artifacts in its printed temporary directory, and closes its browser and server on completion. It does not contact a model or external site; the Local Harness integration tests verify model/tool routing separately.
