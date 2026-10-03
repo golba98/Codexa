@@ -335,7 +335,8 @@ import {
   type WorkbenchSnapshot,
 } from "./session/workbench.js";
 import { AppShell } from "./ui/chrome/AppShell.js";
-import { MemoizedBottomComposer, measureBottomComposerRows } from "./ui/chrome/BottomComposer.js";
+import { MemoizedBottomComposer } from "./ui/chrome/BottomComposer.js";
+import { measureBottomComposerRows } from "./ui/chrome/composer/composerModel.js";
 import { FOCUS_IDS, getFocusTargetForScreen } from "./ui/input/focus.js";
 import {
   assertAttachedContent,

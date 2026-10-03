@@ -1,0 +1,170 @@
+import * as renderDebug from "../../../core/perf/renderDebug.js";
+import type { RunEvent } from "../../../session/types.js";
+import { buildUserInputRows } from "./cards.js";
+import { buildActionRequiredRows } from "./eventRows.js";
+import { createBlankRow, wrapRows } from "./rows.js";
+import { buildTimelineSnapshot } from "./stableSnapshot.js";
+import { buildStreamEventRows, collectStreamEvents, compactActionBursts } from "./streamRows.js";
+import type {
+  NativeTranscriptParts,
+  RenderTimelineItem,
+  StreamEvent,
+  TimelineRow,
+  TurnRenderItem,
+} from "./types.js";
+
+// ─── Native transcript builders ───────────────────────────────────────────────
+
+function isNativeLiveStreamEvent(event: StreamEvent, run: RunEvent): boolean {
+  if (run.status !== "running") return false;
+  if (event.kind === "action") return event.tool.status === "running";
+  if (event.kind === "response") return event.segment.id === (run.activeResponseSegmentId ?? null);
+  if (event.kind === "plan") return run.plan?.status === "active";
+  return false;
+}
+
+function wrapNativeRows(
+  rows: TimelineRow[],
+  totalWidth: number,
+  padded: boolean,
+  keyPrefix: string,
+): TimelineRow[] {
+  return wrapRows(rows, totalWidth, padded, keyPrefix, false);
+}
+
+// Counts full per-turn row builds so tests can assert that unchanged finalized
+// turns are served from the static transcript cache instead of being rebuilt.
+let _nativeTurnBuildCount = 0;
+
+export function __getNativeTurnBuildCountForTests(): number {
+  return _nativeTurnBuildCount;
+}
+
+export function __resetNativeTurnBuildCountForTests(): void {
+  _nativeTurnBuildCount = 0;
+}
+
+function appendNativeTurnParts(
+  output: NativeTranscriptParts,
+  item: TurnRenderItem,
+  options: {
+    totalWidth: number;
+    verboseMode?: boolean;
+    workspaceRoot?: string | null;
+  },
+): void {
+  _nativeTurnBuildCount += 1;
+  const run = item.item.run;
+  const innerWidth = Math.max(10, options.totalWidth - (item.padded ? 2 : 0));
+  const verbose = options.verboseMode ?? false;
+  const running = run?.status === "running";
+
+  if (item.item.user) {
+    const userRows = wrapNativeRows(
+      buildUserInputRows(item, innerWidth),
+      options.totalWidth,
+      item.padded,
+      item.key,
+    );
+    const promptGapRow = createBlankRow(`${item.key}-prompt-gap-row`, options.totalWidth);
+    if (running) {
+      output.liveRows.push(...userRows, promptGapRow);
+    } else {
+      output.staticItems.push({ key: `${item.key}-user`, rows: userRows });
+      output.staticItems.push({ key: `${item.key}-prompt-gap`, rows: [promptGapRow] });
+    }
+  }
+
+  if (!run) return;
+
+  const events = compactActionBursts(collectStreamEvents(item), verbose, run.status !== "running");
+  events.forEach((event, eventIndex) => {
+    // Keep the complete active turn live and commit it atomically on finalize.
+    // Ink <Static> is append-only, and finalize-time rendering differs from the
+    // live rendering (action bursts compact, deferred reasoning rows reflow in,
+    // plan-mode chatter is demoted), so committing early would leave scrollback
+    // that disagrees with the finalized turn. Width resizes remount <Static>
+    // via repaintGeneration. TranscriptShell tail-windows these rows so the
+    // live region never exceeds the terminal (Ink would clear scrollback).
+    const placeAsLive = running;
+    // Rendering: only the event that is currently active gets a live indicator
+    // (spinner / streaming cursor). Completed events render in stable form even
+    // while their parent run is still running.
+    const isLiveRender = placeAsLive && isNativeLiveStreamEvent(event, run);
+    const rows = buildStreamEventRows({
+      item,
+      event,
+      isLive: isLiveRender,
+      isLastEvent: false,
+      innerWidth,
+      verbose,
+      workspaceRoot: options.workspaceRoot,
+      forceStable: !isLiveRender,
+    });
+
+    if (eventIndex > 0)
+      rows.unshift(createBlankRow(`${item.key}-stream-gap-${event.streamSeq}`, innerWidth));
+    const wrappedRows = wrapNativeRows(rows, options.totalWidth, item.padded, item.key);
+    if (placeAsLive) {
+      output.liveRows.push(...wrappedRows);
+    } else {
+      output.staticItems.push({
+        key: `${item.key}-stream-${event.streamSeq}`,
+        rows: wrappedRows,
+      });
+    }
+  });
+
+  const questionRows = buildActionRequiredRows(item, innerWidth);
+  if (questionRows.length > 0) {
+    output.liveRows.push(
+      ...wrapNativeRows(questionRows, options.totalWidth, item.padded, item.key),
+    );
+  }
+
+  const endGapRow = createBlankRow(`${item.key}-turn-end-gap-row`, options.totalWidth);
+  if (run && run.status === "running") {
+    output.liveRows.push(endGapRow);
+  } else {
+    output.staticItems.push({
+      key: `${item.key}-turn-end-gap`,
+      rows: [endGapRow],
+    });
+  }
+}
+
+export function buildNativeTranscriptParts(
+  items: RenderTimelineItem[],
+  options: {
+    totalWidth: number;
+    verboseMode?: boolean;
+    debugLabel?: string;
+    workspaceRoot?: string | null;
+  },
+): NativeTranscriptParts {
+  renderDebug.traceEvent("timeline", "buildNativeTranscriptParts", {
+    debugLabel: options.debugLabel ?? "native",
+    items: items.length,
+    totalWidth: options.totalWidth,
+    verbose: options.verboseMode ?? false,
+  });
+
+  const output: NativeTranscriptParts = {
+    staticItems: [],
+    liveRows: [],
+  };
+
+  for (const item of items) {
+    if (item.type === "turn") {
+      appendNativeTurnParts(output, item, options);
+      continue;
+    }
+
+    output.staticItems.push({
+      key: item.key,
+      rows: buildTimelineSnapshot([item], options).rows,
+    });
+  }
+
+  return output;
+}

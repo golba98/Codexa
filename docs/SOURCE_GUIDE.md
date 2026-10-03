@@ -511,3 +511,29 @@ When changing `src/`:
 | `src/session/workbench.ts` |  |
 | `src/ui/input/pastedContent.ts` |  |
 | `src/core/providerRuntime/codexaNative.ts` |  |
+
+## PR 5 module boundaries
+
+| File | Responsibility |
+| --- | --- |
+| `src/core/providerRuntime/localHarness/bridgePolicy.ts` | Pure workspace and approval decisions for harness tool requests. |
+| `src/core/providerRuntime/localHarness/config.ts` | Harness configuration, fingerprints, reasoning, output budgets, and subprocess environment. |
+| `src/core/providerRuntime/localHarness/messages.ts` | Harness route descriptions, redaction, cancellation, hashing, and failure messages. |
+| `src/core/providerRuntime/localHarness/notifications.ts` | Harness event handlers with explicit process and active-run ownership context. |
+| `src/core/providerRuntime/localHarness/profile.ts` | Harness profile YAML and session scratch directory preparation. |
+| `src/ui/chrome/composer/composerKeymap.ts` | Pure composer key classification and raw terminal key sequences. |
+| `src/ui/chrome/composer/composerModel.ts` | Composer props, measurement, status labels, and suggestion helpers. |
+| `src/ui/chrome/composer/useComposerInput.ts` | Composer editing, paste, mentions, focus, and raw-key lifecycle. |
+| `src/ui/timeline/TimelineRows.tsx` | Timeline row rendering and memo comparators. |
+| `src/ui/timeline/measure/caches.ts` | Timeline row cache ownership and reset entry point. |
+| `src/ui/timeline/measure/cards.ts` | Timeline bordered cards, user input, and impact summaries. |
+| `src/ui/timeline/measure/eventRows.ts` | Standalone, introductory, and action-required event rows. |
+| `src/ui/timeline/measure/markdownRows.ts` | Markdown and code-block row measurement. |
+| `src/ui/timeline/measure/nativeTranscript.ts` | Native scrollback transcript parts and turn build instrumentation. |
+| `src/ui/timeline/measure/rows.ts` | Styled row wrapping, width, padding, and snapshot assembly. |
+| `src/ui/timeline/measure/stableSnapshot.ts` | Stable and live snapshot construction with frozen row groups. |
+| `src/ui/timeline/measure/streamRows.ts` | Stream event rendering, coalescing, live indicators, and turn rows. |
+| `src/ui/timeline/measure/types.ts` | Timeline measurement and render-item types without a component dependency. |
+| `src/ui/timeline/timelineItems.ts` | Pure transcript item construction and turn presentation state. |
+| `src/ui/timeline/timelineViewport.ts` | Pure viewport anchoring, scrolling, reflow, and row selection. |
+| `src/ui/timeline/useTimelineViewport.ts` | Viewport state and effects, preserving finalize transition ordering. |

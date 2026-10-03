@@ -14,7 +14,7 @@ const transcriptShellSource = readFileSync(
   "utf8",
 );
 const composerSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "BottomComposer.tsx"),
+  join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "composer", "useComposerInput.ts"),
   "utf8",
 );
 const launcherSource = readFileSync(

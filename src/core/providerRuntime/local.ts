@@ -19,7 +19,8 @@ import {
   type LmStudioModelList,
   resolveUnslothConnection,
 } from "./localBackends.js";
-import { resolveDefaultMaxOutputTokens, runLocalHarness } from "./localHarness/runtime.js";
+import { resolveDefaultMaxOutputTokens } from "./localHarness/config.js";
+import { runLocalHarness } from "./localHarness/runtime.js";
 import type {
   ProviderChatRequest,
   ProviderModel,
