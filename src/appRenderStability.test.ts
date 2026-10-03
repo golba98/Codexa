@@ -464,3 +464,11 @@ test("Composer clears every raw-key timeout when its stdin listener is removed",
     assert.match(cleanup[1] ?? "", new RegExp(`clearTimeout\\(${ref}\\.current\\)`), ref);
   }
 });
+
+test("startPromptRun re-creates when the workspace provider config or auth timestamp change", () => {
+  // callbackBody spans the whole useCallback call, so the dependency array is at its end.
+  const body = callbackBody(appSource, "startPromptRun") ?? "";
+  const deps = body.slice(body.lastIndexOf("["));
+  assert.match(deps, /\bproviderWorkspaceConfig,/);
+  assert.match(deps, /\bauthStatus\.checkedAt,/);
+});

@@ -179,3 +179,17 @@ test("returns null capabilities when no cache exists anywhere", () => {
     );
   });
 });
+
+test("reads the codex cache from CODEX_HOME when it is set", () => {
+  withTempDir((dir) => {
+    const previous = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = dir;
+    try {
+      writeFileSync(join(dir, "models_cache.json"), JSON.stringify(SEED_FIXTURE), "utf8");
+      assert.equal(loadCodexSeedModels()?.models[0]?.modelId, "gpt-5.6-sol");
+    } finally {
+      if (previous === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = previous;
+    }
+  });
+});

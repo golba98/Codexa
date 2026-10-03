@@ -16,9 +16,10 @@ export function getUpdateCheckCacheFilePath(): string {
   return join(home, ".ubume-update-check.json");
 }
 
+/** Cache file written by pre-rename (Codexa) releases; read only as a fallback. */
 function getLegacyUpdateCheckCacheFilePath(): string {
   const home = process.env.USERPROFILE ?? process.env.HOME ?? homedir();
-  return join(home, ".ubume-update-check.json");
+  return join(home, ".codexa-update-check.json");
 }
 
 export function loadUpdateCheckCache(

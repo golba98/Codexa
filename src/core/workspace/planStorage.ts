@@ -1,6 +1,5 @@
 import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { homedir } from "os";
 import { join } from "path";
 import { isNoiseLine } from "../providers/codexTranscript.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
@@ -90,17 +89,7 @@ export function resolvePlanDir(platformOverride?: Platform): string {
   const envDir = process.env["UBUME_PLAN_DIR"] || process.env["CODEXA_PLAN_DIR"];
   if (envDir) return envDir;
 
-  const platform = platformOverride ?? process.platform;
-
-  if (platform === "win32") {
-    const localAppData = process.env["LOCALAPPDATA"];
-    if (localAppData) return join(localAppData, "Ubume", "plans");
-    const appData = process.env["APPDATA"];
-    if (appData) return join(appData, "Ubume", "plans");
-    return join(homedir(), "AppData", "Local", "Ubume", "plans");
-  }
-
-  return join(resolveUbumeDataDir(platform), "plans");
+  return join(resolveUbumeDataDir(platformOverride ?? process.platform), "plans");
 }
 
 // SHA-256 of the workspace path ensures filename uniqueness across projects with the same name.

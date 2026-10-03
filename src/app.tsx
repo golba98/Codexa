@@ -5752,11 +5752,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       appendConversationMessage,
       appendErrorEvent,
       appendSystemEvent,
+      authStatus.checkedAt,
       authStatus.state,
       finalizePromptRun,
       mode,
       provider,
       projectInstructions,
+      providerWorkspaceConfig,
       dispatchSession,
       refreshAuthStatus,
       runtimeConfig,
@@ -7004,9 +7006,11 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   ]);
 
   const modelDisplayName = activeRuntimeDisplay.modelDisplay;
-  const currentCheckpointStore = activeConversationRef.current
-    ? new CheckpointStore(workspaceRoot, activeConversationRef.current.metadata.id)
-    : null;
+  const activeConversationId = activeConversationRef.current?.metadata.id ?? null;
+  const currentCheckpointStore = useMemo(
+    () => (activeConversationId ? new CheckpointStore(workspaceRoot, activeConversationId) : null),
+    [activeConversationId, workspaceRoot],
+  );
   const recoveryCheckpoints = checkpointsRef.current.length
     ? checkpointsRef.current
     : (activeConversationRef.current?.messages ?? []).flatMap((message, index): FileCheckpoint[] =>
