@@ -248,6 +248,8 @@ export function startApp({
 
   const kittyKeyboard = resolveKittyKeyboardOptions(env);
   renderHandle = renderApp(<App launchArgs={launchArgs} />, {
+    // App owns cancel, draft clearing, and the deliberate second Ctrl-C quit.
+    exitOnCtrlC: false,
     ...(kittyKeyboard ? { kittyKeyboard } : {}),
     // AppStdout is the narrow surface the app uses; Ink wants the full stream type.
     stdout: wrappedStdout as unknown as NodeJS.WriteStream,
