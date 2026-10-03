@@ -100,3 +100,5 @@ release. [CHANGELOG.md](CHANGELOG.md) contains the detailed technical record.
 Use `ubume doctor`, `ubume status --json`, `ubume providers`, and `ubume sessions list` to diagnose and inspect Ubume from a shell. `ubume exec "prompt"` saves a session by default; continue it with `ubume exec --resume <id> "next instruction"`, or use `--no-save` for a transient run. Pipe prompts with `ubume exec --stdin`. See [terminal command usage](docs/TERMINAL_COMMANDS.md) for JSON output, file attachments, diagnostics, and session diffs.
 
 Saved chats, including LM Studio and Unsloth conversations, live in Ubume's user data folder under `chats/`. `/resume` includes provider sections and Local backend/model filters. Native Antigravity history uses the `agy` CLI. See [resume and storage details](docs/TERMINAL_WORKBENCH.md).
+
+Local models can use integrated structured browser tools through the DeepSeek Harness. See [browser setup and usage](docs/LOCAL_BROWSER.md). Install Chromium with `ubume browser install`.

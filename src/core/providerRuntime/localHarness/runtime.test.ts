@@ -778,6 +778,50 @@ describe("Harness event projection and policy", () => {
     assert.equal(active.toolArguments.has("call-1"), false);
   });
 
+  test("browser permissions bind one action to its approved target and reject altered calls", async () => {
+    let decision: "allow-once" | "deny" = "deny";
+    let identity = "original-target";
+    let executions = 0;
+    const fixture = activeProcess({ onToolApproval: async (approval) => {
+      assert.equal(approval.allowForRun, false);
+      assert.doesNotMatch(approval.description ?? "", /secret-value/);
+      return decision;
+    } });
+    const internals = fixture.process as unknown as {
+      browser: unknown;
+      active: { request: ProviderChatRequest };
+      onBridgeRequest(method: string, params: Record<string, unknown>): Promise<any>;
+    };
+    internals.browser = {
+      approvalState: async () => ({ identity, description: "Email field" }),
+      execute: async () => { executions++; return { ok: true, value: { summary: "done" } }; },
+    };
+    const bridge = internals.onBridgeRequest.bind(fixture.process);
+    const call = { sessionId: "session-1", callId: "browser-1", tool: "browser_type", arguments: { element: "e1", text: "secret-value" } };
+    assert.equal((await bridge("tool/policy", call)).kind, "ask");
+    assert.equal((await bridge("approval/request", call)).outcome, "rejected");
+    assert.equal((await bridge("browser/execute", call)).error.code, "BROWSER_PERMISSION_DENIED");
+    decision = "allow-once";
+    await bridge("tool/policy", call); await bridge("approval/request", call);
+    assert.equal((await bridge("browser/execute", { ...call, arguments: { element: "e1", text: "altered" } })).error.code, "BROWSER_PERMISSION_DENIED");
+    await bridge("tool/policy", call); await bridge("approval/request", call);
+    identity = "replaced-target";
+    assert.equal((await bridge("browser/execute", call)).error.code, "BROWSER_PERMISSION_DENIED");
+    await bridge("tool/policy", call); await bridge("approval/request", call);
+    assert.equal((await bridge("browser/execute", call)).ok, true);
+    assert.equal((await bridge("browser/execute", call)).error.code, "BROWSER_PERMISSION_DENIED");
+    assert.equal(executions, 1);
+    internals.active.request.runtime.policy.sandboxMode = "read-only";
+    assert.equal((await bridge("tool/policy", call)).kind, "deny");
+    assert.equal((await bridge("tool/policy", { ...call, tool: "browser_inspect", arguments: {} })).kind, "allow");
+    internals.active.request.runtime.policy.sandboxMode = "workspace-write";
+    internals.active.request.runtime.policy.approvalPolicy = "never";
+    assert.equal((await bridge("tool/policy", call)).kind, "allow");
+    assert.equal((await bridge("browser/execute", call)).ok, true);
+    assert.equal(executions, 2);
+    assert.equal((await bridge("tool/policy", { ...call, arguments: { text: 42 } })).kind, "deny");
+  });
+
   test("approved plan execution asks for mutating tools instead of denying them", async () => {
     const fixture = activeProcess();
     (fixture.process as unknown as { active: { request: { runIntent: string } } }).active.request.runIntent = "approved-execution";

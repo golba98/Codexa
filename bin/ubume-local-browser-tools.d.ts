@@ -1,0 +1,10 @@
+import type { Context } from "@deepseek-ai/cordis";
+import type { ParameterSchemaSpec } from "@deepseek-ai/dsh-tools";
+export type BrowserToolName = "browser_open" | "browser_navigate" | "browser_inspect" | "browser_click" | "browser_type" | "browser_press" | "browser_select" | "browser_scroll" | "browser_back" | "browser_forward" | "browser_reload" | "browser_screenshot" | "browser_wait" | "browser_close";
+export const browserSpecs: Record<BrowserToolName, ParameterSchemaSpec>;
+export const browserInteractions: Set<string>;
+export function isBrowserTool(name: string): name is BrowserToolName;
+export function validateBrowserArguments(tool: string, args: unknown): Record<string, unknown>;
+export function browserDescription(tool: string, args?: Record<string, unknown>): string;
+export function safeBrowserUrl(value: string): string;
+export function registerBrowserTools(ctx: Context, transport: unknown, sessionId: string, supportsVision: boolean): Array<() => void>;

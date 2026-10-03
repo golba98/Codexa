@@ -24,6 +24,7 @@
     "sync:npm-lock": "bun scripts/sync-npm-lock.ts"
   },
   "dependencies": {
+    "playwright": "1.63.0",
     "@deepseek-ai/dsh": "0.1.1-rc.2",
     "@deepseek-ai/dsh-attachment-local": "0.1.1-rc.2",
     "@deepseek-ai/dsh-llm": "0.1.1-rc.2",

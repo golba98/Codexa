@@ -27,6 +27,8 @@ export interface ToolApprovalRequest {
   signature: string;
   command?: string;
   paths: string[];
+  description?: string;
+  allowForRun?: boolean;
 }
 
 export type BackendAuthState = "delegated" | "api-key-required" | "coming-soon";

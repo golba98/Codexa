@@ -17,6 +17,7 @@ import { clearModelContextMetadataCache, resolveModelContextLengthCached } from 
 import { deriveLmStudioApiRoot, fetchLmStudioModels, type LmStudioModelInfo, type LmStudioModelList } from "./lmstudio.js";
 import { resolveUnslothConnection } from "./unsloth.js";
 import { runLocalHarness } from "./localHarness/runtime.js";
+import { resolveBrowserCapability } from "../computerUse/capability.js";
 
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:1234/v1";
 const DEFAULT_LOCAL_API_KEY = "lm-studio";
@@ -227,7 +228,11 @@ function diagnosticsFor(options: {
   contextField?: string | null;
   error?: string | null;
 }): Record<string, string | number | boolean | null> {
+  const browser = resolveBrowserCapability();
   return {
+    browserComputerUse: browser.status,
+    browserReason: browser.reason,
+    browserMode: browser.mode,
     localBackend: options.config.localBackend,
     enabled: options.config.enabled,
     type: options.config.type,
@@ -732,6 +737,8 @@ export async function runLocalDiagnostics(options: {
     `Active model: ${diagnostics.selectedModel ?? "none"}`,
     `Selected: ${diagnostics.selectedModel ?? "none"}`,
     `Endpoint check: ${diagnostics.endpointCheckResult ?? "unknown"}`,
+    `Browser computer use: ${diagnostics.browserComputerUse ?? "unavailable"} (${diagnostics.browserMode ?? "auto"})`,
+    diagnostics.browserReason ? `Browser: ${diagnostics.browserReason}` : null,
     diagnostics.errorMessage ? `Error: ${diagnostics.errorMessage}` : null,
     ...lmLines,
   ].filter(Boolean).join("\n");

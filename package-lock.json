@@ -9,6 +9,7 @@
       "version": "0.1.11",
       "license": "MIT",
       "dependencies": {
+        "playwright": "1.63.0",
         "@deepseek-ai/dsh": "0.1.1-rc.2",
         "@deepseek-ai/dsh-attachment-local": "0.1.1-rc.2",
         "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
@@ -5993,6 +5994,25 @@
       "version": "5.0.1",
       "resolved": "https://registry.npmjs.org/pkce-challenge/-/pkce-challenge-5.0.1.tgz",
       "integrity": "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ=="
+    },
+    "node_modules/playwright": {
+      "version": "1.63.0",
+      "resolved": "https://registry.npmjs.org/playwright/-/playwright-1.63.0.tgz",
+      "integrity": "sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==",
+      "dependencies": {
+        "playwright-core": "1.63.0"
+      },
+      "bin": {
+        "playwright": "cli.js"
+      }
+    },
+    "node_modules/playwright-core": {
+      "version": "1.63.0",
+      "resolved": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.63.0.tgz",
+      "integrity": "sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==",
+      "bin": {
+        "playwright-core": "cli.js"
+      }
     },
     "node_modules/powershell-utils": {
       "version": "0.2.1",
