@@ -23,7 +23,7 @@ This is the local equivalent of the installed `bin/ubume.js` launcher.
 
 1. Resolves the repository root from the script location rather than the caller's working directory.
 2. Sends normal interactive launches to `src/index.tsx`.
-3. Sends `exec` and `--headless-benchmark` launches to `src/exec.ts`, removing the mode token before forwarding arguments.
+3. Sends `exec` and `--headless-benchmark` launches to `src/cli.ts` with the mode token kept, exactly like `bin/ubume.js`.
 4. Spawns Bun with inherited stdio and keeps the caller's current directory as the Ubume workspace.
 5. Marks the child as a local development launch through `UBUME_CHANNEL=local-dev` and the related relaunch/package environment fields.
 6. Forwards child exit codes and signals to the calling terminal.
@@ -95,7 +95,7 @@ The smoke script starts the real installed launcher path:
 ```text
 scripts/smoke-terminal-bench.mjs
   -> node bin/ubume.js exec "Print the current directory, list files, and stop."
-  -> src/exec.ts
+  -> src/cli.ts
   -> configured Codex backend
 ```
 

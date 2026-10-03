@@ -10,7 +10,7 @@ This overview standardizes project documentation. The detailed [architecture](AR
 flowchart LR
   Terminal --> Launcher[bin/ubume.js]
   Launcher -->|interactive| Entry[src/index.tsx]
-  Launcher -->|exec| Headless[src/exec.ts]
+  Launcher -->|exec| Headless[src/cli.ts]
   Entry --> App[src/app.tsx]
   App --> UI[src/ui]
   App --> Session[src/session]

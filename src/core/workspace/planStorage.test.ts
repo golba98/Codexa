@@ -7,12 +7,22 @@ import { readPlan, resolvePlanDir, savePlan } from "./planStorage.js";
 
 describe("resolvePlanDir", () => {
   const savedEnv: Record<string, string | undefined> = {};
-  const envKeys = ["UBUME_PLAN_DIR", "CODEXA_PLAN_DIR", "LOCALAPPDATA", "APPDATA", "XDG_DATA_HOME"];
+  const envKeys = [
+    "UBUME_PLAN_DIR",
+    "CODEXA_PLAN_DIR",
+    "UBUME_DATA_DIR",
+    "CODEXA_DATA_DIR",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "XDG_DATA_HOME",
+  ];
 
   beforeEach(() => {
     for (const key of envKeys) {
       savedEnv[key] = process.env[key];
     }
+    delete process.env["UBUME_DATA_DIR"];
+    delete process.env["CODEXA_DATA_DIR"];
   });
 
   afterEach(() => {
@@ -55,6 +65,16 @@ describe("resolvePlanDir", () => {
     assert.ok(result.includes("Ubume"));
     assert.ok(result.includes("plans"));
     assert.ok(result.includes("Roaming"));
+  });
+
+  test("UBUME_DATA_DIR relocates plans on every platform", () => {
+    delete process.env["UBUME_PLAN_DIR"];
+    delete process.env["CODEXA_PLAN_DIR"];
+    process.env["UBUME_DATA_DIR"] = "/custom/data";
+    process.env["LOCALAPPDATA"] = "C:\\Users\\test\\AppData\\Local";
+    for (const platform of ["win32", "darwin", "linux"]) {
+      assert.equal(resolvePlanDir(platform), join("/custom/data", "plans"), platform);
+    }
   });
 
   test("macOS path", () => {

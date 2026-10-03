@@ -149,3 +149,25 @@ test("isCacheForRunningVersion ignores a leading v but rejects a different insta
   assert.equal(isCacheForRunningVersion(cache, "1.0.4"), true);
   assert.equal(isCacheForRunningVersion(cache, "1.0.5"), false);
 });
+
+test("load falls back to the pre-rename Codexa cache file", () => {
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  const dir = makeTempDir();
+  try {
+    delete process.env.USERPROFILE;
+    process.env.HOME = dir;
+    writeFileSync(
+      join(dir, ".codexa-update-check.json"),
+      JSON.stringify(makeCache({ latestVersion: "0.9.0" })),
+      "utf8",
+    );
+    assert.equal(loadUpdateCheckCache()?.latestVersion, "0.9.0");
+  } finally {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserProfile;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

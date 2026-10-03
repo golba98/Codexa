@@ -1,9 +1,8 @@
 import { DEFAULT_BACKEND } from "../../config/settings.js";
 import { codexSubprocessProvider } from "./codexSubprocess.js";
-import { openaiNativeProvider } from "./openaiNative.js";
 import type { BackendProvider } from "./types.js";
 
-const BACKEND_PROVIDERS: BackendProvider[] = [codexSubprocessProvider, openaiNativeProvider];
+const BACKEND_PROVIDERS: BackendProvider[] = [codexSubprocessProvider];
 
 export function getBackendProvider(id: string): BackendProvider {
   return (

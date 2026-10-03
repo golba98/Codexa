@@ -42,7 +42,7 @@ flowchart LR
   Install --> Shims[ubume-dev and cxd]
   Shims --> Dev
   Dev --> Interactive[src/index.tsx]
-  Dev --> Headless[src/exec.ts]
+  Dev --> Headless[src/cli.ts]
   Build --> BuildInfo[src/config/buildInfo.ts]
   Audit --> Source[Read-only src inspection]
   Smoke --> Launcher[bin/ubume.js exec]
@@ -57,7 +57,7 @@ Only build-info generation intentionally rewrites a tracked source file. The cap
 flowchart LR
   User[User in a terminal] --> Launcher[bin/ubume.js]
   Launcher -->|interactive| Entry[src/index.tsx]
-  Launcher -->|exec / benchmark| Exec[src/exec.ts]
+  Launcher -->|exec / benchmark| Exec[src/cli.ts]
 
   Entry --> App[src/app.tsx]
   App --> Session[src/session]
@@ -75,13 +75,13 @@ flowchart LR
   UI --> Terminal[Terminal screen and native scrollback]
 ```
 
-The launcher chooses a mode but does not own application state. `src/index.tsx` owns interactive startup and terminal cleanup. `src/exec.ts` owns the headless command surface. Both paths reuse configuration and backend services from `src/`.
+The launcher chooses a mode but does not own application state. `src/index.tsx` owns interactive startup and terminal cleanup. `src/cli.ts` owns the headless command surface (dispatching through `src/headless/commands.ts`). Both paths reuse configuration and backend services from `src/`.
 
 ## Major source boundaries
 
 ```mermaid
 flowchart TD
-  Entrypoints[Entrypoints<br/>index.tsx / exec.ts] --> Orchestrator[App orchestration<br/>app.tsx]
+  Entrypoints[Entrypoints<br/>index.tsx / cli.ts] --> Orchestrator[App orchestration<br/>app.tsx]
   Entrypoints --> Headless[Headless runner<br/>headless/]
   Orchestrator --> Session[Session state and reducers<br/>session/]
   Orchestrator --> Commands[Slash-command parsing<br/>commands/]
@@ -152,8 +152,9 @@ Important details:
 ```mermaid
 flowchart LR
   CLI[ubume exec] --> Launcher[bin/ubume.js]
-  Launcher --> Entry[src/exec.ts]
-  Entry --> Parse[headless/execArgs.ts]
+  Launcher --> Entry[src/cli.ts]
+  Entry --> Commands[headless/commands.ts]
+  Commands --> Parse[headless/execArgs.ts]
   Parse --> Resolve[Layered config + workspace]
   Resolve --> Runner[headless/execRunner.ts]
   Runner --> Backend[core/providers backend]

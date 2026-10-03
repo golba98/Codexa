@@ -604,6 +604,7 @@ export function BottomComposer({
       stdin.off("data", handleRawInput);
       if (backtabEventTimeoutRef.current) clearTimeout(backtabEventTimeoutRef.current);
       if (ctrlMEventTimeoutRef.current) clearTimeout(ctrlMEventTimeoutRef.current);
+      if (ctrlAltPEventTimeoutRef.current) clearTimeout(ctrlAltPEventTimeoutRef.current);
       if (mouseEventTimeoutRef.current) clearTimeout(mouseEventTimeoutRef.current);
       if (pasteChunkTimerRef.current) clearTimeout(pasteChunkTimerRef.current);
     };

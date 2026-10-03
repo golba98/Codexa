@@ -52,12 +52,10 @@ import {
 import {
   APP_VERSION,
   type AuthPreference,
-  type AvailableBackend,
   type AvailableMode,
   type AvailableModel,
   estimateTokens,
   formatAuthPreferenceLabel,
-  formatBackendLabel,
   formatBusyLoaderSettingValue,
   formatModeLabel,
   formatReasoningLabel,
@@ -356,7 +354,6 @@ import {
   type PendingImportFile,
 } from "./ui/panels/AttachmentImportPanel.js";
 import { AuthPanel } from "./ui/panels/AuthPanel.js";
-import { BackendPicker } from "./ui/panels/BackendPicker.js";
 import { ExternalSessionViewer } from "./ui/panels/ExternalSessionViewer.js";
 import { ModelPickerScreen } from "./ui/panels/ModelPickerScreen.js";
 import { ModePicker } from "./ui/panels/ModePicker.js";
@@ -3039,24 +3036,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     updateRuntimeConfig,
   ]);
 
-  const setBackendWithNotice = useCallback(
-    (nextBackend: AvailableBackend) => {
-      updateRuntimeConfig((current) => ({
-        ...current,
-        provider: nextBackend,
-      }));
-      setScreen("main");
-      appendSystemEvent(
-        "Backend updated",
-        `Active backend is now ${formatBackendLabel(nextBackend)}.`,
-      );
-      if (nextBackend === "codex-subprocess") {
-        void refreshAuthStatus(false);
-      }
-    },
-    [appendSystemEvent, busy, refreshAuthStatus, updateRuntimeConfig],
-  );
-
   const setModeWithNotice = useCallback(
     (nextMode: AvailableMode) => {
       updateRuntimeConfig((current) => ({
@@ -3597,10 +3576,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     [appendSystemEvent, baseLayeredConfig.diagnostics.projectRoot, busy, reloadBaseLayeredConfig],
   );
 
-  const openBackendPicker = useCallback(() => {
-    setScreen("backend-picker");
-  }, [appendSystemEvent, busy]);
-
   const probeLocalBackend = useCallback(
     (localBackend: LocalBackendId) => {
       const existing = localBackendCheckInFlightRef.current.get(localBackend);
@@ -4126,6 +4101,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   const runProviderSetup = useCallback(
     (providerId: ProviderId) => {
       const provider = findProvider(providerRegistry, providerId);
+      const label = provider?.displayName ?? providerId;
       const windows = process.platform === "win32";
       const plan = getProviderSetupPlan(providerId, windows);
 
@@ -4160,19 +4136,16 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           });
 
       child.once("error", (error) => {
-        appendErrorEvent("Mistral Vibe setup failed", error.message);
+        appendErrorEvent(`${label} setup failed`, error.message);
       });
       child.once("close", (code) => {
         if (code === 0) {
           appendSystemEvent(
-            `${provider?.displayName ?? providerId} setup`,
+            `${label} setup`,
             "Installation and setup finished. Reopen the provider picker to launch it.",
           );
         } else if (code !== null) {
-          appendErrorEvent(
-            `${provider?.displayName ?? providerId} setup failed`,
-            `The setup process exited with code ${code}.`,
-          );
+          appendErrorEvent(`${label} setup failed`, `The setup process exited with code ${code}.`);
         }
       });
     },
@@ -5779,11 +5752,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       appendConversationMessage,
       appendErrorEvent,
       appendSystemEvent,
+      authStatus.checkedAt,
       authStatus.state,
       finalizePromptRun,
       mode,
       provider,
       projectInstructions,
+      providerWorkspaceConfig,
       dispatchSession,
       refreshAuthStatus,
       runtimeConfig,
@@ -6485,11 +6460,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         case "resume":
           openResumePicker();
           return;
-        case "backend":
-          if (commandResult.value) {
-            setBackendWithNotice(commandResult.value as AvailableBackend);
-          }
-          return;
         case "model":
           if (commandResult.value) {
             setModelWithNotice(commandResult.value as AvailableModel);
@@ -6732,9 +6702,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           return;
         case "auth_status":
           void refreshAuthStatus(true);
-          return;
-        case "open_backend_picker":
-          openBackendPicker();
           return;
         case "open_provider_picker":
           openProviderPicker();
@@ -6996,7 +6963,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     modelCapabilities,
     mode,
     openAuthPanel,
-    openBackendPicker,
     openProviderPicker,
     openModePicker,
     openModelPicker,
@@ -7020,7 +6986,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     removeWritableRootWithNotice,
     setApprovalPolicyWithNotice,
     setAuthPreferenceWithNotice,
-    setBackendWithNotice,
     setNetworkAccessWithNotice,
     setModeWithNotice,
     setModelWithNotice,
@@ -7041,9 +7006,11 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   ]);
 
   const modelDisplayName = activeRuntimeDisplay.modelDisplay;
-  const currentCheckpointStore = activeConversationRef.current
-    ? new CheckpointStore(workspaceRoot, activeConversationRef.current.metadata.id)
-    : null;
+  const activeConversationId = activeConversationRef.current?.metadata.id ?? null;
+  const currentCheckpointStore = useMemo(
+    () => (activeConversationId ? new CheckpointStore(workspaceRoot, activeConversationId) : null),
+    [activeConversationId, workspaceRoot],
+  );
   const recoveryCheckpoints = checkpointsRef.current.length
     ? checkpointsRef.current
     : (activeConversationRef.current?.messages ?? []).flatMap((message, index): FileCheckpoint[] =>
@@ -7259,14 +7226,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           }
           panel={
             <>
-              {screen === "backend-picker" && (
-                <BackendPicker
-                  currentBackend={backend}
-                  onSelect={(value) => setBackendWithNotice(value as AvailableBackend)}
-                  onCancel={() => setScreen("main")}
-                />
-              )}
-
               {screen === "workbench-panel" && (
                 <WorkbenchPanel
                   key={workbenchView}
