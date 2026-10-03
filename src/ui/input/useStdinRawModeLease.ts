@@ -1,5 +1,5 @@
-import { useEffect } from "react";
 import { useStdin } from "ink";
+import { useEffect } from "react";
 
 /**
  * Hold one raw-mode reference for the lifetime of the mounted tree.

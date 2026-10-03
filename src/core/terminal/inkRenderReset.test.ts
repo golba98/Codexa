@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  type InkRenderInstance,
   resetInkOutputForFreshFrame,
   resolveInkRenderInstance,
-  type InkRenderInstance,
 } from "./inkRenderReset.js";
 
 function createFakeInkInstance() {
@@ -44,7 +44,11 @@ test("resetInkOutputForFreshFrame zeroes Ink frame caches to the startup baselin
   assert.equal(instance.lastOutputToRender, "");
   assert.equal(instance.lastOutputHeight, 0);
   assert.equal(instance.fullStaticOutput, "");
-  assert.equal(instance.lastTerminalWidth, 140, "reseats lastTerminalWidth so the next frame is not treated as a width shrink");
+  assert.equal(
+    instance.lastTerminalWidth,
+    140,
+    "reseats lastTerminalWidth so the next frame is not treated as a width shrink",
+  );
   assert.equal(calls.logReset, 1, "resets log-update accounting exactly once");
   assert.equal(calls.throttledOnRenderCancel, 1, "drops any pending throttled render");
   assert.equal(calls.throttledLogCancel, 1, "drops any pending throttled log write");
@@ -59,7 +63,11 @@ test("resetInkOutputForFreshFrame emits no clear/erase escape sequences itself",
 
   resetInkOutputForFreshFrame({ instance, columns: 100 });
 
-  assert.equal(instance.writes, "", "reset relies on the already-issued physical clear, never writes escapes");
+  assert.equal(
+    instance.writes,
+    "",
+    "reset relies on the already-issued physical clear, never writes escapes",
+  );
 });
 
 test("resetInkOutputForFreshFrame leaves lastTerminalWidth untouched when columns is not finite", () => {

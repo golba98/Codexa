@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
-import { EventEmitter } from "events";
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildProviderLaunchSpec, commandExistsOnPath, launchCliCommand, launchProviderCli } from "./launcher.js";
+import { EventEmitter } from "events";
+import {
+  buildProviderLaunchSpec,
+  commandExistsOnPath,
+  launchCliCommand,
+  launchProviderCli,
+} from "./launcher.js";
 import type { ProviderConfig } from "./types.js";
 
 function makeProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
@@ -25,9 +30,12 @@ function makeProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
 }
 
 test("builds launch specs for enabled providers", () => {
-  const spec = buildProviderLaunchSpec(makeProvider({
-    launchCommand: { executable: "claude", args: ["--resume"] },
-  }), "C:\\Workspace");
+  const spec = buildProviderLaunchSpec(
+    makeProvider({
+      launchCommand: { executable: "claude", args: ["--resume"] },
+    }),
+    "C:\\Workspace",
+  );
 
   assert.equal("status" in spec, false);
   if ("status" in spec) return;
@@ -37,15 +45,18 @@ test("builds launch specs for enabled providers", () => {
 });
 
 test("disabled providers fail before spawning", () => {
-  const result = buildProviderLaunchSpec(makeProvider({
-    id: "local",
-    displayName: "Local",
-    backendType: "local-openai-compatible",
-    enabled: false,
-    statusLabel: "Disabled",
-    launchCommand: null,
-    isDefault: false,
-  }), "C:\\Workspace");
+  const result = buildProviderLaunchSpec(
+    makeProvider({
+      id: "local",
+      displayName: "Local",
+      backendType: "local-openai-compatible",
+      enabled: false,
+      statusLabel: "Disabled",
+      launchCommand: null,
+      isDefault: false,
+    }),
+    "C:\\Workspace",
+  );
 
   assert.equal("status" in result, true);
   assert.equal("status" in result ? result.status : "", "disabled");
@@ -53,9 +64,12 @@ test("disabled providers fail before spawning", () => {
 });
 
 test("unsafe configured launch commands fail before spawning", () => {
-  const result = buildProviderLaunchSpec(makeProvider({
-    launchCommand: { executable: "codex & calc", args: [] },
-  }), "C:\\Workspace");
+  const result = buildProviderLaunchSpec(
+    makeProvider({
+      launchCommand: { executable: "codex & calc", args: [] },
+    }),
+    "C:\\Workspace",
+  );
 
   assert.equal("status" in result, true);
   assert.equal("status" in result ? result.status : "", "spawn-error");
@@ -73,9 +87,12 @@ test("configured launch commands reject shell injection and extra arguments", ()
   ];
 
   for (const executable of unsafeExecutables) {
-    const result = buildProviderLaunchSpec(makeProvider({
-      launchCommand: { executable, args: [] },
-    }), "C:\\Workspace");
+    const result = buildProviderLaunchSpec(
+      makeProvider({
+        launchCommand: { executable, args: [] },
+      }),
+      "C:\\Workspace",
+    );
 
     assert.equal("status" in result, true, executable);
     assert.equal("status" in result ? result.status : "", "spawn-error", executable);
@@ -184,7 +201,11 @@ test("launch passes the workspace root as the child cwd", async () => {
   const child = new EventEmitter();
   let observedCwd = "";
   let observedShell: boolean | undefined = undefined;
-  const spawnImpl = ((_executable: string, _args: string[], options: { cwd?: string; shell?: boolean }) => {
+  const spawnImpl = ((
+    _executable: string,
+    _args: string[],
+    options: { cwd?: string; shell?: boolean },
+  ) => {
     observedCwd = options.cwd ?? "";
     observedShell = options.shell;
     queueMicrotask(() => child.emit("close", 0, null));
@@ -217,13 +238,16 @@ test("launch wraps Windows batch commands without enabling shell mode", async ()
     return child;
   }) as unknown as typeof import("child_process").spawn;
 
-  const result = await launchProviderCli(makeProvider({
-    launchCommand: { executable: "codex.cmd", args: ["--resume"] },
-  }), {
-    cwd: "C:\\Workspace",
-    commandExists: () => true,
-    spawnImpl,
-  });
+  const result = await launchProviderCli(
+    makeProvider({
+      launchCommand: { executable: "codex.cmd", args: ["--resume"] },
+    }),
+    {
+      cwd: "C:\\Workspace",
+      commandExists: () => true,
+      spawnImpl,
+    },
+  );
 
   assert.equal(result.status, "completed");
   assert.equal(observedExecutable, "cmd.exe");
@@ -299,24 +323,46 @@ test("launchCliCommand hands the terminal to an arbitrary command in its own fol
     return child;
   }) as unknown as typeof import("child_process").spawn;
 
-  const result = await launchCliCommand("Claude Code", { executable: "claude", args: ["--resume", "abc-123"], cwd: "/work/app" }, {
-    stdin: { isRaw: true, setRawMode(enabled) { rawModes.push(enabled); } },
-    commandExists: () => true,
-    spawnImpl,
-  });
+  const result = await launchCliCommand(
+    "Claude Code",
+    { executable: "claude", args: ["--resume", "abc-123"], cwd: "/work/app" },
+    {
+      stdin: {
+        isRaw: true,
+        setRawMode(enabled) {
+          rawModes.push(enabled);
+        },
+      },
+      commandExists: () => true,
+      spawnImpl,
+    },
+  );
 
   assert.equal(result.status, "completed");
   assert.match(result.message, /^Claude Code launch finished with exit code 0/);
-  assert.deepEqual(observed, { executable: "claude", args: ["--resume", "abc-123"], cwd: "/work/app" });
+  assert.deepEqual(observed, {
+    executable: "claude",
+    args: ["--resume", "abc-123"],
+    cwd: "/work/app",
+  });
   assert.deepEqual(rawModes, [false, true]);
 });
 
 test("launchCliCommand reports a missing executable without touching raw mode", async () => {
   const rawModes: boolean[] = [];
-  const result = await launchCliCommand("Codex", { executable: "codex", args: ["resume", "x"], cwd: "/work" }, {
-    stdin: { isRaw: true, setRawMode(enabled) { rawModes.push(enabled); } },
-    commandExists: () => false,
-  });
+  const result = await launchCliCommand(
+    "Codex",
+    { executable: "codex", args: ["resume", "x"], cwd: "/work" },
+    {
+      stdin: {
+        isRaw: true,
+        setRawMode(enabled) {
+          rawModes.push(enabled);
+        },
+      },
+      commandExists: () => false,
+    },
+  );
   assert.equal(result.status, "missing-command");
   assert.match(result.message, /Codex could not be launched because `codex`/);
   assert.deepEqual(rawModes, []);

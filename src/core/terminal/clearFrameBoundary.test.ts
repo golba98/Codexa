@@ -1,22 +1,24 @@
 import assert from "node:assert/strict";
 import { readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import { configureRenderDebug } from "../perf/renderDebug.js";
 import {
   __getClearFrameBoundaryTraceStatsForTests,
   __resetClearFrameBoundaryTraceStatsForTests,
   createClearFrameBoundaryController,
 } from "./clearFrameBoundary.js";
 import type { InkRenderInstance } from "./inkRenderReset.js";
-import { configureRenderDebug } from "../perf/renderDebug.js";
 
-function createHarness(overrides: {
-  onWidthResizeRefresh?: () => void;
-  isOverlayActive?: () => boolean;
-  getRenderedRepaintGeneration?: () => number;
-  getRenderedLayoutCols?: () => number | undefined;
-} = {}) {
+function createHarness(
+  overrides: {
+    onWidthResizeRefresh?: () => void;
+    isOverlayActive?: () => boolean;
+    getRenderedRepaintGeneration?: () => number;
+    getRenderedLayoutCols?: () => number | undefined;
+  } = {},
+) {
   const events: string[] = [];
   const stdout = { columns: 120, rows: 40 };
   const calls = { logReset: 0, logSync: 0, throttledOnRenderCancel: 0, throttledLogCancel: 0 };
@@ -117,7 +119,10 @@ test("suppresses stale pre-clear frames while clear is pending and commits one a
   assert.equal(events.includes("throttledOnRender.cancel"), true);
   assert.equal(events.includes("throttledLog.cancel"), true);
   assert.equal(events.includes("log.reset"), true);
-  assert.equal(events.some((entry) => entry.startsWith("write:fresh-post-clear")), true);
+  assert.equal(
+    events.some((entry) => entry.startsWith("write:fresh-post-clear")),
+    true,
+  );
   assert.equal(calls.logReset, 1);
   assert.equal(calls.throttledOnRenderCancel, 1);
   assert.equal(calls.throttledLogCancel, 1);
@@ -146,7 +151,11 @@ test("drops stale frames by snapshot hash even after app generation has advanced
   });
 
   instance.renderInteractiveFrame?.("old-frame", 10, "");
-  assert.equal(events.length, 0, "stale pre-clear frame should still be suppressed until transcript clears");
+  assert.equal(
+    events.length,
+    0,
+    "stale pre-clear frame should still be suppressed until transcript clears",
+  );
 
   controller.syncRenderState({
     generation: 1,
@@ -156,8 +165,14 @@ test("drops stale frames by snapshot hash even after app generation has advanced
     uiStateKind: "IDLE",
   });
   instance.renderInteractiveFrame?.("new-frame", 5, "");
-  assert.equal(events.some((entry) => entry.startsWith("clear:")), true);
-  assert.equal(events.some((entry) => entry.startsWith("write:new-frame")), true);
+  assert.equal(
+    events.some((entry) => entry.startsWith("clear:")),
+    true,
+  );
+  assert.equal(
+    events.some((entry) => entry.startsWith("write:new-frame")),
+    true,
+  );
 });
 
 test("marks only the first committed post-clear frame as authoritative", () => {
@@ -221,13 +236,21 @@ test("syncRenderState signals a post-clear repaint until the authoritative frame
     transcriptCleared: true,
     uiStateKind: "IDLE",
   });
-  assert.equal(afterCleared, true, "host must be told to force a repaint once the cleared frame is ready");
+  assert.equal(
+    afterCleared,
+    true,
+    "host must be told to force a repaint once the cleared frame is ready",
+  );
 
   // The forced repaint runs renderInteractiveFrame again, which now commits the
   // authoritative frame instead of leaving it stuck behind the stale gate.
   instance.renderInteractiveFrame?.("fresh-post-clear", 6, "");
   assert.equal(controller.getState().clearPending, false, "post-clear frame committed");
-  assert.equal(events.some((entry) => entry.startsWith("write:fresh-post-clear")), true, "authoritative frame is written");
+  assert.equal(
+    events.some((entry) => entry.startsWith("write:fresh-post-clear")),
+    true,
+    "authoritative frame is written",
+  );
 
   // Once committed, no further repaint should be requested (no render loop).
   const afterCommit = controller.syncRenderState({
@@ -262,12 +285,19 @@ test("seeded post-clear launch frame is ready even when static events are not em
     uiStateKind: "IDLE",
   });
 
-  assert.equal(repaintRequested, true, "seeded launch frame should be eligible for the authoritative post-clear repaint");
+  assert.equal(
+    repaintRequested,
+    true,
+    "seeded launch frame should be eligible for the authoritative post-clear repaint",
+  );
 
   instance.renderInteractiveFrame?.("██████\nLaunch mode\n│ ❯", 8, "");
 
   assert.equal(events[0]?.startsWith("clear:test:clearBoundary:firstPostClearFrame"), true);
-  assert.equal(events.some((entry) => entry.startsWith("write:██████\nLaunch mode\n│ ❯")), true);
+  assert.equal(
+    events.some((entry) => entry.startsWith("write:██████\nLaunch mode\n│ ❯")),
+    true,
+  );
   assert.equal(controller.getState().clearPending, false);
   assert.equal(controller.getState().committedGeneration, 1);
 });
@@ -303,7 +333,9 @@ test("replays suppressed static intro rows into the first authoritative post-cle
 
   assert.equal(events[0]?.startsWith("clear:test:clearBoundary:firstPostClearFrame"), true);
   assert.ok(
-    events.some((entry) => entry === `write:│ ❯ Ask Ubume\nContext: 0 / ~200K:4:${staticIntro.length}`),
+    events.some(
+      (entry) => entry === `write:│ ❯ Ask Ubume\nContext: 0 / ~200K:4:${staticIntro.length}`,
+    ),
     "authoritative frame should replay the static intro that Ink consumed during the suppressed frame",
   );
   assert.equal(controller.getState().clearPending, false);
@@ -337,11 +369,21 @@ test("defers the width repaint until the re-flushed static frame arrives, then c
   instance.renderInteractiveFrame?.("stale-width-frame", 4, "");
   assert.equal(resizeRefreshCount, 1, "width change should request the <Static> re-flush");
   assert.equal(controller.getState().widthRepaintPending, true);
-  assert.equal(events.some((entry) => entry.startsWith("write:")), false, "the stale-state frame must be suppressed, not written");
-  assert.equal(events.some((entry) => entry.startsWith("clear:")), false, "no physical clear before the rebuilt frame exists");
+  assert.equal(
+    events.some((entry) => entry.startsWith("write:")),
+    false,
+    "the stale-state frame must be suppressed, not written",
+  );
+  assert.equal(
+    events.some((entry) => entry.startsWith("clear:")),
+    false,
+    "no physical clear before the rebuilt frame exists",
+  );
 
   instance.renderInteractiveFrame?.("rebuilt-frame", 6, "██ re-flushed static\n");
-  const clearIndex = events.findIndex((entry) => entry.startsWith("clear:test:clearBoundary:resizeRefresh"));
+  const clearIndex = events.findIndex((entry) =>
+    entry.startsWith("clear:test:clearBoundary:resizeRefresh"),
+  );
   const writeIndex = events.findIndex((entry) => entry.startsWith("write:rebuilt-frame"));
   assert.ok(clearIndex >= 0, "the repaint must use the scrollback-inclusive transcript clear");
   assert.ok(writeIndex > clearIndex, "clear must immediately precede the rebuilt frame write");
@@ -352,7 +394,11 @@ test("defers the width repaint until the re-flushed static frame arrives, then c
   );
   assert.equal(controller.getState().widthRepaintPending, false);
   assert.equal(controller.getState().lastFrameWasAuthoritative, true);
-  assert.equal(calls.logReset, resetBeforeResize + 1, "the repaint resets Ink's caches exactly once");
+  assert.equal(
+    calls.logReset,
+    resetBeforeResize + 1,
+    "the repaint resets Ink's caches exactly once",
+  );
 });
 
 test("a width shrink (maximize→restore) also repaints atomically instead of stranding the wider frame", () => {
@@ -374,13 +420,26 @@ test("a width shrink (maximize→restore) also repaints atomically instead of st
   stdout.columns = 80;
   stdout.rows = 24;
   instance.renderInteractiveFrame?.("stale-wide-frame", 4, "");
-  assert.equal(controller.getState().widthRepaintPending, true, "a shrink must arm the width repaint");
-  assert.equal(events.some((entry) => entry.startsWith("write:")), false, "the stale wide frame must be suppressed");
+  assert.equal(
+    controller.getState().widthRepaintPending,
+    true,
+    "a shrink must arm the width repaint",
+  );
+  assert.equal(
+    events.some((entry) => entry.startsWith("write:")),
+    false,
+    "the stale wide frame must be suppressed",
+  );
 
   instance.renderInteractiveFrame?.("narrow-frame", 5, "narrow static\n");
-  const clearIndex = events.findIndex((entry) => entry.startsWith("clear:test:clearBoundary:resizeRefresh"));
+  const clearIndex = events.findIndex((entry) =>
+    entry.startsWith("clear:test:clearBoundary:resizeRefresh"),
+  );
   const writeIndex = events.findIndex((entry) => entry.startsWith("write:narrow-frame"));
-  assert.ok(clearIndex >= 0, "the shrink repaint must use the scrollback-inclusive transcript clear");
+  assert.ok(
+    clearIndex >= 0,
+    "the shrink repaint must use the scrollback-inclusive transcript clear",
+  );
   assert.ok(writeIndex > clearIndex, "clear must immediately precede the narrow frame write");
   assert.equal(controller.getState().widthRepaintPending, false);
 });
@@ -411,14 +470,30 @@ test("waits for the committed layout to match the new width before requesting th
   stdout.columns = 180;
   instance.renderInteractiveFrame?.("stale-layout-frame", 4, "");
   instance.renderInteractiveFrame?.("still-stale-layout-frame", 4, "");
-  assert.equal(resizeRefreshCount, 0, "no <Static> remount while the committed layout lags the terminal width");
-  assert.equal(events.some((entry) => entry.startsWith("write:")), false, "stale-layout frames stay suppressed");
+  assert.equal(
+    resizeRefreshCount,
+    0,
+    "no <Static> remount while the committed layout lags the terminal width",
+  );
+  assert.equal(
+    events.some((entry) => entry.startsWith("write:")),
+    false,
+    "stale-layout frames stay suppressed",
+  );
 
   // The viewport settle lands: the committed layout now matches the terminal.
   renderedLayoutCols = 180;
   instance.renderInteractiveFrame?.("settled-layout-frame", 4, "");
-  assert.equal(resizeRefreshCount, 1, "the re-flush is requested from the first width-correct commit");
-  assert.equal(events.some((entry) => entry.startsWith("write:")), false, "the pre-remount frame is still suppressed");
+  assert.equal(
+    resizeRefreshCount,
+    1,
+    "the re-flush is requested from the first width-correct commit",
+  );
+  assert.equal(
+    events.some((entry) => entry.startsWith("write:")),
+    false,
+    "the pre-remount frame is still suppressed",
+  );
 
   instance.renderInteractiveFrame?.("rebuilt-frame", 6, "width-correct static\n");
   assert.equal(
@@ -446,7 +521,11 @@ test("does not mistake a pre-resize static chunk for the rebuilt frame", () => {
   stdout.columns = 180;
   instance.renderInteractiveFrame?.("stale-width-frame", 4, "");
   instance.renderInteractiveFrame?.("chunk-frame", 4, "incremental chunk\n");
-  assert.equal(events.some((entry) => entry.startsWith("write:")), false, "pre-re-flush static chunks must stay suppressed");
+  assert.equal(
+    events.some((entry) => entry.startsWith("write:")),
+    false,
+    "pre-re-flush static chunks must stay suppressed",
+  );
   assert.equal(controller.getState().widthRepaintPending, true);
 
   renderedGeneration = 1;
@@ -480,7 +559,11 @@ test("repaints on every width change, and a settled width never re-arms", () => 
   // Another commit at the settled width: no new repaint.
   instance.renderInteractiveFrame?.("steady-frame", 6, "");
   assert.equal(resizeRefreshCount, 1, "a commit at the settled width must not re-arm the repaint");
-  assert.equal(controller.getState().lastFrameWasAuthoritative, false, "steady frames are diffed, not authoritative");
+  assert.equal(
+    controller.getState().lastFrameWasAuthoritative,
+    false,
+    "steady frames are diffed, not authoritative",
+  );
 
   // A second, later width change repaints again.
   stdout.columns = 101;
@@ -496,7 +579,11 @@ test("repaints on every width change, and a settled width never re-arms", () => 
 
 test("does not repaint on a height-only resize (no width change)", () => {
   let resizeRefreshCount = 0;
-  const harness = createHarness({ onWidthResizeRefresh: () => { resizeRefreshCount += 1; } });
+  const harness = createHarness({
+    onWidthResizeRefresh: () => {
+      resizeRefreshCount += 1;
+    },
+  });
   const { controller, instance, stdout, calls, events } = harness;
 
   instance.renderInteractiveFrame?.("initial-frame", 4, "");
@@ -505,7 +592,11 @@ test("does not repaint on a height-only resize (no width change)", () => {
   // Only the row count changes — no reflow risk, so no authoritative repaint.
   stdout.rows = 60;
   instance.renderInteractiveFrame?.("taller-frame", 5, "");
-  assert.equal(resizeRefreshCount, 0, "height-only resize should not trigger the re-flush callback");
+  assert.equal(
+    resizeRefreshCount,
+    0,
+    "height-only resize should not trigger the re-flush callback",
+  );
   assert.equal(controller.getState().lastFrameWasAuthoritative, false);
   assert.equal(calls.logReset, resetAfterFirstFrame, "height-only resize should not force a reset");
   assert.equal(
@@ -537,8 +628,14 @@ test("width repaint safety valve commits after the suppression cap instead of fr
     instance.renderInteractiveFrame?.(`stalled-frame-${index}`, 4, "");
   }
 
-  assert.equal(controller.getState().widthRepaintPending, false, "the safety valve must resolve the pending repaint");
-  const fallbackClear = events.findIndex((entry) => entry.startsWith("clear:test:clearBoundary:resizeRefreshFallback"));
+  assert.equal(
+    controller.getState().widthRepaintPending,
+    false,
+    "the safety valve must resolve the pending repaint",
+  );
+  const fallbackClear = events.findIndex((entry) =>
+    entry.startsWith("clear:test:clearBoundary:resizeRefreshFallback"),
+  );
   assert.ok(fallbackClear >= 0, "the fallback still clears before repainting");
   assert.equal(
     events.some((entry) => entry === `write:stalled-frame-8:4:${"accumulated static\n".length}`),
@@ -559,12 +656,21 @@ test("enters the alternate screen atomically before the first overlay frame writ
   instance.renderInteractiveFrame?.("overlay-frame", 40, "");
 
   const altOnIndex = events.findIndex((entry) => entry.startsWith("altScreen:on"));
-  const viewportClearIndex = events.findIndex((entry) => entry.startsWith("clearViewport:test:clearBoundary:overlayEnter"));
+  const viewportClearIndex = events.findIndex((entry) =>
+    entry.startsWith("clearViewport:test:clearBoundary:overlayEnter"),
+  );
   const writeIndex = events.findIndex((entry) => entry.startsWith("write:overlay-frame"));
   assert.ok(altOnIndex >= 0, "the overlay transition must enter the alternate screen");
   assert.ok(viewportClearIndex > altOnIndex, "the alternate buffer is homed before the frame");
-  assert.ok(writeIndex > viewportClearIndex, "the overlay frame must be written after the buffer switch, never into the normal buffer");
-  assert.equal(events.includes("log.reset"), true, "Ink caches reset so the first overlay frame is written in full");
+  assert.ok(
+    writeIndex > viewportClearIndex,
+    "the overlay frame must be written after the buffer switch, never into the normal buffer",
+  );
+  assert.equal(
+    events.includes("log.reset"),
+    true,
+    "Ink caches reset so the first overlay frame is written in full",
+  );
   assert.equal(controller.getState().overlayActive, true);
 });
 
@@ -581,18 +687,27 @@ test("startup overlay exit commits a freshly mounted main Static frame into an e
   overlayActive = false;
   const freshMainStatic = "Ubume logo\nWorkspace: test\nProvider: Local\n";
   instance.fullStaticOutput = `${instance.fullStaticOutput ?? ""}${freshMainStatic}`;
-  instance.renderInteractiveFrame?.("composer\nLocal / model\nContext: Unknown", 6, freshMainStatic);
+  instance.renderInteractiveFrame?.(
+    "composer\nLocal / model\nContext: Unknown",
+    6,
+    freshMainStatic,
+  );
 
   const altOffIndex = events.findIndex((entry) => entry.startsWith("altScreen:off"));
   const writeIndex = events.findIndex((entry) => entry.startsWith("write:composer"));
   assert.ok(altOffIndex >= 0, "the startup updater must leave the alternate screen");
-  assert.ok(writeIndex > altOffIndex, "the complete main frame is written only after restoring the normal buffer");
+  assert.ok(
+    writeIndex > altOffIndex,
+    "the complete main frame is written only after restoring the normal buffer",
+  );
   assert.equal(
     events[writeIndex],
     `write:composer\nLocal / model\nContext: Unknown:6:${freshMainStatic.length}`,
   );
   assert.equal(
-    events.some((entry) => entry.startsWith("clearViewport:") || entry.startsWith("clearTranscript:")),
+    events.some(
+      (entry) => entry.startsWith("clearViewport:") || entry.startsWith("clearTranscript:"),
+    ),
     false,
     "checker exit must not physically clear the restored normal buffer",
   );
@@ -630,8 +745,15 @@ test("holds transcript static flushed during an overlay and replays it into the 
   const syncIndex = events.findIndex((entry) => entry.startsWith("log.sync:"));
   const writeIndex = events.findIndex((entry) => entry.startsWith("write:main-frame-2"));
   assert.ok(altOffIndex >= 0, "exit must leave the alternate screen");
-  assert.ok(syncIndex > altOffIndex, "the normal buffer's log state is restored after the buffer switch");
-  assert.equal(events[syncIndex], `log.sync:${savedLastOutputToRender}`, "log state must be restored to the saved normal-buffer frame");
+  assert.ok(
+    syncIndex > altOffIndex,
+    "the normal buffer's log state is restored after the buffer switch",
+  );
+  assert.equal(
+    events[syncIndex],
+    `log.sync:${savedLastOutputToRender}`,
+    "log state must be restored to the saved normal-buffer frame",
+  );
   const expectedStatic = "chunk-a\nchunk-b\nchunk-c\n";
   assert.ok(writeIndex > syncIndex, "the exit frame is written after the caches are restored");
   assert.equal(
@@ -648,7 +770,13 @@ test("a clear armed while an overlay is open replaces the pre-overlay transcript
   const { controller, instance, events } = harness;
 
   const oldStatic = "Ubume logo\nold chat\n";
-  controller.syncRenderState({ generation: 0, staticEventsLength: 2, activeEventsLength: 0, transcriptCleared: false, uiStateKind: "IDLE" });
+  controller.syncRenderState({
+    generation: 0,
+    staticEventsLength: 2,
+    activeEventsLength: 0,
+    transcriptCleared: false,
+    uiStateKind: "IDLE",
+  });
   instance.fullStaticOutput = oldStatic;
   instance.renderInteractiveFrame?.("main-frame", 4, oldStatic);
 
@@ -674,12 +802,20 @@ test("a clear armed while an overlay is open replaces the pre-overlay transcript
   assert.equal(repaintRequested, true);
   instance.renderInteractiveFrame?.("composer", 5, "");
 
-  assert.equal(events.some((entry) => entry.startsWith("log.sync:")), false, "the pre-overlay frame must not be restored");
+  assert.equal(
+    events.some((entry) => entry.startsWith("log.sync:")),
+    false,
+    "the pre-overlay frame must not be restored",
+  );
   const clearIndex = events.findIndex((entry) => entry.startsWith("clear:test:clearBoundary:"));
   const committedWrites = events.filter((entry) => entry.startsWith("write:composer"));
   assert.ok(clearIndex >= 0, "the transcript is physically cleared before the resumed frame");
   assert.equal(committedWrites.length, 1, "exactly one authoritative resumed frame is written");
-  assert.equal(committedWrites[0], `write:composer:5:${resumedStatic.length}`, "the resumed static (one logo) is written once");
+  assert.equal(
+    committedWrites[0],
+    `write:composer:5:${resumedStatic.length}`,
+    "the resumed static (one logo) is written once",
+  );
   assert.equal(controller.getState().committedGeneration, 1);
   assert.equal(controller.getState().overlayActive, false);
 });
@@ -707,8 +843,12 @@ test("a width change while an overlay is open repaints the alt buffer, then re-a
   // so a viewport clear plus a full rewrite is a complete repaint.
   stdout.columns = 180;
   instance.renderInteractiveFrame?.("overlay-frame-wide", 40, "");
-  const overlayResizeClear = events.findIndex((entry) => entry.startsWith("clearViewport:test:clearBoundary:overlayResize"));
-  const overlayResizeWrite = events.findIndex((entry) => entry.startsWith("write:overlay-frame-wide"));
+  const overlayResizeClear = events.findIndex((entry) =>
+    entry.startsWith("clearViewport:test:clearBoundary:overlayResize"),
+  );
+  const overlayResizeWrite = events.findIndex((entry) =>
+    entry.startsWith("write:overlay-frame-wide"),
+  );
   assert.ok(overlayResizeClear >= 0, "overlay resize should clear the alternate viewport");
   assert.ok(overlayResizeWrite > overlayResizeClear);
 
@@ -718,15 +858,29 @@ test("a width change while an overlay is open repaints the alt buffer, then re-a
   overlayActive = false;
   instance.renderInteractiveFrame?.("main-frame-exit", 5, "");
   assert.equal(controller.getState().widthRepaintPending, true);
-  assert.equal(events.some((entry) => entry.startsWith("write:")), false, "the stale restored frame must not be written");
+  assert.equal(
+    events.some((entry) => entry.startsWith("write:")),
+    false,
+    "the stale restored frame must not be written",
+  );
 
   instance.renderInteractiveFrame?.("main-frame-stale", 5, "");
-  assert.equal(resizeRefreshCount, 1, "the repaint must request the <Static> re-flush once the layout is ready");
-  assert.equal(events.some((entry) => entry.startsWith("write:")), false, "pre-re-flush frames stay suppressed");
+  assert.equal(
+    resizeRefreshCount,
+    1,
+    "the repaint must request the <Static> re-flush once the layout is ready",
+  );
+  assert.equal(
+    events.some((entry) => entry.startsWith("write:")),
+    false,
+    "pre-re-flush frames stay suppressed",
+  );
 
   instance.renderInteractiveFrame?.("main-frame-rebuilt", 6, "re-flushed transcript\n");
   assert.equal(
-    events.some((entry) => entry === `write:main-frame-rebuilt:6:${"re-flushed transcript\n".length}`),
+    events.some(
+      (entry) => entry === `write:main-frame-rebuilt:6:${"re-flushed transcript\n".length}`,
+    ),
     true,
     "the rebuilt transcript frame commits the repaint after the overlay exit",
   );
@@ -767,7 +921,10 @@ test("does not hash or scan the accumulated transcript when tracing is disabled"
   });
   instance.renderInteractiveFrame?.("post-clear-frame", 6, "");
 
-  assert.deepEqual(__getClearFrameBoundaryTraceStatsForTests(), { frameHashCount: 0, markerScanCount: 0 });
+  assert.deepEqual(__getClearFrameBoundaryTraceStatsForTests(), {
+    frameHashCount: 0,
+    markerScanCount: 0,
+  });
   assert.ok(events.includes("write:live-frame:10:0"));
   assert.ok(events.includes("write:post-clear-frame:6:0"));
   assert.equal(controller.getState().clearPending, false);
@@ -812,12 +969,26 @@ test("logs clear generation, stale suppression, and first committed post-clear f
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line)) as Array<Record<string, unknown>>;
-    const frameRecords = records.filter((entry) => entry.kind === "terminal" && entry.event === "clearBoundaryFrame");
-    const firstCommit = records.find((entry) => entry.kind === "terminal" && entry.event === "firstCommittedPostClearFrame");
-    const repaintArmed = records.find((entry) => entry.kind === "terminal" && entry.event === "widthRepaintArmed");
-    const resizeCommit = records.find((entry) => entry.kind === "terminal" && entry.event === "resizeRefreshCommitted");
-    assert.ok(frameRecords.some((entry) => entry.staleFrameSuppressed === true), "stale pre-clear suppression should be traced");
-    assert.ok(frameRecords.some((entry) => entry.frameClassification === "post-clear"), "post-clear frame classification should be traced");
+    const frameRecords = records.filter(
+      (entry) => entry.kind === "terminal" && entry.event === "clearBoundaryFrame",
+    );
+    const firstCommit = records.find(
+      (entry) => entry.kind === "terminal" && entry.event === "firstCommittedPostClearFrame",
+    );
+    const repaintArmed = records.find(
+      (entry) => entry.kind === "terminal" && entry.event === "widthRepaintArmed",
+    );
+    const resizeCommit = records.find(
+      (entry) => entry.kind === "terminal" && entry.event === "resizeRefreshCommitted",
+    );
+    assert.ok(
+      frameRecords.some((entry) => entry.staleFrameSuppressed === true),
+      "stale pre-clear suppression should be traced",
+    );
+    assert.ok(
+      frameRecords.some((entry) => entry.frameClassification === "post-clear"),
+      "post-clear frame classification should be traced",
+    );
     assert.ok(repaintArmed, "width-change repaint arming should be traced");
     assert.ok(resizeCommit, "resize refresh commit should be traced");
     assert.ok(firstCommit, "first committed post-clear frame should be traced");
@@ -843,11 +1014,7 @@ test("terminal trace marker counts include Ink static output from the startup fr
     const { instance } = harness;
 
     instance.renderInteractiveFrame?.(
-      [
-        "│ ❯",
-        "Local / qwen/qwen3.6-35b-a3b (High)",
-        "Context: 115 / 262K",
-      ].join("\n"),
+      ["│ ❯", "Local / qwen/qwen3.6-35b-a3b (High)", "Context: 115 / 262K"].join("\n"),
       9,
       [
         "██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝██╔══██╗",
@@ -860,7 +1027,9 @@ test("terminal trace marker counts include Ink static output from the startup fr
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line)) as Array<Record<string, unknown>>;
-    const frame = records.find((entry) => entry.kind === "terminal" && entry.event === "clearBoundaryFrame");
+    const frame = records.find(
+      (entry) => entry.kind === "terminal" && entry.event === "clearBoundaryFrame",
+    );
     assert.ok(frame, "startup frame should be traced");
     assert.equal(frame.ubumeLogoCount, 1);
     assert.equal(frame.providerMigratedCount, 1);

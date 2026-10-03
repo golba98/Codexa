@@ -10,7 +10,10 @@ export const UBUME_PACKAGE_NAME = "ubume";
 export const LEGACY_CODEXA_PACKAGE_NAME = "@golba98/codexa";
 const SEMVER_RE = /^\d+\.\d+\.\d+(-[\w.]+)?$/;
 
-function readPackageVersion(packageJsonPath: string, allowedNames?: readonly string[]): string | null {
+function readPackageVersion(
+  packageJsonPath: string,
+  allowedNames?: readonly string[],
+): string | null {
   try {
     const parsed = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
       name?: unknown;
@@ -35,10 +38,7 @@ function readPackageVersion(packageJsonPath: string, allowedNames?: readonly str
  *
  * `startDir` overrides the walk-up starting directory (test seam).
  */
-export function resolveAppVersion(
-  env: NodeJS.ProcessEnv = process.env,
-  startDir?: string,
-): string {
+export function resolveAppVersion(env: NodeJS.ProcessEnv = process.env, startDir?: string): string {
   const packageRoot = env.UBUME_PACKAGE_ROOT?.trim() || env.CODEXA_PACKAGE_ROOT?.trim();
   if (packageRoot) {
     const version = readPackageVersion(join(packageRoot, "package.json"));

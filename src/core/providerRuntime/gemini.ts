@@ -1,12 +1,26 @@
-import { createRunControl } from "../providers/runControl.js";
 import { appendFileSync } from "fs";
-import { runCommand, type CommandResult, type CommandStreamHandlers } from "../process/CommandRunner.js";
-import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
-import type { BackendRunHandlers } from "../providers/types.js";
-import { GEMINI_DEFAULT_MODEL_ID, GEMINI_FALLBACK_MODELS, normalizeGeminiModelId } from "./models.js";
-import type { ProviderBackendKind, ProviderChatRequest, ProviderRouteValidationResult, ProviderRuntime, ResolvedRuntimeConfig } from "./types.js";
 import { formatConversationHistory } from "../../session/conversation.js";
 import { resolveGeminiExecutable } from "../executables/geminiExecutable.js";
+import {
+  type CommandResult,
+  type CommandStreamHandlers,
+  runCommand,
+} from "../process/CommandRunner.js";
+import { createRunControl } from "../providers/runControl.js";
+import type { BackendRunHandlers } from "../providers/types.js";
+import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
+import {
+  GEMINI_DEFAULT_MODEL_ID,
+  GEMINI_FALLBACK_MODELS,
+  normalizeGeminiModelId,
+} from "./models.js";
+import type {
+  ProviderBackendKind,
+  ProviderChatRequest,
+  ProviderRouteValidationResult,
+  ProviderRuntime,
+  ResolvedRuntimeConfig,
+} from "./types.js";
 
 // ─── Diagnostics ─────────────────────────────────────────────────────────────
 
@@ -17,15 +31,21 @@ function isGeminiDiagEnabled(): boolean {
 
 function diagLog(msg: string): void {
   if (!isGeminiDiagEnabled()) return;
-  try { appendFileSync(GEMINI_DIAG_LOG, `[${new Date().toISOString()}] ${msg}\n`); } catch { /* ignore */ }
+  try {
+    appendFileSync(GEMINI_DIAG_LOG, `[${new Date().toISOString()}] ${msg}\n`);
+  } catch {
+    /* ignore */
+  }
 }
 
 const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const GEMINI_TIMEOUT_MS = Number(process.env.UBUME_GEMINI_TIMEOUT_MS?.trim()) || 120_000;
 const GEMINI_ROUTE_VALIDATION_TIMEOUT_MS = 30_000;
 const GEMINI_READY_PROMPT = "Respond with READY only.";
-const GEMINI_REASONING_UNSUPPORTED_DIAGNOSTIC = "Gemini reasoning control is not supported by this CLI version.";
-export const GEMINI_ROUTE_SETUP_MESSAGE = "Google/Gemini is not configured for in-Ubume routing yet. Sign in with Gemini CLI headless auth or set GEMINI_API_KEY / GOOGLE_API_KEY.";
+const GEMINI_REASONING_UNSUPPORTED_DIAGNOSTIC =
+  "Gemini reasoning control is not supported by this CLI version.";
+export const GEMINI_ROUTE_SETUP_MESSAGE =
+  "Google/Gemini is not configured for in-Ubume routing yet. Sign in with Gemini CLI headless auth or set GEMINI_API_KEY / GOOGLE_API_KEY.";
 
 type CommandRunner = typeof runCommand;
 export type GeminiApprovalMode = "default" | "plan" | "auto_edit" | "yolo";
@@ -98,32 +118,45 @@ function parseGeminiJsonResponse(text: string): string | null {
   return null;
 }
 
-function firstUsefulOutputLine(result: Pick<CommandResult, "stdout" | "stderr" | "userMessage">): string | null {
-  return sanitizeTerminalOutput(`${result.stderr}\n${result.stdout}\n${result.userMessage}`)
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean) ?? null;
+function firstUsefulOutputLine(
+  result: Pick<CommandResult, "stdout" | "stderr" | "userMessage">,
+): string | null {
+  return (
+    sanitizeTerminalOutput(`${result.stderr}\n${result.stdout}\n${result.userMessage}`)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean) ?? null
+  );
 }
 
-function getCombinedOutput(result: Pick<CommandResult, "stdout" | "stderr" | "userMessage">): string {
+function getCombinedOutput(
+  result: Pick<CommandResult, "stdout" | "stderr" | "userMessage">,
+): string {
   return sanitizeTerminalOutput(`${result.stderr}\n${result.stdout}\n${result.userMessage}`);
 }
 
-export function resolveGeminiApprovalMode(runtime?: ResolvedRuntimeConfig | boolean): GeminiApprovalMode {
+export function resolveGeminiApprovalMode(
+  runtime?: ResolvedRuntimeConfig | boolean,
+): GeminiApprovalMode {
   if (typeof runtime === "boolean") {
     return runtime ? "plan" : "default";
   }
 
   if (!runtime) return "default";
-  if (runtime.planMode || runtime.mode === "suggest" || runtime.policy.sandboxMode === "read-only") {
+  if (
+    runtime.planMode ||
+    runtime.mode === "suggest" ||
+    runtime.policy.sandboxMode === "read-only"
+  ) {
     return "plan";
   }
   if (runtime.mode === "auto-edit") {
     return "auto_edit";
   }
   if (
-    runtime.mode === "full-auto"
-    || (runtime.policy.approvalPolicy === "never" && runtime.policy.sandboxMode === "danger-full-access")
+    runtime.mode === "full-auto" ||
+    (runtime.policy.approvalPolicy === "never" &&
+      runtime.policy.sandboxMode === "danger-full-access")
   ) {
     return "yolo";
   }
@@ -143,12 +176,7 @@ export function buildGeminiCliPromptArgs(
 ): string[] {
   void runtime;
   const resolvedModelId = normalizeGeminiModelId(modelId);
-  return [
-    "--model",
-    resolvedModelId,
-    "-p",
-    prompt,
-  ];
+  return ["--model", resolvedModelId, "-p", prompt];
 }
 
 export async function buildGeminiCommand(options: {
@@ -171,15 +199,12 @@ export async function buildGeminiCommand(options: {
 
   const approvalMode = resolveGeminiApprovalMode(options.runtime);
   const outputFormat = options.outputFormat ?? "text";
-  const model = options.mode === "readiness" ? GEMINI_DEFAULT_MODEL_ID : normalizeGeminiModelId(options.model);
-  const args = options.mode === "readiness"
-    ? ["--model", model, "-p", GEMINI_READY_PROMPT]
-    : [
-      "--model",
-      model,
-      "-p",
-      options.prompt ?? "",
-    ];
+  const model =
+    options.mode === "readiness" ? GEMINI_DEFAULT_MODEL_ID : normalizeGeminiModelId(options.model);
+  const args =
+    options.mode === "readiness"
+      ? ["--model", model, "-p", GEMINI_READY_PROMPT]
+      : ["--model", model, "-p", options.prompt ?? ""];
 
   return {
     file,
@@ -190,7 +215,10 @@ export async function buildGeminiCommand(options: {
     ...(options.reasoning ? { reasoning: options.reasoning } : {}),
     approvalMode,
     outputFormat,
-    includesPolicy: args.includes("--policy") || args.includes("--admin-policy") || args.some((arg) => /auto-saved\.toml/i.test(arg)),
+    includesPolicy:
+      args.includes("--policy") ||
+      args.includes("--admin-policy") ||
+      args.some((arg) => /auto-saved\.toml/i.test(arg)),
   };
 }
 
@@ -223,16 +251,19 @@ function recordPromptDiagnostics(command: GeminiCommandSpec, result: CommandResu
     parsedMessages: 0,
     finalAssistantTextLength: 0,
     finalAssistantTextPreview: "",
-    stderrWarningTextPresent: /warning|ripgrep is not available|falling back to greptool/i.test(result.stderr),
+    stderrWarningTextPresent: /warning|ripgrep is not available|falling back to greptool/i.test(
+      result.stderr,
+    ),
   };
 }
 
 function recordExtractionDiagnostics(result: CommandResult, text: string): GeminiExtractionStatus {
-  const extractionStatus: GeminiExtractionStatus = result.status === "completed" && result.exitCode === 0
-    ? text.trim()
-      ? "assistant-text"
-      : "completed-empty-assistant"
-    : "not-completed";
+  const extractionStatus: GeminiExtractionStatus =
+    result.status === "completed" && result.exitCode === 0
+      ? text.trim()
+        ? "assistant-text"
+        : "completed-empty-assistant"
+      : "not-completed";
 
   if (lastPromptDiagnostics) {
     lastPromptDiagnostics = {
@@ -243,15 +274,17 @@ function recordExtractionDiagnostics(result: CommandResult, text: string): Gemin
     };
   }
 
-  diagLog([
-    "PARSED:",
-    `parseMode=plain-text`,
-    `parsedEvents=0`,
-    `parsedMessages=0`,
-    `extractionStatus=${extractionStatus}`,
-    `finalExtractedAssistantText.length=${text.length}`,
-    `stderrWarningTextPresent=${/warning|ripgrep is not available|falling back to greptool/i.test(result.stderr)}`,
-  ].join(" "));
+  diagLog(
+    [
+      "PARSED:",
+      `parseMode=plain-text`,
+      `parsedEvents=0`,
+      `parsedMessages=0`,
+      `extractionStatus=${extractionStatus}`,
+      `finalExtractedAssistantText.length=${text.length}`,
+      `stderrWarningTextPresent=${/warning|ripgrep is not available|falling back to greptool/i.test(result.stderr)}`,
+    ].join(" "),
+  );
 
   return extractionStatus;
 }
@@ -285,24 +318,35 @@ async function executeGeminiCommand(
     },
   };
 
-  diagLog([
-    "EXECUTE_COMMAND:",
-    `resolvedCommand=${command.file}`,
-    `argv=${diagnosticArgs(command)}`,
-    `cwd=${command.cwd}`,
-    `shell=false`,
-  ].join(" "));
+  diagLog(
+    [
+      "EXECUTE_COMMAND:",
+      `resolvedCommand=${command.file}`,
+      `argv=${diagnosticArgs(command)}`,
+      `cwd=${command.cwd}`,
+      `shell=false`,
+    ].join(" "),
+  );
 
-  const runner = runCommandImpl({
-    executable: command.file,
-    args: command.args,
-    cwd: command.cwd,
-    timeoutMs,
-  }, streamHandlers);
-  diagLog(`SPAWNED: pid=${runner.child?.pid ?? "unknown"} executable=${command.file} timeoutMs=${timeoutMs}`);
+  const runner = runCommandImpl(
+    {
+      executable: command.file,
+      args: command.args,
+      cwd: command.cwd,
+      timeoutMs,
+    },
+    streamHandlers,
+  );
+  diagLog(
+    `SPAWNED: pid=${runner.child?.pid ?? "unknown"} executable=${command.file} timeoutMs=${timeoutMs}`,
+  );
   const result = await runner.result;
-  diagLog(`PROCESS_CLOSE_EVENT: closeObserved=true status=${result.status} exitCode=${result.exitCode} signal=${result.signal}`);
-  diagLog(`CLOSED: status=${result.status} exitCode=${result.exitCode} signal=${result.signal} durationMs=${result.durationMs} stdout.len=${result.stdout.length} stderr.len=${result.stderr.length} stdoutChunks=${stdoutChunkCount} stderrChunks=${stderrChunkCount} lifecycle=${JSON.stringify(lifecycleEvents)}`);
+  diagLog(
+    `PROCESS_CLOSE_EVENT: closeObserved=true status=${result.status} exitCode=${result.exitCode} signal=${result.signal}`,
+  );
+  diagLog(
+    `CLOSED: status=${result.status} exitCode=${result.exitCode} signal=${result.signal} durationMs=${result.durationMs} stdout.len=${result.stdout.length} stderr.len=${result.stderr.length} stdoutChunks=${stdoutChunkCount} stderrChunks=${stderrChunkCount} lifecycle=${JSON.stringify(lifecycleEvents)}`,
+  );
   return result;
 }
 
@@ -313,31 +357,41 @@ async function runGeminiApi(request: ProviderChatRequest, signal?: AbortSignal):
   }
 
   const modelId = normalizeGeminiModelId(request.route.modelId);
-  const response = await fetch(`${GEMINI_API_BASE_URL}/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method: "POST",
-    signal,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: request.conversationHistory?.length
-            ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
-            : request.prompt }],
-        },
-      ],
-    }),
-  });
+  const response = await fetch(
+    `${GEMINI_API_BASE_URL}/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: request.conversationHistory?.length
+                  ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
+                  : request.prompt,
+              },
+            ],
+          },
+        ],
+      }),
+    },
+  );
 
   const body = await response.text();
   if (!response.ok) {
-    throw new Error(`Gemini API request failed (${response.status}): ${sanitizeTerminalOutput(body).slice(0, 500)}`);
+    throw new Error(
+      `Gemini API request failed (${response.status}): ${sanitizeTerminalOutput(body).slice(0, 500)}`,
+    );
   }
 
   const parsed = JSON.parse(body) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   };
-  const text = parsed.candidates?.flatMap((candidate) => candidate.content?.parts ?? [])
+  const text = parsed.candidates
+    ?.flatMap((candidate) => candidate.content?.parts ?? [])
     .map((part) => part.text ?? "")
     .join("")
     .trim();
@@ -355,8 +409,11 @@ function isPolicyFileError(result: CommandResult): boolean {
 
 function isInvalidModelError(result: CommandResult): boolean {
   const combined = getCombinedOutput(result);
-  return /\b(model)\b[\s\S]{0,80}\b(not found|invalid|unknown|unsupported|does not exist|not supported)\b/i.test(combined)
-    || /\b(not found|invalid|unknown|unsupported)\b[\s\S]{0,80}\b(model)\b/i.test(combined);
+  return (
+    /\b(model)\b[\s\S]{0,80}\b(not found|invalid|unknown|unsupported|does not exist|not supported)\b/i.test(
+      combined,
+    ) || /\b(not found|invalid|unknown|unsupported)\b[\s\S]{0,80}\b(model)\b/i.test(combined)
+  );
 }
 
 function formatGeminiFailure(command: GeminiCommandSpec, result: CommandResult): string {
@@ -379,7 +436,9 @@ function formatGeminiFailure(command: GeminiCommandSpec, result: CommandResult):
       `Command args: ${JSON.stringify(redactedPromptArgs(command))}`,
       result.stderr.trim() ? `Stderr: ${result.stderr.trim().slice(0, 500)}` : null,
       result.stdout.trim() ? `Stdout: ${result.stdout.trim().slice(0, 500)}` : null,
-    ].filter(Boolean).join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
   return combinedOutput || result.userMessage || "Gemini CLI headless route failed.";
 }
@@ -414,41 +473,70 @@ export async function runGeminiCliWithRunner(
   handlers?: CommandStreamHandlers,
 ): Promise<string> {
   const first = await runGeminiCliAttempt(request, runCommandImpl, request.route.modelId, handlers);
-  diagLog(`ATTEMPT1: status=${first.result.status} exitCode=${first.result.exitCode} stdout.len=${first.result.stdout.length} stderr.len=${first.result.stderr.length}`);
+  diagLog(
+    `ATTEMPT1: status=${first.result.status} exitCode=${first.result.exitCode} stdout.len=${first.result.stdout.length} stderr.len=${first.result.stderr.length}`,
+  );
   if (first.result.status === "completed" && first.result.exitCode === 0) {
     const text = sanitizeTerminalOutput(first.result.stdout).trim();
     const extractionStatus = recordExtractionDiagnostics(first.result, text);
     if (!text) {
       diagLog(`EMPTY_STDOUT: stdout is empty after sanitize+trim.`);
-      diagLog(`EMPTY_STDOUT: stderr.len=${first.result.stderr.length} stdout.len=${first.result.stdout.length}`);
-      diagLog(`EMPTY_STDOUT: extractionStatus=${extractionStatus}. Gemini likely wrote response to stderr or emitted no assistant text. Run will complete with no rendered assistant content unless app boundary treats this as an error.`);
+      diagLog(
+        `EMPTY_STDOUT: stderr.len=${first.result.stderr.length} stdout.len=${first.result.stdout.length}`,
+      );
+      diagLog(
+        `EMPTY_STDOUT: extractionStatus=${extractionStatus}. Gemini likely wrote response to stderr or emitted no assistant text. Run will complete with no rendered assistant content unless app boundary treats this as an error.`,
+      );
     }
     diagLog(`SUCCESS: returning text.length=${text.length}`);
     return text;
   }
 
   recordExtractionDiagnostics(first.result, "");
-  diagLog(`FAILURE: isInvalidModel=${request.route.modelId ? isInvalidModelError(first.result) : false} status=${first.result.status} exitCode=${first.result.exitCode}`);
+  diagLog(
+    `FAILURE: isInvalidModel=${request.route.modelId ? isInvalidModelError(first.result) : false} status=${first.result.status} exitCode=${first.result.exitCode}`,
+  );
 
   throw new Error(formatGeminiFailure(first.command, first.result));
 }
 
-async function runGeminiCli(request: ProviderChatRequest, handlers?: CommandStreamHandlers): Promise<string> {
+async function runGeminiCli(
+  request: ProviderChatRequest,
+  handlers?: CommandStreamHandlers,
+): Promise<string> {
   return runGeminiCliWithRunner(request, runCommand, handlers);
 }
 
-export function classifyGeminiProbeFailure(result: CommandResult): "auth required" | "quota/rate limit" | "bad flag" | "shell wrapper/function conflict" | "unknown" {
+export function classifyGeminiProbeFailure(
+  result: CommandResult,
+):
+  | "auth required"
+  | "quota/rate limit"
+  | "bad flag"
+  | "shell wrapper/function conflict"
+  | "unknown" {
   const combined = getCombinedOutput(result);
-  if (/parameter name 'p' is ambiguous|Possible matches include:[\s\S]*ProgressAction|PipelineVariable/i.test(combined)) {
+  if (
+    /parameter name 'p' is ambiguous|Possible matches include:[\s\S]*ProgressAction|PipelineVariable/i.test(
+      combined,
+    )
+  ) {
     return "shell wrapper/function conflict";
   }
-  if (/\b(auth|authentication|login|sign in|signin|unauthorized|not authenticated)\b/i.test(combined)) {
+  if (
+    /\b(auth|authentication|login|sign in|signin|unauthorized|not authenticated)\b/i.test(combined)
+  ) {
     return "auth required";
   }
-  if (/\b(quota|rate limit|rate-limit|too many requests|resource exhausted|429)\b/i.test(combined)) {
+  if (
+    /\b(quota|rate limit|rate-limit|too many requests|resource exhausted|429)\b/i.test(combined)
+  ) {
     return "quota/rate limit";
   }
-  if (/\b(unknown|invalid|unrecognized|unexpected)\b/i.test(combined) && /\b(flag|option|argument|parameter)\b/i.test(combined)) {
+  if (
+    /\b(unknown|invalid|unrecognized|unexpected)\b/i.test(combined) &&
+    /\b(flag|option|argument|parameter)\b/i.test(combined)
+  ) {
     return "bad flag";
   }
   return "unknown";
@@ -458,7 +546,12 @@ async function captureGeminiEnvironment(
   cwd: string,
   runCommandImpl: CommandRunner,
   configuredPath?: string | null,
-): Promise<{ path: string | null; version: string | null; commandCheckOk: boolean; commandCheckOutput: string | null }> {
+): Promise<{
+  path: string | null;
+  version: string | null;
+  commandCheckOk: boolean;
+  commandCheckOutput: string | null;
+}> {
   try {
     const resolved = await resolveGeminiExecutable({ runCommandImpl, cwd, configuredPath });
     const versionRunner = runCommandImpl({
@@ -525,7 +618,9 @@ export async function validateGeminiRoute(options: {
       status: hasGeminiApiKey(options.env) ? "ready" : "not-configured",
       providerId: "google",
       backendKind: hasGeminiApiKey(options.env) ? "gemini-api-key" : "unavailable",
-      message: hasGeminiApiKey(options.env) ? "Google/Gemini API key is configured." : `${message} Set GEMINI_EXECUTABLE to a known working Gemini CLI command/path.`,
+      message: hasGeminiApiKey(options.env)
+        ? "Google/Gemini API key is configured."
+        : `${message} Set GEMINI_EXECUTABLE to a known working Gemini CLI command/path.`,
       diagnostics: {
         resolvedCommand: null,
         executablePath: null,
@@ -539,12 +634,19 @@ export async function validateGeminiRoute(options: {
     };
   }
 
-  const result = await executeGeminiCommand(command, runImpl, options.timeoutMs ?? GEMINI_ROUTE_VALIDATION_TIMEOUT_MS);
+  const result = await executeGeminiCommand(
+    command,
+    runImpl,
+    options.timeoutMs ?? GEMINI_ROUTE_VALIDATION_TIMEOUT_MS,
+  );
   const envInfo = await envInfoPromise;
   const parsed = parseGeminiJsonResponse(result.stdout);
-  const probeText = sanitizeTerminalOutput(`${result.stdout}\n${result.stderr}\n${parsed ?? ""}`).trim();
+  const probeText = sanitizeTerminalOutput(
+    `${result.stdout}\n${result.stderr}\n${parsed ?? ""}`,
+  ).trim();
   const probeMatch = /\bREADY\b/.test(probeText);
-  const successfulGeminiResponse = result.status === "completed" && result.exitCode === 0 && probeMatch;
+  const successfulGeminiResponse =
+    result.status === "completed" && result.exitCode === 0 && probeMatch;
   const failureReason = classifyGeminiProbeFailure(result);
 
   const diagnostics: Record<string, string | number | boolean | null> = {
@@ -574,7 +676,9 @@ export async function validateGeminiRoute(options: {
     readyTokenObserved: probeMatch,
   };
 
-  const looksFound = envInfo.path && (envInfo.commandCheckOk || (result.status !== "spawn_error" && result.errorCode !== "ENOENT"));
+  const looksFound =
+    envInfo.path &&
+    (envInfo.commandCheckOk || (result.status !== "spawn_error" && result.errorCode !== "ENOENT"));
   if (successfulGeminiResponse) {
     geminiCliHeadlessValidated = true;
     return {
@@ -601,9 +705,11 @@ export async function validateGeminiRoute(options: {
   if (failureReason === "shell wrapper/function conflict") {
     errorMessage = `PowerShell wrapper detected. Ubume is bypassing it and using:\n${command.file}`;
   } else if (result.status === "completed" && result.exitCode === 0) {
-    errorMessage = "Gemini CLI responded, but Ubume could not validate the headless route. The probe returned unexpected output.";
+    errorMessage =
+      "Gemini CLI responded, but Ubume could not validate the headless route. The probe returned unexpected output.";
   } else if (!looksFound) {
-    errorMessage = "Gemini CLI was not found as a real executable file. Install Gemini CLI or set GEMINI_EXECUTABLE to a known working command/path.";
+    errorMessage =
+      "Gemini CLI was not found as a real executable file. Install Gemini CLI or set GEMINI_EXECUTABLE to a known working command/path.";
   } else if (result.status === "timeout") {
     errorMessage = "Installed but headless probe timed out.";
   } else if (result.status === "completed" && result.exitCode !== 0) {
@@ -622,7 +728,11 @@ export async function validateGeminiRoute(options: {
 }
 
 function getGeminiRuntimeBackendKind(): ProviderBackendKind {
-  return geminiCliHeadlessValidated ? "gemini-cli-auth" : hasGeminiApiKey() ? "gemini-api-key" : "gemini-cli-auth";
+  return geminiCliHeadlessValidated
+    ? "gemini-cli-auth"
+    : hasGeminiApiKey()
+      ? "gemini-api-key"
+      : "gemini-cli-auth";
 }
 
 function formatDiagnosticSnippet(label: string, value: string | null | undefined): string | null {
@@ -639,7 +749,11 @@ export async function runGeminiDiagnostics(options: {
 }): Promise<string> {
   const runImpl = options.runCommandImpl ?? runCommand;
   const selectedModel = normalizeGeminiModelId(options.selectedModel);
-  const envInfo = await captureGeminiEnvironment(options.cwd, runImpl, options.configuredPath ?? options.runtime.geminiCommandPath);
+  const envInfo = await captureGeminiEnvironment(
+    options.cwd,
+    runImpl,
+    options.configuredPath ?? options.runtime.geminiCommandPath,
+  );
   const readiness = await validateGeminiRoute({
     cwd: options.cwd,
     modelId: selectedModel,
@@ -688,10 +802,15 @@ export async function runGeminiDiagnostics(options: {
     `  Last stderr warning text present: ${lastPromptDiagnostics?.stderrWarningTextPresent ?? "none"}`,
     formatDiagnosticSnippet("  Last stdout", lastPromptDiagnostics?.stdoutSnippet),
     formatDiagnosticSnippet("  Last stderr", lastPromptDiagnostics?.stderrSnippet),
-    formatDiagnosticSnippet("  Last final assistant text", lastPromptDiagnostics?.finalAssistantTextPreview),
+    formatDiagnosticSnippet(
+      "  Last final assistant text",
+      lastPromptDiagnostics?.finalAssistantTextPreview,
+    ),
     `  Prompt preview command file: ${promptPreview.file}`,
     `  Prompt preview command args: ${JSON.stringify(redactedPromptArgs(promptPreview))}`,
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 // ─── Runtime ─────────────────────────────────────────────────────────────────
@@ -702,15 +821,17 @@ export const geminiRuntime: ProviderRuntime = {
   modelPickerLabel: "Gemini",
   backendKind: "gemini-cli-auth",
   routeAvailable: true,
-  routeStatus: "Uses Gemini CLI subscription-backed route when available, otherwise GEMINI_API_KEY or GOOGLE_API_KEY.",
+  routeStatus:
+    "Uses Gemini CLI subscription-backed route when available, otherwise GEMINI_API_KEY or GOOGLE_API_KEY.",
   routeSetupMessage: GEMINI_ROUTE_SETUP_MESSAGE,
   launchAvailable: true,
   isRouteConfigured: isGeminiRouteConfigured,
-  validateRoute: async ({ route, workspaceRoot, geminiCommandPath }) => validateGeminiRoute({
-    cwd: workspaceRoot,
-    modelId: route.modelId,
-    configuredPath: geminiCommandPath,
-  }),
+  validateRoute: async ({ route, workspaceRoot, geminiCommandPath }) =>
+    validateGeminiRoute({
+      cwd: workspaceRoot,
+      modelId: route.modelId,
+      configuredPath: geminiCommandPath,
+    }),
   discoverModels: () => ({
     status: "ready",
     providerId: "google",
@@ -731,7 +852,9 @@ export const geminiRuntime: ProviderRuntime = {
     };
     let cancelled = false;
 
-    diagLog(`=== RUN START: route=${JSON.stringify(request.route)} cwd=${request.workspaceRoot} geminiCommandPath=${request.runtime.geminiCommandPath ?? "unset"} geminiCliHeadlessValidated=${geminiCliHeadlessValidated} hasApiKey=${hasGeminiApiKey()}`);
+    diagLog(
+      `=== RUN START: route=${JSON.stringify(request.route)} cwd=${request.workspaceRoot} geminiCommandPath=${request.runtime.geminiCommandPath ?? "unset"} geminiCliHeadlessValidated=${geminiCliHeadlessValidated} hasApiKey=${hasGeminiApiKey()}`,
+    );
 
     handlers.onProgress?.({
       id: "gemini-route",
@@ -759,11 +882,19 @@ export const geminiRuntime: ProviderRuntime = {
         diagLog(`LIFECYCLE: ${event}`);
         handlers.onProcessLifecycle?.(event === "cancel" ? "cleanup" : event);
       },
-      onStdout: (text) => { diagLog(`STDOUT chunk length=${text.length}`); },
-      onStderr: (text) => { diagLog(`STDERR chunk length=${text.length}`); },
+      onStdout: (text) => {
+        diagLog(`STDOUT chunk length=${text.length}`);
+      },
+      onStderr: (text) => {
+        diagLog(`STDERR chunk length=${text.length}`);
+      },
     };
 
-    const execPath = geminiCliHeadlessValidated ? "runGeminiCli" : hasGeminiApiKey() ? "runGeminiApi" : "runGeminiCli (fallback-no-key)";
+    const execPath = geminiCliHeadlessValidated
+      ? "runGeminiCli"
+      : hasGeminiApiKey()
+        ? "runGeminiApi"
+        : "runGeminiCli (fallback-no-key)";
     diagLog(`EXEC PATH: geminiCliHeadlessValidated=${geminiCliHeadlessValidated} → ${execPath}`);
 
     const runGemini = geminiCliHeadlessValidated
@@ -776,8 +907,12 @@ export const geminiRuntime: ProviderRuntime = {
       .then((text) => {
         diagLog(`RESOLVED: text.length=${text.length} cancelled=${cancelled}`);
         if (!text) {
-          diagLog(`EMPTY_RESPONSE: text is empty → onAssistantDelta !chunk guard will block it → run will finalize silently with no rendered assistant content`);
-          diagLog(`NO_ERROR_CARD: runGeminiCliWithRunner returned "" (success path, not throw). .catch is NOT reached. handlers.onError is NOT called. finalizePromptRun will receive status="completed". RUN_FAILED is never dispatched. No error card appears.`);
+          diagLog(
+            `EMPTY_RESPONSE: text is empty → onAssistantDelta !chunk guard will block it → run will finalize silently with no rendered assistant content`,
+          );
+          diagLog(
+            `NO_ERROR_CARD: runGeminiCliWithRunner returned "" (success path, not throw). .catch is NOT reached. handlers.onError is NOT called. finalizePromptRun will receive status="completed". RUN_FAILED is never dispatched. No error card appears.`,
+          );
         }
         if (cancelled) return;
         diagLog(`CALLING: onAssistantDelta onFinalAnswerObserved onResponse`);
@@ -787,9 +922,12 @@ export const geminiRuntime: ProviderRuntime = {
         diagLog(`HANDLERS CALLED OK`);
       })
       .catch((error) => {
-        diagLog(`REJECTED: cancelled=${cancelled} errorType=${error instanceof Error ? error.name : typeof error}`);
+        diagLog(
+          `REJECTED: cancelled=${cancelled} errorType=${error instanceof Error ? error.name : typeof error}`,
+        );
         if (cancelled) return;
-        const message = error instanceof Error ? error.message : "Google/Gemini in-Ubume routing failed.";
+        const message =
+          error instanceof Error ? error.message : "Google/Gemini in-Ubume routing failed.";
         diagLog(`CALLING: onError`);
         handlers.onError(message);
       });

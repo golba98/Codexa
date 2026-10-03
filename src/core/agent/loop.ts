@@ -1,14 +1,14 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { BackendRunHandlers } from "../providers/types.js";
 import type { ProviderChatRequest } from "../providerRuntime/types.js";
-import { executeAgentTool, type AgentToolResult } from "./tools.js";
+import type { BackendRunHandlers } from "../providers/types.js";
 import {
-  parseAgentToolCall,
-  serializeToolResult,
   type MalformedOpenAiToolCall,
   type NormalizedAgentToolCall,
+  parseAgentToolCall,
+  serializeToolResult,
 } from "./protocol.js";
+import { type AgentToolResult, executeAgentTool } from "./tools.js";
 
 export interface AgentChatToolCall {
   id: string;
@@ -18,7 +18,12 @@ export interface AgentChatToolCall {
 
 export type AgentChatMessage =
   | { role: "system" | "user"; content: string }
-  | { role: "assistant"; content: string | null; reasoning_content?: string; tool_calls?: readonly AgentChatToolCall[] }
+  | {
+      role: "assistant";
+      content: string | null;
+      reasoning_content?: string;
+      tool_calls?: readonly AgentChatToolCall[];
+    }
   | { role: "tool"; content: string; tool_call_id: string };
 
 export interface AgentChatResponse {
@@ -32,7 +37,10 @@ export interface AgentChatResponse {
 export interface RunAgentLoopOptions {
   request: ProviderChatRequest;
   handlers: BackendRunHandlers;
-  sendMessages: (messages: readonly AgentChatMessage[], turnIndex: number) => Promise<AgentChatResponse>;
+  sendMessages: (
+    messages: readonly AgentChatMessage[],
+    turnIndex: number,
+  ) => Promise<AgentChatResponse>;
   includeSystemPrompt: boolean;
   toolProtocol?: "none" | "text" | "openai";
   signal?: AbortSignal;
@@ -45,7 +53,9 @@ function workspaceSummary(workspaceRoot: string): string {
   const lines = [`Workspace root: ${workspaceRoot}`];
   try {
     const entries = readdirSync(workspaceRoot, { withFileTypes: true })
-      .filter((entry) => ![".git", "node_modules", "dist", "build", "coverage"].includes(entry.name))
+      .filter(
+        (entry) => ![".git", "node_modules", "dist", "build", "coverage"].includes(entry.name),
+      )
       .map((entry) => `${entry.name}${entry.isDirectory() ? "/" : ""}`)
       .sort()
       .slice(0, 20);
@@ -57,9 +67,13 @@ function workspaceSummary(workspaceRoot: string): string {
   try {
     const packageJsonPath = path.join(workspaceRoot, "package.json");
     if (existsSync(packageJsonPath)) {
-      const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as Record<string, unknown>;
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as Record<
+        string,
+        unknown
+      >;
       const name = typeof packageJson.name === "string" ? packageJson.name : null;
-      const description = typeof packageJson.description === "string" ? packageJson.description : null;
+      const description =
+        typeof packageJson.description === "string" ? packageJson.description : null;
       if (name) lines.push(`Package: ${name}${description ? ` - ${description}` : ""}`);
     }
   } catch {
@@ -69,7 +83,10 @@ function workspaceSummary(workspaceRoot: string): string {
   return lines.join("\n");
 }
 
-function localAgentSystemPrompt(request: ProviderChatRequest, toolProtocol: "none" | "text" | "openai"): string {
+function localAgentSystemPrompt(
+  request: ProviderChatRequest,
+  toolProtocol: "none" | "text" | "openai",
+): string {
   const hasCargoToml = existsSync(path.join(request.workspaceRoot, "Cargo.toml"));
   const planning = request.runIntent === "plan";
   return [
@@ -88,7 +105,9 @@ function localAgentSystemPrompt(request: ProviderChatRequest, toolProtocol: "non
       ? "Rust workspace note: Cargo.toml exists. Prefer src/main.rs for simple binaries, use cargo check for validation, use cargo run for running, and do not use rustc main.rs unless main.rs is truly at the workspace root."
       : null,
     toolProtocol === "text" ? "Use exactly one tool call at a time in this format:" : null,
-    toolProtocol === "text" ? '<tool_call>{"name":"read_file","arguments":{"path":"src/index.tsx"}}</tool_call>' : null,
+    toolProtocol === "text"
+      ? '<tool_call>{"name":"read_file","arguments":{"path":"src/index.tsx"}}</tool_call>'
+      : null,
     toolProtocol === "text"
       ? planning
         ? "Available tools: list_files, read_file, get_workspace_info."
@@ -101,7 +120,9 @@ function localAgentSystemPrompt(request: ProviderChatRequest, toolProtocol: "non
     request.projectInstructions?.content
       ? ["Project instructions:", request.projectInstructions.content].join("\n")
       : null,
-  ].filter(Boolean).join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function buildInitialMessages(
@@ -113,18 +134,26 @@ function buildInitialMessages(
   if (includeSystemPrompt) {
     return [
       { role: "system", content: systemPrompt },
-      ...(request.conversationHistory ?? []).map((message) => ({ role: message.role, content: message.content })),
+      ...(request.conversationHistory ?? []).map((message) => ({
+        role: message.role,
+        content: message.content,
+      })),
       { role: "user", content: request.prompt },
     ];
   }
 
   return [
-    ...(request.conversationHistory ?? []).map((message) => ({ role: message.role, content: message.content })),
+    ...(request.conversationHistory ?? []).map((message) => ({
+      role: message.role,
+      content: message.content,
+    })),
     { role: "user", content: `${systemPrompt}\n\nUser request:\n${request.prompt}` },
   ];
 }
 
-function toolActivityCommand(result: Pick<AgentToolResult, "tool" | "path" | "paths" | "command">): string {
+function toolActivityCommand(
+  result: Pick<AgentToolResult, "tool" | "path" | "paths" | "command">,
+): string {
   if (result.command) return `${result.tool}: ${result.command}`;
   if (result.path) return `${result.tool}: ${result.path}`;
   if (result.paths && result.paths.length > 0) return `${result.tool}: ${result.paths.join(", ")}`;
@@ -148,7 +177,10 @@ function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -186,7 +218,11 @@ function commandStatus(command: ExecutedCommand): string {
   return `- ${command.command}: ${status}${exitCode}`;
 }
 
-function synthesizeFinalMessage(_request: ProviderChatRequest, summary: AgentLoopSummary, reason: string): string {
+function synthesizeFinalMessage(
+  _request: ProviderChatRequest,
+  summary: AgentLoopSummary,
+  reason: string,
+): string {
   const files = [...summary.changedFiles].sort();
   const commandLines = summary.commands.map(commandStatus);
   return [
@@ -197,10 +233,17 @@ function synthesizeFinalMessage(_request: ProviderChatRequest, summary: AgentLoo
     "",
     "Commands run:",
     commandLines.length > 0 ? commandLines.join("\n") : "- None",
-  ].join("\n").trim();
+  ]
+    .join("\n")
+    .trim();
 }
 
-async function requestFinalAnswer(options: RunAgentLoopOptions, messages: AgentChatMessage[], toolCallCount: number, reason: string): Promise<string | null> {
+async function requestFinalAnswer(
+  options: RunAgentLoopOptions,
+  messages: AgentChatMessage[],
+  toolCallCount: number,
+  reason: string,
+): Promise<string | null> {
   messages.push({
     role: "user",
     content: [
@@ -210,7 +253,8 @@ async function requestFinalAnswer(options: RunAgentLoopOptions, messages: AgentC
     ].join("\n"),
   });
   const response = await options.sendMessages(messages, toolCallCount);
-  if ((response.toolCalls?.length ?? 0) > 0 || (response.malformedToolCalls?.length ?? 0) > 0) return null;
+  if ((response.toolCalls?.length ?? 0) > 0 || (response.malformedToolCalls?.length ?? 0) > 0)
+    return null;
   const parsed = parseAgentToolCall(response.text);
   return parsed.kind === "final" && parsed.text.trim() ? parsed.text.trim() : null;
 }
@@ -244,9 +288,9 @@ function appendToolResultMessage(
   result: unknown,
 ): void {
   const content = serializeToolResult(result);
-  messages.push(native
-    ? { role: "tool", tool_call_id: toolCallId, content }
-    : { role: "user", content });
+  messages.push(
+    native ? { role: "tool", tool_call_id: toolCallId, content } : { role: "user", content },
+  );
 }
 
 export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string> {
@@ -283,29 +327,41 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
       const parsed = parseAgentToolCall(response.text);
       if (parsed.kind === "final") {
         if (response.finishReason === "tool_calls") {
-          textMalformed = { error: "Completion ended with finish_reason=tool_calls but contained no tool calls.", raw: response.text };
+          textMalformed = {
+            error: "Completion ended with finish_reason=tool_calls but contained no tool calls.",
+            raw: response.text,
+          };
         } else {
           return parsed.text.trim();
         }
       } else if (parsed.kind === "malformed_tool_call") {
         textMalformed = { error: parsed.error, raw: parsed.raw };
       } else {
-        calls = [{
-          id: parsed.id,
-          name: parsed.name,
-          arguments: parsed.arguments,
-          rawArguments: parsed.rawArguments,
-        }];
+        calls = [
+          {
+            id: parsed.id,
+            name: parsed.name,
+            arguments: parsed.arguments,
+            rawArguments: parsed.rawArguments,
+          },
+        ];
       }
     }
 
     if (toolProtocol === "none" && calls.length > 0) {
-      textMalformed = { error: "Tool calls are disabled by the selected model capability profile.", raw: response.text };
+      textMalformed = {
+        error: "Tool calls are disabled by the selected model capability profile.",
+        raw: response.text,
+      };
       calls = [];
     }
 
-    const callIds = calls.map((call, index) => call.id ?? `local-call-${toolCallCount + index + 1}`);
-    const malformedIds = malformedCalls.map((call, index) => call.id ?? `local-malformed-${toolCallCount + index + 1}`);
+    const callIds = calls.map(
+      (call, index) => call.id ?? `local-call-${toolCallCount + index + 1}`,
+    );
+    const malformedIds = malformedCalls.map(
+      (call, index) => call.id ?? `local-malformed-${toolCallCount + index + 1}`,
+    );
     if (native) {
       messages.push({
         role: "assistant",
@@ -366,7 +422,8 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
         });
         consecutiveNoProgressCalls += 1;
         if (consecutiveNoProgressCalls >= maxConsecutiveNoProgressCalls) {
-          const finalReason = "The Local agent replayed completed tool calls without making progress.";
+          const finalReason =
+            "The Local agent replayed completed tool calls without making progress.";
           const final = await requestFinalAnswer(options, messages, toolCallCount, finalReason);
           return final ?? synthesizeFinalMessage(options.request, summary, finalReason);
         }
@@ -382,25 +439,32 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
         path: typeof call.arguments.path === "string" ? call.arguments.path : undefined,
         command: typeof call.arguments.command === "string" ? call.arguments.command : undefined,
       });
-      const mutating = call.name === "write_file" || call.name === "apply_patch" || call.name === "run_shell";
+      const mutating =
+        call.name === "write_file" || call.name === "apply_patch" || call.name === "run_shell";
       let deniedReason: string | null = null;
       if (mutating && options.request.runIntent === "plan") {
-        deniedReason = "This tool is unavailable in Plan mode. Continue with read-only inspection and return a plan.";
+        deniedReason =
+          "This tool is unavailable in Plan mode. Continue with read-only inspection and return a plan.";
       } else if (
-        mutating
-        && options.request.runtime.policy.approvalPolicy !== "never"
-        && !approvedForRun.has(signature)
+        mutating &&
+        options.request.runtime.policy.approvalPolicy !== "never" &&
+        !approvedForRun.has(signature)
       ) {
         const rawPath = typeof call.arguments.path === "string" ? call.arguments.path : null;
-        const patchPaths = call.name === "apply_patch" && typeof call.arguments.patch === "string"
-          ? [...call.arguments.patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File:\s*(.+)$/gm)].map((match) => match[1]!.trim())
-          : [];
-        const decision = await options.handlers.onToolApproval?.({
-          tool: call.name,
-          signature,
-          command: typeof call.arguments.command === "string" ? call.arguments.command : undefined,
-          paths: rawPath ? [rawPath] : patchPaths,
-        }) ?? "deny";
+        const patchPaths =
+          call.name === "apply_patch" && typeof call.arguments.patch === "string"
+            ? [
+                ...call.arguments.patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File:\s*(.+)$/gm),
+              ].map((match) => match[1]!.trim())
+            : [];
+        const decision =
+          (await options.handlers.onToolApproval?.({
+            tool: call.name,
+            signature,
+            command:
+              typeof call.arguments.command === "string" ? call.arguments.command : undefined,
+            paths: rawPath ? [rawPath] : patchPaths,
+          })) ?? "deny";
         if (decision === "deny") deniedReason = "User denied this local-model action.";
         if (decision === "allow-for-run") approvedForRun.add(signature);
       }
@@ -420,9 +484,8 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
         const deniedFingerprint = toolResultFingerprint(denied);
         const previousDenied = previousToolResults.get(signature);
         previousToolResults.set(signature, deniedFingerprint);
-        consecutiveNoProgressCalls = previousDenied === deniedFingerprint
-          ? consecutiveNoProgressCalls + 1
-          : 0;
+        consecutiveNoProgressCalls =
+          previousDenied === deniedFingerprint ? consecutiveNoProgressCalls + 1 : 0;
         if (consecutiveNoProgressCalls >= maxConsecutiveNoProgressCalls) {
           const reason = "The Local agent repeated denied tool calls without making progress.";
           const final = await requestFinalAnswer(options, messages, toolCallCount, reason);
@@ -431,7 +494,12 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
         continue;
       }
 
-      options.handlers.onToolActivity?.({ id: activityId, command: runningCommand, status: "running", startedAt });
+      options.handlers.onToolActivity?.({
+        id: activityId,
+        command: runningCommand,
+        status: "running",
+        startedAt,
+      });
       const result = await executeAgentTool(call.name, call.arguments, {
         workspaceRoot: options.request.workspaceRoot,
         runtime: options.request.runtime,
@@ -451,11 +519,11 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<string
       const resultFingerprint = toolResultFingerprint(result);
       const previousResult = previousToolResults.get(signature);
       previousToolResults.set(signature, resultFingerprint);
-      consecutiveNoProgressCalls = previousResult === resultFingerprint
-        ? consecutiveNoProgressCalls + 1
-        : 0;
+      consecutiveNoProgressCalls =
+        previousResult === resultFingerprint ? consecutiveNoProgressCalls + 1 : 0;
       if (consecutiveNoProgressCalls >= maxConsecutiveNoProgressCalls) {
-        const reason = "The Local agent repeated tool calls with unchanged results and could not make further progress.";
+        const reason =
+          "The Local agent repeated tool calls with unchanged results and could not make further progress.";
         const final = await requestFinalAnswer(options, messages, toolCallCount, reason);
         return final ?? synthesizeFinalMessage(options.request, summary, reason);
       }

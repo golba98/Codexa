@@ -1,9 +1,19 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import { wrapCommandText, wrapPlainText, wrapTextRows, getTextWidth, getTextUnits, splitTextAtColumn } from "./textLayout.js";
+import test from "node:test";
+import {
+  getTextUnits,
+  getTextWidth,
+  splitTextAtColumn,
+  wrapCommandText,
+  wrapPlainText,
+  wrapTextRows,
+} from "./textLayout.js";
 
 test("wrapCommandText breaks on spaces and indents continuation lines", () => {
-  const result = wrapCommandText("if (Get-Command rg) { rg --files } else { Get-ChildItem -Recurse -File }", 40);
+  const result = wrapCommandText(
+    "if (Get-Command rg) { rg --files } else { Get-ChildItem -Recurse -File }",
+    40,
+  );
   assert.equal(result.length, 2);
   assert.equal(result[0].trimEnd(), "if (Get-Command rg) { rg --files } else");
   assert.equal(result[1].trimEnd(), "  { Get-ChildItem -Recurse -File }");
@@ -54,23 +64,40 @@ test("wrapPlainText only character-splits an individually overlong word", () => 
 test("atomic token ID markers measure zero columns, matching getTextWidth", () => {
   const token = "[Image: a.png]\u2063\uFE01\u2063";
   const units = getTextUnits(token);
-  assert.deepEqual(units.slice(-3).map((unit) => unit.width), [0, 0, 0]);
-  assert.equal(units.reduce((total, unit) => total + unit.width, 0), getTextWidth(token));
+  assert.deepEqual(
+    units.slice(-3).map((unit) => unit.width),
+    [0, 0, 0],
+  );
+  assert.equal(
+    units.reduce((total, unit) => total + unit.width, 0),
+    getTextWidth(token),
+  );
 });
 
 test("splitTextAtColumn highlights the visible character after an atomic token", () => {
   assert.equal(splitTextAtColumn("[Image: a.png]\u2063\uFE01\u2063 x", 14).current, " ");
 });
 
-
 test("text units match terminal cell width for combining marks and emoji clusters", () => {
-  for (const text of ["e\u0301", "👩‍💻", "🇿🇦", "字", "[Pasted Content 22,703 chars]\u2063\uFE01\u2063"]) {
+  for (const text of [
+    "e\u0301",
+    "👩‍💻",
+    "🇿🇦",
+    "字",
+    "[Pasted Content 22,703 chars]\u2063\uFE01\u2063",
+  ]) {
     const units = getTextUnits(text);
-    assert.equal(units.reduce((sum, unit) => sum + unit.width, 0), getTextWidth(text));
+    assert.equal(
+      units.reduce((sum, unit) => sum + unit.width, 0),
+      getTextWidth(text),
+    );
     assert.equal(units.map((unit) => unit.text).join(""), text);
     for (const unit of units) assert.equal(text.slice(unit.start, unit.end), unit.text);
   }
   assert.equal(getTextUnits("e\u0301").length, 1);
   assert.equal(getTextUnits("👩‍💻").length, 1);
-  assert.deepEqual(wrapTextRows("e\u0301👩‍💻字", 2).map((row) => row.text), ["e\u0301", "👩‍💻", "字"]);
+  assert.deepEqual(
+    wrapTextRows("e\u0301👩‍💻字", 2).map((row) => row.text),
+    ["e\u0301", "👩‍💻", "字"],
+  );
 });

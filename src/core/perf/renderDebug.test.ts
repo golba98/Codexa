@@ -1,19 +1,19 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   configureRenderDebug,
   getRenderDebugLogPath,
   traceBlankFrame,
   traceEvent,
+  traceFlickerEvent,
   traceLayoutValidity,
   traceLifecycleEvent,
   traceLifecycleTransition,
-  traceFlickerEvent,
-  traceStatusTick,
   traceRender,
+  traceStatusTick,
   traceTerminalWrite,
 } from "./renderDebug.js";
 
@@ -44,7 +44,10 @@ test("render debug writes JSONL only when explicitly enabled", () => {
     traceRender("EnabledComponent", "unit");
 
     assert.equal(getRenderDebugLogPath(), logPath);
-    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const records = readFileSync(logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     assert.equal(records[0]?.kind, "session");
     assert.equal(records[1]?.kind, "render");
     assert.equal(records[1]?.component, "EnabledComponent");
@@ -72,7 +75,10 @@ test("model state debug alias enables the render status log", () => {
     traceEvent("model", "alias");
 
     assert.equal(getRenderDebugLogPath(), logPath);
-    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const records = readFileSync(logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     assert.equal(records[0]?.kind, "session");
     assert.equal(records[1]?.kind, "model");
     assert.equal(records[1]?.event, "alias");
@@ -84,7 +90,10 @@ test("model state debug alias enables the render status log", () => {
 
 test("render debug creates missing log directories", () => {
   const logPath = join(tmpdir(), `ubume-render-debug-nested-${process.pid}`, "render-debug.log");
-  rmSync(join(tmpdir(), `ubume-render-debug-nested-${process.pid}`), { force: true, recursive: true });
+  rmSync(join(tmpdir(), `ubume-render-debug-nested-${process.pid}`), {
+    force: true,
+    recursive: true,
+  });
 
   try {
     configureRenderDebug({
@@ -94,7 +103,10 @@ test("render debug creates missing log directories", () => {
     assert.equal(existsSync(logPath), true);
   } finally {
     configureRenderDebug({});
-    rmSync(join(tmpdir(), `ubume-render-debug-nested-${process.pid}`), { force: true, recursive: true });
+    rmSync(join(tmpdir(), `ubume-render-debug-nested-${process.pid}`), {
+      force: true,
+      recursive: true,
+    });
   }
 });
 
@@ -111,7 +123,10 @@ test("render debug records lifecycle, layout, and blank-frame diagnostics", () =
     traceLayoutValidity("Timeline", { viewportRows: 0, cols: 120 });
     traceBlankFrame("Timeline", { reason: "visible-rows-zero-with-events" });
 
-    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const records = readFileSync(logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     assert.equal(records[1]?.kind, "lifecycle");
     assert.equal(records[1]?.component, "Timeline");
     assert.equal(records[1]?.event, "mount");
@@ -141,7 +156,10 @@ test("terminal writes are classified for clear and reset diagnosis", () => {
       "\x1b[2J\x1b[3J\x1b[H\x1bc\x1b[?1049h\x1b]0;UBUME\x07\x1b[?2004h\x1b[?1000h",
     );
 
-    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const records = readFileSync(logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     assert.equal(records[1]?.kind, "stdout");
     assert.equal(records[1]?.containsViewportClear, true);
     assert.equal(records[1]?.containsScrollbackClear, true);
@@ -168,7 +186,10 @@ test("UBUME_DEBUG_RENDER aliases render debug logging", () => {
     });
     traceRender("AliasComponent", "unit");
 
-    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const records = readFileSync(logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     assert.equal(records[0]?.kind, "session");
     assert.equal(records[1]?.kind, "render");
     assert.equal(records[1]?.component, "AliasComponent");
@@ -190,7 +211,10 @@ test("render trace flag enables compact render diagnostics", () => {
     traceRender("TraceComponent", "unit");
     traceFlickerEvent("viewportSlice", { reason: "unit" });
 
-    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const records = readFileSync(logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     assert.equal(records[0]?.kind, "session");
     assert.equal(records[1]?.kind, "render");
     assert.equal(records[1]?.component, "TraceComponent");
@@ -217,7 +241,10 @@ test("lifecycle trace is gated by UBUME_DEBUG_LIFECYCLE", () => {
       reason: "unit",
     });
 
-    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const records = readFileSync(logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     assert.equal(records.length, 1);
     assert.equal(records[0]?.kind, "lifecycle");
     assert.equal(records[0]?.reason, "unit");
@@ -239,7 +266,10 @@ test("flicker trace is gated by UBUME_DEBUG_FLICKER", () => {
     traceFlickerEvent("timelineRender", { reason: "unit" });
     traceStatusTick({ owner: "Status", label: "Codex is thinking" });
 
-    const records = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const records = readFileSync(logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     assert.equal(records.length, 2);
     assert.equal(records[0]?.kind, "flicker");
     assert.equal(records[0]?.event, "timelineRender");

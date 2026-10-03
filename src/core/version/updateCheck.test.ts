@@ -1,19 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { isCacheValid, type UpdateCheckCache } from "../../config/updateCheckCache.js";
 import {
-  UBUME_NPM_REGISTRY_URL,
-  UBUME_UPDATE_COMMAND,
   checkForUpdates,
   compareSemver,
   formatUpdateInstructions,
   formatVersionLabel,
   isNewerVersion,
   isValidSemver,
+  type NpmRegistryMetadata,
   normalizeVersion,
   shouldRunStartupUpdateCheck,
-  type NpmRegistryMetadata,
+  UBUME_NPM_REGISTRY_URL,
+  UBUME_UPDATE_COMMAND,
 } from "./updateCheck.js";
-import { isCacheValid, type UpdateCheckCache } from "../../config/updateCheckCache.js";
 
 function metadata(version: string): NpmRegistryMetadata {
   return { "dist-tags": { latest: version } };
@@ -173,7 +173,11 @@ test("checkForUpdates returns unknown (not update-available) when npm latest is 
     },
   );
 
-  assert.notEqual(result.status, "update-available", "must not show a false update banner for invalid semver");
+  assert.notEqual(
+    result.status,
+    "update-available",
+    "must not show a false update banner for invalid semver",
+  );
   assert.equal(result.status, "unknown");
 });
 
@@ -320,7 +324,10 @@ test("formatUpdateInstructions formats update-available npm status", () => {
   assert.match(result, /Current installed version: 1\.0\.1/);
   assert.match(result, /npm latest version:\s+1\.0\.2/);
   assert.match(result, /Update available: Ubume v1\.0\.2/);
-  assert.match(result, new RegExp(`Run: ${UBUME_UPDATE_COMMAND.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.match(
+    result,
+    new RegExp(`Run: ${UBUME_UPDATE_COMMAND.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+  );
 });
 
 test("formatUpdateInstructions leads with up-to-date confirmation and both versions", () => {
@@ -337,12 +344,15 @@ test("formatUpdateInstructions leads with up-to-date confirmation and both versi
 });
 
 test("formatUpdateInstructions shows the caller-provided update command", () => {
-  const result = formatUpdateInstructions({
-    status: "update-available",
-    currentVersion: "1.0.1",
-    latestVersion: "1.0.2",
-    checkedAt: Date.now(),
-  }, "bun add -g ubume@latest");
+  const result = formatUpdateInstructions(
+    {
+      status: "update-available",
+      currentVersion: "1.0.1",
+      latestVersion: "1.0.2",
+      checkedAt: Date.now(),
+    },
+    "bun add -g ubume@latest",
+  );
 
   assert.match(result, /Run: bun add -g ubume@latest/);
 });

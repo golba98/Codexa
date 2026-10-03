@@ -7,9 +7,9 @@ test("parses profile and repeated config overrides", () => {
     "--profile",
     "review",
     "--config",
-    "model=\"gpt-5.4\"",
+    'model="gpt-5.4"',
     "-c",
-    "ubume.mode=\"suggest\"",
+    'ubume.mode="suggest"',
   ]);
 
   assert.equal(parsed.ok, true);
@@ -19,17 +19,14 @@ test("parses profile and repeated config overrides", () => {
   assert.equal(parsed.value.version, false);
   assert.equal(parsed.value.initialPrompt, null);
   assert.equal(parsed.value.profile, "review");
-  assert.deepEqual(parsed.value.configOverrides, [
-    "model=\"gpt-5.4\"",
-    "ubume.mode=\"suggest\"",
-  ]);
+  assert.deepEqual(parsed.value.configOverrides, ['model="gpt-5.4"', 'ubume.mode="suggest"']);
   assert.deepEqual(parsed.value.passthroughArgs, [
     "--profile",
     "review",
     "--config",
-    "model=\"gpt-5.4\"",
+    'model="gpt-5.4"',
     "-c",
-    "ubume.mode=\"suggest\"",
+    'ubume.mode="suggest"',
   ]);
 });
 
@@ -50,8 +47,8 @@ test("rejects malformed config payloads", () => {
 test("parses inline profile and config assignments", () => {
   const parsed = parseLaunchArgs([
     "--profile=review",
-    "--config=model=\"gpt-5.4-mini\"",
-    "-c=ubume.mode=\"auto-edit\"",
+    '--config=model="gpt-5.4-mini"',
+    '-c=ubume.mode="auto-edit"',
   ]);
 
   assert.equal(parsed.ok, true);
@@ -59,13 +56,13 @@ test("parses inline profile and config assignments", () => {
 
   assert.equal(parsed.value.profile, "review");
   assert.deepEqual(parsed.value.configOverrides, [
-    "model=\"gpt-5.4-mini\"",
-    "ubume.mode=\"auto-edit\"",
+    'model="gpt-5.4-mini"',
+    'ubume.mode="auto-edit"',
   ]);
   assert.deepEqual(parsed.value.passthroughArgs, [
     "--profile=review",
-    "--config=model=\"gpt-5.4-mini\"",
-    "-c=ubume.mode=\"auto-edit\"",
+    '--config=model="gpt-5.4-mini"',
+    '-c=ubume.mode="auto-edit"',
   ]);
 });
 
@@ -84,10 +81,7 @@ test("parses model flags as runtime config overrides", () => {
   if (!parsed.ok) return;
 
   assert.equal(parsed.value.initialPrompt, "Say READY only.");
-  assert.deepEqual(parsed.value.configOverrides, [
-    "model=\"gpt-5.3-codex\"",
-    "model=\"gpt-5.4-mini\"",
-  ]);
+  assert.deepEqual(parsed.value.configOverrides, ['model="gpt-5.3-codex"', 'model="gpt-5.4-mini"']);
   assert.deepEqual(parsed.value.passthroughArgs, [
     "--model",
     "gpt-5.3-codex",
@@ -105,7 +99,7 @@ test("parses inline model flag assignment", () => {
   if (!parsed.ok) return;
 
   assert.equal(parsed.value.initialPrompt, "compare this");
-  assert.deepEqual(parsed.value.configOverrides, ["model=\"gpt-5.5\""]);
+  assert.deepEqual(parsed.value.configOverrides, ['model="gpt-5.5"']);
   assert.deepEqual(parsed.value.passthroughArgs, ["--model=gpt-5.5"]);
   assert.equal(parsed.value.modelOverride, "gpt-5.5");
 });
@@ -188,13 +182,17 @@ test("--no-clear can be combined with other flags", () => {
   assert.equal(parsed.value.initialPrompt, "do something");
 });
 
-
 test("startup resume and import targets are exclusive and never replay as a prompt or relaunch argument", () => {
   for (const args of [["--resume", "chat_abc"], ["--import-session=vibe:native_1"]]) {
-    const parsed = parseLaunchArgs(args); assert(parsed.ok);
-    assert.equal(parsed.value.initialPrompt, null); assert.deepEqual(parsed.value.passthroughArgs, []);
+    const parsed = parseLaunchArgs(args);
+    assert(parsed.ok);
+    assert.equal(parsed.value.initialPrompt, null);
+    assert.deepEqual(parsed.value.passthroughArgs, []);
   }
-  assert.equal(parseLaunchArgs(["--resume", "chat_abc", "--import-session", "codex:native"]).ok, false);
+  assert.equal(
+    parseLaunchArgs(["--resume", "chat_abc", "--import-session", "codex:native"]).ok,
+    false,
+  );
   assert.equal(parseLaunchArgs(["--resume=../escape"]).ok, false);
   assert.equal(parseLaunchArgs(["--import-session=gemini:native"]).ok, false);
   assert.equal(parseLaunchArgs(["--resume", "chat_abc", "execute this"]).ok, false);

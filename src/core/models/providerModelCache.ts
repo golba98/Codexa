@@ -37,10 +37,12 @@ function readCacheFile(cacheFile: string): ProviderModelCacheFile | null {
     }
     const parsed: unknown = JSON.parse(readFileSync(cacheFile, "utf8"));
     if (
-      typeof parsed !== "object" || parsed === null || Array.isArray(parsed)
-      || (parsed as ProviderModelCacheFile).version !== CACHE_VERSION
-      || typeof (parsed as ProviderModelCacheFile).providers !== "object"
-      || (parsed as ProviderModelCacheFile).providers === null
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed) ||
+      (parsed as ProviderModelCacheFile).version !== CACHE_VERSION ||
+      typeof (parsed as ProviderModelCacheFile).providers !== "object" ||
+      (parsed as ProviderModelCacheFile).providers === null
     ) {
       return null;
     }
@@ -55,13 +57,18 @@ function isValidEntry(entry: unknown): entry is CachedProviderModels {
     return false;
   }
   const candidate = entry as CachedProviderModels;
-  return typeof candidate.discoveredAt === "number"
-    && Array.isArray(candidate.models)
-    && candidate.models.every((model) =>
-      typeof model === "object" && model !== null
-      && typeof model.id === "string"
-      && typeof model.modelId === "string"
-      && typeof model.label === "string");
+  return (
+    typeof candidate.discoveredAt === "number" &&
+    Array.isArray(candidate.models) &&
+    candidate.models.every(
+      (model) =>
+        typeof model === "object" &&
+        model !== null &&
+        typeof model.id === "string" &&
+        typeof model.modelId === "string" &&
+        typeof model.label === "string",
+    )
+  );
 }
 
 export function loadCachedProviderModels(

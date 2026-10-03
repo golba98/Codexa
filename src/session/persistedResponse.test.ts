@@ -62,20 +62,29 @@ test("failed runs include the first line of the error", () => {
     toolCommands: [],
     fileActivity: [],
   });
-  assert.equal(message?.content, "Partial work\n\n[Run failed: Local agent request failed: continuation stopped.]");
+  assert.equal(
+    message?.content,
+    "Partial work\n\n[Run failed: Local agent request failed: continuation stopped.]",
+  );
 });
 
 test("interrupted runs with no output and no activity save nothing", () => {
-  assert.equal(buildPersistedAssistantMessage({
-    status: "canceled",
-    streamedText: "   ",
-    toolCommands: [],
-    fileActivity: [],
-  }), undefined);
+  assert.equal(
+    buildPersistedAssistantMessage({
+      status: "canceled",
+      streamedText: "   ",
+      toolCommands: [],
+      fileActivity: [],
+    }),
+    undefined,
+  );
 });
 
 test("activity summary dedupes, caps, and truncates entries", () => {
-  const files = Array.from({ length: 22 }, (_, index) => ({ path: `f${index}.js`, operation: "modified" as const }));
+  const files = Array.from({ length: 22 }, (_, index) => ({
+    path: `f${index}.js`,
+    operation: "modified" as const,
+  }));
   const summary = formatRunActivitySummary(
     ["ls", "ls", `echo ${"x".repeat(100)}`],
     [{ path: "new.js", operation: "created" }, { path: "new.js", operation: "modified" }, ...files],

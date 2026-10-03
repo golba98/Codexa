@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "child_process";
+import { type ChildProcess, spawn } from "child_process";
 import { accessSync, constants, existsSync } from "fs";
 import { delimiter, join } from "path";
 import { buildSpawnSpec } from "../executables/executableResolver.js";
@@ -35,7 +35,10 @@ function formatCommand(command: ProviderLaunchCommand): string {
   return [command.executable, ...command.args].join(" ");
 }
 
-export function buildProviderLaunchSpec(provider: ProviderConfig, cwd: string): ProviderLaunchSpec | ProviderLaunchResult {
+export function buildProviderLaunchSpec(
+  provider: ProviderConfig,
+  cwd: string,
+): ProviderLaunchSpec | ProviderLaunchResult {
   if (!provider.enabled) {
     return {
       status: "disabled",
@@ -97,7 +100,12 @@ function getPathExecutableCandidates(executable: string): string[] {
     return [executable];
   }
 
-  const pathExt = process.env.PATHEXT?.split(";").filter(Boolean) ?? [".COM", ".EXE", ".BAT", ".CMD"];
+  const pathExt = process.env.PATHEXT?.split(";").filter(Boolean) ?? [
+    ".COM",
+    ".EXE",
+    ".BAT",
+    ".CMD",
+  ];
   return [executable, ...pathExt.map((ext) => `${executable}${ext.toLowerCase()}`)];
 }
 
@@ -126,7 +134,11 @@ export async function commandExistsOnPath(executable: string): Promise<boolean> 
   return false;
 }
 
-function formatSpawnError(displayName: string, executable: string, error: NodeJS.ErrnoException): ProviderLaunchResult {
+function formatSpawnError(
+  displayName: string,
+  executable: string,
+  error: NodeJS.ErrnoException,
+): ProviderLaunchResult {
   if (error.code === "ENOENT") {
     return {
       status: "missing-command",

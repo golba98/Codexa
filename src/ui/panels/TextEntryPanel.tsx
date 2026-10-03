@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
+import { useMemo, useState } from "react";
 import type { FocusTargetId } from "../input/focus.js";
-import { useTheme } from "../theme.js";
 import { stripMouseEscapes } from "../input/inputBuffer.js";
+import { useTheme } from "../theme.js";
 
 interface TextEntryPanelProps {
   focusId: FocusTargetId;
@@ -36,43 +36,46 @@ export function TextEntryPanel({
   const [value, setValue] = useState(initialValue);
   const [cursor, setCursor] = useState(initialValue.length);
 
-  useInput((input, key) => {
-    if (key.escape) {
-      onCancel();
-      return;
-    }
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        onCancel();
+        return;
+      }
 
-    if (key.return) {
-      onSubmit(value.trim());
-      return;
-    }
+      if (key.return) {
+        onSubmit(value.trim());
+        return;
+      }
 
-    if (key.leftArrow) {
-      setCursor((current) => Math.max(0, current - 1));
-      return;
-    }
+      if (key.leftArrow) {
+        setCursor((current) => Math.max(0, current - 1));
+        return;
+      }
 
-    if (key.rightArrow) {
-      setCursor((current) => Math.min(value.length, current + 1));
-      return;
-    }
+      if (key.rightArrow) {
+        setCursor((current) => Math.min(value.length, current + 1));
+        return;
+      }
 
-    if (key.backspace || key.delete) {
-      if (cursor === 0) return;
-      setValue((current) => current.slice(0, cursor - 1) + current.slice(cursor));
-      setCursor((current) => Math.max(0, current - 1));
-      return;
-    }
+      if (key.backspace || key.delete) {
+        if (cursor === 0) return;
+        setValue((current) => current.slice(0, cursor - 1) + current.slice(cursor));
+        setCursor((current) => Math.max(0, current - 1));
+        return;
+      }
 
-    if (!input || key.ctrl || key.meta) {
-      return;
-    }
+      if (!input || key.ctrl || key.meta) {
+        return;
+      }
 
-    const filtered = stripMouseEscapes(input);
-    if (!filtered) return;
-    setValue((current) => insertAt(current, cursor, filtered));
-    setCursor((current) => current + filtered.length);
-  }, { isActive: isFocused });
+      const filtered = stripMouseEscapes(input);
+      if (!filtered) return;
+      setValue((current) => insertAt(current, cursor, filtered));
+      setCursor((current) => current + filtered.length);
+    },
+    { isActive: isFocused },
+  );
 
   const display = useMemo(() => {
     if (!value) {
@@ -95,14 +98,10 @@ export function TextEntryPanel({
 
   return (
     <Box flexDirection="column" width="100%" marginTop={1}>
-      <Box
-        borderStyle="round"
-        borderColor={theme.border}
-        paddingX={2}
-        paddingY={1}
-        width="100%"
-      >
-        <Text color={theme.accent} bold>{title}  </Text>
+      <Box borderStyle="round" borderColor={theme.border} paddingX={2} paddingY={1} width="100%">
+        <Text color={theme.accent} bold>
+          {title}{" "}
+        </Text>
         <Text color={theme.textMuted}>{subtitle}</Text>
       </Box>
 
@@ -118,10 +117,7 @@ export function TextEntryPanel({
         <Box>
           <Text color={theme.text}>{inputLabel}: </Text>
           <Text color={display.isPlaceholder ? theme.textDim : theme.text}>{display.before}</Text>
-          <Text
-            backgroundColor={theme.text}
-            color={theme.surface}
-          >
+          <Text backgroundColor={theme.text} color={theme.surface}>
             {display.current}
           </Text>
           <Text color={display.isPlaceholder ? theme.textDim : theme.text}>{display.after}</Text>

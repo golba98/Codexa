@@ -5,16 +5,32 @@ export function createRunControl(handlers: BackendRunHandlers) {
   let resolve: () => void = () => undefined;
   let pending = 0;
   let finished = false;
-  const stopped = new Promise<void>((done) => { resolve = done; });
-  const settle = () => { if (finished && pending === 0) resolve(); };
+  const stopped = new Promise<void>((done) => {
+    resolve = done;
+  });
+  const settle = () => {
+    if (finished && pending === 0) resolve();
+  };
   handlers.onRunControl?.({ stopped });
   return {
     stopped,
     track<T>(promise: Promise<T>): Promise<T> {
       pending++;
-      void promise.then(() => { pending--; settle(); }, () => { pending--; settle(); });
+      void promise.then(
+        () => {
+          pending--;
+          settle();
+        },
+        () => {
+          pending--;
+          settle();
+        },
+      );
       return promise;
     },
-    finish() { finished = true; settle(); },
+    finish() {
+      finished = true;
+      settle();
+    },
   };
 }

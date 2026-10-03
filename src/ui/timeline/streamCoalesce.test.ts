@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { coalesceConsecutiveThinking } from "./streamCoalesce.js";
 import type { RunProgressBlock } from "../../session/types.js";
+import { coalesceConsecutiveThinking } from "./streamCoalesce.js";
 
-function block(id: string, text: string, updatedAt: number, status: RunProgressBlock["status"] = "completed"): RunProgressBlock {
+function block(
+  id: string,
+  text: string,
+  updatedAt: number,
+  status: RunProgressBlock["status"] = "completed",
+): RunProgressBlock {
   return { id, text, sequence: 1, createdAt: 1, updatedAt, status };
 }
 
@@ -35,8 +40,14 @@ test("thoughts separated by an action stay separate blocks", () => {
     { kind: "thinking", streamSeq: 4, block: block("c", "after tool", 3) },
   ];
   const result = coalesceConsecutiveThinking(events);
-  assert.deepEqual(result.map((event) => event.kind), ["thinking", "action", "thinking"]);
-  assert.equal((result[0] as Extract<TestEvent, { kind: "thinking" }>).block.text, "before tool\n\nstill before");
+  assert.deepEqual(
+    result.map((event) => event.kind),
+    ["thinking", "action", "thinking"],
+  );
+  assert.equal(
+    (result[0] as Extract<TestEvent, { kind: "thinking" }>).block.text,
+    "before tool\n\nstill before",
+  );
   assert.equal((result[2] as Extract<TestEvent, { kind: "thinking" }>).block.text, "after tool");
 });
 
@@ -68,5 +79,8 @@ test("drops blank member texts from the joined body", () => {
     { kind: "thinking", streamSeq: 3, block: block("c", "another", 3) },
   ];
   const result = coalesceConsecutiveThinking(events);
-  assert.equal((result[0] as Extract<TestEvent, { kind: "thinking" }>).block.text, "real thought\n\nanother");
+  assert.equal(
+    (result[0] as Extract<TestEvent, { kind: "thinking" }>).block.text,
+    "real thought\n\nanother",
+  );
 });

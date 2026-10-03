@@ -4,7 +4,13 @@ import { performStartupClear } from "./startupClear.js";
 
 function makeCapture(): { written: string[]; write: (chunk: string) => boolean } {
   const written: string[] = [];
-  return { written, write: (chunk) => { written.push(chunk); return true; } };
+  return {
+    written,
+    write: (chunk) => {
+      written.push(chunk);
+      return true;
+    },
+  };
 }
 
 const TRANSCRIPT_CLEAR = "\x1b[2J\x1b[3J\x1b[H";

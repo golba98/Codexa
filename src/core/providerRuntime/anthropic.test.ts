@@ -1,18 +1,17 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import test from "node:test";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
-import { runCommand, type CommandResult } from "../process/CommandRunner.js";
-import { buildClaudeSpawnSpec, resetClaudeExecutableCacheForTests } from "../executables/claudeExecutable.js";
+import { buildClaudeSpawnSpec } from "../executables/claudeExecutable.js";
+import type { CommandResult, runCommand } from "../process/CommandRunner.js";
 import {
-  ANTHROPIC_ROUTE_SETUP_MESSAGE,
-  createClaudeToolParser,
   anthropicRuntime,
   buildClaudeCodeArgs,
   buildClaudeCodePlainTextArgs,
+  createClaudeToolParser,
   ensureClaudeStreamJsonVerbose,
   mapModelIdToClaudeArg,
   mapReasoningToEffort,
@@ -46,9 +45,8 @@ function mockRunCommand(
 ): typeof runCommand {
   return ((spec) => {
     onCall?.(spec);
-    const result = typeof resultOrMap === "function"
-      ? resultOrMap(spec.executable, spec.args)
-      : resultOrMap;
+    const result =
+      typeof resultOrMap === "function" ? resultOrMap(spec.executable, spec.args) : resultOrMap;
     return {
       child: null as unknown as ChildProcess,
       result: Promise.resolve(result),
@@ -140,9 +138,12 @@ test("Anthropic runtime sends prompts through the Messages API", async () => {
       globalThis.fetch = (async (input, init) => {
         capturedUrl = String(input);
         capturedInit = init;
-        return new Response(JSON.stringify({
-          content: [{ type: "text", text: "Hi from Claude." }],
-        }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            content: [{ type: "text", text: "Hi from Claude." }],
+          }),
+          { status: 200 },
+        );
       }) as typeof fetch;
 
       const response = await new Promise<string>((resolve, reject) => {
@@ -155,8 +156,14 @@ test("Anthropic runtime sends prompts through the Messages API", async () => {
       assert.equal(response, "Hi from Claude.");
       assert.equal(capturedUrl, "https://api.anthropic.com/v1/messages");
       assert.equal(capturedInit?.method, "POST");
-      assert.equal((capturedInit?.headers as Record<string, string>)["x-api-key"], "test-anthropic-key");
-      assert.equal((capturedInit?.headers as Record<string, string>)["anthropic-version"], "2023-06-01");
+      assert.equal(
+        (capturedInit?.headers as Record<string, string>)["x-api-key"],
+        "test-anthropic-key",
+      );
+      assert.equal(
+        (capturedInit?.headers as Record<string, string>)["anthropic-version"],
+        "2023-06-01",
+      );
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -175,12 +182,18 @@ test("resolver: where.exe returns .exe path → validation uses that path", asyn
       cwd: process.cwd(),
       runCommandImpl: mockRunCommand((executable, args) => {
         if (executable === "where.exe") {
-          return commandResult({ exitCode: 0, stdout: "C:\\Users\\Example\\.local\\bin\\claude.exe\n" });
+          return commandResult({
+            exitCode: 0,
+            stdout: "C:\\Users\\Example\\.local\\bin\\claude.exe\n",
+          });
         }
         // Track which executable is used for auth/version
         resolvedPaths.push(executable);
         if (executable === "C:\\Users\\Example\\.local\\bin\\claude.exe" && args[0] === "auth") {
-          return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }) });
+          return commandResult({
+            exitCode: 0,
+            stdout: JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }),
+          });
         }
         return commandResult({ exitCode: 0 });
       }),
@@ -188,7 +201,10 @@ test("resolver: where.exe returns .exe path → validation uses that path", asyn
 
     assert.equal(validation.status, "ready");
     assert.equal(validation.backendKind, "claude-code-auth");
-    assert.equal(validation.diagnostics?.["resolvedCommand"], "C:\\Users\\Example\\.local\\bin\\claude.exe");
+    assert.equal(
+      validation.diagnostics?.["resolvedCommand"],
+      "C:\\Users\\Example\\.local\\bin\\claude.exe",
+    );
     // The auth command should have used the resolved path, not bare "claude"
     assert.ok(
       resolvedPaths.some((p) => p === "C:\\Users\\Example\\.local\\bin\\claude.exe"),
@@ -205,7 +221,10 @@ test("resolver: where.exe returns .cmd path → auth uses that path", async () =
       cwd: process.cwd(),
       runCommandImpl: mockRunCommand((executable, args) => {
         if (executable === "where.exe") {
-          return commandResult({ exitCode: 0, stdout: "C:\\npm\\node_modules\\.bin\\claude.cmd\n" });
+          return commandResult({
+            exitCode: 0,
+            stdout: "C:\\npm\\node_modules\\.bin\\claude.cmd\n",
+          });
         }
         if (args.includes("auth")) authExecutable = executable;
         return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
@@ -238,7 +257,10 @@ test("resolver: CLAUDE_EXECUTABLE env var is used without calling where.exe", as
 
     // Manually test the resolver (bypass the cache since we're injecting mockImpl)
     const { resolveClaudeExecutable } = await import("../executables/claudeExecutable.js");
-    const resolved = await resolveClaudeExecutable({ runCommandImpl: mockImpl, cwd: process.cwd() });
+    const resolved = await resolveClaudeExecutable({
+      runCommandImpl: mockImpl,
+      cwd: process.cwd(),
+    });
 
     assert.equal(resolved, "my-claude", "Should use CLAUDE_EXECUTABLE directly");
     assert.equal(whereExeCalled, false, "Should not call where.exe when CLAUDE_EXECUTABLE is set");
@@ -306,12 +328,14 @@ test("buildClaudeSpawnSpec does not wrap .exe on Windows", () => {
 // ---------------------------------------------------------------------------
 
 test("parseClaudeAuthStatus: loggedIn true with all fields", () => {
-  const result = parseClaudeAuthStatus(JSON.stringify({
-    loggedIn: true,
-    authMethod: "claude.ai",
-    apiProvider: "firstParty",
-    subscriptionType: "pro",
-  }));
+  const result = parseClaudeAuthStatus(
+    JSON.stringify({
+      loggedIn: true,
+      authMethod: "claude.ai",
+      apiProvider: "firstParty",
+      subscriptionType: "pro",
+    }),
+  );
 
   assert.ok(result !== null);
   assert.equal(result?.loggedIn, true);
@@ -347,11 +371,17 @@ test("validateAnthropicRoute: exit 0 + loggedIn true → ready with auth diagnos
     const validation = await validateAnthropicRoute({
       cwd: process.cwd(),
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
+        if (executable === "where.exe")
+          return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
         if (args[0] === "auth") {
           return commandResult({
             exitCode: 0,
-            stdout: JSON.stringify({ loggedIn: true, authMethod: "claude.ai", apiProvider: "firstParty", subscriptionType: "pro" }),
+            stdout: JSON.stringify({
+              loggedIn: true,
+              authMethod: "claude.ai",
+              apiProvider: "firstParty",
+              subscriptionType: "pro",
+            }),
           });
         }
         return commandResult({ exitCode: 0 });
@@ -372,7 +402,8 @@ test("validateAnthropicRoute: exit 0 + loggedIn false → not-configured with lo
     const validation = await validateAnthropicRoute({
       cwd: process.cwd(),
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
+        if (executable === "where.exe")
+          return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
         if (args[0] === "auth") {
           return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: false }) });
         }
@@ -392,7 +423,8 @@ test("validateAnthropicRoute: exit 0 + malformed JSON → not configured", async
     const validation = await validateAnthropicRoute({
       cwd: process.cwd(),
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
+        if (executable === "where.exe")
+          return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
         if (args[0] === "auth") {
           return commandResult({ exitCode: 0, stdout: "authenticated\n" }); // non-JSON output
         }
@@ -462,7 +494,8 @@ test("validateAnthropicRoute: ENOENT + no API key → command not found message"
     const validation = await validateAnthropicRoute({
       cwd: process.cwd(),
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (executable === "where.exe") return commandResult({ status: "spawn_error", exitCode: null, errorCode: "ENOENT" });
+        if (executable === "where.exe")
+          return commandResult({ status: "spawn_error", exitCode: null, errorCode: "ENOENT" });
         return commandResult({ status: "spawn_error", exitCode: null, errorCode: "ENOENT" });
       }),
     });
@@ -494,14 +527,28 @@ test("validateAnthropicRoute: diagnostics include resolvedCommand", async () => 
     const validation = await validateAnthropicRoute({
       cwd: process.cwd(),
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\Users\\Example\\.local\\bin\\claude.exe\n" });
-        if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }) });
+        if (executable === "where.exe")
+          return commandResult({
+            exitCode: 0,
+            stdout: "C:\\Users\\Example\\.local\\bin\\claude.exe\n",
+          });
+        if (args[0] === "auth")
+          return commandResult({
+            exitCode: 0,
+            stdout: JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }),
+          });
         return commandResult({ exitCode: 0 });
       }),
     });
 
-    assert.equal(validation.diagnostics?.["resolvedCommand"], "C:\\Users\\Example\\.local\\bin\\claude.exe");
-    assert.equal(validation.diagnostics?.["authCommand"], "C:\\Users\\Example\\.local\\bin\\claude.exe auth status");
+    assert.equal(
+      validation.diagnostics?.["resolvedCommand"],
+      "C:\\Users\\Example\\.local\\bin\\claude.exe",
+    );
+    assert.equal(
+      validation.diagnostics?.["authCommand"],
+      "C:\\Users\\Example\\.local\\bin\\claude.exe auth status",
+    );
   });
 });
 
@@ -571,7 +618,10 @@ test("buildClaudeCodeArgs: includes -p, model, effort, permission-mode, and prom
   assert.ok(args.includes("stream-json"), "must include stream-json value");
   assert.ok(args.includes("--include-partial-messages"), "must include --include-partial-messages");
   assert.ok(args.includes("--model"), "must include --model flag");
-  assert.ok(args.includes("claude-sonnet-4-20250514"), "must pass versioned model ID through unchanged");
+  assert.ok(
+    args.includes("claude-sonnet-4-20250514"),
+    "must pass versioned model ID through unchanged",
+  );
   assert.ok(args.includes("--effort"), "must include --effort");
   assert.ok(args.includes("high"), "must include high effort");
   assert.ok(args.includes("--permission-mode"), "must include --permission-mode");
@@ -599,20 +649,25 @@ for (const effort of ["low", "medium", "high", "xhigh", "max"] as const) {
 }
 
 test("buildClaudeCodeArgs: stream-json command includes both --verbose and --effort", () => {
-  const args = buildClaudeCodeArgs(buildRequest({
-    route: {
-      providerId: "anthropic",
-      modelId: "opus",
-      backendKind: "claude-code-auth",
-      reasoning: "xhigh",
-    },
-  }));
+  const args = buildClaudeCodeArgs(
+    buildRequest({
+      route: {
+        providerId: "anthropic",
+        modelId: "opus",
+        backendKind: "claude-code-auth",
+        reasoning: "xhigh",
+      },
+    }),
+  );
 
   assert.ok(args.includes("-p"), "must use print mode");
   assert.ok(args.includes("--output-format"), "must include output format");
   assert.ok(args.includes("stream-json"), "must use stream-json");
   assert.ok(args.includes("--verbose"), "stream-json print mode must include --verbose");
-  assert.deepEqual(args.slice(args.indexOf("--effort"), args.indexOf("--effort") + 2), ["--effort", "xhigh"]);
+  assert.deepEqual(args.slice(args.indexOf("--effort"), args.indexOf("--effort") + 2), [
+    "--effort",
+    "xhigh",
+  ]);
 });
 
 test("buildClaudeCodeArgs: omits --effort when reasoning is null", () => {
@@ -645,27 +700,49 @@ test("buildClaudeCodePlainTextArgs: plain text command omits --verbose and strea
   assert.ok(!args.includes("--verbose"), "plain text mode should not require --verbose");
   assert.ok(!args.includes("--output-format"), "plain text mode should not request stream-json");
   assert.ok(!args.includes("stream-json"), "plain text mode should not include stream-json value");
-  assert.ok(!args.includes("--include-partial-messages"), "plain text mode should not request partial stream messages");
-  assert.deepEqual(args.slice(args.indexOf("--model"), args.indexOf("--model") + 2), ["--model", "sonnet"]);
+  assert.ok(
+    !args.includes("--include-partial-messages"),
+    "plain text mode should not request partial stream messages",
+  );
+  assert.deepEqual(args.slice(args.indexOf("--model"), args.indexOf("--model") + 2), [
+    "--model",
+    "sonnet",
+  ]);
 });
 
 test("ensureClaudeStreamJsonVerbose: inserts --verbose whenever print mode uses stream-json", () => {
   assert.deepEqual(
-    ensureClaudeStreamJsonVerbose(["-p", "--output-format", "stream-json", "--model", "haiku", "Hi"]),
+    ensureClaudeStreamJsonVerbose([
+      "-p",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "haiku",
+      "Hi",
+    ]),
     ["-p", "--verbose", "--output-format", "stream-json", "--model", "haiku", "Hi"],
   );
   assert.deepEqual(
-    ensureClaudeStreamJsonVerbose(["--print", "--output-format", "stream-json", "--model", "opus", "Hi"]),
+    ensureClaudeStreamJsonVerbose([
+      "--print",
+      "--output-format",
+      "stream-json",
+      "--model",
+      "opus",
+      "Hi",
+    ]),
     ["--print", "--verbose", "--output-format", "stream-json", "--model", "opus", "Hi"],
   );
   assert.deepEqual(
     ensureClaudeStreamJsonVerbose(["-p", "--verbose", "--output-format", "stream-json", "Hi"]),
     ["-p", "--verbose", "--output-format", "stream-json", "Hi"],
   );
-  assert.deepEqual(
-    ensureClaudeStreamJsonVerbose(["-p", "--model", "sonnet", "Hi"]),
-    ["-p", "--model", "sonnet", "Hi"],
-  );
+  assert.deepEqual(ensureClaudeStreamJsonVerbose(["-p", "--model", "sonnet", "Hi"]), [
+    "-p",
+    "--model",
+    "sonnet",
+    "Hi",
+  ]);
 });
 
 test("Claude arg builders keep --model selectedModel", () => {
@@ -711,7 +788,8 @@ test("runClaudeCodeWithRunner: known stream-json verbose error falls back once t
             status: "failed",
             exitCode: 1,
             stderr: "Error: When using --print, --output-format=stream-json requires --verbose",
-            userMessage: "Error: When using --print, --output-format=stream-json requires --verbose",
+            userMessage:
+              "Error: When using --print, --output-format=stream-json requires --verbose",
           });
         }
         return commandResult({ stdout: "Hi from Claude.\n" });
@@ -726,7 +804,10 @@ test("runClaudeCodeWithRunner: known stream-json verbose error falls back once t
   assert.ok(calls[0]?.includes("stream-json"), "first attempt should use stream-json");
   assert.ok(!calls[1]?.includes("stream-json"), "fallback attempt should use plain text");
   assert.ok(!calls[1]?.includes("--verbose"), "plain text fallback should not require --verbose");
-  assert.ok(progress.some((line) => line.includes("--verbose")), "diagnostic should show whether --verbose was included");
+  assert.ok(
+    progress.some((line) => line.includes("--verbose")),
+    "diagnostic should show whether --verbose was included",
+  );
 });
 
 test("runClaudeCodeWithRunner: invalid Claude effort falls back to model default once", async () => {
@@ -754,7 +835,8 @@ test("runClaudeCodeWithRunner: invalid Claude effort falls back to model default
           return commandResult({
             status: "failed",
             exitCode: 2,
-            stderr: "Invalid effort max for selected model. Valid efforts: low, medium, high, xhigh.",
+            stderr:
+              "Invalid effort max for selected model. Valid efforts: low, medium, high, xhigh.",
             userMessage: "Invalid effort max for selected model.",
           });
         }
@@ -766,8 +848,14 @@ test("runClaudeCodeWithRunner: invalid Claude effort falls back to model default
 
   assert.equal(response, "Hi from xhigh.");
   assert.equal(calls.length, 2, "must retry only once");
-  assert.deepEqual(calls[0]?.slice(calls[0].indexOf("--effort"), calls[0].indexOf("--effort") + 2), ["--effort", "max"]);
-  assert.deepEqual(calls[1]?.slice(calls[1].indexOf("--effort"), calls[1].indexOf("--effort") + 2), ["--effort", "xhigh"]);
+  assert.deepEqual(
+    calls[0]?.slice(calls[0].indexOf("--effort"), calls[0].indexOf("--effort") + 2),
+    ["--effort", "max"],
+  );
+  assert.deepEqual(
+    calls[1]?.slice(calls[1].indexOf("--effort"), calls[1].indexOf("--effort") + 2),
+    ["--effort", "xhigh"],
+  );
   assert.ok(progress.some((line) => /retrying once with --effort xhigh/i.test(line)));
 });
 
@@ -897,8 +985,10 @@ test("integration: validation stores resolved exe used by subsequent execution",
     await validateAnthropicRoute({
       cwd: process.cwd(),
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
-        if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+        if (executable === "where.exe")
+          return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
+        if (args[0] === "auth")
+          return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
         return commandResult({ exitCode: 0 });
       }),
     });
@@ -938,26 +1028,69 @@ test("discoverModels returns ANTHROPIC_FALLBACK_MODELS before any validation", (
   for (const m of result.models) {
     assert.ok(!m.modelId.startsWith("gpt-"), "Must not include OpenAI models");
   }
-  assert.deepEqual(result.models.find((m) => m.modelId === "opus")?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
-  assert.deepEqual(result.models.find((m) => m.modelId === "sonnet")?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
-  assert.deepEqual(result.models.find((m) => m.modelId === "haiku")?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
+  assert.deepEqual(
+    result.models
+      .find((m) => m.modelId === "opus")
+      ?.supportedReasoningLevels?.map((level) => level.id),
+    ["low", "medium", "high", "xhigh", "max"],
+  );
+  assert.deepEqual(
+    result.models
+      .find((m) => m.modelId === "sonnet")
+      ?.supportedReasoningLevels?.map((level) => level.id),
+    ["low", "medium", "high", "xhigh", "max"],
+  );
+  assert.deepEqual(
+    result.models
+      .find((m) => m.modelId === "haiku")
+      ?.supportedReasoningLevels?.map((level) => level.id),
+    ["low", "medium", "high", "xhigh", "max"],
+  );
 });
 
 test("discoverModels uses Claude Code model-list result when available", async () => {
   await withAnthropicEnv({}, async () => {
     const mockImpl = mockRunCommand((executable, args) => {
-      if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
-      if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
-      if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json\n" });
-      if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json\n" });
+      if (executable === "where.exe")
+        return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
+      if (args[0] === "auth")
+        return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+      if (args[0] === "--help")
+        return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json\n" });
+      if (args[0] === "model" && args[1] === "--help")
+        return commandResult({ exitCode: 0, stdout: "model list --json\n" });
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
-        return commandResult({ exitCode: 0, stdout: JSON.stringify({
-          models: [
-            { value: "claude-sonnet-4-6", label: "Sonnet 4.6", family: "sonnet", canonicalId: "claude-sonnet-4-6", effortLevels: ["low", "medium", "high", "max"], defaultEffort: "high" },
-            { value: "claude-opus-4-8", label: "Opus 4.8", family: "opus", canonicalId: "claude-opus-4-8", effortLevels: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "xhigh" },
-            { value: "claude-haiku-4-5", label: "Haiku 4.5", family: "haiku", canonicalId: "claude-haiku-4-5", effortLevels: ["low", "medium", "high"], defaultEffort: "medium" },
-          ],
-        }) });
+        return commandResult({
+          exitCode: 0,
+          stdout: JSON.stringify({
+            models: [
+              {
+                value: "claude-sonnet-4-6",
+                label: "Sonnet 4.6",
+                family: "sonnet",
+                canonicalId: "claude-sonnet-4-6",
+                effortLevels: ["low", "medium", "high", "max"],
+                defaultEffort: "high",
+              },
+              {
+                value: "claude-opus-4-8",
+                label: "Opus 4.8",
+                family: "opus",
+                canonicalId: "claude-opus-4-8",
+                effortLevels: ["low", "medium", "high", "xhigh", "max"],
+                defaultEffort: "xhigh",
+              },
+              {
+                value: "claude-haiku-4-5",
+                label: "Haiku 4.5",
+                family: "haiku",
+                canonicalId: "claude-haiku-4-5",
+                effortLevels: ["low", "medium", "high"],
+                defaultEffort: "medium",
+              },
+            ],
+          }),
+        });
       }
       return commandResult({ exitCode: 0 });
     });
@@ -974,9 +1107,21 @@ test("discoverModels uses Claude Code model-list result when available", async (
     assert.ok(opus, "Should include opus");
     assert.ok(haiku, "Should include haiku");
 
-    assert.equal(sonnet?.source, "claude-code-command", "Sonnet should be marked as Claude Code command discovered");
-    assert.equal(opus?.source, "claude-code-command", "Opus should be marked as Claude Code command discovered");
-    assert.equal(haiku?.source, "claude-code-command", "Haiku should be marked as Claude Code command discovered");
+    assert.equal(
+      sonnet?.source,
+      "claude-code-command",
+      "Sonnet should be marked as Claude Code command discovered",
+    );
+    assert.equal(
+      opus?.source,
+      "claude-code-command",
+      "Opus should be marked as Claude Code command discovered",
+    );
+    assert.equal(
+      haiku?.source,
+      "claude-code-command",
+      "Haiku should be marked as Claude Code command discovered",
+    );
 
     assert.equal(sonnet?.label, "Claude Sonnet 4.6");
     assert.equal(opus?.label, "Claude Opus 4.8");
@@ -989,18 +1134,25 @@ test("Claude capability discovery uses settings availableModels when CLI model l
   const tempRoot = mkdtempSync(join(tmpdir(), "ubume-claude-settings-"));
   try {
     const settingsPath = join(tempRoot, "settings.json");
-    writeFileSync(settingsPath, JSON.stringify({
-      availableModels: ["sonnet"],
-      effortLevel: "max",
-    }), "utf-8");
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        availableModels: ["sonnet"],
+        effortLevel: "max",
+      }),
+      "utf-8",
+    );
 
     const discovery = await discoverClaudeCodeCapabilities({
       cwd: process.cwd(),
       settingsPath,
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
-        if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
-        if (args.includes("--help")) return commandResult({ exitCode: 0, stdout: "no model json command here" });
+        if (executable === "where.exe")
+          return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
+        if (args[0] === "auth")
+          return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+        if (args.includes("--help"))
+          return commandResult({ exitCode: 0, stdout: "no model json command here" });
         return commandResult({ exitCode: 0, stdout: "" });
       }),
     });
@@ -1018,9 +1170,11 @@ test("Claude capability discovery uses settings availableModels when CLI model l
 test("discoverModels returns fallback-source models when version check fails", async () => {
   await withAnthropicEnv({}, async () => {
     const mockImpl = mockRunCommand((executable, args) => {
-      if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
+      if (executable === "where.exe")
+        return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
       if (args[0] === "--version") return commandResult({ exitCode: 1, stdout: "" });
-      if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+      if (args[0] === "auth")
+        return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       return commandResult({ exitCode: 0 });
     });
     await validateAnthropicRoute({ cwd: process.cwd(), runCommandImpl: mockImpl });
@@ -1028,7 +1182,11 @@ test("discoverModels returns fallback-source models when version check fails", a
     const result = anthropicRuntime.discoverModels();
     assert.ok(result.models.length > 0);
     for (const m of result.models) {
-      assert.equal(m.source, "fallback", `Model ${m.modelId} should be fallback when version fails`);
+      assert.equal(
+        m.source,
+        "fallback",
+        `Model ${m.modelId} should be fallback when version fails`,
+      );
     }
   });
 });
@@ -1044,7 +1202,10 @@ test("refreshModels returns correct structure with Claude model labels", async (
   assert.ok(result.models.length > 0, "Should return Claude models");
 
   const ids = result.models.map((m) => m.modelId);
-  assert.ok(ids.every((id) => !id.startsWith("gpt-")), "Must not include OpenAI models");
+  assert.ok(
+    ids.every((id) => !id.startsWith("gpt-")),
+    "Must not include OpenAI models",
+  );
 
   // Source must be explicit and provider-owned.
   for (const m of result.models) {
@@ -1070,14 +1231,29 @@ test("refreshModels keeps previous good capability data on failure", async () =>
     await validateAnthropicRoute({
       cwd: process.cwd(),
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (executable === "where.exe") return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
-        if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
-        if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
-        if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
+        if (executable === "where.exe")
+          return commandResult({ exitCode: 0, stdout: "C:\\bin\\claude.exe\n" });
+        if (args[0] === "auth")
+          return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+        if (args[0] === "--help")
+          return commandResult({ exitCode: 0, stdout: "model list --json" });
+        if (args[0] === "model" && args[1] === "--help")
+          return commandResult({ exitCode: 0, stdout: "model list --json" });
         if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
-          return commandResult({ exitCode: 0, stdout: JSON.stringify({
-            models: [{ value: "sonnet", label: "Sonnet 4.6", family: "sonnet", effortLevels: ["low", "medium", "high", "max"], defaultEffort: "high" }],
-          }) });
+          return commandResult({
+            exitCode: 0,
+            stdout: JSON.stringify({
+              models: [
+                {
+                  value: "sonnet",
+                  label: "Sonnet 4.6",
+                  family: "sonnet",
+                  effortLevels: ["low", "medium", "high", "max"],
+                  defaultEffort: "high",
+                },
+              ],
+            }),
+          });
         }
         return commandResult({ exitCode: 0 });
       }),
@@ -1151,11 +1327,42 @@ test("malformed stream-json lines do not crash (no throw)", () => {
 
 test("Claude tool transcript captures commands, full results and failures", () => {
   const activities: import("../../session/types.js").RunToolActivity[] = [];
-  const parse = createClaudeToolParser({ onResponse() {}, onError() {}, onToolActivity(activity) { activities.push(activity); } });
+  const parse = createClaudeToolParser({
+    onResponse() {},
+    onError() {},
+    onToolActivity(activity) {
+      activities.push(activity);
+    },
+  });
   parse("not json");
-  parse(JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "call-1", name: "Bash", input: { command: "cat example.ts" } }] } }));
-  parse(JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "call-1", content: [{ text: "line one" }, { text: "line two" }], is_error: true }] } }));
-  assert.equal(activities.length, 2); assert.equal(activities[0]?.status, "running");
-  assert.equal(activities[1]?.command, "cat example.ts"); assert.equal(activities[1]?.status, "failed");
+  parse(
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "call-1", name: "Bash", input: { command: "cat example.ts" } },
+        ],
+      },
+    }),
+  );
+  parse(
+    JSON.stringify({
+      type: "user",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call-1",
+            content: [{ text: "line one" }, { text: "line two" }],
+            is_error: true,
+          },
+        ],
+      },
+    }),
+  );
+  assert.equal(activities.length, 2);
+  assert.equal(activities[0]?.status, "running");
+  assert.equal(activities[1]?.command, "cat example.ts");
+  assert.equal(activities[1]?.status, "failed");
   assert.equal(activities[1]?.output, "line one\nline two");
 });

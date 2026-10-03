@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getTextWidth, splitTextAtColumn } from "../render/textLayout.js";
+import { createImageAttachmentToken } from "./imageAttachments.js";
 import {
-  clampScrollToCursor,
-  createInputViewport,
-  createInputRowWindow,
-  getComposerRowLayout,
   COMPOSER_ROW_CHROME,
+  clampScrollToCursor,
+  createInputRowWindow,
+  createInputViewport,
   deleteInputBackward,
   deleteInputForward,
+  getComposerRowLayout,
   insertInputText,
   locateCursor,
   moveCursorLeft,
@@ -16,9 +18,11 @@ import {
   stripMouseEscapes,
   wrapInputRows,
 } from "./inputBuffer.js";
-import { createImageAttachmentToken } from "./imageAttachments.js";
-import { createAtomicContentToken, deleteAdjacentPastedContent, moveAcrossPastedContent } from "./pastedContent.js";
-import { getTextWidth, splitTextAtColumn } from "../render/textLayout.js";
+import {
+  createAtomicContentToken,
+  deleteAdjacentPastedContent,
+  moveAcrossPastedContent,
+} from "./pastedContent.js";
 
 test("normalizes windows line endings for the composer buffer", () => {
   assert.equal(normalizeInputText("a\r\nb\rc"), "a\nb\nc");
@@ -26,8 +30,14 @@ test("normalizes windows line endings for the composer buffer", () => {
 
 test("wraps multiline input into stable viewport rows", () => {
   const rows = wrapInputRows("alpha\nbeta gamma", 5);
-  assert.deepEqual(rows.map((row) => row.text), ["alpha", "beta", "gamma"]);
-  assert.deepEqual(rows.map((row) => row.breakType), ["hard", "soft", "end"]);
+  assert.deepEqual(
+    rows.map((row) => row.text),
+    ["alpha", "beta", "gamma"],
+  );
+  assert.deepEqual(
+    rows.map((row) => row.breakType),
+    ["hard", "soft", "end"],
+  );
 });
 
 test("keeps the cursor visible by scrolling the composer viewport", () => {
@@ -46,7 +56,10 @@ test("keeps cursor mapping stable at hard newlines and soft wrap boundaries", ()
 
 test("keeps words intact and maps skipped wrap whitespace to the continuation row", () => {
   const rows = wrapInputRows("say was", 6);
-  assert.deepEqual(rows.map((row) => row.text), ["say", "was"]);
+  assert.deepEqual(
+    rows.map((row) => row.text),
+    ["say", "was"],
+  );
   assert.deepEqual(locateCursor(rows, 4), { row: 1, column: 0 });
   assert.deepEqual(locateCursor(rows, 7), { row: 1, column: 3 });
 });
@@ -70,7 +83,9 @@ test("uses code-point-safe cursor movement and deletion", () => {
 test("creates a bounded input viewport for large pasted content", () => {
   const viewport = createInputViewport({
     text: Array.from({ length: 12 }, (_, index) => `line-${index + 1}`).join("\n"),
-    cursorOffset: "line-1\nline-2\nline-3\nline-4\nline-5\nline-6\nline-7\nline-8\nline-9\nline-10\nline-11\nline-12".length,
+    cursorOffset:
+      "line-1\nline-2\nline-3\nline-4\nline-5\nline-6\nline-7\nline-8\nline-9\nline-10\nline-11\nline-12"
+        .length,
     width: 20,
     maxVisibleRows: 4,
   });
@@ -98,7 +113,10 @@ test("reclamps scroll state when resize reduces the wrapped row count", () => {
 
   assert.equal(narrowViewport.scrollRow > 0, true);
   assert.equal(wideViewport.scrollRow, 0);
-  assert.deepEqual(wideViewport.visibleRows.map((row) => row.text), ["alpha beta gamma delta epsilon"]);
+  assert.deepEqual(
+    wideViewport.visibleRows.map((row) => row.text),
+    ["alpha beta gamma delta epsilon"],
+  );
 });
 
 test("strips leaked SGR mouse escape sequence fragments from input", () => {
@@ -112,7 +130,7 @@ test("strips leaked SGR mouse escape sequence fragments from input", () => {
 test("stripMouseEscapes: removes complete SGR sequences (ESC-prefixed)", () => {
   assert.equal(stripMouseEscapes("\x1b[<0;83;19M"), "");
   assert.equal(stripMouseEscapes("\x1b[<64;83;19M"), "");
-  assert.equal(stripMouseEscapes("\x1b[<64;83;19m"), "");  // lowercase m
+  assert.equal(stripMouseEscapes("\x1b[<64;83;19m"), ""); // lowercase m
 });
 
 test("stripMouseEscapes: removes leaked SGR fragments (ESC already stripped by readline)", () => {
@@ -141,7 +159,7 @@ test("stripMouseEscapes: preserves normal text and returns it unchanged", () => 
 
 test("robustness: rapid sequential typing and deletion", () => {
   let state = { value: "", cursorOffset: 0 };
-  
+
   // Simulate typing "hello"
   for (const char of "hello") {
     state = insertInputText({ ...state, text: char });
@@ -164,14 +182,24 @@ test("robustness: rapid sequential typing and deletion", () => {
 });
 
 test("cursor highlight tracks the real character when moving right past an image token", () => {
-  const token = createImageAttachmentToken({ path: "/tmp/a.png", name: "clipboard-image.png", mediaType: "image/png", bytes: 1 });
+  const token = createImageAttachmentToken({
+    path: "/tmp/a.png",
+    name: "clipboard-image.png",
+    mediaType: "image/png",
+    bytes: 1,
+  });
   const value = `look at ${token} please`;
   let cursor = "look at ".length;
   const highlighted: string[] = [];
 
   while (cursor < value.length) {
     cursor = moveAcrossPastedContent(value, cursor, "right") ?? moveCursorRight(value, cursor);
-    const viewport = createInputViewport({ text: value, cursorOffset: cursor, width: 80, maxVisibleRows: 5 });
+    const viewport = createInputViewport({
+      text: value,
+      cursorOffset: cursor,
+      width: 80,
+      maxVisibleRows: 5,
+    });
     const row = viewport.visibleRows[viewport.cursorRow - viewport.scrollRow]!;
     const { current } = splitTextAtColumn(row.text, viewport.cursorColumn);
     assert.equal(current, value[cursor] ?? "", `cursor ${cursor}`);
@@ -181,13 +209,19 @@ test("cursor highlight tracks the real character when moving right past an image
   assert.deepEqual(highlighted, [" ", "p", "l", "e", "a", "s", "e", ""]);
 });
 
-
 test("composer geometry accounts for the border, padding and measured prompt", () => {
   for (const width of [20, 80, 115, 120, 240]) {
     const row = getComposerRowLayout(width);
     const chrome = COMPOSER_ROW_CHROME;
-    assert.equal(row.editorWidth + row.promptWidth + chrome.paddingLeft + chrome.paddingRight
-      + chrome.borderLeft + chrome.borderRight, width);
+    assert.equal(
+      row.editorWidth +
+        row.promptWidth +
+        chrome.paddingLeft +
+        chrome.paddingRight +
+        chrome.borderLeft +
+        chrome.borderRight,
+      width,
+    );
     assert.equal(row.promptWidth, getTextWidth(chrome.prompt));
   }
   assert.equal(getComposerRowLayout(115).editorWidth, 109);
@@ -195,11 +229,36 @@ test("composer geometry accounts for the border, padding and measured prompt", (
 });
 
 test("row windows reserve the cursor at full-width boundaries without losing its character", () => {
-  assert.deepEqual(createInputRowWindow("", 4, 0), { before: "", current: " ", after: "", cursorColumn: 0 });
-  assert.deepEqual(createInputRowWindow("abcd", 4, 4), { before: "bcd", current: " ", after: "", cursorColumn: 3 });
-  assert.deepEqual(createInputRowWindow("abcdefgh", 4, 0), { before: "", current: "a", after: "bcd", cursorColumn: 0 });
-  assert.deepEqual(createInputRowWindow("abcdefgh", 4, 4), { before: "bcd", current: "e", after: "", cursorColumn: 3 });
-  assert.deepEqual(createInputRowWindow("abcdefgh", 4, 8), { before: "fgh", current: " ", after: "", cursorColumn: 3 });
+  assert.deepEqual(createInputRowWindow("", 4, 0), {
+    before: "",
+    current: " ",
+    after: "",
+    cursorColumn: 0,
+  });
+  assert.deepEqual(createInputRowWindow("abcd", 4, 4), {
+    before: "bcd",
+    current: " ",
+    after: "",
+    cursorColumn: 3,
+  });
+  assert.deepEqual(createInputRowWindow("abcdefgh", 4, 0), {
+    before: "",
+    current: "a",
+    after: "bcd",
+    cursorColumn: 0,
+  });
+  assert.deepEqual(createInputRowWindow("abcdefgh", 4, 4), {
+    before: "bcd",
+    current: "e",
+    after: "",
+    cursorColumn: 3,
+  });
+  assert.deepEqual(createInputRowWindow("abcdefgh", 4, 8), {
+    before: "fgh",
+    current: " ",
+    after: "",
+    cursorColumn: 3,
+  });
   assert.equal(createInputRowWindow("abcdefgh", 4).before, "abcd");
 });
 
@@ -209,10 +268,19 @@ test("pasted content and following input share the bounded viewport at every cur
     const { editorWidth } = getComposerRowLayout(width);
     for (const value of ["", "hello", `${token} short`, `${token} ${"abcdefghij".repeat(20)}`]) {
       for (const cursor of [0, token.length, Math.floor(value.length / 2), value.length]) {
-        const viewport = createInputViewport({ text: value, cursorOffset: Math.min(cursor, value.length), width: editorWidth, maxVisibleRows: 5 });
+        const viewport = createInputViewport({
+          text: value,
+          cursorOffset: Math.min(cursor, value.length),
+          width: editorWidth,
+          maxVisibleRows: 5,
+        });
         viewport.visibleRows.forEach((row, index) => {
           const active = index === viewport.cursorRow - viewport.scrollRow;
-          const window = createInputRowWindow(row.text, editorWidth, active ? viewport.cursorColumn : undefined);
+          const window = createInputRowWindow(
+            row.text,
+            editorWidth,
+            active ? viewport.cursorColumn : undefined,
+          );
           assert.ok(getTextWidth(window.before + window.current + window.after) <= editorWidth);
           if (active) {
             assert.ok(getTextWidth(window.current) > 0);
@@ -230,16 +298,32 @@ test("deleting a pasted token immediately restores room for editable text", () =
   const token = createAtomicContentToken("[Pasted Content 22,703 chars]");
   const value = `${token} hello`;
   const width = getComposerRowLayout(40).editorWidth;
-  const initial = createInputViewport({ text: value, cursorOffset: value.length, width, maxVisibleRows: 5 });
+  const initial = createInputViewport({
+    text: value,
+    cursorOffset: value.length,
+    width,
+    maxVisibleRows: 5,
+  });
   const deleted = deleteAdjacentPastedContent(value, token.length, "backward")!;
-  const next = createInputViewport({ text: deleted.value, cursorOffset: deleted.value.length, width, maxVisibleRows: 5 });
+  const next = createInputViewport({
+    text: deleted.value,
+    cursorOffset: deleted.value.length,
+    width,
+    maxVisibleRows: 5,
+  });
   assert.ok(initial.rows.length > next.rows.length);
   assert.equal(next.rows[0]?.text, " hello");
   assert.equal(createInputRowWindow(next.rows[0]!.text, width, next.cursorColumn).before, " hello");
 });
 
 test("row windows handle display cells and indivisible graphemes", () => {
-  for (const text of ["字字字", "e\u0301e\u0301e\u0301", "👩‍💻👩‍💻👩‍💻", "😀abc", "\u2063\uFE01\u2063abc"]) {
+  for (const text of [
+    "字字字",
+    "e\u0301e\u0301e\u0301",
+    "👩‍💻👩‍💻👩‍💻",
+    "😀abc",
+    "\u2063\uFE01\u2063abc",
+  ]) {
     for (const width of [1, 2, 3, 4, 8]) {
       for (const cursor of [0, getTextWidth(text) / 2, getTextWidth(text)]) {
         const window = createInputRowWindow(text, width, cursor);
@@ -249,17 +333,29 @@ test("row windows handle display cells and indivisible graphemes", () => {
       }
     }
   }
-  assert.deepEqual(createInputRowWindow("字", 1, 0), { before: "", current: " ", after: "", cursorColumn: 0 });
+  assert.deepEqual(createInputRowWindow("字", 1, 0), {
+    before: "",
+    current: " ",
+    after: "",
+    cursorColumn: 0,
+  });
   assert.equal(createInputRowWindow("e\u0301x", 2, 0).current, "e\u0301");
   assert.equal(createInputRowWindow("👩‍💻x", 3, 0).current, "👩‍💻");
 });
 
 test("resize reclamps rendered cursor windows and vertical scrolling together", () => {
-  const value = createAtomicContentToken("[Pasted Content 22,703 chars]") + " " + "abcdefghij".repeat(20);
+  const value =
+    createAtomicContentToken("[Pasted Content 22,703 chars]") + " " + "abcdefghij".repeat(20);
   let scrollRow = 0;
   for (const width of [120, 20, 80, 40, 240]) {
     const { editorWidth } = getComposerRowLayout(width);
-    const viewport = createInputViewport({ text: value, cursorOffset: value.length, width: editorWidth, maxVisibleRows: 5, scrollRow });
+    const viewport = createInputViewport({
+      text: value,
+      cursorOffset: value.length,
+      width: editorWidth,
+      maxVisibleRows: 5,
+      scrollRow,
+    });
     scrollRow = viewport.scrollRow;
     const row = viewport.visibleRows[viewport.cursorRow - scrollRow]!;
     const window = createInputRowWindow(row.text, editorWidth, viewport.cursorColumn);

@@ -160,7 +160,9 @@ export function parseOpenAiToolCallsDetailed(value: unknown): OpenAiToolCallPars
 
 export function parseOpenAiToolCalls(value: unknown): NormalizedAgentToolCall[] {
   return parseOpenAiToolCallsDetailed(value)
-    .filter((item): item is { kind: "valid"; call: NormalizedAgentToolCall } => item.kind === "valid")
+    .filter(
+      (item): item is { kind: "valid"; call: NormalizedAgentToolCall } => item.kind === "valid",
+    )
     .map((item) => item.call);
 }
 
@@ -170,7 +172,11 @@ const AGENT_TOOL_DEFINITIONS: readonly OpenAiToolDefinition[] = [
     function: {
       name: "list_files",
       description: "List files and directories inside the workspace.",
-      parameters: { type: "object", properties: { path: { type: "string" } }, additionalProperties: false },
+      parameters: {
+        type: "object",
+        properties: { path: { type: "string" } },
+        additionalProperties: false,
+      },
     },
   },
   {
@@ -178,7 +184,12 @@ const AGENT_TOOL_DEFINITIONS: readonly OpenAiToolDefinition[] = [
     function: {
       name: "read_file",
       description: "Read a UTF-8 text file inside the workspace.",
-      parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"], additionalProperties: false },
+      parameters: {
+        type: "object",
+        properties: { path: { type: "string" } },
+        required: ["path"],
+        additionalProperties: false,
+      },
     },
   },
   {
@@ -212,7 +223,12 @@ const AGENT_TOOL_DEFINITIONS: readonly OpenAiToolDefinition[] = [
     function: {
       name: "run_shell",
       description: "Run a safe shell command in the workspace.",
-      parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"], additionalProperties: false },
+      parameters: {
+        type: "object",
+        properties: { command: { type: "string" } },
+        required: ["command"],
+        additionalProperties: false,
+      },
     },
   },
   {
@@ -225,12 +241,15 @@ const AGENT_TOOL_DEFINITIONS: readonly OpenAiToolDefinition[] = [
   },
 ];
 
-export function agentToolDefinitions(runIntent: "normal" | "plan" | "approved-execution" = "normal"): readonly OpenAiToolDefinition[] {
+export function agentToolDefinitions(
+  runIntent: "normal" | "plan" | "approved-execution" = "normal",
+): readonly OpenAiToolDefinition[] {
   if (runIntent !== "plan") return AGENT_TOOL_DEFINITIONS;
-  return AGENT_TOOL_DEFINITIONS.filter((definition) =>
-    definition.function.name === "list_files"
-    || definition.function.name === "read_file"
-    || definition.function.name === "get_workspace_info"
+  return AGENT_TOOL_DEFINITIONS.filter(
+    (definition) =>
+      definition.function.name === "list_files" ||
+      definition.function.name === "read_file" ||
+      definition.function.name === "get_workspace_info",
   );
 }
 
@@ -255,7 +274,7 @@ function extractJsonObjectAfterToolCall(text: string): string | null {
       escaped = inString;
       continue;
     }
-    if (char === "\"") {
+    if (char === '"') {
       inString = !inString;
       continue;
     }
@@ -269,7 +288,10 @@ function extractJsonObjectAfterToolCall(text: string): string | null {
     }
   }
 
-  return text.slice(firstBrace).replace(/<\/tool_call>.*/is, "").trim();
+  return text
+    .slice(firstBrace)
+    .replace(/<\/tool_call>.*/is, "")
+    .trim();
 }
 
 function parseToolCallPayload(raw: string): AgentToolParseResult {
@@ -278,7 +300,11 @@ function parseToolCallPayload(raw: string): AgentToolParseResult {
     const fromToolCalls = isRecord(parsed) ? parseOpenAiToolCalls(parsed.tool_calls) : [];
     const normalized = fromToolCalls[0] ?? normalizeAgentToolCall(parsed);
     if (!normalized) {
-      return { kind: "malformed_tool_call", raw, error: "Tool call JSON did not contain a supported tool call." };
+      return {
+        kind: "malformed_tool_call",
+        raw,
+        error: "Tool call JSON did not contain a supported tool call.",
+      };
     }
 
     return {
@@ -326,7 +352,10 @@ export function serializeToolResult(result: unknown): string {
   lines.push(`success: ${scalar(record.success)}`);
   if (record.command !== undefined) lines.push(`command: ${scalar(record.command)}`);
   if (record.path !== undefined) lines.push(`path: ${scalar(record.path)}`);
-  if (record.paths !== undefined) lines.push(`paths: ${Array.isArray(record.paths) ? record.paths.join(", ") : scalar(record.paths)}`);
+  if (record.paths !== undefined)
+    lines.push(
+      `paths: ${Array.isArray(record.paths) ? record.paths.join(", ") : scalar(record.paths)}`,
+    );
   if (record.exitCode !== undefined) lines.push(`exit_code: ${scalar(record.exitCode)}`);
   if (record.durationMs !== undefined) lines.push(`duration_ms: ${scalar(record.durationMs)}`);
   if (record.summary !== undefined) lines.push(...blockField("summary", record.summary));

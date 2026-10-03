@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  externalSourceLabel,
   type ExternalSessionSummary,
   type ExternalTranscript,
   type ExternalTranscriptEntry,
   type ExternalTranscriptEntryKind,
+  externalSourceLabel,
 } from "../../core/externalSessions/types.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import { clampVisualText, usePanelLayout } from "../layout.js";
@@ -45,15 +45,27 @@ interface TranscriptRow {
 function entryTime(timestamp: string | undefined): string {
   if (!timestamp) return "";
   const date = new Date(timestamp);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function wrapEntryText(text: string, width: number): string[] {
-  return sanitizeTerminalOutput(text).split("\n").flatMap((line) => line ? wrapPlainText(line, width) : [""]);
+  return sanitizeTerminalOutput(text)
+    .split("\n")
+    .flatMap((line) => (line ? wrapPlainText(line, width) : [""]));
 }
 
 /** Read-only transcript of a native Claude Code / Codex / Antigravity session. */
-export function SessionTranscriptViewer({ summary, label, loadTranscript, onBack, onOpenNative, onContinue, continueLabel = "continue here" }: SessionTranscriptViewerProps) {
+export function SessionTranscriptViewer({
+  summary,
+  label,
+  loadTranscript,
+  onBack,
+  onOpenNative,
+  onContinue,
+  continueLabel = "continue here",
+}: SessionTranscriptViewerProps) {
   const theme = useTheme();
   const layout = usePanelLayout();
   const { isFocused } = useFocus({ id: "external-session-viewer", autoFocus: true });
@@ -71,18 +83,32 @@ export function SessionTranscriptViewer({ summary, label, loadTranscript, onBack
       (transcript) => {
         if (!active) return;
         // Prompts and replies open; tool calls stay folded until asked for.
-        setExpanded(new Set(transcript.entries.filter((entry) => entry.kind !== "tool").map((entry) => entry.id)));
+        setExpanded(
+          new Set(
+            transcript.entries.filter((entry) => entry.kind !== "tool").map((entry) => entry.id),
+          ),
+        );
         setState({ status: "ready", transcript });
       },
-      (error: unknown) => { if (active) setState({ status: "error", message: error instanceof Error ? error.message : "unknown error" }); },
+      (error: unknown) => {
+        if (active)
+          setState({
+            status: "error",
+            message: error instanceof Error ? error.message : "unknown error",
+          });
+      },
     );
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [loadTranscript]);
 
   const allEntries = state.status === "ready" ? state.transcript.entries : [];
   const entries = useMemo(() => {
     const needle = query.toLowerCase();
-    return needle ? allEntries.filter((entry) => `${entry.title}\n${entry.text}`.toLowerCase().includes(needle)) : allEntries;
+    return needle
+      ? allEntries.filter((entry) => `${entry.title}\n${entry.text}`.toLowerCase().includes(needle))
+      : allEntries;
   }, [allEntries, query]);
 
   const notice = state.status === "ready" ? state.transcript.notice : undefined;
@@ -97,12 +123,21 @@ export function SessionTranscriptViewer({ summary, label, loadTranscript, onBack
       headers.push(result.length);
       const open = expanded.has(entry.id);
       const time = entryTime(entry.timestamp);
-      result.push({ entry: index, kind: entry.kind, header: true, text: `${open ? "▾" : "▸"} ${time ? `${time} · ` : ""}${sanitizeTerminalOutput(entry.title)}` });
+      result.push({
+        entry: index,
+        kind: entry.kind,
+        header: true,
+        text: `${open ? "▾" : "▸"} ${time ? `${time} · ` : ""}${sanitizeTerminalOutput(entry.title)}`,
+      });
       if (!open) return;
       const key = `${entry.id}:${width}`;
       let lines = cache.get(key);
-      if (!lines) { lines = wrapEntryText(entry.text, width - 4); cache.set(key, lines); }
-      for (const line of lines) result.push({ entry: index, kind: entry.kind, header: false, text: `  ${line}` });
+      if (!lines) {
+        lines = wrapEntryText(entry.text, width - 4);
+        cache.set(key, lines);
+      }
+      for (const line of lines)
+        result.push({ entry: index, kind: entry.kind, header: false, text: `  ${line}` });
     });
     return { rows: result, headerRows: headers };
   }, [entries, expanded, width]);
@@ -124,81 +159,169 @@ export function SessionTranscriptViewer({ summary, label, loadTranscript, onBack
     if (entry !== undefined) setSelected(entry);
   };
 
-  useInput((input, key) => {
-    if (searching) {
-      if (key.escape) { setSearching(false); setQuery(""); }
-      else if (key.return) setSearching(false);
-      else if (key.backspace || key.delete) setQuery((text) => text.slice(0, -1));
-      else if (!key.ctrl && !key.meta && input) setQuery((text) => text + input);
-      setSelected(0);
-      setOffset(0);
-      return;
-    }
-    if (key.escape) return onBack();
-    if (input === "o") return onOpenNative?.();
-    if (input === "c") return onContinue?.();
-    if (input === "/") { setSearching(true); return; }
-    if (key.upArrow || input === "k") return select(selectedIndex - 1);
-    if (key.downArrow || input === "j") return select(selectedIndex + 1);
-    if (key.pageDown) return scrollTo(start + height);
-    if (key.pageUp) return scrollTo(start - height);
-    if (key.home) { setSelected(0); setOffset(0); return; }
-    if (key.end) { setSelected(Math.max(0, entries.length - 1)); setOffset(maxOffset); return; }
-    if (key.return) {
-      const entry = entries[selectedIndex];
-      if (!entry) return;
-      setExpanded((current) => {
-        const next = new Set(current);
-        if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id);
-        return next;
-      });
-      const header = headerRows[selectedIndex] ?? 0;
-      if (header < start) setOffset(header);
-      return;
-    }
-    if (input === "e") {
-      const tools = allEntries.filter((entry) => entry.kind === "tool");
-      const allOpen = tools.every((entry) => expanded.has(entry.id));
-      setExpanded((current) => {
-        const next = new Set(current);
-        for (const tool of tools) { if (allOpen) next.delete(tool.id); else next.add(tool.id); }
-        return next;
-      });
-    }
-  }, { isActive: isFocused });
+  useInput(
+    (input, key) => {
+      if (searching) {
+        if (key.escape) {
+          setSearching(false);
+          setQuery("");
+        } else if (key.return) setSearching(false);
+        else if (key.backspace || key.delete) setQuery((text) => text.slice(0, -1));
+        else if (!key.ctrl && !key.meta && input) setQuery((text) => text + input);
+        setSelected(0);
+        setOffset(0);
+        return;
+      }
+      if (key.escape) return onBack();
+      if (input === "o") return onOpenNative?.();
+      if (input === "c") return onContinue?.();
+      if (input === "/") {
+        setSearching(true);
+        return;
+      }
+      if (key.upArrow || input === "k") return select(selectedIndex - 1);
+      if (key.downArrow || input === "j") return select(selectedIndex + 1);
+      if (key.pageDown) return scrollTo(start + height);
+      if (key.pageUp) return scrollTo(start - height);
+      if (key.home) {
+        setSelected(0);
+        setOffset(0);
+        return;
+      }
+      if (key.end) {
+        setSelected(Math.max(0, entries.length - 1));
+        setOffset(maxOffset);
+        return;
+      }
+      if (key.return) {
+        const entry = entries[selectedIndex];
+        if (!entry) return;
+        setExpanded((current) => {
+          const next = new Set(current);
+          if (next.has(entry.id)) next.delete(entry.id);
+          else next.add(entry.id);
+          return next;
+        });
+        const header = headerRows[selectedIndex] ?? 0;
+        if (header < start) setOffset(header);
+        return;
+      }
+      if (input === "e") {
+        const tools = allEntries.filter((entry) => entry.kind === "tool");
+        const allOpen = tools.every((entry) => expanded.has(entry.id));
+        setExpanded((current) => {
+          const next = new Set(current);
+          for (const tool of tools) {
+            if (allOpen) next.delete(tool.id);
+            else next.add(tool.id);
+          }
+          return next;
+        });
+      }
+    },
+    { isActive: isFocused },
+  );
 
-  const headerColor = (kind: ExternalTranscriptEntryKind) => kind === "user" ? theme.prompt : kind === "assistant" ? theme.text : kind === "note" ? theme.info : theme.command;
-  const bodyColor = (kind: ExternalTranscriptEntryKind) => kind === "tool" || kind === "note" ? theme.textMuted : theme.text;
-  const counts = state.status === "ready" ? ` · ${entries.length}${query ? ` of ${allEntries.length}` : ""} entries` : "";
+  const headerColor = (kind: ExternalTranscriptEntryKind) =>
+    kind === "user"
+      ? theme.prompt
+      : kind === "assistant"
+        ? theme.text
+        : kind === "note"
+          ? theme.info
+          : theme.command;
+  const bodyColor = (kind: ExternalTranscriptEntryKind) =>
+    kind === "tool" || kind === "note" ? theme.textMuted : theme.text;
+  const counts =
+    state.status === "ready"
+      ? ` · ${entries.length}${query ? ` of ${allEntries.length}` : ""} entries`
+      : "";
 
   let placeholder: { text: string; color: string } | null = null;
-  if (state.status === "loading") placeholder = { text: "Loading transcript…", color: theme.textMuted };
-  else if (state.status === "error") placeholder = { text: `Could not read this session: ${state.message}`, color: theme.error };
-  else if (entries.length === 0) placeholder = { text: query ? "No entries match your search." : "This session has no readable messages.", color: theme.textMuted };
+  if (state.status === "loading")
+    placeholder = { text: "Loading transcript…", color: theme.textMuted };
+  else if (state.status === "error")
+    placeholder = { text: `Could not read this session: ${state.message}`, color: theme.error };
+  else if (entries.length === 0)
+    placeholder = {
+      text: query ? "No entries match your search." : "This session has no readable messages.",
+      color: theme.textMuted,
+    };
 
   return (
-    <Box flexDirection="column" width="100%" borderStyle="round" borderColor={theme.borderFocused} paddingX={1}>
-      <Text color={theme.accent} bold wrap="truncate">{sanitizeTerminalOutput(`${label} · ${summary.title}`)}</Text>
-      <Text color={theme.textDim} wrap="truncate">{sanitizeTerminalOutput(`${summary.cwd ?? "Unknown folder"} · ${summary.id ?? ""}${counts}`)}</Text>
-      {notice && <Text color={theme.warning} wrap="truncate">{sanitizeTerminalOutput(notice)}</Text>}
+    <Box
+      flexDirection="column"
+      width="100%"
+      borderStyle="round"
+      borderColor={theme.borderFocused}
+      paddingX={1}
+    >
+      <Text color={theme.accent} bold wrap="truncate">
+        {sanitizeTerminalOutput(`${label} · ${summary.title}`)}
+      </Text>
+      <Text color={theme.textDim} wrap="truncate">
+        {sanitizeTerminalOutput(
+          `${summary.cwd ?? "Unknown folder"} · ${summary.id ?? ""}${counts}`,
+        )}
+      </Text>
+      {notice && (
+        <Text color={theme.warning} wrap="truncate">
+          {sanitizeTerminalOutput(notice)}
+        </Text>
+      )}
       <Box flexDirection="column" height={height} overflow="hidden">
-        {placeholder
-          ? <Text color={placeholder.color} wrap="truncate">{sanitizeTerminalOutput(placeholder.text)}</Text>
-          : rows.slice(start, start + height).map((row, index) => {
+        {placeholder ? (
+          <Text color={placeholder.color} wrap="truncate">
+            {sanitizeTerminalOutput(placeholder.text)}
+          </Text>
+        ) : (
+          rows.slice(start, start + height).map((row, index) => {
             const isSelected = row.header && row.entry === selectedIndex;
-            return <Text key={start + index} color={isSelected ? theme.accent : row.header ? headerColor(row.kind) : bodyColor(row.kind)} bold={row.header} wrap="truncate">
-              {row.header ? `${isSelected ? "›" : " "} ${clampVisualText(row.text, Math.max(1, width - 2))}` : row.text || " "}
-            </Text>;
-          })}
+            return (
+              <Text
+                key={start + index}
+                color={
+                  isSelected
+                    ? theme.accent
+                    : row.header
+                      ? headerColor(row.kind)
+                      : bodyColor(row.kind)
+                }
+                bold={row.header}
+                wrap="truncate"
+              >
+                {row.header
+                  ? `${isSelected ? "›" : " "} ${clampVisualText(row.text, Math.max(1, width - 2))}`
+                  : row.text || " "}
+              </Text>
+            );
+          })
+        )}
       </Box>
       <Text color={theme.textDim} wrap="truncate">
-        {searching ? `Search: ${query}` : `↑↓ select · Enter expand · e tools · PgUp/PgDn · / search${onOpenNative ? ` · o open in ${label}` : ""}${onContinue ? ` · c ${continueLabel}` : ""} · Esc back`}
+        {searching
+          ? `Search: ${query}`
+          : `↑↓ select · Enter expand · e tools · PgUp/PgDn · / search${onOpenNative ? ` · o open in ${label}` : ""}${onContinue ? ` · c ${continueLabel}` : ""} · Esc back`}
       </Text>
     </Box>
   );
 }
 
-export function ExternalSessionViewer({ summary, loadTranscript, onBack, onOpenNative, onContinue }: ExternalSessionViewerProps) {
-  return <SessionTranscriptViewer summary={summary} label={externalSourceLabel(summary.source)} loadTranscript={loadTranscript} onBack={onBack}
-    onOpenNative={() => onOpenNative(summary)} onContinue={() => onContinue(summary)} />;
+export function ExternalSessionViewer({
+  summary,
+  loadTranscript,
+  onBack,
+  onOpenNative,
+  onContinue,
+}: ExternalSessionViewerProps) {
+  return (
+    <SessionTranscriptViewer
+      summary={summary}
+      label={externalSourceLabel(summary.source)}
+      loadTranscript={loadTranscript}
+      onBack={onBack}
+      onOpenNative={() => onOpenNative(summary)}
+      onContinue={() => onContinue(summary)}
+    />
+  );
 }

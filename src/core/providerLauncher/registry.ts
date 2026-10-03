@@ -1,13 +1,18 @@
-import type {
-  ProviderConfig,
-  ProviderId,
-  ProviderBackendType,
-  ProviderLaunchCommand,
-  ProviderWorkspaceConfig,
-  ProviderWorkspaceOverride,
-} from "./types.js";
 import { DEFAULT_MODEL } from "../../config/settings.js";
-import { isLocalDevChannel } from "../version/channel.js";
+import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "../providerRuntime/antigravity.js";
+import { resolveModelCapabilityProfileCached } from "../providerRuntime/capabilityProfile.js";
+import { CODEXA_CUPY_MODEL_ID, discoverCodexaCupyModels } from "../providerRuntime/codexaCupy.js";
+import {
+  CODEXA_NATIVE_MODEL_ID,
+  discoverCodexaNativeModels,
+} from "../providerRuntime/codexaNative.js";
+import {
+  formatContextLength,
+  resolveModelContextLengthCached,
+} from "../providerRuntime/contextMetadata.js";
+import { setLocalProviderConfig } from "../providerRuntime/local.js";
+import { discoverMistralVibeModels } from "../providerRuntime/mistralVibe.js";
+import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 import {
   getDefaultRouteModel,
   getProviderRouteSetupMessage,
@@ -15,19 +20,37 @@ import {
   isProviderRoutableInUbume,
   isProviderRouteConfigured,
 } from "../providerRuntime/registry.js";
-import { normalizeGeminiModelId } from "../providerRuntime/models.js";
-import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "../providerRuntime/antigravity.js";
-import { discoverMistralVibeModels } from "../providerRuntime/mistralVibe.js";
-import { setLocalProviderConfig } from "../providerRuntime/local.js";
-import { CODEXA_NATIVE_MODEL_ID, discoverCodexaNativeModels } from "../providerRuntime/codexaNative.js";
-import { CODEXA_CUPY_MODEL_ID, discoverCodexaCupyModels } from "../providerRuntime/codexaCupy.js";
-import { formatContextLength, resolveModelContextLengthCached } from "../providerRuntime/contextMetadata.js";
-import { resolveModelCapabilityProfileCached } from "../providerRuntime/capabilityProfile.js";
+import { isLocalDevChannel } from "../version/channel.js";
+import type {
+  ProviderBackendType,
+  ProviderConfig,
+  ProviderId,
+  ProviderLaunchCommand,
+  ProviderWorkspaceConfig,
+  ProviderWorkspaceOverride,
+} from "./types.js";
 
 // Google/Gemini remains a recognized legacy config value so existing workspace
 // files can be migrated, but it is no longer a selectable Ubume provider.
-const ALL_PROVIDER_ORDER: readonly ProviderId[] = ["openai", "anthropic", "mistral", "codexa-native", "codexa-cupy", "local", "antigravity"];
-const KNOWN_PROVIDER_IDS: readonly ProviderId[] = ["openai", "anthropic", "google", "mistral", "local", "codexa-native", "codexa-cupy", "antigravity"];
+const ALL_PROVIDER_ORDER: readonly ProviderId[] = [
+  "openai",
+  "anthropic",
+  "mistral",
+  "codexa-native",
+  "codexa-cupy",
+  "local",
+  "antigravity",
+];
+const KNOWN_PROVIDER_IDS: readonly ProviderId[] = [
+  "openai",
+  "anthropic",
+  "google",
+  "mistral",
+  "local",
+  "codexa-native",
+  "codexa-cupy",
+  "antigravity",
+];
 
 export function getProviderOrder(env: NodeJS.ProcessEnv = process.env): readonly ProviderId[] {
   if (isLocalDevChannel(env)) {
@@ -38,7 +61,10 @@ export function getProviderOrder(env: NodeJS.ProcessEnv = process.env): readonly
 
 const DEFAULT_PROVIDER_ID: ProviderId = "openai";
 
-type ProviderDefault = Omit<ProviderConfig, "currentModel" | "enabled" | "statusLabel" | "launchCommand" | "isDefault"> & {
+type ProviderDefault = Omit<
+  ProviderConfig,
+  "currentModel" | "enabled" | "statusLabel" | "launchCommand" | "isDefault"
+> & {
   currentModel: (activeModel: string) => string;
   enabled: boolean;
   launchCommand: ProviderLaunchCommand | null;
@@ -87,7 +113,8 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
     enabled: false,
     launchCommand: null,
     isActiveRoute: false,
-    routeUnavailableReason: "Local provider unavailable. Start LM Studio, load a model, and enable the local server.",
+    routeUnavailableReason:
+      "Local provider unavailable. Start LM Studio, load a model, and enable the local server.",
   },
   "codexa-native": {
     id: "codexa-native",
@@ -139,7 +166,9 @@ function isProviderId(value: unknown): value is ProviderId {
   return typeof value === "string" && KNOWN_PROVIDER_IDS.includes(value as ProviderId);
 }
 
-function normalizeLaunchCommand(value: ProviderWorkspaceOverride["command"] | undefined): ProviderLaunchCommand | null | undefined {
+function normalizeLaunchCommand(
+  value: ProviderWorkspaceOverride["command"] | undefined,
+): ProviderLaunchCommand | null | undefined {
   if (value === undefined) return undefined;
   if (value === null) return null;
   if (typeof value === "string") {
@@ -166,26 +195,35 @@ function applyOverride(
   const launchCommand = normalizeLaunchCommand(override.command);
   const hasConfiguredCommand = launchCommand !== undefined;
   const nextCommand = hasConfiguredCommand ? launchCommand : provider.launchCommand;
-  const nextEnabled = typeof override.enabled === "boolean"
-    ? provider.id === "local" ? provider.enabled && override.enabled : override.enabled
-    : provider.enabled;
+  const nextEnabled =
+    typeof override.enabled === "boolean"
+      ? provider.id === "local"
+        ? provider.enabled && override.enabled
+        : override.enabled
+      : provider.enabled;
 
-  const overrideModel = typeof override.currentModel === "string" && override.currentModel.trim()
-    ? override.currentModel.trim()
-    : null;
+  const overrideModel =
+    typeof override.currentModel === "string" && override.currentModel.trim()
+      ? override.currentModel.trim()
+      : null;
 
   return {
     ...provider,
-    currentModel: overrideModel && provider.id !== "local"
-      ? provider.id === "google" ? normalizeGeminiModelId(overrideModel) : overrideModel
-      : provider.currentModel,
+    currentModel:
+      overrideModel && provider.id !== "local"
+        ? provider.id === "google"
+          ? normalizeGeminiModelId(overrideModel)
+          : overrideModel
+        : provider.currentModel,
     enabled: nextEnabled,
     launchCommand: nextCommand,
     statusLabel: !nextEnabled
       ? "Disabled"
       : provider.routeMode === "launch-only"
         ? provider.statusLabel
-        : (provider.routeUnavailableReason ? "Needs config" : "Enabled"),
+        : provider.routeUnavailableReason
+          ? "Needs config"
+          : "Enabled",
   };
 }
 
@@ -194,9 +232,10 @@ export function getDefaultProviderId(
   env: NodeJS.ProcessEnv = process.env,
 ): ProviderId {
   const providerId = config?.workspaceDefaultProviderId;
-  const isAvailable = isProviderId(providerId)
-    && providerId !== "google"
-    && (providerId !== "codexa-native" || isLocalDevChannel(env));
+  const isAvailable =
+    isProviderId(providerId) &&
+    providerId !== "google" &&
+    (providerId !== "codexa-native" || isLocalDevChannel(env));
   return isAvailable ? providerId : DEFAULT_PROVIDER_ID;
 }
 
@@ -205,7 +244,9 @@ export function getActiveRouteProviderId(
   env: NodeJS.ProcessEnv = process.env,
 ): ProviderId {
   const providerId = config?.activeRoute?.providerId;
-  return isProviderId(providerId) && providerId !== "google" && isProviderRoutableInUbume(providerId, env)
+  return isProviderId(providerId) &&
+    providerId !== "google" &&
+    isProviderRoutableInUbume(providerId, env)
     ? providerId
     : DEFAULT_PROVIDER_ID;
 }
@@ -229,23 +270,29 @@ export function buildProviderRegistry(options: {
     }
     const defaults = DEFAULT_PROVIDERS[id];
     const runtime = getProviderRuntime(id);
-    const discovery = id === "mistral"
-      ? discoverMistralVibeModels(options.workspaceRoot ?? process.cwd())
-      : id === "codexa-native"
-      ? discoverCodexaNativeModels(undefined, env)
-      : id === "codexa-cupy"
-      ? discoverCodexaCupyModels(undefined, env)
-      : runtime.discoverModels();
+    const discovery =
+      id === "mistral"
+        ? discoverMistralVibeModels(options.workspaceRoot ?? process.cwd())
+        : id === "codexa-native"
+          ? discoverCodexaNativeModels(undefined, env)
+          : id === "codexa-cupy"
+            ? discoverCodexaCupyModels(undefined, env)
+            : runtime.discoverModels();
 
     const activeRoute = options.workspaceConfig?.activeRoute;
     const isThisActive = activeRoute?.providerId === id;
 
-    let currentModelLabel = isThisActive && activeRoute
-      ? activeRoute.modelId
-      : getDefaultRouteModel(id, id === "openai" ? DEFAULT_MODEL : defaults.currentModel(options.activeModel));
+    let currentModelLabel =
+      isThisActive && activeRoute
+        ? activeRoute.modelId
+        : getDefaultRouteModel(
+            id,
+            id === "openai" ? DEFAULT_MODEL : defaults.currentModel(options.activeModel),
+          );
 
     if (id === "google") {
-      const hasGoogleOverride = options.workspaceConfig?.providers?.google?.currentModel !== undefined;
+      const hasGoogleOverride =
+        options.workspaceConfig?.providers?.google?.currentModel !== undefined;
       const geminiRoute = isThisActive || !hasGoogleOverride ? activeRoute : null;
       const selection = geminiRoute?.modelSelection;
       if (selection) {
@@ -260,9 +307,11 @@ export function buildProviderRegistry(options: {
     }
 
     if (id === "local") {
-      const selectedModel = typeof discovery.diagnostics?.selectedModel === "string" && discovery.diagnostics.selectedModel.trim()
-        ? discovery.diagnostics.selectedModel.trim()
-        : discovery.models[0]?.modelId;
+      const selectedModel =
+        typeof discovery.diagnostics?.selectedModel === "string" &&
+        discovery.diagnostics.selectedModel.trim()
+          ? discovery.diagnostics.selectedModel.trim()
+          : discovery.models[0]?.modelId;
       if (selectedModel) {
         currentModelLabel = selectedModel;
       }
@@ -272,14 +321,17 @@ export function buildProviderRegistry(options: {
       currentModelLabel = discovery.models[0]?.modelId ?? "Vibe default";
     }
 
-    const rawMetadataForModel = discovery.models.find((model) => model.modelId === currentModelLabel)?.raw;
+    const rawMetadataForModel = discovery.models.find(
+      (model) => model.modelId === currentModelLabel,
+    )?.raw;
     const contextMetadata = resolveModelContextLengthCached({
       providerId: id,
       modelId: currentModelLabel,
       providerConfig: options.workspaceConfig?.providers?.[id],
       rawMetadata: rawMetadataForModel,
     });
-    const contextSource = contextMetadata.source === "known-registry" ? "registry" : contextMetadata.source;
+    const contextSource =
+      contextMetadata.source === "known-registry" ? "registry" : contextMetadata.source;
     const capabilityProfile = resolveModelCapabilityProfileCached({
       providerId: id,
       modelId: currentModelLabel,
@@ -288,35 +340,37 @@ export function buildProviderRegistry(options: {
     });
 
     const routeUnavailableReason: string | null = runtime.routeAvailable
-      ? (isProviderRouteConfigured(id, env)
-          ? null
-          : (options.routeErrors?.[id]
-            ?? discovery.message
-            ?? getProviderRouteSetupMessage(id)))
+      ? isProviderRouteConfigured(id, env)
+        ? null
+        : (options.routeErrors?.[id] ?? discovery.message ?? getProviderRouteSetupMessage(id))
       : runtime.routeStatus;
 
-    const enabled = id === "codexa-native" || id === "codexa-cupy"
-      ? isLocalDevChannel(env)
-      : id === "local"
-      ? discovery.status === "ready"
-      : defaults.enabled;
+    const enabled =
+      id === "codexa-native" || id === "codexa-cupy"
+        ? isLocalDevChannel(env)
+        : id === "local"
+          ? discovery.status === "ready"
+          : defaults.enabled;
 
     const availabilityStatus = options.diagnostics?.[id]?.availabilityStatus;
-    const statusLabel = id === "mistral"
-      ? availabilityStatus === "checking"
-        ? "Checking"
-        : availabilityStatus === "unavailable"
-          ? "Missing"
-          : routeUnavailableReason
-            ? "Needs config"
-            : "Enabled"
-      : id === "local"
-      ? (discovery.status === "ready" ? "Enabled" : "Disabled")
-      : !enabled
-        ? "Disabled"
-        : routeUnavailableReason
-          ? "Needs config"
-          : "Enabled";
+    const statusLabel =
+      id === "mistral"
+        ? availabilityStatus === "checking"
+          ? "Checking"
+          : availabilityStatus === "unavailable"
+            ? "Missing"
+            : routeUnavailableReason
+              ? "Needs config"
+              : "Enabled"
+        : id === "local"
+          ? discovery.status === "ready"
+            ? "Enabled"
+            : "Disabled"
+          : !enabled
+            ? "Disabled"
+            : routeUnavailableReason
+              ? "Needs config"
+              : "Enabled";
 
     const provider: ProviderConfig = {
       id,
@@ -328,13 +382,16 @@ export function buildProviderRegistry(options: {
       // Keep the provider's stable backend identity even when discovery reports
       // missing local model files. Availability is represented separately by
       // statusLabel and routeUnavailableReason.
-      backendType: id === "codexa-native" || id === "codexa-cupy"
-        ? defaults.backendType
-        : discovery.backendKind as ProviderBackendType,
+      backendType:
+        id === "codexa-native" || id === "codexa-cupy"
+          ? defaults.backendType
+          : (discovery.backendKind as ProviderBackendType),
       routeMode: runtime.routeAvailable ? "in-ubume" : "launch-only",
       enabled,
       statusLabel,
-      launchCommand: defaults.launchCommand ? { ...defaults.launchCommand, args: [...defaults.launchCommand.args] } : null,
+      launchCommand: defaults.launchCommand
+        ? { ...defaults.launchCommand, args: [...defaults.launchCommand.args] }
+        : null,
       isDefault: id === defaultProviderId,
       isActiveRoute: id === activeRouteProviderId,
       routeUnavailableReason,
@@ -345,7 +402,10 @@ export function buildProviderRegistry(options: {
   });
 }
 
-export function findProvider(providers: readonly ProviderConfig[], providerId: ProviderId): ProviderConfig | null {
+export function findProvider(
+  providers: readonly ProviderConfig[],
+  providerId: ProviderId,
+): ProviderConfig | null {
   return providers.find((provider) => provider.id === providerId) ?? null;
 }
 

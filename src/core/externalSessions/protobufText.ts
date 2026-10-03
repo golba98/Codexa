@@ -6,7 +6,9 @@
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
-interface Cursor { offset: number }
+interface Cursor {
+  offset: number;
+}
 
 function readVarint(bytes: Uint8Array, cursor: Cursor): number | null {
   let result = 0;
@@ -31,13 +33,19 @@ function decodeText(bytes: Uint8Array): string | null {
   }
   for (const char of text) {
     const code = char.codePointAt(0)!;
-    if ((code < 0x20 && char !== "\n" && char !== "\r" && char !== "\t") || code === 0x7f) return null;
+    if ((code < 0x20 && char !== "\n" && char !== "\r" && char !== "\t") || code === 0x7f)
+      return null;
   }
   return text;
 }
 
 /** Parses one message; returns null when the bytes are not a well-formed message. */
-function walkMessage(bytes: Uint8Array, depth: number, maxDepth: number, output: string[]): boolean {
+function walkMessage(
+  bytes: Uint8Array,
+  depth: number,
+  maxDepth: number,
+  output: string[],
+): boolean {
   const cursor: Cursor = { offset: 0 };
   while (cursor.offset < bytes.length) {
     const tag = readVarint(bytes, cursor);

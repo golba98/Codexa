@@ -1,5 +1,5 @@
-import React from "react";
 import { Box } from "ink";
+import React from "react";
 import type { CodexAuthState } from "../../core/auth/codexAuth.js";
 import { getShellWidth, type Layout, type StartupHeaderMode } from "../layout.js";
 import { buildIntroRenderItem, TimelineRowView } from "./Timeline.js";
@@ -33,16 +33,19 @@ export function buildStaticIntroRows({
 }
 
 export function StaticIntroItem(props: StaticIntroItemProps) {
-  const rows = React.useMemo(() => buildStaticIntroRows(props), [
-    props.authState,
-    props.workspaceLabel,
-    props.layout.cols,
-    props.layout.rows,
-    props.layout.mode,
-    props.startupHeaderMode,
-    props.verboseMode,
-    props.workspaceRoot,
-  ]);
+  const rows = React.useMemo(
+    () => buildStaticIntroRows(props),
+    [
+      props.authState,
+      props.workspaceLabel,
+      props.layout.cols,
+      props.layout.rows,
+      props.layout.mode,
+      props.startupHeaderMode,
+      props.verboseMode,
+      props.workspaceRoot,
+    ],
+  );
 
   return (
     <Box flexDirection="column">

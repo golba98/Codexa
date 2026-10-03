@@ -15,9 +15,11 @@ function activity(overrides: Partial<RunToolActivity>): RunToolActivity {
 }
 
 test("reports access-denied Remove-Item cleanup failures", () => {
-  const result = getBlockedCleanupFailure(activity({
-    summary: "Access to the path 'C:\\repo\\__pycache__\\mod.pyc' is denied.",
-  }));
+  const result = getBlockedCleanupFailure(
+    activity({
+      summary: "Access to the path 'C:\\repo\\__pycache__\\mod.pyc' is denied.",
+    }),
+  );
 
   assert.match(result ?? "", /access denied/i);
   assert.match(result ?? "", /C:\\repo\\__pycache__\\mod\.pyc/);
@@ -32,10 +34,12 @@ test("reports generic POSIX and node locked delete failures", () => {
     "EBUSY: resource busy or locked, unlink 'tests/__pycache__/case.pyc'",
     "The process cannot access the file because it is being used by another process: 'tests/__pycache__/case.pyc'",
   ]) {
-    const result = getBlockedCleanupFailure(activity({
-      command: "rm -rf tests/__pycache__",
-      summary,
-    }));
+    const result = getBlockedCleanupFailure(
+      activity({
+        command: "rm -rf tests/__pycache__",
+        summary,
+      }),
+    );
 
     assert.ok(result, `Expected blocked cleanup failure for: ${summary}`);
     assert.match(result, /blocked|denied|locked|busy/i);
@@ -43,14 +47,18 @@ test("reports generic POSIX and node locked delete failures", () => {
 });
 
 test("reports git and generic lock artifacts during delete failures", () => {
-  const gitLock = getBlockedCleanupFailure(activity({
-    command: "Remove-Item -LiteralPath .git\\config.lock",
-    summary: "Access to the path '.git\\config.lock' is denied.",
-  }));
-  const genericLock = getBlockedCleanupFailure(activity({
-    command: "del cache.lock",
-    summary: "EPERM: operation not permitted, unlink 'cache.lock'",
-  }));
+  const gitLock = getBlockedCleanupFailure(
+    activity({
+      command: "Remove-Item -LiteralPath .git\\config.lock",
+      summary: "Access to the path '.git\\config.lock' is denied.",
+    }),
+  );
+  const genericLock = getBlockedCleanupFailure(
+    activity({
+      command: "del cache.lock",
+      summary: "EPERM: operation not permitted, unlink 'cache.lock'",
+    }),
+  );
 
   assert.match(gitLock ?? "", /lock artifact/i);
   assert.match(gitLock ?? "", /\.git\\config\.lock/i);
@@ -59,18 +67,33 @@ test("reports git and generic lock artifacts during delete failures", () => {
 });
 
 test("ignores non-delete failures and non-failed activities", () => {
-  assert.equal(getBlockedCleanupFailure(activity({
-    command: "git status",
-    summary: "fatal: Unable to create '.git/config.lock': File exists.",
-  })), null);
+  assert.equal(
+    getBlockedCleanupFailure(
+      activity({
+        command: "git status",
+        summary: "fatal: Unable to create '.git/config.lock': File exists.",
+      }),
+    ),
+    null,
+  );
 
-  assert.equal(getBlockedCleanupFailure(activity({
-    status: "completed",
-    summary: "Access to the path 'x.pyc' is denied.",
-  })), null);
+  assert.equal(
+    getBlockedCleanupFailure(
+      activity({
+        status: "completed",
+        summary: "Access to the path 'x.pyc' is denied.",
+      }),
+    ),
+    null,
+  );
 
-  assert.equal(getBlockedCleanupFailure(activity({
-    command: "rm -rf __pycache__",
-    summary: "No such file or directory",
-  })), null);
+  assert.equal(
+    getBlockedCleanupFailure(
+      activity({
+        command: "rm -rf __pycache__",
+        summary: "No such file or directory",
+      }),
+    ),
+    null,
+  );
 });

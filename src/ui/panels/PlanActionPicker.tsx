@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Text, useFocus, useFocusManager, useInput, useStdin } from "ink";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FOCUS_IDS } from "../input/focus.js";
-import { getArrowDirection, type ArrowDirection } from "../input/rawArrowKeys.js";
+import { type ArrowDirection, getArrowDirection } from "../input/rawArrowKeys.js";
 import { useTheme } from "../theme.js";
 
 export type PlanActionValue = "implement" | "revise" | "cancel";
@@ -29,11 +29,7 @@ export function measurePlanActionPickerRows(cols = 80): number {
   return cols < VERTICAL_LAYOUT_BREAKPOINT ? 3 : 1;
 }
 
-export function PlanActionPicker({
-  cols = 80,
-  onSelect,
-  onCancel,
-}: PlanActionPickerProps) {
+export function PlanActionPicker({ cols = 80, onSelect, onCancel }: PlanActionPickerProps) {
   const theme = useTheme();
   const { isFocused } = useFocus({ id: FOCUS_IDS.composer, autoFocus: true });
   const { focus } = useFocusManager();
@@ -107,47 +103,56 @@ export function PlanActionPicker({
     };
   }, [clearPendingEscape, moveSelection, stdin]);
 
-  useInput((input, key) => {
-    if (mouseEventTickRef.current) return;
+  useInput(
+    (input, key) => {
+      if (mouseEventTickRef.current) return;
 
-    if (key.escape) {
-      pendingEscapeRef.current = true;
-      if (escapeTimeoutRef.current) clearTimeout(escapeTimeoutRef.current);
-      escapeTimeoutRef.current = setTimeout(() => {
-        escapeTimeoutRef.current = null;
-        if (!pendingEscapeRef.current) return;
-        pendingEscapeRef.current = false;
-        onCancelRef.current();
-      }, ESCAPE_SETTLE_MS);
-      return;
-    }
+      if (key.escape) {
+        pendingEscapeRef.current = true;
+        if (escapeTimeoutRef.current) clearTimeout(escapeTimeoutRef.current);
+        escapeTimeoutRef.current = setTimeout(() => {
+          escapeTimeoutRef.current = null;
+          if (!pendingEscapeRef.current) return;
+          pendingEscapeRef.current = false;
+          onCancelRef.current();
+        }, ESCAPE_SETTLE_MS);
+        return;
+      }
 
-    // Tail of an escape sequence Ink could not reassemble; the raw listener owns it.
-    if (input.startsWith("[") || input.startsWith("O")) return;
+      // Tail of an escape sequence Ink could not reassemble; the raw listener owns it.
+      if (input.startsWith("[") || input.startsWith("O")) return;
 
-    clearPendingEscape();
+      clearPendingEscape();
 
-    if (key.return) {
-      onSelect(ACTION_ROWS[selectedIndex]?.value ?? "implement");
-      return;
-    }
+      if (key.return) {
+        onSelect(ACTION_ROWS[selectedIndex]?.value ?? "implement");
+        return;
+      }
 
-    if (key.upArrow || key.leftArrow || (key.shift && key.tab)) {
-      moveSelection("left");
-      return;
-    }
+      if (key.upArrow || key.leftArrow || (key.shift && key.tab)) {
+        moveSelection("left");
+        return;
+      }
 
-    if (key.downArrow || key.rightArrow || key.tab) {
-      moveSelection("right");
-      return;
-    }
+      if (key.downArrow || key.rightArrow || key.tab) {
+        moveSelection("right");
+        return;
+      }
 
-    if (input.length === 1 && !key.meta && !key.ctrl) {
-      const lower = input.toLowerCase();
-      if (lower === "i") { onSelect("implement"); return; }
-      if (lower === "r" || lower === "u") { onSelect("revise"); return; }
-    }
-  }, { isActive: isFocused });
+      if (input.length === 1 && !key.meta && !key.ctrl) {
+        const lower = input.toLowerCase();
+        if (lower === "i") {
+          onSelect("implement");
+          return;
+        }
+        if (lower === "r" || lower === "u") {
+          onSelect("revise");
+          return;
+        }
+      }
+    },
+    { isActive: isFocused },
+  );
 
   const renderAction = (row: (typeof ACTION_ROWS)[number], index: number) => {
     const selected = index === selectedIndex;
@@ -156,9 +161,7 @@ export function PlanActionPicker({
         <Text color={selected ? theme.accent : theme.textDim}>
           {selected ? "› " : vertical ? "  " : ""}
         </Text>
-        <Text color={selected ? theme.text : theme.textMuted}>
-          {`[${row.key}] ${row.label}`}
-        </Text>
+        <Text color={selected ? theme.text : theme.textMuted}>{`[${row.key}] ${row.label}`}</Text>
       </Text>
     );
   };
@@ -166,7 +169,9 @@ export function PlanActionPicker({
   if (vertical) {
     return (
       <Box flexDirection="column">
-        <Text color={isFocused ? theme.text : theme.textMuted} bold={isFocused}>Plan ready</Text>
+        <Text color={isFocused ? theme.text : theme.textMuted} bold={isFocused}>
+          Plan ready
+        </Text>
         {ACTION_ROWS.map(renderAction)}
       </Box>
     );
@@ -174,7 +179,9 @@ export function PlanActionPicker({
 
   return (
     <Text>
-      <Text color={isFocused ? theme.text : theme.textMuted} bold={isFocused}>Plan ready</Text>
+      <Text color={isFocused ? theme.text : theme.textMuted} bold={isFocused}>
+        Plan ready
+      </Text>
       <Text color={theme.textDim}>{"  "}</Text>
       {ACTION_ROWS.map((row, index) => (
         <React.Fragment key={row.value}>

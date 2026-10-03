@@ -1,18 +1,22 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { Box, render, Text } from "ink";
 import React from "react";
-import { Box, Text, render } from "ink";
 import { buildProviderRegistry } from "../../core/providerLauncher/registry.js";
-import type { ProviderConfig, ProviderId, ProviderPickerAction } from "../../core/providerLauncher/types.js";
+import type {
+  ProviderConfig,
+  ProviderId,
+  ProviderPickerAction,
+} from "../../core/providerLauncher/types.js";
 import { createLayoutSnapshot } from "../layout.js";
+import { ThemeProvider } from "../theme.js";
 import {
-  ProviderPicker,
   getCodexaNativeModelProviders,
   getTableLayout,
   groupCodexaNativeProviders,
+  ProviderPicker,
 } from "./ProviderPicker.js";
-import { ThemeProvider } from "../theme.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -74,7 +78,9 @@ function captureConsoleMessages() {
 
 function assertNoAvailableRowsFragmentWarning(messages: readonly string[]) {
   assert.equal(
-    messages.some((message) => message.includes("Invalid prop `availableRows` supplied to `React.Fragment`")),
+    messages.some((message) =>
+      message.includes("Invalid prop `availableRows` supplied to `React.Fragment`"),
+    ),
     false,
   );
 }
@@ -89,7 +95,10 @@ function assertProviderOrder(frame: string, providerNames: readonly string[]) {
   for (const providerName of providerNames) {
     const nextIndex = frame.indexOf(providerName);
     assert.ok(nextIndex >= 0, `expected ${providerName} to render`);
-    assert.ok(nextIndex > previousIndex, `expected ${providerName} to render after the previous provider`);
+    assert.ok(
+      nextIndex > previousIndex,
+      `expected ${providerName} to render after the previous provider`,
+    );
     previousIndex = nextIndex;
   }
 }
@@ -118,7 +127,9 @@ function assertSelectedProviderLine(frame: string, providerName: string) {
 }
 
 function visibleProviderNames(providers: readonly ProviderConfig[]): string[] {
-  return providers.map((provider) => provider.id === "mistral" ? "Mistral Vibe" : provider.displayName);
+  return providers.map((provider) =>
+    provider.id === "mistral" ? "Mistral Vibe" : provider.displayName,
+  );
 }
 
 function createInkHarness(node: React.ReactElement) {
@@ -358,8 +369,9 @@ test("provider picker reports Mistral Vibe in-Ubume route actions without launch
 
 test("provider picker opens Local Backends and Enter selects LM Studio", async () => {
   const harness = createInkHarness(<ProviderPickerHarness />);
-  const localIndex = buildProviderRegistry({ activeModel: "gpt-5.4" })
-    .findIndex((provider) => provider.id === "local");
+  const localIndex = buildProviderRegistry({ activeModel: "gpt-5.4" }).findIndex(
+    (provider) => provider.id === "local",
+  );
 
   try {
     await sleep(80);
@@ -384,7 +396,9 @@ test("provider picker opens Local Backends and Enter selects LM Studio", async (
 
 test("provider picker selects Unsloth from the Local Backends page", async () => {
   const harness = createInkHarness(<ProviderPickerHarness />);
-  const localIndex = buildProviderRegistry({ activeModel: "gpt-5.4" }).findIndex((provider) => provider.id === "local");
+  const localIndex = buildProviderRegistry({ activeModel: "gpt-5.4" }).findIndex(
+    (provider) => provider.id === "local",
+  );
   try {
     await sleep(80);
     for (let index = 0; index < localIndex; index += 1) {
@@ -416,7 +430,9 @@ test("Local Backends page shows independent inline statuses and probes on open",
           "lm-studio": { state: "not-running", label: "Not running" },
           unsloth: { state: "no-model", label: "No model loaded" },
         }}
-        onLocalBackendsOpen={() => { openCount += 1; }}
+        onLocalBackendsOpen={() => {
+          openCount += 1;
+        }}
         onAction={() => {}}
         onCancel={() => {}}
       />
@@ -454,12 +470,12 @@ test("provider picker cancels from provider list with Esc", async () => {
   }
 });
 
-test('pressing U fires use-in-ubume for the selected provider', async () => {
+test("pressing U fires use-in-ubume for the selected provider", async () => {
   const harness = createInkHarness(<ProviderPickerHarness />);
 
   try {
     await sleep(80);
-    harness.stdin.write('u');
+    harness.stdin.write("u");
     await sleep(80);
 
     assert.match(harness.getOutput(), /action:openai:use-in-ubume/);
@@ -468,14 +484,14 @@ test('pressing U fires use-in-ubume for the selected provider', async () => {
   }
 });
 
-test('pressing U after navigating down fires use-in-ubume for the selected provider', async () => {
+test("pressing U after navigating down fires use-in-ubume for the selected provider", async () => {
   const harness = createInkHarness(<ProviderPickerHarness />);
 
   try {
     await sleep(80);
-    harness.stdin.write('j'); // down to Anthropic
+    harness.stdin.write("j"); // down to Anthropic
     await sleep(40);
-    harness.stdin.write('u');
+    harness.stdin.write("u");
     await sleep(80);
 
     assert.match(harness.getOutput(), /action:anthropic:use-in-ubume/);
@@ -514,7 +530,7 @@ test("provider picker renders provider names only at normal width", async () => 
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
@@ -530,9 +546,7 @@ test("provider picker renders provider names only at normal width", async () => 
 });
 
 test("provider picker keeps provider-only rows at narrow widths", async () => {
-  const providers = [
-    buildMockProvider({ id: "openai", displayName: "OpenAI" }),
-  ];
+  const providers = [buildMockProvider({ id: "openai", displayName: "OpenAI" })];
   // Width 60: drops stream & tool, keeps context
   const harness60 = createInkHarness(
     <ThemeProvider theme="purple">
@@ -543,7 +557,7 @@ test("provider picker keeps provider-only rows at narrow widths", async () => {
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
@@ -568,7 +582,7 @@ test("provider picker keeps provider-only rows at narrow widths", async () => {
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
@@ -594,13 +608,13 @@ test("provider picker at maximized width still omits model names", async () => {
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
     await sleep(80);
     const output = harness.getOutput();
-    const borderLine = output.split("\n").find(line => line.includes("╭"));
+    const borderLine = output.split("\n").find((line) => line.includes("╭"));
     assert(borderLine, "Should find top border line");
     assert(borderLine.length > 100, `Border line length should be > 100, got ${borderLine.length}`);
     assert.match(output, /OpenAI/);
@@ -627,7 +641,7 @@ test("provider picker renders only the selection marker", async () => {
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
@@ -663,7 +677,10 @@ test("getTableLayout calculations for wide/maximized terminals", () => {
   assert(cols.status <= 22, `Status column should be <= 22, got ${cols.status}`);
   assert(cols.status >= 16, `Status column should be >= 16, got ${cols.status}`);
   assert(cols.provider <= 22, `Provider column should be <= 22, got ${cols.provider}`);
-  assert(cols.trailingPadding >= 0, `Should have trailingPadding >= 0, got ${cols.trailingPadding}`);
+  assert(
+    cols.trailingPadding >= 0,
+    `Should have trailingPadding >= 0, got ${cols.trailingPadding}`,
+  );
 });
 
 test("provider picker wide layout still renders only provider names", async () => {
@@ -678,19 +695,19 @@ test("provider picker wide layout still renders only provider names", async () =
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
     await sleep(80);
     const output = harness.getOutput();
-    
+
     // Panel width > 100
-    const borderLine = output.split("\n").find(line => line.includes("╭"));
+    const borderLine = output.split("\n").find((line) => line.includes("╭"));
     assert(borderLine, "Should find top border line");
     assert(borderLine.length > 100, `Border line length should be > 100, got ${borderLine.length}`);
 
-    const dataLine = output.split("\n").find(line => line.includes("OpenAI"));
+    const dataLine = output.split("\n").find((line) => line.includes("OpenAI"));
     assert(dataLine, "Should find data line");
     assert.doesNotMatch(dataLine, /gpt-5\.4-mini|Enabled/);
   } finally {
@@ -699,9 +716,7 @@ test("provider picker wide layout still renders only provider names", async () =
 });
 
 test("ProviderPicker width at contentWidth 171 is >150", async () => {
-  const providers = [
-    buildMockProvider({ id: "openai", displayName: "OpenAI" }),
-  ];
+  const providers = [buildMockProvider({ id: "openai", displayName: "OpenAI" })];
   const harness = createInkHarness(
     <ThemeProvider theme="purple">
       <ProviderPicker
@@ -710,13 +725,13 @@ test("ProviderPicker width at contentWidth 171 is >150", async () => {
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
     await sleep(80);
     const output = harness.getOutput();
-    const borderLine = output.split("\n").find(line => line.includes("╭"));
+    const borderLine = output.split("\n").find((line) => line.includes("╭"));
     assert(borderLine, "Should find top border line");
     assert(borderLine.length > 150, `Border line length should be > 150, got ${borderLine.length}`);
   } finally {
@@ -725,9 +740,7 @@ test("ProviderPicker width at contentWidth 171 is >150", async () => {
 });
 
 test("ProviderPicker width at contentWidth 207 is >190", async () => {
-  const providers = [
-    buildMockProvider({ id: "openai", displayName: "OpenAI" }),
-  ];
+  const providers = [buildMockProvider({ id: "openai", displayName: "OpenAI" })];
   const harness = createInkHarness(
     <ThemeProvider theme="purple">
       <ProviderPicker
@@ -736,13 +749,13 @@ test("ProviderPicker width at contentWidth 207 is >190", async () => {
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
     await sleep(80);
     const output = harness.getOutput();
-    const borderLine = output.split("\n").find(line => line.includes("╭"));
+    const borderLine = output.split("\n").find((line) => line.includes("╭"));
     assert(borderLine, "Should find top border line");
     assert(borderLine.length > 190, `Border line length should be > 190, got ${borderLine.length}`);
   } finally {
@@ -766,7 +779,7 @@ test("ProviderPicker with 5 providers shows all providers when rows are sufficie
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
@@ -798,16 +811,25 @@ test("ProviderPicker does not reserve excessive empty vertical rows", async () =
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
     await sleep(80);
     const output = harness.getOutput();
     const latestFrame = getLatestBoxFrame(output);
-    const lines = latestFrame.split("\n").map(l => l.trim()).filter(Boolean);
-    const emptyPanelLines = lines.filter(line => line.startsWith("│") && line.endsWith("│") && line.slice(1, -1).trim() === "");
-    assert.equal(emptyPanelLines.length, 0, "Compact mode should not render empty interior panel rows");
+    const lines = latestFrame
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const emptyPanelLines = lines.filter(
+      (line) => line.startsWith("│") && line.endsWith("│") && line.slice(1, -1).trim() === "",
+    );
+    assert.equal(
+      emptyPanelLines.length,
+      0,
+      "Compact mode should not render empty interior panel rows",
+    );
   } finally {
     await harness.cleanup();
   }
@@ -826,7 +848,7 @@ test("ProviderPicker at 100x21 uses compact mode and shows all selectable provid
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
@@ -890,13 +912,17 @@ test("ProviderPicker cursor remains visible on Codexa Native, Local, and Antigra
 
   const localFrame = await renderProviderPickerAtIndex({
     providers,
-    selectedIndex: groupCodexaNativeProviders(providers).findIndex((provider) => provider.id === "local"),
+    selectedIndex: groupCodexaNativeProviders(providers).findIndex(
+      (provider) => provider.id === "local",
+    ),
   });
   assertSelectedProviderLine(localFrame, "Local");
 
   const antigravityFrame = await renderProviderPickerAtIndex({
     providers,
-    selectedIndex: groupCodexaNativeProviders(providers).findIndex((provider) => provider.id === "antigravity"),
+    selectedIndex: groupCodexaNativeProviders(providers).findIndex(
+      (provider) => provider.id === "antigravity",
+    ),
   });
   assertSelectedProviderLine(antigravityFrame, "Antigravity");
 });
@@ -911,12 +937,21 @@ test("Codexa Native grouping keeps route identities while improving model labels
   const models = getCodexaNativeModelProviders(providers);
 
   assert.equal(grouped.filter((provider) => provider.displayName === "Codexa Native").length, 1);
-  assert.equal(grouped.some((provider) => provider.displayName === "codexa-PyTorch"), false);
-  assert.equal(grouped.some((provider) => provider.displayName === "CuPy"), false);
-  assert.deepEqual(models.map((provider) => [provider.id, provider.displayName]), [
-    ["codexa-native", "Codexa PyTorch"],
-    ["codexa-cupy", "Codexa CuPy"],
-  ]);
+  assert.equal(
+    grouped.some((provider) => provider.displayName === "codexa-PyTorch"),
+    false,
+  );
+  assert.equal(
+    grouped.some((provider) => provider.displayName === "CuPy"),
+    false,
+  );
+  assert.deepEqual(
+    models.map((provider) => [provider.id, provider.displayName]),
+    [
+      ["codexa-native", "Codexa PyTorch"],
+      ["codexa-cupy", "Codexa CuPy"],
+    ],
+  );
 });
 
 test("Codexa Native opens a responsive child page and selects exactly one backend", async () => {
@@ -938,8 +973,9 @@ test("Codexa Native opens a responsive child page and selects exactly one backen
 
   try {
     await sleep(80);
-    const nativeIndex = groupCodexaNativeProviders(providers)
-      .findIndex((provider) => provider.id === "codexa-native");
+    const nativeIndex = groupCodexaNativeProviders(providers).findIndex(
+      (provider) => provider.id === "codexa-native",
+    );
     for (let index = 0; index < nativeIndex; index += 1) {
       harness.stdin.write("j");
       await sleep(30);
@@ -983,8 +1019,9 @@ test("Codexa Native child page inherits compact resize windowing and Escape retu
 
   try {
     await sleep(80);
-    const nativeIndex = groupCodexaNativeProviders(providers)
-      .findIndex((provider) => provider.id === "codexa-native");
+    const nativeIndex = groupCodexaNativeProviders(providers).findIndex(
+      (provider) => provider.id === "codexa-native",
+    );
     for (let index = 0; index < nativeIndex; index += 1) {
       harness.stdin.write("j");
       await sleep(30);
@@ -1022,7 +1059,7 @@ test("ProviderPicker at wide standard size keeps selectable providers compact an
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
@@ -1048,10 +1085,12 @@ test("ProviderPicker at wide standard size keeps selectable providers compact an
 });
 
 test("tiny ProviderPicker with many providers shows continuous selection position", async () => {
-  const providers = Array.from({ length: 10 }, (_, index) => buildMockProvider({
-    id: (index === 0 ? "openai" : `p${index + 1}`) as any,
-    displayName: `Provider${index + 1}`,
-  }));
+  const providers = Array.from({ length: 10 }, (_, index) =>
+    buildMockProvider({
+      id: (index === 0 ? "openai" : `p${index + 1}`) as any,
+      displayName: `Provider${index + 1}`,
+    }),
+  );
   const harness = createInkHarness(
     <ThemeProvider theme="purple">
       <ProviderPicker
@@ -1060,7 +1099,7 @@ test("tiny ProviderPicker with many providers shows continuous selection positio
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
@@ -1118,7 +1157,7 @@ test("sliced provider order is contiguous and does not skip Anthropic", async ()
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {
@@ -1155,7 +1194,7 @@ test("provider picker omits extra current-provider metadata outside the visible 
         onAction={() => {}}
         onCancel={() => {}}
       />
-    </ThemeProvider>
+    </ThemeProvider>,
   );
 
   try {

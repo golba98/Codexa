@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { normalizeWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
+import type { LaunchArgs } from "./launchArgs.js";
 import {
+  DEFAULT_RUNTIME_CONFIG,
   formatApprovalPolicyLabel,
   formatNetworkAccessLabel,
   formatPersonalityLabel,
@@ -15,23 +17,21 @@ import {
   type RuntimePersonality,
   type RuntimeSandboxMode,
   type RuntimeServiceTier,
-  DEFAULT_RUNTIME_CONFIG,
 } from "./runtimeConfig.js";
 import {
   AVAILABLE_BACKENDS,
   AVAILABLE_MODES,
+  type AvailableBackend,
+  type AvailableMode,
+  type AvailableModel,
   formatBackendLabel,
   formatModeLabel,
   formatReasoningLabel,
   getCodexConfigFile,
-  type AvailableBackend,
-  type AvailableMode,
-  type AvailableModel,
   type ReasoningLevel,
 } from "./settings.js";
-import type { LaunchArgs } from "./launchArgs.js";
+import { isRecord } from "./toml-serialize.js";
 import { isProjectTrusted } from "./trustStore.js";
-import { isRecord, serializeTomlDocument } from "./toml-serialize.js";
 
 export const RUNTIME_FIELD_PATHS = [
   "provider",
@@ -97,9 +97,10 @@ interface ParsedConfigLayer {
 // ─── Field source tracking ─────────────────────────────────────────────────────
 
 function createFieldSources(label: string): Record<RuntimeFieldPath, string> {
-  return Object.fromEntries(
-    RUNTIME_FIELD_PATHS.map((field) => [field, label]),
-  ) as Record<RuntimeFieldPath, string>;
+  return Object.fromEntries(RUNTIME_FIELD_PATHS.map((field) => [field, label])) as Record<
+    RuntimeFieldPath,
+    string
+  >;
 }
 
 function addTouchedField(target: Set<RuntimeFieldPath>, field: RuntimeFieldPath): void {
@@ -232,7 +233,9 @@ function extractRuntimePatch(
     } else {
       if ("network_access" in sandboxTable) {
         if (typeof sandboxTable.network_access === "boolean") {
-          const networkAccess: RuntimeNetworkAccess = sandboxTable.network_access ? "enabled" : "disabled";
+          const networkAccess: RuntimeNetworkAccess = sandboxTable.network_access
+            ? "enabled"
+            : "disabled";
           assignPolicyValue(patch, "networkAccess", networkAccess);
           addTouchedField(touchedFields, "policy.networkAccess");
         } else {
@@ -255,15 +258,15 @@ function extractRuntimePatch(
   }
 
   const ubumeTable = data.ubume ?? data.codexa;
-  const tableKey = "ubume" in data ? "ubume" : ("codexa" in data ? "codexa" : null);
+  const tableKey = "ubume" in data ? "ubume" : "codexa" in data ? "codexa" : null;
   if (tableKey) {
     if (!isRecord(ubumeTable)) {
       ignoredEntries.push(tableKey);
     } else {
       if ("backend" in ubumeTable) {
         if (
-          typeof ubumeTable.backend === "string"
-          && AVAILABLE_BACKENDS.some((item) => item.id === ubumeTable.backend)
+          typeof ubumeTable.backend === "string" &&
+          AVAILABLE_BACKENDS.some((item) => item.id === ubumeTable.backend)
         ) {
           patch.provider = ubumeTable.backend as AvailableBackend;
           addTouchedField(touchedFields, "provider");
@@ -274,8 +277,8 @@ function extractRuntimePatch(
 
       if ("mode" in ubumeTable) {
         if (
-          typeof ubumeTable.mode === "string"
-          && AVAILABLE_MODES.some((item) => item.key === ubumeTable.mode)
+          typeof ubumeTable.mode === "string" &&
+          AVAILABLE_MODES.some((item) => item.key === ubumeTable.mode)
         ) {
           patch.mode = ubumeTable.mode as AvailableMode;
           addTouchedField(touchedFields, "mode");
@@ -305,14 +308,19 @@ function extractRuntimePatch(
 // ─── Layer loading ─────────────────────────────────────────────────────────────
 
 export function parseTomlDocument(text: string): Record<string, unknown> {
-  const parsed = (globalThis as { Bun?: { TOML?: { parse?: (input: string) => unknown } } }).Bun?.TOML?.parse?.(text);
+  const parsed = (
+    globalThis as { Bun?: { TOML?: { parse?: (input: string) => unknown } } }
+  ).Bun?.TOML?.parse?.(text);
   if (parsed === undefined) {
     throw new Error("Bun TOML parser is unavailable.");
   }
   return isRecord(parsed) ? parsed : {};
 }
 
-function tryLoadConfigLayer(label: string, filePath: string): ParsedConfigLayer | ConfigLayerReport {
+function tryLoadConfigLayer(
+  label: string,
+  filePath: string,
+): ParsedConfigLayer | ConfigLayerReport {
   if (!existsSync(filePath)) {
     return {
       label,
@@ -328,9 +336,10 @@ function tryLoadConfigLayer(label: string, filePath: string): ParsedConfigLayer 
       path: filePath,
       data,
       topLevelPatch: extractRuntimePatch(data, label, filePath),
-      topLevelProfile: typeof data.profile === "string" && data.profile.trim().length > 0
-        ? data.profile.trim()
-        : null,
+      topLevelProfile:
+        typeof data.profile === "string" && data.profile.trim().length > 0
+          ? data.profile.trim()
+          : null,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown TOML parse failure";
@@ -356,10 +365,7 @@ function applyRuntimeLayer(
   return nextRuntime;
 }
 
-function getProfilePatch(
-  layer: ParsedConfigLayer,
-  profileName: string,
-): RuntimeLayerPatch | null {
+function getProfilePatch(layer: ParsedConfigLayer, profileName: string): RuntimeLayerPatch | null {
   const profiles = layer.data.profiles;
   if (!isRecord(profiles)) {
     return null;
@@ -386,7 +392,8 @@ function extractRuntimePatchFromOverride(
   rawOverride: string,
 ): RuntimeLayerPatch {
   const separatorIndex = rawOverride.indexOf("=");
-  const key = separatorIndex === -1 ? rawOverride.trim() : rawOverride.slice(0, separatorIndex).trim();
+  const key =
+    separatorIndex === -1 ? rawOverride.trim() : rawOverride.slice(0, separatorIndex).trim();
   const rawValue = separatorIndex === -1 ? "" : rawOverride.slice(separatorIndex + 1).trim();
   const value = parseTomlScalar(rawValue);
   const sourceLabel = `CLI override (${key})`;
@@ -505,7 +512,12 @@ export function resolveLayeredConfig(options: ResolveLayeredConfigOptions): Laye
   const userConfigFile = getCodexConfigFile();
   const userLayer = tryLoadConfigLayer("User config", userConfigFile);
   if ("data" in userLayer) {
-    runtime = applyRuntimeLayer(runtime, diagnostics.fieldSources, userLayer.topLevelPatch, "User config");
+    runtime = applyRuntimeLayer(
+      runtime,
+      diagnostics.fieldSources,
+      userLayer.topLevelPatch,
+      "User config",
+    );
     diagnostics.layers.push({ label: "User config", status: "loaded", path: userLayer.path });
     diagnostics.ignoredEntries.push(...userLayer.topLevelPatch.ignoredEntries);
     loadedLayers.push(userLayer);
@@ -516,8 +528,9 @@ export function resolveLayeredConfig(options: ResolveLayeredConfigOptions): Laye
     diagnostics.layers.push(userLayer);
   }
 
-  const projectLayerPaths = listProjectLayerPaths(projectRoot, workspaceRoot)
-    .filter((filePath) => existsSync(filePath));
+  const projectLayerPaths = listProjectLayerPaths(projectRoot, workspaceRoot).filter((filePath) =>
+    existsSync(filePath),
+  );
 
   if (projectLayerPaths.length === 0) {
     diagnostics.layers.push({
@@ -536,12 +549,18 @@ export function resolveLayeredConfig(options: ResolveLayeredConfigOptions): Laye
     }
   } else {
     for (const filePath of projectLayerPaths) {
-      const relativeLabel = filePath === join(projectRoot, ".codex", "config.toml")
-        ? "Project config"
-        : `Project config (${dirname(dirname(filePath)).slice(projectRoot.length + 1) || "."})`;
+      const relativeLabel =
+        filePath === join(projectRoot, ".codex", "config.toml")
+          ? "Project config"
+          : `Project config (${dirname(dirname(filePath)).slice(projectRoot.length + 1) || "."})`;
       const layer = tryLoadConfigLayer(relativeLabel, filePath);
       if ("data" in layer) {
-        runtime = applyRuntimeLayer(runtime, diagnostics.fieldSources, layer.topLevelPatch, layer.label);
+        runtime = applyRuntimeLayer(
+          runtime,
+          diagnostics.fieldSources,
+          layer.topLevelPatch,
+          layer.label,
+        );
         diagnostics.layers.push({ label: layer.label, status: "loaded", path: layer.path });
         diagnostics.ignoredEntries.push(...layer.topLevelPatch.ignoredEntries);
         loadedLayers.push(layer);
@@ -593,7 +612,12 @@ export function resolveLayeredConfig(options: ResolveLayeredConfigOptions): Laye
       continue;
     }
 
-    runtime = applyRuntimeLayer(runtime, diagnostics.fieldSources, overridePatch, `CLI override (${rawOverride})`);
+    runtime = applyRuntimeLayer(
+      runtime,
+      diagnostics.fieldSources,
+      overridePatch,
+      `CLI override (${rawOverride})`,
+    );
     diagnostics.layers.push({
       label: `CLI override`,
       status: "loaded",
@@ -707,13 +731,10 @@ export function formatLayeredConfigStatus(result: LayeredConfigResult): string {
   ];
 
   for (const layer of diagnostics.layers) {
-    const detail = [
-      layer.path ? `path ${layer.path}` : null,
-      layer.reason ?? null,
-    ].filter(Boolean).join("; ");
-    lines.push(
-      `    - ${layer.label}: ${layer.status}${detail ? ` (${detail})` : ""}`,
-    );
+    const detail = [layer.path ? `path ${layer.path}` : null, layer.reason ?? null]
+      .filter(Boolean)
+      .join("; ");
+    lines.push(`    - ${layer.label}: ${layer.status}${detail ? ` (${detail})` : ""}`);
   }
 
   lines.push("  Winning sources:");
@@ -749,7 +770,10 @@ function cloneTomlValue(value: unknown): unknown {
   return value;
 }
 
-function ensureTable(root: Record<string, unknown>, path: readonly string[]): Record<string, unknown> {
+function ensureTable(
+  root: Record<string, unknown>,
+  path: readonly string[],
+): Record<string, unknown> {
   let current = root;
   for (const segment of path) {
     const next = current[segment];
@@ -772,7 +796,11 @@ function getNestedValue(root: Record<string, unknown>, path: readonly string[]):
   return current;
 }
 
-function setNestedValue(root: Record<string, unknown>, path: readonly string[], value: unknown): void {
+function setNestedValue(
+  root: Record<string, unknown>,
+  path: readonly string[],
+  value: unknown,
+): void {
   const table = ensureTable(root, path.slice(0, -1));
   table[path[path.length - 1]!] = cloneTomlValue(value);
 }

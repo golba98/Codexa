@@ -1,7 +1,7 @@
-import React, { memo } from "react";
 import { Box, Text } from "ink";
-import type { UIState } from "../../session/types.js";
+import { memo } from "react";
 import * as renderDebug from "../../core/perf/renderDebug.js";
+import type { UIState } from "../../session/types.js";
 import { useTheme } from "../theme.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
 import { isAnimatedBusyState } from "./busyStatusAnimation.js";
@@ -43,7 +43,15 @@ function RunFooter({ uiState, showBusyLoader = true }: RunFooterProps) {
 
   return (
     <Box flexDirection="column" paddingBottom={1} width="100%">
-      <Box borderStyle="single" borderTop={true} borderBottom={false} borderLeft={false} borderRight={false} borderColor={theme.border} marginBottom={1} />
+      <Box
+        borderStyle="single"
+        borderTop={true}
+        borderBottom={false}
+        borderLeft={false}
+        borderRight={false}
+        borderColor={theme.border}
+        marginBottom={1}
+      />
       <Box paddingX={1} width="100%" justifyContent="space-between" overflow="hidden">
         <Box flexShrink={1} flexGrow={1} overflow="hidden">
           <Text color={theme.info}>{"✧ "}</Text>
@@ -58,8 +66,7 @@ function RunFooter({ uiState, showBusyLoader = true }: RunFooterProps) {
 }
 
 export const MemoizedRunFooter = memo(RunFooter, (prev, next) => {
-  return prev.uiState.kind === next.uiState.kind
-    && prev.showBusyLoader === next.showBusyLoader;
+  return prev.uiState.kind === next.uiState.kind && prev.showBusyLoader === next.showBusyLoader;
 });
 
 export { RunFooter };

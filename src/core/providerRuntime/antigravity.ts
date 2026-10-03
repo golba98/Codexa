@@ -1,23 +1,22 @@
-import { createRunControl } from "../providers/runControl.js";
-import { runCommand } from "../process/CommandRunner.js";
-import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
+import { formatConversationHistory } from "../../session/conversation.js";
+import {
+  resetAgyExecutableCacheForTests,
+  resolveAgyExecutable,
+} from "../executables/antigravityExecutable.js";
+import { buildSpawnSpec } from "../executables/executableResolver.js";
 import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
 import { loadCachedProviderModels } from "../models/providerModelCache.js";
+import { runCommand } from "../process/CommandRunner.js";
+import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
+import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type {
-  ProviderBackendKind,
   ProviderChatRequest,
   ProviderModel,
   ProviderModelDiscoveryResult,
   ProviderRouteValidationResult,
   ProviderRuntime,
 } from "./types.js";
-import {
-  resolveAgyExecutable,
-  resetAgyExecutableCacheForTests,
-} from "../executables/antigravityExecutable.js";
-import { buildSpawnSpec } from "../executables/executableResolver.js";
-import { formatConversationHistory } from "../../session/conversation.js";
 
 export { resetAgyExecutableCacheForTests };
 
@@ -47,22 +46,28 @@ function normalizeAgyId(value: string): string {
 }
 
 function formatAgyVariantLabel(value: string): string {
-  return value
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1).toLowerCase()}`)
-    .join(" ") || value;
+  return (
+    value
+      .split(/[-_\s]+/)
+      .filter(Boolean)
+      .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1).toLowerCase()}`)
+      .join(" ") || value
+  );
 }
 
 function readAgySelectorMetadata(model: ProviderModel): AgySelectorMetadata | null {
   if (!model.raw || typeof model.raw !== "object" || Array.isArray(model.raw)) return null;
   const raw = model.raw as Partial<AgySelectorMetadata>;
-  if (raw.provider !== "antigravity" || !raw.selectors || typeof raw.selectors !== "object") return null;
+  if (raw.provider !== "antigravity" || !raw.selectors || typeof raw.selectors !== "object")
+    return null;
   return { provider: "antigravity", selectors: raw.selectors };
 }
 
 function preferredAgyDefault(modelId: string, efforts: readonly string[]): string {
-  if ((modelId === "gemini-3.5-flash" || modelId === "gemini-3.1-pro") && efforts.includes(ANTIGRAVITY_DEFAULT_REASONING)) {
+  if (
+    (modelId === "gemini-3.5-flash" || modelId === "gemini-3.1-pro") &&
+    efforts.includes(ANTIGRAVITY_DEFAULT_REASONING)
+  ) {
     return ANTIGRAVITY_DEFAULT_REASONING;
   }
   return efforts[0] ?? ANTIGRAVITY_DEFAULT_REASONING;
@@ -70,17 +75,25 @@ function preferredAgyDefault(modelId: string, efforts: readonly string[]): strin
 
 const AGY_REASONING_DISPLAY_ORDER = ["low", "medium", "high", "xhigh", "max"] as const;
 
-function sortAgyReasoningLevels(levels: readonly ReasoningEffortCapability[]): ReasoningEffortCapability[] {
+function sortAgyReasoningLevels(
+  levels: readonly ReasoningEffortCapability[],
+): ReasoningEffortCapability[] {
   const rank = new Map<string, number>(AGY_REASONING_DISPLAY_ORDER.map((id, index) => [id, index]));
   return levels
     .map((level, index) => ({ level, index }))
-    .sort((left, right) => (rank.get(left.level.id) ?? AGY_REASONING_DISPLAY_ORDER.length + left.index)
-      - (rank.get(right.level.id) ?? AGY_REASONING_DISPLAY_ORDER.length + right.index))
+    .sort(
+      (left, right) =>
+        (rank.get(left.level.id) ?? AGY_REASONING_DISPLAY_ORDER.length + left.index) -
+        (rank.get(right.level.id) ?? AGY_REASONING_DISPLAY_ORDER.length + right.index),
+    )
     .map(({ level }) => level);
 }
 
 export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
-  const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
   const parsed = lines.map((line) => {
     // Current `agy models` output is a two-column table:
     //   gemini-3.7-flash-high  Gemini 3.7 Flash (High)
@@ -114,7 +127,10 @@ export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
         defaultReasoningLevel: null,
         supportedReasoningLevels: null,
         source: "discovered",
-        raw: { provider: "antigravity", selectors: { "": item.selector } } satisfies AgySelectorMetadata,
+        raw: {
+          provider: "antigravity",
+          selectors: { "": item.selector },
+        } satisfies AgySelectorMetadata,
       });
       continue;
     }
@@ -125,15 +141,21 @@ export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
     const existing = grouped.get(item.base);
     if (existing) {
       const metadata = readAgySelectorMetadata(existing);
-      const levels = sortAgyReasoningLevels([...(existing.supportedReasoningLevels ?? []), {
-        id: effortId,
-        label: formatAgyVariantLabel(item.variant ?? effortId),
-        description: null,
-      }]);
+      const levels = sortAgyReasoningLevels([
+        ...(existing.supportedReasoningLevels ?? []),
+        {
+          id: effortId,
+          label: formatAgyVariantLabel(item.variant ?? effortId),
+          description: null,
+        },
+      ]);
       const selectors = { ...(metadata?.selectors ?? {}), [effortId]: item.selector };
       const updated = {
         ...existing,
-        defaultReasoningLevel: preferredAgyDefault(modelId, levels.map((level) => level.id)),
+        defaultReasoningLevel: preferredAgyDefault(
+          modelId,
+          levels.map((level) => level.id),
+        ),
         supportedReasoningLevels: levels,
         raw: { provider: "antigravity", selectors } satisfies AgySelectorMetadata,
       };
@@ -155,7 +177,10 @@ export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
       defaultReasoningLevel: preferredAgyDefault(modelId, [effortId]),
       supportedReasoningLevels: [level],
       source: "discovered",
-      raw: { provider: "antigravity", selectors: { [effortId]: item.selector } } satisfies AgySelectorMetadata,
+      raw: {
+        provider: "antigravity",
+        selectors: { [effortId]: item.selector },
+      } satisfies AgySelectorMetadata,
     };
     grouped.set(item.base, model);
     models.push(model);
@@ -170,7 +195,9 @@ function normalizeCachedAgyModels(models: readonly ProviderModel[]): readonly Pr
   });
   if (!legacyRows.some((row) => row && /^(\S+)\s{2,}(.+)$/.test(row))) return models;
 
-  const normalized = parseAgyModelsOutput(legacyRows.filter((row): row is string => Boolean(row)).join("\n"));
+  const normalized = parseAgyModelsOutput(
+    legacyRows.filter((row): row is string => Boolean(row)).join("\n"),
+  );
   return normalized.length > 0 ? normalized : models;
 }
 
@@ -187,7 +214,7 @@ export function getAgyModelSelector(
   if (!model.supportedReasoningLevels?.length) return metadata.selectors[""] ?? null;
   if (reasoning) return metadata.selectors[reasoning] ?? null;
   const effort = model.defaultReasoningLevel;
-  return effort ? metadata.selectors[effort] ?? null : null;
+  return effort ? (metadata.selectors[effort] ?? null) : null;
 }
 
 export function getAntigravityModelLabel(modelId: string): string {
@@ -216,16 +243,19 @@ export function getAntigravityModelLabel(modelId: string): string {
  * Old IDs encoded effort in the model ID (e.g., "gemini-3.5-flash-high").
  * New IDs use the base family ("gemini-3.5-flash") with reasoning stored separately.
  */
-export function migrateAntigravityLegacyModelId(modelId: string): { modelId: string; reasoning?: string } {
+export function migrateAntigravityLegacyModelId(modelId: string): {
+  modelId: string;
+  reasoning?: string;
+} {
   const legacy: Record<string, { modelId: string; reasoning?: string }> = {
-    "gemini-3.5-flash-high":   { modelId: "gemini-3.5-flash", reasoning: "high" },
+    "gemini-3.5-flash-high": { modelId: "gemini-3.5-flash", reasoning: "high" },
     "gemini-3.5-flash-medium": { modelId: "gemini-3.5-flash", reasoning: "medium" },
-    "gemini-3.5-flash-low":    { modelId: "gemini-3.5-flash", reasoning: "low" },
-    "gemini-3.1-pro-high":     { modelId: "gemini-3.1-pro",   reasoning: "high" },
-    "gemini-3.1-pro-low":      { modelId: "gemini-3.1-pro",   reasoning: "low" },
+    "gemini-3.5-flash-low": { modelId: "gemini-3.5-flash", reasoning: "low" },
+    "gemini-3.1-pro-high": { modelId: "gemini-3.1-pro", reasoning: "high" },
+    "gemini-3.1-pro-low": { modelId: "gemini-3.1-pro", reasoning: "low" },
     "claude-sonnet-4-6-think": { modelId: "claude-sonnet-4.6-thinking" },
-    "claude-opus-4-6-think":   { modelId: "claude-opus-4.6-thinking" },
-    "gpt-oss-120b":            { modelId: "gpt-oss-120b-medium" },
+    "claude-opus-4-6-think": { modelId: "claude-opus-4.6-thinking" },
+    "gpt-oss-120b": { modelId: "gpt-oss-120b-medium" },
   };
   return legacy[modelId] ?? { modelId };
 }
@@ -256,9 +286,10 @@ export async function discoverAgyModels(options: {
     cwd: options.cwd,
     timeoutMs: ANTIGRAVITY_VALIDATION_TIMEOUT_MS,
   }).result;
-  const models = result.status === "completed" && result.exitCode === 0
-    ? parseAgyModelsOutput(result.stdout)
-    : [];
+  const models =
+    result.status === "completed" && result.exitCode === 0
+      ? parseAgyModelsOutput(result.stdout)
+      : [];
   if (models.length > 0) {
     discoveredAgyModels = models;
     return {
@@ -267,7 +298,11 @@ export async function discoverAgyModels(options: {
       backendKind: "antigravity-cli-auth",
       models,
       message: `Loaded ${models.length} models from agy models.`,
-      diagnostics: { modelSource: "agy-models-command", modelsExitCode: result.exitCode, modelsStatus: result.status },
+      diagnostics: {
+        modelSource: "agy-models-command",
+        modelsExitCode: result.exitCode,
+        modelsStatus: result.status,
+      },
     };
   }
   const cached = normalizeCachedAgyModels(loadCachedProviderModels("antigravity")?.models ?? []);
@@ -276,10 +311,15 @@ export async function discoverAgyModels(options: {
     providerId: "antigravity",
     backendKind: cached.length > 0 ? "antigravity-cli-auth" : "unavailable",
     models: cached,
-    message: cached.length > 0
-      ? "Live agy model metadata is unavailable; using the last successful discovery."
-      : "Antigravity model metadata is unavailable. Run Refresh models after checking `agy models`.",
-    diagnostics: { modelSource: cached.length > 0 ? "cache" : "unavailable", modelsExitCode: result.exitCode, modelsStatus: result.status },
+    message:
+      cached.length > 0
+        ? "Live agy model metadata is unavailable; using the last successful discovery."
+        : "Antigravity model metadata is unavailable. Run Refresh models after checking `agy models`.",
+    diagnostics: {
+      modelSource: cached.length > 0 ? "cache" : "unavailable",
+      modelsExitCode: result.exitCode,
+      modelsStatus: result.status,
+    },
   };
 }
 
@@ -409,41 +449,47 @@ export function runAntigravityWithRunner(
     : request.prompt;
   const spawnSpec = buildSpawnSpec(executable, ["--model", selector, "-p", prompt], platform);
 
-  const runner = runCommandImpl(
-    {
-      executable: spawnSpec.executable,
-      args: spawnSpec.args,
-      cwd: request.workspaceRoot,
-      env: { ...process.env },
-      timeoutMs: ANTIGRAVITY_TIMEOUT_MS,
-    },
-  );
+  const runner = runCommandImpl({
+    executable: spawnSpec.executable,
+    args: spawnSpec.args,
+    cwd: request.workspaceRoot,
+    env: { ...process.env },
+    timeoutMs: ANTIGRAVITY_TIMEOUT_MS,
+  });
 
   const control = createRunControl(handlers);
   control.track(runner.stopped ?? runner.result.then(() => undefined));
-  runner.result.then((result) => {
+  runner.result
+    .then((result) => {
+      control.finish();
+      if (result.status === "canceled") return;
+
+      if (result.status !== "completed" || result.exitCode !== 0) {
+        const message = result.userMessage || result.stderr || "Antigravity CLI execution failed.";
+        handlers.onError(
+          message,
+          `agy command: ${JSON.stringify([spawnSpec.executable, ...spawnSpec.args])}`,
+        );
+        return;
+      }
+
+      const text = sanitizeTerminalOutput(result.stdout).trim();
+      if (text) {
+        handlers.onAssistantDelta?.(text);
+      }
+      handlers.onFinalAnswerObserved?.(text);
+      handlers.onResponse(text);
+    })
+    .catch((error) => {
+      control.finish();
+      const message = error instanceof Error ? error.message : "Antigravity CLI execution failed.";
+      handlers.onError(message);
+    });
+
+  return () => {
+    runner.cancel();
     control.finish();
-    if (result.status === "canceled") return;
-
-    if (result.status !== "completed" || result.exitCode !== 0) {
-      const message = result.userMessage || result.stderr || "Antigravity CLI execution failed.";
-      handlers.onError(message, `agy command: ${JSON.stringify([spawnSpec.executable, ...spawnSpec.args])}`);
-      return;
-    }
-
-    const text = sanitizeTerminalOutput(result.stdout).trim();
-    if (text) {
-      handlers.onAssistantDelta?.(text);
-    }
-    handlers.onFinalAnswerObserved?.(text);
-    handlers.onResponse(text);
-  }).catch((error) => {
-    control.finish();
-    const message = error instanceof Error ? error.message : "Antigravity CLI execution failed.";
-    handlers.onError(message);
-  });
-
-  return () => { runner.cancel(); control.finish(); };
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -460,10 +506,11 @@ export const antigravityRuntime: ProviderRuntime = {
   routeSetupMessage: ANTIGRAVITY_ROUTE_SETUP_MESSAGE,
   launchAvailable: true,
   isRouteConfigured: isAntigravityRouteConfigured,
-  validateRoute: async ({ workspaceRoot, antigravityCommandPath }) => validateAntigravityRoute({
-    cwd: workspaceRoot,
-    configuredPath: antigravityCommandPath ?? null,
-  }),
+  validateRoute: async ({ workspaceRoot, antigravityCommandPath }) =>
+    validateAntigravityRoute({
+      cwd: workspaceRoot,
+      configuredPath: antigravityCommandPath ?? null,
+    }),
   discoverModels: (): ProviderModelDiscoveryResult => {
     const models = getActiveAgyModels();
     return {
@@ -471,7 +518,9 @@ export const antigravityRuntime: ProviderRuntime = {
       providerId: "antigravity",
       backendKind: models.length > 0 ? "antigravity-cli-auth" : "unavailable",
       models,
-      ...(models.length === 0 ? { message: "Antigravity model metadata is unavailable. Run Refresh models." } : {}),
+      ...(models.length === 0
+        ? { message: "Antigravity model metadata is unavailable. Run Refresh models." }
+        : {}),
     };
   },
   refreshModels: async ({ cwd }): Promise<ProviderModelDiscoveryResult> => {
@@ -480,19 +529,30 @@ export const antigravityRuntime: ProviderRuntime = {
       executable = await resolveAgyExecutable({ cwd });
       resolvedAgyExecutable = executable;
     } catch {
-      const cached = normalizeCachedAgyModels(loadCachedProviderModels("antigravity")?.models ?? []);
+      const cached = normalizeCachedAgyModels(
+        loadCachedProviderModels("antigravity")?.models ?? [],
+      );
       return {
         status: cached.length > 0 ? "ready" : "not-configured",
         providerId: "antigravity",
         backendKind: cached.length > 0 ? "antigravity-cli-auth" : "unavailable",
         models: cached,
-        message: cached.length > 0
-          ? "Antigravity CLI is unavailable; using the last successful model discovery."
-          : ANTIGRAVITY_ROUTE_SETUP_MESSAGE,
-        diagnostics: { modelSource: cached.length > 0 ? "cache" : "unavailable", resolvedCommand: null },
+        message:
+          cached.length > 0
+            ? "Antigravity CLI is unavailable; using the last successful model discovery."
+            : ANTIGRAVITY_ROUTE_SETUP_MESSAGE,
+        diagnostics: {
+          modelSource: cached.length > 0 ? "cache" : "unavailable",
+          resolvedCommand: null,
+        },
       };
     }
-    return discoverAgyModels({ executable, cwd, runCommandImpl: runCommand, platform: process.platform });
+    return discoverAgyModels({
+      executable,
+      cwd,
+      runCommandImpl: runCommand,
+      platform: process.platform,
+    });
   },
   run: (request: ProviderChatRequest, handlers: BackendRunHandlers) => {
     handlers.onProgress?.({
@@ -503,17 +563,49 @@ export const antigravityRuntime: ProviderRuntime = {
     const control = createRunControl(handlers);
     let cancelled = false;
     let cancelChild: (() => void) | undefined;
-    const lookup = resolveAgyExecutable({ cwd: request.workspaceRoot, configuredPath: request.antigravityCommandPath }).then((executable) => {
-      if (cancelled) { control.finish(); return; }
-      if (!executable) { control.finish(); handlers.onError(ANTIGRAVITY_ROUTE_SETUP_MESSAGE); return; }
-      cancelChild = runAntigravityWithRunner(request, {
-        ...handlers,
-        onRunControl: (child) => { control.track(child.stopped); },
-        onResponse: (text) => { control.finish(); handlers.onResponse(text); },
-        onError: (message, detail) => { control.finish(); handlers.onError(message, detail); },
-      }, runCommand, executable);
-    }).catch((error) => { control.finish(); if (!cancelled) handlers.onError(error instanceof Error ? error.message : String(error)); });
+    const lookup = resolveAgyExecutable({
+      cwd: request.workspaceRoot,
+      configuredPath: request.antigravityCommandPath,
+    })
+      .then((executable) => {
+        if (cancelled) {
+          control.finish();
+          return;
+        }
+        if (!executable) {
+          control.finish();
+          handlers.onError(ANTIGRAVITY_ROUTE_SETUP_MESSAGE);
+          return;
+        }
+        cancelChild = runAntigravityWithRunner(
+          request,
+          {
+            ...handlers,
+            onRunControl: (child) => {
+              control.track(child.stopped);
+            },
+            onResponse: (text) => {
+              control.finish();
+              handlers.onResponse(text);
+            },
+            onError: (message, detail) => {
+              control.finish();
+              handlers.onError(message, detail);
+            },
+          },
+          runCommand,
+          executable,
+        );
+      })
+      .catch((error) => {
+        control.finish();
+        if (!cancelled) handlers.onError(error instanceof Error ? error.message : String(error));
+      });
     control.track(lookup);
-    return () => { cancelled = true; cancelChild?.(); control.finish(); };
+    return () => {
+      cancelled = true;
+      cancelChild?.();
+      control.finish();
+    };
   },
 };

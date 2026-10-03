@@ -28,22 +28,26 @@ function formatTomlPrimitive(value: string | number | boolean): string {
 }
 
 function formatTomlArray(values: readonly unknown[]): string {
-  return `[${values.map((value) => {
-    if (isPrimitive(value)) {
-      return formatTomlPrimitive(value);
-    }
+  return `[${values
+    .map((value) => {
+      if (isPrimitive(value)) {
+        return formatTomlPrimitive(value);
+      }
 
-    if (Array.isArray(value)) {
-      return formatTomlArray(value);
-    }
+      if (Array.isArray(value)) {
+        return formatTomlArray(value);
+      }
 
-    if (isRecord(value)) {
-      return `{ ${Object.entries(value).map(([key, item]) => `${formatTomlKey(key)} = ${formatTomlValue(item)}`).join(", ")} }`;
-    }
+      if (isRecord(value)) {
+        return `{ ${Object.entries(value)
+          .map(([key, item]) => `${formatTomlKey(key)} = ${formatTomlValue(item)}`)
+          .join(", ")} }`;
+      }
 
-    // TOML has no null literal; fall back to JSON encoding for unknown types.
-    return JSON.stringify(value ?? null);
-  }).join(", ")}]`;
+      // TOML has no null literal; fall back to JSON encoding for unknown types.
+      return JSON.stringify(value ?? null);
+    })
+    .join(", ")}]`;
 }
 
 function formatTomlValue(value: unknown): string {
@@ -56,7 +60,9 @@ function formatTomlValue(value: unknown): string {
   }
 
   if (isRecord(value)) {
-    return `{ ${Object.entries(value).map(([key, item]) => `${formatTomlKey(key)} = ${formatTomlValue(item)}`).join(", ")} }`;
+    return `{ ${Object.entries(value)
+      .map(([key, item]) => `${formatTomlKey(key)} = ${formatTomlValue(item)}`)
+      .join(", ")} }`;
   }
 
   // TOML has no null literal; fall back to JSON encoding for unknown types.
@@ -68,11 +74,17 @@ function serializeTomlSection(
   value: Record<string, unknown>,
   lines: string[],
 ): void {
-  const scalarEntries = Object.entries(value).filter(([, item]) => !isRecord(item) && !Array.isArray(item));
-  const arrayEntries = Object.entries(value).filter(([, item]) => Array.isArray(item) && !(item as unknown[]).every(isRecord));
+  const scalarEntries = Object.entries(value).filter(
+    ([, item]) => !isRecord(item) && !Array.isArray(item),
+  );
+  const arrayEntries = Object.entries(value).filter(
+    ([, item]) => Array.isArray(item) && !(item as unknown[]).every(isRecord),
+  );
   const tableEntries = Object.entries(value).filter(([, item]) => isRecord(item));
   // An array whose every element is a record is a TOML array-of-tables ([[key]]).
-  const arrayTableEntries = Object.entries(value).filter(([, item]) => Array.isArray(item) && (item as unknown[]).every(isRecord));
+  const arrayTableEntries = Object.entries(value).filter(
+    ([, item]) => Array.isArray(item) && (item as unknown[]).every(isRecord),
+  );
 
   if (path.length > 0) {
     lines.push(`[${formatTomlPath(path)}]`);

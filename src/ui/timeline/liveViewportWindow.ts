@@ -60,9 +60,5 @@ export function windowLiveRows(rows: TimelineRow[], maxRows: number): TimelineRo
   if (!frame) return rows.slice(plainStart);
 
   const hiddenRows = recapStart - frame.topIndex - 1;
-  return [
-    frame.topRow,
-    buildFrameElisionRow(frame.topRow, hiddenRows),
-    ...rows.slice(recapStart),
-  ];
+  return [frame.topRow, buildFrameElisionRow(frame.topRow, hiddenRows), ...rows.slice(recapStart)];
 }

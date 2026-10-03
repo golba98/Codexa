@@ -1,16 +1,24 @@
 import type { ProviderId } from "../providerLauncher/types.js";
 import type { ConversationMessage } from "../workspace/conversationStore.js";
-import { externalSourceLabel, type ExternalSessionSource, type ExternalTranscript } from "./types.js";
+import {
+  type ExternalSessionSource,
+  type ExternalTranscript,
+  externalSourceLabel,
+} from "./types.js";
 
 /** Imported history is replayed to the provider on every turn, so keep it bounded. */
 const DEFAULT_MAX_CHARS = 200_000;
 
 export function externalProviderId(source: ExternalSessionSource): ProviderId {
   switch (source) {
-    case "claude": return "anthropic";
-    case "codex": return "openai";
-    case "antigravity": return "antigravity";
-    case "vibe": return "mistral";
+    case "claude":
+      return "anthropic";
+    case "codex":
+      return "openai";
+    case "antigravity":
+      return "antigravity";
+    case "vibe":
+      return "mistral";
   }
 }
 
@@ -19,7 +27,7 @@ function toolName(title: string): string {
 }
 
 function formatToolCounts(counts: Map<string, number>): string {
-  return `Tools used: ${[...counts].map(([name, count]) => count > 1 ? `${name} ×${count}` : name).join(", ")}`;
+  return `Tools used: ${[...counts].map(([name, count]) => (count > 1 ? `${name} ×${count}` : name)).join(", ")}`;
 }
 
 /**
@@ -37,7 +45,12 @@ export function externalTranscriptToConversationMessages(
     if (tools.size === 0) return;
     const last = messages.at(-1);
     if (last?.role === "assistant") last.activitySummary = formatToolCounts(tools);
-    else messages.push({ role: "assistant", content: "[No reply text; tool activity only]", activitySummary: formatToolCounts(tools) });
+    else
+      messages.push({
+        role: "assistant",
+        content: "[No reply text; tool activity only]",
+        activitySummary: formatToolCounts(tools),
+      });
     tools = new Map();
   };
 

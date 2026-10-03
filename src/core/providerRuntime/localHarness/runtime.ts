@@ -1,26 +1,18 @@
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID, scryptSync } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
-import type { BackendRunHandlers, ToolApprovalDecision } from "../../providers/types.js";
-import type { ProviderChatRequest } from "../types.js";
-import { resolveDefaultMaxOutputTokens } from "../localOutputBudget.js";
-import type { LocalHarnessSessionMetadata } from "../../workspace/conversationStore.js";
-import { resolveUbumeChatWorkspaceDir, resolveUbumeWorkspaceDataDir, resolveLegacyCodexaDataDir, workspaceStorageKey } from "../../workspace/appData.js";
-import { getShellWorkspaceGuardMessage, isPathInsideAllowedRoots } from "../../workspace/workspaceGuard.js";
-import {
-  describeSessionScratchDir,
-  ensureSessionScratchDir,
-  mentionsScratchDir,
-  pruneStaleScratchDirs,
-  removeUnusedSessionScratchDir,
-} from "../../workspace/scratchDir.js";
-import { isDangerousShellCommand } from "../../agent/tools.js";
-import { traceLocalStream } from "../../debug/localStreamDebug.js";
 import {
   DEFAULT_MAX_IMAGE_BYTES,
   DEFAULT_MAX_IMAGE_DIMENSION,
@@ -32,9 +24,38 @@ import {
   saveImageFile,
 } from "@deepseek-ai/dsh-attachment-local";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
-import { browserDescription, browserInteractions, isBrowserTool, validateBrowserArguments } from "../../../../bin/ubume-local-browser-tools.js";
+import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
+import {
+  browserDescription,
+  browserInteractions,
+  isBrowserTool,
+  validateBrowserArguments,
+} from "../../../../bin/ubume-local-browser-tools.js";
+import { isDangerousShellCommand } from "../../agent/tools.js";
 import { BrowserManager } from "../../computerUse/browser.js";
 import { resolveBrowserCapability } from "../../computerUse/capability.js";
+import { traceLocalStream } from "../../debug/localStreamDebug.js";
+import type { BackendRunHandlers, ToolApprovalDecision } from "../../providers/types.js";
+import {
+  resolveLegacyCodexaDataDir,
+  resolveUbumeChatWorkspaceDir,
+  resolveUbumeWorkspaceDataDir,
+  workspaceStorageKey,
+} from "../../workspace/appData.js";
+import type { LocalHarnessSessionMetadata } from "../../workspace/conversationStore.js";
+import {
+  describeSessionScratchDir,
+  ensureSessionScratchDir,
+  mentionsScratchDir,
+  pruneStaleScratchDirs,
+  removeUnusedSessionScratchDir,
+} from "../../workspace/scratchDir.js";
+import {
+  getShellWorkspaceGuardMessage,
+  isPathInsideAllowedRoots,
+} from "../../workspace/workspaceGuard.js";
+import { resolveDefaultMaxOutputTokens } from "../localOutputBudget.js";
+import type { ProviderChatRequest } from "../types.js";
 
 const HARNESS_VERSION = "0.1.1-rc.2";
 const PROFILE_NAME = "ubume-local";
@@ -82,7 +103,9 @@ export async function buildLocalHarnessPromptContentBlocks(
     mediaTypes: ["image/png", "image/jpeg", "image/webp", "image/gif"] as const,
   };
   if (attachments.length > limits.maxImagesPerMessage) {
-    throw new Error(`Local Harness accepts at most ${limits.maxImagesPerMessage} images in one prompt.`);
+    throw new Error(
+      `Local Harness accepts at most ${limits.maxImagesPerMessage} images in one prompt.`,
+    );
   }
   for (const attachment of attachments) {
     const data = await readFile(attachment.path);
@@ -90,7 +113,10 @@ export async function buildLocalHarnessPromptContentBlocks(
       join(dshHome, "attachments", "v1"),
       { data, mediaType: attachment.mediaType, name: attachment.name },
       limits,
-      { maxDimension: DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION, maxBytes: DEFAULT_NORMALIZED_IMAGE_MAX_BYTES },
+      {
+        maxDimension: DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
+        maxBytes: DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
+      },
     );
     blocks.push({ type: "image", attachment: ref });
   }
@@ -124,7 +150,13 @@ interface HarnessRunState {
   reject: (error: Error) => void;
   abortCleanup: () => void;
   turnFailure?: string;
-  lastUsage?: { inputTokens: number; outputTokens: number; contextTokens: number; contextWindow: number | null; exact: boolean };
+  lastUsage?: {
+    inputTokens: number;
+    outputTokens: number;
+    contextTokens: number;
+    contextWindow: number | null;
+    exact: boolean;
+  };
   /** Why the last model turn stopped (`max-tokens`, `stop`, `aborted`, …), from the finish chunk or turn/end. */
   stopReason?: string;
   /** Number of output-window continuations issued inside this logical Ubume run. */
@@ -158,7 +190,10 @@ interface HarnessConfig {
 
 type HarnessReasoningEffort = "low" | "medium" | "high";
 
-function resolveHarnessReasoningEffort(request: ProviderChatRequest, model: string): HarnessReasoningEffort | null {
+function resolveHarnessReasoningEffort(
+  request: ProviderChatRequest,
+  model: string,
+): HarnessReasoningEffort | null {
   if (request.localConfig?.models?.[model]?.supportsReasoningEffort !== true) return null;
   const level = (request.runtime as { reasoningLevel?: unknown }).reasoningLevel;
   return level === "low" || level === "medium" || level === "high" ? level : null;
@@ -180,12 +215,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function textFromContent(value: unknown): string {
   if (!Array.isArray(value)) return "";
-  return value.flatMap((block) => {
-    if (!isRecord(block)) return [];
-    if ((block.type === "text" || block.type === "output_text") && typeof block.text === "string") return [block.text];
-    if (Array.isArray(block.content)) return [textFromContent(block.content)];
-    return [];
-  }).join("");
+  return value
+    .flatMap((block) => {
+      if (!isRecord(block)) return [];
+      if ((block.type === "text" || block.type === "output_text") && typeof block.text === "string")
+        return [block.text];
+      if (Array.isArray(block.content)) return [textFromContent(block.content)];
+      return [];
+    })
+    .join("");
 }
 
 function transcriptHash(request: ProviderChatRequest): string {
@@ -195,17 +233,22 @@ function transcriptHash(request: ProviderChatRequest): string {
 }
 
 function routeFingerprint(config: HarnessConfig, request: ProviderChatRequest): string {
-  return createHash("sha256").update(JSON.stringify({
-    baseUrl: sanitizedEndpoint(config.baseUrl),
-    localBackend: request.route.localBackend ?? request.localConfig?.localBackend ?? "lm-studio",
-    model: config.model,
-    contextWindow: config.contextWindow,
-    maxTokens: config.maxTokens,
-    supportsVision: config.supportsVision,
-    reasoningEffort: config.reasoningEffort,
-    sandbox: resolveHarnessSandboxMode(request),
-    writableRoots: request.runtime.policy.writableRoots,
-  })).digest("hex");
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        baseUrl: sanitizedEndpoint(config.baseUrl),
+        localBackend:
+          request.route.localBackend ?? request.localConfig?.localBackend ?? "lm-studio",
+        model: config.model,
+        contextWindow: config.contextWindow,
+        maxTokens: config.maxTokens,
+        supportsVision: config.supportsVision,
+        reasoningEffort: config.reasoningEffort,
+        sandbox: resolveHarnessSandboxMode(request),
+        writableRoots: request.runtime.policy.writableRoots,
+      }),
+    )
+    .digest("hex");
 }
 
 function secretFingerprint(value: string): string {
@@ -239,11 +282,16 @@ function sanitizedEndpoint(value: string): string {
 function resolveDshBin(): string {
   const packagePath = require.resolve("@deepseek-ai/dsh/package.json");
   const manifest = JSON.parse(readFileSync(packagePath, "utf8")) as { bin?: { dsh?: string } };
-  if (!manifest.bin?.dsh) throw new Error("The installed @deepseek-ai/dsh package has no dsh executable.");
+  if (!manifest.bin?.dsh)
+    throw new Error("The installed @deepseek-ai/dsh package has no dsh executable.");
   return resolve(dirname(packagePath), manifest.bin.dsh);
 }
 
-function prepareSessionScratch(request: ProviderChatRequest, sessionId: string, resumed: boolean): string | null {
+function prepareSessionScratch(
+  request: ProviderChatRequest,
+  sessionId: string,
+  resumed: boolean,
+): string | null {
   if (resolveHarnessSandboxMode(request) === "read-only") return null;
   try {
     // Only name the folder here; the tool/policy bridge creates it once a tool targets it.
@@ -251,7 +299,10 @@ function prepareSessionScratch(request: ProviderChatRequest, sessionId: string, 
     if (!resumed) pruneStaleScratchDirs(request.workspaceRoot, { keep: sessionId });
     return `Scratch directory for this session: ${scratch.relativePath}/ (put every temporary test, debug, or probe file there, not in the project).`;
   } catch (error) {
-    traceLocalStream("harness.scratch.unavailable", { sessionId, error: error instanceof Error ? error.message : String(error) });
+    traceLocalStream("harness.scratch.unavailable", {
+      sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -367,21 +418,46 @@ function profilePatch(supportsVision: boolean, reasoningEffortEnabled = false): 
 }
 
 function ensureProfile(workspaceRoot: string, config: HarnessConfig): string {
-  const home = join(resolveUbumeChatWorkspaceDir(workspaceRoot), "local-harness", `v-${HARNESS_VERSION}`);
-  const legacy = [resolveUbumeWorkspaceDataDir(workspaceRoot, { readOnly: true }), join(resolveLegacyCodexaDataDir(), "workspaces", workspaceStorageKey(workspaceRoot))].map((root) => join(root, "local-harness", `v-${HARNESS_VERSION}`)).find(existsSync);
+  const home = join(
+    resolveUbumeChatWorkspaceDir(workspaceRoot),
+    "local-harness",
+    `v-${HARNESS_VERSION}`,
+  );
+  const legacy = [
+    resolveUbumeWorkspaceDataDir(workspaceRoot, { readOnly: true }),
+    join(resolveLegacyCodexaDataDir(), "workspaces", workspaceStorageKey(workspaceRoot)),
+  ]
+    .map((root) => join(root, "local-harness", `v-${HARNESS_VERSION}`))
+    .find(existsSync);
   if (!existsSync(home) && legacy) {
     const temporary = `${home}.migration-${randomUUID()}`;
     mkdirSync(dirname(home), { recursive: true, mode: 0o700 });
-    try { cpSync(legacy, temporary, { recursive: true, errorOnExist: true, force: false }); renameSync(temporary, home); }
-    finally { rmSync(temporary, { recursive: true, force: true }); }
+    try {
+      cpSync(legacy, temporary, { recursive: true, errorOnExist: true, force: false });
+      renameSync(temporary, home);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
   }
   const profileDir = join(home, "profiles", PROFILE_NAME);
   mkdirSync(profileDir, { recursive: true });
-  writeFileSync(join(profileDir, "package.json"), `${JSON.stringify({
-    private: true,
-    dsh: { profile: { bundles: ["@deepseek-ai/dsh-base"] } },
-  }, null, 2)}\n`, "utf8");
-  writeFileSync(join(profileDir, "cordis.patch.yml"), profilePatch(config.supportsVision, config.reasoningEffort !== null), "utf8");
+  writeFileSync(
+    join(profileDir, "package.json"),
+    `${JSON.stringify(
+      {
+        private: true,
+        dsh: { profile: { bundles: ["@deepseek-ai/dsh-base"] } },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  writeFileSync(
+    join(profileDir, "cordis.patch.yml"),
+    profilePatch(config.supportsVision, config.reasoningEffort !== null),
+    "utf8",
+  );
   return home;
 }
 
@@ -389,29 +465,49 @@ function resolveHarnessConfig(request: ProviderChatRequest): HarnessConfig {
   const resolved = request.resolvedLocalAgentConfig;
   const selectedBackend = request.route.localBackend ?? request.localConfig?.localBackend;
   if (selectedBackend === "unsloth" && !resolved) {
-    throw new Error("Local agent request failed: the selected Unsloth connection was not resolved before Harness startup.");
+    throw new Error(
+      "Local agent request failed: the selected Unsloth connection was not resolved before Harness startup.",
+    );
   }
   const local = request.localConfig;
-  const model = resolved?.modelId ?? (request.route.modelId || local?.pinnedModel || local?.currentModel || local?.defaultModel || "");
+  const model =
+    resolved?.modelId ??
+    (request.route.modelId ||
+      local?.pinnedModel ||
+      local?.currentModel ||
+      local?.defaultModel ||
+      "");
   if (!model) throw new Error("Local agent request failed: no Local model is selected.");
   const modelConfig = local?.models?.[model];
   if (resolved?.supportsToolCalls === false || modelConfig?.supportsToolCalls === false) {
-    throw new Error(`Local agent request failed.\n\nModel: ${model}\n\nThe selected model is configured without tool/function-calling support required by the Local agent harness.`);
+    throw new Error(
+      `Local agent request failed.\n\nModel: ${model}\n\nThe selected model is configured without tool/function-calling support required by the Local agent harness.`,
+    );
   }
   if (resolved?.supportsStreaming === false || modelConfig?.supportsStreaming === false) {
-    throw new Error(`Local agent request failed.\n\nModel: ${model}\n\nThe selected model is configured without streaming support required by Ubume's Local agent harness.`);
+    throw new Error(
+      `Local agent request failed.\n\nModel: ${model}\n\nThe selected model is configured without streaming support required by Ubume's Local agent harness.`,
+    );
   }
   if (resolved?.supportsSystemPrompt === false || modelConfig?.supportsSystemPrompt === false) {
-    throw new Error(`Local agent request failed.\n\nModel: ${model}\n\nThe selected model is configured without system-prompt support required by the Local agent harness.`);
+    throw new Error(
+      `Local agent request failed.\n\nModel: ${model}\n\nThe selected model is configured without system-prompt support required by the Local agent harness.`,
+    );
   }
   return {
-    baseUrl: (resolved?.baseUrl ?? local?.baseUrl ?? process.env.UBUME_LOCAL_BASE_URL ?? "http://localhost:1234/v1").replace(/\/+$/, ""),
+    baseUrl: (
+      resolved?.baseUrl ??
+      local?.baseUrl ??
+      process.env.UBUME_LOCAL_BASE_URL ??
+      "http://localhost:1234/v1"
+    ).replace(/\/+$/, ""),
     apiKey: resolved?.apiKey ?? local?.apiKey ?? process.env.UBUME_LOCAL_API_KEY ?? "lm-studio",
     model,
     contextWindow: resolved?.contextWindow ?? modelConfig?.contextLength ?? 32_768,
-    maxTokens: resolved?.maxTokens
-      ?? modelConfig?.maxOutputTokens
-      ?? resolveDefaultMaxOutputTokens(resolved?.contextWindow ?? modelConfig?.contextLength),
+    maxTokens:
+      resolved?.maxTokens ??
+      modelConfig?.maxOutputTokens ??
+      resolveDefaultMaxOutputTokens(resolved?.contextWindow ?? modelConfig?.contextLength),
     supportsVision: resolved?.supportsVision ?? modelConfig?.supportsVision === true,
     reasoningEffort: resolveHarnessReasoningEffort(request, model),
   };
@@ -422,7 +518,8 @@ function normalizedArgs(value: unknown): Record<string, unknown> {
 }
 
 function commandFrom(tool: string, args: Record<string, unknown>): string {
-  if (isBrowserTool(tool)) return typeof args.description === "string" ? args.description : browserDescription(tool, args);
+  if (isBrowserTool(tool))
+    return typeof args.description === "string" ? args.description : browserDescription(tool, args);
   if ((tool === "bash" || tool === "pwsh") && typeof args.command === "string") return args.command;
   if (typeof args.path === "string") return `${tool} ${args.path}`;
   if (typeof args.file_path === "string") return `${tool} ${args.file_path}`;
@@ -430,8 +527,9 @@ function commandFrom(tool: string, args: Record<string, unknown>): string {
 }
 
 function pathsFrom(args: Record<string, unknown>): string[] {
-  return [args.path, args.file_path, args.old_path, args.new_path]
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  return [args.path, args.file_path, args.old_path, args.new_path].filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0,
+  );
 }
 
 function isMutatingTool(tool: string): boolean {
@@ -439,7 +537,11 @@ function isMutatingTool(tool: string): boolean {
 }
 
 export interface LocalHarnessRunner {
-  run(request: ProviderChatRequest, handlers: BackendRunHandlers, signal: AbortSignal): Promise<string>;
+  run(
+    request: ProviderChatRequest,
+    handlers: BackendRunHandlers,
+    signal: AbortSignal,
+  ): Promise<string>;
   shutdown(): Promise<void>;
   terminate(): void;
   closeSession?(sessionId: string): Promise<void>;
@@ -447,7 +549,10 @@ export interface LocalHarnessRunner {
 
 export class LocalHarnessProcess implements LocalHarnessRunner {
   private browser = new BrowserManager();
-  private browserGrants = new Map<string, { sessionId: string; digest: string; identity?: string; description: string; allowed: boolean }>();
+  private browserGrants = new Map<
+    string,
+    { sessionId: string; digest: string; identity?: string; description: string; allowed: boolean }
+  >();
   private browserCalls = new Map<string, AbortController>();
   private child: ChildProcessWithoutNullStreams | null = null;
   private transport: JsonRpcLineTransport | null = null;
@@ -470,7 +575,11 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     this.terminate();
   }
 
-  async run(request: ProviderChatRequest, handlers: BackendRunHandlers, signal: AbortSignal): Promise<string> {
+  async run(
+    request: ProviderChatRequest,
+    handlers: BackendRunHandlers,
+    signal: AbortSignal,
+  ): Promise<string> {
     await this.failedSessionCleanup;
     if (signal.aborted) throw new DOMException("Local request cancelled.", "AbortError");
     const config = resolveHarnessConfig(request);
@@ -484,30 +593,52 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       throw error;
     }
     const metadata = request.localHarnessSession;
-    let canResume = metadata?.harnessVersion === HARNESS_VERSION && metadata.routeFingerprint === fingerprint
-      && metadata.throughMessageCount === (request.conversationHistory?.length ?? 0)
-      && metadata.transcriptHash === transcriptHash(request);
+    let canResume =
+      metadata?.harnessVersion === HARNESS_VERSION &&
+      metadata.routeFingerprint === fingerprint &&
+      metadata.throughMessageCount === (request.conversationHistory?.length ?? 0) &&
+      metadata.transcriptHash === transcriptHash(request);
     if (metadata && !canResume) {
       await this.closeSession(metadata.sessionId);
-      if (!this.transport) throw new Error("Local Harness disconnected while closing the previous session. Retry to start a fresh session.");
+      if (!this.transport)
+        throw new Error(
+          "Local Harness disconnected while closing the previous session. Retry to start a fresh session.",
+        );
     }
     let sessionId = canResume && metadata ? metadata.sessionId : randomUUID();
 
-    traceLocalStream("harness.session.open", { sessionId, model: config.model, resumed: canResume, endpoint: sanitizedEndpoint(config.baseUrl) });
+    traceLocalStream("harness.session.open", {
+      sessionId,
+      model: config.model,
+      resumed: canResume,
+      endpoint: sanitizedEndpoint(config.baseUrl),
+    });
     try {
-      const opened = await this.requestBounded("session/open", { sessionId, resume: canResume }, signal) as { resumeUnavailable?: string };
+      const opened = (await this.requestBounded(
+        "session/open",
+        { sessionId, resume: canResume },
+        signal,
+      )) as { resumeUnavailable?: string };
       if (opened.resumeUnavailable === "missing" || opened.resumeUnavailable === "incompatible") {
         canResume = false;
         sessionId = randomUUID();
-        handlers.onProgress?.({ id: "local-harness-recovery", source: "transcript", text: `Saved Local Harness state is ${opened.resumeUnavailable}; recovering the saved conversation into a fresh session.` });
+        handlers.onProgress?.({
+          id: "local-harness-recovery",
+          source: "transcript",
+          text: `Saved Local Harness state is ${opened.resumeUnavailable}; recovering the saved conversation into a fresh session.`,
+        });
         await this.requestBounded("session/open", { sessionId, resume: false }, signal);
       }
     } catch (error) {
       const child = this.child;
       await this.shutdown();
       if (signal.aborted) throw new DOMException("Local request cancelled.", "AbortError");
-      const stderr = this.redactions.reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr).trim();
-      throw new Error(`Local Harness session/open failed: ${error instanceof Error ? error.message : String(error)}\nExit: ${child?.exitCode ?? child?.signalCode ?? "unknown"}${stderr ? `\n${stderr}` : ""}\nYour next prompt will start a fresh Harness session.`);
+      const stderr = this.redactions
+        .reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr)
+        .trim();
+      throw new Error(
+        `Local Harness session/open failed: ${error instanceof Error ? error.message : String(error)}\nExit: ${child?.exitCode ?? child?.signalCode ?? "unknown"}${stderr ? `\n${stderr}` : ""}\nYour next prompt will start a fresh Harness session.`,
+      );
     }
 
     if (signal.aborted) {
@@ -561,20 +692,26 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       signal.addEventListener("abort", abort, { once: true });
       state.abortCleanup = () => signal.removeEventListener("abort", abort);
       const history = request.conversationHistory ?? [];
-      const conversationContent = !canResume && history.length > 0
-        ? [
-          "Ubume restored the following visible conversation into a new Local Harness session.",
-          "Treat it as prior dialogue; prior ephemeral tool state is unavailable.",
-          "",
-          ...history.map((message) => `${message.role.toUpperCase()}: ${message.content}`),
-          "",
-          `USER: ${request.prompt}`,
-        ].join("\n")
-        : request.prompt;
-      const browserNote = !canResume || !this.browser.hasSession(state.sessionId)
-        ? browserCapability.status === "available" ? "Browser state is ephemeral. Use browser_open to initialize it; previous browser references and logins are unavailable. Browser interaction tools follow Ubume permissions; network-off permits localhost only." : `Browser tools unavailable: ${browserCapability.reason}`
-        : "";
-      const promptContent = [scratchNote, browserNote, conversationContent].filter(Boolean).join("\n\n");
+      const conversationContent =
+        !canResume && history.length > 0
+          ? [
+              "Ubume restored the following visible conversation into a new Local Harness session.",
+              "Treat it as prior dialogue; prior ephemeral tool state is unavailable.",
+              "",
+              ...history.map((message) => `${message.role.toUpperCase()}: ${message.content}`),
+              "",
+              `USER: ${request.prompt}`,
+            ].join("\n")
+          : request.prompt;
+      const browserNote =
+        !canResume || !this.browser.hasSession(state.sessionId)
+          ? browserCapability.status === "available"
+            ? "Browser state is ephemeral. Use browser_open to initialize it; previous browser references and logins are unavailable. Browser interaction tools follow Ubume permissions; network-off permits localhost only."
+            : `Browser tools unavailable: ${browserCapability.reason}`
+          : "";
+      const promptContent = [scratchNote, browserNote, conversationContent]
+        .filter(Boolean)
+        .join("\n\n");
       if (!canResume && history.length > 0) {
         handlers.onProgress?.({
           id: "local-harness-session-migration",
@@ -582,13 +719,27 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
           text: "Restored visible Ubume history into a new Local Harness session; prior ephemeral tool state was not available.",
         });
       }
-      void buildLocalHarnessPromptContentBlocks(this.dshHome, promptContent, request.imageAttachments ?? [])
-        .then((contentBlocks) => this.transport!.request("session/prompt", { sessionId, contentBlocks }, signal))
-        .catch((error) => this.failActive(error instanceof Error ? error : new Error(String(error))));
+      void buildLocalHarnessPromptContentBlocks(
+        this.dshHome,
+        promptContent,
+        request.imageAttachments ?? [],
+      )
+        .then((contentBlocks) =>
+          this.transport!.request("session/prompt", { sessionId, contentBlocks }, signal),
+        )
+        .catch((error) =>
+          this.failActive(error instanceof Error ? error : new Error(String(error))),
+        );
     });
   }
 
-  private async ensureStarted(request: ProviderChatRequest, config: HarnessConfig, fingerprint: string, handlers: BackendRunHandlers, signal: AbortSignal = new AbortController().signal): Promise<void> {
+  private async ensureStarted(
+    request: ProviderChatRequest,
+    config: HarnessConfig,
+    fingerprint: string,
+    handlers: BackendRunHandlers,
+    signal: AbortSignal = new AbortController().signal,
+  ): Promise<void> {
     if (this.child && this.transport && this.fingerprint === fingerprint) return;
     await this.shutdown();
     if (signal.aborted) throw new DOMException("Local request cancelled.", "AbortError");
@@ -599,7 +750,12 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     const harnessSandboxMode = resolveHarnessSandboxMode(request);
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      NODE_OPTIONS: [process.env.NODE_OPTIONS?.trim(), `--max-old-space-size=${HARNESS_HEAP_LIMIT_MIB}`].filter(Boolean).join(" "),
+      NODE_OPTIONS: [
+        process.env.NODE_OPTIONS?.trim(),
+        `--max-old-space-size=${HARNESS_HEAP_LIMIT_MIB}`,
+      ]
+        .filter(Boolean)
+        .join(" "),
       UBUME_DSH_MAX_RSS_BYTES: String(HARNESS_MAX_RSS_BYTES),
       DSH_HOME: dshHome,
       DSH_TELEMETRY_DISABLED: "1",
@@ -614,18 +770,29 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       UBUME_DSH_VISION: config.supportsVision ? "1" : "0",
       ...(config.reasoningEffort ? { UBUME_DSH_REASONING_EFFORT: config.reasoningEffort } : {}),
     };
-    const child = spawn(process.env.UBUME_NODE_PATH?.trim() || "node", [resolveDshBin(), "--profile", PROFILE_NAME], {
-      cwd: request.workspaceRoot,
-      env,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const child = spawn(
+      process.env.UBUME_NODE_PATH?.trim() || "node",
+      [resolveDshBin(), "--profile", PROFILE_NAME],
+      {
+        cwd: request.workspaceRoot,
+        env,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
     this.child = child;
     this.stopMemoryPoll();
     if (child.pid && process.platform === "linux") {
-      this.memoryPoll = setInterval(() => this.checkMemory(child, readLinuxProcessRssBytes(child.pid!)), HARNESS_MEMORY_POLL_MS);
+      this.memoryPoll = setInterval(
+        () => this.checkMemory(child, readLinuxProcessRssBytes(child.pid!)),
+        HARNESS_MEMORY_POLL_MS,
+      );
       this.memoryPoll.unref?.();
     }
-    traceLocalStream("harness.start", { model: config.model, endpoint: sanitizedEndpoint(config.baseUrl), workspaceRoot: request.workspaceRoot });
+    traceLocalStream("harness.start", {
+      model: config.model,
+      endpoint: sanitizedEndpoint(config.baseUrl),
+      workspaceRoot: request.workspaceRoot,
+    });
     this.stderr = "";
     this.redactions = [config.apiKey].filter((value) => value.length >= 6);
     let startupSettled = false;
@@ -657,22 +824,34 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       this.browserGrants.clear();
       this.transport?.close();
       this.transport = null;
-      if (!startupSettled) rejectStartup(new Error(`Local Harness exited during startup (${code ?? "signal"}).`));
+      if (!startupSettled)
+        rejectStartup(new Error(`Local Harness exited during startup (${code ?? "signal"}).`));
       if (this.active && !this.active.settled) {
-        const safeStderr = this.redactions.reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr).trim();
-        const memoryFailure = code === 85 || /heap out of memory|allocation failed.*heap/i.test(safeStderr);
+        const safeStderr = this.redactions
+          .reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr)
+          .trim();
+        const memoryFailure =
+          code === 85 || /heap out of memory|allocation failed.*heap/i.test(safeStderr);
         const backpressureFailure = code === 86;
-        this.failActive(new Error(memoryFailure
-          ? harnessMemoryLimitMessage()
-          : backpressureFailure
-            ? "Local Harness output exceeded its 16 MiB safety buffer. The turn was stopped; your next prompt will start a fresh Harness session."
-            : `Local Harness exited unexpectedly (${code ?? "signal"}).${safeStderr ? `\n${safeStderr}` : ""}`));
+        this.failActive(
+          new Error(
+            memoryFailure
+              ? harnessMemoryLimitMessage()
+              : backpressureFailure
+                ? "Local Harness output exceeded its 16 MiB safety buffer. The turn was stopped; your next prompt will start a fresh Harness session."
+                : `Local Harness exited unexpectedly (${code ?? "signal"}).${safeStderr ? `\n${safeStderr}` : ""}`,
+          ),
+        );
       }
     });
     const transport = new JsonRpcLineTransport(child.stdout, child.stdin);
     this.transport = transport;
     transport.onNotification((method, params) => {
-      if (method === "browser.cancel" && this.child === child && params.sessionId === this.active?.sessionId) {
+      if (
+        method === "browser.cancel" &&
+        this.child === child &&
+        params.sessionId === this.active?.sessionId
+      ) {
         this.browserCalls.get(String(params.callId))?.abort();
         return;
       }
@@ -682,14 +861,18 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     transport.start();
     try {
       await Promise.race([
-        this.requestBounded("initialize", {
-          cwd: request.workspaceRoot,
-          provider: INTERNAL_PROVIDER,
-          model: config.model,
-          maxTokens: config.maxTokens,
-          browserCapability: resolveBrowserCapability(),
-          supportsVision: config.supportsVision,
-        }, signal),
+        this.requestBounded(
+          "initialize",
+          {
+            cwd: request.workspaceRoot,
+            provider: INTERNAL_PROVIDER,
+            model: config.model,
+            maxTokens: config.maxTokens,
+            browserCapability: resolveBrowserCapability(),
+            supportsVision: config.supportsVision,
+          },
+          signal,
+        ),
         startupFailure,
       ]);
       startupSettled = true;
@@ -699,12 +882,20 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       await this.shutdown();
       if (signal.aborted) throw new DOMException("Local request cancelled.", "AbortError");
       const message = error instanceof Error ? error.message : String(error);
-      const safeStderr = this.redactions.reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr).trim();
-      throw new Error(`Local Harness startup failed.\n\nModel: ${config.model}\nEndpoint: ${sanitizedEndpoint(config.baseUrl)}\n\n${message}${safeStderr ? `\n${safeStderr}` : ""}`);
+      const safeStderr = this.redactions
+        .reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr)
+        .trim();
+      throw new Error(
+        `Local Harness startup failed.\n\nModel: ${config.model}\nEndpoint: ${sanitizedEndpoint(config.baseUrl)}\n\n${message}${safeStderr ? `\n${safeStderr}` : ""}`,
+      );
     }
   }
 
-  private onNotification(method: string, params: HarnessNotification, sourceChild?: ChildProcessWithoutNullStreams): void {
+  private onNotification(
+    method: string,
+    params: HarnessNotification,
+    sourceChild?: ChildProcessWithoutNullStreams,
+  ): void {
     if (sourceChild && sourceChild !== this.child) return;
     if (method === "harness.memory") {
       if (this.child && typeof (params as { rssBytes?: unknown }).rssBytes === "number") {
@@ -713,7 +904,8 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       return;
     }
     const state = this.active;
-    const ownsNotification = params.sessionId === state?.sessionId || params.parentSessionId === state?.sessionId;
+    const ownsNotification =
+      params.sessionId === state?.sessionId || params.parentSessionId === state?.sessionId;
     if (!state || !ownsNotification || state.settled) return;
     if (method === "subagent.started" || method === "subagent.finished") {
       const childId = params.childSessionId ?? "subagent";
@@ -746,9 +938,12 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       state.handlers.onProgress?.({
         id: "local-harness-compaction",
         source: "transcript",
-        text: failure !== null
-          ? `Local Harness could not compact the conversation (${failure}); continuing with the full context.`
-          : ended ? "Local Harness compacted the conversation context." : "Local Harness is compacting conversation context.",
+        text:
+          failure !== null
+            ? `Local Harness could not compact the conversation (${failure}); continuing with the full context.`
+            : ended
+              ? "Local Harness compacted the conversation context."
+              : "Local Harness is compacting conversation context.",
       });
       if (ended && failure === null && state.lastUsage) {
         state.handlers.onContextUsage?.({ ...state.lastUsage, compacted: true });
@@ -756,7 +951,10 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       return;
     }
     if (event.type === "llm/retry") {
-      const failure = isRecord(data.failure) && typeof data.failure.message === "string" ? data.failure.message : "model request failed";
+      const failure =
+        isRecord(data.failure) && typeof data.failure.message === "string"
+          ? data.failure.message
+          : "model request failed";
       const attempt = typeof data.retry === "number" ? data.retry : 1;
       const limit = typeof data.maxRetries === "number" ? `/${data.maxRetries}` : "";
       state.handlers.onProgress?.({
@@ -770,7 +968,10 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       const reason = data.reason;
       if (reason.kind === "error") {
         const failure = isRecord(reason.error) ? reason.error : {};
-        const message = typeof failure.message === "string" ? failure.message : "The Local Harness model request failed.";
+        const message =
+          typeof failure.message === "string"
+            ? failure.message
+            : "The Local Harness model request failed.";
         state.turnFailure = [
           `Local agent request failed: ${message}`,
           "",
@@ -804,9 +1005,10 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
           ? previousDisplay.slice(REASONING_TRUNCATED_PREFIX.length)
           : previousDisplay;
         const combined = `${previous}${chunk.text}`;
-        const text = combined.length > MAX_DISPLAY_REASONING_CHARS
-          ? `${REASONING_TRUNCATED_PREFIX}${combined.slice(-MAX_DISPLAY_REASONING_CHARS)}`
-          : combined;
+        const text =
+          combined.length > MAX_DISPLAY_REASONING_CHARS
+            ? `${REASONING_TRUNCATED_PREFIX}${combined.slice(-MAX_DISPLAY_REASONING_CHARS)}`
+            : combined;
         state.reasoningText.set(reasoningKey, text);
         state.handlers.onProgress?.({
           id: `local-reasoning-${state.sessionId}-${step}-${index}`,
@@ -816,9 +1018,21 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       } else if (chunk.type === "usage" && isRecord(chunk.usage)) {
         this.emitUsage(state, chunk.usage);
       } else if (chunk.type === "finish") {
-        const kind = isRecord(chunk.reason) && typeof chunk.reason.kind === "string" ? chunk.reason.kind : null;
-        const replay = isRecord(chunk.replayState) && isRecord(chunk.replayState.response) ? chunk.replayState.response : null;
-        const stopReason = kind ?? (replay?.stopReason === "length" ? "max-tokens" : typeof replay?.stopReason === "string" ? replay.stopReason : null);
+        const kind =
+          isRecord(chunk.reason) && typeof chunk.reason.kind === "string"
+            ? chunk.reason.kind
+            : null;
+        const replay =
+          isRecord(chunk.replayState) && isRecord(chunk.replayState.response)
+            ? chunk.replayState.response
+            : null;
+        const stopReason =
+          kind ??
+          (replay?.stopReason === "length"
+            ? "max-tokens"
+            : typeof replay?.stopReason === "string"
+              ? replay.stopReason
+              : null);
         if (stopReason) state.stopReason = stopReason;
       }
       return;
@@ -841,10 +1055,19 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       const callId = String(data.callId ?? event.seq ?? randomUUID());
       const tool = String(data.name ?? "tool");
       let args: Record<string, unknown> = {};
-      try { args = normalizedArgs(JSON.parse(String(data.arguments ?? "{}"))); } catch { /* malformed args stay empty */ }
+      try {
+        args = normalizedArgs(JSON.parse(String(data.arguments ?? "{}")));
+      } catch {
+        /* malformed args stay empty */
+      }
       state.toolArguments.set(callId, { tool, arguments: args });
       state.toolEventCount = (state.toolEventCount ?? 0) + 1;
-      traceLocalStream("harness.tool.call", { sessionId: state.sessionId, callId, tool, arguments: args });
+      traceLocalStream("harness.tool.call", {
+        sessionId: state.sessionId,
+        callId,
+        tool,
+        arguments: args,
+      });
       state.handlers.onToolActivity?.({
         id: `local-tool-${callId}`,
         command: commandFrom(tool, args),
@@ -865,7 +1088,9 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
         startedAt: Date.now(),
         completedAt: Date.now(),
         output: textFromContent(data.message.content),
-        summary: textFromContent(data.message.content).slice(0, 2_000) || (failed ? "Tool failed" : "Tool completed"),
+        summary:
+          textFromContent(data.message.content).slice(0, 2_000) ||
+          (failed ? "Tool failed" : "Tool completed"),
       });
       state.toolEventCount += 1;
       state.toolArguments.delete(callId);
@@ -881,75 +1106,182 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       inputTokens,
       outputTokens,
       contextTokens: inputTokens + outputTokens,
-      contextWindow: state.request.localConfig?.models?.[state.request.route.modelId]?.contextLength ?? null,
+      contextWindow:
+        state.request.localConfig?.models?.[state.request.route.modelId]?.contextLength ?? null,
       exact: true,
     };
     state.lastUsage = normalized;
     state.handlers.onContextUsage?.(normalized);
   }
 
-  private async onBridgeRequest(method: string, params: Record<string, unknown>, sourceChild?: ChildProcessWithoutNullStreams): Promise<unknown> {
+  private async onBridgeRequest(
+    method: string,
+    params: Record<string, unknown>,
+    sourceChild?: ChildProcessWithoutNullStreams,
+  ): Promise<unknown> {
     const state = this.active;
-    if (!state || state.settled || (sourceChild && sourceChild !== this.child) || params.sessionId !== state.sessionId) return method === "approval/request" ? { outcome: "rejected" } : method === "browser/execute" ? { ok: false, error: { code: "BROWSER_PERMISSION_DENIED", message: "No active Local run owns this browser call." } } : { kind: "deny", reason: "No active Ubume Local run owns this tool call." };
+    if (
+      !state ||
+      state.settled ||
+      (sourceChild && sourceChild !== this.child) ||
+      params.sessionId !== state.sessionId
+    )
+      return method === "approval/request"
+        ? { outcome: "rejected" }
+        : method === "browser/execute"
+          ? {
+              ok: false,
+              error: {
+                code: "BROWSER_PERMISSION_DENIED",
+                message: "No active Local run owns this browser call.",
+              },
+            }
+          : { kind: "deny", reason: "No active Ubume Local run owns this tool call." };
     if (method === "browser/execute") {
       const tool = String(params.tool);
       const callId = String(params.callId);
       const grant = this.browserGrants.get(callId);
       this.browserGrants.delete(callId);
       const args = normalizedArgs(params.arguments);
-      if (!isBrowserTool(tool) || !grant?.allowed || grant.sessionId !== state.sessionId || grant.digest !== createHash("sha256").update(JSON.stringify([tool, args])).digest("hex")) return { ok: false, error: { code: "BROWSER_PERMISSION_DENIED", message: "This browser action has no matching permission decision." } };
+      if (
+        !isBrowserTool(tool) ||
+        !grant?.allowed ||
+        grant.sessionId !== state.sessionId ||
+        grant.digest !==
+          createHash("sha256")
+            .update(JSON.stringify([tool, args]))
+            .digest("hex")
+      )
+        return {
+          ok: false,
+          error: {
+            code: "BROWSER_PERMISSION_DENIED",
+            message: "This browser action has no matching permission decision.",
+          },
+        };
       const controller = new AbortController();
       this.browserCalls.set(callId, controller);
       try {
         if (grant.identity) {
-          const current = await this.browser.approvalState(state.sessionId, args, tool === "browser_type", controller.signal);
-          if (current.identity !== grant.identity) return { ok: false, error: { code: "BROWSER_PERMISSION_DENIED", message: "Browser target changed after approval. Inspect again and request fresh approval." } };
+          const current = await this.browser.approvalState(
+            state.sessionId,
+            args,
+            tool === "browser_type",
+            controller.signal,
+          );
+          if (current.identity !== grant.identity)
+            return {
+              ok: false,
+              error: {
+                code: "BROWSER_PERMISSION_DENIED",
+                message:
+                  "Browser target changed after approval. Inspect again and request fresh approval.",
+              },
+            };
         }
         if (this.active !== state || state.settled) controller.abort();
-        return await this.browser.execute({ sessionId: state.sessionId, callId, tool, arguments: args }, { signal: controller.signal, networkAccess: state.request.runtime.policy.networkAccess, dshHome: this.dshHome });
+        return await this.browser.execute(
+          { sessionId: state.sessionId, callId, tool, arguments: args },
+          {
+            signal: controller.signal,
+            networkAccess: state.request.runtime.policy.networkAccess,
+            dshHome: this.dshHome,
+          },
+        );
       } catch {
-        return { ok: false, error: { code: "BROWSER_STALE_REFERENCE", message: "Browser target is no longer available. Inspect the page again." } };
-      } finally { this.browserCalls.delete(callId); }
+        return {
+          ok: false,
+          error: {
+            code: "BROWSER_STALE_REFERENCE",
+            message: "Browser target is no longer available. Inspect the page again.",
+          },
+        };
+      } finally {
+        this.browserCalls.delete(callId);
+      }
     }
     if (method === "tool/policy") {
       const tool = String(params.tool ?? "tool");
       const callId = String(params.callId ?? "");
       const args = normalizedArgs(params.arguments);
       if (isBrowserTool(tool)) {
-        try { validateBrowserArguments(tool, args); }
-        catch { return { kind: "deny", reason: "Invalid browser arguments." }; }
+        try {
+          validateBrowserArguments(tool, args);
+        } catch {
+          return { kind: "deny", reason: "Invalid browser arguments." };
+        }
         const interactive = browserInteractions.has(tool);
-        if (interactive && (state.request.runIntent === "plan" || state.request.runtime.policy.sandboxMode === "read-only")) return { kind: "deny", reason: "Ubume's current runtime policy is read-only." };
+        if (
+          interactive &&
+          (state.request.runIntent === "plan" ||
+            state.request.runtime.policy.sandboxMode === "read-only")
+        )
+          return { kind: "deny", reason: "Ubume's current runtime policy is read-only." };
         let description = browserDescription(tool, args);
         let identity: string | undefined;
         if (interactive) {
           const controller = new AbortController();
           this.browserCalls.set(callId, controller);
           try {
-            const target = await this.browser.approvalState(state.sessionId, args, tool === "browser_type", controller.signal);
-            identity = target.identity; description += ` — ${target.description}`;
-          } catch { return { kind: "deny", reason: "Browser target unavailable. Open/inspect the page again." }; }
-          finally { this.browserCalls.delete(callId); }
+            const target = await this.browser.approvalState(
+              state.sessionId,
+              args,
+              tool === "browser_type",
+              controller.signal,
+            );
+            identity = target.identity;
+            description += ` — ${target.description}`;
+          } catch {
+            return {
+              kind: "deny",
+              reason: "Browser target unavailable. Open/inspect the page again.",
+            };
+          } finally {
+            this.browserCalls.delete(callId);
+          }
         }
-        if (this.active !== state || state.settled) return { kind: "deny", reason: "Local run cancelled." };
+        if (this.active !== state || state.settled)
+          return { kind: "deny", reason: "Local run cancelled." };
         const ask = interactive && state.request.runtime.policy.approvalPolicy === "on-request";
-        this.browserGrants.set(callId, { sessionId: state.sessionId, digest: createHash("sha256").update(JSON.stringify([tool, args])).digest("hex"), identity, description, allowed: !ask });
+        this.browserGrants.set(callId, {
+          sessionId: state.sessionId,
+          digest: createHash("sha256")
+            .update(JSON.stringify([tool, args]))
+            .digest("hex"),
+          identity,
+          description,
+          allowed: !ask,
+        });
         state.toolArguments.set(callId, { tool, arguments: { description } });
         return ask ? { kind: "ask", reason: description } : { kind: "allow" };
       }
       if (callId) state.toolArguments.set(callId, { tool, arguments: args });
       if (!isMutatingTool(tool)) return { kind: "allow" };
-      if (state.request.runIntent === "plan" || state.request.runtime.policy.sandboxMode === "read-only") {
+      if (
+        state.request.runIntent === "plan" ||
+        state.request.runtime.policy.sandboxMode === "read-only"
+      ) {
         return { kind: "deny", reason: "Ubume's current runtime policy is read-only." };
       }
       const command = typeof args.command === "string" ? args.command : "";
-      if (command && isDangerousShellCommand(command)) return { kind: "deny", reason: "Shell command blocked as dangerous." };
+      if (command && isDangerousShellCommand(command))
+        return { kind: "deny", reason: "Shell command blocked as dangerous." };
       if (command) {
-        const guard = getShellWorkspaceGuardMessage(command, state.request.workspaceRoot, state.request.runtime.policy.writableRoots);
+        const guard = getShellWorkspaceGuardMessage(
+          command,
+          state.request.workspaceRoot,
+          state.request.runtime.policy.writableRoots,
+        );
         if (guard) return { kind: "deny", reason: guard };
       }
       for (const candidatePath of pathsFrom(args)) {
-        if (!isPathInsideAllowedRoots(candidatePath, state.request.workspaceRoot, state.request.runtime.policy.writableRoots)) {
+        if (
+          !isPathInsideAllowedRoots(
+            candidatePath,
+            state.request.workspaceRoot,
+            state.request.runtime.policy.writableRoots,
+          )
+        ) {
           return { kind: "deny", reason: `Path is outside the active workspace: ${candidatePath}` };
         }
       }
@@ -957,12 +1289,16 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
         try {
           ensureSessionScratchDir(state.request.workspaceRoot, state.sessionId);
         } catch (error) {
-          traceLocalStream("harness.scratch.unavailable", { sessionId: state.sessionId, error: error instanceof Error ? error.message : String(error) });
+          traceLocalStream("harness.scratch.unavailable", {
+            sessionId: state.sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
       const signature = `${tool}:${command || pathsFrom(args).join(",")}`;
       if (state.approvals.has(signature)) return { kind: "allow" };
-      if (state.request.runtime.policy.approvalPolicy === "on-request") return { kind: "ask", reason: `Allow ${commandFrom(tool, args)}?` };
+      if (state.request.runtime.policy.approvalPolicy === "on-request")
+        return { kind: "ask", reason: `Allow ${commandFrom(tool, args)}?` };
       return { kind: "allow" };
     }
     if (method === "approval/request") {
@@ -970,8 +1306,19 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       const browserGrant = this.browserGrants.get(callId);
       if (browserGrant) {
         if (!state.handlers.onToolApproval) return { outcome: "rejected" };
-        const decision = await state.handlers.onToolApproval({ tool: String(params.tool), signature: `browser:${callId}`, description: browserGrant.description, allowForRun: false, paths: [] });
-        if (this.active !== state || state.settled || this.browserGrants.get(callId) !== browserGrant) return { outcome: "cancelled" };
+        const decision = await state.handlers.onToolApproval({
+          tool: String(params.tool),
+          signature: `browser:${callId}`,
+          description: browserGrant.description,
+          allowForRun: false,
+          paths: [],
+        });
+        if (
+          this.active !== state ||
+          state.settled ||
+          this.browserGrants.get(callId) !== browserGrant
+        )
+          return { outcome: "cancelled" };
         browserGrant.allowed = decision === "allow-once";
         return { outcome: browserGrant.allowed ? "allowed-once" : "rejected" };
       }
@@ -986,7 +1333,10 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
         command: typeof args.command === "string" ? args.command : undefined,
         paths: pathsFrom(args),
       });
-      if (decision === "allow-for-run") state.approvals.add(`${tool}:${typeof args.command === "string" ? args.command : pathsFrom(args).join(",")}`);
+      if (decision === "allow-for-run")
+        state.approvals.add(
+          `${tool}:${typeof args.command === "string" ? args.command : pathsFrom(args).join(",")}`,
+        );
       return { outcome: decision === "deny" ? "rejected" : "allowed-once" };
     }
     throw new Error(`Unknown Local Harness bridge request: ${method}`);
@@ -1012,19 +1362,22 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
 
     const textProgress = state.text.length > (state.windowStartTextLength ?? 0);
     const toolProgress = (state.toolEventCount ?? 0) > (state.windowStartToolEventCount ?? 0);
-    state.consecutiveNoProgressWindows = textProgress || toolProgress
-      ? 0
-      : (state.consecutiveNoProgressWindows ?? 0) + 1;
+    state.consecutiveNoProgressWindows =
+      textProgress || toolProgress ? 0 : (state.consecutiveNoProgressWindows ?? 0) + 1;
     if (state.consecutiveNoProgressWindows >= 2) {
-      this.failActive(new Error([
-        "Local agent request failed: automatic continuation stopped after two output windows made no visible progress.",
-        "",
-        `Backend: ${state.request.resolvedLocalAgentConfig?.localBackend ?? state.request.route.localBackend ?? "local"}`,
-        `Model: ${state.request.route.modelId}`,
-        `Endpoint: ${sanitizedEndpoint(state.request.resolvedLocalAgentConfig?.baseUrl ?? state.request.localConfig?.baseUrl ?? "")}`,
-        "",
-        "The partial response remains visible. Lower the reasoning effort or raise max_output_tokens if the model supports a larger per-request limit.",
-      ].join("\n")));
+      this.failActive(
+        new Error(
+          [
+            "Local agent request failed: automatic continuation stopped after two output windows made no visible progress.",
+            "",
+            `Backend: ${state.request.resolvedLocalAgentConfig?.localBackend ?? state.request.route.localBackend ?? "local"}`,
+            `Model: ${state.request.route.modelId}`,
+            `Endpoint: ${sanitizedEndpoint(state.request.resolvedLocalAgentConfig?.baseUrl ?? state.request.localConfig?.baseUrl ?? "")}`,
+            "",
+            "The partial response remains visible. Lower the reasoning effort or raise max_output_tokens if the model supports a larger per-request limit.",
+          ].join("\n"),
+        ),
+      );
       return true;
     }
 
@@ -1049,23 +1402,27 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       responseCharacters: state.text.length,
       reasoningOnly,
     });
-    void this.transport.request("session/prompt", {
-      sessionId: state.sessionId,
-      contentBlocks: [{
-        type: "text",
-        text: reasoningOnly
-          ? [
-          "Your previous turn ran out of output budget while reasoning and produced no answer.",
-          "Do not restart the analysis. Keep reasoning to a few sentences and begin the work now with tool calls, or give the answer directly.",
-          ].join(" ")
-          : [
-          "Continue the current task exactly where the previous response stopped.",
-          "Do not repeat text already emitted or mention output limits or continuation.",
-          "If work remains, perform it with tools instead of describing what you will do.",
-          "Finish validation and give the final result only when the task is complete.",
-          ].join(" "),
-      }],
-    }).catch((error) => this.failActive(error instanceof Error ? error : new Error(String(error))));
+    void this.transport
+      .request("session/prompt", {
+        sessionId: state.sessionId,
+        contentBlocks: [
+          {
+            type: "text",
+            text: reasoningOnly
+              ? [
+                  "Your previous turn ran out of output budget while reasoning and produced no answer.",
+                  "Do not restart the analysis. Keep reasoning to a few sentences and begin the work now with tool calls, or give the answer directly.",
+                ].join(" ")
+              : [
+                  "Continue the current task exactly where the previous response stopped.",
+                  "Do not repeat text already emitted or mention output limits or continuation.",
+                  "If work remains, perform it with tools instead of describing what you will do.",
+                  "Finish validation and give the final result only when the task is complete.",
+                ].join(" "),
+          },
+        ],
+      })
+      .catch((error) => this.failActive(error instanceof Error ? error : new Error(String(error))));
     return true;
   }
 
@@ -1080,63 +1437,94 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
         `Endpoint: ${sanitizedEndpoint(state.request.resolvedLocalAgentConfig?.baseUrl ?? state.request.localConfig?.baseUrl ?? "")}`,
       ];
       const usage = state.lastUsage;
-      const usageLine = usage ? `Usage: ${formatTokens(usage.inputTokens)} input tokens, ${formatTokens(usage.outputTokens)} output tokens.` : null;
+      const usageLine = usage
+        ? `Usage: ${formatTokens(usage.inputTokens)} input tokens, ${formatTokens(usage.outputTokens)} output tokens.`
+        : null;
       if (this.outputBudgetExhausted(state)) {
         const cap = this.outputBudget(state) ?? usage?.outputTokens ?? 0;
-        this.failActive(new Error([
-          `Local agent request failed: the model used its entire output budget (${formatTokens(cap)} tokens) on reasoning and never started its answer.`,
-          "",
-          ...backendLines,
-          ...(usageLine ? [usageLine] : []),
-          "",
-          "Raise max_output_tokens for this model in providers.json, or lower its reasoning effort (set supports_reasoning_effort: true for the model and pick a lower reasoning level).",
-        ].join("\n")));
+        this.failActive(
+          new Error(
+            [
+              `Local agent request failed: the model used its entire output budget (${formatTokens(cap)} tokens) on reasoning and never started its answer.`,
+              "",
+              ...backendLines,
+              ...(usageLine ? [usageLine] : []),
+              "",
+              "Raise max_output_tokens for this model in providers.json, or lower its reasoning effort (set supports_reasoning_effort: true for the model and pick a lower reasoning level).",
+            ].join("\n"),
+          ),
+        );
         return;
       }
       if (state.reasoningText.size > 0) {
-        this.failActive(new Error([
-          "Local agent request failed: the model produced reasoning only and no answer or tool calls.",
-          "",
-          ...backendLines,
-          ...(usageLine ? [usageLine] : []),
-          "",
-          "The turn ended normally, so the server delivered no assistant text after the reasoning channel. Check the model's chat template and whether the server streams the final message.",
-        ].join("\n")));
+        this.failActive(
+          new Error(
+            [
+              "Local agent request failed: the model produced reasoning only and no answer or tool calls.",
+              "",
+              ...backendLines,
+              ...(usageLine ? [usageLine] : []),
+              "",
+              "The turn ended normally, so the server delivered no assistant text after the reasoning channel. Check the model's chat template and whether the server streams the final message.",
+            ].join("\n"),
+          ),
+        );
         return;
       }
-      this.failActive(new Error([
-        "Local agent request failed: the Harness turn completed without visible assistant output.",
-        "",
-        ...backendLines,
-        "Verify the model chat template, streaming response format, and native tool/function-calling support.",
-      ].join("\n")));
+      this.failActive(
+        new Error(
+          [
+            "Local agent request failed: the Harness turn completed without visible assistant output.",
+            "",
+            ...backendLines,
+            "Verify the model chat template, streaming response format, and native tool/function-calling support.",
+          ].join("\n"),
+        ),
+      );
       return;
     }
     try {
-      const flushed = await this.requestBounded("session/flush", { sessionId: state.sessionId }) as { durable?: boolean };
-      if (flushed.durable !== true) throw new Error("Local Harness did not acknowledge durable session storage.");
+      const flushed = (await this.requestBounded("session/flush", {
+        sessionId: state.sessionId,
+      })) as { durable?: boolean };
+      if (flushed.durable !== true)
+        throw new Error("Local Harness did not acknowledge durable session storage.");
     } catch (error) {
-      if (this.active === state && !state.settled) this.failActive(new Error(`Local chat checkpoint could not be saved: ${error instanceof Error ? error.message : String(error)}`));
+      if (this.active === state && !state.settled)
+        this.failActive(
+          new Error(
+            `Local chat checkpoint could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
       return;
     }
     if (this.active !== state || state.settled) return;
     state.settled = true;
     state.abortCleanup();
     this.active = null;
-    if (state.request?.workspaceRoot) removeUnusedSessionScratchDir(state.request.workspaceRoot, state.sessionId);
+    if (state.request?.workspaceRoot)
+      removeUnusedSessionScratchDir(state.request.workspaceRoot, state.sessionId);
     const completedMessages = [
       ...(state.request.conversationHistory ?? []),
       { role: "user", content: state.request.prompt },
       { role: "assistant", content: state.text },
     ];
-    state.handlers.onLocalHarnessSession?.({
-      ...state.sessionMetadata,
-      throughMessageCount: completedMessages.length,
-      transcriptHash: createHash("sha256").update(JSON.stringify(completedMessages)).digest("hex"),
-      updatedAt: new Date().toISOString(),
-    }, state.sessionId);
+    state.handlers.onLocalHarnessSession?.(
+      {
+        ...state.sessionMetadata,
+        throughMessageCount: completedMessages.length,
+        transcriptHash: createHash("sha256")
+          .update(JSON.stringify(completedMessages))
+          .digest("hex"),
+        updatedAt: new Date().toISOString(),
+      },
+      state.sessionId,
+    );
     state.handlers.onFinalAnswerObserved?.(state.text);
-    traceLocalStream("harness.request.complete", { sessionId: state.sessionId, responseCharacters: state.text.length });
+    traceLocalStream("harness.request.complete", {
+      sessionId: state.sessionId,
+      responseCharacters: state.text.length,
+    });
     state.resolve(state.text);
   }
 
@@ -1150,7 +1538,8 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     this.browserGrants.clear();
     const browserCleanup = this.browser.closeSession(state.sessionId);
     // Best-effort cleanup must never keep a failed run from settling.
-    if (state.request?.workspaceRoot) removeUnusedSessionScratchDir(state.request.workspaceRoot, state.sessionId);
+    if (state.request?.workspaceRoot)
+      removeUnusedSessionScratchDir(state.request.workspaceRoot, state.sessionId);
     state.handlers.onLocalHarnessSession?.(null, state.sessionId);
     const child = this.child;
     const transport = this.transport;
@@ -1160,17 +1549,23 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
           if (this.child === child) void this.shutdown().then(resolveCleanup, resolveCleanup);
           else resolveCleanup();
         }, 1_500);
-        void transport.request("session/close", { sessionId: state.sessionId }).then(() => {
-          clearTimeout(timer);
-          resolveCleanup();
-        }).catch(() => {
-          clearTimeout(timer);
-          if (this.child === child) void this.shutdown().then(resolveCleanup, resolveCleanup);
-          else resolveCleanup();
-        });
+        void transport
+          .request("session/close", { sessionId: state.sessionId })
+          .then(() => {
+            clearTimeout(timer);
+            resolveCleanup();
+          })
+          .catch(() => {
+            clearTimeout(timer);
+            if (this.child === child) void this.shutdown().then(resolveCleanup, resolveCleanup);
+            else resolveCleanup();
+          });
       });
     }
-    this.failedSessionCleanup = Promise.allSettled([this.failedSessionCleanup, browserCleanup]).then(() => undefined);
+    this.failedSessionCleanup = Promise.allSettled([
+      this.failedSessionCleanup,
+      browserCleanup,
+    ]).then(() => undefined);
     traceLocalStream("harness.request.error", {
       sessionId: state.sessionId,
       error: error.message,
@@ -1192,14 +1587,19 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     this.fingerprint = "";
     this.dshHome = "";
     if (!child) return;
-    if (!child.pid) { transport?.close(); return; }
+    if (!child.pid) {
+      transport?.close();
+      return;
+    }
     traceLocalStream("harness.shutdown", {});
     try {
       await Promise.race([
         transport?.request("shutdown", {}) ?? Promise.resolve(),
         new Promise((resolveWait) => setTimeout(resolveWait, 1_500)),
       ]);
-    } catch { /* terminate below */ }
+    } catch {
+      /* terminate below */
+    }
     transport?.close();
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
     // Wait for the child to actually exit so the next ensureStarted() never
@@ -1220,20 +1620,31 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     }
   }
 
-  async waitForCleanup(): Promise<void> { await this.failedSessionCleanup; }
-
-  failureDetails(): string {
-    return this.redactions.reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr).trim();
+  async waitForCleanup(): Promise<void> {
+    await this.failedSessionCleanup;
   }
 
-  private async requestBounded(method: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+  failureDetails(): string {
+    return this.redactions
+      .reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr)
+      .trim();
+  }
+
+  private async requestBounded(
+    method: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     const transport = this.transport;
     if (!transport) throw new Error(`Local Harness disconnected during ${method}.`);
     const controller = new AbortController();
     const abort = () => controller.abort(signal?.reason);
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
-    const timer = setTimeout(() => controller.abort(new Error(`Local Harness ${method} timed out after 10 seconds.`)), 10_000);
+    const timer = setTimeout(
+      () => controller.abort(new Error(`Local Harness ${method} timed out after 10 seconds.`)),
+      10_000,
+    );
     try {
       return await transport.request(method, params, controller.signal);
     } catch (error) {
@@ -1247,10 +1658,15 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
 
   async closeSession(sessionId: string): Promise<void> {
     await this.browser.closeSession(sessionId);
-    for (const [callId, grant] of this.browserGrants) if (grant.sessionId === sessionId) this.browserGrants.delete(callId);
+    for (const [callId, grant] of this.browserGrants)
+      if (grant.sessionId === sessionId) this.browserGrants.delete(callId);
     if (!this.transport || !sessionId) return;
-    try { await this.requestBounded("session/close", { sessionId }); }
-    catch (error) { await this.shutdown(); throw error; }
+    try {
+      await this.requestBounded("session/close", { sessionId });
+    } catch (error) {
+      await this.shutdown();
+      throw error;
+    }
   }
 
   terminate(): void {
@@ -1263,7 +1679,9 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     const child = this.child;
     if (child?.exitCode === null && child.signalCode === null) {
       child.kill("SIGTERM");
-      const timer = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }, 2_000);
+      const timer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      }, 2_000);
       timer.unref?.();
       child.once?.("exit", () => clearTimeout(timer));
     }
@@ -1274,23 +1692,37 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
 
 let sharedProcess: LocalHarnessRunner = new LocalHarnessProcess();
 
-export function resetLocalHarnessProcessForTests(processOverride: LocalHarnessRunner = new LocalHarnessProcess()): void {
+export function resetLocalHarnessProcessForTests(
+  processOverride: LocalHarnessRunner = new LocalHarnessProcess(),
+): void {
   sharedProcess.terminate();
   sharedProcess = processOverride;
 }
 
-export async function runLocalHarness(request: ProviderChatRequest, handlers: BackendRunHandlers, signal: AbortSignal): Promise<string> {
+export async function runLocalHarness(
+  request: ProviderChatRequest,
+  handlers: BackendRunHandlers,
+  signal: AbortSignal,
+): Promise<string> {
   const runner = sharedProcess;
-  try { return await runner.run(request, handlers, signal); }
-  catch (error) {
-    if (!signal.aborted && runner instanceof LocalHarnessProcess && /^JSON-RPC.*(?:closed|disconnect)/i.test(error instanceof Error ? error.message : String(error))) {
+  try {
+    return await runner.run(request, handlers, signal);
+  } catch (error) {
+    if (
+      !signal.aborted &&
+      runner instanceof LocalHarnessProcess &&
+      /^JSON-RPC.*(?:closed|disconnect)/i.test(
+        error instanceof Error ? error.message : String(error),
+      )
+    ) {
       await runner.shutdown();
       const detail = runner.failureDetails();
-      throw new Error(`Local Harness disconnected during session/prompt. ${error instanceof Error ? error.message : String(error)}${detail ? `\n${detail}` : ""}\nYour next prompt will start a fresh Harness session. The failed turn was not retried.`);
+      throw new Error(
+        `Local Harness disconnected during session/prompt. ${error instanceof Error ? error.message : String(error)}${detail ? `\n${detail}` : ""}\nYour next prompt will start a fresh Harness session. The failed turn was not retried.`,
+      );
     }
     throw error;
-  }
-  finally {
+  } finally {
     if (runner instanceof LocalHarnessProcess) {
       await runner.waitForCleanup();
       if (signal.aborted) await runner.shutdown();

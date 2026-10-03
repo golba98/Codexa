@@ -1,15 +1,26 @@
-import { codexSubprocessProvider } from "../providers/codexSubprocess.js";
 import { loadSeededOpenAiModels } from "../models/codexModelsCacheSeed.js";
-import { loadCachedProviderModels, saveCachedProviderModels } from "../models/providerModelCache.js";
+import {
+  loadCachedProviderModels,
+  saveCachedProviderModels,
+} from "../models/providerModelCache.js";
+import type {
+  ProviderActiveRoute,
+  ProviderId,
+  ProviderWorkspaceOverride,
+} from "../providerLauncher/types.js";
+import { codexSubprocessProvider } from "../providers/codexSubprocess.js";
 import type { BackendRunHandlers } from "../providers/types.js";
-import type { ProviderId, ProviderActiveRoute, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
 import { isLocalDevChannel } from "../version/channel.js";
 import { anthropicRuntime } from "./anthropic.js";
+import {
+  ANTIGRAVITY_DEFAULT_MODEL_ID,
+  antigravityRuntime,
+  migrateAntigravityLegacyModelId,
+} from "./antigravity.js";
+import { codexaCupyRuntime } from "./codexaCupy.js";
+import { CODEXA_NATIVE_MODEL_ID, codexaNativeRuntime } from "./codexaNative.js";
 import { geminiRuntime } from "./gemini.js";
 import { localRuntime } from "./local.js";
-import { codexaNativeRuntime, CODEXA_NATIVE_MODEL_ID } from "./codexaNative.js";
-import { codexaCupyRuntime } from "./codexaCupy.js";
-import { antigravityRuntime, ANTIGRAVITY_DEFAULT_MODEL_ID, migrateAntigravityLegacyModelId } from "./antigravity.js";
 import { mistralVibeRuntime } from "./mistralVibe.js";
 import {
   ANTHROPIC_FALLBACK_MODELS,
@@ -119,7 +130,9 @@ export function getProviderRouteSetupMessage(providerId: ProviderId): string {
 
 export function discoverProviderModels(providerId: ProviderId): ProviderModelDiscoveryResult {
   const result = getProviderRuntime(providerId).discoverModels();
-  const hasRuntimeModels = result.models.some((model) => model.source && model.source !== "fallback");
+  const hasRuntimeModels = result.models.some(
+    (model) => model.source && model.source !== "fallback",
+  );
   if (result.status === "ready" && !hasRuntimeModels) {
     const cached = loadCachedProviderModels(providerId);
     if (cached) {
@@ -130,7 +143,9 @@ export function discoverProviderModels(providerId: ProviderId): ProviderModelDis
 }
 
 export function persistProviderDiscovery(discovery: ProviderModelDiscoveryResult): void {
-  const runtimeModels = discovery.models.filter((model) => model.source && model.source !== "fallback");
+  const runtimeModels = discovery.models.filter(
+    (model) => model.source && model.source !== "fallback",
+  );
   if (discovery.status !== "ready" || runtimeModels.length === 0) {
     return;
   }
@@ -197,11 +212,16 @@ export function resolveActiveProviderRoute(options: {
   currentReasoning: string;
 }): ActiveProviderRoute {
   const configuredRoute = options.workspaceConfigActiveRoute;
-  if (configuredRoute && configuredRoute.providerId !== "google" && isProviderRoutableInUbume(configuredRoute.providerId)) {
+  if (
+    configuredRoute &&
+    configuredRoute.providerId !== "google" &&
+    isProviderRoutableInUbume(configuredRoute.providerId)
+  ) {
     const route: ActiveProviderRoute = {
       providerId: configuredRoute.providerId,
       modelId: configuredRoute.modelId,
-      backendKind: configuredRoute.backendKind ?? getProviderRuntime(configuredRoute.providerId).backendKind,
+      backendKind:
+        configuredRoute.backendKind ?? getProviderRuntime(configuredRoute.providerId).backendKind,
       ...(configuredRoute.reasoning ? { reasoning: configuredRoute.reasoning } : {}),
       ...(configuredRoute.modelSelection ? { modelSelection: configuredRoute.modelSelection } : {}),
       ...(configuredRoute.providerId === "local"
@@ -215,14 +235,23 @@ export function resolveActiveProviderRoute(options: {
       route.modelId = normalizeGeminiModelId(route.modelId);
     } else if (route.providerId === "anthropic") {
       const discovery = discoverProviderModels("anthropic");
-      const stillAvailable = discovery.models.some((model) =>
-        model.modelId === route.modelId ||
-        model.id === route.modelId ||
-        model.canonicalId === route.modelId
+      const stillAvailable = discovery.models.some(
+        (model) =>
+          model.modelId === route.modelId ||
+          model.id === route.modelId ||
+          model.canonicalId === route.modelId,
       );
       const hasNonFallbackModels = discovery.models.some((model) => model.source !== "fallback");
-      const isKnownShortAlias = ANTHROPIC_FALLBACK_MODELS.some((model) => model.modelId === route.modelId);
-      if (discovery.status === "ready" && hasNonFallbackModels && discovery.models.length > 0 && !stillAvailable && isKnownShortAlias) {
+      const isKnownShortAlias = ANTHROPIC_FALLBACK_MODELS.some(
+        (model) => model.modelId === route.modelId,
+      );
+      if (
+        discovery.status === "ready" &&
+        hasNonFallbackModels &&
+        discovery.models.length > 0 &&
+        !stillAvailable &&
+        isKnownShortAlias
+      ) {
         route.modelId = discovery.models[0]!.modelId;
       }
     } else if (route.providerId === "antigravity") {
@@ -233,13 +262,18 @@ export function resolveActiveProviderRoute(options: {
       }
       const discovery = discoverProviderModels("antigravity");
       if (discovery.status === "ready" && discovery.models.length > 0) {
-        let model = discovery.models.find((item) => item.modelId === route.modelId || item.id === route.modelId);
+        let model = discovery.models.find(
+          (item) => item.modelId === route.modelId || item.id === route.modelId,
+        );
         if (!model) {
           model = discovery.models[0];
           route.modelId = model.modelId;
         }
         const levels = model.supportedReasoningLevels;
-        if (levels?.length && (!route.reasoning || !levels.some((level) => level.id === route.reasoning))) {
+        if (
+          levels?.length &&
+          (!route.reasoning || !levels.some((level) => level.id === route.reasoning))
+        ) {
           route.reasoning = model.defaultReasoningLevel ?? levels[0]?.id;
         }
       }

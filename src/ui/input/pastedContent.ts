@@ -1,8 +1,10 @@
 export const LARGE_PASTE_THRESHOLD = 1_000;
 
-export const PASTED_CONTENT_PATTERN = /\[Pasted Content ([\d,]+) chars\](?:\u2063[\uFE00-\uFE09]+\u2063)?/g;
+export const PASTED_CONTENT_PATTERN =
+  /\[Pasted Content ([\d,]+) chars\](?:\u2063[\uFE00-\uFE09]+\u2063)?/g;
 export const IMAGE_ATTACHMENT_PATTERN = /\[Image: ([^\]\n]+)\](?:\u2063[\uFE00-\uFE09]+\u2063)?/g;
-const ATOMIC_CONTENT_PATTERN = /(?:\[Pasted Content [\d,]+ chars\]|\[(?:Image|File): [^\]\n]+\])(?:\u2063[\uFE00-\uFE09]+\u2063)?/g;
+const ATOMIC_CONTENT_PATTERN =
+  /(?:\[Pasted Content [\d,]+ chars\]|\[(?:Image|File): [^\]\n]+\])(?:\u2063[\uFE00-\uFE09]+\u2063)?/g;
 
 let nextPasteId = Date.now() * 1000;
 
@@ -15,7 +17,10 @@ export function createPastedContentLabel(value: string): string {
 }
 
 function encodeInvisibleId(value: number): string {
-  return String(value).split("").map((digit) => String.fromCharCode(0xFE00 + Number(digit))).join("");
+  return String(value)
+    .split("")
+    .map((digit) => String.fromCharCode(0xfe00 + Number(digit)))
+    .join("");
 }
 
 export function createAtomicContentToken(label: string): string {
@@ -53,7 +58,11 @@ export function findPastedContentSpan(value: string, cursor: number) {
   return null;
 }
 
-export function moveAcrossPastedContent(value: string, cursor: number, direction: "left" | "right"): number | null {
+export function moveAcrossPastedContent(
+  value: string,
+  cursor: number,
+  direction: "left" | "right",
+): number | null {
   const span = findPastedContentSpan(value, cursor);
   if (!span) return null;
   if (direction === "left" && cursor > span.start) return span.start;
@@ -61,7 +70,11 @@ export function moveAcrossPastedContent(value: string, cursor: number, direction
   return null;
 }
 
-export function deleteAdjacentPastedContent(value: string, cursor: number, direction: "backward" | "forward") {
+export function deleteAdjacentPastedContent(
+  value: string,
+  cursor: number,
+  direction: "backward" | "forward",
+) {
   ATOMIC_CONTENT_PATTERN.lastIndex = 0;
   for (const match of value.matchAll(ATOMIC_CONTENT_PATTERN)) {
     const start = match.index ?? 0;
@@ -75,17 +88,25 @@ export function deleteAdjacentPastedContent(value: string, cursor: number, direc
 }
 
 /** Validate chips before expansion, so literal chip-like text inside files is safe. */
-export function assertAttachedContent(value: string, pastes: PastedContentRegistry, images: ReadonlyMap<string, unknown>, files: ReadonlyMap<string, unknown>): void {
+export function assertAttachedContent(
+  value: string,
+  pastes: PastedContentRegistry,
+  images: ReadonlyMap<string, unknown>,
+  files: ReadonlyMap<string, unknown>,
+): void {
   const counts = new Map<string, number>();
   for (const match of value.matchAll(new RegExp(ATOMIC_CONTENT_PATTERN.source, "g"))) {
     const token = match[0];
     if (token.startsWith("[Image:")) {
-      if (!images.has(token)) throw new Error("An image attachment is unresolved. Reattach it before sending.");
+      if (!images.has(token))
+        throw new Error("An image attachment is unresolved. Reattach it before sending.");
     } else if (token.startsWith("[File:")) {
-      if (!files.has(token)) throw new Error("A file attachment is unresolved. Reattach it before sending.");
+      if (!files.has(token))
+        throw new Error("A file attachment is unresolved. Reattach it before sending.");
     } else {
       const count = counts.get(token) ?? 0;
-      if (pastes.get(token)?.[count] === undefined) throw new Error("Pasted content is unresolved. Paste it again before sending.");
+      if (pastes.get(token)?.[count] === undefined)
+        throw new Error("Pasted content is unresolved. Paste it again before sending.");
       counts.set(token, count + 1);
     }
   }

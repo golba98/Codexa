@@ -14,13 +14,16 @@
     "install:dev-bin": "node scripts/install-local-dev-bin.mjs",
     "debug:claude-models": "bun run --silent src/core/providerRuntime/claudeCodeDiscoveryDebug.ts",
     "typecheck": "tsc --noEmit",
+    "format": "biome format --write src",
+    "lint": "biome lint src",
+    "check": "biome ci src",
     "test": "bun test --max-concurrency=1",
     "audit:ubume-gap": "node scripts/audit-ubume-capabilities.mjs",
     "audit:codexa-gap": "node scripts/audit-ubume-capabilities.mjs",
     "smoke:terminal-bench": "node scripts/smoke-terminal-bench.mjs",
     "gen-build-info": "node scripts/gen-build-info.mjs",
-    "build": "bun run gen-build-info && bun run typecheck",
-    "prepublishOnly": "npm run sync:npm-lock && npm run gen-build-info && npm run typecheck && bun test --max-concurrency=1",
+    "build": "bun run gen-build-info && bun run typecheck && bun run check",
+    "prepublishOnly": "npm run sync:npm-lock && npm run gen-build-info && npm run typecheck && npm run check && bun test --max-concurrency=1",
     "sync:npm-lock": "bun scripts/sync-npm-lock.ts"
   },
   "dependencies": {
@@ -136,6 +139,7 @@
     "zod": "4.5.4"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@types/bun": "^1.4.2",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",

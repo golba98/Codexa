@@ -60,7 +60,8 @@ export function getTerminalCapability(input: TerminalCapabilityInput): TerminalC
     return {
       supported: false,
       reason: "unsupported-terminal",
-      message: "This terminal does not support the VT control sequences required by the Ubume UI. Use a VT-compatible terminal such as Windows Terminal or the VS Code terminal.",
+      message:
+        "This terminal does not support the VT control sequences required by the Ubume UI. Use a VT-compatible terminal such as Windows Terminal or the VS Code terminal.",
     };
   }
 
@@ -81,13 +82,15 @@ export function getTerminalCapability(input: TerminalCapabilityInput): TerminalC
     };
   }
 
-  const message = "This terminal does not advertise VT control sequence support. Ubume will continue because modern Windows terminals usually support VT; set UBUME_REQUIRE_VT=1 to hard-fail when support is not detected.";
+  const message =
+    "This terminal does not advertise VT control sequence support. Ubume will continue because modern Windows terminals usually support VT; set UBUME_REQUIRE_VT=1 to hard-fail when support is not detected.";
 
   if (input.env.UBUME_REQUIRE_VT === "1") {
     return {
       supported: false,
       reason: "unsupported-terminal",
-      message: "This terminal does not appear to support the VT control sequences required by the Ubume UI. Use Windows Terminal, the VS Code terminal, or another VT-compatible terminal, or set UBUME_FORCE_VT=1 to bypass this check.",
+      message:
+        "This terminal does not appear to support the VT control sequences required by the Ubume UI. Use Windows Terminal, the VS Code terminal, or another VT-compatible terminal, or set UBUME_FORCE_VT=1 to bypass this check.",
     };
   }
 

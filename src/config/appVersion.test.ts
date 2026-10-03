@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { dirname } from "path";
 import { getAppVersion, resolveAppVersion } from "./appVersion.js";
 import { APP_VERSION as BUILD_INFO_VERSION } from "./buildInfo.js";
 
@@ -113,6 +112,8 @@ test("getAppVersion returns a valid semver string", () => {
 
 test("drift guard: buildInfo APP_VERSION matches repo package.json version", () => {
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-  const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { version?: string };
+  const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+    version?: string;
+  };
   assert.equal(BUILD_INFO_VERSION, pkg.version);
 });

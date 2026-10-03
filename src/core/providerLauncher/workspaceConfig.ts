@@ -1,11 +1,16 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { DEFAULT_MODEL } from "../../config/settings.js";
+import { normalizeGeminiModelId } from "../providerRuntime/models.js";
+import {
+  getDefaultRouteModel,
+  getProviderRuntime,
+  isProviderRoutableInUbume,
+  isProviderRouteConfigured,
+} from "../providerRuntime/registry.js";
 import { resolveUbumeWorkspaceDataDir } from "../workspace/appData.js";
 import { normalizeWorkspaceRoot } from "../workspace/workspaceRoot.js";
 import { isKnownProviderId } from "./registry.js";
-import { getDefaultRouteModel, getProviderRuntime, isProviderRouteConfigured, isProviderRoutableInUbume } from "../providerRuntime/registry.js";
-import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 import type {
   ProviderActiveRoute,
   ProviderId,
@@ -16,8 +21,14 @@ import type {
 
 const DEPRECATED_GOOGLE_PROVIDER_ID = "google";
 
-export function getProviderWorkspaceConfigFile(workspaceRoot: string, options: { readOnly?: boolean } = {}): string {
-  return join(resolveUbumeWorkspaceDataDir(normalizeWorkspaceRoot(workspaceRoot), options), "providers.json");
+export function getProviderWorkspaceConfigFile(
+  workspaceRoot: string,
+  options: { readOnly?: boolean } = {},
+): string {
+  return join(
+    resolveUbumeWorkspaceDataDir(normalizeWorkspaceRoot(workspaceRoot), options),
+    "providers.json",
+  );
 }
 
 export function getLegacyProviderWorkspaceConfigFile(workspaceRoot: string): string {
@@ -29,17 +40,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isDeprecatedGoogleRoute(value: unknown): boolean {
-  return isRecord(value) && (value.providerId ?? value.provider_id) === DEPRECATED_GOOGLE_PROVIDER_ID;
+  return (
+    isRecord(value) && (value.providerId ?? value.provider_id) === DEPRECATED_GOOGLE_PROVIDER_ID
+  );
 }
 
 function resolveDeprecatedProviderFallback(
   providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>>,
 ): ProviderId {
   const candidates: readonly ProviderId[] = ["openai", "anthropic", "local"];
-  return candidates.find((providerId) =>
-    isProviderRoutableInUbume(providerId)
-    && (providerId === "openai" || providers[providerId] !== undefined || isProviderRouteConfigured(providerId))
-  ) ?? "openai";
+  return (
+    candidates.find(
+      (providerId) =>
+        isProviderRoutableInUbume(providerId) &&
+        (providerId === "openai" ||
+          providers[providerId] !== undefined ||
+          isProviderRouteConfigured(providerId)),
+    ) ?? "openai"
+  );
 }
 
 function createFallbackActiveRoute(
@@ -47,11 +65,14 @@ function createFallbackActiveRoute(
   providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>>,
 ): ProviderActiveRoute {
   const override = providers[providerId];
-  const modelId = providerId === "openai"
-    ? override?.currentModel ?? DEFAULT_MODEL
-    : providerId === "google"
-      ? normalizeGeminiModelId(override?.currentModel ?? getDefaultRouteModel(providerId, DEFAULT_MODEL))
-      : override?.currentModel ?? getDefaultRouteModel(providerId, DEFAULT_MODEL);
+  const modelId =
+    providerId === "openai"
+      ? (override?.currentModel ?? DEFAULT_MODEL)
+      : providerId === "google"
+        ? normalizeGeminiModelId(
+            override?.currentModel ?? getDefaultRouteModel(providerId, DEFAULT_MODEL),
+          )
+        : (override?.currentModel ?? getDefaultRouteModel(providerId, DEFAULT_MODEL));
 
   return {
     providerId,
@@ -135,7 +156,11 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
       const entry: import("./types.js").ProviderModelWorkspaceOverride = {};
 
       const rawContextLength = modelValue.contextLength ?? modelValue.context_length;
-      if (typeof rawContextLength === "number" && Number.isInteger(rawContextLength) && rawContextLength > 0) {
+      if (
+        typeof rawContextLength === "number" &&
+        Number.isInteger(rawContextLength) &&
+        rawContextLength > 0
+      ) {
         entry.contextLength = rawContextLength;
       }
 
@@ -187,29 +212,49 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
   }
 
   const antigravityCommandPath = value.antigravityCommandPath ?? value.antigravity_command_path;
-  if (typeof antigravityCommandPath === "string" && antigravityCommandPath.trim()) override.antigravityCommandPath = antigravityCommandPath.trim();
+  if (typeof antigravityCommandPath === "string" && antigravityCommandPath.trim())
+    override.antigravityCommandPath = antigravityCommandPath.trim();
   return override;
 }
 
 function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
   if (!isRecord(value)) return undefined;
   const rawProviderId = value.providerId ?? value.provider_id;
-  const providerId = (value.backendKind ?? value.backend_kind) === "agy" ? "antigravity" : rawProviderId;
+  const providerId =
+    (value.backendKind ?? value.backend_kind) === "agy" ? "antigravity" : rawProviderId;
   const modelId = value.modelId ?? value.model_id;
   const backendKind = value.backendKind ?? value.backend_kind;
   const reasoning = value.reasoning;
   const modelSelection = value.modelSelection ?? value.model_selection;
   const localBackend = value.localBackend ?? value.local_backend;
 
-  if (typeof providerId !== "string" || !isKnownProviderId(providerId) || !isProviderRoutableInUbume(providerId)) return undefined;
+  if (
+    typeof providerId !== "string" ||
+    !isKnownProviderId(providerId) ||
+    !isProviderRoutableInUbume(providerId)
+  )
+    return undefined;
   if (typeof modelId !== "string" || !modelId.trim()) return undefined;
 
-  const normalizedModelId = providerId === "google" ? normalizeGeminiModelId(modelId.trim()) : modelId.trim();
-  const normalizedModelSelection = providerId === "google" && isRecord(modelSelection)
-    ? modelSelection.kind === "manual"
-      ? { kind: "manual" as const, modelId: normalizeGeminiModelId(typeof modelSelection.modelId === "string" ? modelSelection.modelId : null) }
-      : { kind: "auto" as const, family: modelSelection.family === "gemini-2.5" ? "gemini-2.5" as const : "gemini-3" as const }
-    : undefined;
+  const normalizedModelId =
+    providerId === "google" ? normalizeGeminiModelId(modelId.trim()) : modelId.trim();
+  const normalizedModelSelection =
+    providerId === "google" && isRecord(modelSelection)
+      ? modelSelection.kind === "manual"
+        ? {
+            kind: "manual" as const,
+            modelId: normalizeGeminiModelId(
+              typeof modelSelection.modelId === "string" ? modelSelection.modelId : null,
+            ),
+          }
+        : {
+            kind: "auto" as const,
+            family:
+              modelSelection.family === "gemini-2.5"
+                ? ("gemini-2.5" as const)
+                : ("gemini-3" as const),
+          }
+      : undefined;
 
   return {
     providerId,
@@ -218,7 +263,7 @@ function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
     ...(typeof reasoning === "string" && reasoning.trim() ? { reasoning: reasoning.trim() } : {}),
     ...(normalizedModelSelection ? { modelSelection: normalizedModelSelection } : {}),
     ...(providerId === "local"
-      ? { localBackend: localBackend === "unsloth" ? "unsloth" as const : "lm-studio" as const }
+      ? { localBackend: localBackend === "unsloth" ? ("unsloth" as const) : ("lm-studio" as const) }
       : {}),
   };
 }
@@ -243,10 +288,11 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
     config.providers = providers;
   }
 
-  const defaultProvider = data.workspaceDefaultProviderId
-    ?? data.workspace_default_provider_id
-    ?? data.defaultProviderId
-    ?? data.default_provider_id;
+  const defaultProvider =
+    data.workspaceDefaultProviderId ??
+    data.workspace_default_provider_id ??
+    data.defaultProviderId ??
+    data.default_provider_id;
   if (defaultProvider === DEPRECATED_GOOGLE_PROVIDER_ID) {
     foundDeprecatedGoogle = true;
     config.workspaceDefaultProviderId = resolveDeprecatedProviderFallback(providers);
@@ -275,9 +321,10 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
   }
 
   if (foundDeprecatedGoogle) {
-    const revertedProviderId = config.activeRoute?.providerId
-      ?? config.workspaceDefaultProviderId
-      ?? resolveDeprecatedProviderFallback(providers);
+    const revertedProviderId =
+      config.activeRoute?.providerId ??
+      config.workspaceDefaultProviderId ??
+      resolveDeprecatedProviderFallback(providers);
     config.migrationNotice = {
       deprecatedProviderId: DEPRECATED_GOOGLE_PROVIDER_ID,
       revertedProviderId,
@@ -287,7 +334,9 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
   return config;
 }
 
-function serializeLaunchCommand(command: string | ProviderLaunchCommand | null | undefined): unknown {
+function serializeLaunchCommand(
+  command: string | ProviderLaunchCommand | null | undefined,
+): unknown {
   if (command === undefined || command === null || typeof command === "string") {
     return command;
   }
@@ -297,13 +346,17 @@ function serializeLaunchCommand(command: string | ProviderLaunchCommand | null |
   };
 }
 
-export function serializeProviderWorkspaceConfig(config: ProviderWorkspaceConfig): Record<string, unknown> {
+export function serializeProviderWorkspaceConfig(
+  config: ProviderWorkspaceConfig,
+): Record<string, unknown> {
   const providers = Object.fromEntries(
     Object.entries(config.providers ?? {}).map(([id, override]) => [
       id,
       {
         ...(override.currentModel !== undefined ? { current_model: override.currentModel } : {}),
-        ...(override.currentReasoning !== undefined ? { current_reasoning: override.currentReasoning } : {}),
+        ...(override.currentReasoning !== undefined
+          ? { current_reasoning: override.currentReasoning }
+          : {}),
         ...(override.enabled !== undefined ? { enabled: override.enabled } : {}),
         ...(override.type !== undefined ? { type: override.type } : {}),
         ...(override.baseUrl !== undefined ? { base_url: override.baseUrl } : {}),
@@ -311,48 +364,92 @@ export function serializeProviderWorkspaceConfig(config: ProviderWorkspaceConfig
         ...(override.pinnedModel !== undefined ? { pinned_model: override.pinnedModel } : {}),
         ...(override.defaultModel !== undefined ? { default_model: override.defaultModel } : {}),
         ...(override.localBackend !== undefined ? { local_backend: override.localBackend } : {}),
-        ...(override.models !== undefined ? { models: Object.fromEntries(
-          Object.entries(override.models).map(([modelId, model]) => [
-            modelId,
-            {
-              ...(model.contextLength !== undefined ? { contextLength: model.contextLength } : {}),
-              ...(model.maxOutputTokens !== undefined ? { maxOutputTokens: model.maxOutputTokens } : {}),
-              ...(model.supportsStreaming !== undefined ? { supportsStreaming: model.supportsStreaming } : {}),
-              ...(model.supportsToolCalls !== undefined ? { supportsToolCalls: model.supportsToolCalls } : {}),
-              ...(model.supportsSystemPrompt !== undefined ? { supportsSystemPrompt: model.supportsSystemPrompt } : {}),
-              ...(model.supportsVision !== undefined ? { supportsVision: model.supportsVision } : {}),
-              ...(model.supportsReasoningEffort !== undefined ? { supportsReasoningEffort: model.supportsReasoningEffort } : {}),
-            },
-          ]),
-        ) } : {}),
-        ...(override.command !== undefined ? { command: serializeLaunchCommand(override.command) } : {}),
-        ...(override.claudeCommandPath !== undefined ? { claude_command_path: override.claudeCommandPath } : {}),
-        ...(override.geminiCommandPath !== undefined ? { gemini_command_path: override.geminiCommandPath } : {}),
-        ...(override.codexCommandPath !== undefined ? { codex_command_path: override.codexCommandPath } : {}),
-        ...(override.antigravityCommandPath !== undefined ? { antigravity_command_path: override.antigravityCommandPath } : {}),
+        ...(override.models !== undefined
+          ? {
+              models: Object.fromEntries(
+                Object.entries(override.models).map(([modelId, model]) => [
+                  modelId,
+                  {
+                    ...(model.contextLength !== undefined
+                      ? { contextLength: model.contextLength }
+                      : {}),
+                    ...(model.maxOutputTokens !== undefined
+                      ? { maxOutputTokens: model.maxOutputTokens }
+                      : {}),
+                    ...(model.supportsStreaming !== undefined
+                      ? { supportsStreaming: model.supportsStreaming }
+                      : {}),
+                    ...(model.supportsToolCalls !== undefined
+                      ? { supportsToolCalls: model.supportsToolCalls }
+                      : {}),
+                    ...(model.supportsSystemPrompt !== undefined
+                      ? { supportsSystemPrompt: model.supportsSystemPrompt }
+                      : {}),
+                    ...(model.supportsVision !== undefined
+                      ? { supportsVision: model.supportsVision }
+                      : {}),
+                    ...(model.supportsReasoningEffort !== undefined
+                      ? { supportsReasoningEffort: model.supportsReasoningEffort }
+                      : {}),
+                  },
+                ]),
+              ),
+            }
+          : {}),
+        ...(override.command !== undefined
+          ? { command: serializeLaunchCommand(override.command) }
+          : {}),
+        ...(override.claudeCommandPath !== undefined
+          ? { claude_command_path: override.claudeCommandPath }
+          : {}),
+        ...(override.geminiCommandPath !== undefined
+          ? { gemini_command_path: override.geminiCommandPath }
+          : {}),
+        ...(override.codexCommandPath !== undefined
+          ? { codex_command_path: override.codexCommandPath }
+          : {}),
+        ...(override.antigravityCommandPath !== undefined
+          ? { antigravity_command_path: override.antigravityCommandPath }
+          : {}),
       },
     ]),
   );
 
   return {
-    ...(config.workspaceDefaultProviderId ? { workspaceDefaultProviderId: config.workspaceDefaultProviderId } : {}),
-    ...(config.activeRoute ? {
-      activeRoute: {
-        providerId: config.activeRoute.providerId,
-        modelId: config.activeRoute.modelId,
-        backendKind: config.activeRoute.backendKind ?? getProviderRuntime(config.activeRoute.providerId).backendKind,
-        ...(config.activeRoute.reasoning ? { reasoning: config.activeRoute.reasoning } : {}),
-        ...(config.activeRoute.modelSelection ? { modelSelection: config.activeRoute.modelSelection } : {}),
-        ...(config.activeRoute.providerId === "local"
-          ? { localBackend: config.activeRoute.localBackend ?? config.providers?.local?.localBackend ?? "lm-studio" }
-          : {}),
-      },
-    } : {}),
+    ...(config.workspaceDefaultProviderId
+      ? { workspaceDefaultProviderId: config.workspaceDefaultProviderId }
+      : {}),
+    ...(config.activeRoute
+      ? {
+          activeRoute: {
+            providerId: config.activeRoute.providerId,
+            modelId: config.activeRoute.modelId,
+            backendKind:
+              config.activeRoute.backendKind ??
+              getProviderRuntime(config.activeRoute.providerId).backendKind,
+            ...(config.activeRoute.reasoning ? { reasoning: config.activeRoute.reasoning } : {}),
+            ...(config.activeRoute.modelSelection
+              ? { modelSelection: config.activeRoute.modelSelection }
+              : {}),
+            ...(config.activeRoute.providerId === "local"
+              ? {
+                  localBackend:
+                    config.activeRoute.localBackend ??
+                    config.providers?.local?.localBackend ??
+                    "lm-studio",
+                }
+              : {}),
+          },
+        }
+      : {}),
     ...(Object.keys(providers).length > 0 ? { providers } : {}),
   };
 }
 
-export function loadProviderWorkspaceConfig(workspaceRoot: string, options: { readOnly?: boolean } = {}): ProviderWorkspaceConfig {
+export function loadProviderWorkspaceConfig(
+  workspaceRoot: string,
+  options: { readOnly?: boolean } = {},
+): ProviderWorkspaceConfig {
   const filePath = getProviderWorkspaceConfigFile(workspaceRoot, options);
   if (existsSync(filePath)) {
     try {
@@ -371,11 +468,18 @@ export function loadProviderWorkspaceConfig(workspaceRoot: string, options: { re
   }
 }
 
-export function saveProviderWorkspaceConfig(workspaceRoot: string, config: ProviderWorkspaceConfig): void {
+export function saveProviderWorkspaceConfig(
+  workspaceRoot: string,
+  config: ProviderWorkspaceConfig,
+): void {
   const filePath = getProviderWorkspaceConfigFile(workspaceRoot);
   mkdirSync(dirname(filePath), { recursive: true });
   const tmpFile = `${filePath}.tmp`;
-  writeFileSync(tmpFile, JSON.stringify(serializeProviderWorkspaceConfig(config), null, 2), "utf-8");
+  writeFileSync(
+    tmpFile,
+    JSON.stringify(serializeProviderWorkspaceConfig(config), null, 2),
+    "utf-8",
+  );
   renameSync(tmpFile, filePath);
 }
 
@@ -385,7 +489,8 @@ export function setProviderWorkspaceDefault(
 ): ProviderWorkspaceConfig {
   return {
     ...config,
-    workspaceDefaultProviderId: providerId === DEPRECATED_GOOGLE_PROVIDER_ID ? "openai" : providerId,
+    workspaceDefaultProviderId:
+      providerId === DEPRECATED_GOOGLE_PROVIDER_ID ? "openai" : providerId,
   };
 }
 
@@ -427,7 +532,11 @@ export function setProviderActiveRoute(
   config: ProviderWorkspaceConfig,
   activeRoute: ProviderActiveRoute,
 ): ProviderWorkspaceConfig {
-  if (activeRoute.providerId === DEPRECATED_GOOGLE_PROVIDER_ID || !isProviderRoutableInUbume(activeRoute.providerId) || !isProviderRouteConfigured(activeRoute.providerId)) {
+  if (
+    activeRoute.providerId === DEPRECATED_GOOGLE_PROVIDER_ID ||
+    !isProviderRoutableInUbume(activeRoute.providerId) ||
+    !isProviderRouteConfigured(activeRoute.providerId)
+  ) {
     return config;
   }
 
@@ -435,7 +544,8 @@ export function setProviderActiveRoute(
     return { ...config, activeRoute };
   }
 
-  const localBackend = activeRoute.localBackend ?? config.providers?.local?.localBackend ?? "lm-studio";
+  const localBackend =
+    activeRoute.localBackend ?? config.providers?.local?.localBackend ?? "lm-studio";
   return {
     ...config,
     activeRoute: { ...activeRoute, localBackend },

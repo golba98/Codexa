@@ -1,16 +1,25 @@
 import type { RunToolActivity } from "../../session/types.js";
 
-const DELETE_COMMAND_PATTERN =
-  /(?:^|[\s;&|])(?:remove-item|rm|rmdir|del|erase|unlink)\b/i;
+const DELETE_COMMAND_PATTERN = /(?:^|[\s;&|])(?:remove-item|rm|rmdir|del|erase|unlink)\b/i;
 
 const BLOCKED_DELETE_CAUSE_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
-  { pattern: /(?:^|[\\/])\.git[\\/][^\s"'`]*\.lock\b|(?:^|[\\/])?config\.lock\b|\.lock\b/i, label: "lock artifact" },
+  {
+    pattern: /(?:^|[\\/])\.git[\\/][^\s"'`]*\.lock\b|(?:^|[\\/])?config\.lock\b|\.lock\b/i,
+    label: "lock artifact",
+  },
   { pattern: /\bEACCES\b/i, label: "access denied" },
   { pattern: /\bEPERM\b/i, label: "permission denied" },
   { pattern: /\bEBUSY\b/i, label: "file is busy or locked" },
-  { pattern: /access(?:\s+to\s+the\s+path)?\s+.*?\s+denied|access is denied/i, label: "access denied" },
+  {
+    pattern: /access(?:\s+to\s+the\s+path)?\s+.*?\s+denied|access is denied/i,
+    label: "access denied",
+  },
   { pattern: /permission denied|operation not permitted/i, label: "permission denied" },
-  { pattern: /being used by another process|file is in use|resource busy|text file busy|device or resource busy/i, label: "file is locked or in use" },
+  {
+    pattern:
+      /being used by another process|file is in use|resource busy|text file busy|device or resource busy/i,
+    label: "file is locked or in use",
+  },
 ];
 
 const PATH_PATTERNS = [
@@ -63,5 +72,7 @@ export function getBlockedCleanupFailure(activity: RunToolActivity): string | nu
     `Cause: ${cause}.`,
     target,
     "Ubume stopped after the first clear blocked-delete signal to avoid retrying a doomed cleanup.",
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

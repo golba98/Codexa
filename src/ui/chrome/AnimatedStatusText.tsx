@@ -1,9 +1,13 @@
-import React, { useEffect, useState } from "react";
 import { Text } from "ink";
+import { useEffect, useState } from "react";
 import * as renderDebug from "../../core/perf/renderDebug.js";
-import { useTheme } from "../theme.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
-import { BUSY_STATUS_FRAME_MS, BUSY_STATUS_FRAMES, getBusyStatusFrame } from "./busyStatusAnimation.js";
+import { useTheme } from "../theme.js";
+import {
+  BUSY_STATUS_FRAME_MS,
+  BUSY_STATUS_FRAMES,
+  getBusyStatusFrame,
+} from "./busyStatusAnimation.js";
 
 interface AnimatedStatusTextProps {
   baseText: string;
@@ -24,13 +28,16 @@ function useLocalBusyStatusFrame(isActive: boolean, label: string, flow: boolean
     }
 
     setFrameIndex(0);
-    const timer = setInterval(() => {
-      setFrameIndex((current) => {
-        const next = current + 1;
-        renderDebug.traceStatusTick({ owner: "Status", label, frameIndex: next });
-        return next;
-      });
-    }, flow ? 120 : BUSY_STATUS_FRAME_MS);
+    const timer = setInterval(
+      () => {
+        setFrameIndex((current) => {
+          const next = current + 1;
+          renderDebug.traceStatusTick({ owner: "Status", label, frameIndex: next });
+          return next;
+        });
+      },
+      flow ? 120 : BUSY_STATUS_FRAME_MS,
+    );
     timer.unref?.();
 
     return () => {
@@ -44,10 +51,20 @@ function useLocalBusyStatusFrame(isActive: boolean, label: string, flow: boolean
   return frameIndex;
 }
 
-export function AnimatedStatusText({ baseText, isActive, isError = false, animationFrame, animationStyle = "dots" }: AnimatedStatusTextProps) {
+export function AnimatedStatusText({
+  baseText,
+  isActive,
+  isError = false,
+  animationFrame,
+  animationStyle = "dots",
+}: AnimatedStatusTextProps) {
   const flow = animationStyle === "flow";
   const animate = isActive && (!flow || !process.env.NO_COLOR);
-  const frameIndex = useLocalBusyStatusFrame(animate && animationFrame === undefined, baseText, flow);
+  const frameIndex = useLocalBusyStatusFrame(
+    animate && animationFrame === undefined,
+    baseText,
+    flow,
+  );
   const localFrame = getBusyStatusFrame(frameIndex);
   renderDebug.useRenderDebug("Status", {
     baseText,
@@ -63,15 +80,24 @@ export function AnimatedStatusText({ baseText, isActive, isError = false, animat
 
   const theme = useTheme();
   const renderedText = sanitizeTerminalOutput(baseText);
-  const suffix = animate && !flow ? animationFrame ?? localFrame : "";
+  const suffix = animate && !flow ? (animationFrame ?? localFrame) : "";
   const characters = Array.from(renderedText);
   const highlight = frameIndex % (characters.length + 3);
 
   return (
     <Text color={isError ? theme.error : theme.info} wrap="truncate">
-      {flow && animate ? characters.map((character, index) => (
-        <Text key={index} color={index >= highlight - 2 && index <= highlight ? theme.accent : theme.info} bold={index >= highlight - 2 && index <= highlight}>{character}</Text>
-      )) : renderedText}{suffix}
+      {flow && animate
+        ? characters.map((character, index) => (
+            <Text
+              key={index}
+              color={index >= highlight - 2 && index <= highlight ? theme.accent : theme.info}
+              bold={index >= highlight - 2 && index <= highlight}
+            >
+              {character}
+            </Text>
+          ))
+        : renderedText}
+      {suffix}
     </Text>
   );
 }

@@ -72,10 +72,7 @@ test("returns a readable fallback when only noise is present", () => {
     "provider: openai",
   ].join("\n");
 
-  assert.match(
-    sanitizeCodexTranscript(raw),
-    /no assistant response text was detected/i,
-  );
+  assert.match(sanitizeCodexTranscript(raw), /no assistant response text was detected/i);
 });
 
 test("streams thinking lines separately from assistant deltas", () => {
@@ -86,16 +83,18 @@ test("streams thinking lines separately from assistant deltas", () => {
     onAssistantDelta: (chunk) => assistant.push(chunk),
   });
 
-  parser.feed([
-    "OpenAI Codex v0.118.0",
-    "Checking src/app.tsx",
-    "Task:",
-    "Refactor the CLI",
-    "",
-    "assistant",
-    "First line",
-    "Second line",
-  ].join("\n"));
+  parser.feed(
+    [
+      "OpenAI Codex v0.118.0",
+      "Checking src/app.tsx",
+      "Task:",
+      "Refactor the CLI",
+      "",
+      "assistant",
+      "First line",
+      "Second line",
+    ].join("\n"),
+  );
   parser.flush();
 
   assert.deepEqual(thinking, ["Checking src/app.tsx"]);
@@ -125,14 +124,16 @@ test("emits tool activity separately from assistant prose while streaming", () =
     onToolActivity: (activity) => toolActivity.push(activity),
   });
 
-  parser.feed([
-    "assistant",
-    "$ rg --files",
-    "src/app.tsx",
-    "src/ui/BottomComposer.tsx",
-    "",
-    "I found the relevant files.",
-  ].join("\n"));
+  parser.feed(
+    [
+      "assistant",
+      "$ rg --files",
+      "src/app.tsx",
+      "src/ui/BottomComposer.tsx",
+      "",
+      "I found the relevant files.",
+    ].join("\n"),
+  );
   parser.flush();
 
   assert.deepEqual(assistant, ["I found the relevant files."]);
@@ -243,9 +244,11 @@ test("auto-promotes long prose lines from preamble to assistant section", () => 
     onAssistantDelta: (chunk) => assistant.push(chunk),
   });
 
-  parser.feed([
-    "I have analyzed the codebase and here is a comprehensive summary of all the changes that need to be made to fix this issue.",
-  ].join("\n"));
+  parser.feed(
+    [
+      "I have analyzed the codebase and here is a comprehensive summary of all the changes that need to be made to fix this issue.",
+    ].join("\n"),
+  );
   parser.flush();
 
   // Long prose with many words should auto-promote to assistant

@@ -65,8 +65,14 @@ test("parses codex cache into provider models with reasoning levels", () => {
     assert.equal(sol.modelId, "gpt-5.6-sol");
     assert.equal(sol.label, "GPT-5.6-Sol");
     assert.equal(sol.defaultReasoningLevel, "medium");
-    assert.deepEqual(sol.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "ultra"]);
-    assert.equal(sol.supportedReasoningLevels?.[2]?.description, "Maximum reasoning with automatic task delegation");
+    assert.deepEqual(
+      sol.supportedReasoningLevels?.map((level) => level.id),
+      ["low", "medium", "ultra"],
+    );
+    assert.equal(
+      sol.supportedReasoningLevels?.[2]?.description,
+      "Maximum reasoning with automatic task delegation",
+    );
     assert.equal(seed.fetchedAt, Date.parse("2026-07-12T03:23:48.012262527Z"));
   });
 });
@@ -78,7 +84,11 @@ test("missing or malformed cache file yields null", () => {
     writeFileSync(bad, "not json", "utf8");
     assert.equal(loadCodexSeedModels(bad), null);
     const empty = join(dir, "empty.json");
-    writeFileSync(empty, JSON.stringify({ fetched_at: "2026-01-01T00:00:00Z", models: [] }), "utf8");
+    writeFileSync(
+      empty,
+      JSON.stringify({ fetched_at: "2026-01-01T00:00:00Z", models: [] }),
+      "utf8",
+    );
     assert.equal(loadCodexSeedModels(empty), null);
   });
 });
@@ -90,35 +100,53 @@ test("prefers the fresher of codex seed and persisted discovery", () => {
     writeFileSync(codexFile, JSON.stringify(SEED_FIXTURE), "utf8");
 
     const newerThanSeed = Date.parse(SEED_FIXTURE.fetched_at) + 60_000;
-    saveCachedProviderModels("openai", {
-      discoveredAt: newerThanSeed,
-      models: [{
-        id: "gpt-6",
-        modelId: "gpt-6",
-        label: "GPT-6",
-        description: null,
-        defaultReasoningLevel: "high",
-        supportedReasoningLevels: null,
-        source: "discovered",
-      }],
-    }, providerFile);
+    saveCachedProviderModels(
+      "openai",
+      {
+        discoveredAt: newerThanSeed,
+        models: [
+          {
+            id: "gpt-6",
+            modelId: "gpt-6",
+            label: "GPT-6",
+            description: null,
+            defaultReasoningLevel: "high",
+            supportedReasoningLevels: null,
+            source: "discovered",
+          },
+        ],
+      },
+      providerFile,
+    );
 
-    const fresher = loadSeededOpenAiModels({ codexCacheFile: codexFile, providerCacheFile: providerFile });
+    const fresher = loadSeededOpenAiModels({
+      codexCacheFile: codexFile,
+      providerCacheFile: providerFile,
+    });
     assert.equal(fresher?.models[0]?.modelId, "gpt-6", "newer persisted discovery wins");
 
-    saveCachedProviderModels("openai", {
-      discoveredAt: Date.parse(SEED_FIXTURE.fetched_at) - 60_000,
-      models: [{
-        id: "gpt-old",
-        modelId: "gpt-old",
-        label: "GPT Old",
-        description: null,
-        defaultReasoningLevel: null,
-        supportedReasoningLevels: null,
-        source: "discovered",
-      }],
-    }, providerFile);
-    const seedWins = loadSeededOpenAiModels({ codexCacheFile: codexFile, providerCacheFile: providerFile });
+    saveCachedProviderModels(
+      "openai",
+      {
+        discoveredAt: Date.parse(SEED_FIXTURE.fetched_at) - 60_000,
+        models: [
+          {
+            id: "gpt-old",
+            modelId: "gpt-old",
+            label: "GPT Old",
+            description: null,
+            defaultReasoningLevel: null,
+            supportedReasoningLevels: null,
+            source: "discovered",
+          },
+        ],
+      },
+      providerFile,
+    );
+    const seedWins = loadSeededOpenAiModels({
+      codexCacheFile: codexFile,
+      providerCacheFile: providerFile,
+    });
     assert.equal(seedWins?.models[0]?.modelId, "gpt-5.6-sol", "newer codex seed wins");
   });
 });

@@ -1,6 +1,9 @@
-import type { CodexModelCapability, CodexModelCapabilities } from "../models/codexModelCapabilities.js";
-import type { ProviderModel } from "./types.js";
+import type {
+  CodexModelCapabilities,
+  CodexModelCapability,
+} from "../models/codexModelCapabilities.js";
 import { getClaudeCodeEffortLevels } from "./reasoning.js";
+import type { ProviderModel } from "./types.js";
 
 export const GEMINI_DEFAULT_MODEL_ID = "gemini-3-flash-preview";
 export const GEMINI_VERIFIED_MODEL_IDS = [
@@ -12,8 +15,13 @@ export const GEMINI_VERIFIED_MODEL_IDS = [
   "gemini-2.5-flash-lite",
 ] as const;
 
-export function isVerifiedGeminiModelId(modelId: string | null | undefined): modelId is typeof GEMINI_VERIFIED_MODEL_IDS[number] {
-  return typeof modelId === "string" && GEMINI_VERIFIED_MODEL_IDS.includes(modelId as typeof GEMINI_VERIFIED_MODEL_IDS[number]);
+export function isVerifiedGeminiModelId(
+  modelId: string | null | undefined,
+): modelId is (typeof GEMINI_VERIFIED_MODEL_IDS)[number] {
+  return (
+    typeof modelId === "string" &&
+    GEMINI_VERIFIED_MODEL_IDS.includes(modelId as (typeof GEMINI_VERIFIED_MODEL_IDS)[number])
+  );
 }
 
 export function normalizeGeminiModelId(modelId: string | null | undefined): string {
@@ -134,14 +142,16 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
 ];
 
 function isRuntimeSource(source: ProviderModel["source"]): boolean {
-  return source === "discovered"
-    || source === "claude-code"
-    || source === "claude-code-command"
-    || source === "claude-code-package"
-    || source === "claude-code-cache"
-    || source === "claude-code-config"
-    || source === "settings"
-    || source === "config";
+  return (
+    source === "discovered" ||
+    source === "claude-code" ||
+    source === "claude-code-command" ||
+    source === "claude-code-package" ||
+    source === "claude-code-cache" ||
+    source === "claude-code-config" ||
+    source === "settings" ||
+    source === "config"
+  );
 }
 
 export function providerModelsToCodexCapabilities(
@@ -158,7 +168,9 @@ export function providerModelsToCodexCapabilities(
     isDefault: model.modelId === currentModel || (!currentModel && index === 0),
     defaultReasoningLevel: model.defaultReasoningLevel,
     supportedReasoningLevels: model.supportedReasoningLevels,
-    reasoningLevelCount: model.supportedReasoningLevels ? model.supportedReasoningLevels.length : null,
+    reasoningLevelCount: model.supportedReasoningLevels
+      ? model.supportedReasoningLevels.length
+      : null,
     source: isRuntimeSource(model.source) ? "runtime" : "fallback",
     raw: model,
   }));

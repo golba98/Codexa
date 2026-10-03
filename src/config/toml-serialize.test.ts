@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatTomlKey, formatTomlPath, serializeTomlDocument } from "./toml-serialize.js";
 import { parseTomlDocument } from "./layeredConfig.js";
+import { formatTomlKey, formatTomlPath, serializeTomlDocument } from "./toml-serialize.js";
 
 test("formatTomlKey quotes keys only when necessary", () => {
   assert.equal(formatTomlKey("model"), "model");
@@ -56,11 +56,13 @@ test("serializeTomlDocument produces valid parseable TOML for paths with spaces 
   assert.equal(parsed.sandbox_mode, "danger-full-access");
   assert.equal(parsed.approval_policy, "never");
   assert.deepEqual(
-    (parsed.projects as Record<string, unknown>)["/home/k9-vortex/Development/1-JavaScript(Type)/13-Ubume CLI"],
+    (parsed.projects as Record<string, unknown>)[
+      "/home/k9-vortex/Development/1-JavaScript(Type)/13-Ubume CLI"
+    ],
     { trust_level: "trusted" },
   );
-  assert.deepEqual(
-    (parsed.ubume as Record<string, unknown>),
-    { mode: "full-auto", plan_mode: false },
-  );
+  assert.deepEqual(parsed.ubume as Record<string, unknown>, {
+    mode: "full-auto",
+    plan_mode: false,
+  });
 });

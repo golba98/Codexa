@@ -21,7 +21,9 @@ export function getLegacyUpdateCheckCacheFilePath(): string {
   return join(home, ".ubume-update-check.json");
 }
 
-export function loadUpdateCheckCache(filePath = getUpdateCheckCacheFilePath()): UpdateCheckCache | null {
+export function loadUpdateCheckCache(
+  filePath = getUpdateCheckCacheFilePath(),
+): UpdateCheckCache | null {
   try {
     let resolvedPath = filePath;
     if (!existsSync(resolvedPath) && filePath === getUpdateCheckCacheFilePath()) {
@@ -45,7 +47,10 @@ export function loadUpdateCheckCache(filePath = getUpdateCheckCacheFilePath()): 
   }
 }
 
-export function saveUpdateCheckCache(cache: UpdateCheckCache, filePath = getUpdateCheckCacheFilePath()): void {
+export function saveUpdateCheckCache(
+  cache: UpdateCheckCache,
+  filePath = getUpdateCheckCacheFilePath(),
+): void {
   try {
     mkdirSync(dirname(filePath), { recursive: true });
     const tmp = `${filePath}.tmp`;

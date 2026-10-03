@@ -45,8 +45,7 @@ export function resolveInkRenderInstance(stdout: object): InkRenderInstance | nu
     const inkMain = req.resolve("ink");
     const instancesPath = inkMain.replace(/index\.js$/, "instances.js");
     const instances = req(instancesPath);
-    const weakMap: WeakMap<object, InkRenderInstance> =
-      instances.default ?? instances;
+    const weakMap: WeakMap<object, InkRenderInstance> = instances.default ?? instances;
     return weakMap.get(stdout) ?? null;
   } catch {
     return null;

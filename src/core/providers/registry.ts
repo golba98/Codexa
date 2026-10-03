@@ -3,10 +3,7 @@ import { codexSubprocessProvider } from "./codexSubprocess.js";
 import { openaiNativeProvider } from "./openaiNative.js";
 import type { BackendProvider } from "./types.js";
 
-export const BACKEND_PROVIDERS: BackendProvider[] = [
-  codexSubprocessProvider,
-  openaiNativeProvider,
-];
+export const BACKEND_PROVIDERS: BackendProvider[] = [codexSubprocessProvider, openaiNativeProvider];
 
 export function getBackendProvider(id: string): BackendProvider {
   return (
@@ -17,5 +14,7 @@ export function getBackendProvider(id: string): BackendProvider {
 }
 
 export function listBackendSummaries(): string {
-  return AVAILABLE_BACKENDS.map((backend, index) => `  ${index + 1}. ${backend.label} (${backend.id})`).join("\n");
+  return AVAILABLE_BACKENDS.map(
+    (backend, index) => `  ${index + 1}. ${backend.label} (${backend.id})`,
+  ).join("\n");
 }

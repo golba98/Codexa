@@ -1,7 +1,13 @@
 import type { ModelSpec } from "../models/modelSpecs.js";
 import type { ProviderId, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
 
-export type ContextLengthSource = "api" | "cli" | "config" | "known-registry" | "lmstudio-api" | "unknown";
+export type ContextLengthSource =
+  | "api"
+  | "cli"
+  | "config"
+  | "known-registry"
+  | "lmstudio-api"
+  | "unknown";
 export type ContextConfidence = "verified" | "configured" | "known" | "estimated" | "unknown";
 
 export interface ModelContextMetadata {
@@ -213,9 +219,7 @@ export function formatContextMeter(
 ): string {
   if (contextLimit === null || contextLimit === undefined) return "Unknown";
   const used = usedTokens ?? 0;
-  const pct = contextLimit > 0
-    ? Math.min(100, Math.floor((used / contextLimit) * 100))
-    : 0;
+  const pct = contextLimit > 0 ? Math.min(100, Math.floor((used / contextLimit) * 100)) : 0;
   return `${used.toLocaleString("en-US")} / ${contextLimit.toLocaleString("en-US")} · ${pct}%`;
 }
 
@@ -276,13 +280,19 @@ function findContextField(raw: unknown): { value: number; field: string } | null
   return null;
 }
 
-function resolveFromRawMetadata(providerId: ProviderId, modelId: string, raw: unknown): ModelContextMetadata | null {
+function resolveFromRawMetadata(
+  providerId: ProviderId,
+  modelId: string,
+  raw: unknown,
+): ModelContextMetadata | null {
   const found = findContextField(raw);
   if (!found) return null;
   const source: ContextLengthSource =
     found.field === "loaded_context_length" || found.field.endsWith(".loaded_context_length")
       ? "lmstudio-api"
-      : providerId === "local" ? "api" : "cli";
+      : providerId === "local"
+        ? "api"
+        : "cli";
   return {
     providerId,
     modelId,
@@ -321,12 +331,16 @@ function resolveFromConfig(
   };
 }
 
-function resolveFromKnownRegistry(providerId: ProviderId, modelId: string): ModelContextMetadata | null {
-  const lookupId = providerId === "anthropic"
-    ? modelId
-    : providerId === "openai"
-      ? normalizeOpenAIModelId(modelId)
-      : modelId;
+function resolveFromKnownRegistry(
+  providerId: ProviderId,
+  modelId: string,
+): ModelContextMetadata | null {
+  const lookupId =
+    providerId === "anthropic"
+      ? modelId
+      : providerId === "openai"
+        ? normalizeOpenAIModelId(modelId)
+        : modelId;
   const entry = KNOWN_CONTEXT_REGISTRY[`${providerId}:${lookupId}`];
   if (!entry) return null;
   return {
@@ -353,10 +367,10 @@ export async function resolveModelContextLength(
 
   const rawMetadata = options.rawMetadata ?? null;
   const resolved =
-    resolveFromRawMetadata(options.providerId, options.modelId, rawMetadata)
-    ?? resolveFromConfig(options.providerId, options.modelId, options.providerConfig)
-    ?? resolveFromKnownRegistry(options.providerId, options.modelId)
-    ?? unknownMetadata(
+    resolveFromRawMetadata(options.providerId, options.modelId, rawMetadata) ??
+    resolveFromConfig(options.providerId, options.modelId, options.providerConfig) ??
+    resolveFromKnownRegistry(options.providerId, options.modelId) ??
+    unknownMetadata(
       options.providerId,
       options.modelId,
       options.providerId === "local"

@@ -42,16 +42,23 @@ export function formatRunActivitySummary(
     if (files.get(path) === "created" && entry.operation === "modified") continue;
     files.set(path, entry.operation);
   }
-  const commands = [...new Set(
-    toolCommands
-      .map((command) => command.replace(/\s+/g, " ").trim())
-      .filter(Boolean)
-      .map((command) => truncate(command, MAX_COMMAND_CHARS)),
-  )];
+  const commands = [
+    ...new Set(
+      toolCommands
+        .map((command) => command.replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .map((command) => truncate(command, MAX_COMMAND_CHARS)),
+    ),
+  ];
 
   const lines: string[] = [];
   if (files.size > 0) {
-    lines.push(`Files changed: ${joinCapped([...files].map(([path, operation]) => `${path} (${operation})`), MAX_SUMMARY_FILES)}`);
+    lines.push(
+      `Files changed: ${joinCapped(
+        [...files].map(([path, operation]) => `${path} (${operation})`),
+        MAX_SUMMARY_FILES,
+      )}`,
+    );
   }
   if (commands.length > 0) {
     lines.push(`Commands run: ${joinCapped(commands, MAX_SUMMARY_COMMANDS)}`);
@@ -76,7 +83,10 @@ export function buildPersistedAssistantMessage(input: {
   const summary = formatRunActivitySummary(input.toolCommands, input.fileActivity);
 
   if (input.status === "completed") {
-    const content = selectPersistedAssistantResponse(input.renderedResponse, input.completeResponse);
+    const content = selectPersistedAssistantResponse(
+      input.renderedResponse,
+      input.completeResponse,
+    );
     if (content?.trim()) {
       return { role: "assistant", content, ...(summary ? { activitySummary: summary } : {}) };
     }
@@ -85,9 +95,13 @@ export function buildPersistedAssistantMessage(input: {
 
   const partial = input.streamedText.trim();
   if (!partial && !summary) return undefined;
-  const firstErrorLine = input.errorMessage?.split("\n").find((line) => line.trim())?.trim();
-  const note = input.status === "canceled"
-    ? "[Run canceled before finishing]"
-    : `[Run failed${firstErrorLine ? `: ${truncate(firstErrorLine, MAX_ERROR_CHARS)}` : ""}]`;
+  const firstErrorLine = input.errorMessage
+    ?.split("\n")
+    .find((line) => line.trim())
+    ?.trim();
+  const note =
+    input.status === "canceled"
+      ? "[Run canceled before finishing]"
+      : `[Run failed${firstErrorLine ? `: ${truncate(firstErrorLine, MAX_ERROR_CHARS)}` : ""}]`;
   return { role: "assistant", content: [partial, note, summary].filter(Boolean).join("\n\n") };
 }

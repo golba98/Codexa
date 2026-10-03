@@ -1,5 +1,5 @@
-import type { AvailableMode } from "../../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
+import type { AvailableMode } from "../../config/settings.js";
 import type { ProjectInstructions } from "../workspace/projectInstructions.js";
 
 // ─── Write-intent detection ───────────────────────────────────────────────────
@@ -78,8 +78,10 @@ export function isClearlySafeGeneratedCleanupRequest(prompt: string): boolean {
   if (BROAD_ALL_FILES_CLEANUP_PATTERN.test(normalized)) return false;
   if (FORCEFUL_DELETE_PATTERN.test(normalized)) return false;
 
-  return GENERATED_CLEANUP_ACTION_PATTERN.test(normalized)
-    && GENERATED_CLEANUP_SAFE_TARGET_PATTERN.test(normalized);
+  return (
+    GENERATED_CLEANUP_ACTION_PATTERN.test(normalized) &&
+    GENERATED_CLEANUP_SAFE_TARGET_PATTERN.test(normalized)
+  );
 }
 
 export function resolveExecutionMode(
@@ -101,12 +103,15 @@ export function enrichFileCreationPrompt(prompt: string): string {
   const normalized = prompt.trim();
   if (!normalized) return prompt;
 
-  const fileCreationMatch = /^(?:make|create|generate|add|write)\s+(?:a\s+|an\s+|new\s+)?(?:text\s+|markdown\s+|js\s+|ts\s+|python\s+)?(?:file|script|document)\s*(?:about|saying|for|called|named|with)?\s*(.*)$/i.exec(normalized);
-  
+  const fileCreationMatch =
+    /^(?:make|create|generate|add|write)\s+(?:a\s+|an\s+|new\s+)?(?:text\s+|markdown\s+|js\s+|ts\s+|python\s+)?(?:file|script|document)\s*(?:about|saying|for|called|named|with)?\s*(.*)$/i.exec(
+      normalized,
+    );
+
   if (!fileCreationMatch) {
     return prompt;
   }
-  
+
   const description = fileCreationMatch[1]?.trim();
   if (!description) {
     return [
@@ -118,10 +123,11 @@ export function enrichFileCreationPrompt(prompt: string): string {
     ].join("\n");
   }
 
-  const explicitExact = /^(?:called|named|save as)\s+['"]?([a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+)['"]?$/i.test(description);
+  const explicitExact =
+    /^(?:called|named|save as)\s+['"]?([a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+)['"]?$/i.test(description);
   const hasExtension = /\.[a-zA-Z0-9]{1,5}(\s|$)/.test(description);
   const hasQuotes = /['"]([^'"]+)['"]/.test(description);
-  
+
   if (explicitExact || hasExtension || hasQuotes) {
     return [
       prompt,
@@ -214,7 +220,12 @@ export function buildPlanExecutionPrompt({
 
 // ─── Hollow response detection ───────────────────────────────────────────────
 
-export type HollowResponseKind = "greeting" | "filler" | "clarification" | "short-no-action" | "none";
+export type HollowResponseKind =
+  | "greeting"
+  | "filler"
+  | "clarification"
+  | "short-no-action"
+  | "none";
 
 export interface HollowResponseResult {
   isHollow: boolean;
@@ -278,7 +289,11 @@ export function detectHollowResponse(prompt: string, response: string): HollowRe
   if (trimmed.length < 80) {
     const hasConfirmation = ACTION_CONFIRMATION_PATTERNS.some((p) => p.test(trimmed));
     if (!hasConfirmation) {
-      return { isHollow: true, kind: "short-no-action", reason: "Short response with no action confirmation" };
+      return {
+        isHollow: true,
+        kind: "short-no-action",
+        reason: "Short response with no action confirmation",
+      };
     }
   }
 
@@ -310,19 +325,16 @@ function resolvePromptRuntime(
   };
 }
 
-function formatProjectInstructionsSection(projectInstructions: ProjectInstructions | null | undefined): string[] {
+function formatProjectInstructionsSection(
+  projectInstructions: ProjectInstructions | null | undefined,
+): string[] {
   const content = projectInstructions?.content.trim();
   if (!content) {
     return [];
   }
   const sourcePath = projectInstructions?.path ?? "unknown";
 
-  return [
-    "Project instructions:",
-    `Loaded from: ${sourcePath}`,
-    content,
-    "",
-  ];
+  return ["Project instructions:", `Loaded from: ${sourcePath}`, content, ""];
 }
 
 export function buildCodexPrompt(
@@ -341,11 +353,11 @@ export function buildCodexPrompt(
   const readOnlySandbox = sandboxMode === "read-only";
   const planModeInstructions = planMode
     ? [
-      "Planning mode is enabled for this session.",
-      "Start by giving a concise, repo-aware plan for how you will handle the task.",
-      "After the plan, continue the task normally under the current mode and runtime permissions.",
-      "Do not treat planning mode as a permission change and do not silently switch execution modes.",
-    ]
+        "Planning mode is enabled for this session.",
+        "Start by giving a concise, repo-aware plan for how you will handle the task.",
+        "After the plan, continue the task normally under the current mode and runtime permissions.",
+        "Do not treat planning mode as a permission change and do not silently switch execution modes.",
+      ]
     : [];
 
   if (readOnlySandbox) {
@@ -394,16 +406,16 @@ export function buildCodexPrompt(
       : "Act like a coding agent: inspect the repo, create or update files directly, and prefer real workspace edits over large pasted code blocks.";
   const generatedCleanupInstructions = isClearlySafeGeneratedCleanupRequest(prompt)
     ? [
-      "Fast generated-file cleanup guidance:",
-      "- Start with a shallow workspace inspection and act decisively.",
-      "- Delete only conventional generated artifacts, caches, temporary folders, dependency installs, and build outputs inside the workspace.",
-      "- Skip ambiguous, user-authored, source, config, docs, lock, and project files.",
-      "- Attempt each safe cleanup target once.",
-      "- If deletion is blocked by access denied, permission denied, a locked/in-use file, EACCES, EPERM, EBUSY, or Git lock metadata, stop immediately and report the blocked path and cause.",
-      "- Do not retry, force-delete, change permissions, run setup/bootstrap commands, or continue broad analysis after a clear blocked-delete failure.",
-      "- Do not do branch, bootstrap, package install, or repo setup work for this cleanup.",
-      "- Summarize exactly what was removed and what was skipped.",
-    ]
+        "Fast generated-file cleanup guidance:",
+        "- Start with a shallow workspace inspection and act decisively.",
+        "- Delete only conventional generated artifacts, caches, temporary folders, dependency installs, and build outputs inside the workspace.",
+        "- Skip ambiguous, user-authored, source, config, docs, lock, and project files.",
+        "- Attempt each safe cleanup target once.",
+        "- If deletion is blocked by access denied, permission denied, a locked/in-use file, EACCES, EPERM, EBUSY, or Git lock metadata, stop immediately and report the blocked path and cause.",
+        "- Do not retry, force-delete, change permissions, run setup/bootstrap commands, or continue broad analysis after a clear blocked-delete failure.",
+        "- Do not do branch, bootstrap, package install, or repo setup work for this cleanup.",
+        "- Summarize exactly what was removed and what was skipped.",
+      ]
     : [];
 
   return [

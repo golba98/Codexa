@@ -1,5 +1,5 @@
-import { access, copyFile, mkdir, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { access, copyFile, mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   isSkippedExternalDependencyPath,
@@ -74,7 +74,10 @@ export async function importExternalFile(
   return destPath;
 }
 
-export async function saveClipboardImage(data: Uint8Array, attachmentsDir: string): Promise<string> {
+export async function saveClipboardImage(
+  data: Uint8Array,
+  attachmentsDir: string,
+): Promise<string> {
   await mkdir(attachmentsDir, { recursive: true });
   const destPath = await resolveAttachmentDestPath("clipboard-image.png", attachmentsDir);
   await writeFile(destPath, data, { mode: 0o600 });
@@ -88,9 +91,7 @@ export function rewritePromptWithImportedPaths(
   let result = prompt;
   for (const { rawPath, replacementPath } of replacements) {
     const needsQuotes = /\s/.test(replacementPath);
-    const quotedReplacement = needsQuotes
-      ? `"${replacementPath}"`
-      : replacementPath;
+    const quotedReplacement = needsQuotes ? `"${replacementPath}"` : replacementPath;
     // Replace quoted forms first so the unquoted pass doesn't double-replace
     result = result.split(`"${rawPath}"`).join(quotedReplacement);
     result = result.split(`'${rawPath}'`).join(quotedReplacement);

@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
@@ -11,10 +11,13 @@ export const DEFAULT_UNSLOTH_ROOT_URL = "http://127.0.0.1:8888";
 type FetchImpl = typeof fetch;
 
 interface UnslothKeyCache {
-  servers?: Record<string, {
-    saved?: unknown;
-    minted?: unknown;
-  }>;
+  servers?: Record<
+    string,
+    {
+      saved?: unknown;
+      minted?: unknown;
+    }
+  >;
 }
 
 export interface UnslothConnection {
@@ -33,7 +36,7 @@ export interface UnslothModelInfo {
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : null;
 }
 
@@ -72,14 +75,19 @@ function readIdentitySecret(env: NodeJS.ProcessEnv): Buffer | null {
   if (!existsSync(authDb)) return null;
   try {
     const { Database } = require("bun:sqlite") as {
-      Database: new (path: string, options: { readonly: boolean }) => {
+      Database: new (
+        path: string,
+        options: { readonly: boolean },
+      ) => {
         query: (sql: string) => { get: (...params: unknown[]) => unknown };
         close: () => void;
       };
     };
     const database = new Database(authDb, { readonly: true });
     try {
-      const row = asRecord(database.query("SELECT value FROM app_secrets WHERE key = ?").get("studio_identity_secret"));
+      const row = asRecord(
+        database.query("SELECT value FROM app_secrets WHERE key = ?").get("studio_identity_secret"),
+      );
       const value = row?.value;
       return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value)
         ? Buffer.from(value, "hex")
@@ -93,7 +101,8 @@ function readIdentitySecret(env: NodeJS.ProcessEnv): Buffer | null {
 }
 
 function proofMessage(nonce: Buffer, hostname: string, port: number): Buffer {
-  const normalizedHost = hostname.toLowerCase() === "localhost" ? "127.0.0.1" : hostname.toLowerCase();
+  const normalizedHost =
+    hostname.toLowerCase() === "localhost" ? "127.0.0.1" : hostname.toLowerCase();
   return Buffer.concat([nonce, Buffer.from(`|${normalizedHost}|${port}`)]);
 }
 
@@ -107,7 +116,8 @@ export async function verifyUnslothIdentity(options: {
 }): Promise<boolean> {
   if (!isLoopbackUnslothUrl(options.rootUrl)) return false;
   const env = options.env ?? process.env;
-  const secret = options.identitySecret === undefined ? readIdentitySecret(env) : options.identitySecret;
+  const secret =
+    options.identitySecret === undefined ? readIdentitySecret(env) : options.identitySecret;
   if (!secret || secret.length !== 32) return false;
 
   const url = new URL(options.rootUrl);
@@ -123,7 +133,7 @@ export async function verifyUnslothIdentity(options: {
       redirect: "manual",
       signal: options.signal,
     });
-    if (!response.ok || response.status >= 300 && response.status < 400) return false;
+    if (!response.ok || (response.status >= 300 && response.status < 400)) return false;
     const body = asRecord(await response.json());
     const proof = body?.proof;
     if (typeof proof !== "string" || !/^[a-f0-9]{64}$/i.test(proof)) return false;
@@ -143,15 +153,22 @@ function cachedKeysForServer(rootUrl: string, env: NodeJS.ProcessEnv): string[] 
     const parsed = JSON.parse(readFileSync(cachePath, "utf8")) as UnslothKeyCache;
     const entry = parsed.servers?.[rootUrl];
     const keys = [entry?.saved, entry?.minted]
-      .flatMap((value) => Array.isArray(value) ? value : [])
-      .filter((value): value is string => typeof value === "string" && value.startsWith("sk-unsloth-"));
+      .flatMap((value) => (Array.isArray(value) ? value : []))
+      .filter(
+        (value): value is string => typeof value === "string" && value.startsWith("sk-unsloth-"),
+      );
     return [...new Set(keys)];
   } catch {
     return [];
   }
 }
 
-async function keyAccepted(rootUrl: string, apiKey: string, fetchImpl: FetchImpl, signal?: AbortSignal): Promise<UnslothModelInfo[] | null> {
+async function keyAccepted(
+  rootUrl: string,
+  apiKey: string,
+  fetchImpl: FetchImpl,
+  signal?: AbortSignal,
+): Promise<UnslothModelInfo[] | null> {
   const response = await fetchImpl(`${rootUrl}/v1/models`, {
     method: "GET",
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -159,16 +176,19 @@ async function keyAccepted(rootUrl: string, apiKey: string, fetchImpl: FetchImpl
     signal,
   });
   if (response.status === 401 || response.status === 403) return null;
-  if (!response.ok) throw new Error(`Unsloth returned HTTP ${response.status} while checking its API key.`);
+  if (!response.ok)
+    throw new Error(`Unsloth returned HTTP ${response.status} while checking its API key.`);
   return parseUnslothModels(await response.json());
 }
 
-export async function resolveUnslothConnection(options: {
-  fetchImpl?: FetchImpl;
-  signal?: AbortSignal;
-  env?: NodeJS.ProcessEnv;
-  identitySecret?: Buffer | null;
-} = {}): Promise<UnslothConnection> {
+export async function resolveUnslothConnection(
+  options: {
+    fetchImpl?: FetchImpl;
+    signal?: AbortSignal;
+    env?: NodeJS.ProcessEnv;
+    identitySecret?: Buffer | null;
+  } = {},
+): Promise<UnslothConnection> {
   const env = options.env ?? process.env;
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const rootUrl = resolveUnslothRootUrl(env);
@@ -178,7 +198,13 @@ export async function resolveUnslothConnection(options: {
     if (!models) {
       throw new Error("UNSLOTH_API_KEY was rejected by the configured Unsloth server.");
     }
-    return { rootUrl, baseUrl: `${rootUrl}/v1`, apiKey: explicitKey, authSource: "environment", models };
+    return {
+      rootUrl,
+      baseUrl: `${rootUrl}/v1`,
+      apiKey: explicitKey,
+      authSource: "environment",
+      models,
+    };
   }
 
   const identityVerified = await verifyUnslothIdentity({
@@ -189,7 +215,9 @@ export async function resolveUnslothConnection(options: {
     identitySecret: options.identitySecret,
   });
   if (!identityVerified) {
-    throw new Error("Could not securely verify the local Unsloth server. Set UNSLOTH_API_KEY or create an API key in Unsloth Settings > API.");
+    throw new Error(
+      "Could not securely verify the local Unsloth server. Set UNSLOTH_API_KEY or create an API key in Unsloth Settings > API.",
+    );
   }
 
   for (const apiKey of cachedKeysForServer(rootUrl, env)) {
@@ -198,7 +226,9 @@ export async function resolveUnslothConnection(options: {
       return { rootUrl, baseUrl: `${rootUrl}/v1`, apiKey, authSource: "agent-cache", models };
     }
   }
-  throw new Error("No valid Unsloth agent API key was found. Set UNSLOTH_API_KEY or create an API key in Unsloth Settings > API.");
+  throw new Error(
+    "No valid Unsloth agent API key was found. Set UNSLOTH_API_KEY or create an API key in Unsloth Settings > API.",
+  );
 }
 
 export function parseUnslothModels(value: unknown): UnslothModelInfo[] {

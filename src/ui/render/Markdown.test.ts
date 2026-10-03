@@ -1,7 +1,7 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
+import { test } from "node:test";
+import type { CodeSegment, ParaSegment, Segment } from "./Markdown.js";
 import { isShellCodeLanguage, parseMarkdown } from "./Markdown.js";
-import type { ParaSegment, CodeSegment, Segment } from "./Markdown.js";
 
 const SAMPLE = [
   "# Summary",
@@ -33,12 +33,15 @@ const SAMPLE = [
 ].join("\n");
 
 function segmentText(segments: Segment[]): string {
-  return segments.flatMap((segment) => {
-    if (segment.type === "code") return segment.lines;
-    if (segment.type === "header") return segment.parts.map((part) => part.text);
-    if (segment.type === "list") return segment.items.flatMap((item) => item.parts.map((part) => part.text));
-    return segment.lines.flatMap((line) => line.map((part) => part.text));
-  }).join("\n");
+  return segments
+    .flatMap((segment) => {
+      if (segment.type === "code") return segment.lines;
+      if (segment.type === "header") return segment.parts.map((part) => part.text);
+      if (segment.type === "list")
+        return segment.items.flatMap((item) => item.parts.map((part) => part.text));
+      return segment.lines.flatMap((line) => line.map((part) => part.text));
+    })
+    .join("\n");
 }
 
 test("sample response produces separate segments, not one dense para", () => {
@@ -59,7 +62,10 @@ test("blank lines between paragraphs produce separate ParaSegments", () => {
   const paras = segments.filter((s): s is ParaSegment => s.type === "para");
 
   for (const para of paras) {
-    const text = para.lines.flat().map((p) => p.text).join(" ");
+    const text = para.lines
+      .flat()
+      .map((p) => p.text)
+      .join(" ");
     assert.ok(
       !(text.includes("rendering path") && text.includes("What needs to improve")),
       "two distinct paragraphs must not share one ParaSegment",
@@ -93,7 +99,8 @@ test("header immediately followed by text produces two segments", () => {
 });
 
 test("cleans local markdown file links into compact terminal paths", () => {
-  const input = "The app shell lives in [`src/App.tsx`](C:/Users/Example/Projects/Project/src/App.tsx#L22).";
+  const input =
+    "The app shell lives in [`src/App.tsx`](C:/Users/Example/Projects/Project/src/App.tsx#L22).";
   const text = segmentText(parseMarkdown(input));
 
   assert.match(text, /src\/App\.tsx:22/);
@@ -110,7 +117,8 @@ test("cleans Windows absolute paths in prose", () => {
 });
 
 test("cleans file paths with encoded spaces", () => {
-  const input = "Overview: [README.md](file:///C:/Users/Example/Projects/5-Date%20Verification/README.md)";
+  const input =
+    "Overview: [README.md](file:///C:/Users/Example/Projects/5-Date%20Verification/README.md)";
   const text = segmentText(parseMarkdown(input));
 
   assert.match(text, /README\.md/);
@@ -157,7 +165,18 @@ test("code blocks are not rewritten by terminal answer cleanup", () => {
 });
 
 test("recognizes executable shell fence languages without treating ordinary code as shell", () => {
-  for (const language of ["bash", "sh", "shell", "zsh", "fish", "powershell", "pwsh", "cmd", "bat", "batch"]) {
+  for (const language of [
+    "bash",
+    "sh",
+    "shell",
+    "zsh",
+    "fish",
+    "powershell",
+    "pwsh",
+    "cmd",
+    "bat",
+    "batch",
+  ]) {
     assert.equal(isShellCodeLanguage(language), true);
   }
   assert.equal(isShellCodeLanguage("typescript"), false);

@@ -1,9 +1,9 @@
 import { statSync } from "fs";
 import { basename, join, resolve } from "path";
 import { fileURLToPath } from "url";
+import { isLocalDevChannel, LOCAL_DEV_CHANNEL, UBUME_CHANNEL_ENV } from "../version/channel.js";
 import { resolveWorkspacePath } from "./workspaceGuard.js";
 import { normalizeWorkspaceRoot } from "./workspaceRoot.js";
-import { UBUME_CHANNEL_ENV, LOCAL_DEV_CHANNEL, isLocalDevChannel } from "../version/channel.js";
 
 export type LaunchKind = "installed-bin" | "dev-run";
 
@@ -83,7 +83,10 @@ function getDevRelaunchExecutable(execPath: string, hasBunRuntime: boolean): str
   return "bun";
 }
 
-function buildInstalledRelaunchArgs(launcherScriptPath: string, forwardArgs: readonly string[]): string[] {
+function buildInstalledRelaunchArgs(
+  launcherScriptPath: string,
+  forwardArgs: readonly string[],
+): string[] {
   return [launcherScriptPath, ...forwardArgs];
 }
 
@@ -120,9 +123,10 @@ export function resolveLaunchContext(options: ResolveLaunchContextOptions = {}):
       launchKind,
       launcherScriptPath: resolvedLauncherScript,
       relaunchExecutable: envRelaunchExecutable || execPath,
-      relaunchArgs: envRelaunchArgs && envRelaunchArgs.length > 0
-        ? envRelaunchArgs
-        : buildInstalledRelaunchArgs(resolvedLauncherScript, forwardArgs),
+      relaunchArgs:
+        envRelaunchArgs && envRelaunchArgs.length > 0
+          ? envRelaunchArgs
+          : buildInstalledRelaunchArgs(resolvedLauncherScript, forwardArgs),
     };
   }
 
@@ -132,13 +136,16 @@ export function resolveLaunchContext(options: ResolveLaunchContextOptions = {}):
     launchKind: "dev-run",
     launcherScriptPath,
     relaunchExecutable: envRelaunchExecutable || getDevRelaunchExecutable(execPath, hasBunRuntime),
-    relaunchArgs: envRelaunchArgs && envRelaunchArgs.length > 0
-      ? envRelaunchArgs
-      : buildDevRelaunchArgs(packageRoot, forwardArgs),
+    relaunchArgs:
+      envRelaunchArgs && envRelaunchArgs.length > 0
+        ? envRelaunchArgs
+        : buildDevRelaunchArgs(packageRoot, forwardArgs),
   };
 }
 
-export function buildWorkspaceCommandContext(launchContext: LaunchContext): WorkspaceCommandContext {
+export function buildWorkspaceCommandContext(
+  launchContext: LaunchContext,
+): WorkspaceCommandContext {
   return {
     root: launchContext.workspaceRoot,
     summaryMessage: buildWorkspaceStatusMessage(launchContext),
@@ -211,7 +218,9 @@ function buildRelaunchEnv(
     [ENV_KEYS.launcherScript]: launchContext.launcherScriptPath ?? "",
     [ENV_KEYS.relaunchExecutable]: launchContext.relaunchExecutable,
     [ENV_KEYS.relaunchArgs]: JSON.stringify(launchContext.relaunchArgs),
-    [UBUME_CHANNEL_ENV]: isLocalDevChannel(baseEnv) ? LOCAL_DEV_CHANNEL : baseEnv[UBUME_CHANNEL_ENV],
+    [UBUME_CHANNEL_ENV]: isLocalDevChannel(baseEnv)
+      ? LOCAL_DEV_CHANNEL
+      : baseEnv[UBUME_CHANNEL_ENV],
   };
 }
 

@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  getLogoWidth,
+  LOGO_COMPACT,
+  LOGO_COMPACT_MIN_COLS,
+  LOGO_COMPACT_MIN_ROWS,
+  LOGO_LARGE,
+  LOGO_LARGE_MIN_COLS,
+  LOGO_LARGE_MIN_ROWS,
+  LOGO_MEDIUM,
+  LOGO_MEDIUM_MIN_COLS,
+  LOGO_MEDIUM_MIN_ROWS,
   selectLogoVariant,
   selectLogoVariantForViewport,
-  getLogoWidth,
-  LOGO_LARGE,
-  LOGO_MEDIUM,
-  LOGO_COMPACT,
-  LOGO_LARGE_MIN_COLS,
-  LOGO_MEDIUM_MIN_COLS,
-  LOGO_COMPACT_MIN_COLS,
-  LOGO_LARGE_MIN_ROWS,
-  LOGO_MEDIUM_MIN_ROWS,
-  LOGO_COMPACT_MIN_ROWS,
 } from "./logoVariants.js";
 
 test("selectLogoVariant returns LOGO_LARGE at the large threshold", () => {
@@ -56,7 +56,11 @@ test("selectLogoVariant returns LOGO_LARGE at 100 cols", () => {
 
 test("LOGO_MEDIUM is never auto-selected at any col ≥ 72 (LOGO_LARGE always wins)", () => {
   for (const cols of [72, 80, 100, 120, 200]) {
-    assert.notEqual(selectLogoVariant(cols), LOGO_MEDIUM, `LOGO_MEDIUM must not be selected at ${cols} cols`);
+    assert.notEqual(
+      selectLogoVariant(cols),
+      LOGO_MEDIUM,
+      `LOGO_MEDIUM must not be selected at ${cols} cols`,
+    );
   }
 });
 
@@ -107,8 +111,14 @@ test("selectLogoVariantForViewport returns empty only when even compact cannot f
 });
 
 test("selectLogoVariantForViewport at medium cols uses medium then compact by row budget", () => {
-  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS), LOGO_MEDIUM);
-  assert.equal(selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS - 1), LOGO_COMPACT);
+  assert.equal(
+    selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS),
+    LOGO_MEDIUM,
+  );
+  assert.equal(
+    selectLogoVariantForViewport(LOGO_MEDIUM_MIN_COLS, LOGO_MEDIUM_MIN_ROWS - 1),
+    LOGO_COMPACT,
+  );
 });
 
 test("UBUME_NO_ASCII_LOGO=1 or CODEXA_NO_ASCII_LOGO=1 suppresses logo in viewport selector at any size", () => {

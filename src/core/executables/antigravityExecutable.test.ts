@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import type { ChildProcess } from "node:child_process";
+import test from "node:test";
+import type { CommandResult, runCommand } from "../process/CommandRunner.js";
 import { resetAgyExecutableCacheForTests, resolveAgyExecutable } from "./antigravityExecutable.js";
-import { runCommand, type CommandResult } from "../process/CommandRunner.js";
 
 function commandResult(overrides: Partial<CommandResult>): CommandResult {
   return {
@@ -19,7 +19,9 @@ function commandResult(overrides: Partial<CommandResult>): CommandResult {
   };
 }
 
-function mockRunCommand(onCall: (spec: Parameters<typeof runCommand>[0]) => CommandResult): typeof runCommand {
+function mockRunCommand(
+  onCall: (spec: Parameters<typeof runCommand>[0]) => CommandResult,
+): typeof runCommand {
   return ((spec) => ({
     child: null as unknown as ChildProcess,
     result: Promise.resolve(onCall(spec)),
@@ -45,7 +47,9 @@ test("agy resolver: bare fallback returns 'agy' when where.exe finds nothing", a
   if (process.platform === "win32") return;
   await withEnv({}, async () => {
     const resolved = await resolveAgyExecutable({
-      runCommandImpl: mockRunCommand(() => commandResult({ status: "failed", exitCode: 1, stdout: "" })),
+      runCommandImpl: mockRunCommand(() =>
+        commandResult({ status: "failed", exitCode: 1, stdout: "" }),
+      ),
     });
     assert.equal(resolved, "agy");
   });

@@ -2,17 +2,17 @@ import { join, posix, win32 } from "path";
 import {
   AVAILABLE_BACKENDS,
   AVAILABLE_MODES,
+  type AvailableBackend,
+  type AvailableMode,
+  type AvailableModel,
   DEFAULT_BACKEND,
-  DEFAULT_MODEL,
   DEFAULT_MODE,
+  DEFAULT_MODEL,
   DEFAULT_REASONING_LEVEL,
   formatBackendLabel,
   formatModeLabel,
   formatReasoningLabel,
   normalizeReasoningForModel,
-  type AvailableBackend,
-  type AvailableMode,
-  type AvailableModel,
   type ReasoningLevel,
 } from "./settings.js";
 
@@ -106,7 +106,9 @@ export interface ResolvedRuntimeConfig {
 export interface RuntimeStatusContext {
   workspaceRoot: string;
   tokensUsed?: number | null;
-  projectInstructions?: import("../core/workspace/projectInstructions.js").ProjectInstructionsLoadResult | null;
+  projectInstructions?:
+    | import("../core/workspace/projectInstructions.js").ProjectInstructionsLoadResult
+    | null;
 }
 
 export interface RuntimeSummary {
@@ -149,9 +151,8 @@ function detectPathApi(value: string): typeof win32 | typeof posix {
 }
 
 function toPlatformKey(path: string): string {
-  const isWindows = process.platform === "win32"
-    || /^[A-Za-z]:[\\/]/.test(path)
-    || /^\\\\/.test(path);
+  const isWindows =
+    process.platform === "win32" || /^[A-Za-z]:[\\/]/.test(path) || /^\\\\/.test(path);
   return isWindows ? path.toLowerCase() : path;
 }
 
@@ -196,12 +197,12 @@ function isAvailableId<T extends string>(
 }
 
 function normalizeRuntimeString(candidate: unknown, fallback: string): string {
-  return typeof candidate === "string" && candidate.trim().length > 0
-    ? candidate.trim()
-    : fallback;
+  return typeof candidate === "string" && candidate.trim().length > 0 ? candidate.trim() : fallback;
 }
 
-export function normalizeRuntimePolicy(input: Partial<RuntimePolicyConfig> | null | undefined): RuntimePolicyConfig {
+export function normalizeRuntimePolicy(
+  input: Partial<RuntimePolicyConfig> | null | undefined,
+): RuntimePolicyConfig {
   return {
     approvalPolicy: isAvailableId(AVAILABLE_APPROVAL_POLICIES, input?.approvalPolicy)
       ? input!.approvalPolicy
@@ -212,35 +213,50 @@ export function normalizeRuntimePolicy(input: Partial<RuntimePolicyConfig> | nul
     networkAccess: isAvailableId(AVAILABLE_NETWORK_ACCESS_VALUES, input?.networkAccess)
       ? input!.networkAccess
       : DEFAULT_RUNTIME_POLICY.networkAccess,
-    writableRoots: dedupeWritableRoots(input?.writableRoots ?? DEFAULT_RUNTIME_POLICY.writableRoots),
+    writableRoots: dedupeWritableRoots(
+      input?.writableRoots ?? DEFAULT_RUNTIME_POLICY.writableRoots,
+    ),
     serviceTier: isAvailableId(AVAILABLE_SERVICE_TIERS, input?.serviceTier)
       ? input!.serviceTier
       : DEFAULT_RUNTIME_POLICY.serviceTier,
     personality: isAvailableId(AVAILABLE_PERSONALITIES, input?.personality)
       ? input!.personality
       : DEFAULT_RUNTIME_POLICY.personality,
-    allowExternalFileImport: typeof input?.allowExternalFileImport === "boolean"
-      ? input.allowExternalFileImport
-      : DEFAULT_RUNTIME_POLICY.allowExternalFileImport,
-    attachmentDir: normalizeRuntimeString(input?.attachmentDir, DEFAULT_RUNTIME_POLICY.attachmentDir),
+    allowExternalFileImport:
+      typeof input?.allowExternalFileImport === "boolean"
+        ? input.allowExternalFileImport
+        : DEFAULT_RUNTIME_POLICY.allowExternalFileImport,
+    attachmentDir: normalizeRuntimeString(
+      input?.attachmentDir,
+      DEFAULT_RUNTIME_POLICY.attachmentDir,
+    ),
   };
 }
 
-export function normalizeRuntimeConfig(input: PartialRuntimeConfig | null | undefined): RuntimeConfig {
+export function normalizeRuntimeConfig(
+  input: PartialRuntimeConfig | null | undefined,
+): RuntimeConfig {
   const provider = isAvailableId(AVAILABLE_BACKENDS, input?.provider)
     ? input!.provider
     : DEFAULT_RUNTIME_CONFIG.provider;
   const model = normalizeRuntimeString(input?.model, DEFAULT_RUNTIME_CONFIG.model);
-  const mode = isAvailableId(AVAILABLE_MODES.map((item) => ({ id: item.key })), input?.mode)
+  const mode = isAvailableId(
+    AVAILABLE_MODES.map((item) => ({ id: item.key })),
+    input?.mode,
+  )
     ? input!.mode
     : DEFAULT_RUNTIME_CONFIG.mode;
-  const reasoningInput = normalizeRuntimeString(input?.reasoningLevel, DEFAULT_RUNTIME_CONFIG.reasoningLevel);
+  const reasoningInput = normalizeRuntimeString(
+    input?.reasoningLevel,
+    DEFAULT_RUNTIME_CONFIG.reasoningLevel,
+  );
 
   return {
     provider,
     model,
     mode,
-    planMode: typeof input?.planMode === "boolean" ? input.planMode : DEFAULT_RUNTIME_CONFIG.planMode,
+    planMode:
+      typeof input?.planMode === "boolean" ? input.planMode : DEFAULT_RUNTIME_CONFIG.planMode,
     ...(typeof input?.geminiCommandPath === "string" && input.geminiCommandPath.trim()
       ? { geminiCommandPath: input.geminiCommandPath.trim() }
       : {}),
@@ -275,7 +291,10 @@ function arraysEqual(left: readonly string[], right: readonly string[]): boolean
   return left.every((value, index) => value === right[index]);
 }
 
-export function diffRuntimeConfig(base: RuntimeConfig, target: RuntimeConfig): PartialRuntimeConfig {
+export function diffRuntimeConfig(
+  base: RuntimeConfig,
+  target: RuntimeConfig,
+): PartialRuntimeConfig {
   const normalizedBase = normalizeRuntimeConfig(base);
   const normalizedTarget = normalizeRuntimeConfig(target);
   const policyPatch: Partial<RuntimePolicyConfig> = {};
@@ -308,15 +327,11 @@ export function diffRuntimeConfig(base: RuntimeConfig, target: RuntimeConfig): P
     ...(normalizedBase.provider !== normalizedTarget.provider
       ? { provider: normalizedTarget.provider }
       : {}),
-    ...(normalizedBase.model !== normalizedTarget.model
-      ? { model: normalizedTarget.model }
-      : {}),
+    ...(normalizedBase.model !== normalizedTarget.model ? { model: normalizedTarget.model } : {}),
     ...(normalizedBase.reasoningLevel !== normalizedTarget.reasoningLevel
       ? { reasoningLevel: normalizedTarget.reasoningLevel }
       : {}),
-    ...(normalizedBase.mode !== normalizedTarget.mode
-      ? { mode: normalizedTarget.mode }
-      : {}),
+    ...(normalizedBase.mode !== normalizedTarget.mode ? { mode: normalizedTarget.mode } : {}),
     ...(normalizedBase.planMode !== normalizedTarget.planMode
       ? { planMode: normalizedTarget.planMode }
       : {}),
@@ -350,12 +365,14 @@ export function resolveInheritedSandboxMode(mode: AvailableMode): ResolvedSandbo
 
 export function resolveRuntimeConfig(config: RuntimeConfig): ResolvedRuntimeConfig {
   const normalized = normalizeRuntimeConfig(config);
-  const sandboxMode = normalized.policy.sandboxMode === "inherit"
-    ? resolveInheritedSandboxMode(normalized.mode)
-    : normalized.policy.sandboxMode;
-  const approvalPolicy = normalized.policy.approvalPolicy === "inherit"
-    ? resolveInheritedApprovalPolicy(normalized.mode)
-    : normalized.policy.approvalPolicy;
+  const sandboxMode =
+    normalized.policy.sandboxMode === "inherit"
+      ? resolveInheritedSandboxMode(normalized.mode)
+      : normalized.policy.sandboxMode;
+  const approvalPolicy =
+    normalized.policy.approvalPolicy === "inherit"
+      ? resolveInheritedApprovalPolicy(normalized.mode)
+      : normalized.policy.approvalPolicy;
 
   return {
     provider: normalized.provider,
@@ -417,7 +434,9 @@ function labelForId(items: ReadonlyArray<{ id: string; label: string }>, id: str
   return items.find((item) => item.id === id)?.label ?? id;
 }
 
-export function formatApprovalPolicyLabel(value: RuntimeApprovalPolicy | ResolvedApprovalPolicy): string {
+export function formatApprovalPolicyLabel(
+  value: RuntimeApprovalPolicy | ResolvedApprovalPolicy,
+): string {
   return labelForId(AVAILABLE_APPROVAL_POLICIES, value);
 }
 
@@ -454,9 +473,7 @@ export function buildRuntimeSummary(runtime: ResolvedRuntimeConfig): RuntimeSumm
 }
 
 function formatWritableRootsBlock(roots: readonly string[]): string {
-  return roots.length > 0
-    ? roots.map((value) => `    - ${value}`).join("\n")
-    : "    - none";
+  return roots.length > 0 ? roots.map((value) => `    - ${value}`).join("\n") : "    - none";
 }
 
 export function formatPermissionsStatus(
@@ -481,10 +498,14 @@ export function formatPermissionsStatus(
   ].join("\n");
 }
 
-export function formatRuntimeStatus(runtime: ResolvedRuntimeConfig, context: RuntimeStatusContext): string {
-  const writableRoots = runtime.policy.writableRoots.length > 0
-    ? runtime.policy.writableRoots.map((value) => `  - ${value}`).join("\n")
-    : "  - none";
+export function formatRuntimeStatus(
+  runtime: ResolvedRuntimeConfig,
+  context: RuntimeStatusContext,
+): string {
+  const writableRoots =
+    runtime.policy.writableRoots.length > 0
+      ? runtime.policy.writableRoots.map((value) => `  - ${value}`).join("\n")
+      : "  - none";
 
   const lines = [
     "Runtime status:",
@@ -530,11 +551,15 @@ export function buildCodexConfigOverrides(runtime: ResolvedRuntimeConfig): strin
   ];
 
   if (runtime.policy.networkAccess) {
-    overrides.push(`sandbox_workspace_write.network_access=${JSON.stringify(runtime.policy.networkAccess)}`);
+    overrides.push(
+      `sandbox_workspace_write.network_access=${JSON.stringify(runtime.policy.networkAccess)}`,
+    );
   }
 
   if (runtime.policy.writableRoots.length > 0) {
-    overrides.push(`sandbox_workspace_write.writable_roots=${JSON.stringify(runtime.policy.writableRoots)}`);
+    overrides.push(
+      `sandbox_workspace_write.writable_roots=${JSON.stringify(runtime.policy.writableRoots)}`,
+    );
   }
 
   if (runtime.policy.serviceTier !== "flex") {

@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
-import { Box, Text, render } from "ink";
-import { normalizeCodexModelListResponses, type CodexModelCapability } from "../../core/models/codexModelCapabilities.js";
+import test from "node:test";
+import { Box, render, Text } from "ink";
+import React from "react";
+import {
+  type CodexModelCapability,
+  normalizeCodexModelListResponses,
+} from "../../core/models/codexModelCapabilities.js";
+import { CLAUDE_CODE_EFFORT_LEVELS } from "../../core/providerRuntime/reasoning.js";
+import { createLayoutSnapshot } from "../layout.js";
 import { ThemeProvider } from "../theme.js";
 import { ModelPickerScreen } from "./ModelPickerScreen.js";
 import { ReasoningPicker } from "./ReasoningPicker.js";
-import { createLayoutSnapshot } from "../layout.js";
-import { CLAUDE_CODE_EFFORT_LEVELS } from "../../core/providerRuntime/reasoning.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -238,9 +241,24 @@ test("Antigravity collapses Gemini effort variants into one model with an intell
   const models = normalizeCodexModelListResponses([
     {
       data: [
-        { id: "gemini-3.7-flash-high", model: "gemini-3.7-flash-high", displayName: "Gemini 3.7 Flash (High)", hidden: false },
-        { id: "gemini-3.7-flash-medium", model: "gemini-3.7-flash-medium", displayName: "Gemini 3.7 Flash (Medium)", hidden: false },
-        { id: "gemini-3.7-flash-low", model: "gemini-3.7-flash-low", displayName: "Gemini 3.7 Flash (Low)", hidden: false },
+        {
+          id: "gemini-3.7-flash-high",
+          model: "gemini-3.7-flash-high",
+          displayName: "Gemini 3.7 Flash (High)",
+          hidden: false,
+        },
+        {
+          id: "gemini-3.7-flash-medium",
+          model: "gemini-3.7-flash-medium",
+          displayName: "Gemini 3.7 Flash (Medium)",
+          hidden: false,
+        },
+        {
+          id: "gemini-3.7-flash-low",
+          model: "gemini-3.7-flash-low",
+          displayName: "Gemini 3.7 Flash (Low)",
+          hidden: false,
+        },
       ],
     },
   ]).models;
@@ -253,7 +271,9 @@ test("Antigravity collapses Gemini effort variants into one model with an intell
         currentModel="gemini-3.7-flash-high"
         currentReasoning="high"
         activeProviderLabel="Antigravity"
-        onSelect={(model, reasoning) => { selected = `${model}:${reasoning}`; }}
+        onSelect={(model, reasoning) => {
+          selected = `${model}:${reasoning}`;
+        }}
         onCancel={() => {}}
       />
     </ThemeProvider>,
@@ -279,13 +299,30 @@ test("Antigravity collapses Gemini effort variants into one model with an intell
 });
 
 test("Antigravity native Claude and GPT-OSS models do not show an intelligence control", async () => {
-  const models = normalizeCodexModelListResponses([{
-    data: [
-      { id: "claude-sonnet-4-6", model: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6 (Thinking)", hidden: false },
-      { id: "claude-opus-4-6-thinking", model: "claude-opus-4-6-thinking", displayName: "Claude Opus 4.6 (Thinking)", hidden: false },
-      { id: "gpt-oss-120b-medium", model: "gpt-oss-120b-medium", displayName: "GPT-OSS 120B (Medium)", hidden: false },
-    ],
-  }]).models;
+  const models = normalizeCodexModelListResponses([
+    {
+      data: [
+        {
+          id: "claude-sonnet-4-6",
+          model: "claude-sonnet-4-6",
+          displayName: "Claude Sonnet 4.6 (Thinking)",
+          hidden: false,
+        },
+        {
+          id: "claude-opus-4-6-thinking",
+          model: "claude-opus-4-6-thinking",
+          displayName: "Claude Opus 4.6 (Thinking)",
+          hidden: false,
+        },
+        {
+          id: "gpt-oss-120b-medium",
+          model: "gpt-oss-120b-medium",
+          displayName: "GPT-OSS 120B (Medium)",
+          hidden: false,
+        },
+      ],
+    },
+  ]).models;
   const harness = createInkHarness(
     <ThemeProvider theme="purple">
       <ModelPickerScreen

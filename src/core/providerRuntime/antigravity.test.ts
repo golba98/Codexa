@@ -1,26 +1,25 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import test from "node:test";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
-import { runCommand, type CommandResult, type CommandSpec } from "../process/CommandRunner.js";
+import { saveCachedProviderModels } from "../models/providerModelCache.js";
+import type { CommandResult, CommandSpec, runCommand } from "../process/CommandRunner.js";
 import {
   ANTIGRAVITY_DEFAULT_MODEL_ID,
   ANTIGRAVITY_DEFAULT_REASONING,
+  antigravityRuntime,
+  discoverAgyModels,
   getAgyModelSelector,
   getAntigravityModelLabel,
   migrateAntigravityLegacyModelId,
+  parseAgyModelsOutput,
   resetAntigravityRouteValidationCacheForTests,
   runAntigravityWithRunner,
   validateAntigravityRoute,
-  antigravityRuntime,
-  discoverAgyModels,
-  parseAgyModelsOutput,
 } from "./antigravity.js";
-import { resetAgyExecutableCacheForTests } from "../executables/antigravityExecutable.js";
-import { saveCachedProviderModels } from "../models/providerModelCache.js";
 import type { ProviderChatRequest } from "./types.js";
 
 const AGY_MODELS_OUTPUT = [
@@ -111,21 +110,30 @@ test("parseAgyModelsOutput preserves the full discovered catalog", () => {
   const labels = DISCOVERED_AGY_MODELS.map((m) => m.label);
   assert.ok(labels.includes("Gemini 3.5 Flash"), "missing Gemini 3.5 Flash");
   assert.ok(labels.includes("Gemini 3.1 Pro"), "missing Gemini 3.1 Pro");
-  assert.ok(labels.includes("Claude Sonnet 4.6 (Thinking)"), "missing Claude Sonnet 4.6 (Thinking)");
+  assert.ok(
+    labels.includes("Claude Sonnet 4.6 (Thinking)"),
+    "missing Claude Sonnet 4.6 (Thinking)",
+  );
   assert.ok(labels.includes("Claude Opus 4.6 (Thinking)"), "missing Claude Opus 4.6 (Thinking)");
   assert.ok(labels.includes("GPT-OSS 120B (Medium)"), "missing GPT-OSS 120B (Medium)");
 });
 
 test("parseAgyModelsOutput groups Gemini rows from the current two-column agy format", () => {
   const models = parseAgyModelsOutput(CURRENT_AGY_MODELS_OUTPUT);
-  assert.deepEqual(models.map((model) => model.id), [
-    "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "claude-sonnet-4-6",
-    "claude-opus-4-6-thinking",
-    "gpt-oss-120b-medium",
-  ]);
-  assert.deepEqual(models[0]?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high"]);
+  assert.deepEqual(
+    models.map((model) => model.id),
+    [
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+      "claude-sonnet-4-6",
+      "claude-opus-4-6-thinking",
+      "gpt-oss-120b-medium",
+    ],
+  );
+  assert.deepEqual(
+    models[0]?.supportedReasoningLevels?.map((level) => level.id),
+    ["low", "medium", "high"],
+  );
   assert.equal(getAgyModelSelector("gemini-3.7-flash", "high", models), "gemini-3.7-flash-high");
 });
 
@@ -143,7 +151,10 @@ test("current agy format leaves Claude and GPT-OSS as native models without inte
 test("Gemini 3.5 Flash supports Low/Medium/High reasoning (3 levels)", () => {
   const model = DISCOVERED_AGY_MODELS.find((m) => m.id === "gemini-3.5-flash");
   assert.ok(model, "gemini-3.5-flash not found");
-  assert.ok(model!.supportedReasoningLevels !== null, "supportedReasoningLevels should not be null");
+  assert.ok(
+    model!.supportedReasoningLevels !== null,
+    "supportedReasoningLevels should not be null",
+  );
   assert.equal(model!.supportedReasoningLevels!.length, 3);
   const ids = model!.supportedReasoningLevels!.map((l) => l.id);
   assert.deepEqual(ids, ["low", "medium", "high"]);
@@ -155,7 +166,10 @@ test("Gemini 3.5 Flash supports Low/Medium/High reasoning (3 levels)", () => {
 test("Gemini 3.1 Pro supports Low/High reasoning (2 levels, no Medium)", () => {
   const model = DISCOVERED_AGY_MODELS.find((m) => m.id === "gemini-3.1-pro");
   assert.ok(model, "gemini-3.1-pro not found");
-  assert.ok(model!.supportedReasoningLevels !== null, "supportedReasoningLevels should not be null");
+  assert.ok(
+    model!.supportedReasoningLevels !== null,
+    "supportedReasoningLevels should not be null",
+  );
   assert.equal(model!.supportedReasoningLevels!.length, 2);
   const ids = model!.supportedReasoningLevels!.map((l) => l.id);
   assert.deepEqual(ids, ["low", "high"]);
@@ -165,10 +179,18 @@ test("Gemini 3.1 Pro supports Low/High reasoning (2 levels, no Medium)", () => {
 });
 
 test("Claude Sonnet, Claude Opus, and GPT-OSS 120B have no reasoning levels", () => {
-  for (const id of ["claude-sonnet-4.6-thinking", "claude-opus-4.6-thinking", "gpt-oss-120b-medium"]) {
+  for (const id of [
+    "claude-sonnet-4.6-thinking",
+    "claude-opus-4.6-thinking",
+    "gpt-oss-120b-medium",
+  ]) {
     const model = DISCOVERED_AGY_MODELS.find((m) => m.id === id);
     assert.ok(model, `${id} not found`);
-    assert.equal(model!.supportedReasoningLevels, null, `${id} should have null supportedReasoningLevels`);
+    assert.equal(
+      model!.supportedReasoningLevels,
+      null,
+      `${id} should have null supportedReasoningLevels`,
+    );
   }
 });
 
@@ -192,13 +214,25 @@ test("default model is 'gemini-3.5-flash' with defaultReasoningLevel 'high'", ()
 // ---------------------------------------------------------------------------
 
 test("getAgyModelSelector resolves exact discovered Gemini variants", () => {
-  assert.equal(getAgyModelSelector("gemini-3.5-flash", "low", DISCOVERED_AGY_MODELS), "Gemini 3.5 Flash (Low)");
-  assert.equal(getAgyModelSelector("gemini-3.1-pro", "high", DISCOVERED_AGY_MODELS), "Gemini 3.1 Pro (High)");
+  assert.equal(
+    getAgyModelSelector("gemini-3.5-flash", "low", DISCOVERED_AGY_MODELS),
+    "Gemini 3.5 Flash (Low)",
+  );
+  assert.equal(
+    getAgyModelSelector("gemini-3.1-pro", "high", DISCOVERED_AGY_MODELS),
+    "Gemini 3.1 Pro (High)",
+  );
 });
 
 test("getAgyModelSelector uses the discovered default and singleton selector", () => {
-  assert.equal(getAgyModelSelector("gemini-3.5-flash", undefined, DISCOVERED_AGY_MODELS), "Gemini 3.5 Flash (High)");
-  assert.equal(getAgyModelSelector("claude-sonnet-4.6-thinking", undefined, DISCOVERED_AGY_MODELS), "Claude Sonnet 4.6 (Thinking)");
+  assert.equal(
+    getAgyModelSelector("gemini-3.5-flash", undefined, DISCOVERED_AGY_MODELS),
+    "Gemini 3.5 Flash (High)",
+  );
+  assert.equal(
+    getAgyModelSelector("claude-sonnet-4.6-thinking", undefined, DISCOVERED_AGY_MODELS),
+    "Claude Sonnet 4.6 (Thinking)",
+  );
 });
 
 test("getAgyModelSelector does not guess unknown models or efforts", () => {
@@ -223,7 +257,10 @@ test("discoverAgyModels uses the last-good cache when live discovery fails", asy
   try {
     process.env.HOME = tempHome;
     delete process.env.USERPROFILE;
-    saveCachedProviderModels("antigravity", { discoveredAt: Date.now(), models: DISCOVERED_AGY_MODELS });
+    saveCachedProviderModels("antigravity", {
+      discoveredAt: Date.now(),
+      models: DISCOVERED_AGY_MODELS,
+    });
     const discovery = await discoverAgyModels({
       executable: "agy",
       cwd: "/tmp",
@@ -247,19 +284,44 @@ test("discoverAgyModels uses the last-good cache when live discovery fails", asy
 // ---------------------------------------------------------------------------
 
 test("migrateAntigravityLegacyModelId: maps old compound IDs to family + reasoning", () => {
-  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.5-flash-high"),   { modelId: "gemini-3.5-flash", reasoning: "high" });
-  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.5-flash-medium"), { modelId: "gemini-3.5-flash", reasoning: "medium" });
-  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.5-flash-low"),    { modelId: "gemini-3.5-flash", reasoning: "low" });
-  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.1-pro-high"),     { modelId: "gemini-3.1-pro",   reasoning: "high" });
-  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.1-pro-low"),      { modelId: "gemini-3.1-pro",   reasoning: "low" });
-  assert.deepEqual(migrateAntigravityLegacyModelId("gpt-oss-120b"),            { modelId: "gpt-oss-120b-medium" });
+  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.5-flash-high"), {
+    modelId: "gemini-3.5-flash",
+    reasoning: "high",
+  });
+  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.5-flash-medium"), {
+    modelId: "gemini-3.5-flash",
+    reasoning: "medium",
+  });
+  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.5-flash-low"), {
+    modelId: "gemini-3.5-flash",
+    reasoning: "low",
+  });
+  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.1-pro-high"), {
+    modelId: "gemini-3.1-pro",
+    reasoning: "high",
+  });
+  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.1-pro-low"), {
+    modelId: "gemini-3.1-pro",
+    reasoning: "low",
+  });
+  assert.deepEqual(migrateAntigravityLegacyModelId("gpt-oss-120b"), {
+    modelId: "gpt-oss-120b-medium",
+  });
 });
 
 test("migrateAntigravityLegacyModelId: passes through current model IDs unchanged", () => {
-  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.5-flash"),      { modelId: "gemini-3.5-flash" });
-  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.1-pro"),        { modelId: "gemini-3.1-pro" });
-  assert.deepEqual(migrateAntigravityLegacyModelId("claude-sonnet-4.6-thinking"), { modelId: "claude-sonnet-4.6-thinking" });
-  assert.deepEqual(migrateAntigravityLegacyModelId("gpt-oss-120b-medium"),      { modelId: "gpt-oss-120b-medium" });
+  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.5-flash"), {
+    modelId: "gemini-3.5-flash",
+  });
+  assert.deepEqual(migrateAntigravityLegacyModelId("gemini-3.1-pro"), {
+    modelId: "gemini-3.1-pro",
+  });
+  assert.deepEqual(migrateAntigravityLegacyModelId("claude-sonnet-4.6-thinking"), {
+    modelId: "claude-sonnet-4.6-thinking",
+  });
+  assert.deepEqual(migrateAntigravityLegacyModelId("gpt-oss-120b-medium"), {
+    modelId: "gpt-oss-120b-medium",
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -276,14 +338,18 @@ test("getAntigravityModelLabel: falls back to raw modelId for unknown id", () =>
 
 test("runAntigravityWithRunner: passes the exact discovered selector with --model", async () => {
   let capturedSpec: CommandSpec | null = null;
-  const runner = mockRunCommand(commandResult({}), (spec) => { capturedSpec = spec; });
+  const runner = mockRunCommand(commandResult({}), (spec) => {
+    capturedSpec = spec;
+  });
 
   await new Promise<void>((resolve) => {
     const cancel = runAntigravityWithRunner(
       buildRequest({ prompt: "say hello back" }),
       {
         onResponse: () => resolve(),
-        onError: (msg) => { throw new Error(msg); },
+        onError: (msg) => {
+          throw new Error(msg);
+        },
       },
       runner,
       "agy",
@@ -295,17 +361,29 @@ test("runAntigravityWithRunner: passes the exact discovered selector with --mode
 
   assert.ok(capturedSpec !== null, "runCommand was not called");
   assert.equal((capturedSpec as CommandSpec).executable, "agy");
-  assert.deepEqual((capturedSpec as CommandSpec).args, ["--model", "Gemini 3.5 Flash (High)", "-p", "say hello back"]);
+  assert.deepEqual((capturedSpec as CommandSpec).args, [
+    "--model",
+    "Gemini 3.5 Flash (High)",
+    "-p",
+    "say hello back",
+  ]);
 });
 
 test("runAntigravityWithRunner: wraps a .cmd executable in cmd.exe on Windows, keeping the prompt as one arg", async () => {
   let capturedSpec: CommandSpec | null = null;
-  const runner = mockRunCommand(commandResult({}), (spec) => { capturedSpec = spec; });
+  const runner = mockRunCommand(commandResult({}), (spec) => {
+    capturedSpec = spec;
+  });
 
   await new Promise<void>((resolve) => {
     runAntigravityWithRunner(
       buildRequest({ prompt: "say hello back" }),
-      { onResponse: () => resolve(), onError: (msg) => { throw new Error(msg); } },
+      {
+        onResponse: () => resolve(),
+        onError: (msg) => {
+          throw new Error(msg);
+        },
+      },
       runner,
       "agy.cmd",
       "win32",
@@ -315,17 +393,34 @@ test("runAntigravityWithRunner: wraps a .cmd executable in cmd.exe on Windows, k
 
   assert.ok(capturedSpec !== null, "runCommand was not called");
   assert.equal((capturedSpec as CommandSpec).executable, "cmd.exe");
-  assert.deepEqual((capturedSpec as CommandSpec).args, ["/d", "/s", "/c", "call", "agy.cmd", "--model", "Gemini 3.5 Flash (High)", "-p", "say hello back"]);
+  assert.deepEqual((capturedSpec as CommandSpec).args, [
+    "/d",
+    "/s",
+    "/c",
+    "call",
+    "agy.cmd",
+    "--model",
+    "Gemini 3.5 Flash (High)",
+    "-p",
+    "say hello back",
+  ]);
 });
 
 test("runAntigravityWithRunner: passes a .cmd executable through unchanged on non-Windows", async () => {
   let capturedSpec: CommandSpec | null = null;
-  const runner = mockRunCommand(commandResult({}), (spec) => { capturedSpec = spec; });
+  const runner = mockRunCommand(commandResult({}), (spec) => {
+    capturedSpec = spec;
+  });
 
   await new Promise<void>((resolve) => {
     runAntigravityWithRunner(
       buildRequest({ prompt: "say hello back" }),
-      { onResponse: () => resolve(), onError: (msg) => { throw new Error(msg); } },
+      {
+        onResponse: () => resolve(),
+        onError: (msg) => {
+          throw new Error(msg);
+        },
+      },
       runner,
       "agy.cmd",
       "linux",
@@ -335,17 +430,36 @@ test("runAntigravityWithRunner: passes a .cmd executable through unchanged on no
 
   assert.ok(capturedSpec !== null, "runCommand was not called");
   assert.equal((capturedSpec as CommandSpec).executable, "agy.cmd");
-  assert.deepEqual((capturedSpec as CommandSpec).args, ["--model", "Gemini 3.5 Flash (High)", "-p", "say hello back"]);
+  assert.deepEqual((capturedSpec as CommandSpec).args, [
+    "--model",
+    "Gemini 3.5 Flash (High)",
+    "-p",
+    "say hello back",
+  ]);
 });
 
 test("runAntigravityWithRunner: does not synthesize AGY_MODEL", async () => {
   let capturedEnv: NodeJS.ProcessEnv | null | undefined;
-  const runner = mockRunCommand(commandResult({}), (spec) => { capturedEnv = spec.env; });
+  const runner = mockRunCommand(commandResult({}), (spec) => {
+    capturedEnv = spec.env;
+  });
 
   await new Promise<void>((resolve) => {
     runAntigravityWithRunner(
-      buildRequest({ route: { providerId: "antigravity", modelId: "gemini-3.5-flash", backendKind: "antigravity-cli-auth", reasoning: "high" } }),
-      { onResponse: () => resolve(), onError: (msg) => { throw new Error(msg); } },
+      buildRequest({
+        route: {
+          providerId: "antigravity",
+          modelId: "gemini-3.5-flash",
+          backendKind: "antigravity-cli-auth",
+          reasoning: "high",
+        },
+      }),
+      {
+        onResponse: () => resolve(),
+        onError: (msg) => {
+          throw new Error(msg);
+        },
+      },
       runner,
       "agy",
       "linux",
@@ -358,7 +472,9 @@ test("runAntigravityWithRunner: does not synthesize AGY_MODEL", async () => {
 
 test("runAntigravityWithRunner: selects singleton Claude models exactly", async () => {
   let capturedEnv: NodeJS.ProcessEnv | null | undefined;
-  const runner = mockRunCommand(commandResult({}), (spec) => { capturedEnv = spec.env; });
+  const runner = mockRunCommand(commandResult({}), (spec) => {
+    capturedEnv = spec.env;
+  });
 
   const prevAgyModel = process.env.AGY_MODEL;
   delete process.env.AGY_MODEL;
@@ -366,8 +482,19 @@ test("runAntigravityWithRunner: selects singleton Claude models exactly", async 
   try {
     await new Promise<void>((resolve) => {
       runAntigravityWithRunner(
-        buildRequest({ route: { providerId: "antigravity", modelId: "claude-sonnet-4.6-thinking", backendKind: "antigravity-cli-auth" } }),
-        { onResponse: () => resolve(), onError: (msg) => { throw new Error(msg); } },
+        buildRequest({
+          route: {
+            providerId: "antigravity",
+            modelId: "claude-sonnet-4.6-thinking",
+            backendKind: "antigravity-cli-auth",
+          },
+        }),
+        {
+          onResponse: () => resolve(),
+          onError: (msg) => {
+            throw new Error(msg);
+          },
+        },
         runner,
         "agy",
         "linux",
@@ -381,12 +508,19 @@ test("runAntigravityWithRunner: selects singleton Claude models exactly", async 
 });
 
 test("runAntigravityWithRunner: calls onError when agy exits non-zero", async () => {
-  const runner = mockRunCommand(commandResult({ status: "failed", exitCode: 1, stdout: "", stderr: "auth error" }));
+  const runner = mockRunCommand(
+    commandResult({ status: "failed", exitCode: 1, stdout: "", stderr: "auth error" }),
+  );
 
   const errorMsg = await new Promise<string>((resolve) => {
     runAntigravityWithRunner(
       buildRequest(),
-      { onResponse: () => { throw new Error("unexpected success"); }, onError: resolve },
+      {
+        onResponse: () => {
+          throw new Error("unexpected success");
+        },
+        onError: resolve,
+      },
       runner,
       "agy",
       "linux",
@@ -406,7 +540,13 @@ test("validateAntigravityRoute: returns not-configured when agy binary is missin
   const result = await validateAntigravityRoute({
     cwd: "/tmp",
     configuredPath: null,
-    runCommandImpl: mockRunCommand(commandResult({ status: "spawn_error", exitCode: null, userMessage: "`agy` is not installed." })),
+    runCommandImpl: mockRunCommand(
+      commandResult({
+        status: "spawn_error",
+        exitCode: null,
+        userMessage: "`agy` is not installed.",
+      }),
+    ),
   });
 
   assert.equal(result.status, "not-configured");
@@ -433,11 +573,17 @@ test("validateAntigravityRoute: returns ready when agy --help succeeds", async (
 test("validateAntigravityRoute: second validation in a session short-circuits without re-spawning", async () => {
   resetAntigravityRouteValidationCacheForTests();
   let spawnCount = 0;
-  const runCommandImpl = mockRunCommand((spec) => {
-    if (spec.args[0] === "--help") return commandResult({ status: "completed", exitCode: 0, stdout: "Usage of agy..." });
-    if (spec.args[0] === "models") return commandResult({ stdout: AGY_MODELS_OUTPUT });
-    return commandResult({ status: "failed", exitCode: 1 });
-  }, () => { spawnCount += 1; });
+  const runCommandImpl = mockRunCommand(
+    (spec) => {
+      if (spec.args[0] === "--help")
+        return commandResult({ status: "completed", exitCode: 0, stdout: "Usage of agy..." });
+      if (spec.args[0] === "models") return commandResult({ stdout: AGY_MODELS_OUTPUT });
+      return commandResult({ status: "failed", exitCode: 1 });
+    },
+    () => {
+      spawnCount += 1;
+    },
+  );
 
   const first = await validateAntigravityRoute({ cwd: "/tmp", runCommandImpl });
   assert.equal(first.status, "ready");
@@ -458,10 +604,15 @@ test("validateAntigravityRoute: wraps a .cmd executable probe in cmd.exe on Wind
     cwd: "/tmp",
     configuredPath: "agy.cmd",
     platform: "win32",
-    runCommandImpl: mockRunCommand((spec) => spec.args.includes("models")
-      ? commandResult({ stdout: AGY_MODELS_OUTPUT })
-      : commandResult({ status: "completed", exitCode: 0, stdout: "Usage of agy..." }),
-    (spec) => { capturedSpecs.push(spec); }),
+    runCommandImpl: mockRunCommand(
+      (spec) =>
+        spec.args.includes("models")
+          ? commandResult({ stdout: AGY_MODELS_OUTPUT })
+          : commandResult({ status: "completed", exitCode: 0, stdout: "Usage of agy..." }),
+      (spec) => {
+        capturedSpecs.push(spec);
+      },
+    ),
   });
 
   assert.equal(result.status, "ready");

@@ -1,5 +1,5 @@
-import type { BrowserToolName } from "../../../bin/ubume-local-browser-tools.js";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
+import type { BrowserToolName } from "../../../bin/ubume-local-browser-tools.js";
 
 export interface ComputerUseRequest {
   sessionId: string;
@@ -12,7 +12,11 @@ export interface ComputerUsePolicy {
   dshHome: string;
   signal: AbortSignal;
 }
-export interface BrowserPageInfo { url: string; title: string; loadState: string; }
+export interface BrowserPageInfo {
+  url: string;
+  title: string;
+  loadState: string;
+}
 export interface BrowserElement {
   element?: string;
   role: string;
@@ -34,7 +38,9 @@ export interface ComputerUseValue {
   image?: Extract<ContentBlock, { type: "image" }>["attachment"];
   artifactPath?: string;
 }
-export type ComputerUseResult = { ok: true; value: ComputerUseValue } | { ok: false; error: { code: string; message: string } };
+export type ComputerUseResult =
+  | { ok: true; value: ComputerUseValue }
+  | { ok: false; error: { code: string; message: string } };
 export interface ComputerUseBackend {
   execute(request: ComputerUseRequest, policy: ComputerUsePolicy): Promise<ComputerUseResult>;
   closeSession(sessionId: string): Promise<void>;

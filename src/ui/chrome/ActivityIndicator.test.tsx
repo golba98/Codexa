@@ -1,7 +1,6 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import React from "react";
 import { PassThrough } from "node:stream";
+import test from "node:test";
 import { render } from "ink";
 import { ActivityIndicator } from "./ActivityIndicator.js";
 
@@ -17,7 +16,9 @@ function renderIndicator(props: any): Promise<string> {
   stdout.on("data", (chunk) => {
     output += chunk.toString();
   });
-  const instance = render(<ActivityIndicator {...props} />, { stdout: stdout as unknown as NodeJS.WriteStream });
+  const instance = render(<ActivityIndicator {...props} />, {
+    stdout: stdout as unknown as NodeJS.WriteStream,
+  });
   instance.unmount();
   return Promise.resolve(output);
 }
@@ -48,7 +49,10 @@ test("streaming state renders streaming indicator frame", async () => {
 });
 
 test("provider loading renders animated indicator frame", async () => {
-  const output = await renderIndicator({ uiState: { kind: "IDLE" }, externalCliStatus: "starting" });
+  const output = await renderIndicator({
+    uiState: { kind: "IDLE" },
+    externalCliStatus: "starting",
+  });
   assert.ok(output.includes("?"));
 });
 

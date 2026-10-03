@@ -8,7 +8,10 @@ import { loadCachedProviderModels, saveCachedProviderModels } from "./providerMo
 
 function tempCacheFile(): { file: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), "ubume-model-cache-"));
-  return { file: join(dir, "model-cache.json"), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return {
+    file: join(dir, "model-cache.json"),
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  };
 }
 
 const SAMPLE_MODELS: readonly ProviderModel[] = [
@@ -45,10 +48,14 @@ test("providers are isolated from each other", () => {
   const { file, cleanup } = tempCacheFile();
   try {
     saveCachedProviderModels("openai", { discoveredAt: 1, models: SAMPLE_MODELS }, file);
-    saveCachedProviderModels("anthropic", {
-      discoveredAt: 2,
-      models: [{ ...SAMPLE_MODELS[0]!, id: "opus", modelId: "opus", label: "Claude Opus" }],
-    }, file);
+    saveCachedProviderModels(
+      "anthropic",
+      {
+        discoveredAt: 2,
+        models: [{ ...SAMPLE_MODELS[0]!, id: "opus", modelId: "opus", label: "Claude Opus" }],
+      },
+      file,
+    );
     assert.equal(loadCachedProviderModels("openai", file)?.models[0]?.modelId, "gpt-5.6-sol");
     assert.equal(loadCachedProviderModels("anthropic", file)?.models[0]?.modelId, "opus");
     assert.equal(loadCachedProviderModels("google", file), null);
@@ -81,7 +88,14 @@ test("corrupt JSON loads as null and is overwritten by the next save", () => {
 test("unknown cache version loads as null", () => {
   const { file, cleanup } = tempCacheFile();
   try {
-    writeFileSync(file, JSON.stringify({ version: 99, providers: { openai: { discoveredAt: 1, models: SAMPLE_MODELS } } }), "utf8");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 99,
+        providers: { openai: { discoveredAt: 1, models: SAMPLE_MODELS } },
+      }),
+      "utf8",
+    );
     assert.equal(loadCachedProviderModels("openai", file), null);
   } finally {
     cleanup();
@@ -91,7 +105,14 @@ test("unknown cache version loads as null", () => {
 test("entries with malformed models load as null", () => {
   const { file, cleanup } = tempCacheFile();
   try {
-    writeFileSync(file, JSON.stringify({ version: 1, providers: { openai: { discoveredAt: 1, models: [{ bogus: true }] } } }), "utf8");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        providers: { openai: { discoveredAt: 1, models: [{ bogus: true }] } },
+      }),
+      "utf8",
+    );
     assert.equal(loadCachedProviderModels("openai", file), null);
   } finally {
     cleanup();

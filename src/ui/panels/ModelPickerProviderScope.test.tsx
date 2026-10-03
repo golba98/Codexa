@@ -8,26 +8,39 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import React from "react";
 import { render } from "ink";
-import { ThemeProvider } from "../theme.js";
-import { ModelPickerScreen } from "./ModelPickerScreen.js";
-import { createLayoutSnapshot } from "../layout.js";
-import { ANTHROPIC_FALLBACK_MODELS, GEMINI_FALLBACK_MODELS, providerModelsToCodexCapabilities } from "../../core/providerRuntime/models.js";
+import { getSelectableModelCapabilities } from "../../core/models/codexModelCapabilities.js";
+import type { ProviderConfig } from "../../core/providerLauncher/types.js";
 import { anthropicRuntime } from "../../core/providerRuntime/anthropic.js";
 import { geminiRuntime } from "../../core/providerRuntime/gemini.js";
-import { getSelectableModelCapabilities } from "../../core/models/codexModelCapabilities.js";
-import { ProviderPicker } from "./ProviderPicker.js";
-import type { ProviderConfig } from "../../core/providerLauncher/types.js";
+import {
+  ANTHROPIC_FALLBACK_MODELS,
+  GEMINI_FALLBACK_MODELS,
+  providerModelsToCodexCapabilities,
+} from "../../core/providerRuntime/models.js";
 import type { ProviderModel } from "../../core/providerRuntime/types.js";
+import { createLayoutSnapshot } from "../layout.js";
+import { ThemeProvider } from "../theme.js";
+import { ModelPickerScreen } from "./ModelPickerScreen.js";
+import { ProviderPicker } from "./ProviderPicker.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
-  setRawMode(): this { return this; }
-  override resume(): this { return this; }
-  override pause(): this { return this; }
-  ref(): this { return this; }
-  unref(): this { return this; }
+  setRawMode(): this {
+    return this;
+  }
+  override resume(): this {
+    return this;
+  }
+  override pause(): this {
+    return this;
+  }
+  ref(): this {
+    return this;
+  }
+  unref(): this {
+    return this;
+  }
 }
 
 class TestOutput extends PassThrough {
@@ -68,7 +81,11 @@ test("ANTHROPIC_FALLBACK_MODELS contains the expected models", () => {
   assert.ok(ids.includes("sonnet"), "Missing sonnet");
   assert.ok(ids.includes("haiku"), "Missing haiku");
   for (const model of ANTHROPIC_FALLBACK_MODELS) {
-    assert.match(model.label, /version unknown/i, "Fallback labels must honestly mark unknown Claude versions");
+    assert.match(
+      model.label,
+      /version unknown/i,
+      "Fallback labels must honestly mark unknown Claude versions",
+    );
   }
 });
 
@@ -100,7 +117,10 @@ test("GEMINI_FALLBACK_MODELS contains the expected models", () => {
   assert.ok(ids.includes("gemini-2.5-flash"), "Missing gemini-2.5-flash");
   assert.ok(ids.includes("gemini-2.5-flash-lite"), "Missing gemini-2.5-flash-lite");
   assert.ok(!ids.includes("gemini-3-flash"), "Gemini 3 Flash must not be offered; use preview ID");
-  assert.ok(!ids.includes("gemini-3.1-pro"), "Gemini 3.1 Pro must not be offered without preview suffix");
+  assert.ok(
+    !ids.includes("gemini-3.1-pro"),
+    "Gemini 3.1 Pro must not be offered without preview suffix",
+  );
 });
 
 test("GEMINI_FALLBACK_MODELS maps display names to exact CLI IDs with no reasoning support", () => {
@@ -123,8 +143,14 @@ test("GEMINI_FALLBACK_MODELS maps display names to exact CLI IDs with no reasoni
 
 test("GEMINI_FALLBACK_MODELS does not contain OpenAI or Claude model IDs", () => {
   for (const m of GEMINI_FALLBACK_MODELS) {
-    assert.ok(!m.modelId.startsWith("gpt-"), `Gemini list must not contain OpenAI model: "${m.modelId}"`);
-    assert.ok(!m.modelId.startsWith("claude-"), `Gemini list must not contain Claude model: "${m.modelId}"`);
+    assert.ok(
+      !m.modelId.startsWith("gpt-"),
+      `Gemini list must not contain OpenAI model: "${m.modelId}"`,
+    );
+    assert.ok(
+      !m.modelId.startsWith("claude-"),
+      `Gemini list must not contain Claude model: "${m.modelId}"`,
+    );
   }
 });
 
@@ -143,7 +169,10 @@ test("providerModelsToCodexCapabilities converts Anthropic models to selectable 
   assert.ok(modelIds.includes("haiku"), "Should include haiku alias");
   assert.ok(modelIds.includes("fable"), "Should include fable alias");
   for (const id of modelIds) {
-    assert.ok(!id.startsWith("gpt-"), `Converted Anthropic capabilities must not contain OpenAI model: "${id}"`);
+    assert.ok(
+      !id.startsWith("gpt-"),
+      `Converted Anthropic capabilities must not contain OpenAI model: "${id}"`,
+    );
   }
   const sonnet = selectable.find((model) => model.model === "sonnet");
   assert.deepEqual(
@@ -159,7 +188,10 @@ test("Claude fallback reasoning options use the last-known CLI ladder", () => {
   const ids = sonnet?.supportedReasoningLevels?.map((level) => level.id) ?? [];
 
   assert.deepEqual(ids, ["low", "medium", "high", "xhigh", "max"]);
-  assert.deepEqual(opus?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
+  assert.deepEqual(
+    opus?.supportedReasoningLevels?.map((level) => level.id),
+    ["low", "medium", "high", "xhigh", "max"],
+  );
   assert.ok(!ids.includes("none"), "Claude picker must not show OpenAI none reasoning");
   assert.ok(!ids.includes("minimal"), "Claude picker must not show OpenAI minimal reasoning");
 });
@@ -172,14 +204,26 @@ test("providerModelsToCodexCapabilities converts Gemini models to selectable cap
   const modelIds = selectable.map((m) => m.model);
   assert.ok(modelIds.includes("gemini-3.1-pro-preview"), "Should include gemini-3.1-pro-preview");
   assert.ok(modelIds.includes("gemini-3-flash-preview"), "Should include gemini-3-flash-preview");
-  assert.ok(modelIds.includes("gemini-3.1-flash-lite-preview"), "Should include gemini-3.1-flash-lite-preview");
+  assert.ok(
+    modelIds.includes("gemini-3.1-flash-lite-preview"),
+    "Should include gemini-3.1-flash-lite-preview",
+  );
   assert.ok(modelIds.includes("gemini-2.5-pro"), "Should include gemini-2.5-pro");
   assert.ok(modelIds.includes("gemini-2.5-flash"), "Should include gemini-2.5-flash");
   assert.ok(modelIds.includes("gemini-2.5-flash-lite"), "Should include gemini-2.5-flash-lite");
-  assert.ok(!modelIds.includes("gemini-3-flash"), "Should not include legacy non-preview Gemini 3 Flash");
+  assert.ok(
+    !modelIds.includes("gemini-3-flash"),
+    "Should not include legacy non-preview Gemini 3 Flash",
+  );
   for (const id of modelIds) {
-    assert.ok(!id.startsWith("gpt-"), `Converted Gemini capabilities must not contain OpenAI model: "${id}"`);
-    assert.ok(!id.startsWith("claude-"), `Converted Gemini capabilities must not contain Claude model: "${id}"`);
+    assert.ok(
+      !id.startsWith("gpt-"),
+      `Converted Gemini capabilities must not contain OpenAI model: "${id}"`,
+    );
+    assert.ok(
+      !id.startsWith("claude-"),
+      `Converted Gemini capabilities must not contain Claude model: "${id}"`,
+    );
   }
   for (const model of selectable) {
     assert.equal(model.supportedReasoningLevels, null);
@@ -206,7 +250,9 @@ test("model picker renders 'Choose a Claude model' when activeProviderLabel is C
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const claudeModels = getSelectableModelCapabilities(
     providerModelsToCodexCapabilities(ANTHROPIC_FALLBACK_MODELS, "sonnet"),
@@ -242,7 +288,9 @@ test("model picker renders 'Choose a Gemini model' when activeProviderLabel is G
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const geminiModels = getSelectableModelCapabilities(
     providerModelsToCodexCapabilities(GEMINI_FALLBACK_MODELS, "gemini-2.5-pro"),
@@ -277,7 +325,9 @@ test("model picker renders 'Choose an OpenAI model' when activeProviderLabel is 
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const { cleanup } = render(
     <ThemeProvider theme="mono">
@@ -307,7 +357,9 @@ test("model picker Claude list does not contain OpenAI models", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const claudeModels = getSelectableModelCapabilities(
     providerModelsToCodexCapabilities(ANTHROPIC_FALLBACK_MODELS, "sonnet"),
@@ -335,10 +387,15 @@ test("model picker Claude list does not contain OpenAI models", async () => {
     assert.ok(!stripped.includes("gpt-5"), "Claude picker must not display OpenAI models");
     // Claude model aliases must appear and must not be vague family names only.
     assert.ok(
-      stripped.includes("Claude Opus") || stripped.includes("Claude Sonnet") || stripped.includes("Claude Haiku"),
+      stripped.includes("Claude Opus") ||
+        stripped.includes("Claude Sonnet") ||
+        stripped.includes("Claude Haiku"),
       "Claude picker must display Claude model names",
     );
-    assert.ok(stripped.includes("version unknown"), "Fallback picker labels must mark unknown versions");
+    assert.ok(
+      stripped.includes("version unknown"),
+      "Fallback picker labels must mark unknown versions",
+    );
   } finally {
     cleanup();
   }
@@ -348,7 +405,9 @@ test("model picker shows alias-resolved Claude package source and versioned labe
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const packageModels: ProviderModel[] = [
     {
@@ -406,7 +465,9 @@ test("ProviderPicker with initialProviderId=anthropic selects Anthropic in the p
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const mockProviders: ProviderConfig[] = [
     {

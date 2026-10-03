@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
-import type { RunEvent, TimelineEvent } from "./types.js";
 import { hasFinalizedTranscriptPlan } from "./planTranscript.js";
+import type { RunEvent, TimelineEvent } from "./types.js";
 
 function makeRun(overrides: Partial<RunEvent> = {}): RunEvent {
   return {
@@ -44,18 +44,21 @@ test("approval visibility requires a non-empty finalized transcript plan", () =>
   assert.equal(hasFinalizedTranscriptPlan([makeRun()], ""), false);
   assert.equal(hasFinalizedTranscriptPlan([makeRun({ plan: null })], "1. Inspect"), false);
   assert.equal(
-    hasFinalizedTranscriptPlan([
-      makeRun({
-        status: "running",
-        plan: {
-          id: "plan-1",
-          streamSeq: 1,
-          chunks: ["1. Inspect"],
-          status: "active",
-          startedAt: 1,
-        },
-      }),
-    ], "1. Inspect"),
+    hasFinalizedTranscriptPlan(
+      [
+        makeRun({
+          status: "running",
+          plan: {
+            id: "plan-1",
+            streamSeq: 1,
+            chunks: ["1. Inspect"],
+            status: "active",
+            startedAt: 1,
+          },
+        }),
+      ],
+      "1. Inspect",
+    ),
     false,
   );
   assert.equal(
@@ -65,9 +68,6 @@ test("approval visibility requires a non-empty finalized transcript plan", () =>
 });
 
 test("approval visibility matches the transcript plan under whitespace normalization", () => {
-  assert.equal(
-    hasFinalizedTranscriptPlan([makeRun()], "1. Inspect\r\n\r\n2. Update  "),
-    true,
-  );
+  assert.equal(hasFinalizedTranscriptPlan([makeRun()], "1. Inspect\r\n\r\n2. Update  "), true);
   assert.equal(hasFinalizedTranscriptPlan([makeRun()], "1. Inspect\n2. Update the cache"), false);
 });

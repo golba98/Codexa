@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { LaunchArgs } from "../config/launchArgs.js";
+import type { LayeredConfigResult } from "../config/layeredConfig.js";
 import {
+  normalizeRuntimeConfig,
+  type ResolvedRuntimeConfig,
+  resolveRuntimeConfig,
+} from "../config/runtimeConfig.js";
+import type { BackendProvider } from "../core/providers/types.js";
+import {
+  createHeadlessExecTiming,
   HEADLESS_EXEC_PROVIDER_UNAVAILABLE,
   HEADLESS_EXEC_RUN_FAILED,
-  createHeadlessExecTiming,
-  runHeadlessExec,
   type HeadlessExecIo,
+  runHeadlessExec,
 } from "./execRunner.js";
-import { normalizeRuntimeConfig, resolveRuntimeConfig, type ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
-import type { LayeredConfigResult } from "../config/layeredConfig.js";
-import type { LaunchArgs } from "../config/launchArgs.js";
-import type { BackendProvider } from "../core/providers/types.js";
 
 function createLaunchArgs(): LaunchArgs {
   return {
@@ -130,7 +134,10 @@ test("streams assistant deltas to stdout and progress/tool/error diagnostics to 
 
   assert.equal(result.exitCode, 0);
   assert.equal(io.stdoutText(), "Hello world");
-  assert.doesNotMatch(`${io.stdoutText()}\n${io.stderrText()}`, /██████|Ubume v|Workspace:|Provider:|Context:/);
+  assert.doesNotMatch(
+    `${io.stdoutText()}\n${io.stderrText()}`,
+    /██████|Ubume v|Workspace:|Provider:|Context:/,
+  );
   assert.match(io.stderrText(), /startup:/);
   assert.match(io.stderrText(), /reasoning: thinking/);
   assert.match(io.stderrText(), /tool: running: pwd/);
@@ -193,7 +200,11 @@ test("timing is silent when disabled", async () => {
 
 test("raw prompt policy sends the exact prompt and skips project instructions", async () => {
   const io = createIo();
-  const captured: Array<{ prompt: string; promptPolicy: string | undefined; projectInstructions: unknown }> = [];
+  const captured: Array<{
+    prompt: string;
+    promptPolicy: string | undefined;
+    projectInstructions: unknown;
+  }> = [];
   let projectInstructionLoadCount = 0;
   const provider = createProvider((prompt, options, handlers) => {
     captured.push({
@@ -319,7 +330,9 @@ test("returns exit code 0 on provider success without deltas", async () => {
 test("keeps structured fallback events out of stdout", async () => {
   const io = createIo();
   const provider = createProvider((_prompt, _options, handlers) => {
-    handlers.onAssistantDelta?.("{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"raw\"}}\n");
+    handlers.onAssistantDelta?.(
+      '{"type":"item.completed","item":{"type":"agent_message","text":"raw"}}\n',
+    );
     handlers.onAssistantDelta?.("Actual answer");
     handlers.onResponse("Actual answer");
     return () => {};
@@ -381,7 +394,10 @@ test("returns non-zero on provider error", async () => {
 test("missing-file failure remains non-zero and visible", async () => {
   const io = createIo();
   const provider = createProvider((_prompt, _options, handlers) => {
-    handlers.onError("Process exited with code 1", "Get-Content: Cannot find path 'missing.txt' because it does not exist.");
+    handlers.onError(
+      "Process exited with code 1",
+      "Get-Content: Cannot find path 'missing.txt' because it does not exist.",
+    );
     return () => {};
   });
 
@@ -440,23 +456,64 @@ test("final response supplies an unstreamed suffix and waits for provider teardo
   let stopped = false;
   let cleaned = false;
   const provider = createProvider((_prompt, _options, handlers) => {
-    handlers.onRunControl?.({ stopped: new Promise<void>((resolve) => setTimeout(() => { stopped = true; resolve(); }, 30)) });
-    handlers.onAssistantDelta?.("Hello"); handlers.onResponse("Hello world");
-    return () => { cleaned = true; };
+    handlers.onRunControl?.({
+      stopped: new Promise<void>((resolve) =>
+        setTimeout(() => {
+          stopped = true;
+          resolve();
+        }, 30),
+      ),
+    });
+    handlers.onAssistantDelta?.("Hello");
+    handlers.onResponse("Hello world");
+    return () => {
+      cleaned = true;
+    };
   });
-  const result = await runHeadlessExec({ prompt: "Prompt", launchArgs: createLaunchArgs(), workspaceRoot: "C:\\Repo" }, io, { resolveLayeredConfig: () => createLayeredConfig(), getBackendProvider: () => provider });
-  assert.equal(result.exitCode, 0); assert.equal(io.stdoutText(), "Hello world"); assert(stopped); assert(cleaned);
+  const result = await runHeadlessExec(
+    { prompt: "Prompt", launchArgs: createLaunchArgs(), workspaceRoot: "C:\\Repo" },
+    io,
+    { resolveLayeredConfig: () => createLayeredConfig(), getBackendProvider: () => provider },
+  );
+  assert.equal(result.exitCode, 0);
+  assert.equal(io.stdoutText(), "Hello world");
+  assert(stopped);
+  assert(cleaned);
 });
 
 test("abort saves partial result and ignores late provider callbacks", async () => {
-  const io = createIo(); const controller = new AbortController();
+  const io = createIo();
+  const controller = new AbortController();
   let stopped = false;
   const provider = createProvider((_prompt, _options, handlers) => {
     let end!: () => void;
-    handlers.onRunControl?.({ stopped: new Promise<void>((resolve) => { end = resolve; }) });
-    handlers.onAssistantDelta?.("partial"); setTimeout(() => controller.abort(), 10);
-    return () => { setTimeout(() => { handlers.onResponse("late answer"); stopped = true; end(); }, 20); };
+    handlers.onRunControl?.({
+      stopped: new Promise<void>((resolve) => {
+        end = resolve;
+      }),
+    });
+    handlers.onAssistantDelta?.("partial");
+    setTimeout(() => controller.abort(), 10);
+    return () => {
+      setTimeout(() => {
+        handlers.onResponse("late answer");
+        stopped = true;
+        end();
+      }, 20);
+    };
   });
-  const result = await runHeadlessExec({ prompt: "Prompt", launchArgs: createLaunchArgs(), workspaceRoot: "C:\\Repo", signal: controller.signal }, io, { resolveLayeredConfig: () => createLayeredConfig(), getBackendProvider: () => provider });
-  assert.equal(result.exitCode, 130); assert.equal(result.text, "partial"); assert.equal(io.stdoutText(), "partial"); assert(stopped);
+  const result = await runHeadlessExec(
+    {
+      prompt: "Prompt",
+      launchArgs: createLaunchArgs(),
+      workspaceRoot: "C:\\Repo",
+      signal: controller.signal,
+    },
+    io,
+    { resolveLayeredConfig: () => createLayeredConfig(), getBackendProvider: () => provider },
+  );
+  assert.equal(result.exitCode, 130);
+  assert.equal(result.text, "partial");
+  assert.equal(io.stdoutText(), "partial");
+  assert(stopped);
 });

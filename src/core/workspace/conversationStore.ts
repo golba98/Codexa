@@ -1,25 +1,29 @@
+import { randomUUID } from "node:crypto";
 import {
+  closeSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
-  writeFileSync,
-  unlinkSync,
   statSync,
-  openSync,
-  closeSync,
-  fsyncSync,
+  unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { randomUUID } from "node:crypto";
-import { acquireOwnership, type OwnershipLease } from "./ownership.js";
 import { parseWorkbench, type WorkbenchSnapshot } from "../../session/workbench.js";
-import type { ProviderBackendKind } from "../providerRuntime/types.js";
-import type { ProviderId } from "../providerLauncher/types.js";
-import type { LocalBackendId } from "../providerLauncher/types.js";
-import { resolveUbumeConversationDir, resolveLegacyConversationDir, resolveLegacyCodexaDataDir, workspaceStorageKey } from "./appData.js";
 import type { ExternalSessionSource } from "../externalSessions/types.js";
+import type { LocalBackendId, ProviderId } from "../providerLauncher/types.js";
+import type { ProviderBackendKind } from "../providerRuntime/types.js";
+import {
+  resolveLegacyCodexaDataDir,
+  resolveLegacyConversationDir,
+  resolveUbumeConversationDir,
+  workspaceStorageKey,
+} from "./appData.js";
+import { acquireOwnership, type OwnershipLease } from "./ownership.js";
 
 export type ConversationMessageRole = "user" | "assistant";
 
@@ -129,21 +133,23 @@ function parseContextCheckpoint(value: unknown): ConversationContextCheckpoint |
   const transcriptHash = safeString(value.transcriptHash);
   const summary = safeString(value.summary);
   const updatedAt = safeString(value.updatedAt);
-  const contextLength = value.contextLength === null
-    ? null
-    : isNonNegativeInteger(value.contextLength) && value.contextLength > 0
-      ? value.contextLength
-      : undefined;
+  const contextLength =
+    value.contextLength === null
+      ? null
+      : isNonNegativeInteger(value.contextLength) && value.contextLength > 0
+        ? value.contextLength
+        : undefined;
   if (
-    !modelId
-    || contextLength === undefined
-    || !isNonNegativeInteger(value.throughMessageCount)
-    || !transcriptHash
-    || !summary
-    || !updatedAt
-    || (value.activeWindowChars !== undefined && !isNonNegativeInteger(value.activeWindowChars))
-    || (value.responseCharsCovered !== undefined && !isNonNegativeInteger(value.responseCharsCovered))
-  ) return null;
+    !modelId ||
+    contextLength === undefined ||
+    !isNonNegativeInteger(value.throughMessageCount) ||
+    !transcriptHash ||
+    !summary ||
+    !updatedAt ||
+    (value.activeWindowChars !== undefined && !isNonNegativeInteger(value.activeWindowChars)) ||
+    (value.responseCharsCovered !== undefined && !isNonNegativeInteger(value.responseCharsCovered))
+  )
+    return null;
 
   return {
     version: 1,
@@ -152,8 +158,12 @@ function parseContextCheckpoint(value: unknown): ConversationContextCheckpoint |
     throughMessageCount: value.throughMessageCount,
     transcriptHash,
     summary,
-    ...(value.activeWindowChars === undefined ? {} : { activeWindowChars: value.activeWindowChars }),
-    ...(value.responseCharsCovered === undefined ? {} : { responseCharsCovered: value.responseCharsCovered }),
+    ...(value.activeWindowChars === undefined
+      ? {}
+      : { activeWindowChars: value.activeWindowChars }),
+    ...(value.responseCharsCovered === undefined
+      ? {}
+      : { responseCharsCovered: value.responseCharsCovered }),
     updatedAt,
   };
 }
@@ -165,7 +175,8 @@ function parseLocalHarnessSession(value: unknown): LocalHarnessSessionMetadata |
   const routeFingerprint = safeString(value.routeFingerprint);
   const transcriptHash = safeString(value.transcriptHash);
   const updatedAt = safeString(value.updatedAt);
-  if (!sessionId || !harnessVersion || !routeFingerprint || !transcriptHash || !updatedAt) return null;
+  if (!sessionId || !harnessVersion || !routeFingerprint || !transcriptHash || !updatedAt)
+    return null;
   if (!isNonNegativeInteger(value.throughMessageCount)) return null;
   return {
     version: 1,
@@ -193,11 +204,17 @@ function parseMessages(value: unknown): ConversationMessage[] | null {
     const role = item.role;
     const content = item.content;
     if ((role !== "user" && role !== "assistant") || typeof content !== "string") return null;
-    const activitySummary = typeof item.activitySummary === "string" && item.activitySummary.trim()
-      ? item.activitySummary
-      : null;
-    messages.push({ role, content, ...(activitySummary ? { activitySummary } : {}),
-      ...(typeof item.submittedContent === "string" ? { submittedContent: item.submittedContent } : {}),
+    const activitySummary =
+      typeof item.activitySummary === "string" && item.activitySummary.trim()
+        ? item.activitySummary
+        : null;
+    messages.push({
+      role,
+      content,
+      ...(activitySummary ? { activitySummary } : {}),
+      ...(typeof item.submittedContent === "string"
+        ? { submittedContent: item.submittedContent }
+        : {}),
       ...(Number.isInteger(item.turnId) ? { turnId: item.turnId as number } : {}),
       ...(typeof item.createdAt === "number" ? { createdAt: item.createdAt } : {}),
     });
@@ -212,9 +229,10 @@ function parseMetadata(value: unknown, fallbackId: string): ConversationMetadata
   const createdAt = safeString(value.createdAt) ?? new Date(0).toISOString();
   const updatedAt = safeString(value.updatedAt) ?? createdAt;
   const modelId = safeString(value.modelId) ?? "unknown";
-  const messageCount = typeof value.messageCount === "number" && Number.isInteger(value.messageCount)
-    ? Math.max(0, value.messageCount)
-    : 0;
+  const messageCount =
+    typeof value.messageCount === "number" && Number.isInteger(value.messageCount)
+      ? Math.max(0, value.messageCount)
+      : 0;
   const localContextCheckpoint = parseContextCheckpoint(value.localContextCheckpoint);
   const localHarnessSession = parseLocalHarnessSession(value.localHarnessSession);
   const importedFrom = parseImportSource(value.importedFrom);
@@ -227,15 +245,26 @@ function parseMetadata(value: unknown, fallbackId: string): ConversationMetadata
     providerId: typeof value.providerId === "string" ? value.providerId : null,
     modelId,
     backendKind: typeof value.backendKind === "string" ? value.backendKind : null,
-    ...(typeof value.reasoning === "string" && value.reasoning.trim() ? { reasoning: value.reasoning } : {}),
-    ...(value.localBackend === "lm-studio" || value.localBackend === "unsloth" ? { localBackend: value.localBackend } : {}),
+    ...(typeof value.reasoning === "string" && value.reasoning.trim()
+      ? { reasoning: value.reasoning }
+      : {}),
+    ...(value.localBackend === "lm-studio" || value.localBackend === "unsloth"
+      ? { localBackend: value.localBackend }
+      : {}),
     ...(localContextCheckpoint ? { localContextCheckpoint } : {}),
     ...(localHarnessSession ? { localHarnessSession } : {}),
     messageCount,
     ...(safeString(value.workspaceRoot) ? { workspaceRoot: value.workspaceRoot as string } : {}),
-    ...(Array.isArray(value.nativeSessions) ? { nativeSessions: value.nativeSessions.filter(isNativeSessionReference) } : {}),
-    ...(typeof value.parentConversationId === "string" && isSafeConversationId(value.parentConversationId) ? { parentConversationId: value.parentConversationId } : {}),
-    ...(typeof value.parentCheckpointId === "string" ? { parentCheckpointId: value.parentCheckpointId } : {}),
+    ...(Array.isArray(value.nativeSessions)
+      ? { nativeSessions: value.nativeSessions.filter(isNativeSessionReference) }
+      : {}),
+    ...(typeof value.parentConversationId === "string" &&
+    isSafeConversationId(value.parentConversationId)
+      ? { parentConversationId: value.parentConversationId }
+      : {}),
+    ...(typeof value.parentCheckpointId === "string"
+      ? { parentCheckpointId: value.parentCheckpointId }
+      : {}),
     ...(importedFrom ? { importedFrom } : {}),
   };
 }
@@ -248,22 +277,33 @@ function titleFromMessages(messages: ConversationMessage[]): string {
 }
 
 export function isNativeSessionReference(value: unknown): value is NativeSessionReference {
-  return isRecord(value) && ["claude", "codex", "antigravity", "vibe"].includes(String(value.source))
-    && !!safeString(value.sessionId)
-    && (value.throughMessageCount === undefined || isNonNegativeInteger(value.throughMessageCount))
-    && (value.transcriptHash === undefined || !!safeString(value.transcriptHash));
+  return (
+    isRecord(value) &&
+    ["claude", "codex", "antigravity", "vibe"].includes(String(value.source)) &&
+    !!safeString(value.sessionId) &&
+    (value.throughMessageCount === undefined || isNonNegativeInteger(value.throughMessageCount)) &&
+    (value.transcriptHash === undefined || !!safeString(value.transcriptHash))
+  );
 }
 
 function atomicWriteJson(filePath: string, value: unknown): void {
   const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
   try {
     const file = openSync(temporaryPath, "wx", 0o600);
-    try { writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8"); fsyncSync(file); }
-    finally { closeSync(file); }
+    try {
+      writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+      fsyncSync(file);
+    } finally {
+      closeSync(file);
+    }
     renameSync(temporaryPath, filePath);
     if (process.platform !== "win32") {
       const directory = openSync(dirname(filePath), "r");
-      try { fsyncSync(directory); } finally { closeSync(directory); }
+      try {
+        fsyncSync(directory);
+      } finally {
+        closeSync(directory);
+      }
     }
   } finally {
     if (existsSync(temporaryPath)) unlinkSync(temporaryPath);
@@ -295,7 +335,21 @@ export class ConversationStore {
     this.ownership = options.ownership ?? false;
     this.rootDir = options.rootDir ?? resolveUbumeConversationDir(workspaceRoot);
     this.managedRoot = options.rootDir === undefined;
-    this.legacyRootDirs = options.legacyRootDirs ?? (options.legacyRootDir ? [options.legacyRootDir] : this.managedRoot ? [resolveLegacyConversationDir(workspaceRoot), join(resolveLegacyCodexaDataDir(), "workspaces", workspaceStorageKey(workspaceRoot), "conversations")] : []);
+    this.legacyRootDirs =
+      options.legacyRootDirs ??
+      (options.legacyRootDir
+        ? [options.legacyRootDir]
+        : this.managedRoot
+          ? [
+              resolveLegacyConversationDir(workspaceRoot),
+              join(
+                resolveLegacyCodexaDataDir(),
+                "workspaces",
+                workspaceStorageKey(workspaceRoot),
+                "conversations",
+              ),
+            ]
+          : []);
     this.now = options.now ?? (() => new Date());
     this.idFactory = options.idFactory ?? (() => randomUUID());
     this.onDiagnostic = options.onDiagnostic ?? (() => undefined);
@@ -308,7 +362,10 @@ export class ConversationStore {
     this.release();
     this.lease = { id, value };
   }
-  release(): void { this.lease?.value.release(); this.lease = undefined; }
+  release(): void {
+    this.lease?.value.release();
+    this.lease = undefined;
+  }
 
   private conversationDir(id: string): string {
     if (!isSafeConversationId(id)) throw new Error("Invalid conversation id.");
@@ -317,7 +374,11 @@ export class ConversationStore {
 
   private ensureRoot(): void {
     mkdirSync(this.rootDir, { recursive: true, mode: 0o700 });
-    if (this.managedRoot && !existsSync(join(dirname(this.rootDir), "workspace.json"))) atomicWriteJson(join(dirname(this.rootDir), "workspace.json"), { version: 1, workspaceRoot: this.workspace });
+    if (this.managedRoot && !existsSync(join(dirname(this.rootDir), "workspace.json")))
+      atomicWriteJson(join(dirname(this.rootDir), "workspace.json"), {
+        version: 1,
+        workspaceRoot: this.workspace,
+      });
   }
 
   createConversation(route: {
@@ -356,13 +417,18 @@ export class ConversationStore {
       role: message.role,
       content: message.content,
       ...(message.activitySummary ? { activitySummary: message.activitySummary } : {}),
-      ...(message.submittedContent === undefined ? {} : { submittedContent: message.submittedContent }),
+      ...(message.submittedContent === undefined
+        ? {}
+        : { submittedContent: message.submittedContent }),
       ...(message.turnId === undefined ? {} : { turnId: message.turnId }),
       ...(message.createdAt === undefined ? {} : { createdAt: message.createdAt }),
     }));
     const metadata: ConversationMetadata = {
       ...record.metadata,
-      title: record.metadata.title === "Untitled conversation" ? titleFromMessages(record.messages) : record.metadata.title,
+      title:
+        record.metadata.title === "Untitled conversation"
+          ? titleFromMessages(record.messages)
+          : record.metadata.title,
       updatedAt: this.now().toISOString(),
       messageCount: messages.length,
       workspaceRoot: this.workspace,
@@ -371,19 +437,35 @@ export class ConversationStore {
     const snapshotPath = join(dir, "snapshot.json");
     atomicWriteJson(snapshotPath, { version: 2, metadata, messages, session: record.session });
     // A cache failure must not turn a successful canonical save into a failure.
-    try { atomicWriteJson(join(dir, "summary.json"), { version: 1, revision: snapshotRevision(snapshotPath), metadata }); }
-    catch (error) { this.onDiagnostic(`Summary cache unavailable: ${error instanceof Error ? error.message : "filesystem error"}`); }
+    try {
+      atomicWriteJson(join(dir, "summary.json"), {
+        version: 1,
+        revision: snapshotRevision(snapshotPath),
+        metadata,
+      });
+    } catch (error) {
+      this.onDiagnostic(
+        `Summary cache unavailable: ${error instanceof Error ? error.message : "filesystem error"}`,
+      );
+    }
   }
 
   load(id: string): ConversationRecord | null {
     try {
       const dir = this.readDirectory(id);
       const snapshotPath = join(dir, "snapshot.json");
-      const snapshot = existsSync(snapshotPath) ? JSON.parse(readFileSync(snapshotPath, "utf8")) : null;
-      if (snapshot && snapshot.version !== 2) throw new Error("Unsupported conversation snapshot version");
-      const messages = parseMessages(snapshot ? snapshot.messages : JSON.parse(readFileSync(join(dir, "messages.json"), "utf8")));
+      const snapshot = existsSync(snapshotPath)
+        ? JSON.parse(readFileSync(snapshotPath, "utf8"))
+        : null;
+      if (snapshot && snapshot.version !== 2)
+        throw new Error("Unsupported conversation snapshot version");
+      const messages = parseMessages(
+        snapshot ? snapshot.messages : JSON.parse(readFileSync(join(dir, "messages.json"), "utf8")),
+      );
       if (!messages) throw new Error("messages.json is not a valid conversation message array");
-      let metadata: ConversationMetadata | null = snapshot ? parseMetadata(snapshot.metadata, id) : null;
+      let metadata: ConversationMetadata | null = snapshot
+        ? parseMetadata(snapshot.metadata, id)
+        : null;
       if (snapshot && !metadata) throw new Error("Invalid authoritative conversation metadata");
       const metadataPath = join(dir, "metadata.json");
       if (!snapshot && existsSync(metadataPath)) {
@@ -402,19 +484,32 @@ export class ConversationStore {
         messageCount: messages.length,
       };
       if (metadata.id !== id) throw new Error("Conversation identity does not match its directory");
-      metadata = { ...metadata, messageCount: messages.length, ...(this.managedRoot ? { workspaceRoot: this.workspace } : {}) };
+      metadata = {
+        ...metadata,
+        messageCount: messages.length,
+        ...(this.managedRoot ? { workspaceRoot: this.workspace } : {}),
+      };
       const session = snapshot ? parseWorkbench(snapshot.session) : undefined;
-      if (snapshot?.session && !session) this.onDiagnostic(`Conversation ${id}: auxiliary session data is invalid; restored dialogue only.`);
+      if (snapshot?.session && !session)
+        this.onDiagnostic(
+          `Conversation ${id}: auxiliary session data is invalid; restored dialogue only.`,
+        );
       return { metadata, messages, ...(session ? { session } : {}) };
     } catch (error) {
-      this.onDiagnostic(`Skipped conversation ${id}: ${error instanceof Error ? error.message : "invalid data"}`);
+      this.onDiagnostic(
+        `Skipped conversation ${id}: ${error instanceof Error ? error.message : "invalid data"}`,
+      );
       return null;
     }
   }
 
   private readDirectory(id: string): string {
     const current = this.conversationDir(id);
-    return [current, ...this.legacyRootDirs.map((root) => join(root, id))].find((dir) => existsSync(join(dir, "snapshot.json")) || existsSync(join(dir, "messages.json"))) ?? current;
+    return (
+      [current, ...this.legacyRootDirs.map((root) => join(root, id))].find(
+        (dir) => existsSync(join(dir, "snapshot.json")) || existsSync(join(dir, "messages.json")),
+      ) ?? current
+    );
   }
 
   /** Absolute location of the authoritative generation, including legacy reads. */
@@ -431,7 +526,11 @@ export class ConversationStore {
         for (const entry of readdirSync(root, { withFileTypes: true })) {
           if (entry.isDirectory() && isSafeConversationId(entry.name)) ids.add(entry.name);
         }
-      } catch (error) { this.onDiagnostic(`Unable to list conversations: ${error instanceof Error ? error.message : "filesystem error"}`); }
+      } catch (error) {
+        this.onDiagnostic(
+          `Unable to list conversations: ${error instanceof Error ? error.message : "filesystem error"}`,
+        );
+      }
     }
     const entries: ConversationListEntry[] = [];
     for (const id of ids) {
@@ -442,15 +541,27 @@ export class ConversationStore {
         if (existsSync(snapshotPath)) {
           try {
             const cached = JSON.parse(readFileSync(join(dir, "summary.json"), "utf8"));
-            if (cached.version === 1 && cached.revision === snapshotRevision(snapshotPath)) metadata = parseMetadata(cached.metadata, id);
-          } catch { /* Missing or stale cache: use the authoritative snapshot. */ }
+            if (cached.version === 1 && cached.revision === snapshotRevision(snapshotPath))
+              metadata = parseMetadata(cached.metadata, id);
+          } catch {
+            /* Missing or stale cache: use the authoritative snapshot. */
+          }
         }
         metadata ??= this.load(id)?.metadata ?? null;
-        if (metadata?.id === id && metadata.messageCount > 0) entries.push({
-          ...metadata, ...(this.managedRoot ? { workspaceRoot: this.workspace } : {}),
-        });
-      } catch (error) { this.onDiagnostic(`Skipped conversation ${id}: ${error instanceof Error ? error.message : "invalid metadata"}`); }
+        if (metadata?.id === id && metadata.messageCount > 0)
+          entries.push({
+            ...metadata,
+            ...(this.managedRoot ? { workspaceRoot: this.workspace } : {}),
+          });
+      } catch (error) {
+        this.onDiagnostic(
+          `Skipped conversation ${id}: ${error instanceof Error ? error.message : "invalid metadata"}`,
+        );
+      }
     }
-    return entries.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id));
+    return entries.sort(
+      (left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id),
+    );
   }
 }

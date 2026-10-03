@@ -1,16 +1,19 @@
-import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
-import { useTheme } from "../theme.js";
-import { getHorizontalArrowDirection, type HorizontalArrowDirection } from "../input/rawArrowKeys.js";
-import { UBUME_NPM_PACKAGE, formatVersionLabel } from "../../core/version/updateCheck.js";
+import { useEffect, useRef, useState } from "react";
+import type { CommandResult, CommandStreamHandlers } from "../../core/process/CommandRunner.js";
 import {
   formatPermissionGuidance,
+  type GlobalPackageManager,
   getUpdateCommand,
   isPermissionError,
   runUpdateCommand,
-  type GlobalPackageManager,
 } from "../../core/version/packageManager.js";
-import type { CommandResult, CommandStreamHandlers } from "../../core/process/CommandRunner.js";
+import { formatVersionLabel, UBUME_NPM_PACKAGE } from "../../core/version/updateCheck.js";
+import {
+  getHorizontalArrowDirection,
+  type HorizontalArrowDirection,
+} from "../input/rawArrowKeys.js";
+import { useTheme } from "../theme.js";
 
 export type UpdateUIState = "available" | "installing" | "success" | "failed";
 
@@ -19,10 +22,7 @@ export type RunUpdateFn = (
   handlers?: CommandStreamHandlers,
 ) => { result: Promise<CommandResult>; cancel: () => void };
 
-const MENU_ITEMS = [
-  { label: "Update now" },
-  { label: "Later" },
-] as const;
+const MENU_ITEMS = [{ label: "Update now" }, { label: "Later" }] as const;
 
 type HorizontalDirection = HorizontalArrowDirection;
 
@@ -71,52 +71,55 @@ export function UpdatePromptPanel({
     };
   }, [stdin]);
 
-  useInput((input, key) => {
-    if (key.escape) {
-      if (updateState === "installing") {
-        setOutputLines([]);
-        setErrorMessage(null);
-        setUpdateState("available");
-        // Ink clears the active focus id for every bare Escape before
-        // dispatching useInput handlers. Cancellation keeps this panel open,
-        // so explicitly retain its focus for the restored available state.
-        focus(focusId);
-        return;
-      }
-      onSkip();
-      return;
-    }
-    if (updateState === "available") {
-      const rawArrow = rawArrowRef.current;
-      rawArrowRef.current = null;
-      if (key.leftArrow || rawArrow === "left" || input === "h") {
-        setSelectedIndex((i) => Math.max(0, i - 1));
-        return;
-      }
-      if (key.rightArrow || rawArrow === "right" || input === "l") {
-        setSelectedIndex((i) => Math.min(MENU_ITEMS.length - 1, i + 1));
-        return;
-      }
-      if (key.return) {
-        if (selectedIndex === 0) {
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        if (updateState === "installing") {
           setOutputLines([]);
           setErrorMessage(null);
-          setUpdateState("installing");
-        } else {
-          onSkip();
+          setUpdateState("available");
+          // Ink clears the active focus id for every bare Escape before
+          // dispatching useInput handlers. Cancellation keeps this panel open,
+          // so explicitly retain its focus for the restored available state.
+          focus(focusId);
+          return;
         }
+        onSkip();
         return;
       }
-    } else if (updateState === "success") {
-      if (key.return) {
-        onRestart();
+      if (updateState === "available") {
+        const rawArrow = rawArrowRef.current;
+        rawArrowRef.current = null;
+        if (key.leftArrow || rawArrow === "left" || input === "h") {
+          setSelectedIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (key.rightArrow || rawArrow === "right" || input === "l") {
+          setSelectedIndex((i) => Math.min(MENU_ITEMS.length - 1, i + 1));
+          return;
+        }
+        if (key.return) {
+          if (selectedIndex === 0) {
+            setOutputLines([]);
+            setErrorMessage(null);
+            setUpdateState("installing");
+          } else {
+            onSkip();
+          }
+          return;
+        }
+      } else if (updateState === "success") {
+        if (key.return) {
+          onRestart();
+        }
+      } else if (updateState === "failed") {
+        if (key.return) {
+          onSkip();
+        }
       }
-    } else if (updateState === "failed") {
-      if (key.return) {
-        onSkip();
-      }
-    }
-  }, { isActive: isFocused });
+    },
+    { isActive: isFocused },
+  );
 
   useEffect(() => {
     if (updateState !== "installing") return;
@@ -158,13 +161,14 @@ export function UpdatePromptPanel({
     };
   }, [updateState, packageManager, runUpdate]);
 
-  const footerText = updateState === "available"
-    ? "←/→ to choose · Enter to confirm · Esc to close"
-    : updateState === "success"
-      ? "Enter to restart · Esc to stay in Ubume"
-      : updateState === "installing"
-        ? "Esc to cancel"
-        : "Esc to close";
+  const footerText =
+    updateState === "available"
+      ? "←/→ to choose · Enter to confirm · Esc to close"
+      : updateState === "success"
+        ? "Enter to restart · Esc to stay in Ubume"
+        : updateState === "installing"
+          ? "Esc to cancel"
+          : "Esc to close";
 
   return (
     <Box flexDirection="column" width="100%" marginTop={1}>
@@ -183,7 +187,9 @@ export function UpdatePromptPanel({
               <Text color={theme.text}>{`Current version: ${currentVersion}`}</Text>
             </Box>
             <Text color={theme.textMuted}>{`Package: ${UBUME_NPM_PACKAGE}`}</Text>
-            <Text color={theme.textMuted}>{`Run: ${getUpdateCommand(packageManager).displayCommand}`}</Text>
+            <Text
+              color={theme.textMuted}
+            >{`Run: ${getUpdateCommand(packageManager).displayCommand}`}</Text>
             <Box marginTop={1}>
               {MENU_ITEMS.map((item, index) => (
                 <Text
@@ -202,17 +208,23 @@ export function UpdatePromptPanel({
           <>
             <Text color={theme.text}>{`Installing Ubume ${latestVersion}...`}</Text>
             {outputLines.map((line, i) => (
-              <Text key={i} color={theme.textMuted}>{line}</Text>
+              <Text key={i} color={theme.textMuted}>
+                {line}
+              </Text>
             ))}
           </>
         )}
 
         {updateState === "success" && (
           <>
-            <Text color={theme.success}>{`Ubume ${formatVersionLabel(latestVersion)} installed successfully.`}</Text>
+            <Text
+              color={theme.success}
+            >{`Ubume ${formatVersionLabel(latestVersion)} installed successfully.`}</Text>
             <Text color={theme.textMuted}>{"Restart Ubume to use the new version."}</Text>
             <Box marginTop={1}>
-              <Text color={theme.text} bold>{"❯ [ Restart now ]"}</Text>
+              <Text color={theme.text} bold>
+                {"❯ [ Restart now ]"}
+              </Text>
             </Box>
           </>
         )}
@@ -222,7 +234,9 @@ export function UpdatePromptPanel({
             <Text color={theme.error}>{"Update failed."}</Text>
             {errorMessage != null && <Text color={theme.textMuted}>{errorMessage}</Text>}
             {outputLines.slice(-5).map((line, i) => (
-              <Text key={i} color={theme.textDim}>{line}</Text>
+              <Text key={i} color={theme.textDim}>
+                {line}
+              </Text>
             ))}
           </>
         )}

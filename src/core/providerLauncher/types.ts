@@ -1,4 +1,12 @@
-export type ProviderId = "openai" | "anthropic" | "google" | "mistral" | "local" | "codexa-native" | "codexa-cupy" | "antigravity";
+export type ProviderId =
+  | "openai"
+  | "anthropic"
+  | "google"
+  | "mistral"
+  | "local"
+  | "codexa-native"
+  | "codexa-cupy"
+  | "antigravity";
 
 export type LocalBackendId = "lm-studio" | "unsloth";
 
@@ -17,7 +25,11 @@ export type ProviderBackendType =
   | "unavailable";
 
 export type ProviderLaunchAction = "launch" | "set-default" | "cancel";
-export type ProviderRouteAction = "use-in-ubume" | "select-model" | "refresh-models" | "run-diagnostics";
+export type ProviderRouteAction =
+  | "use-in-ubume"
+  | "select-model"
+  | "refresh-models"
+  | "run-diagnostics";
 export type ProviderPickerAction = ProviderLaunchAction | ProviderRouteAction;
 export type ProviderRouteMode = "in-ubume" | "launch-only";
 

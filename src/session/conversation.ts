@@ -1,6 +1,9 @@
 import type { ProviderId } from "../core/providerLauncher/types.js";
 import type { ProviderBackendKind, ProviderRoute } from "../core/providerRuntime/types.js";
-import type { ConversationMessage, ConversationMetadata } from "../core/workspace/conversationStore.js";
+import type {
+  ConversationMessage,
+  ConversationMetadata,
+} from "../core/workspace/conversationStore.js";
 import type { AssistantEvent, TimelineEvent, UserPromptEvent } from "./types.js";
 
 /**
@@ -16,11 +19,14 @@ export function buildResumedProviderRoute(
   return {
     providerId,
     modelId: metadata.modelId,
-    backendKind: metadata.backendKind && metadata.backendKind !== "unavailable"
-      ? metadata.backendKind as ProviderBackendKind
-      : fallbackBackendKind,
+    backendKind:
+      metadata.backendKind && metadata.backendKind !== "unavailable"
+        ? (metadata.backendKind as ProviderBackendKind)
+        : fallbackBackendKind,
     ...(metadata.reasoning ? { reasoning: metadata.reasoning } : {}),
-    ...(providerId === "local" && metadata.localBackend ? { localBackend: metadata.localBackend } : {}),
+    ...(providerId === "local" && metadata.localBackend
+      ? { localBackend: metadata.localBackend }
+      : {}),
   };
 }
 
@@ -75,17 +81,20 @@ export function toProviderConversationHistory(
 ): ConversationMessage[] {
   return messages.map((message) => ({
     role: message.role,
-    content: options.includeActivitySummaries && message.activitySummary
-      ? `${(message.submittedContent ?? message.content)}\n\n${message.activitySummary}`
-      : message.submittedContent ?? message.content,
+    content:
+      options.includeActivitySummaries && message.activitySummary
+        ? `${message.submittedContent ?? message.content}\n\n${message.activitySummary}`
+        : (message.submittedContent ?? message.content),
   }));
 }
 
 export function formatConversationHistory(messages: readonly ConversationMessage[]): string {
-  return messages.map((message) => {
-    const label = message.role === "user" ? "User" : "Assistant";
-    return `${label}:\n${message.content}`;
-  }).join("\n\n");
+  return messages
+    .map((message) => {
+      const label = message.role === "user" ? "User" : "Assistant";
+      return `${label}:\n${message.content}`;
+    })
+    .join("\n\n");
 }
 
 export function selectConversationContext(

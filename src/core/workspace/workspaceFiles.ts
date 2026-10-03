@@ -1,18 +1,34 @@
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { readdir, readFile, lstat, realpath } from "node:fs/promises";
-import { resolve, relative, sep, dirname, join } from "node:path";
 import { createHash } from "node:crypto";
+import { lstat, readdir, readFile, realpath } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 import ignore from "ignore";
 import type { FileAttachment } from "../../session/workbench.js";
 
 const execute = promisify(execFile);
-const excluded = new Set([".git", ".ubume", ".codexa", "node_modules", "dist", "build", "coverage", ".cache", ".next", ".turbo"]);
+const excluded = new Set([
+  ".git",
+  ".ubume",
+  ".codexa",
+  "node_modules",
+  "dist",
+  "build",
+  "coverage",
+  ".cache",
+  ".next",
+  ".turbo",
+]);
 export const FILE_TEXT_LIMIT = 1024 * 1024;
 export function safeProjectPath(path: string): boolean {
-  return !!path && !path.includes("\0") && !path.includes("\\") && !path.startsWith("/")
-    && path.split("/").every((part) => part !== ".." && part !== "." && !excluded.has(part))
-    && !/(^|\/)\.env(?:\.|$)/.test(path);
+  return (
+    !!path &&
+    !path.includes("\0") &&
+    !path.includes("\\") &&
+    !path.startsWith("/") &&
+    path.split("/").every((part) => part !== ".." && part !== "." && !excluded.has(part)) &&
+    !/(^|\/)\.env(?:\.|$)/.test(path)
+  );
 }
 export async function containedFile(root: string, path: string): Promise<string> {
   if (!safeProjectPath(path)) throw new Error(`Unsupported project path: ${path}`);
@@ -23,20 +39,37 @@ export async function containedFile(root: string, path: string): Promise<string>
   let current = base;
   for (const part of rel.split(sep)) {
     current = join(current, part);
-    try { if ((await lstat(current)).isSymbolicLink()) throw new Error(`Symlink paths are unsupported: ${path}`); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    try {
+      if ((await lstat(current)).isSymbolicLink())
+        throw new Error(`Symlink paths are unsupported: ${path}`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
   }
   return absolute;
 }
 export async function listWorkspaceFiles(root: string): Promise<string[]> {
   try {
-    const { stdout } = await execute("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "."], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+    const { stdout } = await execute(
+      "git",
+      ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "."],
+      { cwd: root, maxBuffer: 16 * 1024 * 1024 },
+    );
     return [...new Set(stdout.split("\0").filter(safeProjectPath))].sort();
-  } catch { /* No Git repository: apply nested ignore files ourselves. */ }
+  } catch {
+    /* No Git repository: apply nested ignore files ourselves. */
+  }
   const files: string[] = [];
-  async function walk(dir: string, rules: { base: string; matcher: ReturnType<typeof ignore> }[]): Promise<void> {
+  async function walk(
+    dir: string,
+    rules: { base: string; matcher: ReturnType<typeof ignore> }[],
+  ): Promise<void> {
     let content = "";
-    try { content = await readFile(join(root, dir, ".gitignore"), "utf8"); } catch { /* Optional. */ }
+    try {
+      content = await readFile(join(root, dir, ".gitignore"), "utf8");
+    } catch {
+      /* Optional. */
+    }
     const current = content ? [...rules, { base: dir, matcher: ignore().add(content) }] : rules;
     const entries = await readdir(join(root, dir), { withFileTypes: true });
     for (const entry of entries) {
@@ -44,7 +77,9 @@ export async function listWorkspaceFiles(root: string): Promise<string[]> {
       if (!safeProjectPath(path) || entry.isSymbolicLink()) continue;
       let ignored = false;
       for (const rule of current) {
-        const match = rule.matcher.test(`${relative(join(root, rule.base), join(root, path)).split(sep).join("/")}${entry.isDirectory() ? "/" : ""}`);
+        const match = rule.matcher.test(
+          `${relative(join(root, rule.base), join(root, path)).split(sep).join("/")}${entry.isDirectory() ? "/" : ""}`,
+        );
         if (match.ignored) ignored = true;
         else if (match.unignored) ignored = false;
       }
@@ -58,45 +93,62 @@ export async function listWorkspaceFiles(root: string): Promise<string[]> {
 }
 export function fuzzyFiles(paths: readonly string[], query: string): string[] {
   const needle = query.toLowerCase();
-  return paths.map((path) => {
-    const lower = path.toLowerCase();
-    let cursor = 0;
-    let score = 0;
-    for (const char of needle) {
-      const index = lower.indexOf(char, cursor);
-      if (index < 0) return { path, score: Infinity };
-      score += index - cursor;
-      cursor = index + 1;
-    }
-    return { path, score: score + path.length / 1000 };
-  }).filter((item) => Number.isFinite(item.score)).sort((a, b) => a.score - b.score || a.path.localeCompare(b.path)).slice(0, 30).map((item) => item.path);
+  return paths
+    .map((path) => {
+      const lower = path.toLowerCase();
+      let cursor = 0;
+      let score = 0;
+      for (const char of needle) {
+        const index = lower.indexOf(char, cursor);
+        if (index < 0) return { path, score: Infinity };
+        score += index - cursor;
+        cursor = index + 1;
+      }
+      return { path, score: score + path.length / 1000 };
+    })
+    .filter((item) => Number.isFinite(item.score))
+    .sort((a, b) => a.score - b.score || a.path.localeCompare(b.path))
+    .slice(0, 30)
+    .map((item) => item.path);
 }
 export async function readFileAttachment(root: string, path: string): Promise<FileAttachment> {
   const absolute = await containedFile(root, path);
   const stat = await lstat(absolute);
-  if (!stat.isFile() || stat.size > FILE_TEXT_LIMIT) throw new Error(`${path}: attach a regular text file no larger than 1 MiB.`);
+  if (!stat.isFile() || stat.size > FILE_TEXT_LIMIT)
+    throw new Error(`${path}: attach a regular text file no larger than 1 MiB.`);
   const bytes = await readFile(absolute);
-  if (bytes.length > FILE_TEXT_LIMIT) throw new Error(`${path}: file grew beyond the text attachment limit.`);
+  if (bytes.length > FILE_TEXT_LIMIT)
+    throw new Error(`${path}: file grew beyond the text attachment limit.`);
   if (bytes.includes(0)) throw new Error(`${path}: binary files cannot be attached as text.`);
   const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   return { path, content, hash: createHash("sha256").update(bytes).digest("hex") };
 }
-export async function expandFileAttachments(value: string, registry: Map<string, FileAttachment>, root: string): Promise<string> {
+export async function expandFileAttachments(
+  value: string,
+  registry: Map<string, FileAttachment>,
+  root: string,
+): Promise<string> {
   const replacements = new Map<string, string>();
   let expandedBytes = Buffer.byteLength(value);
-  if (expandedBytes > 8 * FILE_TEXT_LIMIT) throw new Error("Attached text exceeds the 8 MiB prompt limit.");
+  if (expandedBytes > 8 * FILE_TEXT_LIMIT)
+    throw new Error("Attached text exceeds the 8 MiB prompt limit.");
   for (const [token, attachment] of registry) {
     if (!token || !value.includes(token)) continue;
-    const loaded = attachment.content === undefined ? await readFileAttachment(root, attachment.path) : attachment;
+    const loaded =
+      attachment.content === undefined
+        ? await readFileAttachment(root, attachment.path)
+        : attachment;
     const replacement = `\n<file path=${JSON.stringify(loaded.path)}>\n${loaded.content}\n</file>\n`;
     let occurrences = 0;
     for (let offset = 0; ; ) {
       const next = value.indexOf(token, offset);
       if (next < 0) break;
-      occurrences++; offset = next + token.length;
+      occurrences++;
+      offset = next + token.length;
     }
     expandedBytes += occurrences * (Buffer.byteLength(replacement) - Buffer.byteLength(token));
-    if (expandedBytes > 8 * FILE_TEXT_LIMIT) throw new Error("Attached text exceeds the 8 MiB prompt limit.");
+    if (expandedBytes > 8 * FILE_TEXT_LIMIT)
+      throw new Error("Attached text exceeds the 8 MiB prompt limit.");
     replacements.set(token, replacement);
   }
   // Scan the original prompt once: replacement contents are never expanded recursively.
@@ -106,7 +158,8 @@ export async function expandFileAttachments(value: string, registry: Map<string,
   let cursor = 0;
   const append = (text: string) => {
     total += Buffer.byteLength(text);
-    if (total > 8 * FILE_TEXT_LIMIT) throw new Error("Attached text exceeds the 8 MiB prompt limit.");
+    if (total > 8 * FILE_TEXT_LIMIT)
+      throw new Error("Attached text exceeds the 8 MiB prompt limit.");
     chunks.push(text);
   };
   while (cursor < value.length) {
@@ -115,7 +168,10 @@ export async function expandFileAttachments(value: string, registry: Map<string,
     for (const token of tokens) {
       if (!token) continue;
       const index = value.indexOf(token, cursor);
-      if (index >= 0 && index < next) { next = index; match = token; }
+      if (index >= 0 && index < next) {
+        next = index;
+        match = token;
+      }
     }
     append(value.slice(cursor, next));
     if (!match) break;

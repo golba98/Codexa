@@ -1,4 +1,3 @@
-import React from "react";
 import { Box, Text } from "ink";
 import { useTheme } from "../theme.js";
 
@@ -8,8 +7,8 @@ import { useTheme } from "../theme.js";
 
 const WAVE_CHARS = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"] as const;
 const WAVE_COLS = 12;
-const WAVE_SPEED = 0.38;  // radians per tick
-const WAVE_SPREAD = 0.6;  // phase offset between adjacent columns
+const WAVE_SPEED = 0.38; // radians per tick
+const WAVE_SPREAD = 0.6; // phase offset between adjacent columns
 
 interface WaveBarProps {
   tick: number;
@@ -37,8 +36,8 @@ export function WaveBar({ tick, color }: WaveBarProps) {
 const PULSE_TOTAL = 20;
 const PULSE_FILL = 6;
 const PULSE_MAX_POS = PULSE_TOTAL - PULSE_FILL; // 14
-const PULSE_PERIOD = PULSE_MAX_POS * 2;          // 28
-const PULSE_SPEED = 2;                            // ticks per position step
+const PULSE_PERIOD = PULSE_MAX_POS * 2; // 28
+const PULSE_SPEED = 2; // ticks per position step
 
 interface PulseBarProps {
   tick: number;

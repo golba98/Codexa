@@ -33,10 +33,7 @@ export function normalizeWorkspaceRoot(pathValue: string): string {
 }
 
 export function resolveWorkspaceRoot(): string {
-  const candidates = [
-    process.env.CODEX_WORKSPACE_ROOT,
-    process.cwd(),
-  ];
+  const candidates = [process.env.CODEX_WORKSPACE_ROOT, process.cwd()];
 
   for (const candidate of candidates) {
     const value = candidate?.trim();

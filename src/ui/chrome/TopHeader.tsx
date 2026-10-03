@@ -1,24 +1,25 @@
-import React, { memo } from "react";
 import { Box, Text } from "ink";
-import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../../config/settings.js";
-import { formatUbumeBrandLabel } from "../../core/version/channel.js";
-import { UBUME_UPDATE_COMMAND, formatVersionLabel } from "../../core/version/updateCheck.js";
+import type React from "react";
+import { memo } from "react";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
+import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../../config/settings.js";
 import type { CodexAuthState } from "../../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../../core/auth/codexAuth.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
-import { useTheme } from "../theme.js";
-import { clampVisualText, isDecorativeLayoutMode, type Layout, useAppLayoutBudget } from "../layout.js";
-import { getTextWidth } from "../render/textLayout.js";
-import { UPDATE_CARD_ROWS, UpdateAvailableCard } from "./UpdateAvailableCard.js";
+import { formatUbumeBrandLabel } from "../../core/version/channel.js";
+import { formatVersionLabel, UBUME_UPDATE_COMMAND } from "../../core/version/updateCheck.js";
+import { clampVisualText, isDecorativeLayoutMode, type Layout } from "../layout.js";
 import {
-  LOGO_LARGE,
+  getLogoWidth,
   LOGO_COMPACT,
   LOGO_COMPACT_MIN_COLS,
+  LOGO_LARGE,
   LOGO_LARGE_MIN_COLS,
   LOGO_LARGE_MIN_ROWS,
-  getLogoWidth,
 } from "../render/logoVariants.js";
+import { getTextWidth } from "../render/textLayout.js";
+import { useTheme } from "../theme.js";
+import { UPDATE_CARD_ROWS, UpdateAvailableCard } from "./UpdateAvailableCard.js";
 
 // Re-exported for backward compatibility with existing tests.
 export const HEADER_WORDMARK_LINES = LOGO_LARGE;
@@ -83,7 +84,10 @@ function getMetadataRowCount(headerConfig: HeaderConfig): number {
   ].filter(Boolean).length;
 }
 
-function getHeaderVerticalMargins(layout: Layout): { topMarginRows: number; bottomMarginRows: number } {
+function getHeaderVerticalMargins(layout: Layout): {
+  topMarginRows: number;
+  bottomMarginRows: number;
+} {
   if (!isDecorativeLayoutMode(layout.mode)) {
     return {
       topMarginRows: 0,
@@ -104,11 +108,10 @@ function getHeaderVerticalMargins(layout: Layout): { topMarginRows: number; bott
 export function selectHeaderLogo(layout: Layout): readonly string[] {
   if (process.env["UBUME_NO_ASCII_LOGO"] === "1") return [];
   const showNormalLogo =
-    process.env["UBUME_NO_ASCII_LOGO"] !== "1" && (
-      layout.mode === "regular" ||
+    process.env["UBUME_NO_ASCII_LOGO"] !== "1" &&
+    (layout.mode === "regular" ||
       layout.mode === "expanded" ||
-      (layout.mode === "compact" && layout.cols >= 72)
-    );
+      (layout.mode === "compact" && layout.cols >= 72));
   if (!showNormalLogo) return [];
   if (process.env["UBUME_COMPACT_LOGO"] === "1") return LOGO_COMPACT;
   return LOGO_LARGE;
@@ -124,11 +127,10 @@ export function getHeaderHeroLayout(
   const contentWidth = getHeaderContentWidth(layout.cols);
 
   const showNormalLogo =
-    process.env["UBUME_NO_ASCII_LOGO"] !== "1" && (
-      layout.mode === "regular" ||
+    process.env["UBUME_NO_ASCII_LOGO"] !== "1" &&
+    (layout.mode === "regular" ||
       layout.mode === "expanded" ||
-      (layout.mode === "compact" && layout.cols >= 72)
-    );
+      (layout.mode === "compact" && layout.cols >= 72));
 
   const placeMetadataBesideLogo = showNormalLogo && layout.cols >= 95;
 
@@ -173,7 +175,10 @@ export function getHeaderHeroLayout(
 
   const contentRows = isSideBySide
     ? Math.max(logoRowCount, rightColRows)
-    : logoRowCount + metadataGapRows + metadataRows + (hasUpdate ? STACKED_METADATA_GAP_ROWS + 1 : 0);
+    : logoRowCount +
+      metadataGapRows +
+      metadataRows +
+      (hasUpdate ? STACKED_METADATA_GAP_ROWS + 1 : 0);
 
   return {
     mode,
@@ -216,9 +221,11 @@ export function shortenHeaderWorkspaceLabel(workspaceLabel: string, maxWidth: nu
 
   const normalized = trimmed.replace(/[\\/]+$/, "");
   const separatorMatch = normalized.match(/[\\/]/g);
-  const separator = normalized.includes("\\") && (!separatorMatch || normalized.lastIndexOf("\\") >= normalized.lastIndexOf("/"))
-    ? "\\"
-    : "/";
+  const separator =
+    normalized.includes("\\") &&
+    (!separatorMatch || normalized.lastIndexOf("\\") >= normalized.lastIndexOf("/"))
+      ? "\\"
+      : "/";
   const lastSlash = Math.max(normalized.lastIndexOf("\\"), normalized.lastIndexOf("/"));
   const leaf = lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized;
   const prefix = lastSlash >= 0 ? `…${separator}` : "…";
@@ -256,28 +263,42 @@ export function TopHeader({
   const theme = useTheme();
 
   const authLabelRaw = getAuthStateLabel(authState);
-  const authLabel = authLabelRaw.length > 0
-    ? authLabelRaw[0]!.toUpperCase() + authLabelRaw.slice(1)
-    : authLabelRaw;
+  const authLabel =
+    authLabelRaw.length > 0 ? authLabelRaw[0]!.toUpperCase() + authLabelRaw.slice(1) : authLabelRaw;
 
   const heroLayout = getHeaderHeroLayout(layout, headerConfig, !!updateAvailable);
   const selectedLogo = selectHeaderLogo(layout);
   const selectedLogoWidth = selectedLogo.length > 0 ? getLogoWidth(selectedLogo) : 0;
 
   const contentWidth = getHeaderContentWidth(layout.cols);
-  const sideBySideMetadataWidth = Math.max(1, contentWidth - selectedLogoWidth - heroLayout.metadataGapColumns);
-  const metadataWidth = heroLayout.mode === "wide" || heroLayout.mode === "medium"
-    ? sideBySideMetadataWidth
-    : contentWidth;
+  const sideBySideMetadataWidth = Math.max(
+    1,
+    contentWidth - selectedLogoWidth - heroLayout.metadataGapColumns,
+  );
+  const metadataWidth =
+    heroLayout.mode === "wide" || heroLayout.mode === "medium"
+      ? sideBySideMetadataWidth
+      : contentWidth;
   const workspaceValueWidth = Math.max(1, metadataWidth - getTextWidth("Workspace: "));
   const wsDisplay = shortenHeaderWorkspaceLabel(workspaceLabel, workspaceValueWidth);
   const brandLabel = formatUbumeBrandLabel();
   const metadataLinesRaw = [
-    headerConfig.showBrand ? { key: "brand", text: brandLabel, color: theme.text, bold: true } : null,
-    headerConfig.showAuthStatus ? { key: "auth", text: `Auth: ${authLabel}`, color: theme.text, bold: false } : null,
-    headerConfig.showWorkspace ? { key: "workspace", text: `Workspace: ${wsDisplay}`, color: theme.textMuted, bold: false } : null,
+    headerConfig.showBrand
+      ? { key: "brand", text: brandLabel, color: theme.text, bold: true }
+      : null,
+    headerConfig.showAuthStatus
+      ? { key: "auth", text: `Auth: ${authLabel}`, color: theme.text, bold: false }
+      : null,
+    headerConfig.showWorkspace
+      ? { key: "workspace", text: `Workspace: ${wsDisplay}`, color: theme.textMuted, bold: false }
+      : null,
     headerConfig.showProvider && runtimeSummary?.providerLabel
-      ? { key: "provider", text: `Provider: ${runtimeSummary.providerLabel}`, color: theme.text, bold: false }
+      ? {
+          key: "provider",
+          text: `Provider: ${runtimeSummary.providerLabel}`,
+          color: theme.text,
+          bold: false,
+        }
       : null,
   ].filter((line): line is HeaderMetadataLine => Boolean(line));
   const metadataLines = metadataLinesRaw.map((line) => ({
@@ -287,20 +308,25 @@ export function TopHeader({
 
   // Add a 1-row gap between the version line and workspace line in wide mode
   // so the two pieces of metadata have breathing room beside the logo.
-  const hasMetadataGap = heroLayout.mode === "wide"
-    && metadataLines.length <= 3
-    && metadataLines.some((l) => l.key === "brand")
-    && metadataLines.some((l) => l.key === "workspace");
+  const hasMetadataGap =
+    heroLayout.mode === "wide" &&
+    metadataLines.length <= 3 &&
+    metadataLines.some((l) => l.key === "brand") &&
+    metadataLines.some((l) => l.key === "workspace");
   const metadataColumn = (
     <Box flexDirection="column" flexGrow={1} flexShrink={1} width={metadataWidth}>
       {metadataLines.map((line) =>
         hasMetadataGap && line.key === "workspace" ? (
           <Box key={line.key} marginTop={1}>
-            <Text color={line.color} bold={line.bold} wrap="truncate">{line.text}</Text>
+            <Text color={line.color} bold={line.bold} wrap="truncate">
+              {line.text}
+            </Text>
           </Box>
         ) : (
-          <Text key={line.key} color={line.color} bold={line.bold} wrap="truncate">{line.text}</Text>
-        )
+          <Text key={line.key} color={line.color} bold={line.bold} wrap="truncate">
+            {line.text}
+          </Text>
+        ),
       )}
     </Box>
   );
@@ -318,7 +344,9 @@ export function TopHeader({
           else if (i === 4 || i === 5) lineColor = theme.logoShadow;
         }
         return (
-          <Text key={i} color={lineColor} wrap="truncate">{line}</Text>
+          <Text key={i} color={lineColor} wrap="truncate">
+            {line}
+          </Text>
         );
       })}
     </Box>
@@ -330,9 +358,7 @@ export function TopHeader({
 
     return (
       <Box flexDirection="column" paddingX={1} width="100%">
-        {heroLayout.topMarginRows > 0 && (
-          <Box height={heroLayout.topMarginRows} />
-        )}
+        {heroLayout.topMarginRows > 0 && <Box height={heroLayout.topMarginRows} />}
 
         {isSideBySide ? (
           <Box flexDirection="row" width="100%" alignItems="flex-start">
@@ -356,64 +382,102 @@ export function TopHeader({
         ) : (
           <Box flexDirection="column" width="100%">
             {logoColumn}
-            {heroLayout.metadataGapRows > 0 && (
-              <Box height={heroLayout.metadataGapRows} />
-            )}
+            {heroLayout.metadataGapRows > 0 && <Box height={heroLayout.metadataGapRows} />}
             {metadataColumn}
             {updateAvailable && (
-              <Text color={theme.warning} wrap="truncate">{`Update available: Ubume ${formatVersionLabel(updateAvailable.latestVersion)} — Run: ${updateAvailable.updateCommand ?? UBUME_UPDATE_COMMAND}`}</Text>
+              <Text
+                color={theme.warning}
+                wrap="truncate"
+              >{`Update available: Ubume ${formatVersionLabel(updateAvailable.latestVersion)} — Run: ${updateAvailable.updateCommand ?? UBUME_UPDATE_COMMAND}`}</Text>
             )}
           </Box>
         )}
 
-        {heroLayout.bottomMarginRows > 0 && (
-          <Box height={heroLayout.bottomMarginRows} />
-        )}
+        {heroLayout.bottomMarginRows > 0 && <Box height={heroLayout.bottomMarginRows} />}
       </Box>
     );
   }
 
   // Compact / micro / activity-collapsed: single-line header.
   const compactMetadataWidth = contentWidth;
-  const compactWorkspaceValueWidth = Math.max(1, compactMetadataWidth - getTextWidth("Workspace: "));
-  const compactWorkspaceDisplay = shortenHeaderWorkspaceLabel(workspaceLabel, compactWorkspaceValueWidth);
+  const compactWorkspaceValueWidth = Math.max(
+    1,
+    compactMetadataWidth - getTextWidth("Workspace: "),
+  );
+  const compactWorkspaceDisplay = shortenHeaderWorkspaceLabel(
+    workspaceLabel,
+    compactWorkspaceValueWidth,
+  );
   // A leading ✦ accent makes the single-line header read as a deliberate
   // compact Ubume header rather than a broken fallback.
   const compactParts: React.ReactNode[] = [
-    <Text key="accent" color={theme.accent} bold>{"✦ "}</Text>,
+    <Text key="accent" color={theme.accent} bold>
+      {"✦ "}
+    </Text>,
   ];
   if (headerConfig.showBrand) {
     compactParts.push(
-      <Text key="brand" color={theme.text} bold>{brandLabel}</Text>,
+      <Text key="brand" color={theme.text} bold>
+        {brandLabel}
+      </Text>,
     );
   }
   if (headerConfig.showAuthStatus) {
-    if (compactParts.length > 0) compactParts.push(<Text key="sep-auth" color={theme.textDim}>{"  ·  "}</Text>);
-    compactParts.push(<Text key="auth" color={theme.text}>{authLabel}</Text>);
+    if (compactParts.length > 0)
+      compactParts.push(
+        <Text key="sep-auth" color={theme.textDim}>
+          {"  ·  "}
+        </Text>,
+      );
+    compactParts.push(
+      <Text key="auth" color={theme.text}>
+        {authLabel}
+      </Text>,
+    );
   }
   if (headerConfig.showWorkspace) {
-    if (compactParts.length > 0) compactParts.push(<Text key="sep-ws" color={theme.textDim}>{"  ·  "}</Text>);
-    compactParts.push(<Text key="ws" color={theme.textMuted} wrap="truncate">{`Workspace: ${compactWorkspaceDisplay}`}</Text>);
+    if (compactParts.length > 0)
+      compactParts.push(
+        <Text key="sep-ws" color={theme.textDim}>
+          {"  ·  "}
+        </Text>,
+      );
+    compactParts.push(
+      <Text
+        key="ws"
+        color={theme.textMuted}
+        wrap="truncate"
+      >{`Workspace: ${compactWorkspaceDisplay}`}</Text>,
+    );
   }
   if (headerConfig.showProvider && runtimeSummary?.providerLabel) {
-    if (compactParts.length > 0) compactParts.push(<Text key="sep-provider" color={theme.textDim}>{"  ·  "}</Text>);
-    compactParts.push(<Text key="provider" color={theme.text} wrap="truncate">{`Provider: ${runtimeSummary.providerLabel}`}</Text>);
+    if (compactParts.length > 0)
+      compactParts.push(
+        <Text key="sep-provider" color={theme.textDim}>
+          {"  ·  "}
+        </Text>,
+      );
+    compactParts.push(
+      <Text
+        key="provider"
+        color={theme.text}
+        wrap="truncate"
+      >{`Provider: ${runtimeSummary.providerLabel}`}</Text>,
+    );
   }
 
   return (
     <Box flexDirection="column" paddingX={1} width="100%">
-      {heroLayout.topMarginRows > 0 && (
-        <Box height={heroLayout.topMarginRows} />
-      )}
+      {heroLayout.topMarginRows > 0 && <Box height={heroLayout.topMarginRows} />}
       <Box flexDirection="row" width="100%">
         {compactParts}
       </Box>
       {heroLayout.compactHintRows > 0 && (
-        <Text color={theme.textDim} wrap="truncate">{clampMetadataText(RECOMMENDED_FULL_HEADER_HINT, compactMetadataWidth)}</Text>
+        <Text color={theme.textDim} wrap="truncate">
+          {clampMetadataText(RECOMMENDED_FULL_HEADER_HINT, compactMetadataWidth)}
+        </Text>
       )}
-      {heroLayout.bottomMarginRows > 0 && (
-        <Box height={heroLayout.bottomMarginRows} />
-      )}
+      {heroLayout.bottomMarginRows > 0 && <Box height={heroLayout.bottomMarginRows} />}
     </Box>
   );
 }
@@ -436,4 +500,8 @@ export const MemoizedTopHeader = memo(TopHeader, (prev, next) => {
 export const MIN_LOGO_TERMINAL_WIDTH = LOGO_COMPACT_MIN_COLS;
 
 // Re-export for consumers that reference these constants directly.
-export { LOGO_LARGE_MIN_COLS, LOGO_MEDIUM_MIN_COLS, LOGO_COMPACT_MIN_COLS } from "../render/logoVariants.js";
+export {
+  LOGO_COMPACT_MIN_COLS,
+  LOGO_LARGE_MIN_COLS,
+  LOGO_MEDIUM_MIN_COLS,
+} from "../render/logoVariants.js";

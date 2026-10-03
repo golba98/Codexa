@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildGeminiSpawnSpec, resetGeminiExecutableCacheForTests, resolveGeminiExecutable } from "./geminiExecutable.js";
-import { runCommand, type CommandResult } from "../process/CommandRunner.js";
+import test from "node:test";
+import type { CommandResult, runCommand } from "../process/CommandRunner.js";
+import {
+  buildGeminiSpawnSpec,
+  resetGeminiExecutableCacheForTests,
+  resolveGeminiExecutable,
+} from "./geminiExecutable.js";
 
 function commandResult(overrides: Partial<CommandResult>): CommandResult {
   return {
@@ -22,7 +26,9 @@ function commandResult(overrides: Partial<CommandResult>): CommandResult {
   };
 }
 
-function mockRunCommand(onCall: (spec: Parameters<typeof runCommand>[0]) => CommandResult): typeof runCommand {
+function mockRunCommand(
+  onCall: (spec: Parameters<typeof runCommand>[0]) => CommandResult,
+): typeof runCommand {
   return ((spec) => ({
     child: null as unknown as ChildProcess,
     result: Promise.resolve(onCall(spec)),
@@ -99,7 +105,9 @@ test("Gemini resolver: PowerShell function text is not accepted as executable pa
     process.env.APPDATA = tempRoot;
     try {
       const resolved = await resolveGeminiExecutable({
-        runCommandImpl: mockRunCommand(() => commandResult({ stdout: "function gemini { param($p) }\n" })),
+        runCommandImpl: mockRunCommand(() =>
+          commandResult({ stdout: "function gemini { param($p) }\n" }),
+        ),
       });
       assert.equal(resolved, shim);
     } finally {
@@ -109,7 +117,10 @@ test("Gemini resolver: PowerShell function text is not accepted as executable pa
 });
 
 test("Gemini spawn spec bypasses PowerShell and targets the resolved executable", () => {
-  const spec = buildGeminiSpawnSpec("C:\\Users\\Example\\AppData\\Roaming\\npm\\gemini.cmd", ["-p", "Respond with READY only."]);
+  const spec = buildGeminiSpawnSpec("C:\\Users\\Example\\AppData\\Roaming\\npm\\gemini.cmd", [
+    "-p",
+    "Respond with READY only.",
+  ]);
   assert.equal(spec.executable, "C:\\Users\\Example\\AppData\\Roaming\\npm\\gemini.cmd");
   assert.deepEqual(spec.args, ["-p", "Respond with READY only."]);
   assert.equal(spec.shell, undefined);

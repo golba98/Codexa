@@ -1,10 +1,10 @@
 import type { ChildProcess } from "child_process";
 import {
-  runCommand,
-  runShellCommand,
   type CommandResult,
   type CommandSpec,
   type CommandStreamHandlers,
+  runCommand,
+  runShellCommand,
 } from "../process/CommandRunner.js";
 import { UBUME_NPM_PACKAGE } from "./updateCheck.js";
 
@@ -32,13 +32,22 @@ export function detectGlobalPackageManager(
   env: NodeJS.ProcessEnv = process.env,
   launcherPathOverride?: string,
 ): GlobalPackageManager {
-  const launcherPath = launcherPathOverride ?? env.UBUME_LAUNCHER_SCRIPT ?? env.CODEXA_LAUNCHER_SCRIPT ?? process.argv[1] ?? "";
+  const launcherPath =
+    launcherPathOverride ??
+    env.UBUME_LAUNCHER_SCRIPT ??
+    env.CODEXA_LAUNCHER_SCRIPT ??
+    process.argv[1] ??
+    "";
   const normalized = launcherPath.toLowerCase().replace(/\\/g, "/");
   if (!normalized) return "npm";
 
   if (normalized.includes("pnpm")) return "pnpm";
   if (normalized.includes("/.bun/") || normalized.includes("/bun/install/global/")) return "bun";
-  if (normalized.includes("/.yarn/") || normalized.includes("/yarn/") || normalized.includes(".config/yarn")) {
+  if (
+    normalized.includes("/.yarn/") ||
+    normalized.includes("/yarn/") ||
+    normalized.includes(".config/yarn")
+  ) {
     return "yarn";
   }
   return "npm";
@@ -83,7 +92,11 @@ export function runUpdateCommand(
 
   if (platform === "win32") {
     const runShell = deps.runShellCommandFn ?? runShellCommand;
-    const { result, cancel } = runShell(displayCommand, { cwd, timeoutMs: UPDATE_TIMEOUT_MS }, handlers);
+    const { result, cancel } = runShell(
+      displayCommand,
+      { cwd, timeoutMs: UPDATE_TIMEOUT_MS },
+      handlers,
+    );
     return { result, cancel };
   }
 
@@ -115,6 +128,8 @@ export function formatPermissionGuidance(pm: GlobalPackageManager): string {
   } else {
     lines.push(`Make sure the ${pm} global package directory is writable by your user.`);
   }
-  lines.push(`You can also run the command manually in a terminal with the right permissions: ${displayCommand}`);
+  lines.push(
+    `You can also run the command manually in a terminal with the right permissions: ${displayCommand}`,
+  );
   return lines.join("\n");
 }

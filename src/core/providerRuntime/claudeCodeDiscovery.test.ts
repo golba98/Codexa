@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import type { ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ChildProcess } from "node:child_process";
-import { runCommand, type CommandResult } from "../process/CommandRunner.js";
+import test from "node:test";
+import type { CommandResult, runCommand } from "../process/CommandRunner.js";
 import {
-  parseClaudeAuthStatus,
-  parseClaudeEffortLevelsFromHelp,
   claudeCodeModelsToProviderModels,
-  getClaudeModelDefaultEffort,
-  modelSupportsClaudeEffort,
   discoverClaudeCodeCapabilities,
   discoverModelsFromClaudePackageMetadata,
+  getClaudeModelDefaultEffort,
+  modelSupportsClaudeEffort,
+  parseClaudeAuthStatus,
+  parseClaudeEffortLevelsFromHelp,
 } from "./claudeCodeDiscovery.js";
 import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
 
@@ -35,9 +35,8 @@ function mockRunCommand(
   resultOrMap: CommandResult | ((executable: string, args: string[]) => CommandResult),
 ): typeof runCommand {
   return ((spec) => {
-    const result = typeof resultOrMap === "function"
-      ? resultOrMap(spec.executable, spec.args)
-      : resultOrMap;
+    const result =
+      typeof resultOrMap === "function" ? resultOrMap(spec.executable, spec.args) : resultOrMap;
     return {
       child: null as unknown as ChildProcess,
       result: Promise.resolve(result),
@@ -50,13 +49,15 @@ function mockRunCommand(
 // 1. parseClaudeAuthStatus Unit Tests
 // ---------------------------------------------------------------------------
 test("parseClaudeAuthStatus: handles valid JSON loggedIn true/false and extra fields", () => {
-  const trueRes = parseClaudeAuthStatus(JSON.stringify({
-    loggedIn: true,
-    authMethod: "firstParty",
-    apiProvider: "anthropic",
-    subscriptionType: "pro",
-    extraField: "ignored",
-  }));
+  const trueRes = parseClaudeAuthStatus(
+    JSON.stringify({
+      loggedIn: true,
+      authMethod: "firstParty",
+      apiProvider: "anthropic",
+      subscriptionType: "pro",
+      extraField: "ignored",
+    }),
+  );
   assert.deepEqual(trueRes, {
     loggedIn: true,
     authMethod: "firstParty",
@@ -64,10 +65,12 @@ test("parseClaudeAuthStatus: handles valid JSON loggedIn true/false and extra fi
     subscriptionType: "pro",
   });
 
-  const falseRes = parseClaudeAuthStatus(JSON.stringify({
-    loggedIn: false,
-    extraField: 123,
-  }));
+  const falseRes = parseClaudeAuthStatus(
+    JSON.stringify({
+      loggedIn: false,
+      extraField: 123,
+    }),
+  );
   assert.deepEqual(falseRes, {
     loggedIn: false,
     authMethod: undefined,
@@ -86,8 +89,15 @@ test("parseClaudeAuthStatus: returns null for invalid JSON or non-object", () =>
 });
 
 test("parseClaudeEffortLevelsFromHelp: extracts the CLI valid-values list", () => {
-  const helpText = "Usage: claude [options]\n  --effort <level>  Effort level (low, medium, high, xhigh, max)";
-  assert.deepEqual(parseClaudeEffortLevelsFromHelp(helpText), ["low", "medium", "high", "xhigh", "max"]);
+  const helpText =
+    "Usage: claude [options]\n  --effort <level>  Effort level (low, medium, high, xhigh, max)";
+  assert.deepEqual(parseClaudeEffortLevelsFromHelp(helpText), [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ]);
   assert.equal(parseClaudeEffortLevelsFromHelp("Usage: claude [options]"), null);
 });
 
@@ -122,7 +132,10 @@ test("claudeCodeModelsToProviderModels: maps models with effort levels and verif
   assert.equal(providerModels[0].label, "Custom Claude Model");
   assert.equal(providerModels[0].description, "A very nice custom model");
   assert.equal(providerModels[0].defaultReasoningLevel, "medium");
-  assert.deepEqual(providerModels[0].supportedReasoningLevels?.map((l) => l.id), ["low", "medium", "high"]);
+  assert.deepEqual(
+    providerModels[0].supportedReasoningLevels?.map((l) => l.id),
+    ["low", "medium", "high"],
+  );
   assert.equal(providerModels[0].source, "claude-code");
   assert.equal(providerModels[0].canonicalId, "canonical-sonnet");
   assert.equal(providerModels[0].family, "sonnet");
@@ -244,9 +257,12 @@ test("discoverClaudeCodeCapabilities: full success with model list --json as arr
     metadataPaths: [],
     settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
-      if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
-      if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json" });
-      if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
+      if (args[0] === "auth")
+        return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+      if (args[0] === "--help")
+        return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json" });
+      if (args[0] === "model" && args[1] === "--help")
+        return commandResult({ exitCode: 0, stdout: "model list --json" });
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
         return commandResult({
           exitCode: 0,
@@ -279,9 +295,12 @@ test("discoverClaudeCodeCapabilities: full success with model list --json return
     cwd: process.cwd(),
     settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
-      if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
-      if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json" });
-      if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
+      if (args[0] === "auth")
+        return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+      if (args[0] === "--help")
+        return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json" });
+      if (args[0] === "model" && args[1] === "--help")
+        return commandResult({ exitCode: 0, stdout: "model list --json" });
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
         return commandResult({
           exitCode: 0,
@@ -314,9 +333,12 @@ test("discoverClaudeCodeCapabilities: full success with model list --json return
     cwd: process.cwd(),
     settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
-      if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
-      if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json" });
-      if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
+      if (args[0] === "auth")
+        return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+      if (args[0] === "--help")
+        return commandResult({ exitCode: 0, stdout: "Commands:\n  model list --json" });
+      if (args[0] === "model" && args[1] === "--help")
+        return commandResult({ exitCode: 0, stdout: "model list --json" });
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
         return commandResult({
           exitCode: 0,
@@ -339,14 +361,28 @@ test("discoverClaudeCodeCapabilities: applies CLI effort truth and settings defa
   try {
     writeFileSync(settingsPath, JSON.stringify({ effortLevel: "xhigh" }), "utf-8");
     const discovery = await discoverClaudeCodeCapabilities({
-      cwd: process.cwd(), settingsPath, metadataPaths: [],
+      cwd: process.cwd(),
+      settingsPath,
+      metadataPaths: [],
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (args[0] === "auth") return commandResult({ stdout: JSON.stringify({ loggedIn: true }) });
-        if (args[0] === "--help") return commandResult({ stdout: "  --effort <level>  Set effort (low, medium, high, xhigh, max)" });
-        if (args[0] === "model" && args[1] === "list") return commandResult({ stdout: JSON.stringify([
-          { value: "sonnet", family: "sonnet" },
-          { value: "haiku", family: "haiku", effortLevels: ["low", "ultra"], defaultEffort: "ultra" },
-        ]) });
+        if (args[0] === "auth")
+          return commandResult({ stdout: JSON.stringify({ loggedIn: true }) });
+        if (args[0] === "--help")
+          return commandResult({
+            stdout: "  --effort <level>  Set effort (low, medium, high, xhigh, max)",
+          });
+        if (args[0] === "model" && args[1] === "list")
+          return commandResult({
+            stdout: JSON.stringify([
+              { value: "sonnet", family: "sonnet" },
+              {
+                value: "haiku",
+                family: "haiku",
+                effortLevels: ["low", "ultra"],
+                defaultEffort: "ultra",
+              },
+            ]),
+          });
         return commandResult({ exitCode: 1 });
       }),
     });
@@ -368,15 +404,12 @@ test("discoverClaudeCodeCapabilities: normalizes versioned Claude Code IDs into 
     cwd: process.cwd(),
     settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
-      if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+      if (args[0] === "auth")
+        return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
         return commandResult({
           exitCode: 0,
-          stdout: JSON.stringify([
-            "claude-opus-4-8",
-            "claude-sonnet-4-6",
-            "claude-haiku-4-5",
-          ]),
+          stdout: JSON.stringify(["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]),
         });
       }
       return commandResult({ exitCode: 1 });
@@ -400,7 +433,8 @@ test("discoverClaudeCodeCapabilities: aliases are marked version unknown when Cl
     metadataPaths: [],
     settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
-      if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+      if (args[0] === "auth")
+        return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
         return commandResult({ exitCode: 0, stdout: JSON.stringify(["opus", "sonnet", "haiku"]) });
       }
@@ -439,9 +473,13 @@ test("discoverClaudeCodeCapabilities: resolves alias-only command output using i
       metadataPaths: [metadataPath],
       settingsPath: null,
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+        if (args[0] === "auth")
+          return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
         if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
-          return commandResult({ exitCode: 0, stdout: JSON.stringify(["opus", "sonnet", "haiku"]) });
+          return commandResult({
+            exitCode: 0,
+            stdout: JSON.stringify(["opus", "sonnet", "haiku"]),
+          });
         }
         return commandResult({ exitCode: 1 });
       }),
@@ -459,9 +497,33 @@ test("discoverClaudeCodeCapabilities: resolves alias-only command output using i
         discoveryKind: model.discoveryKind,
       })),
       [
-        { value: "opus", canonicalId: "claude-opus-4-8", label: "Claude Opus 4.8", version: "4.8", source: "claude-code-package", isFallback: false, discoveryKind: "aliases" },
-        { value: "sonnet", canonicalId: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", version: "4.6", source: "claude-code-package", isFallback: false, discoveryKind: "aliases" },
-        { value: "haiku", canonicalId: "claude-haiku-4-5", label: "Claude Haiku 4.5", version: "4.5", source: "claude-code-package", isFallback: false, discoveryKind: "aliases" },
+        {
+          value: "opus",
+          canonicalId: "claude-opus-4-8",
+          label: "Claude Opus 4.8",
+          version: "4.8",
+          source: "claude-code-package",
+          isFallback: false,
+          discoveryKind: "aliases",
+        },
+        {
+          value: "sonnet",
+          canonicalId: "claude-sonnet-4-6",
+          label: "Claude Sonnet 4.6",
+          version: "4.6",
+          source: "claude-code-package",
+          isFallback: false,
+          discoveryKind: "aliases",
+        },
+        {
+          value: "haiku",
+          canonicalId: "claude-haiku-4-5",
+          label: "Claude Haiku 4.5",
+          version: "4.5",
+          source: "claude-code-package",
+          isFallback: false,
+          discoveryKind: "aliases",
+        },
       ],
     );
     assert.ok(!discovery.models.some((model) => /version unknown/i.test(model.label)));
@@ -476,12 +538,9 @@ test("discoverModelsFromClaudePackageMetadata: major-only ids like claude-sonnet
   try {
     writeFileSync(
       metadataPath,
-      [
-        "claude-opus-4-8",
-        "claude-sonnet-4-6",
-        "claude-sonnet-5",
-        "claude-haiku-4-5-20251001",
-      ].join("\n"),
+      ["claude-opus-4-8", "claude-sonnet-4-6", "claude-sonnet-5", "claude-haiku-4-5-20251001"].join(
+        "\n",
+      ),
       "utf-8",
     );
 
@@ -489,7 +548,11 @@ test("discoverModelsFromClaudePackageMetadata: major-only ids like claude-sonnet
     assert.ok(discovery, "expected package metadata discovery to succeed");
     const byFamily = new Map(discovery.models.map((model) => [model.family, model]));
     assert.deepEqual(
-      { canonicalId: byFamily.get("sonnet")?.canonicalId, version: byFamily.get("sonnet")?.version, label: byFamily.get("sonnet")?.label },
+      {
+        canonicalId: byFamily.get("sonnet")?.canonicalId,
+        version: byFamily.get("sonnet")?.version,
+        label: byFamily.get("sonnet")?.label,
+      },
       { canonicalId: "claude-sonnet-5", version: "5", label: "Claude Sonnet 5" },
     );
     assert.equal(byFamily.get("opus")?.canonicalId, "claude-opus-4-8");
@@ -521,28 +584,24 @@ test("discoverClaudeCodeCapabilities: uses package metadata before fallback when
   const tempRoot = mkdtempSync(join(tmpdir(), "claude-package-metadata-test-"));
   const metadataPath = join(tempRoot, "claude-binary-strings.txt");
   try {
-    writeFileSync(
-      metadataPath,
-      "claude-opus-4-8\nclaude-sonnet-4-6\nclaude-haiku-4-5\n",
-      "utf-8",
-    );
+    writeFileSync(metadataPath, "claude-opus-4-8\nclaude-sonnet-4-6\nclaude-haiku-4-5\n", "utf-8");
 
     const discovery = await discoverClaudeCodeCapabilities({
       cwd: process.cwd(),
       metadataPaths: [metadataPath],
       settingsPath: null,
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+        if (args[0] === "auth")
+          return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
         return commandResult({ exitCode: 1 });
       }),
     });
 
     assert.equal(discovery.modelSource, "claude-code-package");
-    assert.deepEqual(discovery.models.map((model) => model.label), [
-      "Claude Opus 4.8",
-      "Claude Sonnet 4.6",
-      "Claude Haiku 4.5",
-    ]);
+    assert.deepEqual(
+      discovery.models.map((model) => model.label),
+      ["Claude Opus 4.8", "Claude Sonnet 4.6", "Claude Haiku 4.5"],
+    );
     assert.equal(discovery.diagnostics?.packageMetadataPath, metadataPath);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
@@ -565,7 +624,7 @@ test("discoverClaudeCodeCapabilities: settings fallback when CLI has no model js
           },
         },
       }),
-      "utf-8"
+      "utf-8",
     );
 
     const discovery = await discoverClaudeCodeCapabilities({
@@ -573,8 +632,10 @@ test("discoverClaudeCodeCapabilities: settings fallback when CLI has no model js
       settingsPath,
       metadataPaths: [],
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
-        if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "no model json command here" });
+        if (args[0] === "auth")
+          return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+        if (args[0] === "--help")
+          return commandResult({ exitCode: 0, stdout: "no model json command here" });
         return commandResult({ exitCode: 0 });
       }),
     });
@@ -602,7 +663,7 @@ test("discoverClaudeCodeCapabilities: settings fallback with availableModels, al
         model: "claude-3-opus-custom",
         availableModels: ["opus", "sonnet"],
       }),
-      "utf-8"
+      "utf-8",
     );
 
     const discovery = await discoverClaudeCodeCapabilities({
@@ -610,8 +671,10 @@ test("discoverClaudeCodeCapabilities: settings fallback with availableModels, al
       settingsPath,
       metadataPaths: [],
       runCommandImpl: mockRunCommand((executable, args) => {
-        if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
-        if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "no model json command here" });
+        if (args[0] === "auth")
+          return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+        if (args[0] === "--help")
+          return commandResult({ exitCode: 0, stdout: "no model json command here" });
         return commandResult({ exitCode: 0 });
       }),
     });
@@ -674,29 +737,58 @@ test("direct-probe regression: discovery succeeds when help text has NO matching
     cwd: process.cwd(),
     settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
-      if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
+      if (args[0] === "auth")
+        return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       // Help text deliberately contains NO matching "model list --json" substring.
-      if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "Usage: claude [options]\n  --model <m>  Set model\n" });
-      if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "Usage: claude model\n  list  List models\n" });
+      if (args[0] === "--help")
+        return commandResult({
+          exitCode: 0,
+          stdout: "Usage: claude [options]\n  --model <m>  Set model\n",
+        });
+      if (args[0] === "model" && args[1] === "--help")
+        return commandResult({ exitCode: 0, stdout: "Usage: claude model\n  list  List models\n" });
       // But the direct probe for 'model list --json' succeeds.
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
-        return commandResult({ exitCode: 0, stdout: JSON.stringify({
-          models: [
-            { value: "claude-opus-4-8", label: "Claude Opus 4.8", family: "opus", effortLevels: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "xhigh" },
-            { value: "claude-sonnet-4-7", label: "Claude Sonnet 4.7", family: "sonnet", effortLevels: ["low", "medium", "high", "max"], defaultEffort: "high" },
-          ],
-        }) });
+        return commandResult({
+          exitCode: 0,
+          stdout: JSON.stringify({
+            models: [
+              {
+                value: "claude-opus-4-8",
+                label: "Claude Opus 4.8",
+                family: "opus",
+                effortLevels: ["low", "medium", "high", "xhigh", "max"],
+                defaultEffort: "xhigh",
+              },
+              {
+                value: "claude-sonnet-4-7",
+                label: "Claude Sonnet 4.7",
+                family: "sonnet",
+                effortLevels: ["low", "medium", "high", "max"],
+                defaultEffort: "high",
+              },
+            ],
+          }),
+        });
       }
       return commandResult({ exitCode: 1 }); // everything else fails
     }),
   });
 
-  assert.equal(discovery.modelSource, "claude-code-command", "Must discover via direct probe, not fall back");
+  assert.equal(
+    discovery.modelSource,
+    "claude-code-command",
+    "Must discover via direct probe, not fall back",
+  );
   assert.equal(discovery.models.length, 2);
   assert.equal(discovery.models[0]?.source, "claude-code-command");
   // Must NOT contain any fallback model aliases
-  assert.ok(!discovery.models.some((m) => m.value === "opus" || m.value === "sonnet" || m.value === "haiku"),
-    "Direct-probe results must not be replaced by static fallback aliases");
+  assert.ok(
+    !discovery.models.some(
+      (m) => m.value === "opus" || m.value === "sonnet" || m.value === "haiku",
+    ),
+    "Direct-probe results must not be replaced by static fallback aliases",
+  );
 });
 
 test("direct-probe regression: normalises model objects using 'name' field when 'value'/'id' absent", async () => {
@@ -704,14 +796,19 @@ test("direct-probe regression: normalises model objects using 'name' field when 
     cwd: process.cwd(),
     settingsPath: null,
     runCommandImpl: mockRunCommand((executable, args) => {
-      if (args[0] === "auth") return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: false }) });
+      if (args[0] === "auth")
+        return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: false }) });
       if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
-      if (args[0] === "model" && args[1] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });
+      if (args[0] === "model" && args[1] === "--help")
+        return commandResult({ exitCode: 0, stdout: "model list --json" });
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
         // CLI returns objects using 'name' rather than 'value'/'id'
-        return commandResult({ exitCode: 0, stdout: JSON.stringify([
-          { name: "claude-sonnet-4-7", label: "Claude Sonnet 4.7", family: "sonnet" },
-        ]) });
+        return commandResult({
+          exitCode: 0,
+          stdout: JSON.stringify([
+            { name: "claude-sonnet-4-7", label: "Claude Sonnet 4.7", family: "sonnet" },
+          ]),
+        });
       }
       return commandResult({ exitCode: 1 });
     }),
@@ -738,7 +835,10 @@ test("ANTHROPIC_FALLBACK_MODELS offers the Fable flagship first with the full ef
   assert.equal(fable?.modelId, "fable");
   assert.equal(fable?.family, "fable");
   assert.equal(fable?.defaultReasoningLevel, "xhigh");
-  assert.deepEqual(fable?.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
+  assert.deepEqual(
+    fable?.supportedReasoningLevels?.map((level) => level.id),
+    ["low", "medium", "high", "xhigh", "max"],
+  );
 });
 
 test("ANTHROPIC_FALLBACK_MODELS uses short aliases as modelId, not versioned canonical IDs", () => {
@@ -757,7 +857,10 @@ test("ANTHROPIC_FALLBACK_MODELS uses short aliases as modelId, not versioned can
 
 test("ANTHROPIC_FALLBACK_MODELS uses the full last-known Claude CLI effort ladder", () => {
   for (const model of ANTHROPIC_FALLBACK_MODELS) {
-    assert.deepEqual(model.supportedReasoningLevels?.map((level) => level.id), ["low", "medium", "high", "xhigh", "max"]);
+    assert.deepEqual(
+      model.supportedReasoningLevels?.map((level) => level.id),
+      ["low", "medium", "high", "xhigh", "max"],
+    );
     assert.equal(model.effortVerified, false);
   }
 });

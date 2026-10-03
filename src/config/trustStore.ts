@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
-import { getLegacyCodexaTrustStoreFile, getUbumeTrustStoreFile } from "./settings.js";
 import { normalizeWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
+import { getLegacyCodexaTrustStoreFile, getUbumeTrustStoreFile } from "./settings.js";
 
 interface TrustStoreData {
   trustedProjectRoots: string[];
@@ -19,8 +19,8 @@ function parseTrustStoreData(data: unknown): TrustStoreData {
   const record = data as Record<string, unknown>;
   const trustedProjectRoots = Array.isArray(record.trustedProjectRoots)
     ? record.trustedProjectRoots
-      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-      .map((value) => normalizeWorkspaceRoot(value))
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .map((value) => normalizeWorkspaceRoot(value))
     : [];
 
   return {

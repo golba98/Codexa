@@ -54,7 +54,7 @@ export function calculateListWindow({
   }
 
   const rangeReserved = showRangeLine ? 1 : 0;
-  
+
   // If everything fits including the range line, just show everything.
   if (itemCount + chromeRows + rangeReserved <= availableRows) {
     return {
@@ -75,7 +75,7 @@ export function calculateListWindow({
   // We MUST fit within availableRows.
   const indicatorReserved = showIndicators ? 2 : 0;
   const baseReserved = chromeRows + indicatorReserved + rangeReserved;
-  
+
   let itemRows = Math.max(1, availableRows - baseReserved);
   let start = 0;
   let end = 0;
@@ -83,7 +83,7 @@ export function calculateListWindow({
   // Iteratively refine to account for dynamic indicators.
   for (let attempt = 0; attempt < 3; attempt++) {
     const visibleCount = Math.max(1, Math.min(itemCount, itemRows));
-    
+
     // Center selected item if possible
     start = Math.max(0, selectedIndex - Math.floor(visibleCount / 2));
     if (start + visibleCount > itemCount) {
@@ -93,11 +93,12 @@ export function calculateListWindow({
 
     const actualAbove = start > 0;
     const actualBelow = end < itemCount;
-    const dynamicReserved = chromeRows 
-      + (showRangeLine ? 1 : 0)
-      + (showIndicators && actualAbove ? 1 : 0)
-      + (showIndicators && actualBelow ? 1 : 0);
-    
+    const dynamicReserved =
+      chromeRows +
+      (showRangeLine ? 1 : 0) +
+      (showIndicators && actualAbove ? 1 : 0) +
+      (showIndicators && actualBelow ? 1 : 0);
+
     const nextItemRows = Math.max(1, availableRows - dynamicReserved);
     if (nextItemRows === itemRows) break;
     itemRows = nextItemRows;
@@ -115,8 +116,17 @@ export function calculateListWindow({
   // Final clamping to ensure we don't exceed availableRows if indicators are shown
   let finalAbove = showIndicators && start > 0;
   let finalBelow = showIndicators && end < itemCount;
-  
-  while (end - start + chromeRows + (showRangeLine ? 1 : 0) + (finalAbove ? 1 : 0) + (finalBelow ? 1 : 0) > availableRows && end - start > 1) {
+
+  while (
+    end -
+      start +
+      chromeRows +
+      (showRangeLine ? 1 : 0) +
+      (finalAbove ? 1 : 0) +
+      (finalBelow ? 1 : 0) >
+      availableRows &&
+    end - start > 1
+  ) {
     // Shrink window from the side further from selectedIndex
     if (selectedIndex - start > end - 1 - selectedIndex) {
       start++;
@@ -136,10 +146,12 @@ export function calculateListWindow({
     showRange: showRangeLine,
     hiddenAbove: start,
     hiddenBelow: itemCount - end,
-    totalRows: (end - start) 
-      + chromeRows 
-      + (showRangeLine ? 1 : 0)
-      + (finalAbove ? 1 : 0)
-      + (finalBelow ? 1 : 0),
+    totalRows:
+      end -
+      start +
+      chromeRows +
+      (showRangeLine ? 1 : 0) +
+      (finalAbove ? 1 : 0) +
+      (finalBelow ? 1 : 0),
   };
 }

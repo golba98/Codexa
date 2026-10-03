@@ -42,23 +42,31 @@ function trimBlankEdges(lines: string[]): string[] {
 }
 
 function hasPairedFileHeaders(lines: readonly string[]): boolean {
-  return lines.some((line) => OLD_FILE_HEADER_PATTERN.test(line))
-    && lines.some((line) => NEW_FILE_HEADER_PATTERN.test(line));
+  return (
+    lines.some((line) => OLD_FILE_HEADER_PATTERN.test(line)) &&
+    lines.some((line) => NEW_FILE_HEADER_PATTERN.test(line))
+  );
 }
 
 function hasStrongDiffSignal(lines: readonly string[]): boolean {
-  return lines.some((line) =>
-    DIFF_GIT_HEADER_PATTERN.test(line)
-    || HUNK_HEADER_PATTERN.test(line)
-    || INDEX_HEADER_PATTERN.test(line)
-  ) || hasPairedFileHeaders(lines);
+  return (
+    lines.some(
+      (line) =>
+        DIFF_GIT_HEADER_PATTERN.test(line) ||
+        HUNK_HEADER_PATTERN.test(line) ||
+        INDEX_HEADER_PATTERN.test(line),
+    ) || hasPairedFileHeaders(lines)
+  );
 }
 
 function hasRealChangeLine(lines: readonly string[]): boolean {
   return lines.some((line) => ADD_LINE_PATTERN.test(line) || REMOVE_LINE_PATTERN.test(line));
 }
 
-function shouldRenderUnifiedDiff(lines: readonly string[], options: DiffRenderOptions = {}): boolean {
+function shouldRenderUnifiedDiff(
+  lines: readonly string[],
+  options: DiffRenderOptions = {},
+): boolean {
   if (lines.length < 2) return false;
   if (options.force) {
     return hasStrongDiffSignal(lines) || hasRealChangeLine(lines);
@@ -67,7 +75,11 @@ function shouldRenderUnifiedDiff(lines: readonly string[], options: DiffRenderOp
 }
 
 export function classifyDiffLine(line: string): DiffRenderLineType {
-  if (DIFF_GIT_HEADER_PATTERN.test(line) || OLD_FILE_HEADER_PATTERN.test(line) || NEW_FILE_HEADER_PATTERN.test(line)) {
+  if (
+    DIFF_GIT_HEADER_PATTERN.test(line) ||
+    OLD_FILE_HEADER_PATTERN.test(line) ||
+    NEW_FILE_HEADER_PATTERN.test(line)
+  ) {
     return "file";
   }
 
@@ -110,7 +122,10 @@ export function renderUnifiedDiff(text: string, options: DiffRenderOptions = {})
   }));
 }
 
-export function maybeRenderDiff(text: string, options: DiffRenderOptions = {}): DiffRenderLine[] | null {
+export function maybeRenderDiff(
+  text: string,
+  options: DiffRenderOptions = {},
+): DiffRenderLine[] | null {
   const rendered = renderUnifiedDiff(text, options);
   return rendered.length > 0 ? rendered : null;
 }

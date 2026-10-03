@@ -88,7 +88,10 @@ test("rejects invalid prompt policy values", () => {
 });
 
 test("accepts the pre-rename --codexa-prompt-policy spelling", () => {
-  for (const argv of [["--codexa-prompt-policy", "wrapped", "Prompt"], ["--codexa-prompt-policy=wrapped", "Prompt"]]) {
+  for (const argv of [
+    ["--codexa-prompt-policy", "wrapped", "Prompt"],
+    ["--codexa-prompt-policy=wrapped", "Prompt"],
+  ]) {
     const parsed = parseHeadlessExecArgs(argv);
     assert.equal(parsed.ok, true);
     if (!parsed.ok) return;
@@ -98,8 +101,10 @@ test("accepts the pre-rename --codexa-prompt-policy spelling", () => {
 
 test("parses ubume exec --model and --reasoning together", () => {
   const parsed = parseHeadlessExecArgs([
-    "--model", "gpt-5.4-mini",
-    "--reasoning", "medium",
+    "--model",
+    "gpt-5.4-mini",
+    "--reasoning",
+    "medium",
     "Reply with exactly: UBUME_READY",
   ]);
 
@@ -107,7 +112,7 @@ test("parses ubume exec --model and --reasoning together", () => {
   if (!parsed.ok) return;
   assert.equal(parsed.value.prompt, "Reply with exactly: UBUME_READY");
   assert.deepEqual(parsed.value.launchArgs.configOverrides, [
-    "model=\"gpt-5.4-mini\"",
+    'model="gpt-5.4-mini"',
     "model_reasoning_effort=medium",
   ]);
 });
@@ -123,8 +128,8 @@ test("preserves profile and repeated config overrides", () => {
     "-c",
     "model_reasoning_effort=medium",
     "--config",
-    "sandbox_mode=\"workspace-write\"",
-    "--config=approval_policy=\"never\"",
+    'sandbox_mode="workspace-write"',
+    '--config=approval_policy="never"',
     "Print",
     "files",
   ]);
@@ -136,10 +141,10 @@ test("preserves profile and repeated config overrides", () => {
   assert.equal(parsed.value.prompt, "Print files");
   assert.equal(parsed.value.launchArgs.profile, "bench");
   assert.deepEqual(parsed.value.launchArgs.configOverrides, [
-    "model=\"gpt-5.4-mini\"",
+    'model="gpt-5.4-mini"',
     "model_reasoning_effort=medium",
-    "sandbox_mode=\"workspace-write\"",
-    "approval_policy=\"never\"",
+    'sandbox_mode="workspace-write"',
+    'approval_policy="never"',
   ]);
   assert.deepEqual(parsed.value.launchArgs.passthroughArgs, [
     "--skip-git-repo-check",
@@ -150,8 +155,8 @@ test("preserves profile and repeated config overrides", () => {
     "-c",
     "model_reasoning_effort=medium",
     "--config",
-    "sandbox_mode=\"workspace-write\"",
-    "--config=approval_policy=\"never\"",
+    'sandbox_mode="workspace-write"',
+    '--config=approval_policy="never"',
   ]);
 });
 

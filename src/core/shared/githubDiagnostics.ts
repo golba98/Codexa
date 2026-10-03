@@ -1,5 +1,5 @@
-import { execSync, execFileSync } from "node:child_process";
-import { existsSync, accessSync, constants } from "node:fs";
+import { execFileSync, execSync } from "node:child_process";
+import { accessSync, constants, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export interface RepoIdentity {
@@ -41,7 +41,9 @@ export function parseRepoIdentity(remoteUrl: string | undefined | null): RepoIde
   const url = remoteUrl.trim();
 
   // HTTPS: https://github.com/owner/repo.git or https://github.com/owner/repo
-  const httpsMatch = url.match(/^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?\/?$/i);
+  const httpsMatch = url.match(
+    /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?\/?$/i,
+  );
   if (httpsMatch) {
     return {
       owner: httpsMatch[1],
@@ -72,7 +74,11 @@ export function parseRepoIdentity(remoteUrl: string | undefined | null): RepoIde
 
 export function getLocalGitRemoteUrl(): string | null {
   try {
-    return execSync("git remote get-url origin", { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return execSync("git remote get-url origin", {
+      timeout: 8000,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
   } catch {
     return null;
   }
@@ -88,7 +94,11 @@ export function checkGhCli(): DiagnosticResult {
   };
 
   try {
-    const version = execSync("gh --version", { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n")[0];
+    const version = execSync("gh --version", {
+      timeout: 8000,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).split("\n")[0];
     result.evidence = version ?? "Unknown version";
   } catch {
     result.blocker = "gh CLI not installed or not in PATH";
@@ -97,7 +107,11 @@ export function checkGhCli(): DiagnosticResult {
 
   try {
     // gh auth status output format is not structured JSON; pattern-match on known strings.
-    const authStatus = execSync("gh auth status", { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const authStatus = execSync("gh auth status", {
+      timeout: 8000,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     result.evidence += " | Authenticated";
     if (authStatus.includes("Token scopes")) {
       const scopes = authStatus.match(/Token scopes: (.*)/)?.[1];
@@ -127,10 +141,18 @@ export function checkLocalGitRemote(): DiagnosticResult {
   };
 
   try {
-    const remote = execSync("git remote -v", { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n")[0];
+    const remote = execSync("git remote -v", {
+      timeout: 8000,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).split("\n")[0];
     result.evidence = remote ?? "No remote found";
 
-    execSync("git ls-remote origin HEAD", { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    execSync("git ls-remote origin HEAD", {
+      timeout: 8000,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
     result.status = "PASS";
   } catch {
     result.blocker = "Cannot reach origin remote (check connectivity or remote URL)";
@@ -149,7 +171,11 @@ export function checkLocalGitWrite(): DiagnosticResult {
   };
 
   try {
-    const gitDir = execFileSync("git", ["rev-parse", "--absolute-git-dir"], { timeout: 8000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const gitDir = execFileSync("git", ["rev-parse", "--absolute-git-dir"], {
+      timeout: 8000,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
     if (existsSync(join(gitDir, "index.lock"))) {
       result.blocker = "Git index.lock exists (git process might be running)";
       return result;
@@ -170,15 +196,19 @@ export function classifyDiagnostics(
   ghCli: DiagnosticResult,
   localGit: DiagnosticResult,
   localGitWrite: DiagnosticResult,
-  connector: DiagnosticResult
+  connector: DiagnosticResult,
 ): DiagnosticsReport["recommendedFlow"] {
   const isGitHub = repo?.provider === "github";
   if (!isGitHub) return "Cannot publish yet";
 
   const ghCliOk = ghCli.status === "PASS";
   const gitRemoteOk = localGit.status === "PASS";
-  const gitWriteOk = localGitWrite.status === "PASS" || (localGitWrite.status === "PARTIAL" && localGitWrite.blocker === null);
-  const connectorOk = connector.status === "PASS" || (connector.status === "PARTIAL" && !connector.blocker?.includes("auth"));
+  const gitWriteOk =
+    localGitWrite.status === "PASS" ||
+    (localGitWrite.status === "PARTIAL" && localGitWrite.blocker === null);
+  const connectorOk =
+    connector.status === "PASS" ||
+    (connector.status === "PARTIAL" && !connector.blocker?.includes("auth"));
 
   if (ghCliOk && gitRemoteOk && gitWriteOk) {
     return "Local Git + GH CLI";
@@ -203,7 +233,9 @@ export function printDiagnosticsTable(report: DiagnosticsReport) {
   ];
 
   console.log("\nPath                | Status  | Evidence                      | Blocker");
-  console.log("--------------------|---------|-------------------------------|---------------------------");
+  console.log(
+    "--------------------|---------|-------------------------------|---------------------------",
+  );
   for (const row of rows) {
     const p = row.path.padEnd(20);
     const s = row.status.padEnd(8);
@@ -212,7 +244,9 @@ export function printDiagnosticsTable(report: DiagnosticsReport) {
     console.log(`${p}| ${s}| ${e}| ${b}`);
   }
 
-  console.log(`\nResolved repo: ${report.repo ? `${report.repo.owner}/${report.repo.repo}` : "Unknown"}`);
+  console.log(
+    `\nResolved repo: ${report.repo ? `${report.repo.owner}/${report.repo.repo}` : "Unknown"}`,
+  );
   console.log(`Default branch: ${report.defaultBranch || "Unknown"}`);
   console.log(`Authenticated GH CLI user: ${report.ghCliUser || "Unknown"}`);
   console.log(`Authenticated connector user: ${report.connectorUser || "Unknown"}`);

@@ -4,31 +4,31 @@ import type { RunProgressEntry, TimelineEvent } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
 import { getShellWidth, getVisualWidth } from "../layout.js";
 import { buildStaticIntroRows } from "./StaticIntroItem.js";
-import type { TimelineRow, TimelineSnapshot } from "./timelineMeasure.js";
-import { buildTimelineSnapshot } from "./timelineMeasure.js";
 import {
   buildActiveRenderItems,
   buildStaticRenderItems,
   buildTimelineItems,
   createFinalizeContinuityViewport,
   createFollowTailViewport,
+  createTurnOpacityResolver,
   endTimelineViewport,
   findAnchorItem,
   homeTimelineViewport,
   isNearBottom,
   pageDownTimelineViewport,
   pageUpTimelineViewport,
+  type RenderTimelineItem,
   reflowTimelineViewport,
-  createTurnOpacityResolver,
   resolveTurnOpacity,
   scrollTimelineViewport,
   selectTimelineRows,
   stepDownTimelineViewport,
   stepUpTimelineViewport,
   syncTimelineViewport,
-  type RenderTimelineItem,
   type TimelineViewportState,
 } from "./Timeline.js";
+import type { TimelineRow, TimelineSnapshot } from "./timelineMeasure.js";
+import { buildTimelineSnapshot } from "./timelineMeasure.js";
 
 function createRow(key: string): TimelineRow {
   return {
@@ -39,7 +39,9 @@ function createRow(key: string): TimelineRow {
 
 function createSnapshot(rowCounts: number[]): TimelineSnapshot {
   const items = rowCounts.map((count, itemIndex) => {
-    const rows = Array.from({ length: count }, (_, rowIndex) => createRow(`item-${itemIndex}-row-${rowIndex}`));
+    const rows = Array.from({ length: count }, (_, rowIndex) =>
+      createRow(`item-${itemIndex}-row-${rowIndex}`),
+    );
     return {
       key: `item-${itemIndex}`,
       rows,
@@ -55,7 +57,11 @@ function createSnapshot(rowCounts: number[]): TimelineSnapshot {
   };
 }
 
-function createProgressEntry(sequence: number, text: string, blockTexts: string[] = [text]): RunProgressEntry {
+function createProgressEntry(
+  sequence: number,
+  text: string,
+  blockTexts: string[] = [text],
+): RunProgressEntry {
   return {
     id: `progress-${sequence}`,
     source: "reasoning",
@@ -75,7 +81,11 @@ function createProgressEntry(sequence: number, text: string, blockTexts: string[
   };
 }
 
-function createCompletedProgressEntry(sequence: number, text: string, blockTexts: string[] = [text]): RunProgressEntry {
+function createCompletedProgressEntry(
+  sequence: number,
+  text: string,
+  blockTexts: string[] = [text],
+): RunProgressEntry {
   const entry = createProgressEntry(sequence, text, blockTexts);
   return {
     ...entry,
@@ -239,14 +249,34 @@ test("separates committed and active turn render state", () => {
 
   const turnIds = [1, 2];
   const staticItems = buildStaticRenderItems(committed, turnIds, 2, null, null);
-  const activeThinkingItems = buildActiveRenderItems(active, turnIds, { kind: "THINKING", turnId: 2 });
-  const activeStreamingItems = buildActiveRenderItems(active, turnIds, { kind: "RESPONDING", turnId: 2 });
+  const activeThinkingItems = buildActiveRenderItems(active, turnIds, {
+    kind: "THINKING",
+    turnId: 2,
+  });
+  const activeStreamingItems = buildActiveRenderItems(active, turnIds, {
+    kind: "RESPONDING",
+    turnId: 2,
+  });
 
   assert.equal(staticItems[0]?.type, "turn");
-  assert.equal(staticItems[0]?.type === "turn" ? staticItems[0].renderState.runPhase : "none", "final");
-  assert.equal(staticItems[0]?.type === "turn" ? staticItems[0].renderState.opacity : "dim", "recent");
-  assert.equal(activeThinkingItems[0]?.type === "turn" ? activeThinkingItems[0].renderState.runPhase : "none", "thinking");
-  assert.equal(activeStreamingItems[0]?.type === "turn" ? activeStreamingItems[0].renderState.runPhase : "none", "streaming");
+  assert.equal(
+    staticItems[0]?.type === "turn" ? staticItems[0].renderState.runPhase : "none",
+    "final",
+  );
+  assert.equal(
+    staticItems[0]?.type === "turn" ? staticItems[0].renderState.opacity : "dim",
+    "recent",
+  );
+  assert.equal(
+    activeThinkingItems[0]?.type === "turn" ? activeThinkingItems[0].renderState.runPhase : "none",
+    "thinking",
+  );
+  assert.equal(
+    activeStreamingItems[0]?.type === "turn"
+      ? activeStreamingItems[0].renderState.runPhase
+      : "none",
+    "streaming",
+  );
 });
 
 test("builds multi-row snapshots from wrapped timeline items", () => {
@@ -259,7 +289,8 @@ test("builds multi-row snapshots from wrapped timeline items", () => {
       type: "system",
       createdAt: 1,
       title: "Long system event",
-      content: "This content is intentionally long enough to wrap across multiple transcript rows in a narrow viewport.",
+      content:
+        "This content is intentionally long enough to wrap across multiple transcript rows in a narrow viewport.",
     },
   };
 
@@ -351,7 +382,9 @@ test("Ubume intro scrolls out of the visible timeline window", () => {
 
   const snapshot = buildTimelineSnapshot([intro, ...rows], { totalWidth: 80 });
   const selection = selectTimelineRows(snapshot, createFollowTailViewport(snapshot.totalRows), 8);
-  const text = selection.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+  const text = selection.visibleRows
+    .map((row) => row.spans.map((span) => span.text).join(""))
+    .join("\n");
 
   assert.doesNotMatch(text, /██████/);
   assert.match(text, /Event 29/);
@@ -389,7 +422,10 @@ test("timeline snapshot keeps the prompt card top border closed", () => {
   ]);
   const renderItems = buildActiveRenderItems(items, [10], { kind: "THINKING", turnId: 10 });
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 56 });
-  const topBorder = snapshot.rows[0]?.spans.map((span) => span.text).join("").trim();
+  const topBorder = snapshot.rows[0]?.spans
+    .map((span) => span.text)
+    .join("")
+    .trim();
 
   assert.equal(topBorder?.includes("╭── PROMPT"), true);
   assert.match(topBorder ?? "", /──╮$/);
@@ -446,11 +482,10 @@ test("keeps a frozen browse snapshot while live rows continue to arrive", () => 
   assert.equal(withUpdate.unseenItems, 1);
   assert.equal(withUpdate.unseenRows, 1);
   assert.equal(selected.sourceSnapshot.itemCount, 2);
-  assert.deepEqual(selected.visibleRows.map((row) => row.key), [
-    "item-0-row-0",
-    "item-0-row-1",
-    "item-1-row-0",
-  ]);
+  assert.deepEqual(
+    selected.visibleRows.map((row) => row.key),
+    ["item-0-row-0", "item-0-row-1", "item-1-row-0"],
+  );
 });
 
 test("page down from the frozen tail resumes live follow mode", () => {
@@ -474,7 +509,11 @@ test("wheel stepping leaves follow mode and only resumes at the frozen tail", ()
   const snapshot = createSnapshot([1, 1, 1, 1]);
   const viewportRows = 3;
 
-  const stepUp = stepUpTimelineViewport(createFollowTailViewport(snapshot.totalRows), snapshot, viewportRows);
+  const stepUp = stepUpTimelineViewport(
+    createFollowTailViewport(snapshot.totalRows),
+    snapshot,
+    viewportRows,
+  );
   assert.equal(stepUp.followTail, false);
   assert.equal(stepUp.anchorRow, snapshot.totalRows - 2);
   assert.equal(stepUp.frozenSnapshot?.itemCount, 4);
@@ -498,11 +537,10 @@ test("manual browse snapshot survives run start and first assistant delta", () =
   assert.equal(afterFirstDelta.followTail, false);
   assert.equal(afterFirstDelta.unseenItems, 2);
   assert.equal(afterFirstDelta.unseenRows, 3);
-  assert.deepEqual(selected.visibleRows.map((row) => row.key), [
-    "item-0-row-0",
-    "item-1-row-0",
-    "item-2-row-0",
-  ]);
+  assert.deepEqual(
+    selected.visibleRows.map((row) => row.key),
+    ["item-0-row-0", "item-1-row-0", "item-2-row-0"],
+  );
 });
 
 test("default timeline omits active processing text while a run is streaming", () => {
@@ -562,9 +600,7 @@ test("default timeline omits active processing text while a run is streaming", (
 
   const renderItems = buildActiveRenderItems(items, [99], { kind: "RESPONDING", turnId: 99 });
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 70 });
-  const joined = snapshot.rows
-    .map((row) => row.spans.map((span) => span.text).join(""))
-    .join("\n");
+  const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 
   assert.doesNotMatch(joined, /Codex/);
   assert.doesNotMatch(joined, /Verifying generated file/);
@@ -595,12 +631,16 @@ test("streaming defers all processing text (active and completed) until finalize
       runtime: TEST_RUNTIME,
       prompt: "Improve streaming thoughts",
       progressEntries: [
-        createCompletedProgressEntry(1, "I inspected the renderer and found the content is flattened into plain card rows.", [
+        createCompletedProgressEntry(
+          1,
           "I inspected the renderer and found the content is flattened into plain card rows.",
-        ]),
-        createProgressEntry(2, "Next I am separating completed thoughts from the active live segment.", [
+          ["I inspected the renderer and found the content is flattened into plain card rows."],
+        ),
+        createProgressEntry(
+          2,
           "Next I am separating completed thoughts from the active live segment.",
-        ]),
+          ["Next I am separating completed thoughts from the active live segment."],
+        ),
       ],
       status: "running",
       summary: "Running",
@@ -623,9 +663,7 @@ test("streaming defers all processing text (active and completed) until finalize
 
   const renderItems = buildActiveRenderItems(items, [100], { kind: "RESPONDING", turnId: 100 });
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 54 });
-  const joined = snapshot.rows
-    .map((row) => row.spans.map((span) => span.text).join(""))
-    .join("\n");
+  const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 
   // Active-turn topology stability: reasoning/processing text is DEFERRED while
   // the run is live — both the completed and the active block stay hidden so a
@@ -686,9 +724,7 @@ test("completed runs coalesce contiguous progress updates under one Reasoning bl
 
   const renderItems = buildStaticRenderItems(items, [77], null, null, null);
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 72 });
-  const joined = snapshot.rows
-    .map((row) => row.spans.map((span) => span.text).join(""))
-    .join("\n");
+  const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 
   // Contiguous reasoning (no tool call or response between) merges under a
   // single Reasoning header; the compact cap elides the tail with a marker.
@@ -706,10 +742,10 @@ test("assistant unified diffs render with semantic tones", () => {
     "--- a/src/example.ts",
     "+++ b/src/example.ts",
     "@@ -1,3 +1,4 @@",
-    " const name = \"Ubume\";",
-    "-console.log(\"old\");",
-    "+console.log(\"new\");",
-    "+console.log(\"added\");",
+    ' const name = "Ubume";',
+    '-console.log("old");',
+    '+console.log("new");',
+    '+console.log("added");',
     " export default name;",
   ].join("\n");
   const items = buildTimelineItems([
@@ -756,8 +792,8 @@ test("assistant unified diffs render with semantic tones", () => {
 
   assert.equal(spans.find((span) => span.text.includes("diff --git"))?.tone, "info");
   assert.equal(spans.find((span) => span.text.includes("@@ -1,3 +1,4 @@"))?.tone, "accent");
-  assert.equal(spans.find((span) => span.text.includes("-console.log(\"old\");"))?.tone, "error");
-  assert.equal(spans.find((span) => span.text.includes("+console.log(\"new\");"))?.tone, "success");
+  assert.equal(spans.find((span) => span.text.includes('-console.log("old");'))?.tone, "error");
+  assert.equal(spans.find((span) => span.text.includes('+console.log("new");'))?.tone, "success");
 });
 
 test("completed assistant turn renders local links as compact terminal paths", () => {
@@ -1160,33 +1196,41 @@ function renderJoinedTurn(
 ): string {
   const items = buildTimelineItems(events);
   const renderItems = buildStaticRenderItems(items, [turnId], null, null, null);
-  const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: width, workspaceRoot: options.workspaceRoot });
+  const snapshot = buildTimelineSnapshot(renderItems, {
+    totalWidth: width,
+    workspaceRoot: options.workspaceRoot,
+  });
   return snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 }
 
 test("unified stream renders generated final plan after action blocks", () => {
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(299, {
-    plan: {
-      id: "plan-2",
-      streamSeq: 3,
-      chunks: ["1. Inspect the current app structure\n2. Render the generated plan visibly"],
-      status: "completed",
-      startedAt: 2,
-    },
-    toolActivities: [{
-      id: "tool-1",
-      command: "Get-Content src/app.tsx",
-      status: "completed",
-      startedAt: 10,
-      completedAt: 40,
-      streamSeq: 2,
-    }],
-    streamItems: [
-      { streamSeq: 2, kind: "action", refId: "tool-1" },
-      { streamSeq: 3, kind: "plan", refId: "plan-2" },
-    ],
-    lastStreamSeq: 3,
-  }), 299);
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(299, {
+      plan: {
+        id: "plan-2",
+        streamSeq: 3,
+        chunks: ["1. Inspect the current app structure\n2. Render the generated plan visibly"],
+        status: "completed",
+        startedAt: 2,
+      },
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "Get-Content src/app.tsx",
+          status: "completed",
+          startedAt: 10,
+          completedAt: 40,
+          streamSeq: 2,
+        },
+      ],
+      streamItems: [
+        { streamSeq: 2, kind: "action", refId: "tool-1" },
+        { streamSeq: 3, kind: "plan", refId: "plan-2" },
+      ],
+      lastStreamSeq: 3,
+    }),
+    299,
+  );
 
   assert.match(joined, /╭── Plan/);
   assert.match(joined, /│ 1\. Inspect the current app structure/);
@@ -1197,36 +1241,43 @@ test("unified stream renders generated final plan after action blocks", () => {
 });
 
 test("unified stream renders pre-tool plan-mode prose before the action and the Plan box after", () => {
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(298, {
-    responseSegments: [{
-      id: "response-2-1",
-      streamSeq: 1,
-      chunks: ["Let me inspect the app first."],
-      status: "completed",
-      startedAt: 2,
-    }],
-    toolActivities: [{
-      id: "tool-1",
-      command: "Get-Content src/app.tsx",
-      status: "completed",
-      startedAt: 10,
-      completedAt: 40,
-      streamSeq: 2,
-    }],
-    plan: {
-      id: "plan-2",
-      streamSeq: 3,
-      chunks: ["1. Inspect the current app structure\n2. Render the generated plan visibly"],
-      status: "completed",
-      startedAt: 2,
-    },
-    streamItems: [
-      { streamSeq: 1, kind: "response", refId: "response-2-1" },
-      { streamSeq: 2, kind: "action", refId: "tool-1" },
-      { streamSeq: 3, kind: "plan", refId: "plan-2" },
-    ],
-    lastStreamSeq: 3,
-  }), 298);
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(298, {
+      responseSegments: [
+        {
+          id: "response-2-1",
+          streamSeq: 1,
+          chunks: ["Let me inspect the app first."],
+          status: "completed",
+          startedAt: 2,
+        },
+      ],
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "Get-Content src/app.tsx",
+          status: "completed",
+          startedAt: 10,
+          completedAt: 40,
+          streamSeq: 2,
+        },
+      ],
+      plan: {
+        id: "plan-2",
+        streamSeq: 3,
+        chunks: ["1. Inspect the current app structure\n2. Render the generated plan visibly"],
+        status: "completed",
+        startedAt: 2,
+      },
+      streamItems: [
+        { streamSeq: 1, kind: "response", refId: "response-2-1" },
+        { streamSeq: 2, kind: "action", refId: "tool-1" },
+        { streamSeq: 3, kind: "plan", refId: "plan-2" },
+      ],
+      lastStreamSeq: 3,
+    }),
+    298,
+  );
 
   assert.match(joined, /Let me inspect the app first\./);
   assert.doesNotMatch(joined, /│ Let me inspect the app first\./);
@@ -1238,20 +1289,21 @@ test("unified stream renders pre-tool plan-mode prose before the action and the 
 test("unified stream renders approved execution plan with approved badge", () => {
   const approvedPlan = "1. Apply the selected changes\n2. Run tests";
   const turnId = 9305;
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(turnId, {
-    plan: {
-      id: "plan-2",
-      streamSeq: 1,
-      chunks: [approvedPlan],
-      status: "completed",
-      startedAt: 2,
-    },
-    approvedPlan,
-    streamItems: [
-      { streamSeq: 1, kind: "plan", refId: "plan-2" },
-    ],
-    lastStreamSeq: 1,
-  }), turnId);
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(turnId, {
+      plan: {
+        id: "plan-2",
+        streamSeq: 1,
+        chunks: [approvedPlan],
+        status: "completed",
+        startedAt: 2,
+      },
+      approvedPlan,
+      streamItems: [{ streamSeq: 1, kind: "plan", refId: "plan-2" }],
+      lastStreamSeq: 1,
+    }),
+    turnId,
+  );
 
   assert.match(joined, /╭── Plan/);
   assert.match(joined, /approved/);
@@ -1272,11 +1324,22 @@ test("plan card rows carry frame metadata so the live window cannot slice them o
     streamItems: [{ streamSeq: 1, kind: "plan", refId: "plan-2" }],
     lastStreamSeq: 1,
   });
-  const renderItems = buildStaticRenderItems(buildTimelineItems(events), [turnId], null, null, null);
+  const renderItems = buildStaticRenderItems(
+    buildTimelineItems(events),
+    [turnId],
+    null,
+    null,
+    null,
+  );
   const rows = buildTimelineSnapshot(renderItems, { totalWidth: 90 }).rows;
 
   const framed = rows.filter((row) => row.frame);
-  const planFrameId = framed.find((row) => row.spans.map((span) => span.text).join("").includes("\u256d\u2500\u2500 Plan"))?.frame?.id;
+  const planFrameId = framed.find((row) =>
+    row.spans
+      .map((span) => span.text)
+      .join("")
+      .includes("\u256d\u2500\u2500 Plan"),
+  )?.frame?.id;
   assert.ok(planFrameId, "the Plan card should expose a frame id");
 
   const planRows = framed.filter((row) => row.frame?.id === planFrameId);
@@ -1287,19 +1350,22 @@ test("plan card rows carry frame metadata so the live window cannot slice them o
 
 test("unified stream hides workspace paths in finalized plan snapshots", () => {
   const turnId = 9306;
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(turnId, {
-    plan: {
-      id: "plan-2",
-      streamSeq: 1,
-      chunks: ["Files:\n- C:\\Development\\Project\\src\\app.tsx"],
-      status: "completed",
-      startedAt: 2,
-    },
-    streamItems: [
-      { streamSeq: 1, kind: "plan", refId: "plan-2" },
-    ],
-    lastStreamSeq: 1,
-  }), turnId, 90, { workspaceRoot: "C:\\Development\\Project" });
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(turnId, {
+      plan: {
+        id: "plan-2",
+        streamSeq: 1,
+        chunks: ["Files:\n- C:\\Development\\Project\\src\\app.tsx"],
+        status: "completed",
+        startedAt: 2,
+      },
+      streamItems: [{ streamSeq: 1, kind: "plan", refId: "plan-2" }],
+      lastStreamSeq: 1,
+    }),
+    turnId,
+    90,
+    { workspaceRoot: "C:\\Development\\Project" },
+  );
 
   assert.match(joined, /src\/app\.tsx/);
   assert.doesNotMatch(joined, /C:\\Development/);
@@ -1308,7 +1374,10 @@ test("unified stream hides workspace paths in finalized plan snapshots", () => {
 test("long draft plan remains timeline rows that can be scrolled", () => {
   const longPlan = [
     "Files:",
-    ...Array.from({ length: 36 }, (_, index) => `- src/file-${index + 1}.ts Wire file ${index + 1}.`),
+    ...Array.from(
+      { length: 36 },
+      (_, index) => `- src/file-${index + 1}.ts Wire file ${index + 1}.`,
+    ),
     "",
     "Steps:",
     ...Array.from({ length: 36 }, (_, index) => `${index + 1}. Complete step ${index + 1}.`),
@@ -1322,28 +1391,41 @@ test("long draft plan remains timeline rows that can be scrolled", () => {
       status: "completed",
       startedAt: 2,
     },
-    streamItems: [
-      { streamSeq: 1, kind: "plan", refId: "plan-2" },
-    ],
+    streamItems: [{ streamSeq: 1, kind: "plan", refId: "plan-2" }],
     lastStreamSeq: 1,
   });
   const items = buildTimelineItems(events);
   const renderItems = buildStaticRenderItems(items, [turnId], null, null, null);
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 100 });
-  const firstPage = selectTimelineRows(snapshot, { ...createFollowTailViewport(snapshot.totalRows), followTail: false, anchorRow: 15 }, 12);
+  const firstPage = selectTimelineRows(
+    snapshot,
+    { ...createFollowTailViewport(snapshot.totalRows), followTail: false, anchorRow: 15 },
+    12,
+  );
   const tailPage = selectTimelineRows(snapshot, createFollowTailViewport(snapshot.totalRows), 12);
-  const allRows = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+  const allRows = snapshot.rows
+    .map((row) => row.spans.map((span) => span.text).join(""))
+    .join("\n");
 
   assert.ok(snapshot.totalRows > 72, "long plan should add scrollback rows to the timeline");
   assert.match(allRows, /Plan/);
-  assert.match(firstPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /src\/file-/);
-  assert.match(tailPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /36\. Complete step 36\./);
+  assert.match(
+    firstPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"),
+    /src\/file-/,
+  );
+  assert.match(
+    tailPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"),
+    /36\. Complete step 36\./,
+  );
 });
 
 test("follow-tail viewport shows generated final plan at bottom after prior action rows", () => {
   const longPlan = [
     "Files:",
-    ...Array.from({ length: 12 }, (_, index) => `- src/file-${index + 1}.ts Update file ${index + 1}.`),
+    ...Array.from(
+      { length: 12 },
+      (_, index) => `- src/file-${index + 1}.ts Update file ${index + 1}.`,
+    ),
     "",
     "Steps:",
     ...Array.from({ length: 20 }, (_, index) => `${index + 1}. Final plan step ${index + 1}.`),
@@ -1357,14 +1439,16 @@ test("follow-tail viewport shows generated final plan at bottom after prior acti
       status: "completed",
       startedAt: 2,
     },
-    toolActivities: [{
-      id: "tool-1",
-      command: "Get-Content src/app.tsx",
-      status: "completed",
-      startedAt: 10,
-      completedAt: 40,
-      streamSeq: 2,
-    }],
+    toolActivities: [
+      {
+        id: "tool-1",
+        command: "Get-Content src/app.tsx",
+        status: "completed",
+        startedAt: 10,
+        completedAt: 40,
+        streamSeq: 2,
+      },
+    ],
     streamItems: [
       { streamSeq: 2, kind: "action", refId: "tool-1" },
       { streamSeq: 3, kind: "plan", refId: "plan-2" },
@@ -1375,8 +1459,12 @@ test("follow-tail viewport shows generated final plan at bottom after prior acti
   const renderItems = buildStaticRenderItems(items, [turnId], null, null, null);
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 100 });
   const tailPage = selectTimelineRows(snapshot, createFollowTailViewport(snapshot.totalRows), 10);
-  const tailText = tailPage.visibleRows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
-  const allText = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+  const tailText = tailPage.visibleRows
+    .map((row) => row.spans.map((span) => span.text).join(""))
+    .join("\n");
+  const allText = snapshot.rows
+    .map((row) => row.spans.map((span) => span.text).join(""))
+    .join("\n");
 
   assert.ok(allText.indexOf("Read file") < allText.indexOf("Plan"));
   assert.match(tailText, /20\. Final plan step 20\./);
@@ -1384,28 +1472,35 @@ test("follow-tail viewport shows generated final plan at bottom after prior acti
 });
 
 test("unified stream renders action before response by stream sequence", () => {
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(300, {
-    toolActivities: [{
-      id: "tool-1",
-      command: "rg --files",
-      status: "completed",
-      startedAt: 10,
-      completedAt: 429,
-      streamSeq: 1,
-    }],
-    responseSegments: [{
-      id: "response-1",
-      streamSeq: 2,
-      chunks: ["Purpose\n5-Date Verification explains the two-block calendar puzzle."],
-      status: "completed",
-      startedAt: 20,
-    }],
-    streamItems: [
-      { streamSeq: 1, kind: "action", refId: "tool-1" },
-      { streamSeq: 2, kind: "response", refId: "response-1" },
-    ],
-    lastStreamSeq: 2,
-  }), 300);
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(300, {
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "rg --files",
+          status: "completed",
+          startedAt: 10,
+          completedAt: 429,
+          streamSeq: 1,
+        },
+      ],
+      responseSegments: [
+        {
+          id: "response-1",
+          streamSeq: 2,
+          chunks: ["Purpose\n5-Date Verification explains the two-block calendar puzzle."],
+          status: "completed",
+          startedAt: 20,
+        },
+      ],
+      streamItems: [
+        { streamSeq: 1, kind: "action", refId: "tool-1" },
+        { streamSeq: 2, kind: "response", refId: "response-1" },
+      ],
+      lastStreamSeq: 2,
+    }),
+    300,
+  );
 
   assert.ok(joined.indexOf("List files") < joined.indexOf("Purpose"));
   assert.match(joined, /List files/);
@@ -1414,47 +1509,58 @@ test("unified stream renders action before response by stream sequence", () => {
 });
 
 test("unified stream preserves thinking action response ordering", () => {
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(301, {
-    progressEntries: [{
-      id: "reason-1",
-      source: "reasoning",
-      text: "I need to inspect the project files.",
-      sequence: 1,
-      createdAt: 1,
-      updatedAt: 1,
-      pendingNewlineCount: 0,
-      blocks: [{
-        id: "reason-1-block-1",
-        text: "I need to inspect the project files.",
-        sequence: 1,
-        createdAt: 1,
-        updatedAt: 1,
-        status: "completed",
-        streamSeq: 1,
-      }],
-    }],
-    toolActivities: [{
-      id: "tool-1",
-      command: "Get-Content README.md",
-      status: "completed",
-      startedAt: 10,
-      completedAt: 426,
-      streamSeq: 2,
-    }],
-    responseSegments: [{
-      id: "response-1",
-      streamSeq: 3,
-      chunks: ["Purpose\n5-Date Verification is an interactive math app."],
-      status: "completed",
-      startedAt: 20,
-    }],
-    streamItems: [
-      { streamSeq: 1, kind: "thinking", refId: "reason-1-block-1" },
-      { streamSeq: 2, kind: "action", refId: "tool-1" },
-      { streamSeq: 3, kind: "response", refId: "response-1" },
-    ],
-    lastStreamSeq: 3,
-  }), 301);
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(301, {
+      progressEntries: [
+        {
+          id: "reason-1",
+          source: "reasoning",
+          text: "I need to inspect the project files.",
+          sequence: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          pendingNewlineCount: 0,
+          blocks: [
+            {
+              id: "reason-1-block-1",
+              text: "I need to inspect the project files.",
+              sequence: 1,
+              createdAt: 1,
+              updatedAt: 1,
+              status: "completed",
+              streamSeq: 1,
+            },
+          ],
+        },
+      ],
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "Get-Content README.md",
+          status: "completed",
+          startedAt: 10,
+          completedAt: 426,
+          streamSeq: 2,
+        },
+      ],
+      responseSegments: [
+        {
+          id: "response-1",
+          streamSeq: 3,
+          chunks: ["Purpose\n5-Date Verification is an interactive math app."],
+          status: "completed",
+          startedAt: 20,
+        },
+      ],
+      streamItems: [
+        { streamSeq: 1, kind: "thinking", refId: "reason-1-block-1" },
+        { streamSeq: 2, kind: "action", refId: "tool-1" },
+        { streamSeq: 3, kind: "response", refId: "response-1" },
+      ],
+      lastStreamSeq: 3,
+    }),
+    301,
+  );
 
   assert.ok(joined.indexOf("I need to inspect") < joined.indexOf("Read file"));
   assert.ok(joined.indexOf("Read file") < joined.indexOf("Purpose"));
@@ -1463,38 +1569,43 @@ test("unified stream preserves thinking action response ordering", () => {
 });
 
 test("unified stream preserves response action response interleaving", () => {
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(302, {
-    toolActivities: [{
-      id: "tool-1",
-      command: "Get-Content src\\App.tsx",
-      status: "completed",
-      startedAt: 10,
-      completedAt: 428,
-      streamSeq: 2,
-    }],
-    responseSegments: [
-      {
-        id: "response-1",
-        streamSeq: 1,
-        chunks: ["First segment."],
-        status: "completed",
-        startedAt: 1,
-      },
-      {
-        id: "response-2",
-        streamSeq: 3,
-        chunks: ["Second segment."],
-        status: "completed",
-        startedAt: 2,
-      },
-    ],
-    streamItems: [
-      { streamSeq: 1, kind: "response", refId: "response-1" },
-      { streamSeq: 2, kind: "action", refId: "tool-1" },
-      { streamSeq: 3, kind: "response", refId: "response-2" },
-    ],
-    lastStreamSeq: 3,
-  }), 302);
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(302, {
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "Get-Content src\\App.tsx",
+          status: "completed",
+          startedAt: 10,
+          completedAt: 428,
+          streamSeq: 2,
+        },
+      ],
+      responseSegments: [
+        {
+          id: "response-1",
+          streamSeq: 1,
+          chunks: ["First segment."],
+          status: "completed",
+          startedAt: 1,
+        },
+        {
+          id: "response-2",
+          streamSeq: 3,
+          chunks: ["Second segment."],
+          status: "completed",
+          startedAt: 2,
+        },
+      ],
+      streamItems: [
+        { streamSeq: 1, kind: "response", refId: "response-1" },
+        { streamSeq: 2, kind: "action", refId: "tool-1" },
+        { streamSeq: 3, kind: "response", refId: "response-2" },
+      ],
+      lastStreamSeq: 3,
+    }),
+    302,
+  );
 
   assert.ok(joined.indexOf("First segment") < joined.indexOf("Read file"));
   assert.ok(joined.indexOf("Read file") < joined.indexOf("Second segment"));
@@ -1502,75 +1613,89 @@ test("unified stream preserves response action response interleaving", () => {
 });
 
 test("stream renders Codex text outside compact action rows", () => {
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(305, {
-    toolActivities: [{
-      id: "tool-1",
-      command: "Get-Content README.md",
-      status: "completed",
-      startedAt: 10,
-      completedAt: 426,
-      streamSeq: 2,
-    }],
-    responseSegments: [
-      {
-        id: "response-1",
-        streamSeq: 1,
-        chunks: ["I am checking the README."],
-        status: "completed",
-        startedAt: 1,
-      },
-      {
-        id: "response-2",
-        streamSeq: 3,
-        chunks: ["Purpose: this project wraps Codex in a terminal UI."],
-        status: "completed",
-        startedAt: 2,
-      },
-    ],
-    streamItems: [
-      { streamSeq: 1, kind: "response", refId: "response-1" },
-      { streamSeq: 2, kind: "action", refId: "tool-1" },
-      { streamSeq: 3, kind: "response", refId: "response-2" },
-    ],
-    lastStreamSeq: 3,
-  }), 305);
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(305, {
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "Get-Content README.md",
+          status: "completed",
+          startedAt: 10,
+          completedAt: 426,
+          streamSeq: 2,
+        },
+      ],
+      responseSegments: [
+        {
+          id: "response-1",
+          streamSeq: 1,
+          chunks: ["I am checking the README."],
+          status: "completed",
+          startedAt: 1,
+        },
+        {
+          id: "response-2",
+          streamSeq: 3,
+          chunks: ["Purpose: this project wraps Codex in a terminal UI."],
+          status: "completed",
+          startedAt: 2,
+        },
+      ],
+      streamItems: [
+        { streamSeq: 1, kind: "response", refId: "response-1" },
+        { streamSeq: 2, kind: "action", refId: "tool-1" },
+        { streamSeq: 3, kind: "response", refId: "response-2" },
+      ],
+      lastStreamSeq: 3,
+    }),
+    305,
+  );
 
   const codexLine = joined.split("\n").find((line) => line.includes("I am checking the README."));
   const actionLine = joined.split("\n").find((line) => line.includes("Read file"));
 
   assert.match(joined, /Codex/);
   assert.match(joined, /Read file/);
-  assert.ok(codexLine && !codexLine.includes("│"), "Codex narration should not be inside a bordered row");
-  assert.ok(actionLine && actionLine.includes("✓"), "action execution should keep the compact row visual");
+  assert.ok(
+    codexLine && !codexLine.includes("│"),
+    "Codex narration should not be inside a bordered row",
+  );
+  assert.ok(
+    actionLine && actionLine.includes("✓"),
+    "action execution should keep the compact row visual",
+  );
   assert.doesNotMatch(joined, /^\s*response\b/m);
 });
 
 test("consecutive actions render as separate compact action rows", () => {
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(306, {
-    toolActivities: [
-      {
-        id: "tool-1",
-        command: "Get-ChildItem -Force",
-        status: "completed",
-        startedAt: 10,
-        completedAt: 488,
-        streamSeq: 1,
-      },
-      {
-        id: "tool-2",
-        command: "Get-Content src\\App.tsx",
-        status: "completed",
-        startedAt: 20,
-        completedAt: 452,
-        streamSeq: 2,
-      },
-    ],
-    streamItems: [
-      { streamSeq: 1, kind: "action", refId: "tool-1" },
-      { streamSeq: 2, kind: "action", refId: "tool-2" },
-    ],
-    lastStreamSeq: 2,
-  }), 306);
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(306, {
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "Get-ChildItem -Force",
+          status: "completed",
+          startedAt: 10,
+          completedAt: 488,
+          streamSeq: 1,
+        },
+        {
+          id: "tool-2",
+          command: "Get-Content src\\App.tsx",
+          status: "completed",
+          startedAt: 20,
+          completedAt: 452,
+          streamSeq: 2,
+        },
+      ],
+      streamItems: [
+        { streamSeq: 1, kind: "action", refId: "tool-1" },
+        { streamSeq: 2, kind: "action", refId: "tool-2" },
+      ],
+      lastStreamSeq: 2,
+    }),
+    306,
+  );
 
   assert.equal((joined.match(/✓ /g) ?? []).length, 2);
   assert.match(joined, /List files/);
@@ -1578,66 +1703,78 @@ test("consecutive actions render as separate compact action rows", () => {
 });
 
 test("completed final response is not forced above earlier actions", () => {
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(303, {
-    toolActivities: [{
-      id: "tool-1",
-      command: "git status",
-      status: "completed",
-      startedAt: 10,
-      completedAt: 20,
-      streamSeq: 1,
-    }],
-    responseSegments: [{
-      id: "response-1",
-      streamSeq: 2,
-      chunks: ["Done after checking status."],
-      status: "completed",
-      startedAt: 30,
-    }],
-    streamItems: [
-      { streamSeq: 1, kind: "action", refId: "tool-1" },
-      { streamSeq: 2, kind: "response", refId: "response-1" },
-    ],
-    lastStreamSeq: 2,
-  }), 303);
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(303, {
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "git status",
+          status: "completed",
+          startedAt: 10,
+          completedAt: 20,
+          streamSeq: 1,
+        },
+      ],
+      responseSegments: [
+        {
+          id: "response-1",
+          streamSeq: 2,
+          chunks: ["Done after checking status."],
+          status: "completed",
+          startedAt: 30,
+        },
+      ],
+      streamItems: [
+        { streamSeq: 1, kind: "action", refId: "tool-1" },
+        { streamSeq: 2, kind: "response", refId: "response-1" },
+      ],
+      lastStreamSeq: 2,
+    }),
+    303,
+  );
 
   assert.ok(joined.indexOf("Check git status") < joined.indexOf("Done after checking status"));
 });
 
 test("completed action/read-file rows remain before the final response", () => {
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(307, {
-    toolActivities: [
-      {
-        id: "tool-1",
-        command: "Get-Content 5-Date-Verification.md",
-        status: "completed",
-        startedAt: 10,
-        completedAt: 20,
-        streamSeq: 1,
-      },
-      {
-        id: "tool-2",
-        command: "Get-Content README.md",
-        status: "completed",
-        startedAt: 21,
-        completedAt: 30,
-        streamSeq: 2,
-      },
-    ],
-    responseSegments: [{
-      id: "response-1",
-      streamSeq: 3,
-      chunks: ["Final answer: 5-Date Verification explains the date-checking rule."],
-      status: "completed",
-      startedAt: 40,
-    }],
-    streamItems: [
-      { streamSeq: 1, kind: "action", refId: "tool-1" },
-      { streamSeq: 2, kind: "action", refId: "tool-2" },
-      { streamSeq: 3, kind: "response", refId: "response-1" },
-    ],
-    lastStreamSeq: 3,
-  }), 307);
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(307, {
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "Get-Content 5-Date-Verification.md",
+          status: "completed",
+          startedAt: 10,
+          completedAt: 20,
+          streamSeq: 1,
+        },
+        {
+          id: "tool-2",
+          command: "Get-Content README.md",
+          status: "completed",
+          startedAt: 21,
+          completedAt: 30,
+          streamSeq: 2,
+        },
+      ],
+      responseSegments: [
+        {
+          id: "response-1",
+          streamSeq: 3,
+          chunks: ["Final answer: 5-Date Verification explains the date-checking rule."],
+          status: "completed",
+          startedAt: 40,
+        },
+      ],
+      streamItems: [
+        { streamSeq: 1, kind: "action", refId: "tool-1" },
+        { streamSeq: 2, kind: "action", refId: "tool-2" },
+        { streamSeq: 3, kind: "response", refId: "response-1" },
+      ],
+      lastStreamSeq: 3,
+    }),
+    307,
+  );
 
   assert.equal((joined.match(/✓ Read file/g) ?? []).length, 2);
   assert.ok(joined.indexOf("Read file") < joined.indexOf("Final answer"));
@@ -1663,15 +1800,17 @@ test("finalize continuity viewport shows construction plus the beginning of the 
     createdAt: 1,
     updatedAt: 1,
     pendingNewlineCount: 0,
-    blocks: [{
-      id: "reason-1-block-1",
-      text: "I need to inspect the date verification files.",
-      sequence: 1,
-      createdAt: 1,
-      updatedAt: 1,
-      status: "completed",
-      streamSeq: 1,
-    }],
+    blocks: [
+      {
+        id: "reason-1-block-1",
+        text: "I need to inspect the date verification files.",
+        sequence: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        status: "completed",
+        streamSeq: 1,
+      },
+    ],
   };
   const userEvent: TimelineEvent = {
     id: 1,
@@ -1701,7 +1840,11 @@ test("finalize continuity viewport shows construction plus the beginning of the 
     turnId,
     streamItems: [
       { streamSeq: 1, kind: "thinking", refId: "reason-1-block-1" },
-      ...toolActivities.map((tool) => ({ streamSeq: tool.streamSeq!, kind: "action" as const, refId: tool.id })),
+      ...toolActivities.map((tool) => ({
+        streamSeq: tool.streamSeq!,
+        kind: "action" as const,
+        refId: tool.id,
+      })),
     ],
     responseSegments: [],
     lastStreamSeq: 7,
@@ -1715,13 +1858,15 @@ test("finalize continuity viewport shows construction plus the beginning of the 
     ...runningRun,
     status: "completed",
     durationMs: 1000,
-    responseSegments: [{
-      id: "response-final-2-8",
-      streamSeq: 8,
-      chunks: [finalAnswer],
-      status: "completed",
-      startedAt: 40,
-    }],
+    responseSegments: [
+      {
+        id: "response-final-2-8",
+        streamSeq: 8,
+        chunks: [finalAnswer],
+        status: "completed",
+        startedAt: 40,
+      },
+    ],
     streamItems: [
       ...(runningRun.streamItems ?? []),
       { streamSeq: 8, kind: "response", refId: "response-final-2-8" },
@@ -1737,7 +1882,10 @@ test("finalize continuity viewport shows construction plus the beginning of the 
     turnId,
   };
   const activeItems = buildTimelineItems([userEvent, runningRun]);
-  const activeRenderItems = buildActiveRenderItems(activeItems, [turnId], { kind: "THINKING", turnId });
+  const activeRenderItems = buildActiveRenderItems(activeItems, [turnId], {
+    kind: "THINKING",
+    turnId,
+  });
   const activeSnapshot = buildTimelineSnapshot(activeRenderItems, { totalWidth: 90 });
   const finalItems = buildTimelineItems([userEvent, finalizedRun, assistantEvent]);
   const finalRenderItems = buildStaticRenderItems(finalItems, [turnId], null, null, null);
@@ -1746,8 +1894,8 @@ test("finalize continuity viewport shows construction plus the beginning of the 
     previousTotalRows: activeSnapshot.totalRows,
     viewportRows: 18,
   });
-  const visible = selectTimelineRows(finalSnapshot, continuity, 18).visibleRows
-    .map((row) => row.spans.map((span) => span.text).join(""))
+  const visible = selectTimelineRows(finalSnapshot, continuity, 18)
+    .visibleRows.map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
   assert.equal(continuity.followTail, false);
@@ -1759,32 +1907,41 @@ test("finalize continuity viewport shows construction plus the beginning of the 
 });
 
 test("raw stdout progress does not render as thinking in fallback sessions", () => {
-  const joined = renderJoinedTurn(makeChronologicalTurnEvents(304, {
-    progressEntries: [{
-      id: "stdout-1",
-      source: "stdout",
-      text: "Directory: C:\\Users\\Example\\Project\n\nvitest.config.ts\nimport { useMemo } from \"react\";",
-      sequence: 1,
-      createdAt: 1,
-      updatedAt: 1,
-      pendingNewlineCount: 0,
-      blocks: [{
-        id: "stdout-1-block-1",
-        text: "Directory: C:\\Users\\Example\\Project\n\nvitest.config.ts\nimport { useMemo } from \"react\";",
-        sequence: 1,
-        createdAt: 1,
-        updatedAt: 1,
-        status: "completed",
-      }],
-    }],
-    responseSegments: [{
-      id: "response-1",
-      streamSeq: 1,
-      chunks: ["Done."],
-      status: "completed",
-      startedAt: 2,
-    }],
-  }), 304);
+  const joined = renderJoinedTurn(
+    makeChronologicalTurnEvents(304, {
+      progressEntries: [
+        {
+          id: "stdout-1",
+          source: "stdout",
+          text: 'Directory: C:\\Users\\Example\\Project\n\nvitest.config.ts\nimport { useMemo } from "react";',
+          sequence: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          pendingNewlineCount: 0,
+          blocks: [
+            {
+              id: "stdout-1-block-1",
+              text: 'Directory: C:\\Users\\Example\\Project\n\nvitest.config.ts\nimport { useMemo } from "react";',
+              sequence: 1,
+              createdAt: 1,
+              updatedAt: 1,
+              status: "completed",
+            },
+          ],
+        },
+      ],
+      responseSegments: [
+        {
+          id: "response-1",
+          streamSeq: 1,
+          chunks: ["Done."],
+          status: "completed",
+          startedAt: 2,
+        },
+      ],
+    }),
+    304,
+  );
 
   assert.doesNotMatch(joined, /thinking/);
   assert.doesNotMatch(joined, /Directory: C:\\Users/);
@@ -1835,7 +1992,9 @@ test("action event hides bash -lc wrapper", () => {
 });
 
 test("action event shows normalized command only when no friendly label exists", () => {
-  const items = buildTimelineItems(makeCompletedRunWithTool(204, `pwsh.exe -Command 'python -m pytest tests/'`));
+  const items = buildTimelineItems(
+    makeCompletedRunWithTool(204, `pwsh.exe -Command 'python -m pytest tests/'`),
+  );
   const renderItems = buildStaticRenderItems(items, [204], null, null, null);
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 80 });
   const joined = snapshot.rows.map((row) => row.spans.map((s) => s.text).join("")).join("\n");
@@ -1871,10 +2030,16 @@ test("long command is clipped within the compact action row", () => {
 
   for (const row of actionRows) {
     const actionText = row.spans.map((span) => span.text).join("");
-    assert.doesNotMatch(actionText, /would overflow if not wrapped properly within the card border/);
+    assert.doesNotMatch(
+      actionText,
+      /would overflow if not wrapped properly within the card border/,
+    );
     assert.ok(getVisualWidth(actionText) <= totalWidth);
   }
-  assert.doesNotMatch(snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /╭── action/);
+  assert.doesNotMatch(
+    snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"),
+    /╭── action/,
+  );
 });
 
 // ── Compact action layout: long commands, narrow widths, timing ──────────────
@@ -1882,8 +2047,7 @@ test("long command is clipped within the compact action row", () => {
 // These guard the compact action/tool row against long-command overflow and
 // stale row-cache reuse after clear.
 
-const LONG_ACTION_COMMAND =
-  `/usr/bin/zsh -lc 'pwd && rg -n "13-Custom-CLI-Normal|ubume|purpose|description" -S README* package.json docs src bin . 2>/dev/null'`;
+const LONG_ACTION_COMMAND = `/usr/bin/zsh -lc 'pwd && rg -n "13-Custom-CLI-Normal|ubume|purpose|description" -S README* package.json docs src bin . 2>/dev/null'`;
 
 function rowText(row: TimelineRow): string {
   return row.spans.map((span) => span.text).join("");
@@ -1904,9 +2068,15 @@ function extractCompactActionRows(snapshot: TimelineSnapshot): TimelineRow[] {
 function assertCompactActionIntegrity(rows: TimelineRow[], totalWidth: number): void {
   const widths = rows.map((row) => getVisualWidth(rowText(row)));
   widths.forEach((width, index) => {
-    assert.ok(width <= totalWidth, `row ${index} width ${width} must not exceed terminal width ${totalWidth}: "${rowText(rows[index])}"`);
+    assert.ok(
+      width <= totalWidth,
+      `row ${index} width ${width} must not exceed terminal width ${totalWidth}: "${rowText(rows[index])}"`,
+    );
   });
-  assert.ok(/^[✓✕•] /.test(rowText(rows[0] ?? { key: "", spans: [] })), "first compact row starts with a status glyph");
+  assert.ok(
+    /^[✓✕•] /.test(rowText(rows[0] ?? { key: "", spans: [] })),
+    "first compact row starts with a status glyph",
+  );
 }
 
 test("long action command stays inside a compact row", () => {
@@ -1957,7 +2127,11 @@ test("timing label sits on the compact action row without overflowing", () => {
 // side of that flow: the next action row must be a single, bounded compact row
 // and the per-turn caches must key by turn identity so stale pre-clear content
 // is never served in its place.
-function actionCardSnapshotForTurn(turnId: number, command: string, totalWidth: number): TimelineSnapshot {
+function actionCardSnapshotForTurn(
+  turnId: number,
+  command: string,
+  totalWidth: number,
+): TimelineSnapshot {
   const items = buildTimelineItems(makeCompletedRunWithTool(turnId, command));
   const renderItems = buildStaticRenderItems(items, [turnId], null, null, null);
   return buildTimelineSnapshot(renderItems, { totalWidth });
@@ -2003,43 +2177,61 @@ test("syncTimelineViewport is stable when followTail is true and totalRows did n
 });
 
 test("follow-tail viewport stays anchored when an action updates without row growth", () => {
-  const runningEvents = makeChronologicalTurnEvents(300, {
-    status: "running",
-    durationMs: null,
-    toolActivities: [{
-      id: "tool-1",
-      command: "Get-Content README.md",
+  const runningEvents = makeChronologicalTurnEvents(
+    300,
+    {
       status: "running",
-      startedAt: 10,
-      completedAt: null,
-      streamSeq: 1,
-    }],
-    streamItems: [{ streamSeq: 1, kind: "action", refId: "tool-1" }],
-    lastStreamSeq: 1,
-  }, "");
-  const completedEvents = makeChronologicalTurnEvents(300, {
-    status: "running",
-    durationMs: null,
-    toolActivities: [{
-      id: "tool-1",
-      command: "Get-Content README.md",
-      status: "completed",
-      startedAt: 10,
-      completedAt: 42,
-      summary: "Read 12 lines",
-      streamSeq: 1,
-    }],
-    streamItems: [{ streamSeq: 1, kind: "action", refId: "tool-1" }],
-    lastStreamSeq: 1,
-  }, "");
+      durationMs: null,
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "Get-Content README.md",
+          status: "running",
+          startedAt: 10,
+          completedAt: null,
+          streamSeq: 1,
+        },
+      ],
+      streamItems: [{ streamSeq: 1, kind: "action", refId: "tool-1" }],
+      lastStreamSeq: 1,
+    },
+    "",
+  );
+  const completedEvents = makeChronologicalTurnEvents(
+    300,
+    {
+      status: "running",
+      durationMs: null,
+      toolActivities: [
+        {
+          id: "tool-1",
+          command: "Get-Content README.md",
+          status: "completed",
+          startedAt: 10,
+          completedAt: 42,
+          summary: "Read 12 lines",
+          streamSeq: 1,
+        },
+      ],
+      streamItems: [{ streamSeq: 1, kind: "action", refId: "tool-1" }],
+      lastStreamSeq: 1,
+    },
+    "",
+  );
 
   const turnIds = [300];
   const runningSnapshot = buildTimelineSnapshot(
-    buildActiveRenderItems(buildTimelineItems(runningEvents), turnIds, { kind: "THINKING", turnId: 300 }),
+    buildActiveRenderItems(buildTimelineItems(runningEvents), turnIds, {
+      kind: "THINKING",
+      turnId: 300,
+    }),
     { totalWidth: 80 },
   );
   const completedSnapshot = buildTimelineSnapshot(
-    buildActiveRenderItems(buildTimelineItems(completedEvents), turnIds, { kind: "THINKING", turnId: 300 }),
+    buildActiveRenderItems(buildTimelineItems(completedEvents), turnIds, {
+      kind: "THINKING",
+      turnId: 300,
+    }),
     { totalWidth: 80 },
   );
   const viewport = createFollowTailViewport(runningSnapshot.totalRows);
@@ -2164,16 +2356,16 @@ test("syncTimelineViewport with empty snapshot resets follow-tail viewport to ro
 });
 
 test("isNearBottom returns true when anchorRow is within threshold of tail", () => {
-  assert.equal(isNearBottom(97, 100), true,  "2 rows from tail → near bottom");
-  assert.equal(isNearBottom(96, 100), true,  "3 rows from tail → near bottom (threshold boundary)");
+  assert.equal(isNearBottom(97, 100), true, "2 rows from tail → near bottom");
+  assert.equal(isNearBottom(96, 100), true, "3 rows from tail → near bottom (threshold boundary)");
   assert.equal(isNearBottom(95, 100), false, "4 rows from tail → NOT near bottom");
-  assert.equal(isNearBottom(99, 100), true,  "at tail → near bottom");
-  assert.equal(isNearBottom(0,  0),   true,  "empty content → near bottom");
+  assert.equal(isNearBottom(99, 100), true, "at tail → near bottom");
+  assert.equal(isNearBottom(0, 0), true, "empty content → near bottom");
 });
 
 test("isNearBottom detects proximity correctly across different snapshot sizes", () => {
   // Large transcript — threshold 3 rows from end
-  assert.equal(isNearBottom(97, 100), true,  "100-row: 3 rows from tail → near bottom");
+  assert.equal(isNearBottom(97, 100), true, "100-row: 3 rows from tail → near bottom");
   assert.equal(isNearBottom(95, 100), false, "100-row: 5 rows from tail → NOT near bottom");
 
   // Small transcript — entire content is within threshold
@@ -2202,7 +2394,11 @@ test("provider-picker style open/close: frozen scroll position survives empty-sn
   // Panel opens: transient empty snapshot (liveRows excluded)
   const afterEmpty = syncTimelineViewport(scrolled, createSnapshot([]));
   assert.equal(afterEmpty.followTail, false, "panel open must not reset scroll");
-  assert.equal(afterEmpty.anchorRow, scrolled.anchorRow, "anchor must be preserved through empty snapshot");
+  assert.equal(
+    afterEmpty.anchorRow,
+    scrolled.anchorRow,
+    "anchor must be preserved through empty snapshot",
+  );
 
   // Panel closes: snapshot restores
   const afterRestore = syncTimelineViewport(afterEmpty, fullSnapshot);
@@ -2233,11 +2429,24 @@ test("response completion does not jump to top when user is scrolled mid-transcr
 test("createTurnOpacityResolver matches resolveTurnOpacity including absent ids", () => {
   const turnIds = [1, 2, 3, 4];
   const cases: Array<[number, number | null]> = [
-    [1, null], [4, null], [3, 3], [2, 3], [1, 3], [4, 3], [9, 3], [2, 9], [1, 9], [3, 9],
+    [1, null],
+    [4, null],
+    [3, 3],
+    [2, 3],
+    [1, 3],
+    [4, 3],
+    [9, 3],
+    [2, 9],
+    [1, 9],
+    [3, 9],
   ];
   const resolver = createTurnOpacityResolver(turnIds);
   for (const [turnId, activeTurnId] of cases) {
-    assert.equal(resolver(turnId, activeTurnId), resolveTurnOpacity(turnIds, turnId, activeTurnId), `turn ${turnId} active ${activeTurnId}`);
+    assert.equal(
+      resolver(turnId, activeTurnId),
+      resolveTurnOpacity(turnIds, turnId, activeTurnId),
+      `turn ${turnId} active ${activeTurnId}`,
+    );
   }
   assert.equal(createTurnOpacityResolver([])(1, null), "dim");
 });

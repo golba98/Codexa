@@ -1,6 +1,12 @@
 import type { ProviderId, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
 
-export type CapabilitySource = "api" | "cli" | "config" | "detected-family" | "known-registry" | "unknown";
+export type CapabilitySource =
+  | "api"
+  | "cli"
+  | "config"
+  | "detected-family"
+  | "known-registry"
+  | "unknown";
 export type CapabilityConfidence = "verified" | "configured" | "detected" | "known" | "unknown";
 export type LocalModelFamily = "deepseek";
 
@@ -68,13 +74,7 @@ const MAX_OUTPUT_TOKENS_CANDIDATES = [
   "max_tokens_output",
 ] as const;
 
-const NESTED_METADATA_KEYS = [
-  "model_info",
-  "modelInfo",
-  "metadata",
-  "details",
-  "config",
-] as const;
+const NESTED_METADATA_KEYS = ["model_info", "modelInfo", "metadata", "details", "config"] as const;
 
 const MODEL_IDENTITY_FIELDS = [
   "id",
@@ -134,7 +134,10 @@ function metadataIdentityValues(raw: unknown): string[] {
   return values;
 }
 
-export function detectLocalModelFamily(modelId: string, rawMetadata?: unknown): LocalModelFamily | null {
+export function detectLocalModelFamily(
+  modelId: string,
+  rawMetadata?: unknown,
+): LocalModelFamily | null {
   return [modelId, ...metadataIdentityValues(rawMetadata)].some(deepSeekIdentity)
     ? "deepseek"
     : null;
@@ -223,10 +226,10 @@ function resolveFromRawMetadata(
   }
 
   if (
-    supportsSystemPrompt === null
-    && supportsStreaming === null
-    && supportsToolCalls === null
-    && maxOutputTokens === null
+    supportsSystemPrompt === null &&
+    supportsStreaming === null &&
+    supportsToolCalls === null &&
+    maxOutputTokens === null
   ) {
     return null;
   }
@@ -260,10 +263,10 @@ function resolveFromConfig(
   const maxOutputTokens = validPositiveInteger(modelOverride.maxOutputTokens);
 
   const hasAny =
-    supportsSystemPrompt !== null
-    || supportsStreaming !== null
-    || supportsToolCalls !== null
-    || maxOutputTokens !== null;
+    supportsSystemPrompt !== null ||
+    supportsStreaming !== null ||
+    supportsToolCalls !== null ||
+    maxOutputTokens !== null;
 
   if (!hasAny) return null;
 
@@ -329,14 +332,26 @@ function mergeProfiles(options: {
   rawMetadata?: unknown;
   profiles: readonly (ModelCapabilityProfile | null)[];
 }): ModelCapabilityProfile {
-  const profiles = options.profiles.filter((profile): profile is ModelCapabilityProfile => profile !== null);
+  const profiles = options.profiles.filter(
+    (profile): profile is ModelCapabilityProfile => profile !== null,
+  );
   const first = profiles[0];
-  const family = detectLocalModelFamily(options.modelId, options.rawMetadata)
-    ?? profiles.find((profile) => profile.family)?.family
-    ?? null;
-  const value = <K extends keyof Pick<ModelCapabilityProfile,
-    "maxOutputTokens" | "supportsStreaming" | "supportsToolCalls" | "supportsSystemPrompt" | "supportsVision"
-  >>(field: K): ModelCapabilityProfile[K] => {
+  const family =
+    detectLocalModelFamily(options.modelId, options.rawMetadata) ??
+    profiles.find((profile) => profile.family)?.family ??
+    null;
+  const value = <
+    K extends keyof Pick<
+      ModelCapabilityProfile,
+      | "maxOutputTokens"
+      | "supportsStreaming"
+      | "supportsToolCalls"
+      | "supportsSystemPrompt"
+      | "supportsVision"
+    >,
+  >(
+    field: K,
+  ): ModelCapabilityProfile[K] => {
     for (const profile of profiles) {
       if (profile[field] !== null) return profile[field];
     }
@@ -370,7 +385,11 @@ export function resolveModelCapabilityProfileCached(
 
   const raw = resolveFromRawMetadata(options.providerId, options.modelId, options.rawMetadata);
   const config = resolveFromConfig(options.providerId, options.modelId, options.providerConfig);
-  const detected = resolveFromDetectedFamily(options.providerId, options.modelId, options.rawMetadata);
+  const detected = resolveFromDetectedFamily(
+    options.providerId,
+    options.modelId,
+    options.rawMetadata,
+  );
   const registry = resolveFromKnownRegistry(options.providerId, options.modelId);
   const result = mergeProfiles({
     providerId: options.providerId,

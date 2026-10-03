@@ -1,7 +1,18 @@
-import type { AssistantEvent, ErrorEvent, RunEvent, ShellEvent, SystemEvent, UserPromptEvent } from "../../session/types.js";
+import type {
+  AssistantEvent,
+  ErrorEvent,
+  RunEvent,
+  ShellEvent,
+  SystemEvent,
+  UserPromptEvent,
+} from "../../session/types.js";
 import type { RenderTimelineItem } from "./Timeline.js";
 import type { TurnOpacity } from "./TurnGroup.js";
-import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow } from "./timelineMeasure.js";
+import {
+  buildNativeTranscriptParts,
+  type NativeTranscriptRowItem,
+  type TimelineRow,
+} from "./timelineMeasure.js";
 
 /**
  * Incremental row builder for the finalized (static) half of the transcript.
@@ -68,16 +79,20 @@ export function staticTranscriptGeneration(options: StaticTranscriptBuildOptions
 function isCacheHit(cached: CachedEntry, item: RenderTimelineItem): boolean {
   if (item.type === "event") return cached.kind === "event" && cached.event === item.event;
   if (item.type !== "turn" || cached.kind !== "turn") return false;
-  return cached.user === item.item.user
-    && cached.run === item.item.run
-    && cached.assistant === item.item.assistant
-    && cached.opacity === item.renderState.opacity;
+  return (
+    cached.user === item.item.user &&
+    cached.run === item.item.run &&
+    cached.assistant === item.item.assistant &&
+    cached.opacity === item.renderState.opacity
+  );
 }
 
 function isCacheable(item: RenderTimelineItem, liveRowCount: number): boolean {
   if (item.type === "event") return true;
   if (item.type !== "turn") return false;
-  return item.item.run?.status !== "running" && item.renderState.question === null && liveRowCount === 0;
+  return (
+    item.item.run?.status !== "running" && item.renderState.question === null && liveRowCount === 0
+  );
 }
 
 /**
@@ -153,13 +168,13 @@ export function buildStaticTranscript(
       item.type === "event"
         ? { kind: "event", event: item.event, items: parts.staticItems }
         : {
-          kind: "turn",
-          user: item.item.user,
-          run: item.item.run,
-          assistant: item.item.assistant,
-          opacity: item.renderState.opacity,
-          items: parts.staticItems,
-        },
+            kind: "turn",
+            user: item.item.user,
+            run: item.item.run,
+            assistant: item.item.assistant,
+            opacity: item.renderState.opacity,
+            items: parts.staticItems,
+          },
     );
     seen.add(item.key);
   }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getModeDisplaySpec } from "./modeDisplay.js";
 import { THEMES, DARK_THEME as theme } from "../theme.js";
+import { getModeDisplaySpec } from "./modeDisplay.js";
 
 test("maps internal modes to Codex-aligned display labels", () => {
   assert.equal(getModeDisplaySpec("suggest", theme).label, "Read-only");
@@ -37,6 +37,9 @@ test("keeps the mode ring meaningful across every built-in theme", () => {
 
     assert.equal(new Set(specs.map((spec) => spec.ringGlyph)).size, 3, themeName);
     assert.equal(new Set(specs.map((spec) => spec.ringColor)).size, 3, themeName);
-    assert.ok(specs.every((spec) => spec.ringFill.length > 0), themeName);
+    assert.ok(
+      specs.every((spec) => spec.ringFill.length > 0),
+      themeName,
+    );
   }
 });

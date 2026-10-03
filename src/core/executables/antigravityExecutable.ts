@@ -1,4 +1,4 @@
-import { runCommand } from "../process/CommandRunner.js";
+import type { runCommand } from "../process/CommandRunner.js";
 import { resolveExecutable } from "./executableResolver.js";
 
 type CommandRunner = typeof runCommand;
@@ -32,9 +32,7 @@ export async function resolveAgyExecutable(options?: {
     cwd: options?.cwd,
     configuredPath: options?.configuredPath,
     envOverrides: ["AGY_EXECUTABLE"],
-    commandNames: process.platform === "win32"
-      ? ["agy.exe", "agy.cmd", "agy.bat", "agy"]
-      : ["agy"],
+    commandNames: process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat", "agy"] : ["agy"],
     knownPathDirectories: [],
     knownFilePaths: [],
     label: "antigravity",

@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
+import test from "node:test";
 import { render } from "ink";
-import type { AssistantEvent, RunEvent, UIState, UserPromptEvent } from "../../session/types.js";
+import type React from "react";
+import type { AssistantEvent, RunEvent, UserPromptEvent } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
 import { ThemeProvider } from "../theme.js";
-import { TurnGroup, resolveTurnRunPhase } from "./TurnGroup.js";
+import { TurnGroup } from "./TurnGroup.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -316,31 +316,37 @@ test("renders accumulated Local reasoning once and keeps the final response sepa
     ...makeRunningRun(turnId),
     status: "completed",
     durationMs: 500,
-    progressEntries: [{
-      id: "local-reasoning-session-1-1-0",
-      source: "reasoning",
-      text: "The user said Hi. I should answer helpfully.",
-      sequence: 1,
-      createdAt: 2,
-      updatedAt: 3,
-      pendingNewlineCount: 0,
-      blocks: [{
-        id: "local-reasoning-session-1-1-0-block-1",
+    progressEntries: [
+      {
+        id: "local-reasoning-session-1-1-0",
+        source: "reasoning",
         text: "The user said Hi. I should answer helpfully.",
         sequence: 1,
         createdAt: 2,
         updatedAt: 3,
+        pendingNewlineCount: 0,
+        blocks: [
+          {
+            id: "local-reasoning-session-1-1-0-block-1",
+            text: "The user said Hi. I should answer helpfully.",
+            sequence: 1,
+            createdAt: 2,
+            updatedAt: 3,
+            status: "completed",
+            streamSeq: 1,
+          },
+        ],
+      },
+    ],
+    responseSegments: [
+      {
+        id: "response-1",
+        streamSeq: 2,
+        chunks: ["Hi! How can I help?"],
         status: "completed",
-        streamSeq: 1,
-      }],
-    }],
-    responseSegments: [{
-      id: "response-1",
-      streamSeq: 2,
-      chunks: ["Hi! How can I help?"],
-      status: "completed",
-      startedAt: 4,
-    }],
+        startedAt: 4,
+      },
+    ],
     streamItems: [
       { streamSeq: 1, kind: "thinking", refId: "local-reasoning-session-1-1-0-block-1" },
       { streamSeq: 2, kind: "response", refId: "response-1" },
@@ -383,15 +389,17 @@ test("consecutive Local reasoning fragments coalesce under a single Reasoning he
     createdAt: n,
     updatedAt: n,
     pendingNewlineCount: 0,
-    blocks: [{
-      id: `local-reasoning-session-1-1-${n}-block-1`,
-      text,
-      sequence: 1,
-      createdAt: n,
-      updatedAt: n,
-      status: "completed" as const,
-      streamSeq: n + 1,
-    }],
+    blocks: [
+      {
+        id: `local-reasoning-session-1-1-${n}-block-1`,
+        text,
+        sequence: 1,
+        createdAt: n,
+        updatedAt: n,
+        status: "completed" as const,
+        streamSeq: n + 1,
+      },
+    ],
   });
   const run: RunEvent = {
     ...makeRunningRun(turnId),
@@ -402,13 +410,15 @@ test("consecutive Local reasoning fragments coalesce under a single Reasoning he
       thinkingEntry(1, "The user says Hi."),
       thinkingEntry(2, "We should respond with a greeting."),
     ],
-    responseSegments: [{
-      id: "response-1",
-      streamSeq: 4,
-      chunks: ["Hi! How can I help?"],
-      status: "completed",
-      startedAt: 5,
-    }],
+    responseSegments: [
+      {
+        id: "response-1",
+        streamSeq: 4,
+        chunks: ["Hi! How can I help?"],
+        status: "completed",
+        startedAt: 5,
+      },
+    ],
     streamItems: [
       { streamSeq: 1, kind: "thinking", refId: "local-reasoning-session-1-1-0-block-1" },
       { streamSeq: 2, kind: "thinking", refId: "local-reasoning-session-1-1-1-block-1" },
@@ -442,7 +452,6 @@ test("consecutive Local reasoning fragments coalesce under a single Reasoning he
   assert.match(frame, /Hi! How can I help/);
   harness.instance.unmount();
 });
-
 
 test("snaps cleanly from streaming cursor view to completion view", async () => {
   const turnId = 11;

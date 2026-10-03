@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
+import test from "node:test";
 import type { RenderOptions } from "ink";
+import type React from "react";
 import { startApp } from "./index.js";
 
 const TITLE_SEQUENCE_PATTERN = /\x1b\](?:0|2);[^\x07]*(?:\x07|\x1b\\)/g;
@@ -34,24 +34,26 @@ function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-function createSupportedHarness(options: {
-  inkInstance?: {
-    lastOutput: string;
-    lastOutputToRender: string;
-    lastOutputHeight: number;
-    calculateLayoutCalls: number;
-    onRenderCalls: number;
-    unsubscribeResizeCalls: number;
-    throttledLogCancelCalls: number;
-    rootOnRenderCancelCalls: number;
-    onRenderCancelCalls: number;
-    calculateLayout: () => void;
-    onRender: (() => void) & { cancel: () => void };
-    unsubscribeResize: () => void;
-    throttledLog: { cancel: () => void };
-    rootNode: { onRender: { cancel: () => void } };
-  } | null;
-} = {}) {
+function createSupportedHarness(
+  options: {
+    inkInstance?: {
+      lastOutput: string;
+      lastOutputToRender: string;
+      lastOutputHeight: number;
+      calculateLayoutCalls: number;
+      onRenderCalls: number;
+      unsubscribeResizeCalls: number;
+      throttledLogCancelCalls: number;
+      rootOnRenderCancelCalls: number;
+      onRenderCancelCalls: number;
+      calculateLayout: () => void;
+      onRender: (() => void) & { cancel: () => void };
+      unsubscribeResize: () => void;
+      throttledLog: { cancel: () => void };
+      rootNode: { onRender: { cancel: () => void } };
+    } | null;
+  } = {},
+) {
   const stdout = new MockStdout();
   const stderr = new MockStderr();
   const registeredHandlers: Array<() => void> = [];
@@ -430,9 +432,16 @@ test("startup writes one workspace title before bracketed paste and Ink render s
   const firstTitleIndex = titleMatches[0]?.index ?? -1;
   const bracketedPasteIndex = harness.stdout.writes.indexOf("\x1b[?2004h");
 
-  assert.equal(titleMatches.length, 2, "startup should write one OSC 0 and one OSC 2 title sequence");
+  assert.equal(
+    titleMatches.length,
+    2,
+    "startup should write one OSC 0 and one OSC 2 title sequence",
+  );
   assert.ok(firstTitleIndex >= 0, "workspace title should be written");
-  assert.ok(bracketedPasteIndex > firstTitleIndex, "workspace title should be written before bracketed paste/render setup");
+  assert.ok(
+    bracketedPasteIndex > firstTitleIndex,
+    "workspace title should be written before bracketed paste/render setup",
+  );
   assert.match(harness.stdout.writes, /\x1b\]0;[^\x07]+\x07\x1b\]2;[^\x07]+\x07/);
   assert.doesNotMatch(harness.stdout.writes, /\x1b\](?:0|2);[a-zA-Z]:[\\/]/);
   assert.doesNotMatch(harness.stdout.writes, /\x1b\[2J|\x1b\[3J|\x1bc/);
@@ -470,7 +479,11 @@ test("post-startup resize does not force Ink internals or blank cached output", 
   const harness = createSupportedHarness({ inkInstance });
   startApp(harness.deps);
 
-  assert.equal(inkInstance.unsubscribeResizeCalls, 1, "startup still disables Ink's competing resize listener");
+  assert.equal(
+    inkInstance.unsubscribeResizeCalls,
+    1,
+    "startup still disables Ink's competing resize listener",
+  );
 
   const initialLastOutput = inkInstance.lastOutput;
   const initialLastOutputToRender = inkInstance.lastOutputToRender;

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import test from "node:test";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import test from "node:test";
 
 test("persists trusted project roots", async () => {
   const tempHome = mkdtempSync(join(tmpdir(), "ubume-trust-store-"));
@@ -35,7 +35,11 @@ test("migrates legacy codexa-trust.json to ubume-trust.json non-destructively", 
 
   try {
     const legacyTrustFile = join(tempHome, "codexa-trust.json");
-    writeFileSync(legacyTrustFile, JSON.stringify({ trustedProjectRoots: ["/migrated/project"] }), "utf-8");
+    writeFileSync(
+      legacyTrustFile,
+      JSON.stringify({ trustedProjectRoots: ["/migrated/project"] }),
+      "utf-8",
+    );
 
     const module = await import(`./trustStore.js?trustMigrate=${Date.now()}`);
     assert.equal(module.isProjectTrusted("/migrated/project"), true);

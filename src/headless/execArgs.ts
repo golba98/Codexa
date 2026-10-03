@@ -97,18 +97,35 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
     if (!arg) {
       continue;
     }
-    if (["--prompt", "--profile", "--model", "-m", "--reasoning"].includes(arg)
-      && (!argv[index + 1]?.trim() || argv[index + 1]!.startsWith("-"))) {
-      return { ok: false, error: `Missing value for ${arg}. Use ${arg}=VALUE for an option-like value.` };
+    if (
+      ["--prompt", "--profile", "--model", "-m", "--reasoning"].includes(arg) &&
+      (!argv[index + 1]?.trim() || argv[index + 1]!.startsWith("-"))
+    ) {
+      return {
+        ok: false,
+        error: `Missing value for ${arg}. Use ${arg}=VALUE for an option-like value.`,
+      };
     }
 
-    if (arg === "--json") { json = true; continue; }
-    if (arg === "--stdin") { stdin = true; continue; }
-    if (arg === "--no-save") { noSave = true; continue; }
+    if (arg === "--json") {
+      json = true;
+      continue;
+    }
+    if (arg === "--stdin") {
+      stdin = true;
+      continue;
+    }
+    if (arg === "--no-save") {
+      noSave = true;
+      continue;
+    }
     const name = arg.split("=")[0];
     if (["--resume", "--provider", "--cwd", "--file"].includes(name)) {
-      const value = normalizeNonEmpty(arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : argv[++index]);
-      if (!value || (!arg.includes("=") && value.startsWith("--"))) return { ok: false, error: `Missing value for ${name}.` };
+      const value = normalizeNonEmpty(
+        arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : argv[++index],
+      );
+      if (!value || (!arg.includes("=") && value.startsWith("--")))
+        return { ok: false, error: `Missing value for ${name}.` };
       if (name === "--resume") resumeId = value;
       else if (name === "--provider") providerId = value;
       else if (name === "--cwd") cwd = value;
@@ -141,7 +158,10 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
     if (arg === "--ubume-prompt-policy" || arg === "--codexa-prompt-policy") {
       const value = normalizeNonEmpty(argv[index + 1]);
       if (value !== "raw" && value !== "wrapped") {
-        return { ok: false, error: "Missing or invalid value for --ubume-prompt-policy. Use raw or wrapped." };
+        return {
+          ok: false,
+          error: "Missing or invalid value for --ubume-prompt-policy. Use raw or wrapped.",
+        };
       }
       promptPolicy = value;
       index += 1;
@@ -284,46 +304,78 @@ export function parseHeadlessExecArgs(argv: readonly string[]): HeadlessExecArgs
     positionalPromptParts.push(arg);
   }
 
-  const positionalPrompt = positionalPromptParts
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join(" ")
-    .trim() || null;
+  const positionalPrompt =
+    positionalPromptParts
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(" ")
+      .trim() || null;
 
   if (explicitPrompt && positionalPrompt) {
     return { ok: false, error: "Provide a prompt either positionally or with --prompt, not both." };
   }
 
-  if (stdin && (explicitPrompt || positionalPrompt)) return { ok: false, error: "--stdin cannot be combined with another prompt source." };
-  if (noSave && resumeId) return { ok: false, error: "--no-save cannot be combined with --resume." };
+  if (stdin && (explicitPrompt || positionalPrompt))
+    return { ok: false, error: "--stdin cannot be combined with another prompt source." };
+  if (noSave && resumeId)
+    return { ok: false, error: "--no-save cannot be combined with --resume." };
   const prompt = explicitPrompt ?? positionalPrompt;
   if (help) {
     return {
       ok: true,
       value: {
-        help, json, stdin, noSave, resumeId, providerId, cwd, files,
+        help,
+        json,
+        stdin,
+        noSave,
+        resumeId,
+        providerId,
+        cwd,
+        files,
         benchmarkDiagnostics,
         timing,
         promptPolicy,
         prompt: prompt ?? "",
-        launchArgs: buildLaunchArgs({ prompt, profile, configOverrides, passthroughArgs, modelOverride }),
+        launchArgs: buildLaunchArgs({
+          prompt,
+          profile,
+          configOverrides,
+          passthroughArgs,
+          modelOverride,
+        }),
       },
     };
   }
 
   if (!prompt && !stdin) {
-    return { ok: false, error: "Missing prompt. Use ubume exec \"prompt\" or ubume exec --prompt \"prompt\"." };
+    return {
+      ok: false,
+      error: 'Missing prompt. Use ubume exec "prompt" or ubume exec --prompt "prompt".',
+    };
   }
 
   return {
     ok: true,
     value: {
-      help, json, stdin, noSave, resumeId, providerId, cwd, files,
+      help,
+      json,
+      stdin,
+      noSave,
+      resumeId,
+      providerId,
+      cwd,
+      files,
       benchmarkDiagnostics,
       timing,
       promptPolicy,
       prompt: prompt ?? "",
-      launchArgs: buildLaunchArgs({ prompt, profile, configOverrides, passthroughArgs, modelOverride }),
+      launchArgs: buildLaunchArgs({
+        prompt,
+        profile,
+        configOverrides,
+        passthroughArgs,
+        modelOverride,
+      }),
     },
   };
 }

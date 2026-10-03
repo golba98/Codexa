@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { afterEach } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runCommand, type CommandResult } from "../process/CommandRunner.js";
+import { join } from "node:path";
+import test, { afterEach } from "node:test";
+import type { CommandResult, runCommand } from "../process/CommandRunner.js";
 import {
-  resolveCodexExecutable,
   resetCodexExecutableCacheForTests,
+  resolveCodexExecutable,
   spawnCodexProcess,
 } from "./codexExecutable.js";
 
@@ -27,7 +26,10 @@ function commandResult(overrides: Partial<CommandResult> = {}): CommandResult {
   };
 }
 
-function mockRunCommand(result: CommandResult, onCall?: (spec: Parameters<typeof runCommand>[0]) => void): typeof runCommand {
+function mockRunCommand(
+  result: CommandResult,
+  onCall?: (spec: Parameters<typeof runCommand>[0]) => void,
+): typeof runCommand {
   return ((spec) => {
     onCall?.(spec);
     return {
@@ -61,7 +63,9 @@ test("Codex resolver: configuredPath wins and bypasses env and PATH", async () =
     let whereCalled = false;
     const resolved = await resolveCodexExecutable({
       configuredPath: process.execPath,
-      runCommandImpl: mockRunCommand(commandResult(), () => { whereCalled = true; }),
+      runCommandImpl: mockRunCommand(commandResult(), () => {
+        whereCalled = true;
+      }),
     });
 
     assert.equal(resolved, process.execPath);
@@ -73,7 +77,9 @@ test("Codex resolver: CODEX_EXECUTABLE env var used when no configuredPath", asy
   await withEnv({ CODEX_EXECUTABLE: "env-codex.cmd" }, async () => {
     let whereCalled = false;
     const resolved = await resolveCodexExecutable({
-      runCommandImpl: mockRunCommand(commandResult(), () => { whereCalled = true; }),
+      runCommandImpl: mockRunCommand(commandResult(), () => {
+        whereCalled = true;
+      }),
     });
 
     assert.equal(resolved, "env-codex.cmd");
@@ -84,9 +90,10 @@ test("Codex resolver: CODEX_EXECUTABLE env var used when no configuredPath", asy
 test("Codex resolver: rejects unsafe CODEX_EXECUTABLE values", async () => {
   await withEnv({ CODEX_EXECUTABLE: "codex.cmd & calc" }, async () => {
     await assert.rejects(
-      () => resolveCodexExecutable({
-        runCommandImpl: mockRunCommand(commandResult()),
-      }),
+      () =>
+        resolveCodexExecutable({
+          runCommandImpl: mockRunCommand(commandResult()),
+        }),
       /shell metacharacters|single executable name/i,
     );
   });
@@ -105,9 +112,10 @@ test("Codex resolver: rejects malicious CODEX_EXECUTABLE candidates", async () =
   for (const executable of unsafeExecutables) {
     await withEnv({ CODEX_EXECUTABLE: executable }, async () => {
       await assert.rejects(
-        () => resolveCodexExecutable({
-          runCommandImpl: mockRunCommand(commandResult()),
-        }),
+        () =>
+          resolveCodexExecutable({
+            runCommandImpl: mockRunCommand(commandResult()),
+          }),
         /shell metacharacters|single executable name/i,
         executable,
       );
@@ -140,9 +148,8 @@ test("Codex resolver: Windows where.exe PATH lookup used when no env or config",
   await withEnv({}, async () => {
     const calls: Array<Parameters<typeof runCommand>[0]> = [];
     const resolved = await resolveCodexExecutable({
-      runCommandImpl: mockRunCommand(
-        commandResult({ stdout: `${resolvedPath}\n` }),
-        (spec) => calls.push(spec),
+      runCommandImpl: mockRunCommand(commandResult({ stdout: `${resolvedPath}\n` }), (spec) =>
+        calls.push(spec),
       ),
     });
 
@@ -172,7 +179,10 @@ test("Codex resolver: Windows bare fallback when where.exe fails", async () => {
       runCommandImpl: mockRunCommand(commandResult({ exitCode: 1, status: "failed" })),
     });
 
-    assert.ok(["codex.cmd", "codex.exe", "codex"].includes(resolved), `Unexpected fallback: ${resolved}`);
+    assert.ok(
+      ["codex.cmd", "codex.exe", "codex"].includes(resolved),
+      `Unexpected fallback: ${resolved}`,
+    );
   });
 });
 
@@ -197,7 +207,11 @@ test("Codex resolver: configuredPath bypasses cache", async () => {
     assert.equal(withOverride, process.execPath);
 
     const afterOverride = await resolveCodexExecutable();
-    assert.equal(afterOverride, "env-codex.cmd", "Cache should not be polluted by configuredPath call");
+    assert.equal(
+      afterOverride,
+      "env-codex.cmd",
+      "Cache should not be polluted by configuredPath call",
+    );
   });
 });
 
@@ -219,7 +233,9 @@ test("spawnCodexProcess wraps .cmd in cmd.exe on Windows", () => {
   if (process.platform !== "win32") return;
 
   const codexPath = "C:\\Users\\Example\\AppData\\Roaming\\npm\\codex.cmd";
-  const proc = spawnCodexProcess(codexPath, ["exec", "--help"], { stdio: ["ignore", "pipe", "pipe"] });
+  const proc = spawnCodexProcess(codexPath, ["exec", "--help"], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   proc.kill();
 
   assert.ok(proc, "Process should have been spawned");

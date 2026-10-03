@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import React from "react";
-import { Box, Text, render } from "ink";
-import { createLayoutSnapshot } from "../layout.js";
+import { render } from "ink";
 import { BottomComposer } from "../chrome/BottomComposer.js";
+import { createLayoutSnapshot } from "../layout.js";
 import { ThemeProvider } from "../theme.js";
 
 class TestInput extends PassThrough {
@@ -69,7 +68,7 @@ test("Ctrl+Alt+P raw escape sequence opens provider picker", async () => {
       stdout: stdout as any,
       debug: true,
       exitOnCtrlC: false,
-    }
+    },
   );
 
   // Wait for effect setup
@@ -77,11 +76,15 @@ test("Ctrl+Alt+P raw escape sequence opens provider picker", async () => {
 
   // Send raw Ctrl+Alt+P sequence (ESC ^P)
   stdin.write("\x1b\x10");
-  
+
   // useInput is triggered on the next tick in Ink
   await sleep(100);
 
-  assert.strictEqual(providerPickerOpened, true, "Provider picker should be opened by raw Ctrl+Alt+P sequence");
+  assert.strictEqual(
+    providerPickerOpened,
+    true,
+    "Provider picker should be opened by raw Ctrl+Alt+P sequence",
+  );
 });
 
 test("Ctrl+Alt+P CSI u sequence opens provider picker", async () => {
@@ -129,15 +132,19 @@ test("Ctrl+Alt+P CSI u sequence opens provider picker", async () => {
       stdout: stdout as any,
       debug: true,
       exitOnCtrlC: false,
-    }
+    },
   );
 
   await sleep(100);
 
   // Send CSI u sequence for Ctrl+Alt+P
   stdin.write("\x1b[112;7u");
-  
+
   await sleep(100);
 
-  assert.strictEqual(providerPickerOpened, true, "Provider picker should be opened by CSI u Ctrl+Alt+P sequence");
+  assert.strictEqual(
+    providerPickerOpened,
+    true,
+    "Provider picker should be opened by CSI u Ctrl+Alt+P sequence",
+  );
 });

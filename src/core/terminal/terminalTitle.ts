@@ -1,6 +1,10 @@
-import { APP_NAME, type TerminalTitleMode, formatTerminalTitlePath } from "../../config/settings.js";
 import { appendFileSync, mkdirSync } from "fs";
 import { dirname } from "path";
+import {
+  APP_NAME,
+  formatTerminalTitlePath,
+  type TerminalTitleMode,
+} from "../../config/settings.js";
 import * as renderDebug from "../perf/renderDebug.js";
 import { resolveUbumeDebugLogPath } from "../workspace/appData.js";
 
@@ -22,14 +26,18 @@ function findNextOscTitleStart(text: string, from: number): number {
       text.charCodeAt(i + 1) === 0x5d &&
       (text.charCodeAt(i + 2) === 0x30 || text.charCodeAt(i + 2) === 0x32) &&
       text.charCodeAt(i + 3) === 0x3b
-    ) return i;
+    )
+      return i;
   }
   return -1;
 }
 
 // Finds the first BEL (0x07) or ST (ESC \) at/after `from`.
 // Returns { contentEnd: terminator-start, seqEnd: after-terminator } or null.
-function findOscSequenceEnd(text: string, from: number): { contentEnd: number; seqEnd: number } | null {
+function findOscSequenceEnd(
+  text: string,
+  from: number,
+): { contentEnd: number; seqEnd: number } | null {
   for (let i = from; i < text.length; i++) {
     if (text.charCodeAt(i) === 0x07) return { contentEnd: i, seqEnd: i + 1 };
     if (text.charCodeAt(i) === 0x1b && i + 1 < text.length && text.charCodeAt(i + 1) === 0x5c)
@@ -51,9 +59,10 @@ function findIncompleteOscTitleStart(text: string): number {
   return -1;
 }
 
-const TERMINAL_TITLE_DEBUG_LOG_PATH = process.env["UBUME_TERMINAL_TITLE_DEBUG_FILE"]?.trim()
-  || process.env["UBUME_RENDER_DEBUG_FILE"]?.trim()
-  || resolveUbumeDebugLogPath();
+const TERMINAL_TITLE_DEBUG_LOG_PATH =
+  process.env["UBUME_TERMINAL_TITLE_DEBUG_FILE"]?.trim() ||
+  process.env["UBUME_RENDER_DEBUG_FILE"]?.trim() ||
+  resolveUbumeDebugLogPath();
 
 let terminalTitleLifecycleState = "unknown";
 
@@ -116,7 +125,10 @@ export function normalizeTerminalTitle(title: string | null | undefined): string
   return cleanTitle;
 }
 
-export function setIntendedTerminalTitle(title: string | null | undefined, options?: TerminalTitleOptions): string {
+export function setIntendedTerminalTitle(
+  title: string | null | undefined,
+  options?: TerminalTitleOptions,
+): string {
   intendedTerminalTitle = normalizeTerminalTitle(title);
   writeUbumeTerminalTitle(intendedTerminalTitle, {
     ...options,
@@ -148,7 +160,11 @@ export function writeUbumeTerminalTitle(title: string, options?: TerminalTitleOp
   lastWrittenTerminalTitle = cleanTitle;
 
   const sequence = buildTerminalTitleSequence(cleanTitle);
-  renderDebug.traceTerminalWrite("stdout", `terminalTitle:${options?.reason ?? "unknown"}`, sequence);
+  renderDebug.traceTerminalWrite(
+    "stdout",
+    `terminalTitle:${options?.reason ?? "unknown"}`,
+    sequence,
+  );
   writeTerminalTitleDebugRecord({
     event: "ubumeTitleWrite",
     title: cleanTitle,
@@ -159,14 +175,18 @@ export function writeUbumeTerminalTitle(title: string, options?: TerminalTitleOp
 
   if (options?.write) {
     options.write(sequence);
-    debugLog(`write(custom) title="${cleanTitle}" force=${!!options?.force} reason=${options?.reason ?? "unknown"}`);
+    debugLog(
+      `write(custom) title="${cleanTitle}" force=${!!options?.force} reason=${options?.reason ?? "unknown"}`,
+    );
     return;
   }
 
   const stdoutIsTTY = Boolean(process.stdout?.isTTY);
   const stderrIsTTY = Boolean(process.stderr?.isTTY);
 
-  debugLog(`writeUbumeTerminalTitle("${cleanTitle}") force=${!!options?.force} reason=${options?.reason ?? "unknown"} stdoutIsTTY=${stdoutIsTTY} stderrIsTTY=${stderrIsTTY}`);
+  debugLog(
+    `writeUbumeTerminalTitle("${cleanTitle}") force=${!!options?.force} reason=${options?.reason ?? "unknown"} stdoutIsTTY=${stdoutIsTTY} stderrIsTTY=${stderrIsTTY}`,
+  );
 
   if (stderrIsTTY) {
     process.stderr.write(sequence);
@@ -291,10 +311,16 @@ export function stripTerminalTitleSequences(input: string): string {
 
   while (pos < text.length) {
     const start = findNextOscTitleStart(text, pos);
-    if (start === -1) { result += text.slice(pos); break; }
+    if (start === -1) {
+      result += text.slice(pos);
+      break;
+    }
     result += text.slice(pos, start);
     const term = findOscSequenceEnd(text, start + 4);
-    if (term === null) { result += text.slice(start); break; } // unterminated: pass through unchanged
+    if (term === null) {
+      result += text.slice(start);
+      break;
+    } // unterminated: pass through unchanged
     pos = term.seqEnd;
   }
 
@@ -302,9 +328,7 @@ export function stripTerminalTitleSequences(input: string): string {
 }
 
 export function stripTerminalTitleSequencesFromChunk(chunk: Buffer | string): string {
-  return stripTerminalTitleSequences(
-    Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk,
-  );
+  return stripTerminalTitleSequences(Buffer.isBuffer(chunk) ? chunk.toString("utf8") : chunk);
 }
 
 // Each stripper maintains a carryover buffer so that a title escape sequence
@@ -327,7 +351,9 @@ export function createTerminalTitleSequenceStripper(context: TerminalTitleSequen
       const input = carryover + text;
       carryover = "";
 
-      const incompleteStart = findIncompleteOscTitleStart(input.slice(0, MAX_TERMINAL_TITLE_INPUT_LENGTH));
+      const incompleteStart = findIncompleteOscTitleStart(
+        input.slice(0, MAX_TERMINAL_TITLE_INPUT_LENGTH),
+      );
       if (incompleteStart !== -1) {
         carryover = input.slice(incompleteStart);
         return strip(input.slice(0, incompleteStart));
@@ -397,4 +423,3 @@ export function reassertTerminalTitle(
 ): void {
   write(buildTerminalTitleSequence(title));
 }
-

@@ -8,10 +8,10 @@ const GIT_DIFF = [
   "--- a/src/example.ts",
   "+++ b/src/example.ts",
   "@@ -1,3 +1,4 @@",
-  " const name = \"Ubume\";",
-  "-console.log(\"old\");",
-  "+console.log(\"new\");",
-  "+console.log(\"added\");",
+  ' const name = "Ubume";',
+  '-console.log("old");',
+  '+console.log("new");',
+  '+console.log("added");',
   " export default name;",
 ].join("\n");
 
@@ -20,31 +20,17 @@ test("detects a git unified diff", () => {
 });
 
 test("detects a simple file-header and hunk diff", () => {
-  const diff = [
-    "--- old.txt",
-    "+++ new.txt",
-    "@@ -1 +1 @@",
-    "-old",
-    "+new",
-  ].join("\n");
+  const diff = ["--- old.txt", "+++ new.txt", "@@ -1 +1 @@", "-old", "+new"].join("\n");
 
   assert.equal(isUnifiedDiff(diff), true);
 });
 
 test("classifies file, hunk, added, removed, context, and meta lines", () => {
   const rendered = renderUnifiedDiff(GIT_DIFF);
-  assert.deepEqual(rendered.map((line) => line.type), [
-    "file",
-    "meta",
-    "file",
-    "file",
-    "hunk",
-    "context",
-    "remove",
-    "add",
-    "add",
-    "context",
-  ]);
+  assert.deepEqual(
+    rendered.map((line) => line.type),
+    ["file", "meta", "file", "file", "hunk", "context", "remove", "add", "add", "context"],
+  );
 });
 
 test("handles malformed diff-like text without throwing", () => {
@@ -53,11 +39,7 @@ test("handles malformed diff-like text without throwing", () => {
 });
 
 test("does not classify normal text as a diff", () => {
-  const text = [
-    "Here are options:",
-    "- use --help",
-    "+ consider reading docs",
-  ].join("\n");
+  const text = ["Here are options:", "- use --help", "+ consider reading docs"].join("\n");
 
   assert.equal(isUnifiedDiff(text), false);
   assert.equal(maybeRenderDiff(text), null);
@@ -87,13 +69,10 @@ test("strips ANSI and unsafe controls before classification", () => {
   ].join("\n");
 
   const rendered = renderUnifiedDiff(diff);
-  assert.deepEqual(rendered.map((line) => line.text), [
-    "--- a/file.ts",
-    "+++ b/file.ts",
-    "@@ -1 +1 @@",
-    "-old",
-    "+new",
-  ]);
+  assert.deepEqual(
+    rendered.map((line) => line.text),
+    ["--- a/file.ts", "+++ b/file.ts", "@@ -1 +1 @@", "-old", "+new"],
+  );
 });
 
 test("forced rendering accepts explicit diff fences with change lines", () => {

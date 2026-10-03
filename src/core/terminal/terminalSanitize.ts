@@ -70,17 +70,19 @@ function stripTerminalSequences(raw: string): string {
  * segment — never on arbitrary subprocess or user input.
  */
 function stripDangerousSequencesPreserveSGR(raw: string): string {
-  return raw
-    .replace(OSC_SEQUENCE, "")          // OSC: hyperlinks, titles — always strip
-    .replace(DCS_PM_APC_SEQUENCE, "")  // DCS/PM/APC — always strip
-    // Strip CSI sequences that are NOT pure SGR colour codes.
-    // First mark safe SGR sequences with a placeholder, strip all CSI,
-    // then restore the safe ones.
-    .replace(SGR_COLOUR_SEQUENCE, (match) => `\u0000SGR:${match}\u0000`)  // protect SGR
-    .replace(CSI_SEQUENCE, "")                                              // strip dangerous CSI
-    .replace(/\u0000SGR:(\u001B\[[\d;]*m)\u0000/g, "$1")                 // restore SGR
-    .replace(ESC_INTERMEDIATE_SEQUENCE, "")
-    .replace(SINGLE_C1_SEQUENCE, "");
+  return (
+    raw
+      .replace(OSC_SEQUENCE, "") // OSC: hyperlinks, titles — always strip
+      .replace(DCS_PM_APC_SEQUENCE, "") // DCS/PM/APC — always strip
+      // Strip CSI sequences that are NOT pure SGR colour codes.
+      // First mark safe SGR sequences with a placeholder, strip all CSI,
+      // then restore the safe ones.
+      .replace(SGR_COLOUR_SEQUENCE, (match) => `\u0000SGR:${match}\u0000`) // protect SGR
+      .replace(CSI_SEQUENCE, "") // strip dangerous CSI
+      .replace(/\u0000SGR:(\u001B\[[\d;]*m)\u0000/g, "$1") // restore SGR
+      .replace(ESC_INTERMEDIATE_SEQUENCE, "")
+      .replace(SINGLE_C1_SEQUENCE, "")
+  );
 }
 
 function stripUnsafeControls(text: string): string {
@@ -95,9 +97,7 @@ export function sanitizeTerminalOutput(raw: string, options: SanitizeTerminalOpt
   const tabSize = options.tabSize ?? DEFAULT_TAB_SIZE;
 
   const withoutSequences = stripTerminalSequences(raw);
-  const normalizedBreaks = withoutSequences
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n");
+  const normalizedBreaks = withoutSequences.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const withoutUnsafeControls = stripUnsafeControls(normalizedBreaks);
   return normalizeTabs(withoutUnsafeControls, preserveTabs, tabSize);
 }
@@ -130,9 +130,7 @@ export function sanitizeTerminalLines(lines: string[]): string[] {
 export function sanitizeDiffOutput(raw: string): string {
   if (!raw) return "";
   const withSafrSgr = stripDangerousSequencesPreserveSGR(raw);
-  const normalizedBreaks = withSafrSgr
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n");
+  const normalizedBreaks = withSafrSgr.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   return stripUnsafeControls(normalizedBreaks);
 }
 
@@ -141,7 +139,5 @@ export function sanitizeDiffOutput(raw: string): string {
  * Use this when you need the visual width of a string that may contain SGR codes.
  */
 export function stripAnsiForMeasurement(text: string): string {
-  return text
-    .replace(SGR_COLOUR_SEQUENCE, "")
-    .replace(DISALLOWED_CONTROL_BYTES, "");
+  return text.replace(SGR_COLOUR_SEQUENCE, "").replace(DISALLOWED_CONTROL_BYTES, "");
 }

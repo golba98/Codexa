@@ -8,7 +8,7 @@ import type {
   CodexModelCapability,
   ReasoningEffortCapability,
 } from "./codexModelCapabilities.js";
-import { loadCachedProviderModels, type CachedProviderModels } from "./providerModelCache.js";
+import { type CachedProviderModels, loadCachedProviderModels } from "./providerModelCache.js";
 
 // The codex CLI maintains its own model catalog cache with slugs, labels and
 // reasoning levels. Reading it seeds Ubume's OpenAI model list instantly —
@@ -101,14 +101,14 @@ export function loadCodexSeedModels(cacheFile = getCodexModelsCacheFile()): Code
 
 // Freshest locally known OpenAI models without spawning a subprocess:
 // codex's own cache file vs Ubume's persisted last-good discovery.
-export function loadSeededOpenAiModels(options: {
-  codexCacheFile?: string;
-  providerCacheFile?: string;
-} = {}): CachedProviderModels | null {
+export function loadSeededOpenAiModels(
+  options: { codexCacheFile?: string; providerCacheFile?: string } = {},
+): CachedProviderModels | null {
   const seed = loadCodexSeedModels(options.codexCacheFile);
-  const persisted = options.providerCacheFile === undefined
-    ? loadCachedProviderModels("openai")
-    : loadCachedProviderModels("openai", options.providerCacheFile);
+  const persisted =
+    options.providerCacheFile === undefined
+      ? loadCachedProviderModels("openai")
+      : loadCachedProviderModels("openai", options.providerCacheFile);
   if (seed && (!persisted || seed.fetchedAt >= persisted.discoveredAt)) {
     return { discoveredAt: seed.fetchedAt, models: seed.models };
   }
@@ -126,7 +126,9 @@ function toCapability(model: ProviderModel, index: number): CodexModelCapability
     isDefault: index === 0,
     defaultReasoningLevel: model.defaultReasoningLevel,
     supportedReasoningLevels: model.supportedReasoningLevels,
-    reasoningLevelCount: model.supportedReasoningLevels ? model.supportedReasoningLevels.length : null,
+    reasoningLevelCount: model.supportedReasoningLevels
+      ? model.supportedReasoningLevels.length
+      : null,
     source: "runtime",
     raw: model,
   };
@@ -134,10 +136,9 @@ function toCapability(model: ProviderModel, index: number): CodexModelCapability
 
 // Capabilities for the OpenAI picker sourced purely from local caches.
 // Returns null when nothing is cached yet (first ever launch).
-export function loadSeededCodexCapabilities(options: {
-  codexCacheFile?: string;
-  providerCacheFile?: string;
-} = {}): CodexModelCapabilities | null {
+export function loadSeededCodexCapabilities(
+  options: { codexCacheFile?: string; providerCacheFile?: string } = {},
+): CodexModelCapabilities | null {
   const seeded = loadSeededOpenAiModels(options);
   if (!seeded) {
     return null;

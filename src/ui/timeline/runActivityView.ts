@@ -3,10 +3,10 @@ import type { RunEvent } from "../../session/types.js";
 const MAX_VISIBLE_ACTIVE_ACTIVITY = 6;
 const MAX_VISIBLE_SUMMARY_ACTIVITY = 4;
 export function selectVisibleRunActivity(event: RunEvent) {
-  const source = event.status === "running"
-    ? event.activity
-    : event.activitySummary?.recent ?? event.activity;
-  const limit = event.status === "running" ? MAX_VISIBLE_ACTIVE_ACTIVITY : MAX_VISIBLE_SUMMARY_ACTIVITY;
+  const source =
+    event.status === "running" ? event.activity : (event.activitySummary?.recent ?? event.activity);
+  const limit =
+    event.status === "running" ? MAX_VISIBLE_ACTIVE_ACTIVITY : MAX_VISIBLE_SUMMARY_ACTIVITY;
   const visible = source.slice(-limit);
   return {
     visible,

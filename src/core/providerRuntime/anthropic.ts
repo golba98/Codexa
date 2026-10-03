@@ -1,18 +1,28 @@
-import { createRunControl } from "../providers/runControl.js";
-import { runCommand, type CommandResult } from "../process/CommandRunner.js";
-import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
-import type { BackendRunHandlers } from "../providers/types.js";
-import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
-import type { ProviderBackendKind, ProviderChatRequest, ProviderModel, ProviderModelDiscoveryResult, ProviderRouteValidationResult, ProviderRuntime } from "./types.js";
 import { formatConversationHistory } from "../../session/conversation.js";
-import { buildClaudeSpawnSpec, resetClaudeExecutableCacheForTests } from "../executables/claudeExecutable.js";
 import {
+  buildClaudeSpawnSpec,
+  resetClaudeExecutableCacheForTests,
+} from "../executables/claudeExecutable.js";
+import { type CommandResult, runCommand } from "../process/CommandRunner.js";
+import { createRunControl } from "../providers/runControl.js";
+import type { BackendRunHandlers } from "../providers/types.js";
+import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
+import {
+  type ClaudeCodeCapabilityDiscovery,
   claudeCodeModelsToProviderModels,
   discoverClaudeCodeCapabilities,
   getClaudeModelDefaultEffort,
   modelSupportsClaudeEffort,
-  type ClaudeCodeCapabilityDiscovery,
 } from "./claudeCodeDiscovery.js";
+import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
+import type {
+  ProviderBackendKind,
+  ProviderChatRequest,
+  ProviderModel,
+  ProviderModelDiscoveryResult,
+  ProviderRouteValidationResult,
+  ProviderRuntime,
+} from "./types.js";
 
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -20,8 +30,10 @@ const ANTHROPIC_MAX_TOKENS = 1024;
 const ANTHROPIC_TIMEOUT_MS = 120_000;
 const ANTHROPIC_AUTH_CHECK_TIMEOUT_MS = 10_000;
 const ANTHROPIC_ROUTE_VALIDATION_TIMEOUT_MS = 15_000;
-const DISCOVERY_FAILURE_MESSAGE = "Claude Code model version discovery failed; using fallback aliases with unknown versions.";
-export const ANTHROPIC_ROUTE_SETUP_MESSAGE = "Anthropic/Claude is not configured for in-Ubume routing.\nSign in with Claude Code or set ANTHROPIC_API_KEY.";
+const DISCOVERY_FAILURE_MESSAGE =
+  "Claude Code model version discovery failed; using fallback aliases with unknown versions.";
+export const ANTHROPIC_ROUTE_SETUP_MESSAGE =
+  "Anthropic/Claude is not configured for in-Ubume routing.\nSign in with Claude Code or set ANTHROPIC_API_KEY.";
 export { parseClaudeAuthStatus } from "./claudeCodeDiscovery.js";
 
 type CommandRunner = typeof runCommand;
@@ -64,11 +76,13 @@ export function mapReasoningToEffort(reasoning: string | null | undefined): stri
 function buildClaudeCodeBaseArgs(request: ProviderChatRequest): string[] {
   const effort = mapReasoningToEffort(request.route.reasoning ?? null);
   const models = getActiveAnthropicModels();
-  const supportedEffort = effort && modelSupportsClaudeEffort(request.route.modelId, effort, models) ? effort : null;
+  const supportedEffort =
+    effort && modelSupportsClaudeEffort(request.route.modelId, effort, models) ? effort : null;
   return [
     ...(request.route.modelId ? ["--model", mapModelIdToClaudeArg(request.route.modelId)] : []),
     ...(supportedEffort ? ["--effort", supportedEffort] : []),
-    "--permission-mode", "default",
+    "--permission-mode",
+    "default",
     request.conversationHistory?.length
       ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
       : request.prompt,
@@ -90,17 +104,15 @@ export function ensureClaudeStreamJsonVerbose(args: string[]): string[] {
 export function buildClaudeCodeArgs(request: ProviderChatRequest): string[] {
   return ensureClaudeStreamJsonVerbose([
     "-p",
-    "--output-format", "stream-json",
+    "--output-format",
+    "stream-json",
     "--include-partial-messages",
     ...buildClaudeCodeBaseArgs(request),
   ]);
 }
 
 export function buildClaudeCodePlainTextArgs(request: ProviderChatRequest): string[] {
-  return [
-    "-p",
-    ...buildClaudeCodeBaseArgs(request),
-  ];
+  return ["-p", ...buildClaudeCodeBaseArgs(request)];
 }
 
 // ---------------------------------------------------------------------------
@@ -148,19 +160,41 @@ export function createClaudeToolParser(handlers: BackendRunHandlers): (line: str
   const tools = new Map<string, { command: string; startedAt: number }>();
   return (line) => {
     let event: any;
-    try { event = JSON.parse(line); } catch { return; }
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
     const blocks = event?.message?.content;
     if (!Array.isArray(blocks)) return;
     for (const block of blocks) {
       if (block?.type === "tool_use" && typeof block.id === "string") {
-        const command = typeof block.input?.command === "string" ? block.input.command : `${block.name ?? "tool"} ${JSON.stringify(block.input ?? {})}`;
+        const command =
+          typeof block.input?.command === "string"
+            ? block.input.command
+            : `${block.name ?? "tool"} ${JSON.stringify(block.input ?? {})}`;
         const tool = { command, startedAt: tools.get(block.id)?.startedAt ?? Date.now() };
         tools.set(block.id, tool);
         handlers.onToolActivity?.({ id: block.id, ...tool, status: "running" });
       } else if (block?.type === "tool_result" && typeof block.tool_use_id === "string") {
-        const tool = tools.get(block.tool_use_id) ?? { command: "Claude tool", startedAt: Date.now() };
-        const output = typeof block.content === "string" ? block.content : Array.isArray(block.content) ? block.content.map((entry: any) => entry.text ?? JSON.stringify(entry)).join("\n") : "";
-        handlers.onToolActivity?.({ id: block.tool_use_id, ...tool, status: block.is_error ? "failed" : "completed", completedAt: Date.now(), output, summary: output.split("\n")[0]?.slice(0, 200) });
+        const tool = tools.get(block.tool_use_id) ?? {
+          command: "Claude tool",
+          startedAt: Date.now(),
+        };
+        const output =
+          typeof block.content === "string"
+            ? block.content
+            : Array.isArray(block.content)
+              ? block.content.map((entry: any) => entry.text ?? JSON.stringify(entry)).join("\n")
+              : "";
+        handlers.onToolActivity?.({
+          id: block.tool_use_id,
+          ...tool,
+          status: block.is_error ? "failed" : "completed",
+          completedAt: Date.now(),
+          output,
+          summary: output.split("\n")[0]?.slice(0, 200),
+        });
         tools.delete(block.tool_use_id);
       }
     }
@@ -171,7 +205,10 @@ export function createClaudeToolParser(handlers: BackendRunHandlers): (line: str
 // Anthropic Messages API
 // ---------------------------------------------------------------------------
 
-async function runAnthropicApi(request: ProviderChatRequest, signal?: AbortSignal): Promise<string> {
+async function runAnthropicApi(
+  request: ProviderChatRequest,
+  signal?: AbortSignal,
+): Promise<string> {
   const apiKey = getAnthropicApiKey();
   if (!apiKey) {
     throw new Error(ANTHROPIC_ROUTE_SETUP_MESSAGE);
@@ -188,16 +225,26 @@ async function runAnthropicApi(request: ProviderChatRequest, signal?: AbortSigna
     body: JSON.stringify({
       model: request.route.modelId,
       max_tokens: ANTHROPIC_MAX_TOKENS,
-      ...(request.projectInstructions?.content ? { system: request.projectInstructions.content } : {}),
+      ...(request.projectInstructions?.content
+        ? { system: request.projectInstructions.content }
+        : {}),
       messages: request.conversationHistory?.length
-        ? [...request.conversationHistory.map((message) => ({ role: message.role, content: message.content })), { role: "user", content: request.prompt }]
+        ? [
+            ...request.conversationHistory.map((message) => ({
+              role: message.role,
+              content: message.content,
+            })),
+            { role: "user", content: request.prompt },
+          ]
         : [{ role: "user", content: request.prompt }],
     }),
   });
 
   const body = await response.text();
   if (!response.ok) {
-    throw new Error(`Anthropic API request failed (${response.status}): ${sanitizeTerminalOutput(body).slice(0, 500)}`);
+    throw new Error(
+      `Anthropic API request failed (${response.status}): ${sanitizeTerminalOutput(body).slice(0, 500)}`,
+    );
   }
 
   const parsed = JSON.parse(body) as {
@@ -227,8 +274,10 @@ function isClaudeStreamJsonRequiresVerboseError(result: CommandResult): boolean 
 
 function isClaudeInvalidEffortError(result: CommandResult): boolean {
   const combined = `${result.userMessage}\n${result.stderr}\n${result.stdout}`;
-  return /\beffort\b/i.test(combined)
-    && /\b(invalid|unsupported|not supported|unknown|expected|allowed|valid)\b/i.test(combined);
+  return (
+    /\beffort\b/i.test(combined) &&
+    /\b(invalid|unsupported|not supported|unknown|expected|allowed|valid)\b/i.test(combined)
+  );
 }
 
 function withClaudeEffort(request: ProviderChatRequest, effort: string): ProviderChatRequest {
@@ -244,22 +293,26 @@ function withClaudeEffort(request: ProviderChatRequest, effort: string): Provide
 function disableClaudeEffortForSession(modelId: string, effort: string): void {
   const models = getActiveAnthropicModels();
   discoveredAnthropicModels = models.map((model) => {
-    const isTarget = model.modelId === modelId || model.id === modelId || model.family === modelId || model.canonicalId === modelId;
+    const isTarget =
+      model.modelId === modelId ||
+      model.id === modelId ||
+      model.family === modelId ||
+      model.canonicalId === modelId;
     if (!isTarget || !model.supportedReasoningLevels) return model;
     return {
       ...model,
-      supportedReasoningLevels: model.supportedReasoningLevels.filter((level) => level.id !== effort),
+      supportedReasoningLevels: model.supportedReasoningLevels.filter(
+        (level) => level.id !== effort,
+      ),
       description: `${model.description ?? model.label} - ${effort} disabled after Claude Code rejection this session`,
     };
   });
 }
 
-function formatClaudeCommandDiagnostic(
-  executable: string,
-  args: string[],
-  prompt: string,
-): string {
-  const safeArgs = args.map((arg) => arg === prompt ? `<prompt redacted: ${prompt.length} chars>` : arg);
+function formatClaudeCommandDiagnostic(executable: string, args: string[], prompt: string): string {
+  const safeArgs = args.map((arg) =>
+    arg === prompt ? `<prompt redacted: ${prompt.length} chars>` : arg,
+  );
   return `Claude Code command args: ${JSON.stringify([executable, ...safeArgs])}`;
 }
 
@@ -267,7 +320,9 @@ export function runClaudeCodeWithRunner(
   request: ProviderChatRequest,
   handlers: BackendRunHandlers,
   runCommandImpl: CommandRunner = runCommand,
-  executable: string = request.claudeCommandPath ?? process.env.CLAUDE_EXECUTABLE?.trim() ?? resolvedClaudeExecutable,
+  executable: string = request.claudeCommandPath ??
+    process.env.CLAUDE_EXECUTABLE?.trim() ??
+    resolvedClaudeExecutable,
 ): () => void {
   const control = createRunControl(handlers);
   let currentCancel: (() => void) | null = null;
@@ -278,9 +333,10 @@ export function runClaudeCodeWithRunner(
     attemptRequest: ProviderChatRequest = request,
     effortFallbackUsed = false,
   ) => {
-    const args = mode === "stream-json"
-      ? buildClaudeCodeArgs(attemptRequest)
-      : buildClaudeCodePlainTextArgs(attemptRequest);
+    const args =
+      mode === "stream-json"
+        ? buildClaudeCodeArgs(attemptRequest)
+        : buildClaudeCodePlainTextArgs(attemptRequest);
     const spawnSpec = buildClaudeSpawnSpec(executable, args);
 
     let accumulatedText = "";
@@ -304,8 +360,15 @@ export function runClaudeCodeWithRunner(
           for (const line of lines) {
             try {
               const event = JSON.parse(line);
-              if (event.type === "system" && event.subtype === "init" && typeof event.session_id === "string") handlers.onNativeSession?.({ source: "claude", sessionId: event.session_id });
-            } catch { /* Malformed stream lines are handled by the existing parser. */ }
+              if (
+                event.type === "system" &&
+                event.subtype === "init" &&
+                typeof event.session_id === "string"
+              )
+                handlers.onNativeSession?.({ source: "claude", sessionId: event.session_id });
+            } catch {
+              /* Malformed stream lines are handled by the existing parser. */
+            }
             parseTools(line);
             const delta = tryParseStreamJsonDelta(line);
             if (delta === false) {
@@ -323,67 +386,89 @@ export function runClaudeCodeWithRunner(
 
     currentCancel = runner.cancel;
     control.track(runner.stopped ?? runner.result.then(() => undefined));
-    runner.result.then((result) => {
-      if (canceled || result.status === "canceled") { control.finish(); return; }
-      if (result.status !== "completed" || result.exitCode !== 0) {
-        const diagnostic = formatClaudeCommandDiagnostic(spawnSpec.executable, spawnSpec.args, request.prompt);
-        if (mode === "stream-json" && isClaudeStreamJsonRequiresVerboseError(result)) {
-          handlers.onProgress?.({
-            id: "anthropic-claude-command-retry",
-            source: "stderr",
-            text: `${diagnostic}\nClaude Code rejected stream-json args; retrying once with plain text output.`,
-          });
-          runAttempt("plain-text");
+    runner.result
+      .then((result) => {
+        if (canceled || result.status === "canceled") {
+          control.finish();
           return;
         }
+        if (result.status !== "completed" || result.exitCode !== 0) {
+          const diagnostic = formatClaudeCommandDiagnostic(
+            spawnSpec.executable,
+            spawnSpec.args,
+            request.prompt,
+          );
+          if (mode === "stream-json" && isClaudeStreamJsonRequiresVerboseError(result)) {
+            handlers.onProgress?.({
+              id: "anthropic-claude-command-retry",
+              source: "stderr",
+              text: `${diagnostic}\nClaude Code rejected stream-json args; retrying once with plain text output.`,
+            });
+            runAttempt("plain-text");
+            return;
+          }
 
-        const requestedEffort = mapReasoningToEffort(attemptRequest.route.reasoning ?? null);
-        const fallbackEffort = getClaudeModelDefaultEffort(attemptRequest.route.modelId, getActiveAnthropicModels());
-        if (requestedEffort && isClaudeInvalidEffortError(result)) {
-          disableClaudeEffortForSession(attemptRequest.route.modelId, requestedEffort);
-        }
-        if (!effortFallbackUsed && requestedEffort && requestedEffort !== fallbackEffort && isClaudeInvalidEffortError(result)) {
-          const fallbackRequest = withClaudeEffort(attemptRequest, fallbackEffort);
-          const fallbackArgs = mode === "stream-json"
-            ? buildClaudeCodeArgs(fallbackRequest)
-            : buildClaudeCodePlainTextArgs(fallbackRequest);
-          const fallbackSpawnSpec = buildClaudeSpawnSpec(executable, fallbackArgs);
-          handlers.onProgress?.({
-            id: "anthropic-claude-effort-fallback",
-            source: "stderr",
-            text: [
-              `${diagnostic}`,
-              `Claude Code rejected effort "${requestedEffort}" for ${request.route.modelId}; retrying once with --effort ${fallbackEffort}.`,
-              formatClaudeCommandDiagnostic(fallbackSpawnSpec.executable, fallbackSpawnSpec.args, request.prompt),
-            ].join("\n"),
-          });
-          runAttempt(mode, fallbackRequest, true);
+          const requestedEffort = mapReasoningToEffort(attemptRequest.route.reasoning ?? null);
+          const fallbackEffort = getClaudeModelDefaultEffort(
+            attemptRequest.route.modelId,
+            getActiveAnthropicModels(),
+          );
+          if (requestedEffort && isClaudeInvalidEffortError(result)) {
+            disableClaudeEffortForSession(attemptRequest.route.modelId, requestedEffort);
+          }
+          if (
+            !effortFallbackUsed &&
+            requestedEffort &&
+            requestedEffort !== fallbackEffort &&
+            isClaudeInvalidEffortError(result)
+          ) {
+            const fallbackRequest = withClaudeEffort(attemptRequest, fallbackEffort);
+            const fallbackArgs =
+              mode === "stream-json"
+                ? buildClaudeCodeArgs(fallbackRequest)
+                : buildClaudeCodePlainTextArgs(fallbackRequest);
+            const fallbackSpawnSpec = buildClaudeSpawnSpec(executable, fallbackArgs);
+            handlers.onProgress?.({
+              id: "anthropic-claude-effort-fallback",
+              source: "stderr",
+              text: [
+                `${diagnostic}`,
+                `Claude Code rejected effort "${requestedEffort}" for ${request.route.modelId}; retrying once with --effort ${fallbackEffort}.`,
+                formatClaudeCommandDiagnostic(
+                  fallbackSpawnSpec.executable,
+                  fallbackSpawnSpec.args,
+                  request.prompt,
+                ),
+              ].join("\n"),
+            });
+            runAttempt(mode, fallbackRequest, true);
+            return;
+          }
+
+          const message = result.userMessage || result.stderr || "Claude Code execution failed.";
+          control.finish();
+          handlers.onError(message, diagnostic);
           return;
         }
-
-        const message = result.userMessage || result.stderr || "Claude Code execution failed.";
+        let finalText: string;
+        if (mode === "stream-json" && !streamingFailed && accumulatedText !== "") {
+          finalText = accumulatedText;
+        } else {
+          finalText = sanitizeTerminalOutput(result.stdout).trim();
+          if (finalText && (mode !== "stream-json" || accumulatedText === "")) {
+            handlers.onAssistantDelta?.(finalText);
+          }
+        }
         control.finish();
-        handlers.onError(message, diagnostic);
-        return;
-      }
-      let finalText: string;
-      if (mode === "stream-json" && !streamingFailed && accumulatedText !== "") {
-        finalText = accumulatedText;
-      } else {
-        finalText = sanitizeTerminalOutput(result.stdout).trim();
-        if (finalText && (mode !== "stream-json" || accumulatedText === "")) {
-          handlers.onAssistantDelta?.(finalText);
-        }
-      }
-      control.finish();
-      handlers.onFinalAnswerObserved?.(finalText);
-      handlers.onResponse(finalText);
-    }).catch((error) => {
-      control.finish();
-      if (canceled) return;
-      const message = error instanceof Error ? error.message : "Claude Code execution failed.";
-      handlers.onError(message);
-    });
+        handlers.onFinalAnswerObserved?.(finalText);
+        handlers.onResponse(finalText);
+      })
+      .catch((error) => {
+        control.finish();
+        if (canceled) return;
+        const message = error instanceof Error ? error.message : "Claude Code execution failed.";
+        handlers.onError(message);
+      });
   };
 
   runAttempt("stream-json");
@@ -395,10 +480,7 @@ export function runClaudeCodeWithRunner(
   };
 }
 
-function runClaudeCode(
-  request: ProviderChatRequest,
-  handlers: BackendRunHandlers,
-): () => void {
+function runClaudeCode(request: ProviderChatRequest, handlers: BackendRunHandlers): () => void {
   return runClaudeCodeWithRunner(request, handlers);
 }
 
@@ -508,7 +590,11 @@ export async function validateAnthropicRoute(options: {
 // ---------------------------------------------------------------------------
 
 function getAnthropicRuntimeBackendKind(): ProviderBackendKind {
-  return claudeCodeValidated ? "claude-code-auth" : getAnthropicApiKey() ? "anthropic-api-key" : "claude-code-auth";
+  return claudeCodeValidated
+    ? "claude-code-auth"
+    : getAnthropicApiKey()
+      ? "anthropic-api-key"
+      : "claude-code-auth";
 }
 
 function getActiveAnthropicModels(): readonly ProviderModel[] {
@@ -521,29 +607,34 @@ export const anthropicRuntime: ProviderRuntime = {
   modelPickerLabel: "Claude",
   backendKind: "claude-code-auth",
   routeAvailable: true,
-  routeStatus: "Routes through Claude Code CLI when authenticated (`claude auth status` exit 0), or via ANTHROPIC_API_KEY.",
+  routeStatus:
+    "Routes through Claude Code CLI when authenticated (`claude auth status` exit 0), or via ANTHROPIC_API_KEY.",
   routeSetupMessage: ANTHROPIC_ROUTE_SETUP_MESSAGE,
   launchAvailable: true,
   isRouteConfigured: isAnthropicRouteConfigured,
-  validateRoute: async ({ workspaceRoot, claudeCommandPath }) => validateAnthropicRoute({
-    cwd: workspaceRoot,
-    configuredPath: claudeCommandPath,
-  }),
+  validateRoute: async ({ workspaceRoot, claudeCommandPath }) =>
+    validateAnthropicRoute({
+      cwd: workspaceRoot,
+      configuredPath: claudeCommandPath,
+    }),
   discoverModels: (): ProviderModelDiscoveryResult => ({
     status: "ready",
     providerId: "anthropic",
     backendKind: getAnthropicRuntimeBackendKind(),
     models: getActiveAnthropicModels(),
-    message: (claudeCapabilityDiscovery?.modelSource ?? "fallback") === "fallback"
-      ? DISCOVERY_FAILURE_MESSAGE
-      : undefined,
-    diagnostics: claudeCapabilityDiscovery ? {
-      resolvedCommand: claudeCapabilityDiscovery.resolvedCommand,
-      modelSource: claudeCapabilityDiscovery.modelSource,
-      discoveredAt: claudeCapabilityDiscovery.discoveredAt,
-      loggedIn: claudeCapabilityDiscovery.auth.loggedIn,
-      settingsPath: claudeCapabilityDiscovery.settings?.path ?? null,
-    } : { modelSource: "fallback" },
+    message:
+      (claudeCapabilityDiscovery?.modelSource ?? "fallback") === "fallback"
+        ? DISCOVERY_FAILURE_MESSAGE
+        : undefined,
+    diagnostics: claudeCapabilityDiscovery
+      ? {
+          resolvedCommand: claudeCapabilityDiscovery.resolvedCommand,
+          modelSource: claudeCapabilityDiscovery.modelSource,
+          discoveredAt: claudeCapabilityDiscovery.discoveredAt,
+          loggedIn: claudeCapabilityDiscovery.auth.loggedIn,
+          settingsPath: claudeCapabilityDiscovery.settings?.path ?? null,
+        }
+      : { modelSource: "fallback" },
   }),
   refreshModels: async ({ cwd }): Promise<ProviderModelDiscoveryResult> => {
     let discovery: ClaudeCodeCapabilityDiscovery;
@@ -573,9 +664,10 @@ export const anthropicRuntime: ProviderRuntime = {
       providerId: "anthropic",
       backendKind: getAnthropicRuntimeBackendKind(),
       models: discoveredAnthropicModels,
-      message: discovery.modelSource === "fallback"
-        ? DISCOVERY_FAILURE_MESSAGE
-        : `Refreshed Claude capabilities (${discovery.modelSource}).`,
+      message:
+        discovery.modelSource === "fallback"
+          ? DISCOVERY_FAILURE_MESSAGE
+          : `Refreshed Claude capabilities (${discovery.modelSource}).`,
       diagnostics: {
         resolvedCommand: discovery.resolvedCommand,
         modelSource: discovery.modelSource,
@@ -608,12 +700,17 @@ export const anthropicRuntime: ProviderRuntime = {
         })
         .catch((error) => {
           if (cancelled) return;
-          const message = error instanceof Error ? error.message : "Anthropic/Claude in-Ubume routing failed.";
+          const message =
+            error instanceof Error ? error.message : "Anthropic/Claude in-Ubume routing failed.";
           handlers.onError(message);
         });
       control.track(work);
       void work.finally(() => control.finish());
-      return () => { cancelled = true; controller.abort(); control.finish(); };
+      return () => {
+        cancelled = true;
+        controller.abort();
+        control.finish();
+      };
     }
 
     return runClaudeCode(request, handlers);

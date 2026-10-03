@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
+import { useMemo, useState } from "react";
 import type { SettingDefinition } from "../../config/settings.js";
 import type { FocusTargetId } from "../input/focus.js";
 import { useTheme } from "../theme.js";
@@ -47,45 +47,48 @@ export function SettingsPanel<TKey extends string>({
     return `${instructions}\n${activeSetting.description}`;
   }, [activeSetting]);
 
-  useInput((input, key) => {
-    if (key.escape) {
-      onCancel();
-      return;
-    }
-
-    if (key.return) {
-      onSave(draftValues);
-      return;
-    }
-
-    if (key.upArrow) {
-      setSelectedIndex((current) => Math.max(0, current - 1));
-      return;
-    }
-
-    if (key.downArrow) {
-      setSelectedIndex((current) => Math.min(settings.length - 1, current + 1));
-      return;
-    }
-
-    if (key.leftArrow || key.rightArrow) {
-      const direction: -1 | 1 = key.leftArrow ? -1 : 1;
-      const definition = settings[selectedIndex];
-      if (!definition) {
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        onCancel();
         return;
       }
 
-      setDraftValues((current) => ({
-        ...current,
-        [definition.key]: cycleOption(definition, current[definition.key], direction),
-      }));
-      return;
-    }
+      if (key.return) {
+        onSave(draftValues);
+        return;
+      }
 
-    if (!input || key.ctrl || key.meta) {
-      return;
-    }
-  }, { isActive: isFocused });
+      if (key.upArrow) {
+        setSelectedIndex((current) => Math.max(0, current - 1));
+        return;
+      }
+
+      if (key.downArrow) {
+        setSelectedIndex((current) => Math.min(settings.length - 1, current + 1));
+        return;
+      }
+
+      if (key.leftArrow || key.rightArrow) {
+        const direction: -1 | 1 = key.leftArrow ? -1 : 1;
+        const definition = settings[selectedIndex];
+        if (!definition) {
+          return;
+        }
+
+        setDraftValues((current) => ({
+          ...current,
+          [definition.key]: cycleOption(definition, current[definition.key], direction),
+        }));
+        return;
+      }
+
+      if (!input || key.ctrl || key.meta) {
+        return;
+      }
+    },
+    { isActive: isFocused },
+  );
 
   return (
     <Box flexDirection="column" width="100%" marginTop={1}>
@@ -98,7 +101,9 @@ export function SettingsPanel<TKey extends string>({
         flexDirection="column"
       >
         <Box>
-          <Text color={theme.accent} bold>{title}  </Text>
+          <Text color={theme.accent} bold>
+            {title}{" "}
+          </Text>
           <Text color={theme.textMuted}>{subtitle.split("\n")[0]}</Text>
         </Box>
         {activeSetting?.description && (
@@ -124,21 +129,31 @@ export function SettingsPanel<TKey extends string>({
           return (
             <Box key={setting.key} flexDirection="row" overflow="hidden">
               <Box width={3} flexShrink={0}>
-                <Text color={isSelectedRow ? theme.accent : theme.textDim}>{isSelectedRow ? "▸ " : "  "}</Text>
+                <Text color={isSelectedRow ? theme.accent : theme.textDim}>
+                  {isSelectedRow ? "▸ " : "  "}
+                </Text>
               </Box>
               <Box width={20} flexShrink={0} overflow="hidden">
                 <Text color={isSelectedRow ? theme.text : theme.textMuted} bold={isSelectedRow}>
                   {setting.label}
                 </Text>
               </Box>
-              <Box flexDirection="row" flexWrap="nowrap" flexGrow={1} flexShrink={1} overflow="hidden">
+              <Box
+                flexDirection="row"
+                flexWrap="nowrap"
+                flexGrow={1}
+                flexShrink={1}
+                overflow="hidden"
+              >
                 {setting.options.map((option, optionIndex) => {
                   const isActiveOption = option.value === currentValue;
                   const optionText = isActiveOption ? `[${option.label}]` : option.label;
                   return (
                     <Text
                       key={option.value}
-                      color={isActiveOption ? (isSelectedRow ? theme.accent : theme.text) : theme.textDim}
+                      color={
+                        isActiveOption ? (isSelectedRow ? theme.accent : theme.text) : theme.textDim
+                      }
                       bold={isActiveOption}
                     >
                       {optionIndex > 0 ? "  " : ""}

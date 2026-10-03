@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import test from "node:test";
 
 function collectTsFiles(dir: string): string[] {
   const result: string[] = [];

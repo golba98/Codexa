@@ -1,5 +1,5 @@
-import React, { startTransition, useEffect, useState } from "react";
 import { Text } from "ink";
+import { startTransition, useEffect, useState } from "react";
 import { useTheme } from "../theme.js";
 
 const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

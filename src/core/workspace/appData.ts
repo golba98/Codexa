@@ -16,7 +16,10 @@ export function resolveLegacyCodexaDataDir(
 
   const platform = platformOverride ?? process.platform;
   if (platform === "win32") {
-    return join(env["LOCALAPPDATA"]?.trim() || env["APPDATA"]?.trim() || join(home, "AppData", "Local"), "Codexa");
+    return join(
+      env["LOCALAPPDATA"]?.trim() || env["APPDATA"]?.trim() || join(home, "AppData", "Local"),
+      "Codexa",
+    );
   }
   if (platform === "darwin") {
     return join(home, "Library", "Application Support", "Codexa");
@@ -35,7 +38,10 @@ export function resolveUbumeDataDir(
 
   const platform = platformOverride ?? process.platform;
   if (platform === "win32") {
-    return join(env["LOCALAPPDATA"]?.trim() || env["APPDATA"]?.trim() || join(home, "AppData", "Local"), "Ubume");
+    return join(
+      env["LOCALAPPDATA"]?.trim() || env["APPDATA"]?.trim() || join(home, "AppData", "Local"),
+      "Ubume",
+    );
   }
   if (platform === "darwin") {
     return join(home, "Library", "Application Support", "Ubume");
@@ -75,7 +81,10 @@ export function workspaceStorageKey(workspaceRoot: string): string {
   return createHash("sha256").update(workspaceRoot).digest("hex").slice(0, 16);
 }
 
-export function resolveUbumeWorkspaceDataDir(workspaceRoot: string, options: { readOnly?: boolean } = {}): string {
+export function resolveUbumeWorkspaceDataDir(
+  workspaceRoot: string,
+  options: { readOnly?: boolean } = {},
+): string {
   if (!options.readOnly) maybeMigrateLegacyData();
   const current = resolveUbumeDataDir();
   const legacy = resolveLegacyCodexaDataDir();
@@ -99,10 +108,11 @@ export function resolveLegacyConversationDir(workspaceRoot: string): string {
 export function resolveUbumeAttachmentDir(workspaceRoot: string, configuredDir: string): string {
   if (isAbsolute(configuredDir)) return configuredDir;
 
-  const normalized = configuredDir
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/^\.(?:ubume|codexa)\/?/, "") || "attachments";
+  const normalized =
+    configuredDir
+      .trim()
+      .replace(/\\/g, "/")
+      .replace(/^\.(?:ubume|codexa)\/?/, "") || "attachments";
   const safeRelativeDir = normalize(normalized).replace(/^(\.\.([/\\]|$))+/, "") || "attachments";
   return join(resolveUbumeWorkspaceDataDir(workspaceRoot), safeRelativeDir);
 }

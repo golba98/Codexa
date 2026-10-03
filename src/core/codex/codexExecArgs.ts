@@ -9,11 +9,7 @@ export interface BuildCodexExecArgsOptions {
   imageAttachments?: readonly ProviderImageAttachment[];
 }
 
-export type CodexLaunchStrategy =
-  | "direct-flags"
-  | "config-overrides"
-  | "full-auto"
-  | "fail";
+export type CodexLaunchStrategy = "direct-flags" | "config-overrides" | "full-auto" | "fail";
 
 export type BuildCodexExecArgsResult =
   | { ok: true; args: string[]; strategy: Exclude<CodexLaunchStrategy, "fail"> }
@@ -29,7 +25,9 @@ function sanitizeWorkingDirectory(cwd: string): string {
 }
 
 function isFullAutoRuntime(runtime: ResolvedRuntimeConfig): boolean {
-  return runtime.policy.approvalPolicy === "never" && runtime.policy.sandboxMode === "danger-full-access";
+  return (
+    runtime.policy.approvalPolicy === "never" && runtime.policy.sandboxMode === "danger-full-access"
+  );
 }
 
 function buildCapabilitySummary(capabilities: CodexCliCapabilities): string {
@@ -43,7 +41,10 @@ function buildCapabilitySummary(capabilities: CodexCliCapabilities): string {
   return supported.length > 0 ? supported.join(", ") : "none";
 }
 
-function buildRuntimeFailureMessage(runtime: ResolvedRuntimeConfig, capabilities: CodexCliCapabilities): string {
+function buildRuntimeFailureMessage(
+  runtime: ResolvedRuntimeConfig,
+  capabilities: CodexCliCapabilities,
+): string {
   return [
     "Installed Codex CLI cannot safely apply the requested runtime configuration.",
     `Requested approval policy: ${runtime.policy.approvalPolicy}.`,
@@ -53,7 +54,10 @@ function buildRuntimeFailureMessage(runtime: ResolvedRuntimeConfig, capabilities
   ].join("\n");
 }
 
-function buildRuntimePolicyArgs(runtime: ResolvedRuntimeConfig, capabilities: CodexCliCapabilities): BuildCodexExecArgsResult {
+function buildRuntimePolicyArgs(
+  runtime: ResolvedRuntimeConfig,
+  capabilities: CodexCliCapabilities,
+): BuildCodexExecArgsResult {
   const args: string[] = [];
   const missingDirectApproval = !capabilities.askForApproval;
   const missingDirectSandbox = !capabilities.sandbox;
@@ -104,7 +108,8 @@ export function buildCodexExecArgs(
     return {
       ok: false,
       strategy: "fail",
-      error: "Installed Codex CLI does not support image attachments. Update Codex or remove the image from the prompt.",
+      error:
+        "Installed Codex CLI does not support image attachments. Update Codex or remove the image from the prompt.",
     };
   }
 
@@ -146,11 +151,17 @@ export function buildCodexExecArgs(
   }
 
   if (runtime.policy.networkAccess) {
-    args.push("--config", `sandbox_workspace_write.network_access=${JSON.stringify(runtime.policy.networkAccess)}`);
+    args.push(
+      "--config",
+      `sandbox_workspace_write.network_access=${JSON.stringify(runtime.policy.networkAccess)}`,
+    );
   }
 
   if (runtime.policy.writableRoots.length > 0) {
-    args.push("--config", `sandbox_workspace_write.writable_roots=${JSON.stringify(runtime.policy.writableRoots)}`);
+    args.push(
+      "--config",
+      `sandbox_workspace_write.writable_roots=${JSON.stringify(runtime.policy.writableRoots)}`,
+    );
   }
 
   if (runtime.policy.serviceTier !== "flex") {

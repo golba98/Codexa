@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_MODE,
   DEFAULT_SHOW_BUSY_LOADER,
   DEFAULT_TERMINAL_TITLE_MODE,
   DEFAULT_WORKSPACE_DISPLAY_MODE,
-  DEFAULT_MODE,
-  USER_SETTING_DEFINITIONS,
   formatBusyLoaderSettingValue,
   formatModeLabel,
   formatTerminalTitleModeLabel,
@@ -15,10 +14,11 @@ import {
   getCodexConfigFile,
   getCodexHome,
   getLegacyCodexaTrustStoreFile,
-  getUbumeTrustStoreFile,
   getNextMode,
   getNextRotatingMode,
+  getUbumeTrustStoreFile,
   normalizeReasoningForModel,
+  USER_SETTING_DEFINITIONS,
 } from "./settings.js";
 
 test("keeps supported reasoning levels for gpt-5.4-mini", () => {
@@ -89,7 +89,8 @@ test("defines user settings through reusable schemas", () => {
     {
       key: "showBusyLoader",
       label: "Busy loader",
-      description: "Controls whether the footer shows a subtle loading animation while Ubume is busy.",
+      description:
+        "Controls whether the footer shows a subtle loading animation while Ubume is busy.",
       options: [
         { value: "true", label: "True" },
         { value: "false", label: "False" },

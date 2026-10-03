@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
+import test from "node:test";
 import { Box, render } from "ink";
 import type { UIState } from "../../session/types.js";
 import { isBusy } from "../../session/types.js";
-import { BottomComposer } from "./BottomComposer.js";
 import { createLayoutSnapshot } from "../layout.js";
-import { getRunFooterStatus, RunFooter } from "./RunFooter.js";
 import { ThemeProvider } from "../theme.js";
+import { BottomComposer } from "./BottomComposer.js";
+import { getRunFooterStatus, RunFooter } from "./RunFooter.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -54,7 +53,15 @@ test("idle footer status is empty by contract", () => {
   assert.equal(getRunFooterStatus({ kind: "IDLE" }), "");
 });
 
-function LifecycleHarness({ uiState, value, showBusyLoader = true }: { uiState: UIState; value: string; showBusyLoader?: boolean }) {
+function LifecycleHarness({
+  uiState,
+  value,
+  showBusyLoader = true,
+}: {
+  uiState: UIState;
+  value: string;
+  showBusyLoader?: boolean;
+}) {
   const showComposer = !isBusy(uiState);
 
   return (
@@ -88,7 +95,12 @@ function LifecycleHarness({ uiState, value, showBusyLoader = true }: { uiState: 
             onQuit={() => {}}
           />
         ) : (
-          <RunFooter uiState={uiState} showBusyLoader={showBusyLoader} onCancel={() => {}} onQuit={() => {}} />
+          <RunFooter
+            uiState={uiState}
+            showBusyLoader={showBusyLoader}
+            onCancel={() => {}}
+            onQuit={() => {}}
+          />
         )}
       </Box>
     </ThemeProvider>
@@ -103,23 +115,22 @@ test("collapses composer during thinking so input buffer artifacts are removed",
     output += chunk.toString();
   });
 
-  const instance = render(
-    <LifecycleHarness uiState={{ kind: "IDLE" }} value="draft prompt" />,
-    {
-      stdin: stdin as unknown as NodeJS.ReadStream,
-      stdout: stdout as unknown as NodeJS.WriteStream,
-      stderr: stdout as unknown as NodeJS.WriteStream,
-      debug: true,
-      exitOnCtrlC: false,
-    },
-  );
+  const instance = render(<LifecycleHarness uiState={{ kind: "IDLE" }} value="draft prompt" />, {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: true,
+    exitOnCtrlC: false,
+  });
 
   await sleep();
   let frame = stripAnsi(output);
   assert.match(frame, /draft prompt/i);
 
   output = "";
-  instance.rerender(<LifecycleHarness uiState={{ kind: "THINKING", turnId: 1 }} value="draft prompt" />);
+  instance.rerender(
+    <LifecycleHarness uiState={{ kind: "THINKING", turnId: 1 }} value="draft prompt" />,
+  );
   await sleep();
   frame = stripAnsi(output);
   assert.doesNotMatch(frame, /draft prompt/i);
@@ -137,16 +148,13 @@ test("busy footer advances from local status state without a parent rerender", a
     output += chunk.toString();
   });
 
-  const instance = render(
-    <LifecycleHarness uiState={{ kind: "THINKING", turnId: 1 }} value="" />,
-    {
-      stdin: stdin as unknown as NodeJS.ReadStream,
-      stdout: stdout as unknown as NodeJS.WriteStream,
-      stderr: stdout as unknown as NodeJS.WriteStream,
-      debug: true,
-      exitOnCtrlC: false,
-    },
-  );
+  const instance = render(<LifecycleHarness uiState={{ kind: "THINKING", turnId: 1 }} value="" />, {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: true,
+    exitOnCtrlC: false,
+  });
 
   await sleep();
   let frame = stripAnsi(output);
@@ -206,16 +214,13 @@ test("static status debug flag reserves status text without dot ticks", async ()
     output += chunk.toString();
   });
 
-  const instance = render(
-    <LifecycleHarness uiState={{ kind: "THINKING", turnId: 1 }} value="" />,
-    {
-      stdin: stdin as unknown as NodeJS.ReadStream,
-      stdout: stdout as unknown as NodeJS.WriteStream,
-      stderr: stdout as unknown as NodeJS.WriteStream,
-      debug: true,
-      exitOnCtrlC: false,
-    },
-  );
+  const instance = render(<LifecycleHarness uiState={{ kind: "THINKING", turnId: 1 }} value="" />, {
+    stdin: stdin as unknown as NodeJS.ReadStream,
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    stderr: stdout as unknown as NodeJS.WriteStream,
+    debug: true,
+    exitOnCtrlC: false,
+  });
 
   try {
     await sleep();

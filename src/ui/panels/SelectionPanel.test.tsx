@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
+import test from "node:test";
 import { render } from "ink";
 import { AVAILABLE_THEMES } from "../../config/settings.js";
 import { PanelLayoutContext } from "../layout.js";
@@ -10,11 +9,21 @@ import { SelectionPanel } from "./SelectionPanel.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
-  setRawMode(): this { return this; }
-  override resume(): this { return this; }
-  override pause(): this { return this; }
-  ref(): this { return this; }
-  unref(): this { return this; }
+  setRawMode(): this {
+    return this;
+  }
+  override resume(): this {
+    return this;
+  }
+  override pause(): this {
+    return this;
+  }
+  ref(): this {
+    return this;
+  }
+  unref(): this {
+    return this;
+  }
 }
 
 class TestOutput extends PassThrough {
@@ -32,11 +41,15 @@ test("100x22 selection panel shows every registered theme and previews movement"
   const stdout = new TestOutput();
   const highlighted: string[] = [];
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const instance = render(
     <ThemeProvider theme="purple">
-      <PanelLayoutContext.Provider value={{ mode: "compact", availableRows: 12, availableCols: 96 }}>
+      <PanelLayoutContext.Provider
+        value={{ mode: "compact", availableRows: 12, availableCols: 96 }}
+      >
         <SelectionPanel
           focusId="theme-picker-test"
           title="Select visual theme"
@@ -62,7 +75,8 @@ test("100x22 selection panel shows every registered theme and previews movement"
   try {
     await sleep(80);
     const text = output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
-    for (const theme of AVAILABLE_THEMES) assert.match(text, new RegExp(theme.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    for (const theme of AVAILABLE_THEMES)
+      assert.match(text, new RegExp(theme.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.match(text, /> Deep Oceanic/);
 
     stdin.write("\u001b[A");

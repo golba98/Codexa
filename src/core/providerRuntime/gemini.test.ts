@@ -1,24 +1,24 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { runCommand, type CommandResult } from "../process/CommandRunner.js";
+import { join } from "node:path";
+import test from "node:test";
+import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
+import { resetGeminiExecutableCacheForTests } from "../executables/geminiExecutable.js";
+import type { CommandResult, runCommand } from "../process/CommandRunner.js";
 import {
-  buildGeminiCommand,
   buildGeminiCliPromptArgs,
   buildGeminiCliValidationArgs,
+  buildGeminiCommand,
   classifyGeminiProbeFailure,
   hasGeminiApiKey,
   isGeminiRouteConfigured,
   resetGeminiRouteValidationCacheForTests,
-  runGeminiDiagnostics,
   runGeminiCliWithRunner,
+  runGeminiDiagnostics,
   validateGeminiRoute,
 } from "./gemini.js";
-import { resetGeminiExecutableCacheForTests } from "../executables/geminiExecutable.js";
-import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
 import type { ProviderChatRequest } from "./types.js";
 
 // A real temp file used wherever tests need a configured absolute exe path that passes the existence check.
@@ -74,7 +74,10 @@ async function withGeminiEnv<T>(
   }
 }
 
-function mockRunCommand(result: CommandResult, onCall?: (spec: Parameters<typeof runCommand>[0]) => void): typeof runCommand {
+function mockRunCommand(
+  result: CommandResult,
+  onCall?: (spec: Parameters<typeof runCommand>[0]) => void,
+): typeof runCommand {
   return ((spec) => {
     onCall?.(spec);
     return {
@@ -93,10 +96,12 @@ function buildRequest(overrides: Partial<ProviderChatRequest> = {}): ProviderCha
       modelId: "gemini-3-flash-preview",
       backendKind: "gemini-cli-auth",
     },
-    runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
-      model: "gemini-3-flash-preview",
-      geminiCommandPath: FAKE_GEMINI_EXE,
-    })),
+    runtime: resolveRuntimeConfig(
+      normalizeRuntimeConfig({
+        model: "gemini-3-flash-preview",
+        geminiCommandPath: FAKE_GEMINI_EXE,
+      }),
+    ),
     workspaceRoot: process.cwd(),
     ...overrides,
   };
@@ -107,17 +112,22 @@ test("Gemini route validation returns command-not-found diagnostic with PS comma
     const validation = await validateGeminiRoute({
       cwd: process.cwd(),
       modelId: "gemini-3-flash-preview",
-      runCommandImpl: mockRunCommand(commandResult({
-        status: "spawn_error",
-        exitCode: null,
-        errorCode: "ENOENT",
-        userMessage: "`gemini` is not installed or not available on PATH.",
-      })),
+      runCommandImpl: mockRunCommand(
+        commandResult({
+          status: "spawn_error",
+          exitCode: null,
+          errorCode: "ENOENT",
+          userMessage: "`gemini` is not installed or not available on PATH.",
+        }),
+      ),
     });
 
     assert.equal(validation.status, "not-configured");
     assert.equal(validation.backendKind, "unavailable");
-    assert.match(validation.message ?? "", /Gemini CLI was not found|Gemini CLI was not found as a real executable/);
+    assert.match(
+      validation.message ?? "",
+      /Gemini CLI was not found|Gemini CLI was not found as a real executable/,
+    );
     assert.match(validation.message ?? "", /GEMINI_EXECUTABLE/);
     assert.equal(isGeminiRouteConfigured(), false);
   });
@@ -129,25 +139,41 @@ test("Gemini readiness uses resolved executable, Gemini 3 Flash Preview, and com
     const validation = await validateGeminiRoute({
       cwd: process.cwd(),
       modelId: "gemini-3-flash-preview",
-      runCommandImpl: mockRunCommand(commandResult({
-        stderr: "READY\n",
-      }), (spec) => calls.push(spec)),
+      runCommandImpl: mockRunCommand(
+        commandResult({
+          stderr: "READY\n",
+        }),
+        (spec) => calls.push(spec),
+      ),
     });
 
     const probe = calls.find((call) => call.args.includes("-p"));
     assert.equal(validation.status, "ready");
     assert.equal(probe?.executable, FAKE_GEMINI_EXE);
-    assert.deepEqual(probe?.args, ["--model", "gemini-3-flash-preview", "-p", "Respond with READY only."]);
+    assert.deepEqual(probe?.args, [
+      "--model",
+      "gemini-3-flash-preview",
+      "-p",
+      "Respond with READY only.",
+    ]);
     assert.equal("shell" in (probe ?? {}), false);
     assert.equal(probe?.args.includes("--reasoning"), false);
     assert.equal(validation.diagnostics?.resolvedCommand, FAKE_GEMINI_EXE);
-    assert.equal(validation.diagnostics?.lastProbeCommandArgs, JSON.stringify(["--model", "gemini-3-flash-preview", "-p", "Respond with READY only."]));
+    assert.equal(
+      validation.diagnostics?.lastProbeCommandArgs,
+      JSON.stringify(["--model", "gemini-3-flash-preview", "-p", "Respond with READY only."]),
+    );
     assert.equal(validation.diagnostics?.readyTokenObserved, true);
   });
 });
 
 test("Gemini command builders use verified model IDs and no reasoning argv", () => {
-  assert.deepEqual(buildGeminiCliValidationArgs(), ["--model", "gemini-3-flash-preview", "-p", "Respond with READY only."]);
+  assert.deepEqual(buildGeminiCliValidationArgs(), [
+    "--model",
+    "gemini-3-flash-preview",
+    "-p",
+    "Respond with READY only.",
+  ]);
   for (const modelId of [
     "gemini-3.1-pro-preview",
     "gemini-3-flash-preview",
@@ -156,14 +182,28 @@ test("Gemini command builders use verified model IDs and no reasoning argv", () 
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
   ]) {
-    assert.deepEqual(buildGeminiCliPromptArgs("hello", modelId), ["--model", modelId, "-p", "hello"]);
+    assert.deepEqual(buildGeminiCliPromptArgs("hello", modelId), [
+      "--model",
+      modelId,
+      "-p",
+      "hello",
+    ]);
   }
-  assert.deepEqual(buildGeminiCliPromptArgs("hello", "gemini-3-flash", true), ["--model", "gemini-3-flash-preview", "-p", "hello"]);
+  assert.deepEqual(buildGeminiCliPromptArgs("hello", "gemini-3-flash", true), [
+    "--model",
+    "gemini-3-flash-preview",
+    "-p",
+    "hello",
+  ]);
 
   for (const args of [
     buildGeminiCliValidationArgs(),
     buildGeminiCliPromptArgs("hello", "gemini-3-flash-preview"),
-    buildGeminiCliPromptArgs("hello", "gemini-2.5-pro", resolveRuntimeConfig(normalizeRuntimeConfig({ mode: "full-auto" }))),
+    buildGeminiCliPromptArgs(
+      "hello",
+      "gemini-2.5-pro",
+      resolveRuntimeConfig(normalizeRuntimeConfig({ mode: "full-auto" })),
+    ),
   ]) {
     assert.equal(args.includes("--reasoning"), false);
     assert.equal(args.includes("--approval-mode"), false);
@@ -179,7 +219,12 @@ test("Gemini command builder returns exact readiness and prompt specs", async ()
       runCommandImpl: mockRunCommand(commandResult({ stdout: "READY\n" })),
     });
     assert.equal(readiness.file, FAKE_GEMINI_EXE);
-    assert.deepEqual(readiness.args, ["--model", "gemini-3-flash-preview", "-p", "Respond with READY only."]);
+    assert.deepEqual(readiness.args, [
+      "--model",
+      "gemini-3-flash-preview",
+      "-p",
+      "Respond with READY only.",
+    ]);
     assert.equal(readiness.mode, "readiness");
     assert.equal(readiness.model, "gemini-3-flash-preview");
     assert.equal(readiness.includesPolicy, false);
@@ -210,11 +255,13 @@ test("Gemini prompt execution appends plain stdout as assistant text", async () 
     const calls: Array<Parameters<typeof runCommand>[0]> = [];
     const text = await runGeminiCliWithRunner(
       buildRequest({
-        runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
-          model: "gemini-3-flash-preview",
-          mode: "full-auto",
-          geminiCommandPath: FAKE_GEMINI_EXE,
-        })),
+        runtime: resolveRuntimeConfig(
+          normalizeRuntimeConfig({
+            model: "gemini-3-flash-preview",
+            mode: "full-auto",
+            geminiCommandPath: FAKE_GEMINI_EXE,
+          }),
+        ),
       }),
       mockRunCommand(commandResult({ stdout: "done\n" }), (spec) => {
         if (spec.args.includes("-p")) calls.push(spec);
@@ -230,14 +277,17 @@ test("Gemini prompt execution appends plain stdout as assistant text", async () 
 test("Gemini prompt execution detects policy file error and provides diagnostics", async () => {
   await withGeminiEnv({}, async () => {
     await assert.rejects(
-      () => runGeminiCliWithRunner(
-        buildRequest(),
-        mockRunCommand(commandResult({
-          status: "completed",
-          exitCode: 1,
-          stderr: "[USER] Policy file error in auto-saved.toml: validation failed",
-        })),
-      ),
+      () =>
+        runGeminiCliWithRunner(
+          buildRequest(),
+          mockRunCommand(
+            commandResult({
+              status: "completed",
+              exitCode: 1,
+              stderr: "[USER] Policy file error in auto-saved.toml: validation failed",
+            }),
+          ),
+        ),
       /Policy file error in Gemini CLI[\s\S]*validation failed/,
     );
   });
@@ -247,7 +297,8 @@ test("Gemini bad PowerShell wrapper -p ambiguity is classified as wrapper confli
   const result = commandResult({
     status: "failed",
     exitCode: 1,
-    stderr: "Parameter cannot be processed because the parameter name 'p' is ambiguous. Possible matches include: -ProgressAction -PipelineVariable",
+    stderr:
+      "Parameter cannot be processed because the parameter name 'p' is ambiguous. Possible matches include: -ProgressAction -PipelineVariable",
   });
   assert.equal(classifyGeminiProbeFailure(result), "shell wrapper/function conflict");
 
@@ -268,11 +319,13 @@ test("Gemini route validation returns auth-unknown diagnostic if executable foun
     const validation = await validateGeminiRoute({
       cwd: process.cwd(),
       modelId: "gemini-3-flash-preview",
-      runCommandImpl: mockRunCommand(commandResult({
-        status: "completed",
-        exitCode: 1,
-        stderr: "Auth failed",
-      })),
+      runCommandImpl: mockRunCommand(
+        commandResult({
+          status: "completed",
+          exitCode: 1,
+          stderr: "Auth failed",
+        }),
+      ),
     });
 
     assert.equal(validation.status, "not-configured");
@@ -285,10 +338,12 @@ test("Gemini route validation returns timeout diagnostic on probe timeout", asyn
     const validation = await validateGeminiRoute({
       cwd: process.cwd(),
       modelId: "gemini-3-flash-preview",
-      runCommandImpl: mockRunCommand(commandResult({
-        status: "timeout",
-        exitCode: null,
-      })),
+      runCommandImpl: mockRunCommand(
+        commandResult({
+          status: "timeout",
+          exitCode: null,
+        }),
+      ),
     });
 
     assert.equal(validation.status, "not-configured");
@@ -302,11 +357,14 @@ test("Gemini route validation preferences authenticated CLI over API key", async
     const validation = await validateGeminiRoute({
       cwd: process.cwd(),
       modelId: "gemini-3-flash-preview",
-      runCommandImpl: mockRunCommand(commandResult({
-        stdout: JSON.stringify({ response: "READY" }),
-      }), () => {
-        commandCalled = true;
-      }),
+      runCommandImpl: mockRunCommand(
+        commandResult({
+          stdout: JSON.stringify({ response: "READY" }),
+        }),
+        () => {
+          commandCalled = true;
+        },
+      ),
     });
 
     assert.equal(validation.status, "ready");
@@ -321,10 +379,12 @@ test("Gemini route validation falls back to GEMINI_API_KEY if CLI fails", async 
     const validation = await validateGeminiRoute({
       cwd: process.cwd(),
       modelId: "gemini-3-flash-preview",
-      runCommandImpl: mockRunCommand(commandResult({
-        status: "spawn_error",
-        errorCode: "ENOENT",
-      })),
+      runCommandImpl: mockRunCommand(
+        commandResult({
+          status: "spawn_error",
+          errorCode: "ENOENT",
+        }),
+      ),
     });
 
     assert.equal(validation.status, "ready");
@@ -336,14 +396,18 @@ test("Gemini non-zero model errors surface without silent retry", async () => {
   await withGeminiEnv({}, async () => {
     const calls: Array<Parameters<typeof runCommand>[0]> = [];
     await assert.rejects(
-      () => runGeminiCliWithRunner(
-        buildRequest(),
-        mockRunCommand(commandResult({
-          status: "failed",
-          exitCode: 1,
-          stderr: "ModelNotFoundError: Requested entity was not found.",
-        }), (spec) => calls.push(spec)),
-      ),
+      () =>
+        runGeminiCliWithRunner(
+          buildRequest(),
+          mockRunCommand(
+            commandResult({
+              status: "failed",
+              exitCode: 1,
+              stderr: "ModelNotFoundError: Requested entity was not found.",
+            }),
+            (spec) => calls.push(spec),
+          ),
+        ),
       /ModelNotFoundError: Requested entity was not found/,
     );
 
@@ -361,21 +425,32 @@ test("Gemini diagnostics include command details without prompt text", async () 
 
     const diagnostics = await runGeminiDiagnostics({
       cwd: process.cwd(),
-      runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
-        mode: "full-auto",
-        geminiCommandPath: FAKE_GEMINI_EXE,
-      })),
+      runtime: resolveRuntimeConfig(
+        normalizeRuntimeConfig({
+          mode: "full-auto",
+          geminiCommandPath: FAKE_GEMINI_EXE,
+        }),
+      ),
       selectedModel: "gemini-3-flash",
       selectedReasoning: "high",
       runCommandImpl: mockRunCommand(commandResult({ stdout: "READY\n" })),
     });
 
-    assert.ok(diagnostics.includes(`Resolved executable path: ${FAKE_GEMINI_EXE}`), `Expected diagnostics to include resolved path`);
-    assert.match(diagnostics, /Readiness command args: \["--model","gemini-3-flash-preview","-p","Respond with READY only\."\]/);
+    assert.ok(
+      diagnostics.includes(`Resolved executable path: ${FAKE_GEMINI_EXE}`),
+      `Expected diagnostics to include resolved path`,
+    );
+    assert.match(
+      diagnostics,
+      /Readiness command args: \["--model","gemini-3-flash-preview","-p","Respond with READY only\."\]/,
+    );
     assert.match(diagnostics, /Selected model: gemini-3-flash-preview/);
     assert.match(diagnostics, /Policy args included: false/);
     assert.match(diagnostics, /Gemini reasoning control is not supported by this CLI version/);
-    assert.match(diagnostics, /Last prompt command args: \["--model","gemini-3-flash-preview","-p","<prompt>"/);
+    assert.match(
+      diagnostics,
+      /Last prompt command args: \["--model","gemini-3-flash-preview","-p","<prompt>"/,
+    );
     assert.doesNotMatch(diagnostics, /secret prompt text/);
   });
 });
@@ -423,15 +498,20 @@ test("validateGeminiRoute not-configured message names missing credentials when 
     const result = await validateGeminiRoute({
       cwd: process.cwd(),
       modelId: "gemini-3-flash-preview",
-      runCommandImpl: mockRunCommand(commandResult({
-        status: "spawn_error",
-        exitCode: null,
-        errorCode: "ENOENT",
-        userMessage: "`gemini` is not installed or not available on PATH.",
-      })),
+      runCommandImpl: mockRunCommand(
+        commandResult({
+          status: "spawn_error",
+          exitCode: null,
+          errorCode: "ENOENT",
+          userMessage: "`gemini` is not installed or not available on PATH.",
+        }),
+      ),
     });
     assert.equal(result.status, "not-configured");
-    assert.match(result.message ?? "", /GEMINI_API_KEY|GOOGLE_API_KEY|GEMINI_EXECUTABLE|Gemini CLI/);
+    assert.match(
+      result.message ?? "",
+      /GEMINI_API_KEY|GOOGLE_API_KEY|GEMINI_EXECUTABLE|Gemini CLI/,
+    );
     assert.equal(isGeminiRouteConfigured(), false);
   });
 });

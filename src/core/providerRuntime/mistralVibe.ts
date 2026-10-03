@@ -1,19 +1,35 @@
 import { createHash } from "node:crypto";
-import { createRunControl } from "../providers/runControl.js";
 import { existsSync, readFileSync } from "fs";
 import { readdir, readFile } from "fs/promises";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 import { parseTomlDocument } from "../../config/layeredConfig.js";
-import { runCommand, runShellCommand, type CommandResult, type CommandStreamHandlers, type CommandSpec } from "../process/CommandRunner.js";
-import { normalizeExecutableValue } from "../process/processValidation.js";
-import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
-import { launchProviderCli, type LaunchProviderCliOptions, type ProviderLaunchResult } from "../providerLauncher/launcher.js";
-import type { ProviderConfig } from "../providerLauncher/types.js";
-import type { BackendRunHandlers } from "../providers/types.js";
-import type { ProviderChatRequest, ProviderModel, ProviderModelDiscoveryResult, ProviderRouteValidationResult, ProviderRuntime } from "./types.js";
-import { vibeSessionDir } from "../externalSessions/vibeSessions.js";
 import { formatConversationHistory } from "../../session/conversation.js";
+import { vibeSessionDir } from "../externalSessions/vibeSessions.js";
+import {
+  type CommandResult,
+  type CommandSpec,
+  type CommandStreamHandlers,
+  runCommand,
+  runShellCommand,
+} from "../process/CommandRunner.js";
+import { normalizeExecutableValue } from "../process/processValidation.js";
+import {
+  type LaunchProviderCliOptions,
+  launchProviderCli,
+  type ProviderLaunchResult,
+} from "../providerLauncher/launcher.js";
+import type { ProviderConfig } from "../providerLauncher/types.js";
+import { createRunControl } from "../providers/runControl.js";
+import type { BackendRunHandlers } from "../providers/types.js";
+import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
+import type {
+  ProviderChatRequest,
+  ProviderModel,
+  ProviderModelDiscoveryResult,
+  ProviderRouteValidationResult,
+  ProviderRuntime,
+} from "./types.js";
 
 const VIBE_LOOKUP_TIMEOUT_MS = 5_000;
 const VIBE_RUN_TIMEOUT_MS = 600_000;
@@ -30,9 +46,12 @@ type ShellCommandRunner = (
   command: string,
   options: { cwd: string; timeoutMs?: number },
 ) => { result: Promise<CommandResultSubset> };
-type DirectCommandRunner = (
-  spec: { executable: string; args: string[]; cwd: string; timeoutMs?: number },
-) => { result: Promise<CommandResultSubset> };
+type DirectCommandRunner = (spec: {
+  executable: string;
+  args: string[];
+  cwd: string;
+  timeoutMs?: number;
+}) => { result: Promise<CommandResultSubset> };
 
 export interface VibeModelDetection {
   modelId: string;
@@ -66,11 +85,9 @@ function findProjectVibeConfig(cwd: string, vibeHome: string): string | null {
   return null;
 }
 
-export function detectVibeActiveModel(options: {
-  cwd?: string;
-  env?: NodeJS.ProcessEnv;
-  homeDirectory?: string;
-} = {}): VibeModelDetection {
+export function detectVibeActiveModel(
+  options: { cwd?: string; env?: NodeJS.ProcessEnv; homeDirectory?: string } = {},
+): VibeModelDetection {
   const env = options.env ?? process.env;
   const environmentModel = env.VIBE_ACTIVE_MODEL?.trim();
   if (environmentModel) {
@@ -117,11 +134,15 @@ function readVibeModelEntries(filePath: string): VibeConfigModelEntry[] {
       const record = raw as Record<string, unknown>;
       const name = typeof record.name === "string" ? record.name.trim() : "";
       if (!name) continue;
-      const alias = typeof record.alias === "string" && record.alias.trim() ? record.alias.trim() : name;
+      const alias =
+        typeof record.alias === "string" && record.alias.trim() ? record.alias.trim() : name;
       entries.push({
         name,
         alias,
-        provider: typeof record.provider === "string" && record.provider.trim() ? record.provider.trim() : null,
+        provider:
+          typeof record.provider === "string" && record.provider.trim()
+            ? record.provider.trim()
+            : null,
       });
     }
     return entries;
@@ -143,11 +164,9 @@ function vibeEntryToProviderModel(entry: VibeConfigModelEntry): ProviderModel {
   };
 }
 
-export function listVibeConfiguredModels(options: {
-  cwd?: string;
-  env?: NodeJS.ProcessEnv;
-  homeDirectory?: string;
-} = {}): { models: ProviderModel[]; configPath: string | null } {
+export function listVibeConfiguredModels(
+  options: { cwd?: string; env?: NodeJS.ProcessEnv; homeDirectory?: string } = {},
+): { models: ProviderModel[]; configPath: string | null } {
   const env = options.env ?? process.env;
   const homeDirectory = options.homeDirectory ?? homedir();
   const vibeHome = env.VIBE_HOME?.trim() || join(homeDirectory, ".vibe");
@@ -180,19 +199,22 @@ export function discoverMistralVibeModels(cwd = process.cwd()): ProviderModelDis
   if (activeFromList) {
     models.push(activeFromList, ...listed.models.filter((model) => model !== activeFromList));
   } else {
-    models.push({
-      id: detected.modelId,
-      modelId: detected.modelId,
-      label: detected.modelId,
-      description: "Active model reported by Mistral Vibe configuration.",
-      defaultReasoningLevel: null,
-      supportedReasoningLevels: null,
-      source: detected.source === "default" ? "fallback" : "config",
-      raw: {
-        source: detected.source,
-        configPath: detected.configPath,
+    models.push(
+      {
+        id: detected.modelId,
+        modelId: detected.modelId,
+        label: detected.modelId,
+        description: "Active model reported by Mistral Vibe configuration.",
+        defaultReasoningLevel: null,
+        supportedReasoningLevels: null,
+        source: detected.source === "default" ? "fallback" : "config",
+        raw: {
+          source: detected.source,
+          configPath: detected.configPath,
+        },
       },
-    }, ...listed.models);
+      ...listed.models,
+    );
   }
 
   return {
@@ -211,23 +233,35 @@ export function discoverMistralVibeModels(cwd = process.cwd()): ProviderModelDis
 
 function firstOutputLine(result: CommandResultSubset): string | null {
   if (result.status !== "completed" || result.exitCode !== 0) return null;
-  return result.stdout.split(/[\r\n]+/).map((line) => line.trim()).find(Boolean) ?? null;
+  return (
+    result.stdout
+      .split(/[\r\n]+/)
+      .map((line) => line.trim())
+      .find(Boolean) ?? null
+  );
 }
 
-export async function resolveVibeExecutable(options: {
-  cwd?: string;
-  platform?: NodeJS.Platform;
-  runShellCommandImpl?: ShellCommandRunner;
-  runCommandImpl?: DirectCommandRunner;
-} = {}): Promise<string | null> {
+export async function resolveVibeExecutable(
+  options: {
+    cwd?: string;
+    platform?: NodeJS.Platform;
+    runShellCommandImpl?: ShellCommandRunner;
+    runCommandImpl?: DirectCommandRunner;
+  } = {},
+): Promise<string | null> {
   const cwd = options.cwd ?? process.cwd();
   const platform = options.platform ?? process.platform;
   let candidate: string | null;
   const configured = process.env.VIBE_EXECUTABLE?.trim();
-  if (configured) return normalizeExecutableValue(configured, { label: "Mistral Vibe executable", cwd, allowBareExecutable: true });
+  if (configured)
+    return normalizeExecutableValue(configured, {
+      label: "Mistral Vibe executable",
+      cwd,
+      allowBareExecutable: true,
+    });
 
   if (platform === "win32") {
-    const runner = (options.runCommandImpl ?? runCommand as DirectCommandRunner)({
+    const runner = (options.runCommandImpl ?? (runCommand as DirectCommandRunner))({
       executable: "where.exe",
       args: ["vibe"],
       cwd,
@@ -235,7 +269,7 @@ export async function resolveVibeExecutable(options: {
     });
     candidate = firstOutputLine(await runner.result);
   } else {
-    const runner = (options.runShellCommandImpl ?? runShellCommand as ShellCommandRunner)(
+    const runner = (options.runShellCommandImpl ?? (runShellCommand as ShellCommandRunner))(
       "command -v vibe",
       { cwd, timeoutMs: VIBE_LOOKUP_TIMEOUT_MS },
     );
@@ -260,17 +294,20 @@ export async function launchMistralVibeCli(
     resolveExecutable?: (cwd: string) => Promise<string | null>;
   },
 ): Promise<ProviderLaunchResult> {
-  const resolveExecutable = options.resolveExecutable
-    ?? ((cwd: string) => resolveVibeExecutable({ cwd }));
+  const resolveExecutable =
+    options.resolveExecutable ?? ((cwd: string) => resolveVibeExecutable({ cwd }));
   const executable = await resolveExecutable(options.cwd);
   if (!executable) {
     return { status: "missing-command", message: MISTRAL_VIBE_MISSING_MESSAGE };
   }
 
-  return launchProviderCli({
-    ...provider,
-    launchCommand: { executable, args: [] },
-  }, options);
+  return launchProviderCli(
+    {
+      ...provider,
+      launchCommand: { executable, args: [] },
+    },
+    options,
+  );
 }
 
 // ─── Session continuation ────────────────────────────────────────────────────
@@ -326,7 +363,11 @@ function extractVibeText(content: unknown): string {
     return content
       .map((item) => {
         if (typeof item === "string") return item;
-        if (item && typeof item === "object" && typeof (item as { text?: unknown }).text === "string") {
+        if (
+          item &&
+          typeof item === "object" &&
+          typeof (item as { text?: unknown }).text === "string"
+        ) {
           return (item as { text: string }).text;
         }
         return "";
@@ -412,7 +453,8 @@ export function createVibeStreamParser(
         if (!call || typeof call !== "object") continue;
         const record = call as { id?: unknown; function?: { name?: unknown; arguments?: unknown } };
         const name = typeof record.function?.name === "string" ? record.function.name : "tool";
-        const args = typeof record.function?.arguments === "string" ? record.function.arguments : "";
+        const args =
+          typeof record.function?.arguments === "string" ? record.function.arguments : "";
         const id = typeof record.id === "string" ? record.id : `vibe-tool-${++sequence}`;
         const activity = {
           id,
@@ -430,7 +472,11 @@ export function createVibeStreamParser(
     if (!line) return;
     try {
       const parsed = JSON.parse(line) as unknown;
-      if (parsed && typeof parsed === "object" && typeof (parsed as { role?: unknown }).role === "string") {
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        typeof (parsed as { role?: unknown }).role === "string"
+      ) {
         handleMessage(parsed as Record<string, unknown>);
         return;
       }
@@ -489,7 +535,8 @@ export function runMistralVibe(
   const now = deps.now ?? Date.now;
   const env = deps.env ?? process.env;
   const runImpl = deps.runCommandImpl ?? (runCommand as VibeCommandRunner);
-  const resolveExecutable = deps.resolveExecutable ?? ((cwd: string) => resolveVibeExecutable({ cwd }));
+  const resolveExecutable =
+    deps.resolveExecutable ?? ((cwd: string) => resolveVibeExecutable({ cwd }));
   const findSessionImpl = deps.findSessionImpl ?? findLatestVibeSession;
   const workspaceRoot = request.workspaceRoot;
 
@@ -500,7 +547,15 @@ export function runMistralVibe(
   });
 
   const runAttempt = (executable: string, resumeSessionId: string | null) => {
-    const args = ["-p", "--output", "streaming", "--trust", "--auto-approve", "--workdir", workspaceRoot];
+    const args = [
+      "-p",
+      "--output",
+      "streaming",
+      "--trust",
+      "--auto-approve",
+      "--workdir",
+      workspaceRoot,
+    ];
     if (resumeSessionId) args.push("--resume", resumeSessionId);
 
     const modelId = request.route.modelId?.trim();
@@ -509,9 +564,10 @@ export function runMistralVibe(
       spawnEnv.VIBE_ACTIVE_MODEL = modelId;
     }
 
-    const prompt = !resumeSessionId && request.conversationHistory?.length
-      ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
-      : request.prompt;
+    const prompt =
+      !resumeSessionId && request.conversationHistory?.length
+        ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
+        : request.prompt;
     const parser = createVibeStreamParser(
       handlers,
       resumeSessionId ? { startAfterUserPrompt: request.prompt } : undefined,
@@ -538,72 +594,124 @@ export function runMistralVibe(
     currentCancel = runner.cancel;
     control.track(runner.stopped ?? runner.result.then(() => undefined));
 
-    runner.result.then(async (result) => {
-      if (cancelled || result.status === "canceled") { control.finish(); return; }
-      parser.flush();
+    runner.result
+      .then(async (result) => {
+        if (cancelled || result.status === "canceled") {
+          control.finish();
+          return;
+        }
+        parser.flush();
 
-      if (result.status !== "completed" || result.exitCode !== 0) {
-        if (isVibeAuthFailure(result.stderr)) {
+        if (result.status !== "completed" || result.exitCode !== 0) {
+          if (isVibeAuthFailure(result.stderr)) {
+            control.finish();
+            handlers.onError(MISTRAL_VIBE_AUTH_MESSAGE, result.stderr);
+            return;
+          }
+          if (result.status === "spawn_error" && result.errorCode === "ENOENT") {
+            control.finish();
+            handlers.onError(MISTRAL_VIBE_MISSING_MESSAGE);
+            return;
+          }
+          if (
+            resumeSessionId &&
+            /(?:session[^\n]*(?:not found|does not exist|unsupported)|(?:not found|does not exist)[^\n]*session)/i.test(
+              result.stderr,
+            )
+          ) {
+            handlers.onProgress?.({
+              id: "vibe-resume-retry",
+              source: "stderr",
+              text: "Saved Vibe session could not be resumed; retrying with a fresh session.",
+            });
+            runAttempt(executable, null);
+            return;
+          }
           control.finish();
-          handlers.onError(MISTRAL_VIBE_AUTH_MESSAGE, result.stderr);
+          handlers.onError(
+            result.userMessage || "Mistral Vibe execution failed.",
+            result.stderr.trim() || undefined,
+          );
           return;
         }
-        if (result.status === "spawn_error" && result.errorCode === "ENOENT") {
+
+        const finalText = parser.finalText() || sanitizeTerminalOutput(result.stdout).trim();
+        if (!parser.assistantText() && finalText) {
+          handlers.onAssistantDelta?.(finalText);
+        }
+        const sessionId =
+          resumeSessionId ??
+          (await findSessionImpl({ workspaceRoot, sinceMs: spawnedAt, env }).catch(() => null));
+        if (cancelled) {
           control.finish();
-          handlers.onError(MISTRAL_VIBE_MISSING_MESSAGE);
           return;
         }
-        if (resumeSessionId && /(?:session[^\n]*(?:not found|does not exist|unsupported)|(?:not found|does not exist)[^\n]*session)/i.test(result.stderr)) {
-          handlers.onProgress?.({
-            id: "vibe-resume-retry",
-            source: "stderr",
-            text: "Saved Vibe session could not be resumed; retrying with a fresh session.",
+        if (sessionId)
+          handlers.onNativeSession?.({
+            source: "vibe",
+            sessionId,
+            modelId: request.route.modelId,
+            throughMessageCount: (request.conversationHistory?.length ?? 0) + 2,
+            transcriptHash: createHash("sha256")
+              .update(
+                JSON.stringify(
+                  [
+                    ...(request.conversationHistory ?? []),
+                    { role: "user", content: request.prompt },
+                    { role: "assistant", content: finalText },
+                  ].map(({ role, content }) => ({ role, content })),
+                ),
+              )
+              .digest("hex"),
           });
-          runAttempt(executable, null);
-          return;
-        }
         control.finish();
-        handlers.onError(
-          result.userMessage || "Mistral Vibe execution failed.",
-          result.stderr.trim() || undefined,
-        );
-        return;
-      }
-
-      const finalText = parser.finalText() || sanitizeTerminalOutput(result.stdout).trim();
-      if (!parser.assistantText() && finalText) {
-        handlers.onAssistantDelta?.(finalText);
-      }
-      const sessionId = resumeSessionId ?? await findSessionImpl({ workspaceRoot, sinceMs: spawnedAt, env }).catch(() => null);
-      if (cancelled) { control.finish(); return; }
-      if (sessionId) handlers.onNativeSession?.({ source: "vibe", sessionId, modelId: request.route.modelId,
-        throughMessageCount: (request.conversationHistory?.length ?? 0) + 2,
-        transcriptHash: createHash("sha256").update(JSON.stringify([...(request.conversationHistory ?? []), { role: "user", content: request.prompt }, { role: "assistant", content: finalText }].map(({ role, content }) => ({ role, content })))).digest("hex"),
+        handlers.onFinalAnswerObserved?.(finalText);
+        handlers.onResponse(finalText);
+      })
+      .catch((error) => {
+        control.finish();
+        if (cancelled) return;
+        handlers.onError(error instanceof Error ? error.message : "Mistral Vibe execution failed.");
       });
-      control.finish();
-      handlers.onFinalAnswerObserved?.(finalText);
-      handlers.onResponse(finalText);
-    }).catch((error) => {
-      control.finish();
-      if (cancelled) return;
-      handlers.onError(error instanceof Error ? error.message : "Mistral Vibe execution failed.");
-    });
   };
 
   void (async () => {
     const executable = await resolveExecutable(workspaceRoot);
-    if (cancelled) { control.finish(); return; }
+    if (cancelled) {
+      control.finish();
+      return;
+    }
     if (!executable) {
       control.finish();
       handlers.onError(MISTRAL_VIBE_MISSING_MESSAGE);
       return;
     }
-    const reference = [...(request.nativeSessions ?? [])].reverse().find((session) => session.source === "vibe");
-    const historyHash = createHash("sha256").update(JSON.stringify((request.conversationHistory ?? []).map(({ role, content }) => ({ role, content })))).digest("hex");
-    const compatible = reference?.modelId === request.route.modelId && reference.throughMessageCount === (request.conversationHistory?.length ?? 0) && reference.transcriptHash === historyHash;
-    if (reference && !compatible) handlers.onProgress?.({ id: "vibe-recovery", source: "transcript", text: "Saved Vibe state does not match this chat and model; recovering its transcript into a fresh session." });
+    const reference = [...(request.nativeSessions ?? [])]
+      .reverse()
+      .find((session) => session.source === "vibe");
+    const historyHash = createHash("sha256")
+      .update(
+        JSON.stringify(
+          (request.conversationHistory ?? []).map(({ role, content }) => ({ role, content })),
+        ),
+      )
+      .digest("hex");
+    const compatible =
+      reference?.modelId === request.route.modelId &&
+      reference.throughMessageCount === (request.conversationHistory?.length ?? 0) &&
+      reference.transcriptHash === historyHash;
+    if (reference && !compatible)
+      handlers.onProgress?.({
+        id: "vibe-recovery",
+        source: "transcript",
+        text: "Saved Vibe state does not match this chat and model; recovering its transcript into a fresh session.",
+      });
     runAttempt(executable, compatible ? reference.sessionId : null);
-  })().catch((error) => { control.finish(); if (!cancelled) handlers.onError(error instanceof Error ? error.message : "Mistral Vibe launch failed."); });
+  })().catch((error) => {
+    control.finish();
+    if (!cancelled)
+      handlers.onError(error instanceof Error ? error.message : "Mistral Vibe launch failed.");
+  });
 
   return () => {
     cancelled = true;
@@ -612,11 +720,13 @@ export function runMistralVibe(
   };
 }
 
-export async function validateMistralVibeRoute(options: {
-  cwd: string;
-  resolveExecutable?: (cwd: string) => Promise<string | null>;
-} = { cwd: process.cwd() }): Promise<ProviderRouteValidationResult> {
-  const resolveExecutable = options.resolveExecutable ?? ((cwd: string) => resolveVibeExecutable({ cwd }));
+export async function validateMistralVibeRoute(
+  options: { cwd: string; resolveExecutable?: (cwd: string) => Promise<string | null> } = {
+    cwd: process.cwd(),
+  },
+): Promise<ProviderRouteValidationResult> {
+  const resolveExecutable =
+    options.resolveExecutable ?? ((cwd: string) => resolveVibeExecutable({ cwd }));
   const executable = await resolveExecutable(options.cwd);
   if (!executable) {
     return {

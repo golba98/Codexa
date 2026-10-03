@@ -1,11 +1,21 @@
-import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
-import type { ProjectInstructions } from "../workspace/projectInstructions.js";
-import type { BackendRunHandlers } from "../providers/types.js";
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
+import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
+import type { BackendRunHandlers } from "../providers/types.js";
+import type { ProjectInstructions } from "../workspace/projectInstructions.js";
+
 export type { ResolvedRuntimeConfig };
-import type { LocalBackendId, ProviderId } from "../providerLauncher/types.js";
-import type { ProviderWorkspaceOverride } from "../providerLauncher/types.js";
-import type { ConversationContextCheckpoint, ConversationMessage, LocalHarnessSessionMetadata, NativeSessionReference } from "../workspace/conversationStore.js";
+
+import type {
+  LocalBackendId,
+  ProviderId,
+  ProviderWorkspaceOverride,
+} from "../providerLauncher/types.js";
+import type {
+  ConversationContextCheckpoint,
+  ConversationMessage,
+  LocalHarnessSessionMetadata,
+  NativeSessionReference,
+} from "../workspace/conversationStore.js";
 
 export type ProviderBackendKind =
   | "codex-cli-auth"
@@ -28,13 +38,30 @@ export interface ProviderModel {
   description: string | null;
   defaultReasoningLevel: string | null;
   supportedReasoningLevels: readonly ReasoningEffortCapability[] | null;
-  source?: "discovered" | "claude-code" | "claude-code-command" | "claude-code-package" | "claude-code-cache" | "claude-code-config" | "settings" | "config" | "fallback";
+  source?:
+    | "discovered"
+    | "claude-code"
+    | "claude-code-command"
+    | "claude-code-package"
+    | "claude-code-cache"
+    | "claude-code-config"
+    | "settings"
+    | "config"
+    | "fallback";
   canonicalId?: string;
   family?: string;
   version?: string;
   isFallback?: boolean;
   discoveryKind?: "models" | "aliases";
-  effortSource?: "claude-code" | "claude-code-command" | "claude-code-package" | "claude-code-cache" | "claude-code-config" | "settings" | "config" | "fallback";
+  effortSource?:
+    | "claude-code"
+    | "claude-code-command"
+    | "claude-code-package"
+    | "claude-code-cache"
+    | "claude-code-config"
+    | "settings"
+    | "config"
+    | "fallback";
   effortVerified?: boolean;
   raw?: unknown;
 }
@@ -139,8 +166,14 @@ export interface ProviderRuntime {
   routeSetupMessage?: string;
   launchAvailable: boolean;
   isRouteConfigured?: () => boolean;
-  validateRoute?: (request: ProviderRouteValidationRequest) => Promise<ProviderRouteValidationResult>;
+  validateRoute?: (
+    request: ProviderRouteValidationRequest,
+  ) => Promise<ProviderRouteValidationResult>;
   discoverModels: () => ProviderModelDiscoveryResult;
-  refreshModels?: (options: { cwd: string; localConfig?: ProviderWorkspaceOverride | null; localBackend?: LocalBackendId }) => Promise<ProviderModelDiscoveryResult>;
+  refreshModels?: (options: {
+    cwd: string;
+    localConfig?: ProviderWorkspaceOverride | null;
+    localBackend?: LocalBackendId;
+  }) => Promise<ProviderModelDiscoveryResult>;
   run?: (request: ProviderChatRequest, handlers: BackendRunHandlers) => () => void;
 }

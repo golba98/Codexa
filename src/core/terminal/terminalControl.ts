@@ -1,6 +1,10 @@
-import * as renderDebug from "../perf/renderDebug.js";
 import { APP_NAME } from "../../config/settings.js";
-import { setTerminalTitleLifecycleState, traceTerminalTitleSequences, writeGuardedTerminalOutput } from "./terminalTitle.js";
+import * as renderDebug from "../perf/renderDebug.js";
+import {
+  setTerminalTitleLifecycleState,
+  traceTerminalTitleSequences,
+  writeGuardedTerminalOutput,
+} from "./terminalTitle.js";
 
 export const TERMINAL_TITLE = APP_NAME;
 
@@ -60,10 +64,11 @@ export function writeTerminalControl(
     lifecycleState: currentUIStateKind,
   });
   renderDebug.traceTerminalWrite(channel, source, sequence);
-  const containsClearOrReset = sequence.includes("\x1b[2J")
-    || sequence.includes("\x1b[3J")
-    || sequence.includes("\x1bc")
-    || sequence.includes("\x1b[H");
+  const containsClearOrReset =
+    sequence.includes("\x1b[2J") ||
+    sequence.includes("\x1b[3J") ||
+    sequence.includes("\x1bc") ||
+    sequence.includes("\x1b[H");
   const isExplicitRedraw = source === "user:redraw";
   const isStartupWrite = source.includes(":startup");
   const isTranscriptClear = source.includes(":transcriptClear");
@@ -71,7 +76,13 @@ export function writeTerminalControl(
 
   // Aggressively block any clearing or reset sequences after startup,
   // especially during active states, to prevent the UI from disappearing.
-  if (containsClearOrReset && !isExplicitRedraw && !isStartupWrite && !isTranscriptClear && !isViewportClear) {
+  if (
+    containsClearOrReset &&
+    !isExplicitRedraw &&
+    !isStartupWrite &&
+    !isTranscriptClear &&
+    !isViewportClear
+  ) {
     renderDebug.traceEvent("terminal", "blockedPostStartupClearOrReset", {
       source,
       uiStateKind: currentUIStateKind,
@@ -87,9 +98,9 @@ export function writeTerminalControl(
   // Diagnostic: warn if a viewport-clearing sequence fires during streaming
   // even if it claims to be from startup (which shouldn't happen).
   if (
-    (currentUIStateKind === "RESPONDING" || currentUIStateKind === "THINKING")
-    && !isExplicitRedraw
-    && (sequence.includes("\x1b[2J") || sequence.includes("\x1b[3J"))
+    (currentUIStateKind === "RESPONDING" || currentUIStateKind === "THINKING") &&
+    !isExplicitRedraw &&
+    (sequence.includes("\x1b[2J") || sequence.includes("\x1b[3J"))
   ) {
     renderDebug.traceEvent("terminal", "unexpectedClearDuringStreaming", {
       source,
@@ -137,25 +148,44 @@ export function createTerminalModeController(write: TerminalWrite): TerminalMode
   return {
     write: writeStdout,
     clearTranscript(source) {
-      writeStdout(TERMINAL_SEQUENCES.transcriptClear, source.includes(":transcriptClear") ? source : `${source}:transcriptClear`);
+      writeStdout(
+        TERMINAL_SEQUENCES.transcriptClear,
+        source.includes(":transcriptClear") ? source : `${source}:transcriptClear`,
+      );
     },
     clearViewport(source) {
-      writeStdout(TERMINAL_SEQUENCES.viewportClear, source.includes(":viewportClear") ? source : `${source}:viewportClear`);
+      writeStdout(
+        TERMINAL_SEQUENCES.viewportClear,
+        source.includes(":viewportClear") ? source : `${source}:viewportClear`,
+      );
     },
     setMouseReporting(enabled, source) {
       if (mouseReporting === enabled) return;
       mouseReporting = enabled;
-      writeStdout(enabled ? TERMINAL_SEQUENCES.mouseEnable : TERMINAL_SEQUENCES.mouseDisable, source);
+      writeStdout(
+        enabled ? TERMINAL_SEQUENCES.mouseEnable : TERMINAL_SEQUENCES.mouseDisable,
+        source,
+      );
     },
     setBracketedPaste(enabled, source) {
       if (bracketedPaste === enabled) return;
       bracketedPaste = enabled;
-      writeStdout(enabled ? TERMINAL_SEQUENCES.bracketedPasteEnable : TERMINAL_SEQUENCES.bracketedPasteDisable, source);
+      writeStdout(
+        enabled
+          ? TERMINAL_SEQUENCES.bracketedPasteEnable
+          : TERMINAL_SEQUENCES.bracketedPasteDisable,
+        source,
+      );
     },
     setAlternateScreen(enabled, source) {
       if (alternateScreen === enabled) return;
       alternateScreen = enabled;
-      writeStdout(enabled ? TERMINAL_SEQUENCES.alternateScreenEnable : TERMINAL_SEQUENCES.alternateScreenDisable, source);
+      writeStdout(
+        enabled
+          ? TERMINAL_SEQUENCES.alternateScreenEnable
+          : TERMINAL_SEQUENCES.alternateScreenDisable,
+        source,
+      );
     },
     resetModes() {
       renderDebug.traceEvent("terminal", "resetModes", {

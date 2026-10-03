@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
+import { useEffect, useMemo, useState } from "react";
 import { clampVisualText, usePanelLayout } from "../layout.js";
 import { useTheme } from "../theme.js";
 import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
@@ -41,13 +41,17 @@ export function SelectionPanel({
   const availableRows = Math.max(1, panelLayout?.availableRows ?? 12);
   const innerWidth = Math.max(1, (panelLayout?.availableCols ?? 80) - 2);
 
-  const viewport = useMemo(() => calculateResponsivePickerViewport({
-    itemCount: items.length,
-    selectedIndex,
-    availableRows,
-    chromeRows: availableRows >= 3 ? 2 : 0,
-    scrollOffset,
-  }), [availableRows, items.length, scrollOffset, selectedIndex]);
+  const viewport = useMemo(
+    () =>
+      calculateResponsivePickerViewport({
+        itemCount: items.length,
+        selectedIndex,
+        availableRows,
+        chromeRows: availableRows >= 3 ? 2 : 0,
+        scrollOffset,
+      }),
+    [availableRows, items.length, scrollOffset, selectedIndex],
+  );
 
   useEffect(() => {
     setSelectedIndex((current) => clampIndex(current, items.length));
@@ -64,40 +68,43 @@ export function SelectionPanel({
     if (item) onHighlight?.(item.value);
   };
 
-  useInput((input, key) => {
-    if (key.escape) {
-      onCancel();
-      return;
-    }
-    if (key.return) {
-      const item = items[viewport.selectedIndex];
-      if (item) onSelect(item.value);
-      return;
-    }
-    if (key.home) {
-      highlightIndex(0);
-      return;
-    }
-    if (key.end) {
-      highlightIndex(items.length - 1);
-      return;
-    }
-    if (key.pageUp) {
-      highlightIndex(selectedIndex - Math.max(1, viewport.capacity));
-      return;
-    }
-    if (key.pageDown) {
-      highlightIndex(selectedIndex + Math.max(1, viewport.capacity));
-      return;
-    }
-    if (key.upArrow || input === "k") {
-      highlightIndex(selectedIndex - 1);
-      return;
-    }
-    if (key.downArrow || input === "j") {
-      highlightIndex(selectedIndex + 1);
-    }
-  }, { isActive: isFocused });
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        onCancel();
+        return;
+      }
+      if (key.return) {
+        const item = items[viewport.selectedIndex];
+        if (item) onSelect(item.value);
+        return;
+      }
+      if (key.home) {
+        highlightIndex(0);
+        return;
+      }
+      if (key.end) {
+        highlightIndex(items.length - 1);
+        return;
+      }
+      if (key.pageUp) {
+        highlightIndex(selectedIndex - Math.max(1, viewport.capacity));
+        return;
+      }
+      if (key.pageDown) {
+        highlightIndex(selectedIndex + Math.max(1, viewport.capacity));
+        return;
+      }
+      if (key.upArrow || input === "k") {
+        highlightIndex(selectedIndex - 1);
+        return;
+      }
+      if (key.downArrow || input === "j") {
+        highlightIndex(selectedIndex + 1);
+      }
+    },
+    { isActive: isFocused },
+  );
 
   const visibleItems = items.slice(viewport.start, viewport.end);
   const titleText = viewport.hasOverflow
@@ -125,14 +132,13 @@ export function SelectionPanel({
         return (
           <Box key={item.value} width="100%" overflow="hidden">
             <Text color={selected ? theme.accent : theme.textMuted} bold={selected} wrap="truncate">
-              {selected ? "> " : "  "}{clampVisualText(item.label, Math.max(1, innerWidth - 2))}
+              {selected ? "> " : "  "}
+              {clampVisualText(item.label, Math.max(1, innerWidth - 2))}
             </Text>
           </Box>
         );
       })}
-      {availableRows >= 3 && (
-        <Text color={theme.textDim}>↑↓ move · Enter confirm · Esc close</Text>
-      )}
+      {availableRows >= 3 && <Text color={theme.textDim}>↑↓ move · Enter confirm · Esc close</Text>}
     </Box>
   );
 }

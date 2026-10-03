@@ -1,63 +1,66 @@
-import type { BackendProgressUpdate } from "./types.js";
 import type { RunToolActivity } from "../../session/types.js";
+import type { BackendProgressUpdate } from "./types.js";
 
 type CodexThreadEvent =
   | { type: "thread.started"; thread_id: string }
   | { type: "turn.started" }
-  | { type: "turn.completed"; usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number } }
+  | {
+      type: "turn.completed";
+      usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number };
+    }
   | { type: "turn.failed"; error?: { message?: string } }
   | { type: "error"; message?: string }
   | { type: "item.started" | "item.updated" | "item.completed"; item: CodexThreadItem };
 
 type CodexThreadItem =
   | {
-    id: string;
-    type: "agent_message";
-    text: string;
-  }
+      id: string;
+      type: "agent_message";
+      text: string;
+    }
   | {
-    id: string;
-    type: "reasoning";
-    text: string;
-  }
+      id: string;
+      type: "reasoning";
+      text: string;
+    }
   | {
-    id: string;
-    type: "command_execution";
-    command: string;
-    status: "in_progress" | "completed" | "failed";
-    aggregated_output?: string;
-    exit_code?: number;
-  }
+      id: string;
+      type: "command_execution";
+      command: string;
+      status: "in_progress" | "completed" | "failed";
+      aggregated_output?: string;
+      exit_code?: number;
+    }
   | {
-    id: string;
-    type: "mcp_tool_call";
-    server: string;
-    tool: string;
-    status: "in_progress" | "completed" | "failed";
-    error?: { message?: string };
-    result?: unknown;
-  }
+      id: string;
+      type: "mcp_tool_call";
+      server: string;
+      tool: string;
+      status: "in_progress" | "completed" | "failed";
+      error?: { message?: string };
+      result?: unknown;
+    }
   | {
-    id: string;
-    type: "web_search";
-    query: string;
-  }
+      id: string;
+      type: "web_search";
+      query: string;
+    }
   | {
-    id: string;
-    type: "todo_list";
-    items: Array<{ text: string; completed: boolean }>;
-  }
+      id: string;
+      type: "todo_list";
+      items: Array<{ text: string; completed: boolean }>;
+    }
   | {
-    id: string;
-    type: "file_change";
-    changes: Array<{ path: string; kind: "add" | "delete" | "update" }>;
-    status: "completed" | "failed";
-  }
+      id: string;
+      type: "file_change";
+      changes: Array<{ path: string; kind: "add" | "delete" | "update" }>;
+      status: "completed" | "failed";
+    }
   | {
-    id: string;
-    type: "error";
-    message: string;
-  };
+      id: string;
+      type: "error";
+      message: string;
+    };
 
 export interface CodexJsonStreamHandlers {
   onThreadStarted?: (id: string) => void;
@@ -88,7 +91,9 @@ function firstMeaningfulLine(text: string | undefined): string | null {
   return line ?? null;
 }
 
-function summarizeCommandExecution(item: Extract<CodexThreadItem, { type: "command_execution" }>): string {
+function summarizeCommandExecution(
+  item: Extract<CodexThreadItem, { type: "command_execution" }>,
+): string {
   const firstLine = firstMeaningfulLine(item.aggregated_output);
   if (item.status === "failed") {
     if (firstLine) return firstLine;
@@ -114,7 +119,9 @@ function summarizeReasoning(item: Extract<CodexThreadItem, { type: "reasoning" }
   return normalizeProgressText(item.text);
 }
 
-function summarizeFileChange(item: Extract<CodexThreadItem, { type: "file_change" }>): string | null {
+function summarizeFileChange(
+  item: Extract<CodexThreadItem, { type: "file_change" }>,
+): string | null {
   if (!item.changes.length) return null;
   const [first] = item.changes;
   if (item.changes.length === 1 && first) {
@@ -124,9 +131,16 @@ function summarizeFileChange(item: Extract<CodexThreadItem, { type: "file_change
   return `Applied ${item.changes.length} file changes`;
 }
 
-function mapToolActivity(item: Extract<CodexThreadItem, {
-  type: "command_execution" | "mcp_tool_call" | "web_search";
-}>, phase: "item.started" | "item.updated" | "item.completed", existing: RunToolActivity | undefined): RunToolActivity {
+function mapToolActivity(
+  item: Extract<
+    CodexThreadItem,
+    {
+      type: "command_execution" | "mcp_tool_call" | "web_search";
+    }
+  >,
+  phase: "item.started" | "item.updated" | "item.completed",
+  existing: RunToolActivity | undefined,
+): RunToolActivity {
   const startedAt = existing?.startedAt ?? Date.now();
 
   if (item.type === "command_execution") {
@@ -149,12 +163,15 @@ function mapToolActivity(item: Extract<CodexThreadItem, {
       status: item.status === "in_progress" ? "running" : item.status,
       startedAt,
       completedAt: item.status === "in_progress" ? null : Date.now(),
-      ...(item.result === undefined ? {} : { output: typeof item.result === "string" ? item.result : JSON.stringify(item.result) }),
-      summary: item.status === "failed"
-        ? item.error?.message ?? "Failed"
-        : item.status === "completed"
-          ? "Completed"
-          : undefined,
+      ...(item.result === undefined
+        ? {}
+        : { output: typeof item.result === "string" ? item.result : JSON.stringify(item.result) }),
+      summary:
+        item.status === "failed"
+          ? (item.error?.message ?? "Failed")
+          : item.status === "completed"
+            ? "Completed"
+            : undefined,
     };
   }
 
@@ -210,15 +227,24 @@ export function createCodexJsonStreamParser(handlers: CodexJsonStreamHandlers) {
     }
   };
 
-  const upsertTool = (item: Extract<CodexThreadItem, {
-    type: "command_execution" | "mcp_tool_call" | "web_search";
-  }>, phase: "item.started" | "item.updated" | "item.completed") => {
+  const upsertTool = (
+    item: Extract<
+      CodexThreadItem,
+      {
+        type: "command_execution" | "mcp_tool_call" | "web_search";
+      }
+    >,
+    phase: "item.started" | "item.updated" | "item.completed",
+  ) => {
     const next = mapToolActivity(item, phase, toolActivityById.get(item.id));
     toolActivityById.set(item.id, next);
     handlers.onToolActivity?.(next);
   };
 
-  const handleItem = (phase: "item.started" | "item.updated" | "item.completed", item: CodexThreadItem) => {
+  const handleItem = (
+    phase: "item.started" | "item.updated" | "item.completed",
+    item: CodexThreadItem,
+  ) => {
     switch (item.type) {
       case "agent_message":
         emitAssistantText(item.id, item.text ?? "");
@@ -231,14 +257,22 @@ export function createCodexJsonStreamParser(handlers: CodexJsonStreamHandlers) {
         break;
       case "command_execution":
         upsertTool(item, phase);
-        emitProgress(item.id, "tool", item.status === "in_progress" ? `Running ${item.command}` : summarizeCommandExecution(item));
+        emitProgress(
+          item.id,
+          "tool",
+          item.status === "in_progress"
+            ? `Running ${item.command}`
+            : summarizeCommandExecution(item),
+        );
         break;
       case "mcp_tool_call":
         upsertTool(item, phase);
         emitProgress(
           item.id,
           "tool",
-          item.status === "in_progress" ? `Calling ${item.server}:${item.tool}` : item.error?.message ?? `Completed ${item.server}:${item.tool}`,
+          item.status === "in_progress"
+            ? `Calling ${item.server}:${item.tool}`
+            : (item.error?.message ?? `Completed ${item.server}:${item.tool}`),
         );
         break;
       case "web_search":

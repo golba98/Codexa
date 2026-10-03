@@ -1,12 +1,15 @@
-import { formatModeLabel, formatReasoningLabel } from "../../config/settings.js";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
+import { formatModeLabel, formatReasoningLabel } from "../../config/settings.js";
 import type { CodexModelCapability } from "../../core/models/codexModelCapabilities.js";
 import type { ModelSpec } from "../../core/models/modelSpecs.js";
-import type { ModelContextMetadata } from "../../core/providerRuntime/contextMetadata.js";
-import { contextMetadataToModelSpec, formatContextCompact } from "../../core/providerRuntime/contextMetadata.js";
-import type { ActiveProviderRoute } from "../../core/providerRuntime/types.js";
 import { getAntigravityModelLabel } from "../../core/providerRuntime/antigravity.js";
 import { CODEXA_NATIVE_MODEL_ID } from "../../core/providerRuntime/codexaNative.js";
+import type { ModelContextMetadata } from "../../core/providerRuntime/contextMetadata.js";
+import {
+  contextMetadataToModelSpec,
+  formatContextCompact,
+} from "../../core/providerRuntime/contextMetadata.js";
+import type { ActiveProviderRoute } from "../../core/providerRuntime/types.js";
 
 export interface ActiveRuntimeDisplayInput {
   route: ActiveProviderRoute;
@@ -51,11 +54,17 @@ function formatUsedTokens(value: number): string {
   return formatContextCompact(value).replace(/k$/, "K");
 }
 
-function isContextForRoute(metadata: ModelContextMetadata | null | undefined, route: ActiveProviderRoute): metadata is ModelContextMetadata {
+function isContextForRoute(
+  metadata: ModelContextMetadata | null | undefined,
+  route: ActiveProviderRoute,
+): metadata is ModelContextMetadata {
   return metadata?.providerId === route.providerId && metadata.modelId === route.modelId;
 }
 
-function getModelLabel(route: ActiveProviderRoute, capability?: CodexModelCapability | null): string {
+function getModelLabel(
+  route: ActiveProviderRoute,
+  capability?: CodexModelCapability | null,
+): string {
   if (route.providerId === "anthropic") {
     return capability?.label ?? route.modelId;
   }
@@ -82,27 +91,28 @@ export function buildActiveRuntimeDisplay({
   contextMetadata = null,
 }: ActiveRuntimeDisplayInput): ActiveRuntimeDisplay {
   const providerLabel = PROVIDER_DISPLAY[route.providerId] ?? route.providerId;
-  const rawReasoning = route.providerId === "antigravity"
-    ? route.reasoning
-    : route.reasoning ?? reasoningLevel;
+  const rawReasoning =
+    route.providerId === "antigravity" ? route.reasoning : (route.reasoning ?? reasoningLevel);
   // Local runtimes own their reasoning behavior; Ubume cannot adjust it.
   // Do not present the global fallback as if it were an active Local setting.
-  const reasoning = route.providerId !== "local" && rawReasoning
-    ? formatReasoningLabel(rawReasoning)
-    : null;
+  const reasoning =
+    route.providerId !== "local" && rawReasoning ? formatReasoningLabel(rawReasoning) : null;
   const modelLabel = getModelLabel(route, modelCapability);
   const validContextMetadata = isContextForRoute(contextMetadata, route) ? contextMetadata : null;
-  const contextDisplay = validContextMetadata?.contextLength != null
-    ? `${formatUsedTokens(tokensUsed)} / ${validContextMetadata.confidence === "estimated" ? "~" : ""}${formatContextLimit(validContextMetadata.contextLength)}`
-    : "Unknown";
-  const modelSpec = contextMetadataToModelSpec(validContextMetadata ?? {
-    providerId: route.providerId,
-    modelId: route.modelId,
-    contextLength: null,
-    source: "unknown",
-    confidence: "unknown",
-    error: "Context length unavailable for this model.",
-  });
+  const contextDisplay =
+    validContextMetadata?.contextLength != null
+      ? `${formatUsedTokens(tokensUsed)} / ${validContextMetadata.confidence === "estimated" ? "~" : ""}${formatContextLimit(validContextMetadata.contextLength)}`
+      : "Unknown";
+  const modelSpec = contextMetadataToModelSpec(
+    validContextMetadata ?? {
+      providerId: route.providerId,
+      modelId: route.modelId,
+      contextLength: null,
+      source: "unknown",
+      confidence: "unknown",
+      error: "Context length unavailable for this model.",
+    },
+  );
 
   return {
     providerLabel,
@@ -118,7 +128,10 @@ export function buildActiveRuntimeDisplay({
   };
 }
 
-export function runtimeDisplayToSummary(display: ActiveRuntimeDisplay, base: RuntimeSummary): RuntimeSummary {
+export function runtimeDisplayToSummary(
+  display: ActiveRuntimeDisplay,
+  base: RuntimeSummary,
+): RuntimeSummary {
   return {
     ...base,
     providerLabel: display.providerLabel,

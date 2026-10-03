@@ -1,26 +1,29 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
-import { Box, render, renderToString } from "ink";
 import { PassThrough } from "node:stream";
-import { createAtomicContentToken } from "../input/pastedContent.js";
-import { getComposerRowLayout, createInputRowWindow, createInputViewport } from "../input/inputBuffer.js";
-import { getTextWidth } from "../render/textLayout.js";
-import { getContentWidth } from "../layout.js";
+import test from "node:test";
+import { Box, render, renderToString } from "ink";
+import React from "react";
+import type { PendingModelSpec, VerifiedModelSpec } from "../../core/models/modelSpecs.js";
 import {
-  BottomComposer,
+  createInputRowWindow,
+  createInputViewport,
+  getComposerRowLayout,
+} from "../input/inputBuffer.js";
+import { createAtomicContentToken } from "../input/pastedContent.js";
+import { getSlashCommandSuggestions } from "../input/slashCommands.js";
+import { createLayoutSnapshot, getContentWidth } from "../layout.js";
+import { getTextWidth } from "../render/textLayout.js";
+import {
   areBottomComposerPropsEqual,
+  BottomComposer,
   type BottomComposerProps,
   getCommandSuggestionState,
-  getComposerToFooterGapRows,
   getComposerPersona,
+  getComposerToFooterGapRows,
   getTokenBarDisplay,
   getVisibleComposerStatusLine,
   measureBottomComposerRows,
 } from "./BottomComposer.js";
-import { createLayoutSnapshot } from "../layout.js";
-import { getSlashCommandSuggestions } from "../input/slashCommands.js";
-import type { PendingModelSpec, VerifiedModelSpec } from "../../core/models/modelSpecs.js";
 
 test("maps the idle state to the idle composer persona", () => {
   assert.equal(getComposerPersona({ kind: "IDLE" }), "idle");
@@ -30,7 +33,10 @@ test("maps busy, answer, and error states to the right personas", () => {
   assert.equal(getComposerPersona({ kind: "THINKING", turnId: 1 }), "busy");
   assert.equal(getComposerPersona({ kind: "RESPONDING", turnId: 1 }), "busy");
   assert.equal(getComposerPersona({ kind: "SHELL_RUNNING", shellId: 7 }), "busy");
-  assert.equal(getComposerPersona({ kind: "AWAITING_USER_ACTION", turnId: 2, question: "Need Redis?" }), "answer");
+  assert.equal(
+    getComposerPersona({ kind: "AWAITING_USER_ACTION", turnId: 2, question: "Need Redis?" }),
+    "answer",
+  );
   assert.equal(getComposerPersona({ kind: "ERROR", turnId: 3, message: "Boom" }), "error");
 });
 
@@ -75,7 +81,10 @@ test("does not render an exact slash command draft as a suggestion row", () => {
 
   assert.equal(exact.showSuggestions, true);
   assert.equal(exact.reserveSuggestionRow, true);
-  assert.deepEqual(exact.suggestions.map((suggestion) => suggestion.cmd), []);
+  assert.deepEqual(
+    exact.suggestions.map((suggestion) => suggestion.cmd),
+    [],
+  );
 });
 
 test("keeps partial slash command suggestions visible", () => {
@@ -87,7 +96,10 @@ test("keeps partial slash command suggestions visible", () => {
 
   assert.equal(partial.showSuggestions, true);
   assert.equal(partial.reserveSuggestionRow, true);
-  assert.deepEqual(partial.suggestions.map((suggestion) => suggestion.cmd), ["/clear"]);
+  assert.deepEqual(
+    partial.suggestions.map((suggestion) => suggestion.cmd),
+    ["/clear"],
+  );
 });
 
 test("surfaces the provider picker suggestion for root prefixes and alias input", () => {
@@ -114,7 +126,9 @@ test("surfaces the provider picker suggestion for root prefixes and alias input"
     inputLocked: false,
   });
 
-  assert.ok(shortProviderSuggestions.suggestions.map((suggestion) => suggestion.cmd).includes("/providers"));
+  assert.ok(
+    shortProviderSuggestions.suggestions.map((suggestion) => suggestion.cmd).includes("/providers"),
+  );
 
   const prefixProviderSuggestions = getCommandSuggestionState({
     value: "/pr",
@@ -122,7 +136,11 @@ test("surfaces the provider picker suggestion for root prefixes and alias input"
     inputLocked: false,
   });
 
-  assert.ok(prefixProviderSuggestions.suggestions.map((suggestion) => suggestion.cmd).includes("/providers"));
+  assert.ok(
+    prefixProviderSuggestions.suggestions
+      .map((suggestion) => suggestion.cmd)
+      .includes("/providers"),
+  );
 
   const providerSuggestions = getCommandSuggestionState({
     value: "/provider",
@@ -131,7 +149,10 @@ test("surfaces the provider picker suggestion for root prefixes and alias input"
   });
 
   assert.equal(providerSuggestions.showSuggestions, true);
-  assert.deepEqual(providerSuggestions.suggestions.map((suggestion) => suggestion.cmd), ["/providers"]);
+  assert.deepEqual(
+    providerSuggestions.suggestions.map((suggestion) => suggestion.cmd),
+    ["/providers"],
+  );
 
   const exactProviderSuggestions = getCommandSuggestionState({
     value: "/providers",
@@ -140,9 +161,14 @@ test("surfaces the provider picker suggestion for root prefixes and alias input"
   });
 
   assert.equal(exactProviderSuggestions.showSuggestions, true);
-  assert.deepEqual(exactProviderSuggestions.suggestions.map((suggestion) => suggestion.cmd), ["/providers"]);
+  assert.deepEqual(
+    exactProviderSuggestions.suggestions.map((suggestion) => suggestion.cmd),
+    ["/providers"],
+  );
 
-  const aliasMetadata = getSlashCommandSuggestions("/provider").find((suggestion) => suggestion.cmd === "/providers");
+  const aliasMetadata = getSlashCommandSuggestions("/provider").find(
+    (suggestion) => suggestion.cmd === "/providers",
+  );
   assert.deepEqual(aliasMetadata?.aliases, ["/provider"]);
 });
 
@@ -436,7 +462,11 @@ test("getTokenBarDisplay returns correct non-null percentage for a verified spec
   assert.notEqual(display.percentage, null);
   assert.equal(display.isEstimatedLimit, false);
   assert.equal(display.hasKnownLimit, true);
-  assert.equal(display.usedText, "10,000", "usedText should be exact number with thousands separator");
+  assert.equal(
+    display.usedText,
+    "10,000",
+    "usedText should be exact number with thousands separator",
+  );
 });
 
 test("getTokenBarDisplay formats refreshed LM Studio context meter", () => {
@@ -686,10 +716,23 @@ test("getTokenBarDisplay with isEstimated: false uses comma format (regression g
 test("keeps the working row alongside command suggestions during a run", () => {
   const layout = createLayoutSnapshot(100, 30);
   const busy = { kind: "THINKING", turnId: 1 } as const;
-  const plainDraft = measureBottomComposerRows({ layout, uiState: busy, value: "hello", cursor: 5 });
-  const commandDraft = measureBottomComposerRows({ layout, uiState: busy, value: "/model", cursor: 6 });
+  const plainDraft = measureBottomComposerRows({
+    layout,
+    uiState: busy,
+    value: "hello",
+    cursor: 5,
+  });
+  const commandDraft = measureBottomComposerRows({
+    layout,
+    uiState: busy,
+    value: "/model",
+    cursor: 6,
+  });
 
-  assert.equal(getVisibleComposerStatusLine({ uiState: busy, value: "/model", allowCommands: true }), "✧ Ubume is working");
+  assert.equal(
+    getVisibleComposerStatusLine({ uiState: busy, value: "/model", allowCommands: true }),
+    "✧ Ubume is working",
+  );
   assert.equal(commandDraft, plainDraft + 1);
 });
 
@@ -730,7 +773,11 @@ test("memoized composer re-renders when a busy run moves from THINKING to RESPON
 
 test("memoized composer re-renders when the provider CLI becomes ready", () => {
   const prev = composerProps();
-  const next = composerProps({ layout: prev.layout, uiState: prev.uiState, externalCliStatus: "ready" });
+  const next = composerProps({
+    layout: prev.layout,
+    uiState: prev.uiState,
+    externalCliStatus: "ready",
+  });
   assert.equal(areBottomComposerPropsEqual(prev, next), false);
 });
 
@@ -740,10 +787,20 @@ test("memoized composer skips re-render for unchanged busy props", () => {
   assert.equal(areBottomComposerPropsEqual(prev, next), true);
 });
 
-for (const [providerId, label] of [["openai", "Codex CLI"], ["anthropic", "Claude Code"], ["google", "Gemini CLI"]] as const) {
+for (const [providerId, label] of [
+  ["openai", "Codex CLI"],
+  ["anthropic", "Claude Code"],
+  ["google", "Gemini CLI"],
+] as const) {
   test(`reports ${label} as waiting only until it produces output`, () => {
     const uiState = { kind: "THINKING", turnId: 1 } as const;
-    const base = { uiState, value: "", allowCommands: true, activeProviderId: providerId, runElapsedSeconds: 30 };
+    const base = {
+      uiState,
+      value: "",
+      allowCommands: true,
+      activeProviderId: providerId,
+      runElapsedSeconds: 30,
+    };
     assert.equal(
       getVisibleComposerStatusLine({ ...base, externalCliStatus: "starting" }),
       `Still waiting for ${label}  00:30`,
@@ -756,9 +813,16 @@ for (const [providerId, label] of [["openai", "Codex CLI"], ["anthropic", "Claud
 }
 
 test("stopping status stays truthful while a command draft is present", () => {
-  assert.equal(getVisibleComposerStatusLine({ uiState: { kind: "IDLE" }, value: "/model", allowCommands: true, stopping: true }), "✧ Stopping · Ctrl+C again to exit");
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "IDLE" },
+      value: "/model",
+      allowCommands: true,
+      stopping: true,
+    }),
+    "✧ Stopping · Ctrl+C again to exit",
+  );
 });
-
 
 test("memoized composer re-renders when its container width changes without a terminal resize", () => {
   const props = composerProps({ width: 120 });
@@ -770,11 +834,22 @@ test("rendered composer rows fit the supplied width including pasted content and
   const layout = createLayoutSnapshot(120, 24);
   for (const width of [20, 40, getContentWidth(layout.cols), layout.cols]) {
     const editorWidth = getComposerRowLayout(width).editorWidth;
-    const cases = ["", "hello", token + " short", token + " " + "abcdefghij".repeat(20), "x".repeat(editorWidth), "字".repeat(editorWidth), "e\u0301👩‍💻字".repeat(10)];
+    const cases = [
+      "",
+      "hello",
+      token + " short",
+      token + " " + "abcdefghij".repeat(20),
+      "x".repeat(editorWidth),
+      "字".repeat(editorWidth),
+      "e\u0301👩‍💻字".repeat(10),
+    ];
     for (const value of cases) {
       for (const cursor of [0, Math.floor(value.length / 2), value.length]) {
         const props = composerProps({ layout, width, uiState: { kind: "IDLE" }, value, cursor });
-        const frame = renderToString(React.createElement(Box, { width }, React.createElement(BottomComposer, props)), { columns: layout.cols });
+        const frame = renderToString(
+          React.createElement(Box, { width }, React.createElement(BottomComposer, props)),
+          { columns: layout.cols },
+        );
         const plain = frame.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
         const lines = plain.split("\n");
         const top = lines.findIndex((line) => line.startsWith("╭"));
@@ -785,28 +860,49 @@ test("rendered composer rows fit the supplied width including pasted content and
           assert.ok(/[│╮╯]$/.test(line), `right boundary missing: ${line}`);
         }
         assert.equal(lines[top + 1]!.startsWith("│ ❯ "), true);
-        assert.equal(bottom - top + 1 + 1, measureBottomComposerRows(props), "measurement must match prompt and metadata rows");
+        assert.equal(
+          bottom - top + 1 + 1,
+          measureBottomComposerRows(props),
+          "measurement must match prompt and metadata rows",
+        );
         if (value) {
-          const viewport = createInputViewport({ text: value, cursorOffset: cursor, width: editorWidth, maxVisibleRows: 5 });
+          const viewport = createInputViewport({
+            text: value,
+            cursorOffset: cursor,
+            width: editorWidth,
+            maxVisibleRows: 5,
+          });
           const rowIndex = viewport.cursorRow - viewport.scrollRow;
           const row = viewport.visibleRows[rowIndex]!;
           const window = createInputRowWindow(row.text, editorWidth, viewport.cursorColumn);
-          const expected = ((rowIndex === 0 ? "│ ❯ " : "│   ") + window.before + window.current + window.after)
-            .replace(/[\u2063\uFE00-\uFE09]/g, "");
-          assert.ok(lines[top + 1 + rowIndex]!.startsWith(expected), JSON.stringify({ expected, actual: lines[top + 1 + rowIndex] }));
+          const expected = (
+            (rowIndex === 0 ? "│ ❯ " : "│   ") +
+            window.before +
+            window.current +
+            window.after
+          ).replace(/[\u2063\uFE00-\uFE09]/g, "");
+          assert.ok(
+            lines[top + 1 + rowIndex]!.startsWith(expected),
+            JSON.stringify({ expected, actual: lines[top + 1 + rowIndex] }),
+          );
         }
       }
     }
   }
 });
 
-
 test("focused input retains pasted tokens, typed text and submission through terminal resize", async () => {
   class Input extends PassThrough {
     isTTY = true;
-    setRawMode() { return this; }
-    ref() { return this; }
-    unref() { return this; }
+    setRawMode() {
+      return this;
+    }
+    ref() {
+      return this;
+    }
+    unref() {
+      return this;
+    }
   }
   class Output extends PassThrough {
     isTTY = true;
@@ -816,29 +912,41 @@ test("focused input retains pasted tokens, typed text and submission through ter
   const stdin = new Input();
   const stdout = new Output();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString() + "\n"; });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString() + "\n";
+  });
   const token = createAtomicContentToken("[Pasted Content 22,703 chars]");
   let draft = token + " ";
   let submitted = "";
   function Editor({ width }: { width: number }) {
     const [value, setValue] = React.useState(draft);
     const [cursor, setCursor] = React.useState(draft.length);
-    return React.createElement(BottomComposer, composerProps({
-      layout: createLayoutSnapshot(stdout.columns, stdout.rows), width,
-      uiState: { kind: "IDLE" }, value, cursor,
-      onChangeInput: (nextValue, nextCursor) => {
-        draft = nextValue;
-        setValue(nextValue);
-        setCursor(nextCursor);
-      },
-      onSubmit: () => { submitted = value; },
-    }));
+    return React.createElement(
+      BottomComposer,
+      composerProps({
+        layout: createLayoutSnapshot(stdout.columns, stdout.rows),
+        width,
+        uiState: { kind: "IDLE" },
+        value,
+        cursor,
+        onChangeInput: (nextValue, nextCursor) => {
+          draft = nextValue;
+          setValue(nextValue);
+          setCursor(nextCursor);
+        },
+        onSubmit: () => {
+          submitted = value;
+        },
+      }),
+    );
   }
   const instance = render(React.createElement(Editor, { width: stdout.columns }), {
     stdin: stdin as unknown as NodeJS.ReadStream,
     stdout: stdout as unknown as NodeJS.WriteStream,
     stderr: stdout as unknown as NodeJS.WriteStream,
-    debug: true, patchConsole: false, exitOnCtrlC: false,
+    debug: true,
+    patchConsole: false,
+    exitOnCtrlC: false,
   });
   try {
     await instance.waitUntilRenderFlush();
@@ -857,8 +965,14 @@ test("focused input retains pasted tokens, typed text and submission through ter
       const bottom = lines.findIndex((line, index) => index > top && line.startsWith("╰"));
       assert.ok(top >= 0 && bottom > top);
       for (const line of lines.slice(top, bottom + 1)) assert.equal(getTextWidth(line), columns);
-      assert.ok(draft.startsWith(token), "display filtering must preserve the token's invisible ID");
-      assert.ok(lines.slice(top, bottom).some((line) => line.includes("xyz")), JSON.stringify({ columns, draft, frame: lines.slice(top, bottom + 1) }));
+      assert.ok(
+        draft.startsWith(token),
+        "display filtering must preserve the token's invisible ID",
+      );
+      assert.ok(
+        lines.slice(top, bottom).some((line) => line.includes("xyz")),
+        JSON.stringify({ columns, draft, frame: lines.slice(top, bottom + 1) }),
+      );
     }
     assert.equal(draft, token + " " + "xyz".repeat(5));
     stdin.write("\r");

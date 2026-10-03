@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import * as renderDebug from "../perf/renderDebug.js";
-import { resetInkOutputForFreshFrame, type InkRenderInstance } from "./inkRenderReset.js";
+import { type InkRenderInstance, resetInkOutputForFreshFrame } from "./inkRenderReset.js";
 import { traceTerminalClear } from "./terminalControl.js";
 
 interface ClearBoundaryStdoutLike {
@@ -151,7 +151,10 @@ const WIDTH_REPAINT_MAX_SUPPRESSED_FRAMES = 8;
 let frameHashCount = 0;
 let markerScanCount = 0;
 
-export function __getClearFrameBoundaryTraceStatsForTests(): { frameHashCount: number; markerScanCount: number } {
+export function __getClearFrameBoundaryTraceStatsForTests(): {
+  frameHashCount: number;
+  markerScanCount: number;
+} {
   return { frameHashCount, markerScanCount };
 }
 
@@ -316,7 +319,9 @@ function wrapInkLogForTrace(
     return result;
   };
 
-  wrapped.willRender = original.willRender ? (output: string) => original.willRender?.(output) : undefined;
+  wrapped.willRender = original.willRender
+    ? (output: string) => original.willRender?.(output)
+    : undefined;
   wrapped.isCursorDirty = original.isCursorDirty ? () => original.isCursorDirty?.() : undefined;
 
   instance.log = wrapped as unknown as { reset?: () => void };
@@ -448,7 +453,11 @@ export function createClearFrameBoundaryController({
     instance.fullStaticOutput = staticOutput;
   };
 
-  instance.renderInteractiveFrame = (output: string, outputHeight: number, staticOutput: string) => {
+  instance.renderInteractiveFrame = (
+    output: string,
+    outputHeight: number,
+    staticOutput: string,
+  ) => {
     const currentCols = stdout.columns;
     const currentRows = stdout.rows;
     const widthChanged = previousCols !== currentCols;
@@ -597,8 +606,7 @@ export function createClearFrameBoundaryController({
       // width (the viewport hook commits dimensions on a trailing settle),
       // then request the <Static> re-flush exactly once.
       const renderedLayoutCols = getRenderedLayoutCols?.();
-      const layoutReady = getRenderedLayoutCols === undefined
-        || renderedLayoutCols === currentCols;
+      const layoutReady = getRenderedLayoutCols === undefined || renderedLayoutCols === currentCols;
       if (!widthRepaintReflushRequested) {
         if (layoutReady && widthRepaintSuppressedFrames <= WIDTH_REPAINT_MAX_SUPPRESSED_FRAMES) {
           widthRepaintReflushRequested = true;
@@ -622,11 +630,11 @@ export function createClearFrameBoundaryController({
 
       // Phase 2: commit the first frame that carries the re-flushed static
       // content from the post-bump render.
-      const repaintGenerationRendered = widthRepaintTargetGeneration === null
-        || (getRenderedRepaintGeneration?.() ?? 0) >= widthRepaintTargetGeneration;
-      const repaintFrameReady = staticOutput !== ""
-        && repaintGenerationRendered
-        && widthRepaintReflushRequested;
+      const repaintGenerationRendered =
+        widthRepaintTargetGeneration === null ||
+        (getRenderedRepaintGeneration?.() ?? 0) >= widthRepaintTargetGeneration;
+      const repaintFrameReady =
+        staticOutput !== "" && repaintGenerationRendered && widthRepaintReflushRequested;
       if (repaintFrameReady) {
         widthRepaintPending = false;
         widthRepaintTargetGeneration = null;
@@ -667,10 +675,13 @@ export function createClearFrameBoundaryController({
 
     const frameClassification = isFirstPostClearCommit
       ? "post-clear"
-      : (clearPending ? "pre-clear" : "normal");
-    const effectiveStaticOutput = isFirstPostClearCommit && !staticOutput && suppressedPostClearStaticOutput
-      ? suppressedPostClearStaticOutput
-      : staticOutput;
+      : clearPending
+        ? "pre-clear"
+        : "normal";
+    const effectiveStaticOutput =
+      isFirstPostClearCommit && !staticOutput && suppressedPostClearStaticOutput
+        ? suppressedPostClearStaticOutput
+        : staticOutput;
     // Trace-only: the frame text includes Ink's whole accumulated transcript,
     // so hashing and scanning it is O(session length). Only pay for it while a
     // trace channel is recording; the boundary's decisions never read it.
@@ -689,31 +700,32 @@ export function createClearFrameBoundaryController({
     const clearGenerationUsed = isFirstPostClearCommit ? pendingGeneration : committedGeneration;
     const before = snapshotFrameState(instance, logShadow);
 
-    if (traceEnabled) renderDebug.traceEvent("terminal", "clearBoundaryFrame", {
-      clearPending,
-      pendingGeneration,
-      committedGeneration,
-      renderGeneration,
-      transcriptCleared,
-      staticEventsLength,
-      activeEventsLength,
-      uiStateKind,
-      frameClassification,
-      isPostClearFrame: postClearReady,
-      staleFrameSuppressed,
-      frameWriteAllowed: !staleFrameSuppressed,
-      widthChanged,
-      currentCols,
-      currentRows,
-      clearGenerationUsed,
-      frameLength,
-      frameHash,
-      ...markerCounts,
-      ...before,
-      previousLineCountBefore: before.logPreviousLineCount,
-      lastOutputHeightBefore: before.lastOutputHeight,
-      physicalClearImmediatelyBeforeFrame: isFirstPostClearCommit,
-    });
+    if (traceEnabled)
+      renderDebug.traceEvent("terminal", "clearBoundaryFrame", {
+        clearPending,
+        pendingGeneration,
+        committedGeneration,
+        renderGeneration,
+        transcriptCleared,
+        staticEventsLength,
+        activeEventsLength,
+        uiStateKind,
+        frameClassification,
+        isPostClearFrame: postClearReady,
+        staleFrameSuppressed,
+        frameWriteAllowed: !staleFrameSuppressed,
+        widthChanged,
+        currentCols,
+        currentRows,
+        clearGenerationUsed,
+        frameLength,
+        frameHash,
+        ...markerCounts,
+        ...before,
+        previousLineCountBefore: before.logPreviousLineCount,
+        lastOutputHeightBefore: before.lastOutputHeight,
+        physicalClearImmediatelyBeforeFrame: isFirstPostClearCommit,
+      });
 
     if (staleFrameSuppressed) {
       if (staticOutput) {
@@ -723,7 +735,13 @@ export function createClearFrameBoundaryController({
     }
 
     if (isFirstPostClearCommit) {
-      commitAuthoritativeFrame(output, outputHeight, effectiveStaticOutput, "transcript", "firstPostClearFrame");
+      commitAuthoritativeFrame(
+        output,
+        outputHeight,
+        effectiveStaticOutput,
+        "transcript",
+        "firstPostClearFrame",
+      );
       renderDebug.traceEvent("terminal", "clearBoundaryCommit", {
         clearGeneration: pendingGeneration,
         physicalTerminalClearEmitted: true,
@@ -736,39 +754,43 @@ export function createClearFrameBoundaryController({
     }
 
     const after = snapshotFrameState(instance, logShadow);
-    if (traceEnabled) renderDebug.traceEvent("terminal", "clearBoundaryFrameCommitted", {
-      clearPending,
-      pendingGeneration,
-      committedGeneration,
-      renderGeneration,
-      transcriptCleared,
-      frameClassification: isFirstPostClearCommit ? "post-clear-authoritative" : frameClassification,
-      frameLength,
-      frameHash,
-      ...markerCounts,
-      ...after,
-      diffedFrame: !isFirstPostClearCommit,
-      fullAuthoritativeFrame: isFirstPostClearCommit,
-      widthChanged,
-      currentCols,
-      currentRows,
-      clearGenerationUsed,
-      previousLineCountAfter: after.logPreviousLineCount,
-      lastOutputHeightAfter: after.lastOutputHeight,
-      physicalClearImmediatelyBeforeFrame: isFirstPostClearCommit,
-    });
+    if (traceEnabled)
+      renderDebug.traceEvent("terminal", "clearBoundaryFrameCommitted", {
+        clearPending,
+        pendingGeneration,
+        committedGeneration,
+        renderGeneration,
+        transcriptCleared,
+        frameClassification: isFirstPostClearCommit
+          ? "post-clear-authoritative"
+          : frameClassification,
+        frameLength,
+        frameHash,
+        ...markerCounts,
+        ...after,
+        diffedFrame: !isFirstPostClearCommit,
+        fullAuthoritativeFrame: isFirstPostClearCommit,
+        widthChanged,
+        currentCols,
+        currentRows,
+        clearGenerationUsed,
+        previousLineCountAfter: after.logPreviousLineCount,
+        lastOutputHeightAfter: after.lastOutputHeight,
+        physicalClearImmediatelyBeforeFrame: isFirstPostClearCommit,
+      });
 
     if (isFirstPostClearCommit) {
       committedGeneration = pendingGeneration;
       clearPending = false;
       pendingGeneration = null;
       suppressedPostClearStaticOutput = "";
-      if (traceEnabled) renderDebug.traceEvent("terminal", "firstCommittedPostClearFrame", {
-        committedGeneration,
-        frameHash,
-        firstFrameAuthoritative: true,
-        ...markerCounts,
-      });
+      if (traceEnabled)
+        renderDebug.traceEvent("terminal", "firstCommittedPostClearFrame", {
+          committedGeneration,
+          frameHash,
+          firstFrameAuthoritative: true,
+          ...markerCounts,
+        });
     }
   };
 

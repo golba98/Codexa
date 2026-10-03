@@ -82,7 +82,10 @@ function trimToWidthFromStart(text: string, maxWidth: number): string {
 
 // ─── Input window ────────────────────────────────────────────────────────────
 
-export function flattenInputForDisplay(text: string, cursor: number): { text: string; cursor: number } {
+export function flattenInputForDisplay(
+  text: string,
+  cursor: number,
+): { text: string; cursor: number } {
   const normalized = normalizeLineBreaks(text);
   const units = getTextUnits(normalized);
   let output = "";
@@ -111,7 +114,11 @@ export function flattenInputForDisplay(text: string, cursor: number): { text: st
   return { text: output, cursor: mappedCursor };
 }
 
-export function createInlineInputWindow(text: string, cursor: number, maxWidth: number): WindowSlice {
+export function createInlineInputWindow(
+  text: string,
+  cursor: number,
+  maxWidth: number,
+): WindowSlice {
   const safeWidth = Math.max(1, maxWidth);
   const flattened = flattenInputForDisplay(text, cursor);
   const units = getTextUnits(flattened.text);
@@ -136,7 +143,10 @@ export function createInlineInputWindow(text: string, cursor: number, maxWidth: 
   const windowEnd = windowStart + safeWidth;
 
   let startIndex = 0;
-  while (startIndex < units.length && charStartWidths[startIndex]! + units[startIndex]!.width <= windowStart) {
+  while (
+    startIndex < units.length &&
+    charStartWidths[startIndex]! + units[startIndex]!.width <= windowStart
+  ) {
     startIndex += 1;
   }
 
@@ -145,21 +155,33 @@ export function createInlineInputWindow(text: string, cursor: number, maxWidth: 
     endIndex += 1;
   }
 
-  let visibleText = units.slice(startIndex, endIndex).map((unit) => unit.text).join("");
+  let visibleText = units
+    .slice(startIndex, endIndex)
+    .map((unit) => unit.text)
+    .join("");
   let cursorColumn = Math.max(0, cursorWidth - (charStartWidths[startIndex] ?? 0));
   const truncatedLeft = startIndex > 0;
   const truncatedRight = endIndex < units.length;
 
   if (truncatedLeft) {
     const ellipsis = "…";
-    const available = Math.max(1, safeWidth - getCharWidth(ellipsis) - (truncatedRight ? getCharWidth(ellipsis) : 0));
+    const available = Math.max(
+      1,
+      safeWidth - getCharWidth(ellipsis) - (truncatedRight ? getCharWidth(ellipsis) : 0),
+    );
     visibleText = ellipsis + trimToWidthFromEnd(visibleText, available);
-    cursorColumn = Math.min(getTextWidth(visibleText), Math.max(getCharWidth(ellipsis), cursorColumn + getCharWidth(ellipsis)));
+    cursorColumn = Math.min(
+      getTextWidth(visibleText),
+      Math.max(getCharWidth(ellipsis), cursorColumn + getCharWidth(ellipsis)),
+    );
   }
 
   if (truncatedRight) {
     const ellipsis = "…";
-    const available = Math.max(1, safeWidth - (truncatedLeft ? getCharWidth(ellipsis) : 0) - getCharWidth(ellipsis));
+    const available = Math.max(
+      1,
+      safeWidth - (truncatedLeft ? getCharWidth(ellipsis) : 0) - getCharWidth(ellipsis),
+    );
     const baseText = truncatedLeft ? visibleText.slice(1) : visibleText;
     visibleText = `${truncatedLeft ? "…" : ""}${trimToWidthFromStart(baseText, available)}${ellipsis}`;
   }
@@ -170,7 +192,10 @@ export function createInlineInputWindow(text: string, cursor: number, maxWidth: 
   };
 }
 
-export function splitTextAtColumn(text: string, column: number): { before: string; current: string; after: string } {
+export function splitTextAtColumn(
+  text: string,
+  column: number,
+): { before: string; current: string; after: string } {
   const safeColumn = Math.max(0, column);
   let width = 0;
   const units = getTextUnits(text);
@@ -211,7 +236,8 @@ export function wrapTextRows(
   let skippingSoftWhitespace = false;
 
   const unitsText = (units: TextUnit[]) => units.map((unit) => unit.text).join("");
-  const unitsWidth = (units: TextUnit[]) => units.reduce((total, current) => total + current.width, 0);
+  const unitsWidth = (units: TextUnit[]) =>
+    units.reduce((total, current) => total + current.width, 0);
   const pushRow = (units: TextUnit[], end: number, breakType: WrappedTextRow["breakType"]) => {
     rows.push({
       text: unitsText(units),
@@ -220,7 +246,9 @@ export function wrapTextRows(
       breakType,
     });
   };
-  const findWordBoundary = (units: TextUnit[]): { breakStart: number; continuationStart: number } | null => {
+  const findWordBoundary = (
+    units: TextUnit[],
+  ): { breakStart: number; continuationStart: number } | null => {
     for (let index = units.length - 2; index >= 0; index -= 1) {
       if (!/^[ \t]$/.test(units[index]!.text)) continue;
 
@@ -293,12 +321,16 @@ export function wrapTextRows(
     });
   }
 
-  return rows.length > 0 ? rows : [{
-    text: "",
-    start: 0,
-    end: 0,
-    breakType: "end",
-  }];
+  return rows.length > 0
+    ? rows
+    : [
+        {
+          text: "",
+          start: 0,
+          end: 0,
+          breakType: "end",
+        },
+      ];
 }
 
 export function wrapPlainText(
@@ -315,23 +347,23 @@ export function wrapCommandText(text: string, maxWidth: number): string[] {
   const rows: string[] = [];
   let currentLine = "";
   let currentWidth = 0;
-  
+
   // Split on whitespace, but keep the whitespace tokens
   const tokens = normalized.split(/([ \t]+)/);
-  
+
   for (let i = 0; i < tokens.length; i++) {
     let token = tokens[i];
     if (!token) continue;
-    
+
     if (token === "\n") {
       rows.push(currentLine);
       currentLine = "  ";
       currentWidth = 2;
       continue;
     }
-    
+
     let tokenWidth = getTextWidth(token);
-    
+
     // Skip leading whitespace on continuation lines
     if (/^[ \t]+$/.test(token) && currentLine === "  ") {
       continue;
@@ -345,47 +377,46 @@ export function wrapCommandText(text: string, maxWidth: number): string[] {
         currentWidth = 2;
         continue;
       }
-      
+
       if (currentWidth > 2) {
         // We have some content on this line, push it and start a new line
         rows.push(currentLine);
         currentLine = "  ";
         currentWidth = 2;
       }
-      
+
       // Now check if the token alone exceeds the available width (maxWidth - 2)
       while (tokenWidth > maxWidth - currentWidth) {
         const available = maxWidth - currentWidth;
         const split = splitTextAtColumn(token, available);
-        
+
         currentLine += split.before;
         rows.push(currentLine);
-        
+
         token = split.current + split.after;
         tokenWidth = getTextWidth(token);
         currentLine = "  ";
         currentWidth = 2;
       }
-      
+
       currentLine += token;
       currentWidth += tokenWidth;
-      
     } else {
       currentLine += token;
       currentWidth += tokenWidth;
     }
   }
-  
+
   if (currentLine.trim().length > 0 || currentLine === "  ") {
     // only push if there is actual content, or if it is an intentionally empty line (rare)
     if (currentLine !== "  ") {
-       rows.push(currentLine);
+      rows.push(currentLine);
     }
   }
-  
+
   if (rows.length > 0 && rows[0].startsWith("  ") && !text.startsWith("  ")) {
     rows[0] = rows[0].substring(2);
   }
-  
+
   return rows;
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatHollowResponse } from "./hollowResponseFormat.js";
 import type { HollowResponseResult } from "../codex/codexPrompt.js";
+import { formatHollowResponse } from "./hollowResponseFormat.js";
 
 function makeResult(kind: HollowResponseResult["kind"], reason = ""): HollowResponseResult {
   return { isHollow: true, kind, reason };

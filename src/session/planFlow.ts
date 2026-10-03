@@ -17,23 +17,23 @@ interface PlanFlowContext {
 export type PlanFlowState =
   | { kind: "idle" }
   | (PlanFlowContext & {
-    kind: "generating";
-    currentPlan: string | null;
-    pendingFeedback: PlanFeedbackRequest | null;
-  })
+      kind: "generating";
+      currentPlan: string | null;
+      pendingFeedback: PlanFeedbackRequest | null;
+    })
   | (PlanFlowContext & {
-    kind: "awaiting_action";
-    currentPlan: string;
-  })
+      kind: "awaiting_action";
+      currentPlan: string;
+    })
   | (PlanFlowContext & {
-    kind: "collecting_feedback";
-    currentPlan: string;
-    mode: PlanFeedbackMode;
-  })
+      kind: "collecting_feedback";
+      currentPlan: string;
+      mode: PlanFeedbackMode;
+    })
   | (PlanFlowContext & {
-    kind: "executing";
-    currentPlan: string;
-  });
+      kind: "executing";
+      currentPlan: string;
+    });
 
 export type PlanGeneratingState = Extract<PlanFlowState, { kind: "generating" }>;
 export type PlanAwaitingActionState = Extract<PlanFlowState, { kind: "awaiting_action" }>;
@@ -54,7 +54,10 @@ export function resolvePlanExecutionMode(mode: AvailableMode): AvailableMode {
   return mode === "suggest" ? "auto-edit" : mode;
 }
 
-export function startPlanGeneration(originalPrompt: string, executionMode: AvailableMode): PlanGeneratingState {
+export function startPlanGeneration(
+  originalPrompt: string,
+  executionMode: AvailableMode,
+): PlanGeneratingState {
   return {
     kind: "generating",
     originalPrompt,
@@ -106,9 +109,8 @@ export function submitPlanFeedback(state: PlanFlowState, text: string): PlanFlow
     return state;
   }
 
-  const nextConstraints = state.mode === "constraints"
-    ? [...state.constraints, text]
-    : state.constraints;
+  const nextConstraints =
+    state.mode === "constraints" ? [...state.constraints, text] : state.constraints;
 
   return {
     kind: "generating",

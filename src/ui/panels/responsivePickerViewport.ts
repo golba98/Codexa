@@ -37,9 +37,8 @@ export function calculateResponsivePickerViewport({
   const rows = Math.max(0, safeInteger(availableRows));
   const chrome = Math.max(0, safeInteger(chromeRows));
   const capacity = count === 0 ? 0 : Math.max(1, rows - chrome);
-  const clampedSelection = count === 0
-    ? 0
-    : Math.max(0, Math.min(count - 1, safeInteger(selectedIndex)));
+  const clampedSelection =
+    count === 0 ? 0 : Math.max(0, Math.min(count - 1, safeInteger(selectedIndex)));
   const maxStart = Math.max(0, count - capacity);
   let start = Math.max(0, Math.min(maxStart, safeInteger(scrollOffset)));
 

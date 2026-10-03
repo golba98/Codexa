@@ -378,8 +378,16 @@ test("context is resolved from nested raw.loaded_context_length when ProviderMod
     rawMetadata: providerModelShaped,
   });
 
-  assert.equal(metadata.contextLength, 64000, "should resolve loaded_context_length from nested raw field");
-  assert.equal(metadata.source, "lmstudio-api", "nested loaded_context_length should use lmstudio-api source");
+  assert.equal(
+    metadata.contextLength,
+    64000,
+    "should resolve loaded_context_length from nested raw field",
+  );
+  assert.equal(
+    metadata.source,
+    "lmstudio-api",
+    "nested loaded_context_length should use lmstudio-api source",
+  );
 });
 
 // ─── OpenAI/Codex model ID normalisation ─────────────────────────────────────
@@ -459,7 +467,10 @@ test("contextMetadataToModelSpec with confidence 'known' leaves isEstimated fals
   });
   const spec = contextMetadataToModelSpec(metadata);
   assert.equal(spec.status, "verified");
-  assert.ok(!(spec as { isEstimated?: boolean }).isEstimated, "known confidence must not set isEstimated");
+  assert.ok(
+    !(spec as { isEstimated?: boolean }).isEstimated,
+    "known confidence must not set isEstimated",
+  );
 });
 
 // ─── formatContextCompact ─────────────────────────────────────────────────────

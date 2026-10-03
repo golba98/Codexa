@@ -3,12 +3,14 @@ import test from "node:test";
 import { formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 
 test("terminal answer formatting collapses local markdown links and Windows paths", () => {
-  const formatted = formatTerminalAnswerInline([
-    "- [`src/App.tsx`](C:/Users/Example/Projects/Project/src/App.tsx#L22)",
-    "- [README.md](file:///C:/Users/Example/Projects/Project/README.md)",
-    "- C:\\Users\\Example\\Projects\\Project\\docs\\proof.md#L26",
-    "- [OpenAI](https://platform.openai.com/docs)",
-  ].join("\n"));
+  const formatted = formatTerminalAnswerInline(
+    [
+      "- [`src/App.tsx`](C:/Users/Example/Projects/Project/src/App.tsx#L22)",
+      "- [README.md](file:///C:/Users/Example/Projects/Project/README.md)",
+      "- C:\\Users\\Example\\Projects\\Project\\docs\\proof.md#L26",
+      "- [OpenAI](https://platform.openai.com/docs)",
+    ].join("\n"),
+  );
 
   assert.match(formatted, /src\/App\.tsx:22/);
   assert.match(formatted, /README\.md/);

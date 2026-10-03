@@ -41,7 +41,7 @@ export function openReadonlyDatabase(path: string): ReadonlyDatabase | null {
 export function tableColumns(database: ReadonlyDatabase, table: string): Set<string> {
   try {
     const rows = database.query(`PRAGMA table_info(${table})`).all() as { name?: unknown }[];
-    return new Set(rows.flatMap((row) => typeof row.name === "string" ? [row.name] : []));
+    return new Set(rows.flatMap((row) => (typeof row.name === "string" ? [row.name] : [])));
   } catch {
     return new Set();
   }

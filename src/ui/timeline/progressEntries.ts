@@ -1,5 +1,5 @@
-import type { RunProgressBlock, RunProgressEntry, RunProgressSource } from "../../session/types.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
+import type { RunProgressBlock, RunProgressEntry, RunProgressSource } from "../../session/types.js";
 import { wrapPlainText } from "../render/textLayout.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -49,15 +49,21 @@ function sourceLabel(source: RunProgressSource): string {
 }
 
 function firstMeaningfulLine(text: string): string {
-  return sanitizeTerminalOutput(text)
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .split("\n")
-    .map((line) => line.trim())
-    .find(Boolean) ?? "";
+  return (
+    sanitizeTerminalOutput(text)
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .split("\n")
+      .map((line) => line.trim())
+      .find(Boolean) ?? ""
+  );
 }
 
-function buildProgressHeadline(source: RunProgressSource, text: string, status: RunProgressBlock["status"]): string {
+function buildProgressHeadline(
+  source: RunProgressSource,
+  text: string,
+  status: RunProgressBlock["status"],
+): string {
   const label = status === "active" ? "Current" : sourceLabel(source);
   const firstLine = firstMeaningfulLine(text);
   return firstLine ? `${label}: ${firstLine}` : label;
@@ -98,10 +104,15 @@ export function getProgressUpdateCount(entries: RunProgressEntry[]): number {
   return toVisibleProgressBlocks(entries).length;
 }
 
-export function selectVisibleProgressBlocks(entries: RunProgressEntry[], maxVisible: number): VisibleProgressBlocks {
+export function selectVisibleProgressBlocks(
+  entries: RunProgressEntry[],
+  maxVisible: number,
+): VisibleProgressBlocks {
   const blocks = toVisibleProgressBlocks(entries);
   const safeMax = Math.max(0, maxVisible);
-  const findLatestActiveBlock = (candidates: VisibleProgressBlock[]): VisibleProgressBlock | null => {
+  const findLatestActiveBlock = (
+    candidates: VisibleProgressBlock[],
+  ): VisibleProgressBlock | null => {
     for (let index = candidates.length - 1; index >= 0; index -= 1) {
       if (candidates[index]?.isActive) {
         return candidates[index]!;

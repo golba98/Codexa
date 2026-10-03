@@ -25,9 +25,12 @@ test("detects DeepSeek family across local model naming variants", () => {
 });
 
 test("detects DeepSeek family from server metadata names", () => {
-  assert.equal(detectLocalModelFamily("opaque-local-id", {
-    model_info: { display_name: "DeepSeek_R1 Distill Qwen" },
-  }), "deepseek");
+  assert.equal(
+    detectLocalModelFamily("opaque-local-id", {
+      model_info: { display_name: "DeepSeek_R1 Distill Qwen" },
+    }),
+    "deepseek",
+  );
 });
 
 test("DeepSeek family defaults fill only missing capability fields", () => {
@@ -49,7 +52,11 @@ test("DeepSeek family defaults fill only missing capability fields", () => {
 
   assert.equal(profile.family, "deepseek");
   assert.equal(profile.supportsStreaming, false, "authoritative API metadata wins");
-  assert.equal(profile.supportsToolCalls, false, "config fills a missing API field before family defaults");
+  assert.equal(
+    profile.supportsToolCalls,
+    false,
+    "config fills a missing API field before family defaults",
+  );
   assert.equal(profile.supportsSystemPrompt, false);
   assert.equal(profile.maxOutputTokens, 4096);
   assert.equal(profile.source, "api");

@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
+import test from "node:test";
 import { render } from "ink";
-import type { CodexAuthState } from "../../core/auth/codexAuth.js";
 import { buildRuntimeSummary } from "../../config/runtimeConfig.js";
+import type { HeaderConfig } from "../../config/settings.js";
+import {
+  APP_VERSION,
+  formatWorkspaceDisplayPath,
+  HEADER_CONFIG_DEFAULTS,
+} from "../../config/settings.js";
+import type { CodexAuthState } from "../../core/auth/codexAuth.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
 import { createLayoutSnapshot } from "../layout.js";
+import { LOGO_LARGE, LOGO_LARGE_MIN_COLS, LOGO_MEDIUM } from "../render/logoVariants.js";
 import { ThemeProvider } from "../theme.js";
 import {
   getHeaderHeroLayout,
@@ -17,9 +23,6 @@ import {
   TopHeader,
   type UpdateAvailableInfo,
 } from "./TopHeader.js";
-import { LOGO_LARGE, LOGO_MEDIUM, LOGO_MEDIUM_MIN_COLS, LOGO_LARGE_MIN_COLS } from "../render/logoVariants.js";
-import { APP_VERSION, formatWorkspaceDisplayPath, HEADER_CONFIG_DEFAULTS } from "../../config/settings.js";
-import type { HeaderConfig } from "../../config/settings.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -70,8 +73,17 @@ const MOCK_UPDATE: UpdateAvailableInfo = {
   currentVersion: "1.0.2",
 };
 
-async function renderHeader(cols: number, authState: CodexAuthState, headerConfig?: HeaderConfig): Promise<string> {
-  return renderHeaderWithWorkspace(cols, authState, "C:\\Development\\1-JavaScript\\13-Custom CLI", headerConfig);
+async function renderHeader(
+  cols: number,
+  authState: CodexAuthState,
+  headerConfig?: HeaderConfig,
+): Promise<string> {
+  return renderHeaderWithWorkspace(
+    cols,
+    authState,
+    "C:\\Development\\1-JavaScript\\13-Custom CLI",
+    headerConfig,
+  );
 }
 
 async function renderHeaderWithWorkspace(
@@ -118,8 +130,17 @@ async function renderHeaderWithWorkspace(
   return stripAnsi(output);
 }
 
-async function renderHeaderWithUpdate(cols: number, updateAvailable: UpdateAvailableInfo | null): Promise<string> {
-  return renderHeaderWithWorkspace(cols, "authenticated", "C:\\Development\\1-JavaScript\\13-Custom CLI", HEADER_CONFIG_WITH_AUTH, updateAvailable);
+async function renderHeaderWithUpdate(
+  cols: number,
+  updateAvailable: UpdateAvailableInfo | null,
+): Promise<string> {
+  return renderHeaderWithWorkspace(
+    cols,
+    "authenticated",
+    "C:\\Development\\1-JavaScript\\13-Custom CLI",
+    HEADER_CONFIG_WITH_AUTH,
+    updateAvailable,
+  );
 }
 
 test("full mode renders wordmark at wide terminal", async () => {
@@ -147,7 +168,10 @@ test("local-dev channel makes header version obvious", async () => {
   process.env.UBUME_CHANNEL = "local-dev";
   try {
     const output = await renderHeader(130, "authenticated", HEADER_CONFIG_WITH_AUTH);
-    assert.match(output, new RegExp(`Ubume v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-dev local`));
+    assert.match(
+      output,
+      new RegExp(`Ubume v${APP_VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-dev local`),
+    );
   } finally {
     if (previous === undefined) {
       delete process.env.UBUME_CHANNEL;
@@ -165,9 +189,15 @@ test("wide header centers metadata beside the logo with a clear column gap", asy
   const workspaceRow = rows.findIndex((row) => row.includes("Workspace:"));
 
   assert.ok(firstLogoRow >= 0, "logo should render");
-  assert.ok(brandRow >= firstLogoRow && brandRow <= firstLogoRow + 2, "metadata should be vertically centered within the logo block");
+  assert.ok(
+    brandRow >= firstLogoRow && brandRow <= firstLogoRow + 2,
+    "metadata should be vertically centered within the logo block",
+  );
   assert.equal(workspaceRow, brandRow + 2, "workspace should sit below auth in the metadata block");
-  assert.ok((rows[brandRow]?.indexOf(`Ubume v${APP_VERSION}`) ?? -1) >= 49, "metadata should have a visible left gap from the logo");
+  assert.ok(
+    (rows[brandRow]?.indexOf(`Ubume v${APP_VERSION}`) ?? -1) >= 49,
+    "metadata should have a visible left gap from the logo",
+  );
 });
 
 test("version and workspace metadata rows have a visible gap between them", async () => {
@@ -182,7 +212,11 @@ test("version and workspace metadata rows have a visible gap between them", asyn
 
   assert.ok(brandRow >= 0, "brand line should render");
   assert.ok(workspaceRow > brandRow + 1, "workspace should not be immediately adjacent to version");
-  assert.equal(workspaceRow, brandRow + 2, "workspace is exactly 2 rows below brand — 1 blank gap row separates them");
+  assert.equal(
+    workspaceRow,
+    brandRow + 2,
+    "workspace is exactly 2 rows below brand — 1 blank gap row separates them",
+  );
 });
 
 test("normal header keeps metadata beside the canonical logo with compact truncation", async () => {
@@ -199,10 +233,20 @@ test("normal header keeps metadata beside the canonical logo with compact trunca
 
   assert.equal(getHeaderHeroLayout(createLayoutSnapshot(100, 40)).mode, "medium");
   assert.ok(firstLogoRow >= 0, "logo should render");
-  assert.ok(brandRow >= firstLogoRow && brandRow <= firstLogoRow + 2, "metadata should stay beside the logo");
+  assert.ok(
+    brandRow >= firstLogoRow && brandRow <= firstLogoRow + 2,
+    "metadata should stay beside the logo",
+  );
   assert.match(workspaceRow, /Workspace:\s*…\\workspace/);
-  assert.doesNotMatch(output, /____|\/ ___\||\|_\|/, "thin ASCII logo must not render in the header");
-  assert.ok((rows[brandRow]?.indexOf(`Ubume v${APP_VERSION}`) ?? -1) >= 47, "normal metadata should retain a compact gap from the canonical logo");
+  assert.doesNotMatch(
+    output,
+    /____|\/ ___\||\|_\|/,
+    "thin ASCII logo must not render in the header",
+  );
+  assert.ok(
+    (rows[brandRow]?.indexOf(`Ubume v${APP_VERSION}`) ?? -1) >= 47,
+    "normal metadata should retain a compact gap from the canonical logo",
+  );
 });
 
 test("compact header uses text-only identity instead of logo art", async () => {
@@ -333,8 +377,14 @@ test("header layout changes when width changes without duplicating the component
   const firstLogoRow = rows.findIndex((row) => row.includes("██╗"));
   const firstBrandRow = rows.findIndex((row) => row.includes(`Ubume v${APP_VERSION}`));
 
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(100, 40), HEADER_CONFIG_WITH_AUTH).mode, "medium");
-  assert.ok(firstBrandRow >= firstLogoRow, "rerendered medium header should show metadata beside or aligned with logo");
+  assert.equal(
+    getHeaderHeroLayout(createLayoutSnapshot(100, 40), HEADER_CONFIG_WITH_AUTH).mode,
+    "medium",
+  );
+  assert.ok(
+    firstBrandRow >= firstLogoRow,
+    "rerendered medium header should show metadata beside or aligned with logo",
+  );
   assert.ok(brandRows.length <= 2, "rerender should not duplicate unbounded header instances");
 });
 
@@ -384,7 +434,10 @@ test("140 cols selects wide mode", () => {
 
 test("LOGO_LARGE rows never exceed the minimum columns needed to render them", () => {
   for (const row of LOGO_LARGE) {
-    assert.ok(row.length <= LOGO_LARGE_MIN_COLS + 4, `LOGO_LARGE row is unexpectedly wide: "${row}"`);
+    assert.ok(
+      row.length <= LOGO_LARGE_MIN_COLS + 4,
+      `LOGO_LARGE row is unexpectedly wide: "${row}"`,
+    );
   }
 });
 
@@ -393,7 +446,11 @@ test("LOGO_LARGE rows never exceed the minimum columns needed to render them", (
 test("100x21 keeps a normal logo header instead of collapsing to compact", () => {
   const layout = getHeaderHeroLayout(createLayoutSnapshot(100, 21));
   assert.equal(layout.mode, "medium");
-  assert.equal(layout.logoRows, LOGO_LARGE.length, "normal terminals should keep the canonical block wordmark");
+  assert.equal(
+    layout.logoRows,
+    LOGO_LARGE.length,
+    "normal terminals should keep the canonical block wordmark",
+  );
 });
 
 test("normal, wide, and max header modes select the same canonical logo", () => {
@@ -430,7 +487,9 @@ test("compact mode renders a deliberate one-line header with accent", async () =
   stdout.columns = 40;
   stdout.rows = 40;
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const instance = render(
     <ThemeProvider theme="purple">
@@ -458,7 +517,11 @@ test("compact mode renders a deliberate one-line header with accent", async () =
 
   const text = stripAnsi(output);
   assert.match(text, /✦/, "compact header should show the ✦ accent");
-  assert.doesNotMatch(text, /Resize to ≥72×24/, "compact header should not show a recommended-size hint");
+  assert.doesNotMatch(
+    text,
+    /Resize to ≥72×24/,
+    "compact header should not show a recommended-size hint",
+  );
 });
 
 test("UBUME_NO_ASCII_LOGO compact header omits the resize hint row", () => {
@@ -497,7 +560,11 @@ test("compact mode with update available omits the update card", async () => {
   const output = await renderHeaderWithUpdate(65, MOCK_UPDATE);
 
   assert.doesNotMatch(output, /[╭╰]/, "no card border in narrow mode");
-  assert.doesNotMatch(output, /Ubume v1\.0\.3/, "compact header should not spend rows on update notice");
+  assert.doesNotMatch(
+    output,
+    /Ubume v1\.0\.3/,
+    "compact header should not spend rows on update notice",
+  );
 });
 
 test("wide mode without update shows no update notice", async () => {
@@ -512,7 +579,10 @@ test("measureTopHeaderRows increases when hasUpdate is true in side-by-side mode
   const withoutUpdate = measureTopHeaderRows(layout, HEADER_CONFIG_DEFAULTS, false);
   const withUpdate = measureTopHeaderRows(layout, HEADER_CONFIG_DEFAULTS, true);
 
-  assert.ok(withUpdate > withoutUpdate, `totalRows with update (${withUpdate}) should exceed without (${withoutUpdate})`);
+  assert.ok(
+    withUpdate > withoutUpdate,
+    `totalRows with update (${withUpdate}) should exceed without (${withoutUpdate})`,
+  );
 });
 
 test("measureTopHeaderRows increases when hasUpdate is true in medium mode", () => {
@@ -520,7 +590,10 @@ test("measureTopHeaderRows increases when hasUpdate is true in medium mode", () 
   const withoutUpdate = measureTopHeaderRows(layout, HEADER_CONFIG_DEFAULTS, false);
   const withUpdate = measureTopHeaderRows(layout, HEADER_CONFIG_DEFAULTS, true);
 
-  assert.ok(withUpdate > withoutUpdate, `totalRows with update (${withUpdate}) should exceed without (${withoutUpdate}) in medium mode`);
+  assert.ok(
+    withUpdate > withoutUpdate,
+    `totalRows with update (${withUpdate}) should exceed without (${withoutUpdate}) in medium mode`,
+  );
 });
 
 // ─── Responsive threshold parity tests ──────────────────────────────────────
@@ -544,8 +617,16 @@ test("70 cols selects compact mode and renders no logo art", async () => {
 });
 
 test("95 cols is the minimum for placing metadata beside logo", () => {
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(95, 40)).mode, "medium", "95 → medium layout with canonical logo beside metadata");
-  assert.equal(getHeaderHeroLayout(createLayoutSnapshot(94, 40)).mode, "narrow", "94 → narrow layout with logo and metadata below");
+  assert.equal(
+    getHeaderHeroLayout(createLayoutSnapshot(95, 40)).mode,
+    "medium",
+    "95 → medium layout with canonical logo beside metadata",
+  );
+  assert.equal(
+    getHeaderHeroLayout(createLayoutSnapshot(94, 40)).mode,
+    "narrow",
+    "94 → narrow layout with logo and metadata below",
+  );
 });
 
 test("71 cols selects compact mode", () => {
@@ -557,7 +638,11 @@ test("71 cols selects compact mode", () => {
 test("normal canonical wordmark renders at 100 cols without thin ASCII fallback", async () => {
   const output = await renderHeader(100, "authenticated", HEADER_CONFIG_DEFAULTS);
   assert.match(output, /██╗/, "canonical block wordmark must appear at 100 cols");
-  assert.doesNotMatch(output, /____|\/ ___\||\|_\|/, "thin ASCII wordmark must not appear at 100 cols");
+  assert.doesNotMatch(
+    output,
+    /____|\/ ___\||\|_\|/,
+    "thin ASCII wordmark must not appear at 100 cols",
+  );
 });
 
 test("LOGO_LARGE block wordmark renders at 140 cols", async () => {
@@ -579,7 +664,9 @@ test("model line does not render in the header even when showModel is true", asy
   const stdout = new TestOutput();
   stdout.columns = 130;
   let output = "";
-  stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  stdout.on("data", (chunk: Buffer) => {
+    output += chunk.toString();
+  });
   const instance = render(
     <ThemeProvider theme="purple">
       <TopHeader
@@ -616,7 +703,9 @@ test("context line does not render in the header even when contextLabel is provi
   const stdout = new TestOutput();
   stdout.columns = 130;
   let output = "";
-  stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  stdout.on("data", (chunk: Buffer) => {
+    output += chunk.toString();
+  });
   const instance = render(
     <ThemeProvider theme="purple">
       <TopHeader
@@ -641,7 +730,11 @@ test("context line does not render in the header even when contextLabel is provi
   await new Promise((resolve) => setTimeout(resolve, 20));
   const stripped = stripAnsi(output);
   assert.match(stripped, /Provider:\s*Ubume Core/);
-  assert.doesNotMatch(stripped, /Context:/, "Context belongs below the composer, not in the header");
+  assert.doesNotMatch(
+    stripped,
+    /Context:/,
+    "Context belongs below the composer, not in the header",
+  );
 });
 
 test("header does not render fallback unknown context", async () => {
@@ -649,7 +742,9 @@ test("header does not render fallback unknown context", async () => {
   const stdout = new TestOutput();
   stdout.columns = 130;
   let output = "";
-  stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  stdout.on("data", (chunk: Buffer) => {
+    output += chunk.toString();
+  });
   const instance = render(
     <ThemeProvider theme="purple">
       <TopHeader

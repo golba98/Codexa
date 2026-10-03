@@ -66,7 +66,8 @@ export const AVAILABLE_BACKENDS = [
   {
     id: "openai-native",
     label: "OpenAI Native",
-    description: "Future native provider. ChatGPT subscriptions do not automatically grant API access.",
+    description:
+      "Future native provider. ChatGPT subscriptions do not automatically grant API access.",
   },
 ] as const;
 
@@ -158,7 +159,8 @@ export const USER_SETTING_DEFINITIONS: readonly UserSettingDefinition[] = [
   {
     key: "showBusyLoader",
     label: "Busy loader",
-    description: "Controls whether the footer shows a subtle loading animation while Ubume is busy.",
+    description:
+      "Controls whether the footer shows a subtle loading animation while Ubume is busy.",
     options: [
       { value: "true", label: "True" },
       { value: "false", label: "False" },
@@ -192,7 +194,8 @@ export const AUTH_PREFERENCES = [
   {
     id: "chatgpt-login-goal",
     label: "ChatGPT login goal",
-    description: "Design toward account-style sign-in without claiming it works as a backend today.",
+    description:
+      "Design toward account-style sign-in without claiming it works as a backend today.",
   },
   {
     id: "api-key-first",
@@ -267,11 +270,13 @@ export function formatReasoningLabel(reasoning: string): string {
     return found.label;
   }
 
-  return reasoning
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
-    .join(" ") || reasoning;
+  return (
+    reasoning
+      .split(/[-_\s]+/)
+      .filter(Boolean)
+      .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+      .join(" ") || reasoning
+  );
 }
 
 export const AVAILABLE_THEMES = [
@@ -304,11 +309,15 @@ export function formatTerminalTitleModeLabel(mode: TerminalTitleMode): string {
 }
 
 // Maps the old "normal" value (pre-rename) to the current "dir" equivalent.
-export function normalizeLegacyDirectoryDisplayMode(mode: LegacyDirectoryDisplayMode): WorkspaceDisplayMode {
+export function normalizeLegacyDirectoryDisplayMode(
+  mode: LegacyDirectoryDisplayMode,
+): WorkspaceDisplayMode {
   return mode === "simple" ? "simple" : "dir";
 }
 
-export function formatDirectoryDisplayModeLabel(mode: WorkspaceDisplayMode | LegacyDirectoryDisplayMode): string {
+export function formatDirectoryDisplayModeLabel(
+  mode: WorkspaceDisplayMode | LegacyDirectoryDisplayMode,
+): string {
   if (mode === "normal") return "Dir";
   return formatWorkspaceDisplayModeLabel(mode);
 }

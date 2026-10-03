@@ -81,7 +81,10 @@ test("first progress-only update waits for the progress cadence", () => {
   assert.equal(fakeTimers.timers[0]?.delayMs, 50);
 
   fakeTimers.timers[0]!.callback();
-  assert.deepEqual(flushed[0]?.map((update) => update.type), ["tool"]);
+  assert.deepEqual(
+    flushed[0]?.map((update) => update.type),
+    ["tool"],
+  );
 });
 
 test("preserves event order while keeping only the latest same-id progress update", () => {
@@ -99,9 +102,18 @@ test("preserves event order while keeping only the latest same-id progress updat
   scheduler.enqueue(progress("p1", "Thinking harder"));
   scheduler.flushNow();
 
-  assert.deepEqual(flushed[0]?.map((update) => update.type), ["progress", "tool", "assistant"]);
-  assert.equal((flushed[0]?.[2] as Extract<LiveRenderUpdate, { type: "assistant" }>).chunk, "First segment");
-  assert.equal((flushed[0]?.[0] as Extract<LiveRenderUpdate, { type: "progress" }>).update.text, "Thinking harder");
+  assert.deepEqual(
+    flushed[0]?.map((update) => update.type),
+    ["progress", "tool", "assistant"],
+  );
+  assert.equal(
+    (flushed[0]?.[2] as Extract<LiveRenderUpdate, { type: "assistant" }>).chunk,
+    "First segment",
+  );
+  assert.equal(
+    (flushed[0]?.[0] as Extract<LiveRenderUpdate, { type: "progress" }>).update.text,
+    "Thinking harder",
+  );
 });
 
 test("coalesces repeated keyed progress and tool updates across a noisy flush window", () => {
@@ -119,9 +131,18 @@ test("coalesces repeated keyed progress and tool updates across a noisy flush wi
   scheduler.enqueue(progress("p2", "Listing files"));
   scheduler.flushNow();
 
-  assert.deepEqual(flushed[0]?.map((update) => update.type), ["progress", "tool", "progress"]);
-  assert.equal((flushed[0]?.[0] as Extract<LiveRenderUpdate, { type: "progress" }>).update.text, "Reading file 2");
-  assert.equal((flushed[0]?.[1] as Extract<LiveRenderUpdate, { type: "tool" }>).activity.status, "completed");
+  assert.deepEqual(
+    flushed[0]?.map((update) => update.type),
+    ["progress", "tool", "progress"],
+  );
+  assert.equal(
+    (flushed[0]?.[0] as Extract<LiveRenderUpdate, { type: "progress" }>).update.text,
+    "Reading file 2",
+  );
+  assert.equal(
+    (flushed[0]?.[1] as Extract<LiveRenderUpdate, { type: "tool" }>).activity.status,
+    "completed",
+  );
 });
 
 test("records scheduler flush diagnostics", () => {
@@ -174,8 +195,14 @@ test("prevents reentrant flushes when a producer enqueues during a flush", () =>
 
   assert.equal(scheduler.flushNow(), true);
   assert.equal(flushed.length, 2);
-  assert.equal((flushed[0]?.[0] as Extract<LiveRenderUpdate, { type: "assistant" }>).chunk, "first");
-  assert.equal((flushed[1]?.[0] as Extract<LiveRenderUpdate, { type: "assistant" }>).chunk, "queued during flush");
+  assert.equal(
+    (flushed[0]?.[0] as Extract<LiveRenderUpdate, { type: "assistant" }>).chunk,
+    "first",
+  );
+  assert.equal(
+    (flushed[1]?.[0] as Extract<LiveRenderUpdate, { type: "assistant" }>).chunk,
+    "queued during flush",
+  );
 });
 
 test("flushNow drains queued updates before finalization", () => {

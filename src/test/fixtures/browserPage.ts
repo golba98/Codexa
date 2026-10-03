@@ -16,12 +16,31 @@ export const fixtureHtml = `<!doctype html><html><head><title>Ubume browser fixt
 
 export async function fixtureServer() {
   const server = createServer((request, response) => {
-    if (request.url === "/redirect") { response.writeHead(302, { Location: "/" }); response.end(); return; }
-    if (request.url === "/external") { response.writeHead(302, { Location: "https://example.invalid/" }); response.end(); return; }
+    if (request.url === "/redirect") {
+      response.writeHead(302, { Location: "/" });
+      response.end();
+      return;
+    }
+    if (request.url === "/external") {
+      response.writeHead(302, { Location: "https://example.invalid/" });
+      response.end();
+      return;
+    }
     response.setHeader("Content-Type", "text/html");
-    response.end(request.url === "/second" ? '<html><head><title>Second</title></head><body><h1>Second page</h1></body></html>' : fixtureHtml);
+    response.end(
+      request.url === "/second"
+        ? "<html><head><title>Second</title></head><body><h1>Second page</h1></body></html>"
+        : fixtureHtml,
+    );
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address(); assert(address && typeof address !== "string");
-  return { url: `http://127.0.0.1:${address.port}`, close: async () => { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); } };
+  const address = server.address();
+  assert(address && typeof address !== "string");
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    close: async () => {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
 }

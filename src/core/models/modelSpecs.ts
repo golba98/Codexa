@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "fs";
-import { MODEL_SPECS_FILE, LEGACY_MODEL_SPECS_FILE } from "../../config/settings.js";
+import { LEGACY_MODEL_SPECS_FILE, MODEL_SPECS_FILE } from "../../config/settings.js";
 
 export type ModelSpecStatus = "verified" | "loading" | "unknown";
 
@@ -64,7 +64,10 @@ function createPendingModelSpec(
 }
 
 function getModelSpecDocUrl(model: string): string {
-  return MODEL_SPEC_DOC_URLS[model] ?? `https://developers.openai.com/api/docs/models/${encodeURIComponent(model)}`;
+  return (
+    MODEL_SPEC_DOC_URLS[model] ??
+    `https://developers.openai.com/api/docs/models/${encodeURIComponent(model)}`
+  );
 }
 
 export function createLoadingModelSpec(model: string): ModelSpec {
@@ -79,11 +82,7 @@ export function parseTokenCount(rawValue: string): number | null {
   const normalized = rawValue.trim().replace(/\s+/g, "").toLowerCase();
   if (!normalized) return null;
 
-  const suffix = normalized.endsWith("m")
-    ? 1_000_000
-    : normalized.endsWith("k")
-      ? 1_000
-      : 1;
+  const suffix = normalized.endsWith("m") ? 1_000_000 : normalized.endsWith("k") ? 1_000 : 1;
   const numericText = suffix === 1 ? normalized : normalized.slice(0, -1);
   const numeric = Number.parseFloat(numericText.replace(/,/g, ""));
   if (!Number.isFinite(numeric)) return null;
@@ -97,7 +96,7 @@ export function stripHtmlToText(html: string): string {
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;|&#160;/gi, " ")
-    .replace(/&quot;/gi, "\"")
+    .replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'")
     .replace(/&amp;/gi, "&")
     .replace(/\s+/g, " ")
@@ -132,18 +131,24 @@ function isVerifiedModelSpec(value: unknown): value is VerifiedModelSpec {
   if (!value || typeof value !== "object") return false;
 
   const candidate = value as Partial<VerifiedModelSpec>;
-  return candidate.status === "verified"
-    && typeof candidate.contextWindow === "number"
-    && Number.isFinite(candidate.contextWindow)
-    && typeof candidate.maxOutputTokens === "number"
-    && Number.isFinite(candidate.maxOutputTokens)
-    && typeof candidate.sourceUrl === "string"
-    && typeof candidate.verifiedAt === "number"
-    && Number.isFinite(candidate.verifiedAt);
+  return (
+    candidate.status === "verified" &&
+    typeof candidate.contextWindow === "number" &&
+    Number.isFinite(candidate.contextWindow) &&
+    typeof candidate.maxOutputTokens === "number" &&
+    Number.isFinite(candidate.maxOutputTokens) &&
+    typeof candidate.sourceUrl === "string" &&
+    typeof candidate.verifiedAt === "number" &&
+    Number.isFinite(candidate.verifiedAt)
+  );
 }
 
 export function loadModelSpecCache(cacheFile = MODEL_SPECS_FILE): ModelSpecCache {
-  if (cacheFile === MODEL_SPECS_FILE && !existsSync(MODEL_SPECS_FILE) && existsSync(LEGACY_MODEL_SPECS_FILE)) {
+  if (
+    cacheFile === MODEL_SPECS_FILE &&
+    !existsSync(MODEL_SPECS_FILE) &&
+    existsSync(LEGACY_MODEL_SPECS_FILE)
+  ) {
     cacheFile = LEGACY_MODEL_SPECS_FILE;
   }
   try {
@@ -221,8 +226,12 @@ export function resolveModelSpec(model: string, options: ResolveModelSpecOptions
   const runtimeCtx = options.runtimeContextWindow;
   const runtimeMax = options.runtimeMaxOutputTokens;
   if (
-    typeof runtimeCtx === "number" && Number.isFinite(runtimeCtx) && runtimeCtx > 0
-    && typeof runtimeMax === "number" && Number.isFinite(runtimeMax) && runtimeMax > 0
+    typeof runtimeCtx === "number" &&
+    Number.isFinite(runtimeCtx) &&
+    runtimeCtx > 0 &&
+    typeof runtimeMax === "number" &&
+    Number.isFinite(runtimeMax) &&
+    runtimeMax > 0
   ) {
     return {
       status: "verified",
@@ -260,11 +269,13 @@ export function areModelSpecsEqual(left: ModelSpec | undefined, right: ModelSpec
   if (!left) return false;
   if (left.status !== right.status) return false;
 
-  return left.contextWindow === right.contextWindow
-    && left.maxOutputTokens === right.maxOutputTokens
-    && left.sourceUrl === right.sourceUrl
-    && left.verifiedAt === right.verifiedAt
-    && ("error" in left ? left.error : null) === ("error" in right ? right.error : null);
+  return (
+    left.contextWindow === right.contextWindow &&
+    left.maxOutputTokens === right.maxOutputTokens &&
+    left.sourceUrl === right.sourceUrl &&
+    left.verifiedAt === right.verifiedAt &&
+    ("error" in left ? left.error : null) === ("error" in right ? right.error : null)
+  );
 }
 
 export function createModelSpecService(options: ModelSpecServiceOptions = {}) {

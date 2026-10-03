@@ -71,13 +71,14 @@ export function normalizeExecutableValue(
     return trimmed;
   }
 
-  const normalized = isAbsolute(trimmed) || isWindowsAbsolutePath(trimmed) ? trimmed : resolve(cwd, trimmed);
+  const normalized =
+    isAbsolute(trimmed) || isWindowsAbsolutePath(trimmed) ? trimmed : resolve(cwd, trimmed);
   validateCommonExecutableSyntax(normalized, options.label);
 
   if (requireExistingPath && !existsSync(normalized)) {
     throw new Error(
       `${options.label} path does not exist: "${normalized}"\n` +
-      `Check the path is correct and the file is accessible, or unset ${options.label}.`,
+        `Check the path is correct and the file is accessible, or unset ${options.label}.`,
     );
   }
 
@@ -94,10 +95,7 @@ export function validateExecutableForSpawn(
   });
 }
 
-export function validateWindowsBatchExecutableForCmd(
-  executable: string,
-  label: string,
-): void {
+export function validateWindowsBatchExecutableForCmd(executable: string, label: string): void {
   if (!hasWindowsBatchExtension(executable)) return;
   if (WINDOWS_BATCH_METACHARACTER_PATTERN.test(executable)) {
     throw new Error(`${label} contains characters that are unsafe for cmd.exe batch launch.`);

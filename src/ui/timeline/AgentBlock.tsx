@@ -1,22 +1,21 @@
-import React, { memo, useDeferredValue, useMemo } from "react";
 import { Box, Text } from "ink";
+import { memo, useDeferredValue, useMemo } from "react";
+import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
+import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../../session/chatLifecycle.js";
 import type { AssistantEvent, RunEvent } from "../../session/types.js";
 import { getAssistantContent } from "../../session/types.js";
-import { MemoizedRenderMessage } from "../render/Markdown.js";
+import { DashCard } from "../chrome/DashCard.js";
 import { getUsableShellWidth } from "../layout.js";
-import { useTheme } from "../theme.js";
-import { wrapPlainText } from "../render/textLayout.js";
-import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../../session/chatLifecycle.js";
-import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
+import { MemoizedRenderMessage } from "../render/Markdown.js";
 import {
-  sanitizeOutput,
-  sanitizeStreamChunk,
-  normalizeOutput,
   classifyOutput,
   formatForBox,
+  normalizeOutput,
+  sanitizeOutput,
+  sanitizeStreamChunk,
 } from "../render/outputPipeline.js";
-import { DashCard } from "../chrome/DashCard.js";
-
+import { wrapPlainText } from "../render/textLayout.js";
+import { useTheme } from "../theme.js";
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -35,15 +34,18 @@ interface AgentBlockProps {
   streamingMode?: "assistant-first";
 }
 
-const MemoizedMessageBody = memo(function MessageBody({
-  segments,
-  width,
-}: {
-  segments: ReturnType<typeof formatForBox>;
-  width: number;
-}) {
-  return <MemoizedRenderMessage segments={segments} width={width} />;
-}, (prev, next) => prev.segments === next.segments && prev.width === next.width);
+const MemoizedMessageBody = memo(
+  function MessageBody({
+    segments,
+    width,
+  }: {
+    segments: ReturnType<typeof formatForBox>;
+    width: number;
+  }) {
+    return <MemoizedRenderMessage segments={segments} width={width} />;
+  },
+  (prev, next) => prev.segments === next.segments && prev.width === next.width,
+);
 
 const StreamingCursor = memo(function StreamingCursor() {
   const theme = useTheme();
@@ -71,36 +73,45 @@ export function AgentBlock({
   const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
 
   const pipelineState = useMemo(() => {
-    const sanitized = streaming ? sanitizeStreamChunk(renderContent) : sanitizeOutput(renderContent);
+    const sanitized = streaming
+      ? sanitizeStreamChunk(renderContent)
+      : sanitizeOutput(renderContent);
     const normalized = normalizeOutput(sanitized);
     const classified = classifyOutput(normalized);
     const formatted = formatForBox(classified, contentWidth);
     return { length: normalized.length, formatted };
   }, [contentWidth, renderContent, streaming]);
 
-  const failureMessage = run?.status === "failed"
-    ? sanitizeTerminalOutput(run.errorMessage ?? run.summary)
-    : null;
+  const failureMessage =
+    run?.status === "failed" ? sanitizeTerminalOutput(run.errorMessage ?? run.summary) : null;
   const cancelMessage = run?.status === "canceled" ? sanitizeTerminalOutput(run.summary) : null;
 
-  const runStatus = runPhase === "streaming"
-    ? "streaming"
-    : run?.status === "completed"
-      ? "complete"
-      : run?.status ?? "running";
-  const rightBadge = run?.durationMs != null && runPhase !== "streaming"
-    ? `${runStatus} • ${formatDuration(run.durationMs)}`
-    : runStatus;
+  const runStatus =
+    runPhase === "streaming"
+      ? "streaming"
+      : run?.status === "completed"
+        ? "complete"
+        : (run?.status ?? "running");
+  const rightBadge =
+    run?.durationMs != null && runPhase !== "streaming"
+      ? `${runStatus} • ${formatDuration(run.durationMs)}`
+      : runStatus;
   const heading = run?.runtime.model ? run.runtime.model.toUpperCase().replace(/-/g, " ") : "Codex";
 
-  const borderColor = dim ? theme.border : (runPhase === "streaming" ? theme.borderFocused : theme.border);
+  const borderColor = dim
+    ? theme.border
+    : runPhase === "streaming"
+      ? theme.borderFocused
+      : theme.border;
 
   return (
     <DashCard cols={cols} title={heading} rightBadge={rightBadge} borderColor={borderColor}>
       {!streaming && failureMessage && (
         <Box flexDirection="column" width="100%">
           {wrapPlainText(failureMessage, contentWidth).map((row, index) => (
-            <Text key={index} color={theme.error}>{index === 0 ? `✕ ${row || " "}` : row || " "}</Text>
+            <Text key={index} color={theme.error}>
+              {index === 0 ? `✕ ${row || " "}` : row || " "}
+            </Text>
           ))}
         </Box>
       )}
@@ -120,9 +131,7 @@ export function AgentBlock({
           ) : run.status === "completed" && pipelineState.length === 0 ? (
             <Text color={theme.textDim}>{"(no output)"}</Text>
           ) : null}
-          {run.truncatedOutput && (
-            <Text color={theme.textDim}>{RUN_OUTPUT_TRUNCATION_NOTICE}</Text>
-          )}
+          {run.truncatedOutput && <Text color={theme.textDim}>{RUN_OUTPUT_TRUNCATION_NOTICE}</Text>}
         </Box>
       )}
     </DashCard>

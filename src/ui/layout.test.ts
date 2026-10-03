@@ -1,19 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getHeaderHeroLayout, measureTopHeaderRows } from "./chrome/TopHeader.js";
 import {
   advanceTerminalViewport,
   clampVisualText,
-  createTerminalViewport,
   computeAppLayoutBudget,
   createLayoutSnapshot,
+  createTerminalViewport,
+  getContentWidth,
   getShellHeight,
   getShellWidth,
   getUsableShellWidth,
   getVisualWidth,
   resolveStartupHeaderMode,
-  getContentWidth,
 } from "./layout.js";
-import { getHeaderHeroLayout, measureTopHeaderRows } from "./chrome/TopHeader.js";
 
 test("leaves a one-column gutter to avoid edge-triggered scrollbars", () => {
   assert.equal(getShellWidth(120), 119);
@@ -73,7 +73,10 @@ test("responsive layout breakpoints and budgeting spec assertions", () => {
   assert.equal(budget100x22.bottomChromeBudget.composerRows, 3);
   assert.equal(budget100x22.bottomChromeBudget.transientStatusRows, 0);
   assert.equal(budget100x22.bottomChromeBudget.totalRows, 4);
-  assert.ok(budget100x22.activePanelRows >= 6, `expected activePanelRows >= 6, got ${budget100x22.activePanelRows}`);
+  assert.ok(
+    budget100x22.activePanelRows >= 6,
+    `expected activePanelRows >= 6, got ${budget100x22.activePanelRows}`,
+  );
 
   // 80x24 spec assertions
   const layout80x24 = createLayoutSnapshot(80, 24);
@@ -124,40 +127,55 @@ test("expanded size shows the large logo tier", () => {
 });
 
 test("chooses startup header mode from measured row budget", () => {
-  assert.equal(resolveStartupHeaderMode({
-    cols: 120,
-    rows: 30,
-    introRows: 7,
-    composerRows: 6,
-  }), "large");
+  assert.equal(
+    resolveStartupHeaderMode({
+      cols: 120,
+      rows: 30,
+      introRows: 7,
+      composerRows: 6,
+    }),
+    "large",
+  );
 
-  assert.equal(resolveStartupHeaderMode({
-    cols: 120,
-    rows: 16,
-    introRows: 7,
-    composerRows: 6,
-  }), "compact");
+  assert.equal(
+    resolveStartupHeaderMode({
+      cols: 120,
+      rows: 16,
+      introRows: 7,
+      composerRows: 6,
+    }),
+    "compact",
+  );
 
-  assert.equal(resolveStartupHeaderMode({
-    cols: 100,
-    rows: 24,
-    introRows: 7,
-    composerRows: 5,
-  }), "large"); // STARTUP_FULL_MIN_COLS lowered to 100 to match LOGO_LARGE_MIN_COLS
+  assert.equal(
+    resolveStartupHeaderMode({
+      cols: 100,
+      rows: 24,
+      introRows: 7,
+      composerRows: 5,
+    }),
+    "large",
+  ); // STARTUP_FULL_MIN_COLS lowered to 100 to match LOGO_LARGE_MIN_COLS
 
-  assert.equal(resolveStartupHeaderMode({
-    cols: 39,
-    rows: 24,
-    introRows: 7,
-    composerRows: 5,
-  }), "tiny");
+  assert.equal(
+    resolveStartupHeaderMode({
+      cols: 39,
+      rows: 24,
+      introRows: 7,
+      composerRows: 5,
+    }),
+    "tiny",
+  );
 
-  assert.equal(resolveStartupHeaderMode({
-    cols: 100,
-    rows: 13,
-    introRows: 7,
-    composerRows: 5,
-  }), "tiny");
+  assert.equal(
+    resolveStartupHeaderMode({
+      cols: 100,
+      rows: 13,
+      introRows: 7,
+      composerRows: 5,
+    }),
+    "tiny",
+  );
 });
 
 test("measures the header rows for full and compact layouts", () => {

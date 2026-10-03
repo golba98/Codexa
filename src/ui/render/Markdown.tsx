@@ -1,8 +1,8 @@
-import React from "react";
 import { Box, Text } from "ink";
-import { useTheme } from "../theme.js";
+import React from "react";
 import { Panel } from "../panels/Panel.js";
-import { maybeRenderDiff, type DiffRenderLineType } from "./diffRenderer.js";
+import { useTheme } from "../theme.js";
+import { type DiffRenderLineType, maybeRenderDiff } from "./diffRenderer.js";
 import { formatLocalPathForTerminal, formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 
 // ─── Markdown parser ─────────────────────────────────────────────────────────
@@ -20,8 +20,10 @@ function parseInline(text: string): InlinePart[] {
   let match: RegExpExecArray | null;
 
   while ((match = pat.exec(formattedText)) !== null) {
-    if (match.index > last) parts.push({ kind: "text", text: formattedText.slice(last, match.index) });
-    if (match[1] !== undefined) parts.push({ kind: "code", text: formatLocalPathForTerminal(match[1]) });
+    if (match.index > last)
+      parts.push({ kind: "text", text: formattedText.slice(last, match.index) });
+    if (match[1] !== undefined)
+      parts.push({ kind: "code", text: formatLocalPathForTerminal(match[1]) });
     if (match[2] !== undefined) parts.push({ kind: "bold", text: match[2] });
     last = pat.lastIndex;
   }
@@ -38,7 +40,16 @@ export type ParaSegment = { type: "para"; lines: InlinePart[][] };
 export type Segment = CodeSegment | HeaderSegment | ListSegment | ParaSegment;
 
 const SHELL_CODE_LANGUAGES = new Set([
-  "bash", "sh", "shell", "zsh", "fish", "powershell", "pwsh", "cmd", "bat", "batch",
+  "bash",
+  "sh",
+  "shell",
+  "zsh",
+  "fish",
+  "powershell",
+  "pwsh",
+  "cmd",
+  "bat",
+  "batch",
 ]);
 
 export function isShellCodeLanguage(language: string): boolean {
@@ -51,7 +62,9 @@ const BULLET_RE = /^\s*[-*]\s+(.+)/;
 const ORDERED_RE = /^\s*(\d+)\.\s+(.+)/;
 
 function isBlockStart(line: string): boolean {
-  return FENCE_RE.test(line) || HEADER_RE.test(line) || BULLET_RE.test(line) || ORDERED_RE.test(line);
+  return (
+    FENCE_RE.test(line) || HEADER_RE.test(line) || BULLET_RE.test(line) || ORDERED_RE.test(line)
+  );
 }
 
 export function parseMarkdown(content: string): Segment[] {
@@ -119,7 +132,7 @@ export function parseMarkdown(content: string): Segment[] {
     }
 
     const paraLines: InlinePart[][] = [];
-    while (index < lines.length && !isBlockStart(lines[index]!) && lines[index]!.trim() !== '') {
+    while (index < lines.length && !isBlockStart(lines[index]!) && lines[index]!.trim() !== "") {
       paraLines.push(parseInline(lines[index]!));
       index += 1;
     }
@@ -139,8 +152,18 @@ function InlineText({ parts, color }: { parts: InlinePart[]; color: string }) {
   return (
     <Text color={color} wrap="wrap">
       {parts.map((part, index) => {
-        if (part.kind === "code") return <Text key={index} color={theme.info}>{part.text}</Text>;
-        if (part.kind === "bold") return <Text key={index} bold>{part.text}</Text>;
+        if (part.kind === "code")
+          return (
+            <Text key={index} color={theme.info}>
+              {part.text}
+            </Text>
+          );
+        if (part.kind === "bold")
+          return (
+            <Text key={index} bold>
+              {part.text}
+            </Text>
+          );
         return <Text key={index}>{part.text}</Text>;
       })}
     </Text>
@@ -208,7 +231,15 @@ function getDiffColor(kind: DiffRenderLineType, theme: ReturnType<typeof useThem
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function RenderMessage({ segments, width, brightHeadings = false }: { segments: Segment[]; width: number; brightHeadings?: boolean }) {
+export function RenderMessage({
+  segments,
+  width,
+  brightHeadings = false,
+}: {
+  segments: Segment[];
+  width: number;
+  brightHeadings?: boolean;
+}) {
   const theme = useTheme();
 
   return (
@@ -232,14 +263,21 @@ export function RenderMessage({ segments, width, brightHeadings = false }: { seg
           const diffLines = maybeRenderDiff(codeLines.join("\n"), { force: lang === "diff" });
 
           if (isShellCodeLanguage(lang)) {
-            const marker = lang === "cmd" || lang === "bat" || lang === "batch"
-              ? `REM ${lang}`
-              : `# ${lang}`;
+            const marker =
+              lang === "cmd" || lang === "bat" || lang === "batch" ? `REM ${lang}` : `# ${lang}`;
             return (
-              <Box key={index} marginTop={marginTop} flexDirection="column" paddingLeft={2} width="100%">
+              <Box
+                key={index}
+                marginTop={marginTop}
+                flexDirection="column"
+                paddingLeft={2}
+                width="100%"
+              >
                 <Text color={theme.textDim}>{marker}</Text>
                 {codeLines.map((line, lineIndex) => (
-                  <Text key={lineIndex} color={theme.textMuted} wrap="wrap">{line || " "}</Text>
+                  <Text key={lineIndex} color={theme.textMuted} wrap="wrap">
+                    {line || " "}
+                  </Text>
                 ))}
               </Box>
             );
@@ -256,29 +294,38 @@ export function RenderMessage({ segments, width, brightHeadings = false }: { seg
               <Panel cols={panelWidth} title={title}>
                 {diffLines
                   ? diffLines.map((line, lineIndex) => (
-                    <Text key={lineIndex} color={getDiffColor(line.type, theme)} wrap="wrap">
-                      {line.text || " "}
-                    </Text>
-                  ))
-                  : codeLines.map((line, lineIndex) => (
-                    looksLikeTree ? (
-                      <TreeLine key={lineIndex} line={line || " "} />
-                    ) : (
-                      <Box key={lineIndex}>
-                        <Box width={3} flexShrink={0} marginRight={1} justifyContent="flex-end">
-                          <Text color={theme.textDim}>{lineIndex + 1}</Text>
+                      <Text key={lineIndex} color={getDiffColor(line.type, theme)} wrap="wrap">
+                        {line.text || " "}
+                      </Text>
+                    ))
+                  : codeLines.map((line, lineIndex) =>
+                      looksLikeTree ? (
+                        <TreeLine key={lineIndex} line={line || " "} />
+                      ) : (
+                        <Box key={lineIndex}>
+                          <Box width={3} flexShrink={0} marginRight={1} justifyContent="flex-end">
+                            <Text color={theme.textDim}>{lineIndex + 1}</Text>
+                          </Box>
+                          <Text color={theme.textMuted} wrap="wrap">
+                            {line || " "}
+                          </Text>
                         </Box>
-                        <Text color={theme.textMuted} wrap="wrap">{line || " "}</Text>
-                      </Box>
-                    )
-                  ))}
+                      ),
+                    )}
               </Panel>
             </Box>
           );
         }
 
         if (segment.type === "header") {
-          const color = segment.level === 1 ? theme.accent : segment.level === 2 ? theme.text : (brightHeadings ? theme.text : theme.textMuted);
+          const color =
+            segment.level === 1
+              ? theme.accent
+              : segment.level === 2
+                ? theme.text
+                : brightHeadings
+                  ? theme.text
+                  : theme.textMuted;
           return (
             <Box key={index} flexDirection="column" marginTop={marginTop}>
               {segment.level <= 2 && <Text color={theme.border}>{"───"}</Text>}
@@ -325,7 +372,10 @@ export function RenderMessage({ segments, width, brightHeadings = false }: { seg
   );
 }
 
-export const MemoizedRenderMessage = React.memo(RenderMessage, (prev, next) => (
-  prev.segments === next.segments && prev.width === next.width && prev.brightHeadings === next.brightHeadings
-));
-
+export const MemoizedRenderMessage = React.memo(
+  RenderMessage,
+  (prev, next) =>
+    prev.segments === next.segments &&
+    prev.width === next.width &&
+    prev.brightHeadings === next.brightHeadings,
+);
