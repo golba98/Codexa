@@ -36,7 +36,7 @@ const REQUIRED_THREAD_COLUMNS = [
   "archived",
 ];
 
-export function codexHomeDir(options: ExternalSessionOptions = {}): string {
+function codexHomeDir(options: ExternalSessionOptions = {}): string {
   return envValue(options, "CODEX_HOME") ?? join(resolveHome(options), ".codex");
 }
 

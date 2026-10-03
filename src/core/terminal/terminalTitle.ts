@@ -8,7 +8,7 @@ import {
 import * as renderDebug from "../perf/renderDebug.js";
 import { resolveUbumeDebugLogPath } from "../workspace/appData.js";
 
-export const DEFAULT_TERMINAL_TITLE = APP_NAME;
+const DEFAULT_TERMINAL_TITLE = APP_NAME;
 
 // ─── Constants & diagnostics ──────────────────────────────────────────────────
 
@@ -106,7 +106,7 @@ export function setTerminalTitleLifecycleState(state: string): void {
   terminalTitleLifecycleState = state;
 }
 
-export interface TerminalTitleOptions {
+interface TerminalTitleOptions {
   force?: boolean;
   /** Optional custom write function, e.g. for testing or using a specific stdout/stderr instance. */
   write?: (chunk: string) => void;
@@ -201,12 +201,6 @@ export function writeUbumeTerminalTitle(title: string, options?: TerminalTitleOp
   }
 }
 
-/**
- * Directly writes the terminal title escape sequence to process.stdout or process.stderr,
- * bypassing any Ink/React state management to ensure it reaches the terminal.
- */
-export const writeCodexaTerminalTitle = writeUbumeTerminalTitle;
-
 export function setTerminalTitle(title: string, options?: TerminalTitleOptions) {
   writeUbumeTerminalTitle(title, options);
 }
@@ -228,34 +222,9 @@ export function computeTerminalTitle(options: {
   return appName;
 }
 
-/**
- * Force a refresh of the terminal title using current settings and workspace.
- */
-export function refreshTerminalTitle(options: {
-  terminalTitleMode: "dir" | "name" | "simple";
-  workspaceName?: string;
-  appName?: string;
-  force?: boolean;
-  write?: (chunk: string) => void;
-  debugEventName?: string;
-  busyState?: boolean;
-}) {
-  const title = normalizeTerminalTitle(computeTerminalTitle(options));
-  if (DEBUG_TERMINAL_TITLE) {
-    debugLog(
-      `refreshTerminalTitle(event=${options.debugEventName || "unknown"}, mode=${options.terminalTitleMode}, workspace=${options.workspaceName}, busy=${!!options.busyState}) -> "${title}"`,
-    );
-  }
-  setIntendedTerminalTitle(title, {
-    force: options.force,
-    write: options.write,
-    reason: options.debugEventName ?? "refreshTerminalTitle",
-  });
-}
-
 // ─── Sequence stripping ───────────────────────────────────────────────────────
 
-export interface TerminalTitleSequenceTraceContext {
+interface TerminalTitleSequenceTraceContext {
   source: string;
   stream: "stdout" | "stderr" | "unknown";
   origin: "ubume" | "child" | "shell" | "codex-cli" | "unknown";

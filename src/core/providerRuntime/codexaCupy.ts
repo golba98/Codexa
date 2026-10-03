@@ -40,7 +40,7 @@ interface Bridge {
 let bridge: Bridge | null = null;
 let sequence = 0;
 
-export function resolveCodexaCupyConfig(env: NodeJS.ProcessEnv = process.env): Config {
+function resolveCodexaCupyConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const modelRoot =
     env.CODEXA_CUPY_MODEL_ROOT?.trim() ||
     join(homedir(), "Development", "2-Python", "32-LLM (NumPy)");

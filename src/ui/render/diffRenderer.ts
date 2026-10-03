@@ -2,12 +2,12 @@ import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js"
 
 export type DiffRenderLineType = "file" | "hunk" | "add" | "remove" | "context" | "meta";
 
-export interface DiffRenderLine {
+interface DiffRenderLine {
   type: DiffRenderLineType;
   text: string;
 }
 
-export interface DiffRenderOptions {
+interface DiffRenderOptions {
   force?: boolean;
 }
 
@@ -74,7 +74,7 @@ function shouldRenderUnifiedDiff(
   return hasStrongDiffSignal(lines) && hasRealChangeLine(lines);
 }
 
-export function classifyDiffLine(line: string): DiffRenderLineType {
+function classifyDiffLine(line: string): DiffRenderLineType {
   if (
     DIFF_GIT_HEADER_PATTERN.test(line) ||
     OLD_FILE_HEADER_PATTERN.test(line) ||

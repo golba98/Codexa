@@ -33,7 +33,7 @@ const TALL_HEADER_TO_COMPOSER_GAP_ROWS = 1;
 // ─── Types & constants ────────────────────────────────────────────────────────
 
 type AppShellLayout = TerminalViewport;
-export interface AppShellProps {
+interface AppShellProps {
   layout: AppShellLayout;
   screen: Screen;
   authState: CodexAuthState;
@@ -56,10 +56,6 @@ export interface AppShellProps {
 }
 
 // ─── Helpers & subcomponents ─────────────────────────────────────────────────
-
-export function isCrampedViewport(rows: number | undefined): boolean {
-  return (rows ?? 24) <= 24;
-}
 
 export function calculateNativeSpacerRows({
   shellRows,

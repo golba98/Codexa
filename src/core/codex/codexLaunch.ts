@@ -17,7 +17,7 @@ const MODERN_CODEX_CLI_CAPABILITIES: CodexCliCapabilities = {
   image: true,
 };
 
-export interface PreparedCodexExecLaunch {
+interface PreparedCodexExecLaunch {
   executable: string;
   capabilities: CodexCliCapabilities;
   args: string[];
@@ -37,7 +37,7 @@ interface PrepareCodexExecLaunchDependencies {
   diagnosticsLogger?: (message: string) => void;
 }
 
-export interface PrepareCodexExecLaunchOptions extends BuildCodexExecArgsOptions {
+interface PrepareCodexExecLaunchOptions extends BuildCodexExecArgsOptions {
   probeCapabilities?: boolean;
   codexCommandPath?: string | null;
 }

@@ -12,7 +12,7 @@ import type {
   ComputerUseResult,
 } from "./types.js";
 
-export { BrowserToolError, browserUrl, isLoopbackUrl } from "../../../bin/ubume-browser-url.js";
+export { browserUrl, isLoopbackUrl } from "../../../bin/ubume-browser-url.js";
 
 function processStart(pid: number): string | undefined {
   if (process.platform !== "linux") return undefined;

@@ -41,7 +41,7 @@ export interface ModelContextMetadata {
   error?: string;
 }
 
-export interface ResolveModelContextLengthOptions {
+interface ResolveModelContextLengthOptions {
   providerId: ProviderId;
   modelId: string;
   providerConfig?: ProviderWorkspaceOverride | null;

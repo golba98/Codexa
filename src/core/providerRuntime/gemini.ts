@@ -44,16 +44,16 @@ const GEMINI_ROUTE_VALIDATION_TIMEOUT_MS = 30_000;
 const GEMINI_READY_PROMPT = "Respond with READY only.";
 const GEMINI_REASONING_UNSUPPORTED_DIAGNOSTIC =
   "Gemini reasoning control is not supported by this CLI version.";
-export const GEMINI_ROUTE_SETUP_MESSAGE =
+const GEMINI_ROUTE_SETUP_MESSAGE =
   "Google/Gemini is not configured for in-Ubume routing yet. Sign in with Gemini CLI headless auth or set GEMINI_API_KEY / GOOGLE_API_KEY.";
 
 type CommandRunner = typeof runCommand;
-export type GeminiApprovalMode = "default" | "plan" | "auto_edit" | "yolo";
-export type GeminiOutputFormat = "text" | "json" | "stream-json";
-export type GeminiCommandMode = "readiness" | "prompt";
+type GeminiApprovalMode = "default" | "plan" | "auto_edit" | "yolo";
+type GeminiOutputFormat = "text" | "json" | "stream-json";
+type GeminiCommandMode = "readiness" | "prompt";
 type GeminiExtractionStatus = "assistant-text" | "completed-empty-assistant" | "not-completed";
 
-export interface GeminiCommandSpec {
+interface GeminiCommandSpec {
   file: string;
   args: string[];
   cwd: string;
@@ -133,9 +133,7 @@ function getCombinedOutput(
   return sanitizeTerminalOutput(`${result.stderr}\n${result.stdout}\n${result.userMessage}`);
 }
 
-export function resolveGeminiApprovalMode(
-  runtime?: ResolvedRuntimeConfig | boolean,
-): GeminiApprovalMode {
+function resolveGeminiApprovalMode(runtime?: ResolvedRuntimeConfig | boolean): GeminiApprovalMode {
   if (typeof runtime === "boolean") {
     return runtime ? "plan" : "default";
   }

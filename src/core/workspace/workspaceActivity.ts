@@ -3,7 +3,7 @@ import { join, relative, sep } from "path";
 import { SCRATCH_RELATIVE_DIR } from "./scratchDir.js";
 
 export type RunFileOperation = "created" | "modified" | "deleted";
-export type RunDiffLineKind = "added" | "removed";
+type RunDiffLineKind = "added" | "removed";
 
 export interface RunDiffLine {
   kind: RunDiffLineKind;
@@ -27,18 +27,18 @@ export interface RunActivitySummary {
   recent: RunFileActivity[];
 }
 
-export interface WorkspaceActivityTracker {
+interface WorkspaceActivityTracker {
   stop: () => void;
 }
 
-export interface WorkspaceActivityTrackerOptions {
+interface WorkspaceActivityTrackerOptions {
   rootDir: string;
   onActivity: (activity: RunFileActivity[]) => void;
   pollIntervalMs?: number;
   initialSnapshot?: Map<string, WorkspaceFileSnapshot>;
 }
 
-export interface WorkspaceFileSnapshot {
+interface WorkspaceFileSnapshot {
   path: string;
   mtimeMs: number;
   size: number;

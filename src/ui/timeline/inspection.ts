@@ -1,6 +1,7 @@
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import { getAssistantContent, type TimelineEvent } from "../../session/types.js";
-export interface InspectionEntry {
+
+interface InspectionEntry {
   id: string;
   title: string;
   details: string;

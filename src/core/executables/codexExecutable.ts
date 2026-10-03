@@ -13,7 +13,7 @@ interface SpawnOptions {
   stdio: ["ignore" | "pipe", "pipe", "pipe"];
 }
 
-export interface CapturedProcessOutput {
+interface CapturedProcessOutput {
   exitCode: number | null;
   stdout: string;
   stderr: string;

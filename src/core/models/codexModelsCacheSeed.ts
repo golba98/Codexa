@@ -16,7 +16,7 @@ import { type CachedProviderModels, loadCachedProviderModels } from "./providerM
 // on its own runs.
 // Resolved per call from env (matching claudeCodeDiscovery) so HOME
 // redirection in tests holds — Bun's homedir() ignores runtime HOME changes.
-export function getCodexModelsCacheFile(): string {
+function getCodexModelsCacheFile(): string {
   const home = process.env.USERPROFILE ?? process.env.HOME ?? homedir();
   return join(home, ".codex", "models_cache.json");
 }

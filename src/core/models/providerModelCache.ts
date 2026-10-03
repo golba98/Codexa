@@ -9,7 +9,7 @@ import type { ProviderModel } from "../providerRuntime/types.js";
 // while a background refresh runs. Corrupt or missing cache degrades to null.
 // Resolved per call from env (matching claudeCodeDiscovery) so HOME
 // redirection in tests holds — Bun's homedir() ignores runtime HOME changes.
-export function getProviderModelCacheFile(): string {
+function getProviderModelCacheFile(): string {
   const home = process.env.USERPROFILE ?? process.env.HOME ?? homedir();
   const ubumePath = join(home, ".ubume-model-cache.json");
   if (existsSync(ubumePath)) return ubumePath;

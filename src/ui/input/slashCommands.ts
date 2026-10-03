@@ -1,4 +1,4 @@
-export interface SlashCommandSuggestion {
+interface SlashCommandSuggestion {
   cmd: string;
   desc: string;
   aliases?: readonly string[];

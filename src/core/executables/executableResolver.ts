@@ -9,7 +9,7 @@ import {
 
 type CommandRunner = typeof runCommand;
 
-export interface ExecutableResolverOptions {
+interface ExecutableResolverOptions {
   runCommandImpl?: CommandRunner;
   cwd?: string;
   configuredPath?: string | null;

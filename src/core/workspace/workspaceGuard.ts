@@ -23,7 +23,7 @@ export function normalizeDiagnosticPath(filePath: string): string {
   return drivePrefix + pathPart;
 }
 
-export interface WorkspacePathViolation {
+interface WorkspacePathViolation {
   rawPath: string;
   normalizedPath: string;
 }

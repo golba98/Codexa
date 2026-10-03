@@ -3,7 +3,7 @@ import path from "node:path";
 import { resolveUbumeDebugLogPath } from "../workspace/appData.js";
 import { isTerminalResizing } from "./terminalControl.js";
 
-export interface FrameLockOptions {
+interface FrameLockOptions {
   stdout: any;
   env: Record<string, string | undefined>;
 }

@@ -12,7 +12,6 @@ import { clampVisualText, isDecorativeLayoutMode, type Layout } from "../layout.
 import {
   getLogoWidth,
   LOGO_COMPACT,
-  LOGO_COMPACT_MIN_COLS,
   LOGO_LARGE,
   LOGO_LARGE_MIN_COLS,
   LOGO_LARGE_MIN_ROWS,
@@ -35,9 +34,9 @@ const UPDATE_CARD_GAP_ROWS = 1;
 // too small to render any logo art.
 const RECOMMENDED_FULL_HEADER_HINT = `Resize to ≥${LOGO_LARGE_MIN_COLS}×${LOGO_LARGE_MIN_ROWS} for the full Ubume header`;
 
-export type HeaderHeroMode = "wide" | "medium" | "narrow" | "compact";
+type HeaderHeroMode = "wide" | "medium" | "narrow" | "compact";
 
-export interface HeaderHeroLayout {
+interface HeaderHeroLayout {
   mode: HeaderHeroMode;
   topMarginRows: number;
   bottomMarginRows: number;
@@ -491,12 +490,4 @@ export const MemoizedTopHeader = memo(TopHeader, (prev, next) => {
   );
 });
 
-// Minimum terminal cols to render any logo art (the compact 1-row variant).
-export const MIN_LOGO_TERMINAL_WIDTH = LOGO_COMPACT_MIN_COLS;
-
 // Re-export for consumers that reference these constants directly.
-export {
-  LOGO_COMPACT_MIN_COLS,
-  LOGO_LARGE_MIN_COLS,
-  LOGO_MEDIUM_MIN_COLS,
-} from "../render/logoVariants.js";

@@ -16,7 +16,7 @@ export function getUpdateCheckCacheFilePath(): string {
   return join(home, ".ubume-update-check.json");
 }
 
-export function getLegacyUpdateCheckCacheFilePath(): string {
+function getLegacyUpdateCheckCacheFilePath(): string {
   const home = process.env.USERPROFILE ?? process.env.HOME ?? homedir();
   return join(home, ".ubume-update-check.json");
 }

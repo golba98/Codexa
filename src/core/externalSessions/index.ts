@@ -14,11 +14,7 @@ export {
   externalProviderId,
   externalTranscriptToConversationMessages,
 } from "./importTranscript.js";
-export {
-  buildExternalResumeLaunch,
-  type ExternalResumeLaunch,
-  type ExternalResumeLaunchResult,
-} from "./resumeLaunch.js";
+export { buildExternalResumeLaunch } from "./resumeLaunch.js";
 export * from "./types.js";
 
 /** Native sessions for one CLI, newest first. Stores are read-only inputs; missing stores yield []. */

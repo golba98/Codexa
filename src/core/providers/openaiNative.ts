@@ -1,4 +1,4 @@
-import { AVAILABLE_MODELS } from "../../config/settings.js";
+import { LEGACY_FALLBACK_MODELS } from "../../config/settings.js";
 import type { BackendProvider } from "./types.js";
 
 export const openaiNativeProvider: BackendProvider = {
@@ -9,5 +9,5 @@ export const openaiNativeProvider: BackendProvider = {
   authLabel: "Not implemented yet",
   statusMessage:
     "ChatGPT subscriptions and API billing are separate. Native execution is intentionally disabled in v1.",
-  supportsModels: (model) => (AVAILABLE_MODELS as readonly string[]).includes(model),
+  supportsModels: (model) => (LEGACY_FALLBACK_MODELS as readonly string[]).includes(model),
 };

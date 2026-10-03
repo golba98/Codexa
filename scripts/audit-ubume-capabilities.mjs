@@ -112,7 +112,7 @@ const checks = {
     
     const exist = paths.filter(p => existsSync(p));
     const hasModels = exist.some(p => 
-      /AVAILABLE_MODELS|LEGACY_FALLBACK_MODELS/.test(readFileSync(p, "utf-8"))
+      /LEGACY_FALLBACK_MODELS/.test(readFileSync(p, "utf-8"))
     );
     
     return {

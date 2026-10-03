@@ -26,7 +26,7 @@ import {
 } from "./settings.js";
 import { serializeTomlDocument } from "./toml-serialize.js";
 
-export interface UiSettings {
+interface UiSettings {
   layoutStyle: string;
   theme: string;
   workspaceDisplayMode: WorkspaceDisplayMode;
@@ -35,11 +35,11 @@ export interface UiSettings {
   customTheme?: Partial<Theme>;
 }
 
-export interface AuthSettings {
+interface AuthSettings {
   preference: AuthPreference;
 }
 
-export interface UpdateCheckSettings {
+interface UpdateCheckSettings {
   enabled: boolean;
   intervalHours: number;
   skippedUpdateVersion?: string | null;
@@ -50,7 +50,7 @@ export const DEFAULT_UPDATE_CHECK_SETTINGS: UpdateCheckSettings = {
   intervalHours: 6,
 };
 
-export interface AppSettings {
+interface AppSettings {
   ui: UiSettings;
   auth: AuthSettings;
   header: HeaderConfig;

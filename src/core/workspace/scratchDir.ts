@@ -11,13 +11,12 @@ import { join } from "node:path";
 
 /** Workspace-relative home for agent throwaway files (test harnesses, probe scripts, logs). */
 export const SCRATCH_RELATIVE_DIR = ".ubume/scratch";
-export const LEGACY_SCRATCH_RELATIVE_DIR = ".codexa/scratch";
 
 const DEFAULT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const SAFE_SESSION_ID = /^[A-Za-z0-9_-]+$/;
 const SCRATCH_GITIGNORE = ".gitignore";
 
-export interface SessionScratchDir {
+interface SessionScratchDir {
   absolutePath: string;
   relativePath: string;
 }
@@ -26,7 +25,7 @@ export function resolveScratchRoot(workspaceRoot: string): string {
   return join(workspaceRoot, ".ubume", "scratch");
 }
 
-export function resolveLegacyScratchRoot(workspaceRoot: string): string {
+function resolveLegacyScratchRoot(workspaceRoot: string): string {
   return join(workspaceRoot, ".codexa", "scratch");
 }
 

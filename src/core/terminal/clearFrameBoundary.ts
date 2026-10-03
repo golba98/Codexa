@@ -44,7 +44,7 @@ interface SavedNormalBufferFrame {
   cols: number | undefined;
 }
 
-export interface ClearFrameBoundaryRenderState {
+interface ClearFrameBoundaryRenderState {
   generation: number;
   staticEventsLength: number;
   activeEventsLength: number;
@@ -53,7 +53,7 @@ export interface ClearFrameBoundaryRenderState {
   uiStateKind: string;
 }
 
-export interface ClearFrameBoundaryController {
+interface ClearFrameBoundaryController {
   beginClearGeneration: (generation: number) => boolean;
   /**
    * Mirror the React render state into the boundary's gate. Returns `true` when

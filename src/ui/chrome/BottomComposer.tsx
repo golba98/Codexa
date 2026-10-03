@@ -147,7 +147,7 @@ export interface BottomComposerProps {
   externalCliStatus?: ExternalCliStatus;
 }
 
-export interface BottomComposerMeasureParams {
+interface BottomComposerMeasureParams {
   layout: Layout;
   width?: number;
   uiState: UIState;
@@ -166,7 +166,7 @@ export function isBacktabSequence(raw: string): boolean {
   return BACKTAB_ESCAPE_SEQUENCE.test(raw);
 }
 
-export interface CommandSuggestionState {
+interface CommandSuggestionState {
   showSuggestions: boolean;
   reserveSuggestionRow: boolean;
   suggestions: readonly CommandSuggestion[];

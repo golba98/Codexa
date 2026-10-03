@@ -44,14 +44,14 @@ export interface CodexModelCapabilities {
   error: string | null;
 }
 
-export interface DiscoverCodexModelCapabilitiesOptions {
+interface DiscoverCodexModelCapabilitiesOptions {
   executable?: string;
   includeHidden?: boolean;
   timeoutMs?: number;
   now?: () => number;
 }
 
-export interface GetCodexModelCapabilitiesOptions extends DiscoverCodexModelCapabilitiesOptions {
+interface GetCodexModelCapabilitiesOptions extends DiscoverCodexModelCapabilitiesOptions {
   forceRefresh?: boolean;
   ttlMs?: number;
   resolveExecutable?: typeof resolveCodexExecutable;
@@ -443,7 +443,7 @@ async function requestModelListFromAppServer(
   });
 }
 
-export async function discoverCodexModelCapabilities(
+async function discoverCodexModelCapabilities(
   options: DiscoverCodexModelCapabilitiesOptions = {},
 ): Promise<CodexModelCapabilities> {
   const executable = options.executable ?? (await resolveCodexExecutable());
@@ -460,7 +460,7 @@ export async function discoverCodexModelCapabilities(
 
 // Persist a successful live discovery so the next launch can seed the model
 // picker without spawning the codex app-server. Best-effort by design.
-export function persistCodexModelCapabilities(capabilities: CodexModelCapabilities): void {
+function persistCodexModelCapabilities(capabilities: CodexModelCapabilities): void {
   const models: ProviderModel[] = capabilities.models
     .filter((capability) => !capability.hidden)
     .map((capability) => ({
@@ -577,7 +577,7 @@ export function findModelCapability(
   );
 }
 
-export function isModelSelectable(
+function isModelSelectable(
   capabilities: CodexModelCapabilities | null | undefined,
   model: string,
 ): boolean {

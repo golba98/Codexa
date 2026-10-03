@@ -175,7 +175,7 @@ export async function validateProviderRouteActivation(options: {
   };
 }
 
-export function resolveGeminiModelId(selection: GeminiModelSelection): string {
+function resolveGeminiModelId(selection: GeminiModelSelection): string {
   if (selection.kind === "manual") {
     return normalizeGeminiModelId(selection.modelId);
   }
@@ -299,5 +299,3 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
   }
   return currentOpenAiModel;
 }
-
-export const isProviderRoutableInCodexa = isProviderRoutableInUbume;

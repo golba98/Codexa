@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export const DEFAULT_UNSLOTH_ROOT_URL = "http://127.0.0.1:8888";
+const DEFAULT_UNSLOTH_ROOT_URL = "http://127.0.0.1:8888";
 
 type FetchImpl = typeof fetch;
 
@@ -20,7 +20,7 @@ interface UnslothKeyCache {
   >;
 }
 
-export interface UnslothConnection {
+interface UnslothConnection {
   rootUrl: string;
   baseUrl: string;
   apiKey: string;
@@ -28,7 +28,7 @@ export interface UnslothConnection {
   models: UnslothModelInfo[];
 }
 
-export interface UnslothModelInfo {
+interface UnslothModelInfo {
   id: string;
   loaded: boolean;
   [key: string]: unknown;
@@ -44,7 +44,7 @@ function resolveHome(env: NodeJS.ProcessEnv): string {
   return env.USERPROFILE?.trim() || env.HOME?.trim() || homedir();
 }
 
-export function normalizeUnslothRootUrl(value: string): string {
+function normalizeUnslothRootUrl(value: string): string {
   const url = new URL(value.trim() || DEFAULT_UNSLOTH_ROOT_URL);
   if (url.hostname.toLowerCase() === "localhost") {
     url.hostname = "127.0.0.1";
@@ -55,11 +55,11 @@ export function normalizeUnslothRootUrl(value: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
-export function resolveUnslothRootUrl(env: NodeJS.ProcessEnv = process.env): string {
+function resolveUnslothRootUrl(env: NodeJS.ProcessEnv = process.env): string {
   return normalizeUnslothRootUrl(env.UNSLOTH_STUDIO_URL?.trim() || DEFAULT_UNSLOTH_ROOT_URL);
 }
 
-export function isLoopbackUnslothUrl(value: string): boolean {
+function isLoopbackUnslothUrl(value: string): boolean {
   try {
     const hostname = new URL(value).hostname.toLowerCase();
     if (hostname === "localhost" || hostname === "::1") return true;
@@ -106,7 +106,7 @@ function proofMessage(nonce: Buffer, hostname: string, port: number): Buffer {
   return Buffer.concat([nonce, Buffer.from(`|${normalizedHost}|${port}`)]);
 }
 
-export async function verifyUnslothIdentity(options: {
+async function verifyUnslothIdentity(options: {
   rootUrl: string;
   fetchImpl?: FetchImpl;
   signal?: AbortSignal;
@@ -231,7 +231,7 @@ export async function resolveUnslothConnection(
   );
 }
 
-export function parseUnslothModels(value: unknown): UnslothModelInfo[] {
+function parseUnslothModels(value: unknown): UnslothModelInfo[] {
   const data = asRecord(value)?.data;
   if (!Array.isArray(data)) return [];
   const seen = new Set<string>();

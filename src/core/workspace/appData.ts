@@ -120,10 +120,3 @@ export function resolveUbumeAttachmentDir(workspaceRoot: string, configuredDir: 
 export function resolveUbumeDebugLogPath(env: Environment = process.env): string {
   return join(resolveUbumeDataDir(undefined, env), "debug", "render-status.log");
 }
-
-// Backwards-compatible aliases
-export const resolveCodexaDataDir = resolveUbumeDataDir;
-export const resolveCodexaWorkspaceDataDir = resolveUbumeWorkspaceDataDir;
-export const resolveCodexaConversationDir = resolveUbumeConversationDir;
-export const resolveCodexaAttachmentDir = resolveUbumeAttachmentDir;
-export const resolveCodexaDebugLogPath = resolveUbumeDebugLogPath;

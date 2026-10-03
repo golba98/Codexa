@@ -159,11 +159,6 @@ export interface ProviderImageAttachment {
   bytes: number;
 }
 
-export interface ProviderChatResponse {
-  text: string;
-  rawOutput?: string;
-}
-
 export interface ProviderRuntime {
   providerId: ProviderId;
   label: string;

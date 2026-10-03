@@ -94,7 +94,7 @@ export interface TimelineSnapshot {
   itemCount: number;
 }
 
-export interface StableTimelineSnapshot {
+interface StableTimelineSnapshot {
   snapshot: TimelineSnapshot;
   frozenRows: TimelineRow[];
   liveRows: TimelineRow[];
@@ -1201,7 +1201,7 @@ function buildActionRequiredRows(
 
 // ─── Standalone event & intro rows ───────────────────────────────────────────
 
-export function buildStandaloneEventRows(
+function buildStandaloneEventRows(
   item: Extract<RenderTimelineItem, { type: "event" }>,
   width: number,
 ): TimelineRow[] {
@@ -1318,7 +1318,7 @@ export function buildStandaloneEventRows(
   return rows;
 }
 
-export function buildIntroRows(
+function buildIntroRows(
   item: Extract<RenderTimelineItem, { type: "intro" }>,
   width: number,
 ): TimelineRow[] {

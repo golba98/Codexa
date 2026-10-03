@@ -6,7 +6,7 @@ import {
   normalizeDiagnosticPath,
 } from "../workspace/workspaceGuard.js";
 
-export const IMAGE_EXTENSIONS = new Set([
+const IMAGE_EXTENSIONS = new Set([
   ".png",
   ".jpg",
   ".jpeg",

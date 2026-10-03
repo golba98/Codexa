@@ -276,7 +276,7 @@ function titleFromMessages(messages: ConversationMessage[]): string {
   return title.length > 72 ? `${title.slice(0, 69).trimEnd()}...` : title;
 }
 
-export function isNativeSessionReference(value: unknown): value is NativeSessionReference {
+function isNativeSessionReference(value: unknown): value is NativeSessionReference {
   return (
     isRecord(value) &&
     ["claude", "codex", "antigravity", "vibe"].includes(String(value.source)) &&

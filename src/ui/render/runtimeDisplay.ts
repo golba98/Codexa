@@ -13,7 +13,7 @@ import {
 } from "../../core/providerRuntime/contextMetadata.js";
 import type { ActiveProviderRoute } from "../../core/providerRuntime/types.js";
 
-export interface ActiveRuntimeDisplayInput {
+interface ActiveRuntimeDisplayInput {
   route: ActiveProviderRoute;
   reasoningLevel: string;
   mode: string;
@@ -22,7 +22,7 @@ export interface ActiveRuntimeDisplayInput {
   contextMetadata?: ModelContextMetadata | null;
 }
 
-export interface ActiveRuntimeDisplay {
+interface ActiveRuntimeDisplay {
   providerLabel: string;
   modelDisplay: string;
   footerModelDisplay: string;

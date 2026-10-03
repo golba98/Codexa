@@ -3,9 +3,9 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export const MAX_CLIPBOARD_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_CLIPBOARD_IMAGE_BYTES = 20 * 1024 * 1024;
 
-export interface ClipboardImage {
+interface ClipboardImage {
   data: Buffer;
   mediaType: "image/png";
 }

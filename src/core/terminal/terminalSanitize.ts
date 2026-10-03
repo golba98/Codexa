@@ -19,7 +19,7 @@
 //       colouring (no raw ANSI needed), so this helper is available for future
 //       use but diff colour is primarily applied via getDiffTone() tones.
 
-export interface SanitizeTerminalOptions {
+interface SanitizeTerminalOptions {
   preserveTabs?: boolean;
   tabSize?: number;
 }
@@ -40,14 +40,6 @@ const SINGLE_C1_SEQUENCE = /[\u0080-\u009F]/g;
 // Remaining non-printable bytes after the above passes
 const DISALLOWED_CONTROL_BYTES = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
-// ── SGR-only colour-safe allowlist (used by sanitizeDiffOutput) ───────────────
-// Matches ONLY SGR (Select Graphic Rendition) sequences — the subset of CSI
-// that carries colour/style information and has no side-effects on terminal
-// state (no cursor movement, no erase, no mode changes).
-// Pattern: ESC [ <params> m  where <params> is digits/semicolons only.
-// We keep these sequences when the caller asserts the content is safe diff output.
-const SGR_COLOUR_SEQUENCE = /\u001B\[[\d;]*m/g;
-
 function normalizeTabs(text: string, preserveTabs: boolean, tabSize: number): string {
   if (preserveTabs) return text;
   return text.replace(/\t/g, " ".repeat(Math.max(1, tabSize)));
@@ -61,28 +53,6 @@ function stripTerminalSequences(raw: string): string {
     .replace(CSI_SEQUENCE, "")
     .replace(ESC_INTERMEDIATE_SEQUENCE, "")
     .replace(SINGLE_C1_SEQUENCE, "");
-}
-
-/**
- * Strip only the dangerous subset of terminal sequences, preserving SGR colour codes.
- * Used for content we know is diff output and want to pass colour through.
- * NOTE: Only call this on content that has already been classified as a safe diff
- * segment — never on arbitrary subprocess or user input.
- */
-function stripDangerousSequencesPreserveSGR(raw: string): string {
-  return (
-    raw
-      .replace(OSC_SEQUENCE, "") // OSC: hyperlinks, titles — always strip
-      .replace(DCS_PM_APC_SEQUENCE, "") // DCS/PM/APC — always strip
-      // Strip CSI sequences that are NOT pure SGR colour codes.
-      // First mark safe SGR sequences with a placeholder, strip all CSI,
-      // then restore the safe ones.
-      .replace(SGR_COLOUR_SEQUENCE, (match) => `\u0000SGR:${match}\u0000`) // protect SGR
-      .replace(CSI_SEQUENCE, "") // strip dangerous CSI
-      .replace(/\u0000SGR:(\u001B\[[\d;]*m)\u0000/g, "$1") // restore SGR
-      .replace(ESC_INTERMEDIATE_SEQUENCE, "")
-      .replace(SINGLE_C1_SEQUENCE, "")
-  );
 }
 
 function stripUnsafeControls(text: string): string {
@@ -111,33 +81,4 @@ export function sanitizeTerminalLines(lines: string[]): string[] {
     .map((line) => sanitizeTerminalOutput(line))
     .map((line) => line.trimEnd())
     .filter((line) => line.length > 0);
-}
-
-/**
- * Sanitize diff output while preserving SGR colour escape sequences.
- *
- * This is intentionally less aggressive than sanitizeTerminalOutput so that
- * diffs piped through `git diff --color=always` or similar tools retain their
- * ANSI colour information.  Only safe SGR (colour/style) codes are preserved;
- * all cursor-movement, erase, and other side-effecting sequences are stripped.
- *
- * Width measurement of the resulting text must account for the invisible ANSI
- * bytes — use stripAnsiForMeasurement() on the string before measuring.
- *
- * Safety: Never call this on arbitrary subprocess or user input.  Only use it
- * after the markdown parser has classified a segment as a code/diff block.
- */
-export function sanitizeDiffOutput(raw: string): string {
-  if (!raw) return "";
-  const withSafrSgr = stripDangerousSequencesPreserveSGR(raw);
-  const normalizedBreaks = withSafrSgr.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  return stripUnsafeControls(normalizedBreaks);
-}
-
-/**
- * Strip ALL ANSI sequences from a string purely for width measurement purposes.
- * Use this when you need the visual width of a string that may contain SGR codes.
- */
-export function stripAnsiForMeasurement(text: string): string {
-  return text.replace(SGR_COLOUR_SEQUENCE, "").replace(DISALLOWED_CONTROL_BYTES, "");
 }

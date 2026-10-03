@@ -2,11 +2,11 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { resolveUbumeDataDir } from "../workspace/appData.js";
 
-export function isLocalStreamDebugEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+function isLocalStreamDebugEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.UBUME_DEBUG_LOCAL_STREAM === "1";
 }
 
-export function getLocalStreamDebugLogPath(env: NodeJS.ProcessEnv = process.env): string {
+function getLocalStreamDebugLogPath(env: NodeJS.ProcessEnv = process.env): string {
   return (
     env.UBUME_DEBUG_LOCAL_STREAM_FILE?.trim() ||
     join(resolveUbumeDataDir(undefined, env), "debug", "local-stream.jsonl")

@@ -6,8 +6,8 @@ import { APP_VERSION as BUILD_INFO_VERSION } from "./buildInfo.js";
 // Leaf module: must not import settings.ts or anything under src/core/version
 // (settings.ts re-exports APP_VERSION from here, so that would be a cycle).
 
-export const UBUME_PACKAGE_NAME = "ubume";
-export const LEGACY_CODEXA_PACKAGE_NAME = "@golba98/codexa";
+const UBUME_PACKAGE_NAME = "ubume";
+const LEGACY_CODEXA_PACKAGE_NAME = "@golba98/codexa";
 const SEMVER_RE = /^\d+\.\d+\.\d+(-[\w.]+)?$/;
 
 function readPackageVersion(

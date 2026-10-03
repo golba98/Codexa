@@ -48,9 +48,9 @@ export const AVAILABLE_PERSONALITIES = [
 ] as const;
 
 export type RuntimeApprovalPolicy = (typeof AVAILABLE_APPROVAL_POLICIES)[number]["id"];
-export type ResolvedApprovalPolicy = Exclude<RuntimeApprovalPolicy, "inherit">;
+type ResolvedApprovalPolicy = Exclude<RuntimeApprovalPolicy, "inherit">;
 export type RuntimeSandboxMode = (typeof AVAILABLE_SANDBOX_MODES)[number]["id"];
-export type ResolvedSandboxMode = Exclude<RuntimeSandboxMode, "inherit">;
+type ResolvedSandboxMode = Exclude<RuntimeSandboxMode, "inherit">;
 export type RuntimeNetworkAccess = (typeof AVAILABLE_NETWORK_ACCESS_VALUES)[number]["id"];
 export type RuntimeServiceTier = (typeof AVAILABLE_SERVICE_TIERS)[number]["id"];
 export type RuntimePersonality = (typeof AVAILABLE_PERSONALITIES)[number]["id"];
@@ -103,7 +103,7 @@ export interface ResolvedRuntimeConfig {
   policy: ResolvedRuntimePolicy;
 }
 
-export interface RuntimeStatusContext {
+interface RuntimeStatusContext {
   workspaceRoot: string;
   tokensUsed?: number | null;
   projectInstructions?: ProjectInstructionsLoadResult | null;
@@ -122,7 +122,7 @@ export interface RuntimeSummary {
   writableRootsLabel: string;
 }
 
-export const DEFAULT_RUNTIME_POLICY: RuntimePolicyConfig = {
+const DEFAULT_RUNTIME_POLICY: RuntimePolicyConfig = {
   approvalPolicy: "inherit",
   sandboxMode: "inherit",
   networkAccess: "inherit",
@@ -198,7 +198,7 @@ function normalizeRuntimeString(candidate: unknown, fallback: string): string {
   return typeof candidate === "string" && candidate.trim().length > 0 ? candidate.trim() : fallback;
 }
 
-export function normalizeRuntimePolicy(
+function normalizeRuntimePolicy(
   input: Partial<RuntimePolicyConfig> | null | undefined,
 ): RuntimePolicyConfig {
   return {
@@ -340,7 +340,7 @@ export function diffRuntimeConfig(
   };
 }
 
-export function resolveInheritedApprovalPolicy(mode: AvailableMode): ResolvedApprovalPolicy {
+function resolveInheritedApprovalPolicy(mode: AvailableMode): ResolvedApprovalPolicy {
   switch (mode) {
     case "suggest":
     case "auto-edit":
@@ -350,7 +350,7 @@ export function resolveInheritedApprovalPolicy(mode: AvailableMode): ResolvedApp
   }
 }
 
-export function resolveInheritedSandboxMode(mode: AvailableMode): ResolvedSandboxMode {
+function resolveInheritedSandboxMode(mode: AvailableMode): ResolvedSandboxMode {
   switch (mode) {
     case "suggest":
       return "read-only";

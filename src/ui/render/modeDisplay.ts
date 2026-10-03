@@ -1,7 +1,7 @@
 import { formatModeLabel } from "../../config/settings.js";
 import type { Theme } from "../theme.js";
 
-export interface ModeDisplaySpec {
+interface ModeDisplaySpec {
   label: string;
   ringGlyph: string;
   ringColor: string;

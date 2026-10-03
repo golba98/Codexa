@@ -2,7 +2,7 @@ import type { LaunchArgs } from "../config/launchArgs.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface HeadlessExecArgs {
+interface HeadlessExecArgs {
   help: boolean;
   json: boolean;
   stdin: boolean;
@@ -18,7 +18,7 @@ export interface HeadlessExecArgs {
   launchArgs: LaunchArgs;
 }
 
-export type HeadlessExecArgsParseResult =
+type HeadlessExecArgsParseResult =
   | { ok: true; value: HeadlessExecArgs }
   | { ok: false; error: string };
 

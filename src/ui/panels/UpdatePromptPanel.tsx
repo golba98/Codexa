@@ -15,7 +15,7 @@ import {
 } from "../input/rawArrowKeys.js";
 import { useTheme } from "../theme.js";
 
-export type UpdateUIState = "available" | "installing" | "success" | "failed";
+type UpdateUIState = "available" | "installing" | "success" | "failed";
 
 export type RunUpdateFn = (
   pm: GlobalPackageManager,

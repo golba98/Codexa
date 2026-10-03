@@ -46,7 +46,7 @@ function getAnthropicApiKey(): string | null {
   return process.env.ANTHROPIC_API_KEY?.trim() || null;
 }
 
-export function isAnthropicRouteConfigured(): boolean {
+function isAnthropicRouteConfigured(): boolean {
   return getAnthropicApiKey() !== null || claudeCodeValidated;
 }
 

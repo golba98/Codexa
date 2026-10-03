@@ -17,7 +17,7 @@ import {
 } from "../core/workspace/launchContext.js";
 import { buildResumedProviderRoute } from "./conversation.js";
 
-export type SavedRouteAssessment =
+type SavedRouteAssessment =
   | { status: "ready"; route: ProviderRoute }
   | { status: "unavailable"; message: string; route?: ProviderRoute };
 

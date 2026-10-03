@@ -25,7 +25,7 @@ export interface ModelCapabilityProfile {
   error?: string;
 }
 
-export interface ResolveModelCapabilityProfileOptions {
+interface ResolveModelCapabilityProfileOptions {
   providerId: ProviderId;
   modelId: string;
   providerConfig?: ProviderWorkspaceOverride | null;

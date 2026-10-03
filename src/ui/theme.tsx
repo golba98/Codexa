@@ -53,7 +53,7 @@ export const DARK_THEME = {
   logoShadow: "#064E3B",
 } satisfies Theme;
 
-export const PURPLE_THEME = {
+const PURPLE_THEME = {
   bg: "#12101C",
   surface: "#1B162E",
   surfaceMuted: "#151224",
@@ -78,7 +78,7 @@ export const PURPLE_THEME = {
   logoShadow: "#3B2C66",
 } satisfies Theme;
 
-export const MONO_THEME = {
+const MONO_THEME = {
   bg: "#0F0F0F",
   surface: "#1A1A1A",
   surfaceMuted: "#141414",
@@ -103,7 +103,7 @@ export const MONO_THEME = {
   logoShadow: "#525252",
 } satisfies Theme;
 
-export const BLACK_THEME = {
+const BLACK_THEME = {
   bg: "#000000",
   surface: "#0D0D10",
   surfaceMuted: "#060608",
@@ -128,7 +128,7 @@ export const BLACK_THEME = {
   logoShadow: "#52525B",
 } satisfies Theme;
 
-export const NORDIC_THEME = {
+const NORDIC_THEME = {
   bg: "#1E222A",
   surface: "#2E3440",
   surfaceMuted: "#242933",
@@ -153,7 +153,7 @@ export const NORDIC_THEME = {
   logoShadow: "#434C5E",
 } satisfies Theme;
 
-export const DRACULA_THEME = {
+const DRACULA_THEME = {
   bg: "#1E1F29",
   surface: "#282A36",
   surfaceMuted: "#21222C",
@@ -178,7 +178,7 @@ export const DRACULA_THEME = {
   logoShadow: "#44475A",
 } satisfies Theme;
 
-export const GRUVBOX_THEME = {
+const GRUVBOX_THEME = {
   bg: "#1D2021",
   surface: "#282828",
   surfaceMuted: "#242424",
@@ -203,7 +203,7 @@ export const GRUVBOX_THEME = {
   logoShadow: "#504945",
 } satisfies Theme;
 
-export const OCEAN_THEME = {
+const OCEAN_THEME = {
   bg: "#030712",
   surface: "#0F172A",
   surfaceMuted: "#0A0F1D",

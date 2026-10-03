@@ -60,7 +60,7 @@ export function activityLabel(value: string, now = new Date()): string {
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-export function providerLabel(providerId: string | null): string {
+function providerLabel(providerId: string | null): string {
   switch (providerId) {
     case "local":
       return "Local";

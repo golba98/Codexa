@@ -6,11 +6,11 @@ type ModelStateDebugDetails = Record<string, unknown>;
 
 let sequence = 0;
 
-export function isModelStateDebugEnabled(): boolean {
+function isModelStateDebugEnabled(): boolean {
   return process.env.UBUME_RENDER_DEBUG === "1" || process.env.UBUME_DEBUG_MODEL_STATE === "1";
 }
 
-export function getModelStateDebugLogPath(): string {
+function getModelStateDebugLogPath(): string {
   return (
     process.env.UBUME_RENDER_DEBUG_FILE?.trim() ||
     process.env.UBUME_DEBUG_MODEL_STATE_LOG?.trim() ||

@@ -18,8 +18,6 @@ import type {
   ProviderRuntime,
 } from "./types.js";
 
-export { resetAgyExecutableCacheForTests };
-
 const ANTIGRAVITY_TIMEOUT_MS = 120_000;
 const ANTIGRAVITY_VALIDATION_TIMEOUT_MS = 10_000;
 const ANTIGRAVITY_ROUTE_SETUP_MESSAGE =
@@ -323,7 +321,7 @@ export async function discoverAgyModels(options: {
   };
 }
 
-export function isAntigravityRouteConfigured(): boolean {
+function isAntigravityRouteConfigured(): boolean {
   return agyRouteValidated;
 }
 

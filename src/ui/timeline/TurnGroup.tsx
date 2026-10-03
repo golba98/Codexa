@@ -655,24 +655,6 @@ export function TurnGroup({
   );
 }
 
-// Memoized wrapper to prevent re-renders of finalized turns
-export const MemoizedTurnGroup = memo(TurnGroup, (prev, next) => {
-  return (
-    prev.cols === next.cols &&
-    prev.turnIndex === next.turnIndex &&
-    prev.opacity === next.opacity &&
-    prev.question === next.question &&
-    prev.runPhase === next.runPhase &&
-    prev.streamPreviewRows === next.streamPreviewRows &&
-    prev.streamMode === next.streamMode &&
-    prev.verboseMode === next.verboseMode &&
-    prev.user === next.user &&
-    prev.run === next.run &&
-    prev.assistant === next.assistant &&
-    prev.workspaceRoot === next.workspaceRoot
-  );
-});
-
 export type TurnRunPhase = "none" | "thinking" | "streaming" | "final";
 
 export function resolveTurnRunPhase(

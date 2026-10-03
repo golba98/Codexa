@@ -38,7 +38,7 @@ import {
   type TimelineRow,
 } from "./timelineMeasure.js";
 
-export interface TranscriptShellProps {
+interface TranscriptShellProps {
   layout: TerminalViewport;
   authState: CodexAuthState;
   workspaceLabel: string;
@@ -65,7 +65,7 @@ function isTranscriptEvent(event: TimelineEvent): boolean {
   );
 }
 
-export function isHomeScreenState({
+function isHomeScreenState({
   staticEvents,
   activeEvents,
   uiState,

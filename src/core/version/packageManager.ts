@@ -61,7 +61,7 @@ export function getUpdateCommand(pm: GlobalPackageManager): {
   return { displayCommand: argv.join(" "), argv };
 }
 
-export interface RunUpdateCommandDeps {
+interface RunUpdateCommandDeps {
   platform?: NodeJS.Platform;
   cwd?: string;
   runCommandFn?: (

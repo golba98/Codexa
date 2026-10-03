@@ -33,7 +33,7 @@ import {
 import { isRecord } from "./toml-serialize.js";
 import { isProjectTrusted } from "./trustStore.js";
 
-export const RUNTIME_FIELD_PATHS = [
+const RUNTIME_FIELD_PATHS = [
   "provider",
   "model",
   "reasoningLevel",
@@ -48,11 +48,11 @@ export const RUNTIME_FIELD_PATHS = [
   "policy.personality",
 ] as const;
 
-export type RuntimeFieldPath = (typeof RUNTIME_FIELD_PATHS)[number];
+type RuntimeFieldPath = (typeof RUNTIME_FIELD_PATHS)[number];
 
-export type ConfigLayerStatus = "loaded" | "missing" | "blocked" | "error";
+type ConfigLayerStatus = "loaded" | "missing" | "blocked" | "error";
 
-export interface ConfigLayerReport {
+interface ConfigLayerReport {
   label: string;
   status: ConfigLayerStatus;
   path?: string;
@@ -75,7 +75,7 @@ export interface LayeredConfigResult {
   diagnostics: LayeredConfigDiagnostics;
 }
 
-export interface ResolveLayeredConfigOptions {
+interface ResolveLayeredConfigOptions {
   workspaceRoot: string;
   launchArgs: LaunchArgs;
 }

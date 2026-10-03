@@ -1,6 +1,6 @@
-export const LARGE_PASTE_THRESHOLD = 1_000;
+const LARGE_PASTE_THRESHOLD = 1_000;
 
-export const PASTED_CONTENT_PATTERN =
+const PASTED_CONTENT_PATTERN =
   /\[Pasted Content ([\d,]+) chars\](?:\u2063[\uFE00-\uFE09]+\u2063)?/g;
 export const IMAGE_ATTACHMENT_PATTERN = /\[Image: ([^\]\n]+)\](?:\u2063[\uFE00-\uFE09]+\u2063)?/g;
 const ATOMIC_CONTENT_PATTERN =
@@ -8,7 +8,7 @@ const ATOMIC_CONTENT_PATTERN =
 
 let nextPasteId = Date.now() * 1000;
 
-export function countCharacters(value: string): number {
+function countCharacters(value: string): number {
   return Array.from(value).length;
 }
 

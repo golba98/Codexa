@@ -33,7 +33,7 @@ import type {
 
 const VIBE_LOOKUP_TIMEOUT_MS = 5_000;
 const VIBE_RUN_TIMEOUT_MS = 600_000;
-export const VIBE_DEFAULT_MODEL_LABEL = "Vibe default";
+const VIBE_DEFAULT_MODEL_LABEL = "Vibe default";
 
 export const MISTRAL_VIBE_MISSING_MESSAGE =
   "`vibe` is not available. Install Mistral Vibe CLI and authenticate it with `vibe --setup`, then try again.";
@@ -53,7 +53,7 @@ type DirectCommandRunner = (spec: {
   timeoutMs?: number;
 }) => { result: Promise<CommandResultSubset> };
 
-export interface VibeModelDetection {
+interface VibeModelDetection {
   modelId: string;
   source: "environment" | "project-config" | "user-config" | "default";
   configPath: string | null;
@@ -383,7 +383,7 @@ function truncateForActivity(value: string, max = 120): string {
   return collapsed.length > max ? `${collapsed.slice(0, max - 1)}…` : collapsed;
 }
 
-export interface VibeStreamParser {
+interface VibeStreamParser {
   push: (chunk: string) => void;
   flush: () => void;
   finalText: () => string;
@@ -512,7 +512,7 @@ type VibeCommandRunner = (
   handlers: CommandStreamHandlers,
 ) => { result: Promise<CommandResult>; cancel: () => void; stopped?: Promise<void> };
 
-export interface RunMistralVibeDeps {
+interface RunMistralVibeDeps {
   runCommandImpl?: VibeCommandRunner;
   resolveExecutable?: (cwd: string) => Promise<string | null>;
   env?: NodeJS.ProcessEnv;

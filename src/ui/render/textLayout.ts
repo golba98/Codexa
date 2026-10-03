@@ -1,11 +1,6 @@
 import stringWidth from "string-width";
 
-interface WindowSlice {
-  text: string;
-  cursorColumn: number;
-}
-
-export interface TextUnit {
+interface TextUnit {
   text: string;
   start: number;
   end: number;
@@ -21,7 +16,7 @@ export interface WrappedTextRow {
 
 // ─── Character measurement ───────────────────────────────────────────────────
 
-export function getCharWidth(char: string): number {
+function getCharWidth(char: string): number {
   return stringWidth(char);
 }
 
@@ -50,147 +45,7 @@ export function getTextWidth(text: string): number {
   return stringWidth(text);
 }
 
-function trimToWidthFromEnd(text: string, maxWidth: number): string {
-  if (maxWidth <= 0) return "";
-  let width = 0;
-  const kept: TextUnit[] = [];
-  const units = getTextUnits(text);
-
-  for (let index = units.length - 1; index >= 0; index -= 1) {
-    const unit = units[index]!;
-    if (width + unit.width > maxWidth) break;
-    kept.unshift(unit);
-    width += unit.width;
-  }
-
-  return kept.map((unit) => unit.text).join("");
-}
-
-function trimToWidthFromStart(text: string, maxWidth: number): string {
-  if (maxWidth <= 0) return "";
-  let width = 0;
-  let output = "";
-
-  for (const unit of getTextUnits(text)) {
-    if (width + unit.width > maxWidth) break;
-    output += unit.text;
-    width += unit.width;
-  }
-
-  return output;
-}
-
 // ─── Input window ────────────────────────────────────────────────────────────
-
-export function flattenInputForDisplay(
-  text: string,
-  cursor: number,
-): { text: string; cursor: number } {
-  const normalized = normalizeLineBreaks(text);
-  const units = getTextUnits(normalized);
-  let output = "";
-  let mappedCursor = 0;
-
-  for (const unit of units) {
-    if (unit.start === cursor) {
-      mappedCursor = output.length;
-    }
-
-    if (unit.text === "\n") {
-      output += " ↩ ";
-      continue;
-    }
-    if (unit.text === "\t") {
-      output += "  ";
-      continue;
-    }
-    output += unit.text;
-  }
-
-  if (cursor >= normalized.length) {
-    mappedCursor = output.length;
-  }
-
-  return { text: output, cursor: mappedCursor };
-}
-
-export function createInlineInputWindow(
-  text: string,
-  cursor: number,
-  maxWidth: number,
-): WindowSlice {
-  const safeWidth = Math.max(1, maxWidth);
-  const flattened = flattenInputForDisplay(text, cursor);
-  const units = getTextUnits(flattened.text);
-  const charStartWidths: number[] = [];
-  let totalWidth = 0;
-
-  for (const unit of units) {
-    charStartWidths.push(totalWidth);
-    totalWidth += unit.width;
-  }
-
-  const cursorWidth = getTextWidth(flattened.text.slice(0, flattened.cursor));
-  if (totalWidth <= safeWidth) {
-    return { text: flattened.text, cursorColumn: cursorWidth };
-  }
-
-  const preferredStart = Math.max(0, cursorWidth - Math.floor(safeWidth * 0.65));
-  let windowStart = preferredStart;
-  if (windowStart + safeWidth > totalWidth) {
-    windowStart = Math.max(0, totalWidth - safeWidth);
-  }
-  const windowEnd = windowStart + safeWidth;
-
-  let startIndex = 0;
-  while (
-    startIndex < units.length &&
-    charStartWidths[startIndex]! + units[startIndex]!.width <= windowStart
-  ) {
-    startIndex += 1;
-  }
-
-  let endIndex = startIndex;
-  while (endIndex < units.length && charStartWidths[endIndex]! < windowEnd) {
-    endIndex += 1;
-  }
-
-  let visibleText = units
-    .slice(startIndex, endIndex)
-    .map((unit) => unit.text)
-    .join("");
-  let cursorColumn = Math.max(0, cursorWidth - (charStartWidths[startIndex] ?? 0));
-  const truncatedLeft = startIndex > 0;
-  const truncatedRight = endIndex < units.length;
-
-  if (truncatedLeft) {
-    const ellipsis = "…";
-    const available = Math.max(
-      1,
-      safeWidth - getCharWidth(ellipsis) - (truncatedRight ? getCharWidth(ellipsis) : 0),
-    );
-    visibleText = ellipsis + trimToWidthFromEnd(visibleText, available);
-    cursorColumn = Math.min(
-      getTextWidth(visibleText),
-      Math.max(getCharWidth(ellipsis), cursorColumn + getCharWidth(ellipsis)),
-    );
-  }
-
-  if (truncatedRight) {
-    const ellipsis = "…";
-    const available = Math.max(
-      1,
-      safeWidth - (truncatedLeft ? getCharWidth(ellipsis) : 0) - getCharWidth(ellipsis),
-    );
-    const baseText = truncatedLeft ? visibleText.slice(1) : visibleText;
-    visibleText = `${truncatedLeft ? "…" : ""}${trimToWidthFromStart(baseText, available)}${ellipsis}`;
-  }
-
-  return {
-    text: visibleText,
-    cursorColumn: Math.max(0, Math.min(getTextWidth(visibleText), cursorColumn)),
-  };
-}
 
 export function splitTextAtColumn(
   text: string,

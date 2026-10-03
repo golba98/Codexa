@@ -56,9 +56,9 @@ interface EventTimelineItem {
   event: StandaloneTimelineEvent;
 }
 
-export type TimelineItem = TurnTimelineItem | EventTimelineItem;
+type TimelineItem = TurnTimelineItem | EventTimelineItem;
 
-export interface TurnRenderState {
+interface TurnRenderState {
   opacity: TurnOpacity;
   question: string | null;
   runPhase: TurnRunPhase;
@@ -247,7 +247,7 @@ export function buildTimelineItems(events: TimelineEvent[]): TimelineItem[] {
   return items.filter((item) => item.type === "event" || item.user !== null);
 }
 
-export type TurnOpacityResolver = (turnId: number, activeTurnId: number | null) => TurnOpacity;
+type TurnOpacityResolver = (turnId: number, activeTurnId: number | null) => TurnOpacity;
 
 /**
  * Build a resolver once per render pass so resolving every turn's opacity is
@@ -547,66 +547,6 @@ export function pageDownTimelineViewport(
   }
 
   const nextAnchor = Math.min(tailRow, currentAnchor + Math.max(1, viewportRows));
-  if (nextAnchor >= tailRow) {
-    return createFollowTailViewport(liveSnapshot.totalRows);
-  }
-
-  return {
-    anchorRow: nextAnchor,
-    followTail: false,
-    unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
-    unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
-    frozenSnapshot,
-  };
-}
-
-export function halfPageUpTimelineViewport(
-  viewport: TimelineViewportState,
-  liveSnapshot: TimelineSnapshot,
-  viewportRows: number,
-): TimelineViewportState {
-  if (liveSnapshot.totalRows === 0) {
-    return createFollowTailViewport(0);
-  }
-
-  const frozenSnapshot = getFrozenSnapshot(viewport, liveSnapshot);
-  const tailRow = Math.max(0, frozenSnapshot.totalRows - 1);
-  const currentAnchor = viewport.followTail
-    ? tailRow
-    : clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
-  const halfPage = Math.max(1, Math.floor(viewportRows / 2));
-  const nextAnchor = Math.max(
-    getFirstPageAnchor(frozenSnapshot.totalRows, viewportRows),
-    currentAnchor - halfPage,
-  );
-
-  return {
-    anchorRow: nextAnchor,
-    followTail: false,
-    unseenItems: Math.max(0, liveSnapshot.itemCount - frozenSnapshot.itemCount),
-    unseenRows: Math.max(0, liveSnapshot.totalRows - frozenSnapshot.totalRows),
-    frozenSnapshot,
-  };
-}
-
-export function halfPageDownTimelineViewport(
-  viewport: TimelineViewportState,
-  liveSnapshot: TimelineSnapshot,
-  viewportRows: number,
-): TimelineViewportState {
-  if (liveSnapshot.totalRows === 0 || viewport.followTail) {
-    return viewport;
-  }
-
-  const frozenSnapshot = viewport.frozenSnapshot ?? liveSnapshot;
-  const tailRow = Math.max(0, frozenSnapshot.totalRows - 1);
-  const currentAnchor = clampAnchorRow(viewport.anchorRow, frozenSnapshot.totalRows);
-  if (currentAnchor >= tailRow) {
-    return createFollowTailViewport(liveSnapshot.totalRows);
-  }
-
-  const halfPage = Math.max(1, Math.floor(viewportRows / 2));
-  const nextAnchor = Math.min(tailRow, currentAnchor + halfPage);
   if (nextAnchor >= tailRow) {
     return createFollowTailViewport(liveSnapshot.totalRows);
   }
@@ -1537,5 +1477,3 @@ export const Timeline = memo(
     );
   },
 );
-
-export { Timeline as ActiveTimeline };

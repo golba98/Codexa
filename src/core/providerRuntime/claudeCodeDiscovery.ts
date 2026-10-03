@@ -66,7 +66,7 @@ export interface ClaudeCodeCapabilityDiscovery {
   diagnostics?: Record<string, string | number | boolean | null>;
 }
 
-export interface DiscoverClaudeCodeCapabilitiesOptions {
+interface DiscoverClaudeCodeCapabilitiesOptions {
   cwd: string;
   runCommandImpl?: CommandRunner;
   configuredPath?: string | null;
