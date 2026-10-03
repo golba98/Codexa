@@ -14,8 +14,9 @@ export const DEFAULT_NATIVE_MODEL_ROOT = join(homedir(), "Development", "2-Pytho
 /**
  * Resolves which local-repo source file the dev launcher runs, and the args to
  * forward to it. Interactive launches run src/index.tsx; `exec` and
- * `--headless-benchmark` run the headless src/exec.ts. Exported so tests can
- * prove the dev launcher always resolves to the LOCAL checkout.
+ * `--headless-benchmark` run the headless src/cli.ts with the mode token kept,
+ * exactly as bin/ubume.js does. Exported so tests can prove the dev launcher
+ * always resolves to the LOCAL checkout.
  */
 export function resolveLocalDevEntry(root, args) {
   const isHeadlessExec = args[0] === "exec";
@@ -26,9 +27,9 @@ export function resolveLocalDevEntry(root, args) {
     isHeadlessExec,
     isHeadlessBenchmark,
     entry: isHeadlessMode
-      ? join(root, "src", "exec.ts")
+      ? join(root, "src", "cli.ts")
       : join(root, "src", "index.tsx"),
-    entryArgs: isHeadlessMode ? args.slice(1) : args,
+    entryArgs: args,
   };
 }
 

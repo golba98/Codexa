@@ -30,8 +30,8 @@ Keep startup, headless dispatch, and app-wide wiring here. Move reusable domain 
 | --- | --- |
 | `src/app.tsx` | Owns the interactive application's runtime state and wires configuration, providers, commands, sessions, terminal control, screens, and prompt execution. |
 | `src/appRenderStability.test.ts` | Verifies app Render Stability behavior and regression contracts in the application area. |
-| `src/exec.test.ts` | Verifies exec behavior and regression contracts in the application area. |
-| `src/exec.ts` | Provides the executable headless entry point, help text, argument parsing hand-off, timing, and process exit behavior. |
+| `src/cli.test.ts` | Verifies the headless entry point never imports interactive UI modules. |
+| `src/cli.ts` | Headless entry point for `ubume exec`, `--headless-benchmark` and the other terminal commands; dispatches to `headless/commands.ts` with interrupt handling. |
 | `src/index.test.tsx` | Verifies index behavior and regression contracts in the application area. |
 | `src/index.tsx` | Bootstraps the Ink application, validates the terminal, owns terminal-mode setup/cleanup, frame locking, resize handling, and the single App render root. |
 | `src/legacyEnvBootstrap.ts` | Side-effect module imported first by both entry points so legacy `CODEXA_*` environment variables are aliased before any module reads them. |
