@@ -1,7 +1,7 @@
 import "./config/legacyEnv.js";
 import { type Instance, type RenderOptions, render } from "ink";
 import type React from "react";
-import { App } from "./app.js";
+import { App } from "./app/App.js";
 import { type LaunchArgs, parseLaunchArgs } from "./config/launchArgs.js";
 import { loadSettings } from "./config/persistence.js";
 import { APP_NAME, formatTerminalTitlePath } from "./config/settings.js";

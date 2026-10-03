@@ -381,3 +381,52 @@ export function effectiveProviderRuntime(
     ...(override?.codexCommandPath ? { codexCommandPath: override.codexCommandPath } : {}),
   };
 }
+
+export function formatRuntimeProviderLabel(providerId: ProviderId): string {
+  if (providerId === "local") return "Local";
+  if (providerId === "codexa-native" || providerId === "codexa-cupy") return "Codexa Native";
+  if (providerId === "google") return "Google";
+  if (providerId === "anthropic") return "Anthropic";
+  if (providerId === "mistral") return "Mistral Vibe CLI";
+  if (providerId === "antigravity") return "Antigravity";
+  return "OpenAI";
+}
+
+export interface ProviderSetupPlan {
+  installCommand: string | null;
+  setupCommand: string;
+}
+
+export function getProviderSetupPlan(providerId: ProviderId, windows: boolean): ProviderSetupPlan {
+  switch (providerId) {
+    case "openai":
+      return { installCommand: "npm install -g @openai/codex", setupCommand: "codex login" };
+    case "anthropic":
+      return { installCommand: "npm install -g @anthropic-ai/claude-code", setupCommand: "claude" };
+    case "google":
+      return { installCommand: "npm install -g @google/gemini-cli", setupCommand: "gemini" };
+    case "mistral":
+      return windows
+        ? {
+            installCommand:
+              "if (Get-Command uv -ErrorAction SilentlyContinue) { uv tool install mistral-vibe } else { irm https://astral.sh/uv/install.ps1 | iex; uv tool install mistral-vibe }",
+            setupCommand: "vibe --setup",
+          }
+        : {
+            installCommand: "curl -LsSf https://mistral.ai/vibe/install.sh | bash",
+            setupCommand: "vibe --setup",
+          };
+    case "antigravity":
+      return windows
+        ? {
+            installCommand: "irm https://antigravity.google/cli/install.ps1 | iex",
+            setupCommand: "agy",
+          }
+        : {
+            installCommand: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+            setupCommand: "agy",
+          };
+    default:
+      return { installCommand: null, setupCommand: "" };
+  }
+}

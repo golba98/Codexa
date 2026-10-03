@@ -9,9 +9,15 @@
  * Usage: node scripts/audit-ubume-capabilities.mjs
  */
 
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
+
+function readAppSources() {
+  const root = join(repoRoot, "src", "app");
+  return readdirSync(root, { recursive: true }).filter(file => /\.tsx?$/.test(file))
+    .sort().map(file => readFileSync(join(root, file), "utf-8")).join("\n");
+}
 
 const __dirname = import.meta.dirname ?? 
   resolve(new URL(import.meta.url).pathname, "..", "..");
@@ -62,14 +68,14 @@ const checks = {
 
   initialPromptArgument() {
     const path = join(repoRoot, "src", "config", "launchArgs.ts");
-    const appPath = join(repoRoot, "src", "app.tsx");
+    const appPath = join(repoRoot, "src", "app", "App.tsx");
     
     if (!existsSync(path) || !existsSync(appPath)) {
       return { pass: false, evidence: [], reason: "Required files not found" };
     }
 
     const launchContent = readFileSync(path, "utf-8");
-    const appContent = readFileSync(appPath, "utf-8");
+    const appContent = readAppSources();
     
     const hasExtraction = /initialPrompt/.test(launchContent) && /promptArgs/.test(launchContent);
     const hasUsage = /launchArgs\.initialPrompt/.test(appContent)
@@ -143,7 +149,7 @@ const checks = {
 
   agentsmdSupport() {
     const loaderPath = join(repoRoot, "src", "core", "workspace", "projectInstructions.ts");
-    const appPath = join(repoRoot, "src", "app.tsx");
+    const appPath = join(repoRoot, "src", "app", "App.tsx");
     const promptPath = join(repoRoot, "src", "core", "codex", "codexPrompt.ts");
     const providerPath = join(repoRoot, "src", "core", "providers", "codexSubprocess.ts");
     
@@ -158,7 +164,7 @@ const checks = {
     }
     
     const loaderContent = readFileSync(loaderPath, "utf-8");
-    const appContent = readFileSync(appPath, "utf-8");
+    const appContent = readAppSources();
     const promptContent = readFileSync(promptPath, "utf-8");
     const providerContent = readFileSync(providerPath, "utf-8");
     const discoversAgents = /AGENTS\.md/.test(loaderContent) && /\.codex/.test(loaderContent);
@@ -384,10 +390,10 @@ const checks = {
 
   interruptCancelHandling() {
     const indexPath = join(repoRoot, "src", "index.tsx");
-    const appPath = join(repoRoot, "src", "app.tsx");
+    const appPath = join(repoRoot, "src", "app", "App.tsx");
     
     const paths = [indexPath, appPath].filter(p => existsSync(p));
-    const content = paths.map(p => readFileSync(p, "utf-8")).join("");
+    const content = paths.map(p => p === appPath ? readAppSources() : readFileSync(p, "utf-8")).join("");
     const hasSignals = /SIGINT|SIGTERM|signal|cancel/.test(content);
     const hasCancel = /cancel|abort|kill/.test(content);
     
