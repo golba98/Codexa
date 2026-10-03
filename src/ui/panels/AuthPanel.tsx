@@ -3,7 +3,8 @@ import { AUTH_PREFERENCES, formatAuthPreferenceLabel } from "../../config/settin
 import type { CodexAuthProbeResult } from "../../core/auth/codexAuth.js";
 import { getAuthStateLabel } from "../../core/auth/codexAuth.js";
 import type { BackendProvider } from "../../core/providers/types.js";
-import { clampVisualText, usePanelLayout } from "../layout.js";
+import { usePanelLayout } from "../layout.js";
+import { clampVisualText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 
 interface AuthPanelProps {

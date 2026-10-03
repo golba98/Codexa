@@ -3,7 +3,6 @@ import test from "node:test";
 import { getHeaderHeroLayout, measureTopHeaderRows } from "./chrome/TopHeader.js";
 import {
   advanceTerminalViewport,
-  clampVisualText,
   computeAppLayoutBudget,
   createLayoutSnapshot,
   createTerminalViewport,
@@ -11,9 +10,9 @@ import {
   getShellHeight,
   getShellWidth,
   getUsableShellWidth,
-  getVisualWidth,
   resolveStartupHeaderMode,
 } from "./layout.js";
+import { clampVisualText, getTextWidth } from "./render/textLayout.js";
 
 test("leaves a one-column gutter to avoid edge-triggered scrollbars", () => {
   assert.equal(getShellWidth(120), 119);
@@ -233,7 +232,7 @@ test("bumps the layout epoch when the terminal recovers from an unstable restore
 
 test("measures visual width instead of raw string length", () => {
   assert.equal("⚡".length, 1);
-  assert.equal(getVisualWidth("⚡"), 2);
+  assert.equal(getTextWidth("⚡"), 2);
 });
 
 test("clamps text to a visual width budget", () => {

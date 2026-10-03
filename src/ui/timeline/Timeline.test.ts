@@ -3,7 +3,8 @@ import test from "node:test";
 import type { CodexAuthState } from "../../core/auth/codexAuth.js";
 import type { RunProgressEntry, TimelineEvent } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
-import { getShellWidth, getVisualWidth, type Layout } from "../layout.js";
+import { getShellWidth, type Layout } from "../layout.js";
+import { getTextWidth } from "../render/textLayout.js";
 import {
   buildActiveRenderItems,
   buildIntroRenderItem,
@@ -2051,7 +2052,7 @@ test("long command is clipped within the compact action row", () => {
       actionText,
       /would overflow if not wrapped properly within the card border/,
     );
-    assert.ok(getVisualWidth(actionText) <= totalWidth);
+    assert.ok(getTextWidth(actionText) <= totalWidth);
   }
   assert.doesNotMatch(
     snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"),
@@ -2083,7 +2084,7 @@ function extractCompactActionRows(snapshot: TimelineSnapshot): TimelineRow[] {
 }
 
 function assertCompactActionIntegrity(rows: TimelineRow[], totalWidth: number): void {
-  const widths = rows.map((row) => getVisualWidth(rowText(row)));
+  const widths = rows.map((row) => getTextWidth(rowText(row)));
   widths.forEach((width, index) => {
     assert.ok(
       width <= totalWidth,

@@ -35,8 +35,9 @@ import {
   moveAcrossPastedContent,
 } from "../input/pastedContent.js";
 import { type CommandSuggestion, getSlashCommandSuggestions } from "../input/slashCommands.js";
-import { clampVisualText, type Layout } from "../layout.js";
+import type { Layout } from "../layout.js";
 import { getModeDisplaySpec } from "../render/modeDisplay.js";
+import { clampVisualText } from "../render/textLayout.js";
 import { THEMES, type Theme, useTheme } from "../theme.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
 import { isAnimatedBusyState } from "./busyStatusAnimation.js";

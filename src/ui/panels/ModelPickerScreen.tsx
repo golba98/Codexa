@@ -11,7 +11,6 @@ import type { GeminiModelSelection } from "../../core/providerRuntime/types.js";
 import { FOCUS_IDS } from "../input/focus.js";
 import {
   type ActivePanelLayout,
-  clampVisualText,
   getAvailableRowsForPanel,
   getShellWidth,
   type Layout,
@@ -21,6 +20,7 @@ import {
   usePanelAvailableRows,
   usePanelLayout,
 } from "../layout.js";
+import { clampVisualText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
 

@@ -1,6 +1,7 @@
 import { execFileSync, execSync } from "node:child_process";
 import { accessSync, constants, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { errorMessage } from "./values.js";
 
 export interface RepoIdentity {
   owner: string;
@@ -185,7 +186,7 @@ export function checkLocalGitWrite(): DiagnosticResult {
     result.evidence = "Git directory is writable; ref and remote write capability were not tested.";
   } catch (error) {
     result.blocker = "Git directory is unavailable or not writable.";
-    result.evidence = error instanceof Error ? error.message : String(error);
+    result.evidence = errorMessage(error);
   }
 
   return result;

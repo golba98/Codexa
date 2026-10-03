@@ -3,6 +3,7 @@ import type { AvailableBackend } from "../config/settings.js";
 import { MAX_CHAT_LINES } from "../config/settings.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
+import { normalizeLineBreaks } from "../core/shared/values.js";
 import { type RunFileActivity, summarizeRunActivity } from "../core/workspace/workspaceActivity.js";
 import type {
   ErrorEvent,
@@ -485,10 +486,7 @@ export function appendRunActivity(event: RunEvent, additions: RunFileActivity[])
 // ─── Progress blocks ─────────────────────────────────────────────────────────
 
 function trimProgressText(text: string): string {
-  return text
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/[ \t]+\n/g, "\n");
+  return normalizeLineBreaks(text).replace(/[ \t]+\n/g, "\n");
 }
 
 function createProgressBlock(

@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "child_process";
+import { normalizeLineBreaks } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import { createTerminalTitleSequenceStripper } from "../terminal/terminalTitle.js";
 import { validateExecutableForSpawn } from "./processValidation.js";
@@ -38,9 +39,7 @@ interface InternalCommandSpec extends CommandSpec {
 
 // Sanitize before splitting: title sequences can span newlines and must not corrupt the line output.
 function splitOutputLines(text: string): string[] {
-  return sanitizeTerminalOutput(text)
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
+  return normalizeLineBreaks(sanitizeTerminalOutput(text))
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);

@@ -2,10 +2,10 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isRecord } from "../shared/values.js";
 import { extractProtobufStrings } from "./protobufText.js";
 import {
   clampText,
-  isRecord,
   type JsonRecord,
   parseJsonLines,
   resolveHome,

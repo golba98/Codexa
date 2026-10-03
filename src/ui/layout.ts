@@ -12,7 +12,6 @@
 
 import { useStdout } from "ink";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import stringWidth from "string-width";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { setTerminalResizing } from "../core/terminal/terminalControl.js";
 
@@ -210,28 +209,6 @@ export function resolveStartupHeaderMode({
   }
 
   return "compact";
-}
-
-export function getVisualWidth(text: string): number {
-  return stringWidth(text);
-}
-
-export function clampVisualText(text: string, maxWidth: number): string {
-  if (maxWidth <= 0) return "";
-  if (getVisualWidth(text) <= maxWidth) return text;
-
-  const ellipsis = maxWidth > 1 ? "…" : "";
-  const suffixWidth = getVisualWidth(ellipsis);
-  let output = "";
-
-  for (const char of Array.from(text)) {
-    if (getVisualWidth(output + char) + suffixWidth > maxWidth) {
-      break;
-    }
-    output += char;
-  }
-
-  return output + ellipsis;
 }
 
 function computeMode(cols: number, rows: number): LayoutMode {

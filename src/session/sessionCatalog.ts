@@ -9,6 +9,7 @@ import {
 } from "../core/externalSessions/index.js";
 import { sameFolder } from "../core/externalSessions/sessionIo.js";
 import type { LocalBackendId, ProviderId } from "../core/providerLauncher/types.js";
+import { errorMessage } from "../core/shared/values.js";
 import {
   resolveLegacyCodexaDataDir,
   resolveUbumeDataDir,
@@ -149,7 +150,7 @@ export async function listSessionCatalog(
       try {
         for (const key of directories(root)) keys.add(key);
       } catch (error) {
-        errors.push(`Ubume: ${error instanceof Error ? error.message : "Could not list chats"}`);
+        errors.push(`Ubume: ${errorMessage(error, "Could not list chats")}`);
       }
     }
   for (const key of keys) {
@@ -197,10 +198,7 @@ export async function listSessionCatalog(
   const native: ExternalSessionSummary[] = [];
   discovered.forEach((result, index) => {
     if (result.status === "fulfilled") native.push(...result.value);
-    else
-      errors.push(
-        `${sources[index]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
-      );
+    else errors.push(`${sources[index]}: ${errorMessage(result.reason)}`);
   });
   return { sessions: mergeSessionSummaries(owned, native), errors: [...new Set(errors)] };
 }

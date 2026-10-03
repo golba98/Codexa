@@ -8,7 +8,7 @@ import { getAuthStateLabel } from "../../core/auth/codexAuth.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
 import { formatUbumeBrandLabel } from "../../core/version/channel.js";
 import { formatVersionLabel, UBUME_UPDATE_COMMAND } from "../../core/version/updateCheck.js";
-import { clampVisualText, isDecorativeLayoutMode, type Layout } from "../layout.js";
+import { isDecorativeLayoutMode, type Layout } from "../layout.js";
 import {
   getLogoWidth,
   LOGO_COMPACT,
@@ -16,7 +16,7 @@ import {
   LOGO_LARGE_MIN_COLS,
   LOGO_LARGE_MIN_ROWS,
 } from "../render/logoVariants.js";
-import { getTextWidth } from "../render/textLayout.js";
+import { clampVisualText, getTextWidth } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 import { UPDATE_CARD_ROWS, UpdateAvailableCard } from "./UpdateAvailableCard.js";
 

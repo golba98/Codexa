@@ -1,3 +1,4 @@
+import { isRecord } from "../shared/values.js";
 export interface LmStudioModelInfo {
   id: string;
   object?: string;
@@ -54,10 +55,6 @@ export async function fetchLmStudioModelInfo(options: {
   } catch {
     return null;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseModelInfo(value: unknown): LmStudioModelInfo | null {

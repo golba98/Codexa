@@ -9,6 +9,7 @@ import { loadCachedProviderModels } from "../models/providerModelCache.js";
 import { runCommand } from "../process/CommandRunner.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
+import { errorMessage } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type {
   ProviderChatRequest,
@@ -480,7 +481,7 @@ export function runAntigravityWithRunner(
     })
     .catch((error) => {
       control.finish();
-      const message = error instanceof Error ? error.message : "Antigravity CLI execution failed.";
+      const message = errorMessage(error, "Antigravity CLI execution failed.");
       handlers.onError(message);
     });
 
@@ -597,7 +598,7 @@ export const antigravityRuntime: ProviderRuntime = {
       })
       .catch((error) => {
         control.finish();
-        if (!cancelled) handlers.onError(error instanceof Error ? error.message : String(error));
+        if (!cancelled) handlers.onError(errorMessage(error));
       });
     control.track(lookup);
     return () => {

@@ -4,6 +4,7 @@ import type { LaunchArgs } from "../config/launchArgs.js";
 import { isKnownProviderId } from "../core/providerLauncher/registry.js";
 import { discoverLocalModels } from "../core/providerRuntime/local.js";
 import { discoverProviderModels, getProviderRuntime } from "../core/providerRuntime/registry.js";
+import { errorMessage } from "../core/shared/values.js";
 import {
   resolveUbumeConversationDir,
   resolveUbumeWorkspaceDataDir,
@@ -420,7 +421,7 @@ export async function runTerminalCommand(
             : code === 3
               ? "BUSY"
               : "FAILED",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorMessage(error),
     });
   }
 }

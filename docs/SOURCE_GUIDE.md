@@ -260,6 +260,7 @@ Only place genuinely shared, UI-independent helpers here. Keep I/O boundaries sa
 
 | File | Purpose |
 | --- | --- |
+| `src/core/shared/values.ts` | Dependency-free value helpers shared by every layer: `isRecord`, `errorMessage`, `normalizeLineBreaks` and `formatDuration`. |
 | `src/core/shared/attachments.test.ts` | Verifies attachments behavior and regression contracts in the core/shared area. |
 | `src/core/shared/attachments.ts` | Imports external attachments into app data, identifies images, and rewrites prompts to safe workspace-visible paths. |
 | `src/core/shared/cleanupFastFail.test.ts` | Verifies cleanup Fast Fail behavior and regression contracts in the core/shared area. |

@@ -1,6 +1,7 @@
 import { Box, Text, useFocus, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
-import { clampVisualText, usePanelLayout } from "../layout.js";
+import { usePanelLayout } from "../layout.js";
+import { clampVisualText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
 

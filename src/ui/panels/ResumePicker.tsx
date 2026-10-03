@@ -2,6 +2,7 @@ import { Box, Text, useFocus, useInput } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExternalSessionSummary } from "../../core/externalSessions/types.js";
 import type { LocalBackendId } from "../../core/providerLauncher/types.js";
+import { errorMessage } from "../../core/shared/values.js";
 import { isLocalDevChannel } from "../../core/version/channel.js";
 import { workspaceStorageKey } from "../../core/workspace/appData.js";
 import type { ConversationListEntry } from "../../core/workspace/conversationStore.js";
@@ -11,7 +12,8 @@ import {
   type SessionCatalogResult,
   type SessionSummary,
 } from "../../session/sessionCatalog.js";
-import { clampVisualText, getVisualWidth, usePanelLayout } from "../layout.js";
+import { usePanelLayout } from "../layout.js";
+import { clampVisualText, getTextWidth } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
 import {
@@ -52,12 +54,12 @@ export function visibleResumeTabs(
   const selected = Math.max(0, tabs.indexOf(active));
   let start = selected;
   let end = selected + 1;
-  let used = getVisualWidth(resumeTabLabel(tabs[selected]!));
-  while (start > 0 && used + 2 + getVisualWidth(resumeTabLabel(tabs[start - 1]!)) <= width) {
-    used += 2 + getVisualWidth(resumeTabLabel(tabs[--start]!));
+  let used = getTextWidth(resumeTabLabel(tabs[selected]!));
+  while (start > 0 && used + 2 + getTextWidth(resumeTabLabel(tabs[start - 1]!)) <= width) {
+    used += 2 + getTextWidth(resumeTabLabel(tabs[--start]!));
   }
-  while (end < tabs.length && used + 2 + getVisualWidth(resumeTabLabel(tabs[end]!)) <= width) {
-    used += 2 + getVisualWidth(resumeTabLabel(tabs[end++]!));
+  while (end < tabs.length && used + 2 + getTextWidth(resumeTabLabel(tabs[end]!)) <= width) {
+    used += 2 + getTextWidth(resumeTabLabel(tabs[end++]!));
   }
   return tabs.slice(start, end);
 }
@@ -111,7 +113,7 @@ export function ResumePicker({
               ...current,
               [scope]: {
                 status: "error",
-                message: error instanceof Error ? error.message : String(error),
+                message: errorMessage(error),
               },
             }));
         },

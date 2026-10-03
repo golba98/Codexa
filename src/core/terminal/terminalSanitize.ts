@@ -1,3 +1,5 @@
+import { normalizeLineBreaks } from "../shared/values.js";
+
 // ─── terminalSanitize ─────────────────────────────────────────────────────────
 // Strips unsafe ANSI/control sequences from subprocess and user input.
 //
@@ -67,7 +69,7 @@ export function sanitizeTerminalOutput(raw: string, options: SanitizeTerminalOpt
   const tabSize = options.tabSize ?? DEFAULT_TAB_SIZE;
 
   const withoutSequences = stripTerminalSequences(raw);
-  const normalizedBreaks = withoutSequences.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const normalizedBreaks = normalizeLineBreaks(withoutSequences);
   const withoutUnsafeControls = stripUnsafeControls(normalizedBreaks);
   return normalizeTabs(withoutUnsafeControls, preserveTabs, tabSize);
 }

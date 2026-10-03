@@ -22,6 +22,7 @@ import {
 import type { ProviderConfig } from "../providerLauncher/types.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
+import { errorMessage } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type {
   ProviderChatRequest,
@@ -671,7 +672,7 @@ export function runMistralVibe(
       .catch((error) => {
         control.finish();
         if (cancelled) return;
-        handlers.onError(error instanceof Error ? error.message : "Mistral Vibe execution failed.");
+        handlers.onError(errorMessage(error, "Mistral Vibe execution failed."));
       });
   };
 
@@ -709,8 +710,7 @@ export function runMistralVibe(
     runAttempt(executable, compatible ? reference.sessionId : null);
   })().catch((error) => {
     control.finish();
-    if (!cancelled)
-      handlers.onError(error instanceof Error ? error.message : "Mistral Vibe launch failed.");
+    if (!cancelled) handlers.onError(errorMessage(error, "Mistral Vibe launch failed."));
   });
 
   return () => {

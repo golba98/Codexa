@@ -1,5 +1,6 @@
 import { captureCodexProcessOutput } from "../executables/codexExecutable.js";
 import { stripAnsi, stripNonPrintableControls } from "../providers/codexTranscript.js";
+import { normalizeLineBreaks } from "../shared/values.js";
 
 const HELP_TIMEOUT_MS = 5000;
 
@@ -18,10 +19,7 @@ function escapeRegExp(value: string): string {
 }
 
 function normalizeHelpText(text: string): string {
-  return stripNonPrintableControls(stripAnsi(text))
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .toLowerCase();
+  return normalizeLineBreaks(stripNonPrintableControls(stripAnsi(text))).toLowerCase();
 }
 
 // Uses a hand-rolled word-boundary pattern rather than \b so that flag names

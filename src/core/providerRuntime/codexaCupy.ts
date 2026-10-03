@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { formatConversationHistory } from "../../session/conversation.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
+import { errorMessage } from "../shared/values.js";
 import { isLocalDevChannel } from "../version/channel.js";
 import type {
   ProviderModelDiscoveryResult,
@@ -268,7 +269,7 @@ export const codexaCupyRuntime: ProviderRuntime = {
         handlers.onResponse(text);
       })
       .catch((error) => {
-        if (!canceled) handlers.onError(error instanceof Error ? error.message : "CuPy failed.");
+        if (!canceled) handlers.onError(errorMessage(error, "CuPy failed."));
       });
     control.track(work);
     void work.finally(() => control.finish());

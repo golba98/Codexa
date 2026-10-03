@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { formatReasoningLabel } from "../../config/settings.js";
 import type { ProviderModel } from "../providerRuntime/types.js";
+import { isRecord } from "../shared/values.js";
 import type {
   CodexModelCapabilities,
   CodexModelCapability,
@@ -26,10 +27,6 @@ function getCodexModelsCacheFile(): string {
 interface CodexSeed {
   fetchedAt: number;
   models: readonly ProviderModel[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function asString(value: unknown): string | null {

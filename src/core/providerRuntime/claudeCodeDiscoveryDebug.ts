@@ -1,5 +1,6 @@
 import { resolveClaudeExecutable } from "../executables/claudeExecutable.js";
 import { runCommand } from "../process/CommandRunner.js";
+import { errorMessage } from "../shared/values.js";
 import {
   claudeCodeModelsToProviderModels,
   discoverClaudeCodeCapabilities,
@@ -54,7 +55,7 @@ async function main(): Promise<void> {
 try {
   await main();
 } catch (err) {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err);
   process.stderr.write(`debug:claude-models failed: ${message}\n`);
   process.exit(1);
 }

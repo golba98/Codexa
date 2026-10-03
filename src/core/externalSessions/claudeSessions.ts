@@ -1,10 +1,10 @@
 import { readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { isRecord } from "../shared/values.js";
 import {
   clampText,
   envValue,
   forEachJsonLine,
-  isRecord,
   type JsonRecord,
   mapWithConcurrency,
   readHeadJsonLines,

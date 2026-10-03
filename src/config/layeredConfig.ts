@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
+import { errorMessage, isRecord } from "../core/shared/values.js";
 import { normalizeWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
 import type { LaunchArgs } from "./launchArgs.js";
 import {
@@ -30,7 +31,6 @@ import {
   getCodexConfigFile,
   type ReasoningLevel,
 } from "./settings.js";
-import { isRecord } from "./toml-serialize.js";
 import { isProjectTrusted } from "./trustStore.js";
 
 const RUNTIME_FIELD_PATHS = [
@@ -342,7 +342,7 @@ function tryLoadConfigLayer(
           : null,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown TOML parse failure";
+    const message = errorMessage(error, "Unknown TOML parse failure");
     return {
       label,
       status: "error",

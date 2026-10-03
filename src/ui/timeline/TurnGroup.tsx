@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import { memo, useMemo } from "react";
+import { formatDuration } from "../../core/shared/values.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import { normalizePlanReviewMarkdown } from "../../core/workspace/planStorage.js";
 import type { RunFileActivity } from "../../core/workspace/workspaceActivity.js";
@@ -21,12 +22,7 @@ import { DashCard } from "../chrome/DashCard.js";
 import { getFriendlyActionLabel, normalizeCommand } from "../input/commandNormalize.js";
 import { getUsableShellWidth, transcriptContentIndent } from "../layout.js";
 import { MemoizedRenderMessage } from "../render/Markdown.js";
-import {
-  classifyOutput,
-  normalizeOutput,
-  sanitizeOutput,
-  sanitizeStreamChunk,
-} from "../render/outputPipeline.js";
+import { classifyOutput, normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
 import { formatTerminalAnswerInline } from "../render/terminalAnswerFormat.js";
 import { wrapCommandText, wrapPlainText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
@@ -51,11 +47,6 @@ interface TurnGroupProps {
   streamMode: "assistant-first";
   verboseMode?: boolean;
   workspaceRoot?: string | null;
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 // ─── User Input Card ─────────────────────────────────────────────────────────
@@ -470,7 +461,7 @@ function CodexResponseBlock({
 
   const formatted = useMemo(() => {
     const raw = formatTerminalAnswerInline(getResponseSegmentText(segment));
-    const sanitized = segment.status === "active" ? sanitizeStreamChunk(raw) : sanitizeOutput(raw);
+    const sanitized = sanitizeOutput(raw);
     const normalized = normalizeOutput(sanitized);
     return classifyOutput(normalized);
   }, [segment]);

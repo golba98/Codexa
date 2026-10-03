@@ -1,11 +1,11 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { parseTomlDocument } from "../../config/layeredConfig.js";
+import { isRecord } from "../shared/values.js";
 import {
   clampText,
   envValue,
   forEachJsonLine,
-  isRecord,
   mapWithConcurrency,
   readHeadJsonLines,
   resolveHome,

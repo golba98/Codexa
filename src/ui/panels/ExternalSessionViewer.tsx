@@ -7,9 +7,10 @@ import {
   type ExternalTranscriptEntryKind,
   externalSourceLabel,
 } from "../../core/externalSessions/types.js";
+import { errorMessage } from "../../core/shared/values.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
-import { clampVisualText, usePanelLayout } from "../layout.js";
-import { wrapPlainText } from "../render/textLayout.js";
+import { usePanelLayout } from "../layout.js";
+import { clampVisualText, wrapPlainText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 
 interface ExternalSessionViewerProps {
@@ -94,7 +95,7 @@ export function SessionTranscriptViewer({
         if (active)
           setState({
             status: "error",
-            message: error instanceof Error ? error.message : "unknown error",
+            message: errorMessage(error, "unknown error"),
           });
       },
     );

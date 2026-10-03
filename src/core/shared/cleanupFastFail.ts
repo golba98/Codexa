@@ -1,4 +1,5 @@
 import type { RunToolActivity } from "../../session/types.js";
+import { normalizeLineBreaks } from "./values.js";
 
 const DELETE_COMMAND_PATTERN = /(?:^|[\s;&|])(?:remove-item|rm|rmdir|del|erase|unlink)\b/i;
 
@@ -31,7 +32,7 @@ const PATH_PATTERNS = [
 ];
 
 function normalizeText(value: string | null | undefined): string {
-  return (value ?? "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  return normalizeLineBreaks(value ?? "").trim();
 }
 
 function isDeleteCommand(command: string): boolean {

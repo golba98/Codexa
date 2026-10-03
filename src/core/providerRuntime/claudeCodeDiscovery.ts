@@ -3,6 +3,7 @@ import { dirname, join } from "path";
 import { buildClaudeSpawnSpec, resolveClaudeExecutable } from "../executables/claudeExecutable.js";
 import type { CommandResult } from "../process/CommandRunner.js";
 import { runCommand } from "../process/CommandRunner.js";
+import { isRecord } from "../shared/values.js";
 import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
 import { getClaudeCodeEffortLevels } from "./reasoning.js";
 import type { ProviderModel } from "./types.js";
@@ -82,10 +83,6 @@ interface ClaudeSettingsInfo {
   effortLevel?: string;
   availableModels?: readonly string[];
   models?: readonly ClaudeCodeModel[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readString(value: unknown): string | undefined {

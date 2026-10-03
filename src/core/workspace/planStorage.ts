@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { isNoiseLine } from "../providers/codexTranscript.js";
+import { normalizeLineBreaks } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import { resolveUbumeDataDir } from "./appData.js";
 
@@ -54,15 +55,12 @@ export function normalizePlanReviewMarkdown(
   planText: string,
   workspaceRoot?: string | null,
 ): string {
-  const sanitized = sanitizeTerminalOutput(
-    hidePlanReviewFilesystemDetails(planText, workspaceRoot),
-    {
+  const sanitized = normalizeLineBreaks(
+    sanitizeTerminalOutput(hidePlanReviewFilesystemDetails(planText, workspaceRoot), {
       preserveTabs: false,
       tabSize: 2,
-    },
+    }),
   )
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
     .replace(/\n{4,}/g, "\n\n\n")
     .split("\n")
     .filter((line) => !isNoiseLine(line))

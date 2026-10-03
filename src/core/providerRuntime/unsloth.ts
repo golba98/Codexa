@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isRecord } from "../shared/values.js";
 
 const require = createRequire(import.meta.url);
 
@@ -35,9 +36,7 @@ interface UnslothModelInfo {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+  return isRecord(value) ? value : null;
 }
 
 function resolveHome(env: NodeJS.ProcessEnv): string {

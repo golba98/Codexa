@@ -2,14 +2,11 @@ import { createReadStream } from "node:fs";
 import { open } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { getHomeDir } from "../../config/settings.js";
+import { isRecord } from "../shared/values.js";
 import { normalizeWorkspaceRoot } from "../workspace/workspaceRoot.js";
 import type { ExternalSessionOptions } from "./types.js";
 
 export type JsonRecord = Record<string, unknown>;
-
-export function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function stringField(record: JsonRecord, key: string): string | null {
   const value = record[key];

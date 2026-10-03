@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import { memo, useDeferredValue, useMemo } from "react";
+import { formatDuration } from "../../core/shared/values.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../../session/chatLifecycle.js";
 import type { AssistantEvent, RunEvent } from "../../session/types.js";
@@ -7,19 +8,9 @@ import { getAssistantContent } from "../../session/types.js";
 import { DashCard } from "../chrome/DashCard.js";
 import { getUsableShellWidth } from "../layout.js";
 import { MemoizedRenderMessage } from "../render/Markdown.js";
-import {
-  classifyOutput,
-  normalizeOutput,
-  sanitizeOutput,
-  sanitizeStreamChunk,
-} from "../render/outputPipeline.js";
+import { classifyOutput, normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
 import { wrapPlainText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
 
 interface AgentBlockProps {
   cols: number;
@@ -72,9 +63,7 @@ export function AgentBlock({
   const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
 
   const pipelineState = useMemo(() => {
-    const sanitized = streaming
-      ? sanitizeStreamChunk(renderContent)
-      : sanitizeOutput(renderContent);
+    const sanitized = sanitizeOutput(renderContent);
     const normalized = normalizeOutput(sanitized);
     const formatted = classifyOutput(normalized);
     return { length: normalized.length, formatted };

@@ -1,4 +1,5 @@
 import { APP_VERSION } from "../../config/settings.js";
+import { errorMessage } from "../shared/values.js";
 import { isLocalDevChannel } from "./channel.js";
 
 export const UBUME_NPM_PACKAGE = "ubume";
@@ -155,7 +156,7 @@ export async function checkForUpdates(
       status: "error",
       currentVersion,
       latestVersion: null,
-      errorMessage: err instanceof Error ? err.message : String(err),
+      errorMessage: errorMessage(err),
       checkedAt: Date.now(),
       source: "npm",
     };

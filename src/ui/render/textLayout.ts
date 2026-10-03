@@ -1,4 +1,5 @@
 import stringWidth from "string-width";
+import { normalizeLineBreaks } from "../../core/shared/values.js";
 
 interface TextUnit {
   text: string;
@@ -21,10 +22,6 @@ function getCharWidth(char: string): number {
 }
 
 const textSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-
-export function normalizeLineBreaks(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-}
 
 export function getTextUnits(text: string): TextUnit[] {
   const units: TextUnit[] = [];
@@ -274,4 +271,23 @@ export function wrapCommandText(text: string, maxWidth: number): string[] {
   }
 
   return rows;
+}
+
+/** Truncates `text` to `maxWidth` terminal columns, ending with an ellipsis when cut. */
+export function clampVisualText(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
+  if (getTextWidth(text) <= maxWidth) return text;
+
+  const ellipsis = maxWidth > 1 ? "…" : "";
+  const suffixWidth = getTextWidth(ellipsis);
+  let output = "";
+
+  for (const char of Array.from(text)) {
+    if (getTextWidth(output + char) + suffixWidth > maxWidth) {
+      break;
+    }
+    output += char;
+  }
+
+  return output + ellipsis;
 }

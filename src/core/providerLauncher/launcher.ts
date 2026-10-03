@@ -3,6 +3,7 @@ import { accessSync, constants, existsSync } from "fs";
 import { delimiter, join } from "path";
 import { buildSpawnSpec } from "../executables/executableResolver.js";
 import { normalizeExecutableValue } from "../process/processValidation.js";
+import { errorMessage } from "../shared/values.js";
 import type { ProviderConfig } from "./types.js";
 
 interface ProviderLaunchSpec {
@@ -59,7 +60,7 @@ export function buildProviderLaunchSpec(
       cwd,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Invalid launch command.";
+    const message = errorMessage(error, "Invalid launch command.");
     return {
       status: "spawn-error",
       message: `${provider.displayName} has an unsafe launch command. ${message}`,

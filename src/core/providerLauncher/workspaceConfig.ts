@@ -8,6 +8,7 @@ import {
   isProviderRoutableInUbume,
   isProviderRouteConfigured,
 } from "../providerRuntime/registry.js";
+import { isRecord } from "../shared/values.js";
 import { resolveUbumeWorkspaceDataDir } from "../workspace/appData.js";
 import { normalizeWorkspaceRoot } from "../workspace/workspaceRoot.js";
 import { isKnownProviderId } from "./registry.js";
@@ -35,10 +36,6 @@ export function getProviderWorkspaceConfigFile(
 
 export function getLegacyProviderWorkspaceConfigFile(workspaceRoot: string): string {
   return join(normalizeWorkspaceRoot(workspaceRoot), ".codexa", "providers.json");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isDeprecatedGoogleRoute(value: unknown): boolean {

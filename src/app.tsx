@@ -216,6 +216,7 @@ import {
   parseRepoIdentity,
 } from "./core/shared/githubDiagnostics.js";
 import { formatHollowResponse } from "./core/shared/hollowResponseFormat.js";
+import { errorMessage } from "./core/shared/values.js";
 import { createClearFrameBoundaryController } from "./core/terminal/clearFrameBoundary.js";
 import { editExternalPrompt } from "./core/terminal/externalEditor.js";
 import {
@@ -1856,7 +1857,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       conversationStore.save({ ...next, session: snapshotRef.current?.() });
       lastSaveErrorRef.current = null;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Filesystem error";
+      const message = errorMessage(error, "Filesystem error");
       if (lastSaveErrorRef.current !== message) appendErrorEvent("Session save failed", message);
       lastSaveErrorRef.current = message;
     }
@@ -1939,7 +1940,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         conversationStore.save({ ...next, session: snapshotRef.current?.() });
         lastSaveErrorRef.current = null;
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Filesystem error";
+        const message = errorMessage(error, "Filesystem error");
         if (lastSaveErrorRef.current !== message) appendErrorEvent("Session save failed", message);
         lastSaveErrorRef.current = message;
       }
@@ -2083,10 +2084,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         child.once("spawn", () => exit());
       } catch (error) {
         recoveryRef.current = false;
-        appendErrorEvent(
-          "Workspace resume failed",
-          error instanceof Error ? error.message : String(error),
-        );
+        appendErrorEvent("Workspace resume failed", errorMessage(error));
       }
     },
     [appendErrorEvent, appendSystemEvent, conversationStore, exit, launchContext],
@@ -2163,10 +2161,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         else appendErrorEvent(`${label} resume failed`, result.message);
       } catch (error) {
         if (isMountedRef.current)
-          appendErrorEvent(
-            `${label} resume failed`,
-            error instanceof Error ? error.message : "Launch failed.",
-          );
+          appendErrorEvent(`${label} resume failed`, errorMessage(error, "Launch failed."));
       }
     },
     [
@@ -2383,7 +2378,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           );
         }
       } catch (error) {
-        appendErrorEvent("Continue failed", error instanceof Error ? error.message : String(error));
+        appendErrorEvent("Continue failed", errorMessage(error));
       } finally {
         recoveryRef.current = false;
       }
@@ -2461,12 +2456,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       if (!summary)
         throw new Error("The selected native session was not found in its original workspace.");
       await continueExternalSession(summary);
-    })().catch((error) =>
-      appendErrorEvent(
-        "Startup resume failed",
-        error instanceof Error ? error.message : String(error),
-      ),
-    );
+    })().catch((error) => appendErrorEvent("Startup resume failed", errorMessage(error)));
   }, [
     appendErrorEvent,
     continueExternalSession,
@@ -2565,7 +2555,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           traceInputDebug(
             "model_loading_failure",
             getInputDebugSnapshot({
-              error: error instanceof Error ? error.message : String(error),
+              error: errorMessage(error),
             }),
           );
           if (modelDiscoveryAnnounceRef.current) {
@@ -2644,7 +2634,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           return discovery;
         })
         .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = errorMessage(error);
           setProviderModelErrors((current) => ({ ...current, [providerId]: message }));
           setRegistryNonce((current) => current + 1);
           return null;
@@ -2686,7 +2676,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           appendSystemEvent("Auth status", getAuthStatusMessage(result));
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown auth probe failure";
+        const message = errorMessage(error, "Unknown auth probe failure");
         const fallback: CodexAuthProbeResult = {
           state: "unknown",
           checkedAt: Date.now(),
@@ -2956,7 +2946,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           };
         setProviderWorkspaceConfig(nextConfig);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unable to save active route.";
+        const message = errorMessage(error, "Unable to save active route.");
         appendErrorEvent("Route save failed", message);
       }
     },
@@ -2971,8 +2961,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         saveProviderWorkspaceConfig(workspaceRoot, nextConfig);
         setProviderWorkspaceConfig(nextConfig);
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unable to save provider defaults.";
+        const message = errorMessage(error, "Unable to save provider defaults.");
         appendErrorEvent("Provider defaults save failed", message);
       }
     },
@@ -3204,7 +3193,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(normalizedReasoning)}.`,
         );
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         traceInputDebug(
           "model_selection_app_failure",
           getInputDebugSnapshot({
@@ -3344,13 +3333,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               error: validation.message ?? getProviderRouteSetupMessage(providerId),
             }),
           );
-          const errorMessage = validation.message ?? getProviderRouteSetupMessage(providerId);
-          if (providerRouteErrorsRef.current[providerId] !== errorMessage) {
+          const routeError = validation.message ?? getProviderRouteSetupMessage(providerId);
+          if (providerRouteErrorsRef.current[providerId] !== routeError) {
             appendSystemEvent(
               "Provider route unavailable",
-              `${errorMessage} Previous active route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeProviderRoute.modelId}.`,
+              `${routeError} Previous active route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeProviderRoute.modelId}.`,
             );
-            providerRouteErrorsRef.current[providerId] = errorMessage;
+            providerRouteErrorsRef.current[providerId] = routeError;
           }
           if (!modelPickerOpenRef.current) setPendingRouteProviderId(null);
           return;
@@ -3394,7 +3383,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
         // Route changes are reflected reactively in the BottomComposer metadata row.
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         traceInputDebug(
           "model_selection_app_failure",
           getInputDebugSnapshot({
@@ -3620,7 +3609,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         })
         .catch((error) => {
           if (isMountedRef.current) {
-            const message = error instanceof Error ? error.message : String(error);
+            const message = errorMessage(error);
             setLocalBackendStatuses((current) => ({
               ...current,
               [localBackend]: /api key|authentication|authenticate|identity/i.test(message)
@@ -3703,8 +3692,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               : `${provider.displayName} is set as the workspace default, but in-Ubume routing is not configured yet. Active chat route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${model}.`,
         );
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unable to save provider workspace config.";
+        const message = errorMessage(error, "Unable to save provider workspace config.");
         appendErrorEvent("Provider default failed", message);
       }
     },
@@ -3968,10 +3956,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             })
             .catch((error) => {
               if (!isMountedRef.current) return;
-              appendErrorEvent(
-                "Local diagnostics failed",
-                error instanceof Error ? error.message : String(error),
-              );
+              appendErrorEvent("Local diagnostics failed", errorMessage(error));
             });
           return;
         }
@@ -4002,7 +3987,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           })
           .catch((error) => {
             if (!isMountedRef.current) return;
-            const message = error instanceof Error ? error.message : "Gemini diagnostics failed.";
+            const message = errorMessage(error, "Gemini diagnostics failed.");
             appendErrorEvent("Gemini diagnostics failed", message);
           });
         return;
@@ -4067,7 +4052,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         })
         .catch((error) => {
           if (!isMountedRef.current) return;
-          const message = error instanceof Error ? error.message : "Provider launch failed.";
+          const message = errorMessage(error, "Provider launch failed.");
           appendErrorEvent("Provider launch failed", message);
         });
     },
@@ -4729,7 +4714,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       } catch (error) {
         appendErrorEvent(
           "Clipboard image unavailable",
-          error instanceof Error ? error.message : "Could not read an image from the clipboard.",
+          errorMessage(error, "Could not read an image from the clipboard."),
         );
       }
     },
@@ -4999,7 +4984,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           exit();
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown relaunch failure";
+        const message = errorMessage(error, "Unknown relaunch failure");
         appendErrorEvent("Workspace relaunch failed", message);
       }
     },
@@ -5587,7 +5572,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                 const codexAuthFailure =
                   activeProviderRoute.providerId === "openai" &&
                   isLikelyAuthFailure(combinedOutput);
-                const errorMessage = codexAuthFailure
+                const failureMessage = codexAuthFailure
                   ? [
                       "Ubume reported an authentication/session error.",
                       "Recovery:",
@@ -5604,7 +5589,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                 }
 
                 traceLiveRunDiagnostics("failed");
-                void finalizePromptRun(runId, turnId, "failed", errorMessage);
+                void finalizePromptRun(runId, turnId, "failed", failureMessage);
               };
 
               if (flushedLiveUpdates) {
@@ -5649,7 +5634,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               } catch (error) {
                 appendErrorEvent(
                   "Context checkpoint save failed",
-                  error instanceof Error ? error.message : "Filesystem error",
+                  errorMessage(error, "Filesystem error"),
                 );
               }
             },
@@ -5684,12 +5669,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               try {
                 conversationStore.save({ ...next, session: snapshotRef.current?.() });
               } catch (error) {
-                appendErrorEvent(
-                  "Local chat save failed",
-                  error instanceof Error ? error.message : "Filesystem error",
-                );
-                lastSaveErrorRef.current =
-                  error instanceof Error ? error.message : "Filesystem error";
+                appendErrorEvent("Local chat save failed", errorMessage(error, "Filesystem error"));
+                lastSaveErrorRef.current = errorMessage(error, "Filesystem error");
               }
             },
             onRunControl: (control) => {
@@ -6046,7 +6027,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       } catch (err) {
         appendErrorEvent(
           "Import failed",
-          `Could not import ${path.basename(file.srcPath)}: ${err instanceof Error ? err.message : String(err)}`,
+          `Could not import ${path.basename(file.srcPath)}: ${errorMessage(err)}`,
         );
       }
     }

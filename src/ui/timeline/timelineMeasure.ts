@@ -1,4 +1,5 @@
 import * as renderDebug from "../../core/perf/renderDebug.js";
+import { formatDuration } from "../../core/shared/values.js";
 import {
   sanitizeTerminalLines,
   sanitizeTerminalOutput,
@@ -18,7 +19,7 @@ import {
   getRunPlanText,
 } from "../../session/types.js";
 import { getFriendlyActionLabel, normalizeCommand } from "../input/commandNormalize.js";
-import { clampVisualText, transcriptContentIndent } from "../layout.js";
+import { transcriptContentIndent } from "../layout.js";
 import { type DiffRenderLineType, maybeRenderDiff } from "../render/diffRenderer.js";
 import {
   LOGO_COMPACT,
@@ -27,14 +28,14 @@ import {
   selectLogoVariant,
 } from "../render/logoVariants.js";
 import { isShellCodeLanguage, type Segment } from "../render/Markdown.js";
-import {
-  classifyOutput,
-  normalizeOutput,
-  sanitizeOutput,
-  sanitizeStreamChunk,
-} from "../render/outputPipeline.js";
+import { classifyOutput, normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
 import { formatTerminalAnswerInline } from "../render/terminalAnswerFormat.js";
-import { getTextWidth, splitTextAtColumn, wrapPlainText } from "../render/textLayout.js";
+import {
+  clampVisualText,
+  getTextWidth,
+  splitTextAtColumn,
+  wrapPlainText,
+} from "../render/textLayout.js";
 import { formatProgressBlockBodyLines } from "./progressEntries.js";
 import { selectVisibleRunActivity } from "./runActivityView.js";
 import { coalesceConsecutiveThinking } from "./streamCoalesce.js";
@@ -633,11 +634,6 @@ function buildUserInputRows(
     borderTone: "borderSubtle",
     contentRows: lines,
   });
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 function getShellFailureExcerpt(event: ShellEvent): string[] {
@@ -1958,9 +1954,7 @@ function buildCodexResponseRows(params: {
     const contentWidth = Math.max(1, params.width - transcriptContentIndent);
     const rawContent = splitSentenceWall(formatTerminalAnswerInline(segmentText));
 
-    const sanitized = segmentStreaming
-      ? sanitizeStreamChunk(rawContent)
-      : sanitizeOutput(rawContent);
+    const sanitized = sanitizeOutput(rawContent);
     const normalized = normalizeOutput(sanitized);
     const segments = classifyOutput(normalized);
     responseRows = buildMarkdownRows(segments, contentWidth);

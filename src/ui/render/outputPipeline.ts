@@ -1,4 +1,5 @@
 import { isNoiseLine } from "../../core/providers/codexTranscript.js";
+import { normalizeLineBreaks } from "../../core/shared/values.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import { parseMarkdown, type Segment } from "./Markdown.js";
 
@@ -19,19 +20,12 @@ export function sanitizeOutput(raw: string): string {
 }
 
 /**
- * Sanitize streamed chunks directly (delegates to sanitizeOutput).
- */
-export function sanitizeStreamChunk(chunk: string): string {
-  return sanitizeOutput(chunk);
-}
-
-/**
  * Normalize: Normalizes text formatting for the box wrappers.
  * Replaces CRLF with LF and collapses excessive blank lines to prevent
  * vertical stretching and layout popping.
  */
 export function normalizeOutput(clean: string): string {
-  let normalized = clean.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  let normalized = normalizeLineBreaks(clean);
   // Collapse excessive vertical whitespace (4+ newlines into 3)
   normalized = normalized.replace(/\n{4,}/g, "\n\n\n");
 

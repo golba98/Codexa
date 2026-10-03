@@ -35,6 +35,7 @@ import { BrowserManager } from "../../computerUse/browser.js";
 import { resolveBrowserCapability } from "../../computerUse/capability.js";
 import { traceLocalStream } from "../../debug/localStreamDebug.js";
 import type { BackendRunHandlers, ToolApprovalDecision } from "../../providers/types.js";
+import { errorMessage, isRecord } from "../../shared/values.js";
 import {
   resolveLegacyCodexaDataDir,
   resolveUbumeChatWorkspaceDir,
@@ -209,10 +210,6 @@ function resolveHarnessSandboxMode(request: ProviderChatRequest): HarnessSandbox
   return "workspace-write";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function textFromContent(value: unknown): string {
   if (!Array.isArray(value)) return "";
   return value
@@ -301,7 +298,7 @@ function prepareSessionScratch(
   } catch (error) {
     traceLocalStream("harness.scratch.unavailable", {
       sessionId,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     });
     return null;
   }
@@ -637,7 +634,7 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
         .reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr)
         .trim();
       throw new Error(
-        `Local Harness session/open failed: ${error instanceof Error ? error.message : String(error)}\nExit: ${child?.exitCode ?? child?.signalCode ?? "unknown"}${stderr ? `\n${stderr}` : ""}\nYour next prompt will start a fresh Harness session.`,
+        `Local Harness session/open failed: ${errorMessage(error)}\nExit: ${child?.exitCode ?? child?.signalCode ?? "unknown"}${stderr ? `\n${stderr}` : ""}\nYour next prompt will start a fresh Harness session.`,
       );
     }
 
@@ -881,7 +878,7 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
       startupSettled = true;
       await this.shutdown();
       if (signal.aborted) throw new DOMException("Local request cancelled.", "AbortError");
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       const safeStderr = this.redactions
         .reduce((text, secret) => text.split(secret).join("[redacted]"), this.stderr)
         .trim();
@@ -1291,7 +1288,7 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
         } catch (error) {
           traceLocalStream("harness.scratch.unavailable", {
             sessionId: state.sessionId,
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage(error),
           });
         }
       }
@@ -1492,9 +1489,7 @@ export class LocalHarnessProcess implements LocalHarnessRunner {
     } catch (error) {
       if (this.active === state && !state.settled)
         this.failActive(
-          new Error(
-            `Local chat checkpoint could not be saved: ${error instanceof Error ? error.message : String(error)}`,
-          ),
+          new Error(`Local chat checkpoint could not be saved: ${errorMessage(error)}`),
         );
       return;
     }
@@ -1711,14 +1706,12 @@ export async function runLocalHarness(
     if (
       !signal.aborted &&
       runner instanceof LocalHarnessProcess &&
-      /^JSON-RPC.*(?:closed|disconnect)/i.test(
-        error instanceof Error ? error.message : String(error),
-      )
+      /^JSON-RPC.*(?:closed|disconnect)/i.test(errorMessage(error))
     ) {
       await runner.shutdown();
       const detail = runner.failureDetails();
       throw new Error(
-        `Local Harness disconnected during session/prompt. ${error instanceof Error ? error.message : String(error)}${detail ? `\n${detail}` : ""}\nYour next prompt will start a fresh Harness session. The failed turn was not retried.`,
+        `Local Harness disconnected during session/prompt. ${errorMessage(error)}${detail ? `\n${detail}` : ""}\nYour next prompt will start a fresh Harness session. The failed turn was not retried.`,
       );
     }
     throw error;

@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
-import { getVisualWidth } from "../layout.js";
+import { getTextWidth } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 
 interface DashCardProps {
@@ -73,8 +73,8 @@ function buildTopBorder(
   // Or:     "╭── " + title + " " + fill + "──╮"
   const prefix = 4; // "╭── "
   const suffix = badge ? 4 : 3; // " ──╮" with badge spacing, or "──╮"
-  const titleWidth = getVisualWidth(title);
-  const badgeWidth = badge ? getVisualWidth(badge) : 0;
+  const titleWidth = getTextWidth(title);
+  const badgeWidth = badge ? getTextWidth(badge) : 0;
   const spacing = badge ? 2 : 1; // the title-only variant has no trailing gap before the corner
 
   const available = w - prefix - titleWidth - spacing - badgeWidth - suffix;
