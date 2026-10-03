@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 test("ubume exec entrypoint does not import interactive UI modules", () => {
   const source = readFileSync(fileURLToPath(new URL("./exec.ts", import.meta.url)), "utf8");

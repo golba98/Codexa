@@ -1,24 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  __resetTerminalTitleCache,
   buildTerminalTitleSequence,
   computeTerminalTitle,
+  createTerminalTitleSequenceStripper,
   deriveTerminalTitle,
   formatTerminalTitleLabel,
   getIntendedTerminalTitle,
   normalizeTerminalTitle,
-  reassertTerminalTitle,
   reassertIntendedTerminalTitle,
+  reassertTerminalTitle,
   sanitizeTerminalTitle,
   setIntendedTerminalTitle,
   setTerminalTitle,
-  createTerminalTitleSequenceStripper,
   stripTerminalTitleSequences,
   stripTerminalTitleSequencesFromChunk,
   traceTerminalTitleSequences,
-  writeUbumeTerminalTitle,
   writeGuardedTerminalOutput,
-  __resetTerminalTitleCache,
+  writeUbumeTerminalTitle,
 } from "./terminalTitle.js";
 
 test("buildTerminalTitleSequence emits OSC 0 and OSC 2 with sanitized title text", () => {
@@ -31,7 +31,10 @@ test("title normalization never exposes raw Windows paths", () => {
   assert.equal(normalizeTerminalTitle("C:\\WINDOWS\\system"), "Ubume");
   assert.equal(normalizeTerminalTitle("c:/Users/example"), "Ubume");
   assert.equal(normalizeTerminalTitle("\\\\server\\share"), "Ubume");
-  assert.equal(buildTerminalTitleSequence("C:\\WINDOWS\\system"), buildTerminalTitleSequence("Ubume"));
+  assert.equal(
+    buildTerminalTitleSequence("C:\\WINDOWS\\system"),
+    buildTerminalTitleSequence("Ubume"),
+  );
 });
 
 test("stripTerminalTitleSequences removes OSC 0 title sequences with BEL terminator", () => {
@@ -42,10 +45,7 @@ test("stripTerminalTitleSequences removes OSC 0 title sequences with BEL termina
 });
 
 test("stripTerminalTitleSequences removes OSC 2 title sequences with BEL terminator", () => {
-  assert.equal(
-    stripTerminalTitleSequences("hello\x1b]2;Codex\x07world"),
-    "helloworld",
-  );
+  assert.equal(stripTerminalTitleSequences("hello\x1b]2;Codex\x07world"), "helloworld");
 });
 
 test("stripTerminalTitleSequences preserves normal ANSI SGR colour sequences", () => {
@@ -69,7 +69,9 @@ test("stripTerminalTitleSequences removes OSC title sequences with ST terminator
 
 test("stripTerminalTitleSequencesFromChunk handles Buffer input", () => {
   assert.equal(
-    stripTerminalTitleSequencesFromChunk(Buffer.from("hello\x1b]0;C:\\WINDOWS\\system\x07world", "utf8")),
+    stripTerminalTitleSequencesFromChunk(
+      Buffer.from("hello\x1b]0;C:\\WINDOWS\\system\x07world", "utf8"),
+    ),
     "helloworld",
   );
 });
@@ -111,7 +113,10 @@ test("deriveTerminalTitle follows terminal title mode on startup", () => {
 
 test("computeTerminalTitle follows the requested mapping", () => {
   const workspaceName = "13-Custom-CLI-Normal";
-  assert.equal(computeTerminalTitle({ terminalTitleMode: "dir", workspaceName }), "13-Custom-CLI-Normal");
+  assert.equal(
+    computeTerminalTitle({ terminalTitleMode: "dir", workspaceName }),
+    "13-Custom-CLI-Normal",
+  );
   assert.equal(computeTerminalTitle({ terminalTitleMode: "name" }), "Ubume");
   assert.equal(computeTerminalTitle({ terminalTitleMode: "simple" }), "Ubume");
   assert.equal(computeTerminalTitle({ terminalTitleMode: "dir", appName: "Other" }), "Other");
@@ -150,7 +155,11 @@ test("writeUbumeTerminalTitle delegates to central title writer with force suppo
   const writes: string[] = [];
   __resetTerminalTitleCache();
 
-  writeUbumeTerminalTitle("Ubume", { force: true, reason: "test", write: (chunk) => writes.push(chunk) });
+  writeUbumeTerminalTitle("Ubume", {
+    force: true,
+    reason: "test",
+    write: (chunk) => writes.push(chunk),
+  });
 
   assert.deepEqual(writes, [buildTerminalTitleSequence("Ubume")]);
 });
@@ -236,7 +245,11 @@ test("stripTerminalTitleSequences strips OSC sequence with empty title", () => {
 });
 
 test("createTerminalTitleSequenceStripper handles OSC split across chunks with ST terminator", () => {
-  const stripper = createTerminalTitleSequenceStripper({ source: "test", stream: "stdout", origin: "child" });
+  const stripper = createTerminalTitleSequenceStripper({
+    source: "test",
+    stream: "stdout",
+    origin: "child",
+  });
   assert.equal(stripper.process("hello\x1b]2;MyTitle"), "hello");
   assert.equal(stripper.process("\x1b\\world"), "world");
   assert.equal(stripper.flush(), "");
@@ -245,7 +258,11 @@ test("createTerminalTitleSequenceStripper handles OSC split across chunks with S
 test("traceTerminalTitleSequences does not hang on crafted adversarial input", () => {
   const crafted = "\x1b]0;" + "X".repeat(10_000) + "\x1b]2;" + "Y".repeat(10_000);
   const start = Date.now();
-  const found = traceTerminalTitleSequences(crafted, { source: "test", stream: "stdout", origin: "child" });
+  const found = traceTerminalTitleSequences(crafted, {
+    source: "test",
+    stream: "stdout",
+    origin: "child",
+  });
   assert.ok(Date.now() - start < 100, "must complete in under 100 ms");
   assert.equal(found, false, "no complete sequences in adversarial input");
 });

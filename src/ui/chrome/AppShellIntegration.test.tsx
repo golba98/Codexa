@@ -1,26 +1,35 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import React from "react";
-import { render } from "ink";
 import { PassThrough } from "node:stream";
-import { AppShell } from "./AppShell.js";
-import { ProviderPicker } from "../panels/ProviderPicker.js";
-import { createTerminalViewport } from "../layout.js";
-import { ThemeProvider } from "../theme.js";
-import { HEADER_CONFIG_DEFAULTS } from "../../config/settings.js";
+import test from "node:test";
+import { render } from "ink";
 import { buildRuntimeSummary } from "../../config/runtimeConfig.js";
-import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
-import { BottomComposer } from "./BottomComposer.js";
-import { UpdatePromptPanel, type RunUpdateFn } from "../panels/UpdatePromptPanel.js";
+import { HEADER_CONFIG_DEFAULTS } from "../../config/settings.js";
 import type { CommandResult } from "../../core/process/CommandRunner.js";
+import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
+import { createTerminalViewport } from "../layout.js";
+import { ProviderPicker } from "../panels/ProviderPicker.js";
+import { type RunUpdateFn, UpdatePromptPanel } from "../panels/UpdatePromptPanel.js";
+import { ThemeProvider } from "../theme.js";
+import { AppShell } from "./AppShell.js";
+import { BottomComposer } from "./BottomComposer.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
-  setRawMode() { return this; }
-  resume() { return this; }
-  pause() { return this; }
-  ref() { return this; }
-  unref() { return this; }
+  setRawMode() {
+    return this;
+  }
+  resume() {
+    return this;
+  }
+  pause() {
+    return this;
+  }
+  ref() {
+    return this;
+  }
+  unref() {
+    return this;
+  }
 }
 
 class TestOutput extends PassThrough {
@@ -30,11 +39,56 @@ class TestOutput extends PassThrough {
 }
 
 const mockProviders = [
-  { id: "openai", displayName: "OpenAI", routeMode: "provider-direct", backendType: "openai", isActiveRoute: true, enabled: true, currentModel: "gpt-4", statusLabel: "Active" },
-  { id: "anthropic", displayName: "Anthropic", routeMode: "provider-direct", backendType: "anthropic", isActiveRoute: false, enabled: true, currentModel: "claude-3", statusLabel: "Ready" },
-  { id: "mistral", displayName: "Mistral Vibe CLI", routeMode: "in-ubume", backendType: "mistral-vibe-cli-auth", isActiveRoute: false, enabled: true, currentModel: "mistral-medium-3.5", statusLabel: "Enabled" },
-  { id: "local", displayName: "Local", routeMode: "provider-direct", backendType: "local", isActiveRoute: false, enabled: true, currentModel: "llama-3", statusLabel: "Ready" },
-  { id: "antigravity", displayName: "Antigravity", routeMode: "provider-direct", backendType: "antigravity", isActiveRoute: false, enabled: true, currentModel: "AG-1", statusLabel: "Ready" }
+  {
+    id: "openai",
+    displayName: "OpenAI",
+    routeMode: "provider-direct",
+    backendType: "openai",
+    isActiveRoute: true,
+    enabled: true,
+    currentModel: "gpt-4",
+    statusLabel: "Active",
+  },
+  {
+    id: "anthropic",
+    displayName: "Anthropic",
+    routeMode: "provider-direct",
+    backendType: "anthropic",
+    isActiveRoute: false,
+    enabled: true,
+    currentModel: "claude-3",
+    statusLabel: "Ready",
+  },
+  {
+    id: "mistral",
+    displayName: "Mistral Vibe CLI",
+    routeMode: "in-ubume",
+    backendType: "mistral-vibe-cli-auth",
+    isActiveRoute: false,
+    enabled: true,
+    currentModel: "mistral-medium-3.5",
+    statusLabel: "Enabled",
+  },
+  {
+    id: "local",
+    displayName: "Local",
+    routeMode: "provider-direct",
+    backendType: "local",
+    isActiveRoute: false,
+    enabled: true,
+    currentModel: "llama-3",
+    statusLabel: "Ready",
+  },
+  {
+    id: "antigravity",
+    displayName: "Antigravity",
+    routeMode: "provider-direct",
+    backendType: "antigravity",
+    isActiveRoute: false,
+    enabled: true,
+    currentModel: "AG-1",
+    statusLabel: "Ready",
+  },
 ];
 
 function makePendingUpdateResult(): Promise<CommandResult> {
@@ -109,11 +163,11 @@ test("AppShell renders ProviderPicker with all 5 providers at normal standard si
       debug: true,
       exitOnCtrlC: false,
       patchConsole: false,
-    }
+    },
   );
 
   // Wait a bit
-  await new Promise(r => setTimeout(r, 100));
+  await new Promise((r) => setTimeout(r, 100));
   instance.cleanup();
 
   const stripped = output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
@@ -134,13 +188,21 @@ test("AppShell renders ProviderPicker with all 5 providers at normal standard si
   const finalRuntimeIndex = stripped.lastIndexOf("gpt-5.4 (medium)");
   assert.ok(finalRuntimeIndex >= 0, "ProviderPicker shell should render runtime metadata");
   const finalBottomChrome = stripped.slice(Math.max(0, finalRuntimeIndex - 80));
-  assert.equal(finalBottomChrome.match(/Context:/g)?.length ?? 0, 1, "ProviderPicker shell should render one context row");
-  assert.equal(finalBottomChrome.match(/gpt-5\.4 \(medium\)/g)?.length ?? 0, 1, "ProviderPicker shell should render one runtime row");
+  assert.equal(
+    finalBottomChrome.match(/Context:/g)?.length ?? 0,
+    1,
+    "ProviderPicker shell should render one context row",
+  );
+  assert.equal(
+    finalBottomChrome.match(/gpt-5\.4 \(medium\)/g)?.length ?? 0,
+    1,
+    "ProviderPicker shell should render one runtime row",
+  );
 
   assert.equal(
     hasOpenAI && hasAnthropic && hasAntigravity && (!hasMistral || !hasLocal),
     false,
-    "Broken state (missing Mistral Vibe or Local while rendering others) detected!"
+    "Broken state (missing Mistral Vibe or Local while rendering others) detected!",
   );
 });
 
@@ -152,12 +214,16 @@ test("canceling an install leaves the complete updater shell visible", async () 
   let output = "";
   let cancelCalls = 0;
   let skipCalls = 0;
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const layout = createTerminalViewport(120, 40);
   const runUpdate: RunUpdateFn = () => ({
     result: makePendingUpdateResult(),
-    cancel: () => { cancelCalls += 1; },
+    cancel: () => {
+      cancelCalls += 1;
+    },
   });
   const composer = (
     <BottomComposer
@@ -207,7 +273,9 @@ test("canceling an install leaves the complete updater shell visible", async () 
             latestVersion="1.0.20"
             packageManager="npm"
             runUpdate={runUpdate}
-            onSkip={() => { skipCalls += 1; }}
+            onSkip={() => {
+              skipCalls += 1;
+            }}
             onRestart={() => {}}
           />
         }
@@ -243,7 +311,10 @@ test("canceling an install leaves the complete updater shell visible", async () 
   assert.match(postCancel, /│ ❯/);
   assert.match(postCancel, /gpt-5\.4 \(medium\)/);
   assert.match(postCancel, /Context:/);
-  assert.doesNotMatch(postCancel.slice(postCancel.lastIndexOf("Update available")), /Installing Ubume/);
+  assert.doesNotMatch(
+    postCancel.slice(postCancel.lastIndexOf("Update available")),
+    /Installing Ubume/,
+  );
 
   instance.cleanup();
 });

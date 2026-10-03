@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeCommand, getFriendlyActionLabel } from "./commandNormalize.js";
+import { getFriendlyActionLabel, normalizeCommand } from "./commandNormalize.js";
 
 // ─── normalizeCommand ─────────────────────────────────────────────────────────
 
@@ -21,7 +21,10 @@ test("normalizeCommand: strips bare pwsh.exe -Command", () => {
 
 test("normalizeCommand: strips bare powershell.exe -Command", () => {
   assert.equal(normalizeCommand(`powershell.exe -Command 'dir'`), "dir");
-  assert.equal(normalizeCommand(`powershell -Command "Get-Content readme.md"`), "Get-Content readme.md");
+  assert.equal(
+    normalizeCommand(`powershell -Command "Get-Content readme.md"`),
+    "Get-Content readme.md",
+  );
 });
 
 test("normalizeCommand: strips cmd.exe /c wrapper", () => {
@@ -60,7 +63,10 @@ test("normalizeCommand: is case-insensitive for -Command flag", () => {
 // ─── getFriendlyActionLabel ───────────────────────────────────────────────────
 
 test("getFriendlyActionLabel: Get-ChildItem → List files", () => {
-  assert.equal(getFriendlyActionLabel("Get-ChildItem -Force | Select-Object Name,Mode,Length"), "List files");
+  assert.equal(
+    getFriendlyActionLabel("Get-ChildItem -Force | Select-Object Name,Mode,Length"),
+    "List files",
+  );
   assert.equal(getFriendlyActionLabel("Get-ChildItem"), "List files");
   assert.equal(getFriendlyActionLabel("dir /b"), "List files");
   assert.equal(getFriendlyActionLabel("ls -la"), "List files");

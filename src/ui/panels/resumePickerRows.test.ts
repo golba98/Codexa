@@ -1,16 +1,46 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { activityLabel, externalRowText, matchesQuery, nextResumeTab, ubumeRowText } from "./resumePickerRows.js";
 import { createAtomicContentToken } from "../input/pastedContent.js";
+import {
+  activityLabel,
+  externalRowText,
+  matchesQuery,
+  nextResumeTab,
+  ubumeRowText,
+} from "./resumePickerRows.js";
 
 const now = new Date(2026, 8, 30, 15, 0);
 
 test("resume rows hide attachment IDs without changing visible titles or stored metadata", () => {
-  for (const label of ["[Pasted Content 22,703 chars]", "[Image: photo.png]", "[File: notes.txt]"]) {
+  for (const label of [
+    "[Pasted Content 22,703 chars]",
+    "[Image: photo.png]",
+    "[File: notes.txt]",
+  ]) {
     const title = `${createAtomicContentToken(label)} · café ❤️`;
-    const conversation = { version: 1 as const, id: "chat_a", title, createdAt: "", updatedAt: "not a date", providerId: "local", modelId: "qwen", backendKind: null, messageCount: 9 };
-    assert.equal(ubumeRowText(conversation, now), `${label} · café ❤️ — Unknown time · qwen · Local · 9 messages`);
-    assert.equal(externalRowText({ source: "claude", id: "abc", title, cwd: "/work/app", updatedAt: "not a date" }, "workspace", now), `${label} · café ❤️ — Unknown time · Claude Code`);
+    const conversation = {
+      version: 1 as const,
+      id: "chat_a",
+      title,
+      createdAt: "",
+      updatedAt: "not a date",
+      providerId: "local",
+      modelId: "qwen",
+      backendKind: null,
+      messageCount: 9,
+    };
+    assert.equal(
+      ubumeRowText(conversation, now),
+      `${label} · café ❤️ — Unknown time · qwen · Local · 9 messages`,
+    );
+    assert.equal(
+      externalRowText(
+        { source: "claude", id: "abc", title, cwd: "/work/app", updatedAt: "not a date" },
+        "workspace",
+        now,
+      ),
+      `${label} · café ❤️ — Unknown time · Claude Code`,
+    );
     assert.equal(conversation.title, title);
   }
 });
@@ -22,15 +52,44 @@ test("activityLabel describes recent activity relative to now", () => {
 });
 
 test("ubumeRowText shows route, size and where an imported conversation came from", () => {
-  const base = { version: 1 as const, id: "chat_a", title: "Fix picker", createdAt: "", updatedAt: "not a date", providerId: "anthropic", modelId: "sonnet", backendKind: null, messageCount: 4 };
-  assert.equal(ubumeRowText(base, now), "Fix picker — Unknown time · sonnet · Anthropic · 4 messages");
-  assert.equal(ubumeRowText({ ...base, importedFrom: { source: "codex", sessionId: "x" } }, now), "Fix picker — Unknown time · sonnet · Anthropic · 4 messages · from Codex");
+  const base = {
+    version: 1 as const,
+    id: "chat_a",
+    title: "Fix picker",
+    createdAt: "",
+    updatedAt: "not a date",
+    providerId: "anthropic",
+    modelId: "sonnet",
+    backendKind: null,
+    messageCount: 4,
+  };
+  assert.equal(
+    ubumeRowText(base, now),
+    "Fix picker — Unknown time · sonnet · Anthropic · 4 messages",
+  );
+  assert.equal(
+    ubumeRowText({ ...base, importedFrom: { source: "codex", sessionId: "x" } }, now),
+    "Fix picker — Unknown time · sonnet · Anthropic · 4 messages · from Codex",
+  );
 });
 
 test("externalRowText adds the folder name only when listing every project", () => {
-  const summary = { source: "claude" as const, id: "abc", title: "Rename package", cwd: "/work/my app", updatedAt: "not a date", model: "claude-opus-5-5" };
-  assert.equal(externalRowText(summary, "workspace", now), "Rename package — Unknown time · Claude Code · claude-opus-5-5");
-  assert.equal(externalRowText({ ...summary, model: undefined }, "all", now), "Rename package — Unknown time · Claude Code · my app");
+  const summary = {
+    source: "claude" as const,
+    id: "abc",
+    title: "Rename package",
+    cwd: "/work/my app",
+    updatedAt: "not a date",
+    model: "claude-opus-5-5",
+  };
+  assert.equal(
+    externalRowText(summary, "workspace", now),
+    "Rename package — Unknown time · Claude Code · claude-opus-5-5",
+  );
+  assert.equal(
+    externalRowText({ ...summary, model: undefined }, "all", now),
+    "Rename package — Unknown time · Claude Code · my app",
+  );
 });
 
 test("matchesQuery is case-insensitive across every field", () => {

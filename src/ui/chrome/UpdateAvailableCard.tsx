@@ -1,6 +1,5 @@
-import React from "react";
 import { Box, Text } from "ink";
-import { UBUME_UPDATE_COMMAND, formatVersionLabel } from "../../core/version/updateCheck.js";
+import { formatVersionLabel, UBUME_UPDATE_COMMAND } from "../../core/version/updateCheck.js";
 import { clampVisualText } from "../layout.js";
 import { useTheme } from "../theme.js";
 
@@ -15,7 +14,12 @@ export interface UpdateAvailableCardProps {
   width?: number;
 }
 
-export function UpdateAvailableCard({ latestVersion, currentVersion, updateCommand = UBUME_UPDATE_COMMAND, width }: UpdateAvailableCardProps) {
+export function UpdateAvailableCard({
+  latestVersion,
+  currentVersion,
+  updateCommand = UBUME_UPDATE_COMMAND,
+  width,
+}: UpdateAvailableCardProps) {
   const theme = useTheme();
   const command = `Run: ${updateCommand}`;
   // Inner content width = boxWidth - 2 (left/right border cols)
@@ -33,7 +37,9 @@ export function UpdateAvailableCard({ latestVersion, currentVersion, updateComma
       width={width}
       flexShrink={0}
     >
-      <Text color={theme.text} bold>{clamp("Update available")}</Text>
+      <Text color={theme.text} bold>
+        {clamp("Update available")}
+      </Text>
       <Text color={theme.textMuted}>{clamp(`Ubume ${formatVersionLabel(latestVersion)}`)}</Text>
       <Text color={theme.textMuted}>{clamp(`Using ${formatVersionLabel(currentVersion)}`)}</Text>
       <Text color={theme.textDim}>{clamp(command)}</Text>

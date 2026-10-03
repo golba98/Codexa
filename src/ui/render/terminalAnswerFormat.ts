@@ -1,7 +1,9 @@
 const MARKDOWN_LINK_RE = /!?\[([^\]\n]+)\]\(([^)\n]+)\)/g;
 const FILE_URL_RE = /\bfile:\/\/\/?[^\s`"'<>)]*/gi;
-const WINDOWS_ABSOLUTE_PATH_RE = /\b[A-Za-z]:[\\/][^\n`"'<>)]*?\.(?:tsx?|jsx?|md|json|ya?ml|toml|css|html|py|txt|mjs|cjs)(?:#L\d+(?:-L?\d+)?)?/g;
-const UNIX_ABSOLUTE_PATH_RE = /(?:^|[\s(])((?:\/Users|\/home|\/workspace|\/workspaces|\/mnt\/[a-z])\/[^\n`"'<>)]*?\.(?:tsx?|jsx?|md|json|ya?ml|toml|css|html|py|txt|mjs|cjs)(?:#L\d+(?:-L?\d+)?)?)/g;
+const WINDOWS_ABSOLUTE_PATH_RE =
+  /\b[A-Za-z]:[\\/][^\n`"'<>)]*?\.(?:tsx?|jsx?|md|json|ya?ml|toml|css|html|py|txt|mjs|cjs)(?:#L\d+(?:-L?\d+)?)?/g;
+const UNIX_ABSOLUTE_PATH_RE =
+  /(?:^|[\s(])((?:\/Users|\/home|\/workspace|\/workspaces|\/mnt\/[a-z])\/[^\n`"'<>)]*?\.(?:tsx?|jsx?|md|json|ya?ml|toml|css|html|py|txt|mjs|cjs)(?:#L\d+(?:-L?\d+)?)?)/g;
 
 const PATH_ROOT_SEGMENTS = new Set([
   ".github",
@@ -18,7 +20,8 @@ const PATH_ROOT_SEGMENTS = new Set([
   "tests",
 ]);
 
-const ROOT_FILE_RE = /^(?:README|CHANGELOG|LICENSE|SECURITY|package|tsconfig|vite\.config|next\.config|bun\.lock)(?:\.[a-z0-9]+)?$/i;
+const ROOT_FILE_RE =
+  /^(?:README|CHANGELOG|LICENSE|SECURITY|package|tsconfig|vite\.config|next\.config|bun\.lock)(?:\.[a-z0-9]+)?$/i;
 
 function decodePath(value: string): string {
   try {
@@ -29,7 +32,10 @@ function decodePath(value: string): string {
 }
 
 function stripLinkLabelMarkdown(label: string): string {
-  return label.trim().replace(/^`([^`]+)`$/, "$1").replace(/^\*\*([^*]+)\*\*$/, "$1");
+  return label
+    .trim()
+    .replace(/^`([^`]+)`$/, "$1")
+    .replace(/^\*\*([^*]+)\*\*$/, "$1");
 }
 
 function splitLineAnchor(value: string): { path: string; lineSuffix: string } {
@@ -53,15 +59,17 @@ function normalizeLocalPathPathname(rawPath: string): { path: string; lineSuffix
   value = value.replace(/^\/([A-Za-z]:[\\/])/, "$1");
   value = decodePath(value);
   value = value.replace(/\\/g, "/");
-  value = value.replace(/[?#][^#]*$/, (suffix) => suffix.startsWith("#L") ? suffix : "");
+  value = value.replace(/[?#][^#]*$/, (suffix) => (suffix.startsWith("#L") ? suffix : ""));
   return splitLineAnchor(value);
 }
 
 function looksLikeLocalTarget(target: string): boolean {
   const trimmed = target.trim();
-  return /^file:/i.test(trimmed)
-    || /^[A-Za-z]:[\\/]/.test(trimmed)
-    || /^\/(?:Users|home|workspace|workspaces|mnt\/[a-z])\//i.test(trimmed);
+  return (
+    /^file:/i.test(trimmed) ||
+    /^[A-Za-z]:[\\/]/.test(trimmed) ||
+    /^\/(?:Users|home|workspace|workspaces|mnt\/[a-z])\//i.test(trimmed)
+  );
 }
 
 function looksLikePathLabel(label: string): boolean {
@@ -118,7 +126,9 @@ export function formatTerminalAnswerInline(text: string): string {
   });
 
   formatted = formatted.replace(FILE_URL_RE, (match) => formatLocalPathForTerminal(match));
-  formatted = formatted.replace(WINDOWS_ABSOLUTE_PATH_RE, (match) => formatLocalPathForTerminal(match));
+  formatted = formatted.replace(WINDOWS_ABSOLUTE_PATH_RE, (match) =>
+    formatLocalPathForTerminal(match),
+  );
   formatted = formatted.replace(UNIX_ABSOLUTE_PATH_RE, (full, path: string) => {
     const prefix = full.slice(0, full.length - path.length);
     return `${prefix}${formatLocalPathForTerminal(path)}`;

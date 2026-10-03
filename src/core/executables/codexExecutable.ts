@@ -1,6 +1,6 @@
 import { spawn } from "child_process";
 import { join } from "path";
-import { runCommand } from "../process/CommandRunner.js";
+import type { runCommand } from "../process/CommandRunner.js";
 import { buildSpawnSpec, resolveExecutable } from "./executableResolver.js";
 
 type CommandRunner = typeof runCommand;
@@ -66,9 +66,7 @@ async function doResolveCodexExecutable(options?: {
     cwd: options?.cwd,
     configuredPath: options?.configuredPath,
     envOverrides: ["CODEX_EXECUTABLE"],
-    commandNames: process.platform === "win32"
-      ? ["codex.cmd", "codex.exe", "codex"]
-      : ["codex"],
+    commandNames: process.platform === "win32" ? ["codex.cmd", "codex.exe", "codex"] : ["codex"],
     knownFilePaths,
     label: "codex",
   });
@@ -78,19 +76,23 @@ export function formatCodexLaunchError(err: NodeJS.ErrnoException): string {
   const detail = err.message ? `\n\nDetails: ${err.message}` : "";
 
   if (err.code === "ENOENT") {
-    return [
-      "Codex executable was not found in PATH.",
-      "Set CODEX_EXECUTABLE to your working command/path, then restart Ubume.",
-      "Alternative: install CLI with `npm install -g @openai/codex`.",
-    ].join("\n") + detail;
+    return (
+      [
+        "Codex executable was not found in PATH.",
+        "Set CODEX_EXECUTABLE to your working command/path, then restart Ubume.",
+        "Alternative: install CLI with `npm install -g @openai/codex`.",
+      ].join("\n") + detail
+    );
   }
 
   if (err.code === "EACCES" || err.code === "EPERM") {
-    return [
-      "Codex appears installed but this process cannot launch it (permission blocked).",
-      "Set CODEX_EXECUTABLE to a working CLI command/path and restart Ubume.",
-      "Windows note: Codex docs recommend WSL for the best CLI experience.",
-    ].join("\n") + detail;
+    return (
+      [
+        "Codex appears installed but this process cannot launch it (permission blocked).",
+        "Set CODEX_EXECUTABLE to a working CLI command/path and restart Ubume.",
+        "Windows note: Codex docs recommend WSL for the best CLI experience.",
+      ].join("\n") + detail
+    );
   }
 
   return err.message;
@@ -133,7 +135,9 @@ export function captureCodexProcessOutput(
 
     const timer = setTimeout(() => {
       proc.kill();
-      const error = new Error(`Timed out waiting for Codex command: ${args.join(" ")}`) as NodeJS.ErrnoException;
+      const error = new Error(
+        `Timed out waiting for Codex command: ${args.join(" ")}`,
+      ) as NodeJS.ErrnoException;
       error.code = "ETIME";
       finish(() => reject(error));
     }, timeoutMs);
@@ -151,11 +155,13 @@ export function captureCodexProcessOutput(
     });
 
     proc.on("close", (exitCode) => {
-      finish(() => resolve({
-        exitCode,
-        stdout,
-        stderr,
-      }));
+      finish(() =>
+        resolve({
+          exitCode,
+          stdout,
+          stderr,
+        }),
+      );
     });
   });
 }

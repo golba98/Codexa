@@ -24,9 +24,14 @@ function replaceAllLiteral(value: string, search: string, replacement: string): 
  * Strips absolute filesystem paths from plan text, replacing them with
  * relative paths or truncated versions to protect user privacy.
  */
-export function hidePlanReviewFilesystemDetails(planText: string, workspaceRoot?: string | null): string {
+export function hidePlanReviewFilesystemDetails(
+  planText: string,
+  workspaceRoot?: string | null,
+): string {
   let output = planText;
-  const normalizedRoot = workspaceRoot?.trim() ? normalizePathSeparators(workspaceRoot.trim()).replace(/\/+$/, "") : "";
+  const normalizedRoot = workspaceRoot?.trim()
+    ? normalizePathSeparators(workspaceRoot.trim()).replace(/\/+$/, "")
+    : "";
 
   if (normalizedRoot) {
     output = replaceAllLiteral(output, workspaceRoot!.replace(/\\+$/, ""), "");
@@ -49,11 +54,17 @@ export function hidePlanReviewFilesystemDetails(planText: string, workspaceRoot?
  * Normalizes plan markdown for consistent rendering, converting bold labels
  * into proper headings and hiding filesystem details.
  */
-export function normalizePlanReviewMarkdown(planText: string, workspaceRoot?: string | null): string {
-  const sanitized = sanitizeTerminalOutput(hidePlanReviewFilesystemDetails(planText, workspaceRoot), {
-    preserveTabs: false,
-    tabSize: 2,
-  })
+export function normalizePlanReviewMarkdown(
+  planText: string,
+  workspaceRoot?: string | null,
+): string {
+  const sanitized = sanitizeTerminalOutput(
+    hidePlanReviewFilesystemDetails(planText, workspaceRoot),
+    {
+      preserveTabs: false,
+      tabSize: 2,
+    },
+  )
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .replace(/\n{4,}/g, "\n\n\n")

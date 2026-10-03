@@ -28,11 +28,11 @@ function cleanCommand(command: string): string {
  */
 export function normalizeCommand(command: string): string {
   // Full quoted path ending with pwsh.exe / powershell.exe
-  let match = command.match(/^"[^"]*(?:pwsh|powershell)(?:\.exe)?"\s+-Command\s+(.+)$/si);
+  let match = command.match(/^"[^"]*(?:pwsh|powershell)(?:\.exe)?"\s+-Command\s+(.+)$/is);
   if (match) return cleanCommand(stripOuterQuotes(match[1].trim()));
 
   // Bare pwsh.exe / powershell.exe on PATH
-  match = command.match(/^(?:pwsh|powershell)(?:\.exe)?\s+-Command\s+(.+)$/si);
+  match = command.match(/^(?:pwsh|powershell)(?:\.exe)?\s+-Command\s+(.+)$/is);
   if (match) return cleanCommand(stripOuterQuotes(match[1].trim()));
 
   // cmd.exe /c "..."

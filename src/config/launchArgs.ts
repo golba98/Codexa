@@ -1,4 +1,7 @@
-import { EXTERNAL_SESSION_SOURCES, type ExternalSessionSource } from "../core/externalSessions/types.js";
+import {
+  EXTERNAL_SESSION_SOURCES,
+  type ExternalSessionSource,
+} from "../core/externalSessions/types.js";
 
 const FLAG_HELP = "--help";
 const FLAG_HELP_SHORT = "-h";
@@ -26,9 +29,7 @@ export interface LaunchArgs {
   importSession?: { source: ExternalSessionSource; sessionId: string };
 }
 
-export type LaunchArgsParseResult =
-  | { ok: true; value: LaunchArgs }
-  | { ok: false; error: string };
+export type LaunchArgsParseResult = { ok: true; value: LaunchArgs } | { ok: false; error: string };
 
 function normalizeProfileValue(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -72,19 +73,35 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       continue;
     }
 
-    if (arg === "--resume" || arg.startsWith("--resume=") || arg === "--import-session" || arg.startsWith("--import-session=")) {
+    if (
+      arg === "--resume" ||
+      arg.startsWith("--resume=") ||
+      arg === "--import-session" ||
+      arg.startsWith("--import-session=")
+    ) {
       const name = arg.split("=")[0]!;
       const value = arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : argv[++index];
-      if (!value || value.startsWith("--")) return { ok: false, error: `Missing value for ${name}.` };
-      if (resumeId || importSession) return { ok: false, error: "Choose only one --resume or --import-session target." };
+      if (!value || value.startsWith("--"))
+        return { ok: false, error: `Missing value for ${name}.` };
+      if (resumeId || importSession)
+        return { ok: false, error: "Choose only one --resume or --import-session target." };
       if (name === "--resume") {
-        if (!/^chat_[A-Za-z0-9-]+$/.test(value)) return { ok: false, error: "Invalid conversation ID for --resume." };
+        if (!/^chat_[A-Za-z0-9-]+$/.test(value))
+          return { ok: false, error: "Invalid conversation ID for --resume." };
         resumeId = value;
       } else {
         const separator = value.indexOf(":");
         const source = value.slice(0, separator) as ExternalSessionSource;
         const sessionId = value.slice(separator + 1);
-        if (separator < 0 || !EXTERNAL_SESSION_SOURCES.includes(source) || !/^[A-Za-z0-9_-]+$/.test(sessionId)) return { ok: false, error: "Use --import-session source:session-id (claude, codex, vibe, antigravity)." };
+        if (
+          separator < 0 ||
+          !EXTERNAL_SESSION_SOURCES.includes(source) ||
+          !/^[A-Za-z0-9_-]+$/.test(sessionId)
+        )
+          return {
+            ok: false,
+            error: "Use --import-session source:session-id (claude, codex, vibe, antigravity).",
+          };
         importSession = { source, sessionId };
       }
       continue;
@@ -197,13 +214,18 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
     passthroughArgs.push(arg);
   }
 
-  const initialPrompt = promptArgs
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join(" ")
-    .trim() || null;
+  const initialPrompt =
+    promptArgs
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(" ")
+      .trim() || null;
 
-  if ((resumeId || importSession) && initialPrompt) return { ok: false, error: "Resume/import opens a conversation without running a startup prompt." };
+  if ((resumeId || importSession) && initialPrompt)
+    return {
+      ok: false,
+      error: "Resume/import opens a conversation without running a startup prompt.",
+    };
   return {
     ok: true,
     value: {

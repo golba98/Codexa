@@ -3,16 +3,15 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { mergeRuntimeIntoTomlConfig } from "./layeredConfig.js";
-import { DEFAULT_RUNTIME_CONFIG } from "./runtimeConfig.js";
+import { mergeRuntimeIntoTomlConfig, parseTomlDocument } from "./layeredConfig.js";
 import {
   extractLegacyRuntime,
   getDefaultSettings,
   parseSettingsData,
-  serializeSettings,
   saveRuntimeModePreference,
+  serializeSettings,
 } from "./persistence.js";
-import { parseTomlDocument } from "./layeredConfig.js";
+import { DEFAULT_RUNTIME_CONFIG } from "./runtimeConfig.js";
 
 test("extracts legacy flat runtime settings for migration", () => {
   const runtime = extractLegacyRuntime({
@@ -79,33 +78,56 @@ test("falls back to defaults for missing UI or auth preferences", () => {
 });
 
 test("maps legacy directory display settings into workspace display mode", () => {
-  assert.equal(parseSettingsData({ directory_display_mode: "normal" }).ui.workspaceDisplayMode, "dir");
-  assert.equal(parseSettingsData({ directoryDisplayMode: "simple" }).ui.workspaceDisplayMode, "simple");
+  assert.equal(
+    parseSettingsData({ directory_display_mode: "normal" }).ui.workspaceDisplayMode,
+    "dir",
+  );
+  assert.equal(
+    parseSettingsData({ directoryDisplayMode: "simple" }).ui.workspaceDisplayMode,
+    "simple",
+  );
 });
 
 test("parses workspace display and busy loader from camel and snake case", () => {
-  assert.equal(parseSettingsData({ workspace_display_mode: "name", terminal_title_mode: "simple", show_busy_loader: false }).ui.workspaceDisplayMode, "name");
-  assert.equal(parseSettingsData({ workspaceDisplayMode: "dir", terminalTitleMode: "name", showBusyLoader: true }).ui.showBusyLoader, true);
+  assert.equal(
+    parseSettingsData({
+      workspace_display_mode: "name",
+      terminal_title_mode: "simple",
+      show_busy_loader: false,
+    }).ui.workspaceDisplayMode,
+    "name",
+  );
+  assert.equal(
+    parseSettingsData({
+      workspaceDisplayMode: "dir",
+      terminalTitleMode: "name",
+      showBusyLoader: true,
+    }).ui.showBusyLoader,
+    true,
+  );
   assert.equal(parseSettingsData({ terminalTitleMode: "name" }).ui.terminalTitleMode, "name");
 });
 
 test("merges legacy runtime fields into TOML without overwriting existing values", () => {
-  const merged = mergeRuntimeIntoTomlConfig({
-    model: "gpt-5.4",
-    ubume: {
-      mode: "suggest",
+  const merged = mergeRuntimeIntoTomlConfig(
+    {
+      model: "gpt-5.4",
+      ubume: {
+        mode: "suggest",
+      },
     },
-  }, {
-    ...DEFAULT_RUNTIME_CONFIG,
-    model: "gpt-5.4-mini",
-    mode: "full-auto",
-    policy: {
-      ...DEFAULT_RUNTIME_CONFIG.policy,
-      networkAccess: "enabled",
-      writableRoots: ["C:\\safe"],
-      personality: "pragmatic",
+    {
+      ...DEFAULT_RUNTIME_CONFIG,
+      model: "gpt-5.4-mini",
+      mode: "full-auto",
+      policy: {
+        ...DEFAULT_RUNTIME_CONFIG.policy,
+        networkAccess: "enabled",
+        writableRoots: ["C:\\safe"],
+        personality: "pragmatic",
+      },
     },
-  });
+  );
 
   assert.equal(merged.model, "gpt-5.4");
   assert.deepEqual(merged.ubume, { mode: "suggest" });
@@ -121,11 +143,19 @@ test("persists Auto and Plan choices while preserving unrelated Codex config", (
   const previous = process.env.CODEX_HOME;
   process.env.CODEX_HOME = root;
   try {
-    writeFileSync(join(root, "config.toml"), "model = \"kept-model\"\n[ubume]\nbackend = \"openai-native\"\n", "utf-8");
+    writeFileSync(
+      join(root, "config.toml"),
+      'model = "kept-model"\n[ubume]\nbackend = "openai-native"\n',
+      "utf-8",
+    );
     saveRuntimeModePreference("auto-edit", false);
     let parsed = parseTomlDocument(readFileSync(join(root, "config.toml"), "utf-8"));
     assert.equal(parsed.model, "kept-model");
-    assert.deepEqual(parsed.ubume, { backend: "openai-native", mode: "auto-edit", plan_mode: false });
+    assert.deepEqual(parsed.ubume, {
+      backend: "openai-native",
+      mode: "auto-edit",
+      plan_mode: false,
+    });
 
     saveRuntimeModePreference("auto-edit", true);
     parsed = parseTomlDocument(readFileSync(join(root, "config.toml"), "utf-8"));

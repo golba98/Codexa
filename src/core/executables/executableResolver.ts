@@ -103,7 +103,12 @@ export async function resolveExecutable(options: ExecutableResolverOptions): Pro
 
   // 3. Windows PATH lookup by explicit command names (where.exe returns null on non-Windows gracefully)
   for (const candidate of options.commandNames) {
-    const resolved = await resolveWithWhere(runCommandImpl, cwd, candidate, options.requireResolvedFile === true);
+    const resolved = await resolveWithWhere(
+      runCommandImpl,
+      cwd,
+      candidate,
+      options.requireResolvedFile === true,
+    );
     if (resolved) return resolved;
   }
 
@@ -117,14 +122,22 @@ export async function resolveExecutable(options: ExecutableResolverOptions): Pro
     }
 
     for (const candidate of knownCandidates) {
-      const validated = validateResolvedExecutable(candidate, `${options.label} known executable`, cwd);
+      const validated = validateResolvedExecutable(
+        candidate,
+        `${options.label} known executable`,
+        cwd,
+      );
       if (existsSync(validated)) return validated;
     }
   }
 
   // 5. Explicit known file fallbacks
   for (const candidate of options.knownFilePaths ?? []) {
-    const validated = validateResolvedExecutable(candidate, `${options.label} known executable`, cwd);
+    const validated = validateResolvedExecutable(
+      candidate,
+      `${options.label} known executable`,
+      cwd,
+    );
     if (existsSync(validated)) return validated;
   }
 
@@ -157,7 +170,10 @@ export function buildSpawnSpec(
       for (const argument of args) {
         validateWindowsBatchArgumentForCmd(argument, "Windows batch argument");
       }
-      return { executable: "cmd.exe", args: ["/d", "/s", "/c", "call", validatedExecutable, ...args] };
+      return {
+        executable: "cmd.exe",
+        args: ["/d", "/s", "/c", "call", validatedExecutable, ...args],
+      };
     }
   }
   return { executable: validatedExecutable, args };

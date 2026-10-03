@@ -8,10 +8,13 @@ import {
 } from "./busyStatusAnimation.js";
 
 test("busy status frames advance in a fixed-width dot slot", () => {
-  assert.deepEqual(
-    [0, 1, 2, 3, 4].map(getBusyStatusFrame),
-    [" .  ", " .. ", " ...", " .  ", " .. "],
-  );
+  assert.deepEqual([0, 1, 2, 3, 4].map(getBusyStatusFrame), [
+    " .  ",
+    " .. ",
+    " ...",
+    " .  ",
+    " .. ",
+  ]);
   assert.ok(BUSY_STATUS_FRAMES.every((frame) => frame.length === BUSY_STATUS_FRAMES[0]!.length));
 });
 

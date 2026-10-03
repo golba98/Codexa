@@ -1,18 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { RunEvent, RunProgressEntry, RunToolActivity, UserPromptEvent } from "../../session/types.js";
+import type {
+  RunEvent,
+  RunProgressEntry,
+  RunToolActivity,
+  UserPromptEvent,
+} from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
 import type { RenderTimelineItem } from "./Timeline.js";
 import {
   __clearTimelineMeasureCachesForTests,
   __getStaticRowCacheSizeForTests,
   __getStreamingBlockRowCacheSizeForTests,
-  resetTimelineMeasureCaches,
   __wrapStyledSpansForTests,
   buildActionEventRows,
   buildNativeTranscriptParts,
   buildStableTimelineSnapshot,
   buildTimelineSnapshot,
+  resetTimelineMeasureCaches,
   type StreamEvent,
   type TimelineRowSpan,
 } from "./timelineMeasure.js";
@@ -37,7 +42,10 @@ function makeActionEvent(tool: RunToolActivity): Extract<StreamEvent, { kind: "a
   };
 }
 
-function buildRows(tool: RunToolActivity, overrides: Partial<Parameters<typeof buildActionEventRows>[0]> = {}) {
+function buildRows(
+  tool: RunToolActivity,
+  overrides: Partial<Parameters<typeof buildActionEventRows>[0]> = {},
+) {
   return buildActionEventRows({
     keyPrefix: "turn-1-action-1",
     width: 80,
@@ -65,8 +73,14 @@ test("buildActionEventRows preserves compact action row shape when summary chang
   const second = buildRows(makeTool({ summary: "Read 14 lines" }));
 
   assert.equal(second.length, first.length);
-  assert.deepEqual(second.map((row) => row.key), first.map((row) => row.key));
-  assert.match(first.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /^✓ Read file/);
+  assert.deepEqual(
+    second.map((row) => row.key),
+    first.map((row) => row.key),
+  );
+  assert.match(
+    first.map((row) => row.spans.map((span) => span.text).join("")).join("\n"),
+    /^✓ Read file/,
+  );
 });
 
 test("completed action rows ignore live-target changes that do not render", () => {
@@ -88,26 +102,41 @@ test("running action rows keep their shape when live cursor display changes", ()
 
   assert.equal(second.length, first.length);
   assert.match(first.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /▌/);
-  assert.doesNotMatch(second.map((row) => row.spans.map((span) => span.text).join("")).join("\n"), /▌/);
-  assert.deepEqual(second.map((row) => row.key), first.map((row) => row.key));
+  assert.doesNotMatch(
+    second.map((row) => row.spans.map((span) => span.text).join("")).join("\n"),
+    /▌/,
+  );
+  assert.deepEqual(
+    second.map((row) => row.key),
+    first.map((row) => row.key),
+  );
 });
 
 test("running to completed action update keeps row count and keys stable", () => {
   __clearTimelineMeasureCachesForTests();
 
-  const running = buildRows(makeTool({
-    status: "running",
-    completedAt: null,
-    summary: null,
-  }), { isLive: true });
-  const completed = buildRows(makeTool({
-    status: "completed",
-    completedAt: 42,
-    summary: "Read 12 lines",
-  }), { isLive: false });
+  const running = buildRows(
+    makeTool({
+      status: "running",
+      completedAt: null,
+      summary: null,
+    }),
+    { isLive: true },
+  );
+  const completed = buildRows(
+    makeTool({
+      status: "completed",
+      completedAt: 42,
+      summary: "Read 12 lines",
+    }),
+    { isLive: false },
+  );
 
   assert.equal(completed.length, running.length);
-  assert.deepEqual(completed.map((row) => row.key), running.map((row) => row.key));
+  assert.deepEqual(
+    completed.map((row) => row.key),
+    running.map((row) => row.key),
+  );
 });
 
 test("action summary updates do not resize compact action rows", () => {
@@ -117,16 +146,23 @@ test("action summary updates do not resize compact action rows", () => {
   const second = buildRows(makeTool({ summary: "Read 14 lines and summarized the file contents" }));
 
   assert.equal(second.length, first.length);
-  assert.deepEqual(second.map((row) => row.key), first.map((row) => row.key));
+  assert.deepEqual(
+    second.map((row) => row.key),
+    first.map((row) => row.key),
+  );
 });
 
 test("compact action rows show duration only after completion", () => {
   __clearTimelineMeasureCachesForTests();
 
   const running = buildRows(makeTool({ status: "running", completedAt: null }), { isLive: true });
-  const completed = buildRows(makeTool({ status: "completed", completedAt: 42 }), { isLive: false });
+  const completed = buildRows(makeTool({ status: "completed", completedAt: 42 }), {
+    isLive: false,
+  });
   const runningText = running.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
-  const completedText = completed.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
+  const completedText = completed
+    .map((row) => row.spans.map((span) => span.text).join(""))
+    .join("\n");
 
   assert.equal(running.length, completed.length);
   assert.match(runningText, /Read file/);
@@ -147,12 +183,14 @@ test("streaming row cache size is bounded", () => {
   __clearTimelineMeasureCachesForTests();
 
   for (let index = 0; index < 225; index += 1) {
-    buildRows(makeTool({
-      id: `tool-${index}`,
-      status: "running",
-      completedAt: null,
-      summary: `Read ${index} lines`,
-    }));
+    buildRows(
+      makeTool({
+        id: `tool-${index}`,
+        status: "running",
+        completedAt: null,
+        summary: `Read ${index} lines`,
+      }),
+    );
   }
 
   assert.equal(__getStreamingBlockRowCacheSizeForTests(), 200);
@@ -167,15 +205,17 @@ function makeProgressEntry(text: string): RunProgressEntry {
     createdAt: 1,
     updatedAt: 1,
     pendingNewlineCount: 0,
-    blocks: [{
-      id: "thinking-1-block-1",
-      text,
-      sequence: 1,
-      createdAt: 1,
-      updatedAt: 1,
-      status: "active",
-      streamSeq: 1,
-    }],
+    blocks: [
+      {
+        id: "thinking-1-block-1",
+        text,
+        sequence: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        status: "active",
+        streamSeq: 1,
+      },
+    ],
   };
 }
 
@@ -265,13 +305,15 @@ function makeStreamingResponseRenderItem(text: string): RenderTimelineItem {
     errorMessage: null,
     turnId: 2,
     streamItems: [{ streamSeq: 1, kind: "response", refId: "response-1" }],
-    responseSegments: [{
-      id: "response-1",
-      streamSeq: 1,
-      chunks: [text],
-      status: "active",
-      startedAt: 1,
-    }],
+    responseSegments: [
+      {
+        id: "response-1",
+        streamSeq: 1,
+        chunks: [text],
+        status: "active",
+        startedAt: 1,
+      },
+    ],
     lastStreamSeq: 1,
     activeResponseSegmentId: "response-1",
   };
@@ -360,7 +402,10 @@ function makeActionSequenceRenderItem(
   };
 }
 
-function makeCompletedPlanRenderItem(planText: string, status: "running" | "completed" = "completed"): RenderTimelineItem {
+function makeCompletedPlanRenderItem(
+  planText: string,
+  status: "running" | "completed" = "completed",
+): RenderTimelineItem {
   const user: UserPromptEvent = {
     id: 30,
     type: "user",
@@ -425,16 +470,14 @@ function snapshotText(rows: Array<{ spans: Array<{ text: string }> }>): string {
 }
 
 function stableRowsForTools(tools: RunToolActivity[], options: { finalized?: boolean } = {}) {
-  return buildStableTimelineSnapshot(
-    [makeActionSequenceRenderItem(tools, options)],
-    { totalWidth: 72, debugLabel: "action-sequence" },
-  ).snapshot.rows;
+  return buildStableTimelineSnapshot([makeActionSequenceRenderItem(tools, options)], {
+    totalWidth: 72,
+    debugLabel: "action-sequence",
+  }).snapshot.rows;
 }
 
 function actionRows(rows: Array<{ key: string }>, streamSeq: number): string[] {
-  return rows
-    .map((row) => row.key)
-    .filter((key) => key.includes(`-action-${streamSeq}-`));
+  return rows.map((row) => row.key).filter((key) => key.includes(`-action-${streamSeq}-`));
 }
 
 function actionTopIndex(rows: Array<{ key: string }>, streamSeq: number): number {
@@ -444,12 +487,16 @@ function actionTopIndex(rows: Array<{ key: string }>, streamSeq: number): number
 test("completed action wrapped rows stay stable when earlier thinking grows", () => {
   __clearTimelineMeasureCachesForTests();
 
-  const first = buildTimelineSnapshot(
-    [makeRenderItem("Inspecting proof files.")],
-    { totalWidth: 72, debugLabel: "test-before" },
-  );
+  const first = buildTimelineSnapshot([makeRenderItem("Inspecting proof files.")], {
+    totalWidth: 72,
+    debugLabel: "test-before",
+  });
   const second = buildTimelineSnapshot(
-    [makeRenderItem("Inspecting proof files and reading surrounding documentation before summarizing the verification workflow.")],
+    [
+      makeRenderItem(
+        "Inspecting proof files and reading surrounding documentation before summarizing the verification workflow.",
+      ),
+    ],
     { totalWidth: 72, debugLabel: "test-after" },
   );
 
@@ -458,7 +505,10 @@ test("completed action wrapped rows stay stable when earlier thinking grows", ()
 
   assert.ok(firstActionRows.length > 0);
   assert.equal(secondActionRows.length, firstActionRows.length);
-  assert.deepEqual(secondActionRows.map((row) => row.key), firstActionRows.map((row) => row.key));
+  assert.deepEqual(
+    secondActionRows.map((row) => row.key),
+    firstActionRows.map((row) => row.key),
+  );
   for (let index = 0; index < firstActionRows.length; index += 1) {
     assert.strictEqual(secondActionRows[index], firstActionRows[index]);
   }
@@ -467,10 +517,10 @@ test("completed action wrapped rows stay stable when earlier thinking grows", ()
 test("active thinking rows are omitted while action rows remain visible", () => {
   __clearTimelineMeasureCachesForTests();
 
-  const snapshot = buildTimelineSnapshot(
-    [makeRenderItem("Inspecting proof files.")],
-    { totalWidth: 72, debugLabel: "active-thinking-omitted" },
-  );
+  const snapshot = buildTimelineSnapshot([makeRenderItem("Inspecting proof files.")], {
+    totalWidth: 72,
+    debugLabel: "active-thinking-omitted",
+  });
   const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 
   assert.doesNotMatch(joined, /Inspecting proof files/i);
@@ -484,15 +534,47 @@ test("stable active action sequence appends without moving existing action keys"
     makeTool({ id: "tool-1", status: "running", completedAt: null, summary: null, streamSeq: 1 }),
   ]);
   const firstCompletedRows = stableRowsForTools([
-    makeTool({ id: "tool-1", status: "completed", completedAt: 42, summary: "Read 12 lines", streamSeq: 1 }),
+    makeTool({
+      id: "tool-1",
+      status: "completed",
+      completedAt: 42,
+      summary: "Read 12 lines",
+      streamSeq: 1,
+    }),
   ]);
   const secondRunningRows = stableRowsForTools([
-    makeTool({ id: "tool-1", status: "completed", completedAt: 42, summary: "Read 12 lines", streamSeq: 1 }),
-    makeTool({ id: "tool-2", command: "Get-Content package.json", status: "running", completedAt: null, summary: null, streamSeq: 2 }),
+    makeTool({
+      id: "tool-1",
+      status: "completed",
+      completedAt: 42,
+      summary: "Read 12 lines",
+      streamSeq: 1,
+    }),
+    makeTool({
+      id: "tool-2",
+      command: "Get-Content package.json",
+      status: "running",
+      completedAt: null,
+      summary: null,
+      streamSeq: 2,
+    }),
   ]);
   const bothCompletedRows = stableRowsForTools([
-    makeTool({ id: "tool-1", status: "completed", completedAt: 42, summary: "Read 12 lines", streamSeq: 1 }),
-    makeTool({ id: "tool-2", command: "Get-Content package.json", status: "completed", completedAt: 56, summary: "Read package", streamSeq: 2 }),
+    makeTool({
+      id: "tool-1",
+      status: "completed",
+      completedAt: 42,
+      summary: "Read 12 lines",
+      streamSeq: 1,
+    }),
+    makeTool({
+      id: "tool-2",
+      command: "Get-Content package.json",
+      status: "completed",
+      completedAt: 56,
+      summary: "Read package",
+      streamSeq: 2,
+    }),
   ]);
 
   const firstActionKeys = actionRows(firstRunningRows, 1);
@@ -509,7 +591,14 @@ test("stable active action rows keep stream order when a later action completes 
 
   const rows = stableRowsForTools([
     makeTool({ id: "tool-1", status: "running", completedAt: null, summary: null, streamSeq: 1 }),
-    makeTool({ id: "tool-2", command: "Get-Content package.json", status: "completed", completedAt: 56, summary: "Read package", streamSeq: 2 }),
+    makeTool({
+      id: "tool-2",
+      command: "Get-Content package.json",
+      status: "completed",
+      completedAt: 56,
+      summary: "Read package",
+      streamSeq: 2,
+    }),
   ]);
 
   assert.ok(actionTopIndex(rows, 1) >= 0);
@@ -520,14 +609,16 @@ test("stable active action rows keep stream order when a later action completes 
 test("default stable timeline summarizes long repeated read action bursts once finalized", () => {
   __clearTimelineMeasureCachesForTests();
 
-  const tools = Array.from({ length: 7 }, (_, index) => makeTool({
-    id: `tool-${index + 1}`,
-    command: `Get-Content file-${index + 1}.txt`,
-    status: "completed",
-    completedAt: 50 + index,
-    summary: `Read file ${index + 1}`,
-    streamSeq: index + 1,
-  }));
+  const tools = Array.from({ length: 7 }, (_, index) =>
+    makeTool({
+      id: `tool-${index + 1}`,
+      command: `Get-Content file-${index + 1}.txt`,
+      status: "completed",
+      completedAt: 50 + index,
+      summary: `Read file ${index + 1}`,
+      streamSeq: index + 1,
+    }),
+  );
 
   // Compaction is height-reducing, so it only applies after the run finalizes.
   const rows = stableRowsForTools(tools, { finalized: true });
@@ -545,18 +636,21 @@ test("default stable timeline summarizes long repeated read action bursts once f
 test("verbose stable timeline keeps every repeated read action visible", () => {
   __clearTimelineMeasureCachesForTests();
 
-  const tools = Array.from({ length: 7 }, (_, index) => makeTool({
-    id: `tool-${index + 1}`,
-    command: `Get-Content file-${index + 1}.txt`,
-    status: "completed",
-    completedAt: 50 + index,
-    summary: `Read file ${index + 1}`,
-    streamSeq: index + 1,
-  }));
-  const rows = buildStableTimelineSnapshot(
-    [makeActionSequenceRenderItem(tools)],
-    { totalWidth: 72, debugLabel: "verbose-action-sequence", verboseMode: true },
-  ).snapshot.rows;
+  const tools = Array.from({ length: 7 }, (_, index) =>
+    makeTool({
+      id: `tool-${index + 1}`,
+      command: `Get-Content file-${index + 1}.txt`,
+      status: "completed",
+      completedAt: 50 + index,
+      summary: `Read file ${index + 1}`,
+      streamSeq: index + 1,
+    }),
+  );
+  const rows = buildStableTimelineSnapshot([makeActionSequenceRenderItem(tools)], {
+    totalWidth: 72,
+    debugLabel: "verbose-action-sequence",
+    verboseMode: true,
+  }).snapshot.rows;
 
   assert.doesNotMatch(snapshotText(rows), /repeated read activity summarized/);
   for (let index = 1; index <= 7; index += 1) {
@@ -567,12 +661,16 @@ test("verbose stable timeline keeps every repeated read action visible", () => {
 test("stable timeline freezes completed action rows while active text changes", () => {
   __clearTimelineMeasureCachesForTests();
 
-  const first = buildStableTimelineSnapshot(
-    [makeRenderItem("Inspecting proof files.")],
-    { totalWidth: 72, debugLabel: "stable-before" },
-  );
+  const first = buildStableTimelineSnapshot([makeRenderItem("Inspecting proof files.")], {
+    totalWidth: 72,
+    debugLabel: "stable-before",
+  });
   const second = buildStableTimelineSnapshot(
-    [makeRenderItem("Inspecting proof files and reading surrounding documentation before summarizing the verification workflow.")],
+    [
+      makeRenderItem(
+        "Inspecting proof files and reading surrounding documentation before summarizing the verification workflow.",
+      ),
+    ],
     { totalWidth: 72, debugLabel: "stable-after" },
   );
 
@@ -589,10 +687,10 @@ test("stable timeline freezes completed action rows while active text changes", 
 test("buildTimelineSnapshot re-renders when a completed plan changes from empty to final text", () => {
   __clearTimelineMeasureCachesForTests();
 
-  const empty = buildTimelineSnapshot(
-    [makeCompletedPlanRenderItem("")],
-    { totalWidth: 90, debugLabel: "plan-empty" },
-  );
+  const empty = buildTimelineSnapshot([makeCompletedPlanRenderItem("")], {
+    totalWidth: 90,
+    debugLabel: "plan-empty",
+  });
   const final = buildTimelineSnapshot(
     [makeCompletedPlanRenderItem("## Final architecture plan\n1. Update the file tree renderer.")],
     { totalWidth: 90, debugLabel: "plan-final" },
@@ -606,10 +704,10 @@ test("buildTimelineSnapshot re-renders when a completed plan changes from empty 
 test("buildStableTimelineSnapshot re-renders final plan text under the same turn key", () => {
   __clearTimelineMeasureCachesForTests();
 
-  const empty = buildStableTimelineSnapshot(
-    [makeCompletedPlanRenderItem("")],
-    { totalWidth: 90, debugLabel: "stable-plan-empty" },
-  );
+  const empty = buildStableTimelineSnapshot([makeCompletedPlanRenderItem("")], {
+    totalWidth: 90,
+    debugLabel: "stable-plan-empty",
+  });
   const final = buildStableTimelineSnapshot(
     [makeCompletedPlanRenderItem("## Final architecture plan\n1. Update the file tree renderer.")],
     { totalWidth: 90, debugLabel: "stable-plan-final" },
@@ -623,18 +721,24 @@ test("buildStableTimelineSnapshot re-renders final plan text under the same turn
 test("native plan moves from one live block to one committed block at finalize", () => {
   __clearTimelineMeasureCachesForTests();
   const planText = "## Final architecture plan\n1. Keep native terminal scrollback.";
-  const running = buildNativeTranscriptParts(
-    [makeCompletedPlanRenderItem(planText, "running")],
-    { totalWidth: 90, debugLabel: "native-plan-running" },
-  );
+  const running = buildNativeTranscriptParts([makeCompletedPlanRenderItem(planText, "running")], {
+    totalWidth: 90,
+    debugLabel: "native-plan-running",
+  });
   const completed = buildNativeTranscriptParts(
     [makeCompletedPlanRenderItem(planText, "completed")],
     { totalWidth: 90, debugLabel: "native-plan-completed" },
   );
 
-  assert.doesNotMatch(snapshotText(running.staticItems.flatMap((item) => item.rows)), /Final architecture plan/);
+  assert.doesNotMatch(
+    snapshotText(running.staticItems.flatMap((item) => item.rows)),
+    /Final architecture plan/,
+  );
   assert.match(snapshotText(running.liveRows), /Final architecture plan/);
-  assert.match(snapshotText(completed.staticItems.flatMap((item) => item.rows)), /Final architecture plan/);
+  assert.match(
+    snapshotText(completed.staticItems.flatMap((item) => item.rows)),
+    /Final architecture plan/,
+  );
   assert.doesNotMatch(snapshotText(completed.liveRows), /Final architecture plan/);
   assert.equal(completed.staticItems.filter((item) => item.key.includes("-stream-")).length, 1);
 });
@@ -642,18 +746,19 @@ test("native plan moves from one live block to one committed block at finalize",
 test("unchanged active response rows keep references while streaming text grows", () => {
   __clearTimelineMeasureCachesForTests();
 
-  const first = buildTimelineSnapshot(
-    [makeStreamingResponseRenderItem("Line one.\nLine two.")],
-    { totalWidth: 72, debugLabel: "response-before" },
-  );
+  const first = buildTimelineSnapshot([makeStreamingResponseRenderItem("Line one.\nLine two.")], {
+    totalWidth: 72,
+    debugLabel: "response-before",
+  });
   const second = buildTimelineSnapshot(
     [makeStreamingResponseRenderItem("Line one.\nLine two.\nLine three is arriving.")],
     { totalWidth: 72, debugLabel: "response-after" },
   );
 
-  const firstStableLine = first.rows.find((row) =>
-    row.key.includes("-codex-response-1-content-0")
-    && row.spans.some((span) => span.text.includes("Line one.")),
+  const firstStableLine = first.rows.find(
+    (row) =>
+      row.key.includes("-codex-response-1-content-0") &&
+      row.spans.some((span) => span.text.includes("Line one.")),
   );
   const secondStableLine = second.rows.find((row) => row.key === firstStableLine?.key);
 
@@ -665,26 +770,43 @@ test("native transcript keeps the complete running turn live", () => {
   __clearTimelineMeasureCachesForTests();
 
   const parts = buildNativeTranscriptParts(
-    [makeActionSequenceRenderItem([
-      makeTool({ id: "tool-1", status: "completed", completedAt: 42, summary: "Read README", streamSeq: 1 }),
-      makeTool({
-        id: "tool-2",
-        command: "Get-Content package.json",
-        status: "running",
-        completedAt: null,
-        summary: null,
-        streamSeq: 2,
-      }),
-    ])],
+    [
+      makeActionSequenceRenderItem([
+        makeTool({
+          id: "tool-1",
+          status: "completed",
+          completedAt: 42,
+          summary: "Read README",
+          streamSeq: 1,
+        }),
+        makeTool({
+          id: "tool-2",
+          command: "Get-Content package.json",
+          status: "running",
+          completedAt: null,
+          summary: null,
+          streamSeq: 2,
+        }),
+      ]),
+    ],
     { totalWidth: 72, debugLabel: "native-action-split" },
   );
 
   const staticKeys = parts.staticItems.flatMap((item) => item.rows.map((row) => row.key));
   const liveKeys = parts.liveRows.map((row) => row.key);
 
-  assert.equal(staticKeys.some((key) => key.includes("-user-")), false);
-  assert.equal(staticKeys.some((key) => key.includes("-action-1-")), false);
-  assert.equal(staticKeys.some((key) => key.includes("-action-2-")), false);
+  assert.equal(
+    staticKeys.some((key) => key.includes("-user-")),
+    false,
+  );
+  assert.equal(
+    staticKeys.some((key) => key.includes("-action-1-")),
+    false,
+  );
+  assert.equal(
+    staticKeys.some((key) => key.includes("-action-2-")),
+    false,
+  );
   assert.ok(liveKeys.some((key) => key.includes("-user-")));
   assert.ok(liveKeys.some((key) => key.includes("-action-1-")));
   assert.ok(liveKeys.some((key) => key.includes("-action-2-")));
@@ -705,47 +827,83 @@ test("native transcript parts keep streaming response out of static rows", () =>
   assert.match(liveText, /Line three is arriving/);
 });
 
-
 // ── Placement fix: running runs keep all events in liveRows ──────────────────
 
 test("running run keeps its prompt and visible stream events reflowable", () => {
   __clearTimelineMeasureCachesForTests();
 
   const completedTool = makeTool({
-    id: "tool-1", command: "Get-Content README.md", status: "completed",
-    completedAt: 20, summary: "Read 5 lines", streamSeq: 1,
+    id: "tool-1",
+    command: "Get-Content README.md",
+    status: "completed",
+    completedAt: 20,
+    summary: "Read 5 lines",
+    streamSeq: 1,
   });
   const runningTool = makeTool({
-    id: "tool-2", command: "Get-Content package.json", status: "running",
-    completedAt: null, summary: null, streamSeq: 2,
+    id: "tool-2",
+    command: "Get-Content package.json",
+    status: "running",
+    completedAt: null,
+    summary: null,
+    streamSeq: 2,
   });
 
   const thinkingBlock: RunProgressEntry["blocks"][number] = {
-    id: "block-1", text: "Let me inspect the files first.", status: "completed",
-    sequence: 1, createdAt: 1, updatedAt: 2,
+    id: "block-1",
+    text: "Let me inspect the files first.",
+    status: "completed",
+    sequence: 1,
+    createdAt: 1,
+    updatedAt: 2,
   };
   const progressEntry: RunProgressEntry = {
-    id: "entry-1", source: "reasoning", text: thinkingBlock.text,
-    sequence: 1, createdAt: 1, updatedAt: 2, blocks: [thinkingBlock], pendingNewlineCount: 0,
+    id: "entry-1",
+    source: "reasoning",
+    text: thinkingBlock.text,
+    sequence: 1,
+    createdAt: 1,
+    updatedAt: 2,
+    blocks: [thinkingBlock],
+    pendingNewlineCount: 0,
   };
 
   const run: RunEvent = {
-    id: 50, type: "run", createdAt: 1, startedAt: 1, durationMs: null,
-    backendId: "codex-subprocess", backendLabel: "Ubume", runtime: TEST_RUNTIME,
+    id: 50,
+    type: "run",
+    createdAt: 1,
+    startedAt: 1,
+    durationMs: null,
+    backendId: "codex-subprocess",
+    backendLabel: "Ubume",
+    runtime: TEST_RUNTIME,
     prompt: "Inspect project",
     progressEntries: [progressEntry],
-    status: "running", summary: "running...", truncatedOutput: false,
+    status: "running",
+    summary: "running...",
+    truncatedOutput: false,
     toolActivities: [completedTool, runningTool],
-    activity: [], touchedFileCount: 0, errorMessage: null, turnId: 5,
+    activity: [],
+    touchedFileCount: 0,
+    errorMessage: null,
+    turnId: 5,
     streamItems: [
       { kind: "thinking", streamSeq: 0, refId: "block-1" },
       { kind: "action", streamSeq: 1, refId: "tool-1" },
       { kind: "action", streamSeq: 2, refId: "tool-2" },
     ],
-    responseSegments: [], lastStreamSeq: 2, activeResponseSegmentId: null,
+    responseSegments: [],
+    lastStreamSeq: 2,
+    activeResponseSegmentId: null,
   };
 
-  const user: UserPromptEvent = { id: 51, type: "user", createdAt: 1, prompt: "Inspect project", turnId: 5 };
+  const user: UserPromptEvent = {
+    id: 51,
+    type: "user",
+    createdAt: 1,
+    prompt: "Inspect project",
+    turnId: 5,
+  };
   const item: RenderTimelineItem = {
     key: "turn-5",
     type: "turn",
@@ -754,16 +912,32 @@ test("running run keeps its prompt and visible stream events reflowable", () => 
     renderState: { opacity: "active", question: null, runPhase: "streaming" },
   };
 
-  const parts = buildNativeTranscriptParts([item], { totalWidth: 80, debugLabel: "running-placement" });
+  const parts = buildNativeTranscriptParts([item], {
+    totalWidth: 80,
+    debugLabel: "running-placement",
+  });
 
   const staticKeys = parts.staticItems.flatMap((si) => si.rows.map((r) => r.key));
-  assert.equal(staticKeys.some((k) => k.includes("-user-")), false, "running user row must stay live");
+  assert.equal(
+    staticKeys.some((k) => k.includes("-user-")),
+    false,
+    "running user row must stay live",
+  );
   assert.equal(parts.staticItems.filter((si) => si.key.includes("-stream-")).length, 0);
 
   const liveKeys = parts.liveRows.map((r) => r.key);
-  assert.ok(liveKeys.some((k) => k.includes("-user-")), "running user row should be reflowable");
-  assert.ok(liveKeys.some((k) => k.includes("-action-1-")), "completed action should remain reflowable until finalize");
-  assert.ok(liveKeys.some((k) => k.includes("-action-2-")), "running action should be in liveRows");
+  assert.ok(
+    liveKeys.some((k) => k.includes("-user-")),
+    "running user row should be reflowable",
+  );
+  assert.ok(
+    liveKeys.some((k) => k.includes("-action-1-")),
+    "completed action should remain reflowable until finalize",
+  );
+  assert.ok(
+    liveKeys.some((k) => k.includes("-action-2-")),
+    "running action should be in liveRows",
+  );
   assert.ok(
     !liveKeys.some((k) => k.includes("-codex-thinking-")),
     "reasoning must be deferred while running — not surfaced in liveRows",
@@ -774,40 +948,77 @@ test("completed run moves all stream events to staticItems — one atomic commit
   __clearTimelineMeasureCachesForTests();
 
   const tool1 = makeTool({
-    id: "tool-1", command: "Get-Content README.md", status: "completed",
-    completedAt: 20, summary: "Read 5 lines", streamSeq: 1,
+    id: "tool-1",
+    command: "Get-Content README.md",
+    status: "completed",
+    completedAt: 20,
+    summary: "Read 5 lines",
+    streamSeq: 1,
   });
   const tool2 = makeTool({
-    id: "tool-2", command: "Get-Content package.json", status: "completed",
-    completedAt: 25, summary: "Read 10 lines", streamSeq: 2,
+    id: "tool-2",
+    command: "Get-Content package.json",
+    status: "completed",
+    completedAt: 25,
+    summary: "Read 10 lines",
+    streamSeq: 2,
   });
 
   const thinkingBlock2: RunProgressEntry["blocks"][number] = {
-    id: "block-1", text: "Thinking done.", status: "completed",
-    sequence: 1, createdAt: 1, updatedAt: 2,
+    id: "block-1",
+    text: "Thinking done.",
+    status: "completed",
+    sequence: 1,
+    createdAt: 1,
+    updatedAt: 2,
   };
   const progressEntry2: RunProgressEntry = {
-    id: "entry-1", source: "reasoning", text: thinkingBlock2.text,
-    sequence: 1, createdAt: 1, updatedAt: 2, blocks: [thinkingBlock2], pendingNewlineCount: 0,
+    id: "entry-1",
+    source: "reasoning",
+    text: thinkingBlock2.text,
+    sequence: 1,
+    createdAt: 1,
+    updatedAt: 2,
+    blocks: [thinkingBlock2],
+    pendingNewlineCount: 0,
   };
 
   const run: RunEvent = {
-    id: 52, type: "run", createdAt: 1, startedAt: 1, durationMs: 300,
-    backendId: "codex-subprocess", backendLabel: "Ubume", runtime: TEST_RUNTIME,
+    id: 52,
+    type: "run",
+    createdAt: 1,
+    startedAt: 1,
+    durationMs: 300,
+    backendId: "codex-subprocess",
+    backendLabel: "Ubume",
+    runtime: TEST_RUNTIME,
     prompt: "Done project",
     progressEntries: [progressEntry2],
-    status: "completed", summary: "completed", truncatedOutput: false,
+    status: "completed",
+    summary: "completed",
+    truncatedOutput: false,
     toolActivities: [tool1, tool2],
-    activity: [], touchedFileCount: 0, errorMessage: null, turnId: 6,
+    activity: [],
+    touchedFileCount: 0,
+    errorMessage: null,
+    turnId: 6,
     streamItems: [
       { kind: "thinking", streamSeq: 0, refId: "block-1" },
       { kind: "action", streamSeq: 1, refId: "tool-1" },
       { kind: "action", streamSeq: 2, refId: "tool-2" },
     ],
-    responseSegments: [], lastStreamSeq: 2, activeResponseSegmentId: null,
+    responseSegments: [],
+    lastStreamSeq: 2,
+    activeResponseSegmentId: null,
   };
 
-  const user: UserPromptEvent = { id: 53, type: "user", createdAt: 1, prompt: "Done project", turnId: 6 };
+  const user: UserPromptEvent = {
+    id: 53,
+    type: "user",
+    createdAt: 1,
+    prompt: "Done project",
+    turnId: 6,
+  };
   const item: RenderTimelineItem = {
     key: "turn-6",
     type: "turn",
@@ -816,12 +1027,21 @@ test("completed run moves all stream events to staticItems — one atomic commit
     renderState: { opacity: "active", question: null, runPhase: "none" },
   };
 
-  const parts = buildNativeTranscriptParts([item], { totalWidth: 80, debugLabel: "completed-placement" });
+  const parts = buildNativeTranscriptParts([item], {
+    totalWidth: 80,
+    debugLabel: "completed-placement",
+  });
 
   // After run completes, all stream events must be in staticItems.
   const staticItemKeys = parts.staticItems.map((si) => si.key);
-  assert.ok(staticItemKeys.some((k) => k.includes("-stream-1")), "action 1 should be in staticItems");
-  assert.ok(staticItemKeys.some((k) => k.includes("-stream-2")), "action 2 should be in staticItems");
+  assert.ok(
+    staticItemKeys.some((k) => k.includes("-stream-1")),
+    "action 1 should be in staticItems",
+  );
+  assert.ok(
+    staticItemKeys.some((k) => k.includes("-stream-2")),
+    "action 2 should be in staticItems",
+  );
 
   // liveRows must be empty after run completes (user waits at prompt).
   assert.equal(parts.liveRows.length, 0, "liveRows must be empty after run completes");
@@ -832,24 +1052,68 @@ test("gap row keys use event.streamSeq — stable across compaction changes", ()
 
   // Use non-sequential streamSeq values to distinguish from eventIndex (0,1,2).
   const tools = [
-    makeTool({ id: "tool-1", command: "Get-Content a.txt", status: "completed", completedAt: 10, summary: "Read a", streamSeq: 3 }),
-    makeTool({ id: "tool-2", command: "Get-Content b.txt", status: "completed", completedAt: 11, summary: "Read b", streamSeq: 7 }),
-    makeTool({ id: "tool-3", command: "Get-Content c.txt", status: "completed", completedAt: 12, summary: "Read c", streamSeq: 12 }),
+    makeTool({
+      id: "tool-1",
+      command: "Get-Content a.txt",
+      status: "completed",
+      completedAt: 10,
+      summary: "Read a",
+      streamSeq: 3,
+    }),
+    makeTool({
+      id: "tool-2",
+      command: "Get-Content b.txt",
+      status: "completed",
+      completedAt: 11,
+      summary: "Read b",
+      streamSeq: 7,
+    }),
+    makeTool({
+      id: "tool-3",
+      command: "Get-Content c.txt",
+      status: "completed",
+      completedAt: 12,
+      summary: "Read c",
+      streamSeq: 12,
+    }),
   ];
 
   const run: RunEvent = {
-    id: 54, type: "run", createdAt: 1, startedAt: 1, durationMs: 200,
-    backendId: "codex-subprocess", backendLabel: "Ubume", runtime: TEST_RUNTIME,
+    id: 54,
+    type: "run",
+    createdAt: 1,
+    startedAt: 1,
+    durationMs: 200,
+    backendId: "codex-subprocess",
+    backendLabel: "Ubume",
+    runtime: TEST_RUNTIME,
     prompt: "Read files",
     progressEntries: [],
-    status: "completed", summary: "done", truncatedOutput: false,
+    status: "completed",
+    summary: "done",
+    truncatedOutput: false,
     toolActivities: tools,
-    activity: [], touchedFileCount: 0, errorMessage: null, turnId: 7,
-    streamItems: tools.map((t) => ({ kind: "action" as const, streamSeq: t.streamSeq!, refId: t.id })),
-    responseSegments: [], lastStreamSeq: 12, activeResponseSegmentId: null,
+    activity: [],
+    touchedFileCount: 0,
+    errorMessage: null,
+    turnId: 7,
+    streamItems: tools.map((t) => ({
+      kind: "action" as const,
+      streamSeq: t.streamSeq!,
+      refId: t.id,
+    })),
+    responseSegments: [],
+    lastStreamSeq: 12,
+    activeResponseSegmentId: null,
   };
 
-  const user: UserPromptEvent = { id: 55, type: "user", createdAt: 1, prompt: "Read files", turnId: 7 };
+  const user: UserPromptEvent = {
+    id: 55,
+    type: "user",
+    createdAt: 1,
+    prompt: "Read files",
+    turnId: 7,
+  };
   const item: RenderTimelineItem = {
     key: "turn-7",
     type: "turn",
@@ -864,17 +1128,37 @@ test("gap row keys use event.streamSeq — stable across compaction changes", ()
 
   // There should be gaps before tool-2 (streamSeq=7) and tool-3 (streamSeq=12).
   // With the fix the gap key encodes the event's streamSeq, not the eventIndex.
-  assert.ok(gapKeys.some((k) => k.includes("-stream-gap-7")),  "gap before tool-2 should use streamSeq=7");
-  assert.ok(gapKeys.some((k) => k.includes("-stream-gap-12")), "gap before tool-3 should use streamSeq=12");
+  assert.ok(
+    gapKeys.some((k) => k.includes("-stream-gap-7")),
+    "gap before tool-2 should use streamSeq=7",
+  );
+  assert.ok(
+    gapKeys.some((k) => k.includes("-stream-gap-12")),
+    "gap before tool-3 should use streamSeq=12",
+  );
   // Old index-based keys (1, 2) must not be present.
-  assert.equal(gapKeys.some((k) => k.endsWith("-stream-gap-1")), false, "old eventIndex-based gap key must not exist");
-  assert.equal(gapKeys.some((k) => k.endsWith("-stream-gap-2")), false, "old eventIndex-based gap key must not exist");
+  assert.equal(
+    gapKeys.some((k) => k.endsWith("-stream-gap-1")),
+    false,
+    "old eventIndex-based gap key must not exist",
+  );
+  assert.equal(
+    gapKeys.some((k) => k.endsWith("-stream-gap-2")),
+    false,
+    "old eventIndex-based gap key must not exist",
+  );
 });
 
 test("timeline measurement coverage for THINKING -> RESPONDING -> FINALIZE_RUN", () => {
   __clearTimelineMeasureCachesForTests();
 
-  const tool = makeTool({ id: "tool-1", status: "running", completedAt: null, summary: null, streamSeq: 1 });
+  const tool = makeTool({
+    id: "tool-1",
+    status: "running",
+    completedAt: null,
+    summary: null,
+    streamSeq: 1,
+  });
   const runEvent: RunEvent = {
     id: 2,
     type: "run",
@@ -909,28 +1193,33 @@ test("timeline measurement coverage for THINKING -> RESPONDING -> FINALIZE_RUN",
   };
 
   const snapshot1 = buildTimelineSnapshot([item1], { totalWidth: 120 });
-  const actionKeys1 = snapshot1.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  const actionKeys1 = snapshot1.rows.filter((r) => r.key.includes("-action-")).map((r) => r.key);
   assert.ok(actionKeys1.length > 0);
 
   // Complete action
   tool.status = "completed";
   const snapshot2 = buildTimelineSnapshot([item1], { totalWidth: 120 });
-  const actionKeys2 = snapshot2.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  const actionKeys2 = snapshot2.rows.filter((r) => r.key.includes("-action-")).map((r) => r.key);
   assert.deepEqual(actionKeys2, actionKeys1);
 
   // Add response
-  runEvent.responseSegments = [{
-    id: "resp-1",
-    streamSeq: 2,
-    chunks: ["Answer starts"],
-    status: "active",
-    startedAt: 3,
-  }];
-  runEvent.streamItems = [...(runEvent.streamItems ?? []), { kind: "response", streamSeq: 2, refId: "resp-1" }];
+  runEvent.responseSegments = [
+    {
+      id: "resp-1",
+      streamSeq: 2,
+      chunks: ["Answer starts"],
+      status: "active",
+      startedAt: 3,
+    },
+  ];
+  runEvent.streamItems = [
+    ...(runEvent.streamItems ?? []),
+    { kind: "response", streamSeq: 2, refId: "resp-1" },
+  ];
   item1.renderState.runPhase = "streaming";
 
   const snapshot3 = buildTimelineSnapshot([item1], { totalWidth: 120 });
-  const actionKeys3 = snapshot3.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  const actionKeys3 = snapshot3.rows.filter((r) => r.key.includes("-action-")).map((r) => r.key);
   assert.deepEqual(actionKeys3, actionKeys1);
 
   // Finalize
@@ -940,7 +1229,7 @@ test("timeline measurement coverage for THINKING -> RESPONDING -> FINALIZE_RUN",
   item1.renderState.runPhase = "none";
 
   const snapshot4 = buildTimelineSnapshot([item1], { totalWidth: 120 });
-  const actionKeys4 = snapshot4.rows.filter(r => r.key.includes("-action-")).map(r => r.key);
+  const actionKeys4 = snapshot4.rows.filter((r) => r.key.includes("-action-")).map((r) => r.key);
   assert.deepEqual(actionKeys4, actionKeys1);
 });
 
@@ -965,11 +1254,24 @@ function assertNoMidWordSplit(rowTexts: string[], words: string[]) {
 
 test("wrapStyledSpans: no mid-word split within a single styled span", () => {
   const spans: TimelineRowSpan[] = [
-    { text: "where the test mock for stdout is missing some WriteStream properties.", tone: "info" },
+    {
+      text: "where the test mock for stdout is missing some WriteStream properties.",
+      tone: "info",
+    },
   ];
   const rows = __wrapStyledSpansForTests(spans, 40);
   const rowTexts = rows.map((row) => row.map((s) => s.text).join(""));
-  assertNoMidWordSplit(rowTexts, ["for", "stdout", "WriteStream", "where", "test", "mock", "missing", "some", "properties"]);
+  assertNoMidWordSplit(rowTexts, [
+    "for",
+    "stdout",
+    "WriteStream",
+    "where",
+    "test",
+    "mock",
+    "missing",
+    "some",
+    "properties",
+  ]);
 });
 
 test("wrapStyledSpans: no mid-word split across mixed styled spans", () => {
@@ -981,7 +1283,15 @@ test("wrapStyledSpans: no mid-word split across mixed styled spans", () => {
   ];
   const rows = __wrapStyledSpansForTests(spans, 40);
   const rowTexts = rows.map((row) => row.map((s) => s.text).join(""));
-  assertNoMidWordSplit(rowTexts, ["for", "WriteStream", "where", "mock", "normal", "text", "before"]);
+  assertNoMidWordSplit(rowTexts, [
+    "for",
+    "WriteStream",
+    "where",
+    "mock",
+    "normal",
+    "text",
+    "before",
+  ]);
 });
 
 test("wrapStyledSpans: overlong token falls back to character split within line width", () => {
@@ -997,13 +1307,21 @@ test("wrapStyledSpans: overlong token falls back to character split within line 
 });
 
 test("wrapStyledSpans: hard newlines in span text produce separate rows", () => {
-  const spans: TimelineRowSpan[] = [
-    { text: "first line\nsecond line", tone: "text" as never },
-  ];
+  const spans: TimelineRowSpan[] = [{ text: "first line\nsecond line", tone: "text" as never }];
   const rows = __wrapStyledSpansForTests(spans, 80);
   assert.equal(rows.length, 2);
-  assert.ok(rows[0]!.map((s) => s.text).join("").includes("first line"));
-  assert.ok(rows[1]!.map((s) => s.text).join("").includes("second line"));
+  assert.ok(
+    rows[0]!
+      .map((s) => s.text)
+      .join("")
+      .includes("first line"),
+  );
+  assert.ok(
+    rows[1]!
+      .map((s) => s.text)
+      .join("")
+      .includes("second line"),
+  );
 });
 
 test("contiguous reasoning coalesces to one Reasoning block; a tool call splits it", () => {
@@ -1015,15 +1333,17 @@ test("contiguous reasoning coalesces to one Reasoning block; a tool call splits 
     createdAt: n,
     updatedAt: n,
     pendingNewlineCount: 0,
-    blocks: [{
-      id: `local-reasoning-s1-0-${n}-block-1`,
-      text,
-      sequence: 1,
-      createdAt: n,
-      updatedAt: n,
-      status: "completed",
-      streamSeq: n,
-    }],
+    blocks: [
+      {
+        id: `local-reasoning-s1-0-${n}-block-1`,
+        text,
+        sequence: 1,
+        createdAt: n,
+        updatedAt: n,
+        status: "completed",
+        streamSeq: n,
+      },
+    ],
   });
   const run: RunEvent = {
     id: 2,
@@ -1077,12 +1397,20 @@ test("contiguous reasoning coalesces to one Reasoning block; a tool call splits 
     renderState: { runPhase: "final", opacity: "full" },
   } as never;
 
-  const parts = buildNativeTranscriptParts([item], { totalWidth: 80, verboseMode: true, debugLabel: "coalesce-test" });
+  const parts = buildNativeTranscriptParts([item], {
+    totalWidth: 80,
+    verboseMode: true,
+    debugLabel: "coalesce-test",
+  });
   const joined = [...parts.staticItems.flatMap((entry) => entry.rows), ...parts.liveRows]
     .map((row) => row.spans.map((span) => span.text).join(""))
     .join("\n");
 
-  assert.equal(joined.match(/Reasoning/g)?.length, 2, "one Reasoning header per contiguous thought stream");
+  assert.equal(
+    joined.match(/Reasoning/g)?.length,
+    2,
+    "one Reasoning header per contiguous thought stream",
+  );
   assert.match(joined, /first thought\s+second thought\s+third thought/);
   assert.match(joined, /after the tool\s+one more/);
 });
@@ -1092,7 +1420,14 @@ test("resetTimelineMeasureCaches empties the module-level row caches", () => {
     key: "turn-7301",
     type: "turn",
     padded: true,
-    item: { type: "turn", turnId: 7301, turnIndex: 1, user: null, run: makeRun("weighing options"), assistant: null },
+    item: {
+      type: "turn",
+      turnId: 7301,
+      turnIndex: 1,
+      user: null,
+      run: makeRun("weighing options"),
+      assistant: null,
+    },
     renderState: { opacity: "active", question: null, runPhase: "thinking" },
   };
   buildTimelineSnapshot([item], { totalWidth: 100 });

@@ -57,7 +57,9 @@ export function isDangerousShellCommand(command: string): boolean {
 
 function preview(text: string, maxChars = MAX_OUTPUT_CHARS): string {
   const sanitized = sanitizeTerminalOutput(text);
-  return sanitized.length > maxChars ? `${sanitized.slice(0, maxChars)}\n...[truncated]` : sanitized;
+  return sanitized.length > maxChars
+    ? `${sanitized.slice(0, maxChars)}\n...[truncated]`
+    : sanitized;
 }
 
 function trimOutputLines(text: string, preferTail: boolean): string {
@@ -68,9 +70,7 @@ function trimOutputLines(text: string, preferTail: boolean): string {
   const visible = preferTail ? lines.slice(-MAX_OUTPUT_LINES) : lines.slice(0, MAX_OUTPUT_LINES);
   const hidden = lines.length - visible.length;
   const marker = `[...${hidden} line${hidden === 1 ? "" : "s"} truncated; showing ${preferTail ? "last" : "first"} ${MAX_OUTPUT_LINES} lines...]`;
-  return preferTail
-    ? [marker, ...visible].join("\n")
-    : [...visible, marker].join("\n");
+  return preferTail ? [marker, ...visible].join("\n") : [...visible, marker].join("\n");
 }
 
 function stringArg(args: Record<string, unknown>, key: string): string | null {
@@ -83,8 +83,10 @@ function isReadOnly(runtime: ResolvedRuntimeConfig): boolean {
 }
 
 function canWrite(runtime: ResolvedRuntimeConfig): boolean {
-  return runtime.policy.sandboxMode === "workspace-write"
-    || runtime.policy.sandboxMode === "danger-full-access";
+  return (
+    runtime.policy.sandboxMode === "workspace-write" ||
+    runtime.policy.sandboxMode === "danger-full-access"
+  );
 }
 
 function relativeDisplay(workspaceRoot: string, absolutePath: string): string {
@@ -115,8 +117,13 @@ function rustCommandGuard(command: string, context: AgentToolContext): string | 
   return null;
 }
 
-function resolveAllowedPath(rawPath: string, context: AgentToolContext): { ok: true; absolutePath: string; relativePath: string } | { ok: false; error: string } {
-  if (!isPathInsideAllowedRoots(rawPath, context.workspaceRoot, context.runtime.policy.writableRoots)) {
+function resolveAllowedPath(
+  rawPath: string,
+  context: AgentToolContext,
+): { ok: true; absolutePath: string; relativePath: string } | { ok: false; error: string } {
+  if (
+    !isPathInsideAllowedRoots(rawPath, context.workspaceRoot, context.runtime.policy.writableRoots)
+  ) {
     return { ok: false, error: `Path is outside the workspace: ${rawPath}` };
   }
   const absolutePath = resolveWorkspacePath(rawPath, context.workspaceRoot);
@@ -127,10 +134,14 @@ function resolveAllowedPath(rawPath: string, context: AgentToolContext): { ok: t
   };
 }
 
-async function listFiles(args: Record<string, unknown>, context: AgentToolContext): Promise<AgentToolResult> {
+async function listFiles(
+  args: Record<string, unknown>,
+  context: AgentToolContext,
+): Promise<AgentToolResult> {
   const rawPath = stringArg(args, "path") ?? ".";
   const resolved = resolveAllowedPath(rawPath, context);
-  if (!resolved.ok) return { success: false, tool: "list_files", path: rawPath, error: resolved.error };
+  if (!resolved.ok)
+    return { success: false, tool: "list_files", path: rawPath, error: resolved.error };
 
   const entries = await readdir(resolved.absolutePath, { withFileTypes: true });
   const names = entries
@@ -146,15 +157,24 @@ async function listFiles(args: Record<string, unknown>, context: AgentToolContex
   };
 }
 
-async function readFileTool(args: Record<string, unknown>, context: AgentToolContext): Promise<AgentToolResult> {
+async function readFileTool(
+  args: Record<string, unknown>,
+  context: AgentToolContext,
+): Promise<AgentToolResult> {
   const rawPath = stringArg(args, "path");
   if (!rawPath) return { success: false, tool: "read_file", error: "Missing path." };
   const resolved = resolveAllowedPath(rawPath, context);
-  if (!resolved.ok) return { success: false, tool: "read_file", path: rawPath, error: resolved.error };
+  if (!resolved.ok)
+    return { success: false, tool: "read_file", path: rawPath, error: resolved.error };
 
   const fileStat = await stat(resolved.absolutePath);
   if (fileStat.size > MAX_FILE_BYTES) {
-    return { success: false, tool: "read_file", path: resolved.relativePath, error: "File is too large to read through the agent tool." };
+    return {
+      success: false,
+      tool: "read_file",
+      path: resolved.relativePath,
+      error: "File is too large to read through the agent tool.",
+    };
   }
   const content = await readFile(resolved.absolutePath, "utf8");
   return {
@@ -166,16 +186,25 @@ async function readFileTool(args: Record<string, unknown>, context: AgentToolCon
   };
 }
 
-async function writeFileTool(args: Record<string, unknown>, context: AgentToolContext): Promise<AgentToolResult> {
+async function writeFileTool(
+  args: Record<string, unknown>,
+  context: AgentToolContext,
+): Promise<AgentToolResult> {
   if (!canWrite(context.runtime)) {
-    return { success: false, tool: "write_file", error: "write_file is blocked by read-only runtime policy." };
+    return {
+      success: false,
+      tool: "write_file",
+      error: "write_file is blocked by read-only runtime policy.",
+    };
   }
   const rawPath = stringArg(args, "path");
   const content = stringArg(args, "content");
   if (!rawPath) return { success: false, tool: "write_file", error: "Missing path." };
-  if (content === null) return { success: false, tool: "write_file", path: rawPath, error: "Missing content." };
+  if (content === null)
+    return { success: false, tool: "write_file", path: rawPath, error: "Missing content." };
   const resolved = resolveAllowedPath(rawPath, context);
-  if (!resolved.ok) return { success: false, tool: "write_file", path: rawPath, error: resolved.error };
+  if (!resolved.ok)
+    return { success: false, tool: "write_file", path: rawPath, error: resolved.error };
 
   await mkdir(path.dirname(resolved.absolutePath), { recursive: true });
   await writeFile(resolved.absolutePath, content, "utf8");
@@ -213,7 +242,11 @@ function applyPatchFormatToContent(before: string, patchLines: string[]): string
     index += 1;
     const oldLines: string[] = [];
     const newLines: string[] = [];
-    while (index < patchLines.length && !patchLines[index]?.startsWith("@@") && !patchLines[index]?.startsWith("*** ")) {
+    while (
+      index < patchLines.length &&
+      !patchLines[index]?.startsWith("@@") &&
+      !patchLines[index]?.startsWith("*** ")
+    ) {
       const line = patchLines[index] ?? "";
       if (line.startsWith(" ")) {
         oldLines.push(line.slice(1));
@@ -227,7 +260,11 @@ function applyPatchFormatToContent(before: string, patchLines: string[]): string
     }
 
     let matchAt = -1;
-    for (let candidate = cursor; candidate <= contentLines.length - oldLines.length; candidate += 1) {
+    for (
+      let candidate = cursor;
+      candidate <= contentLines.length - oldLines.length;
+      candidate += 1
+    ) {
       const matches = oldLines.every((line, offset) => contentLines[candidate + offset] === line);
       if (matches) {
         matchAt = candidate;
@@ -244,7 +281,10 @@ function applyPatchFormatToContent(before: string, patchLines: string[]): string
   return `${contentLines.join("\n")}\n`;
 }
 
-async function applyPatchFormat(patch: string, context: AgentToolContext): Promise<AgentToolResult> {
+async function applyPatchFormat(
+  patch: string,
+  context: AgentToolContext,
+): Promise<AgentToolResult> {
   const lines = patch.split(/\r?\n/);
   const changedPaths: string[] = [];
   let index = 0;
@@ -256,7 +296,8 @@ async function applyPatchFormat(patch: string, context: AgentToolContext): Promi
 
     if (add) {
       const resolved = resolveAllowedPath(add[1]!, context);
-      if (!resolved.ok) return { success: false, tool: "apply_patch", path: add[1], error: resolved.error };
+      if (!resolved.ok)
+        return { success: false, tool: "apply_patch", path: add[1], error: resolved.error };
       index += 1;
       const content: string[] = [];
       while (index < lines.length && !lines[index]?.startsWith("*** ")) {
@@ -272,10 +313,14 @@ async function applyPatchFormat(patch: string, context: AgentToolContext): Promi
 
     if (update) {
       const resolved = resolveAllowedPath(update[1]!, context);
-      if (!resolved.ok) return { success: false, tool: "apply_patch", path: update[1], error: resolved.error };
+      if (!resolved.ok)
+        return { success: false, tool: "apply_patch", path: update[1], error: resolved.error };
       index += 1;
       const patchLines: string[] = [];
-      while (index < lines.length && !/^\*\*\* (?:Add|Update|Delete|End)/.test(lines[index] ?? "")) {
+      while (
+        index < lines.length &&
+        !/^\*\*\* (?:Add|Update|Delete|End)/.test(lines[index] ?? "")
+      ) {
         patchLines.push(lines[index] ?? "");
         index += 1;
       }
@@ -287,7 +332,8 @@ async function applyPatchFormat(patch: string, context: AgentToolContext): Promi
 
     if (del) {
       const resolved = resolveAllowedPath(del[1]!, context);
-      if (!resolved.ok) return { success: false, tool: "apply_patch", path: del[1], error: resolved.error };
+      if (!resolved.ok)
+        return { success: false, tool: "apply_patch", path: del[1], error: resolved.error };
       await rm(resolved.absolutePath, { force: true });
       changedPaths.push(resolved.relativePath);
       index += 1;
@@ -298,7 +344,11 @@ async function applyPatchFormat(patch: string, context: AgentToolContext): Promi
   }
 
   if (changedPaths.length === 0) {
-    return { success: false, tool: "apply_patch", error: "No supported patch operations were found." };
+    return {
+      success: false,
+      tool: "apply_patch",
+      error: "No supported patch operations were found.",
+    };
   }
 
   return {
@@ -309,9 +359,16 @@ async function applyPatchFormat(patch: string, context: AgentToolContext): Promi
   };
 }
 
-async function applyPatchTool(args: Record<string, unknown>, context: AgentToolContext): Promise<AgentToolResult> {
+async function applyPatchTool(
+  args: Record<string, unknown>,
+  context: AgentToolContext,
+): Promise<AgentToolResult> {
   if (!canWrite(context.runtime)) {
-    return { success: false, tool: "apply_patch", error: "apply_patch is blocked by read-only runtime policy." };
+    return {
+      success: false,
+      tool: "apply_patch",
+      error: "apply_patch is blocked by read-only runtime policy.",
+    };
   }
   const patch = stringArg(args, "patch");
   if (!patch) return { success: false, tool: "apply_patch", error: "Missing patch." };
@@ -320,31 +377,61 @@ async function applyPatchTool(args: Record<string, unknown>, context: AgentToolC
   const paths = explicitPath ? [explicitPath] : parseApplyPatchPaths(patch);
   for (const patchPath of paths) {
     const resolved = resolveAllowedPath(patchPath, context);
-    if (!resolved.ok) return { success: false, tool: "apply_patch", path: patchPath, error: resolved.error };
+    if (!resolved.ok)
+      return { success: false, tool: "apply_patch", path: patchPath, error: resolved.error };
   }
 
   if (!patch.trimStart().startsWith("*** Begin Patch")) {
-    return { success: false, tool: "apply_patch", error: "Only *** Begin Patch format is supported by this agent tool." };
+    return {
+      success: false,
+      tool: "apply_patch",
+      error: "Only *** Begin Patch format is supported by this agent tool.",
+    };
   }
 
   return applyPatchFormat(patch, context);
 }
 
-async function runShellTool(args: Record<string, unknown>, context: AgentToolContext): Promise<AgentToolResult> {
+async function runShellTool(
+  args: Record<string, unknown>,
+  context: AgentToolContext,
+): Promise<AgentToolResult> {
   if (!canWrite(context.runtime) || isReadOnly(context.runtime)) {
-    return { success: false, tool: "run_shell", error: "run_shell is blocked by read-only runtime policy." };
+    return {
+      success: false,
+      tool: "run_shell",
+      error: "run_shell is blocked by read-only runtime policy.",
+    };
   }
   const command = stringArg(args, "command");
   if (!command) return { success: false, tool: "run_shell", error: "Missing command." };
 
   if (isDangerousShellCommand(command)) {
-    return { success: false, tool: "run_shell", command, error: "Shell command blocked as dangerous." };
+    return {
+      success: false,
+      tool: "run_shell",
+      command,
+      error: "Shell command blocked as dangerous.",
+    };
   }
   const rustGuard = rustCommandGuard(command, context);
   if (rustGuard) {
-    return { success: false, tool: "run_shell", command, exitCode: null, durationMs: 0, stdout: "", stderr: "", error: rustGuard };
+    return {
+      success: false,
+      tool: "run_shell",
+      command,
+      exitCode: null,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: rustGuard,
+    };
   }
-  const workspaceGuard = getShellWorkspaceGuardMessage(command, context.workspaceRoot, context.runtime.policy.writableRoots);
+  const workspaceGuard = getShellWorkspaceGuardMessage(
+    command,
+    context.workspaceRoot,
+    context.runtime.policy.writableRoots,
+  );
   if (workspaceGuard) {
     return { success: false, tool: "run_shell", command, error: workspaceGuard };
   }

@@ -50,7 +50,7 @@ const NOISE_PREFIXES = [
   "reasoning summaries:",
   "session id:",
   "auth:",
-  "tokens used",     // catches "tokens used", "tokens used:", "tokens used1,969", etc.
+  "tokens used", // catches "tokens used", "tokens used:", "tokens used1,969", etc.
   "act with strong autonomy",
   "act like a coding agent",
   // Additional internal scaffolding patterns
@@ -66,15 +66,15 @@ export function stripAnsi(text: string): string {
 }
 
 const STDERR_NOISE_PATTERNS = [
-  /\[\d+\/\d+\]/,                          // Progress fractions: [3/10]
-  /^\s*\d+\/\d+\s*$/,                      // Bare fractions: 3/10
-  /\d+(\.\d+)?%/,                           // Percentages: 45.2%
-  /^[\s#=.]+$/,                             // Progress bars: ####, ====, ....
-  /^[\s⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏\-\\|/]+$/,              // Spinner characters
-  /^\(node:\d+\)/,                          // Node.js warnings: (node:1234)
-  /DeprecationWarning:/i,                   // Node deprecation warnings
-  /ExperimentalWarning:/i,                  // Node experimental warnings
-  /^\s*Warning:/i,                          // Generic warnings
+  /\[\d+\/\d+\]/, // Progress fractions: [3/10]
+  /^\s*\d+\/\d+\s*$/, // Bare fractions: 3/10
+  /\d+(\.\d+)?%/, // Percentages: 45.2%
+  /^[\s#=.]+$/, // Progress bars: ####, ====, ....
+  /^[\s⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏\-\\|/]+$/, // Spinner characters
+  /^\(node:\d+\)/, // Node.js warnings: (node:1234)
+  /DeprecationWarning:/i, // Node deprecation warnings
+  /ExperimentalWarning:/i, // Node experimental warnings
+  /^\s*Warning:/i, // Generic warnings
 ];
 
 export function isStderrNoise(line: string): boolean {
@@ -104,7 +104,8 @@ export function createStdoutSanitizer(): {
 } {
   // Lazy-import to avoid circular deps at module parse time.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { sanitizeTerminalOutput } = require("../terminal/terminalSanitize.js") as typeof import("../terminal/terminalSanitize.js");
+  const { sanitizeTerminalOutput } =
+    require("../terminal/terminalSanitize.js") as typeof import("../terminal/terminalSanitize.js");
 
   let carryover = "";
 
@@ -131,8 +132,8 @@ export function createStdoutSanitizer(): {
         // - CSI: ESC [ ... <letter>
         // - OSC: ESC ] ... (BEL or ST)
         const isComplete =
-          /^\u001B[@-Z\\-_]/.test(afterEsc) ||                          // Fe
-          /^\u001B\[[0-?]*[ -/]*[@-~]/.test(afterEsc) ||                // CSI complete
+          /^\u001B[@-Z\\-_]/.test(afterEsc) || // Fe
+          /^\u001B\[[0-?]*[ -/]*[@-~]/.test(afterEsc) || // CSI complete
           /^\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)/.test(afterEsc); // OSC complete
 
         if (!isComplete && afterEsc.length < 20) {
@@ -197,23 +198,23 @@ function isAssistantLabel(line: string): boolean {
 // code blocks tagged with "ex"/"shell"/"output".  These should be hidden from
 // the user and routed to the thinking stream instead.
 const TOOL_EXEC_PATTERNS = [
-  /^\s*\$\s+\S/,                    // $ Get-ChildItem, $ rg --files …
-  /^\s*>\s+\S/,                     // > Get-ChildItem (PowerShell prompt)
-  /^\s*tool_call\s*:/i,             // tool_call: shell
-  /^\s*```\s*(ex|shell|bash|powershell|output|cmd)\s*$/i,  // fenced execution block
-  /^\s*\[running:?\s/i,             // [running: Get-ChildItem]
-  /^\s*\[exec(uting)?:?\s/i,        // [exec: rg --files]
-  /^\s*executing\s*:/i,             // executing: Get-ChildItem
-  /^\s*reading\s+(file|from)\s+/i,  // reading file src/...
-  /^\s*scanning\s+/i,               // scanning directory...
-  /^\s*searching\s+/i,              // searching for...
+  /^\s*\$\s+\S/, // $ Get-ChildItem, $ rg --files …
+  /^\s*>\s+\S/, // > Get-ChildItem (PowerShell prompt)
+  /^\s*tool_call\s*:/i, // tool_call: shell
+  /^\s*```\s*(ex|shell|bash|powershell|output|cmd)\s*$/i, // fenced execution block
+  /^\s*\[running:?\s/i, // [running: Get-ChildItem]
+  /^\s*\[exec(uting)?:?\s/i, // [exec: rg --files]
+  /^\s*executing\s*:/i, // executing: Get-ChildItem
+  /^\s*reading\s+(file|from)\s+/i, // reading file src/...
+  /^\s*scanning\s+/i, // scanning directory...
+  /^\s*searching\s+/i, // searching for...
   /^\s*writing\s+(to\s+)?file\s+/i, // writing to file...
-  /^\s*creating\s+file\s+/i,        // creating file...
-  /^\s*deleting\s+file\s+/i,        // deleting file...
-  /^\s*\[tool:\s/i,                 // [tool: read_file]
-  /^\s*\[function:\s/i,             // [function: search]
-  /^\s*tool_use\s*:/i,              // tool_use: read
-  /^\s*function_call\s*:/i,         // function_call: write
+  /^\s*creating\s+file\s+/i, // creating file...
+  /^\s*deleting\s+file\s+/i, // deleting file...
+  /^\s*\[tool:\s/i, // [tool: read_file]
+  /^\s*\[function:\s/i, // [function: search]
+  /^\s*tool_use\s*:/i, // tool_use: read
+  /^\s*function_call\s*:/i, // function_call: write
 ];
 
 function isToolExecStart(line: string): boolean {
@@ -243,7 +244,10 @@ function looksLikePath(line: string): boolean {
   return /[\\/]/.test(line) || /\.[a-z0-9_-]+$/i.test(line);
 }
 
-function summarizeToolOutput(command: string, outputLines: string[]): {
+function summarizeToolOutput(
+  command: string,
+  outputLines: string[],
+): {
   status: RunToolActivity["status"];
   summary: string;
 } {
@@ -254,7 +258,8 @@ function summarizeToolOutput(command: string, outputLines: string[]): {
 
   const firstLine = lines[0]!;
   const lowerCommand = command.toLowerCase();
-  const failurePattern = /(error|exception|fatal|failed|permission denied|not recognized|not found)/i;
+  const failurePattern =
+    /(error|exception|fatal|failed|permission denied|not recognized|not found)/i;
   if (failurePattern.test(firstLine)) {
     return { status: "failed", summary: firstLine };
   }
@@ -485,12 +490,14 @@ export function createCodexTranscriptStreamParser(handlers: CodexTranscriptStrea
     // line), auto-promote to assistant section. This handles backends that skip
     // the "Assistant:" label.
     if (
-      section === "preamble"
-      && trimmed.length > 40
-      && (trimmed.match(/\s+/g)?.length ?? 0) >= 4
-      && !isNoiseLine(trimmed)
-      && !isToolExecStart(line)
-      && !/^(checking|scanning|searching|reading|loading|processing|analyzing|looking)\s/i.test(trimmed)
+      section === "preamble" &&
+      trimmed.length > 40 &&
+      (trimmed.match(/\s+/g)?.length ?? 0) >= 4 &&
+      !isNoiseLine(trimmed) &&
+      !isToolExecStart(line) &&
+      !/^(checking|scanning|searching|reading|loading|processing|analyzing|looking)\s/i.test(
+        trimmed,
+      )
     ) {
       section = "assistant";
       emitAssistant(line);

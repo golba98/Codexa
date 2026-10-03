@@ -1,8 +1,7 @@
-import React from "react";
-import type { ReactNode } from "react";
 import { Box, Text } from "ink";
-import { useTheme } from "../theme.js";
+import type { ReactNode } from "react";
 import { getVisualWidth } from "../layout.js";
+import { useTheme } from "../theme.js";
 
 interface DashCardProps {
   cols: number;
@@ -38,7 +37,9 @@ export function DashCard({
     <Box flexDirection="column" width="100%">
       <Text wrap="truncate">
         <Text color={border}>{"╭── "}</Text>
-        <Text color={tColor} bold>{topLine.title}</Text>
+        <Text color={tColor} bold>
+          {topLine.title}
+        </Text>
         <Text color={border}>{topLine.badge ? " " + topLine.fill + " " : " " + topLine.fill}</Text>
         {topLine.badge ? (
           <>
@@ -56,7 +57,9 @@ export function DashCard({
         </Box>
         <Text color={border}>{" │"}</Text>
       </Box>
-      <Text wrap="truncate" color={border}>{"╰" + bottomFill + "╯"}</Text>
+      <Text wrap="truncate" color={border}>
+        {"╰" + bottomFill + "╯"}
+      </Text>
     </Box>
   );
 }

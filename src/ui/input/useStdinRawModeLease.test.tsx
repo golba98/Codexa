@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React, { useEffect } from "react";
 import { PassThrough } from "node:stream";
-import { Box, Text, render, useFocus, useInput, useStdin } from "ink";
+import test from "node:test";
+import { Box, render, Text, useFocus, useInput, useStdin } from "ink";
+import { useEffect } from "react";
 import { useStdinRawModeLease } from "./useStdinRawModeLease.js";
 
 // Deliberately does NOT stub resume()/pause(): the bug under test is Node/Bun
@@ -123,15 +123,26 @@ async function runSwapScenario(lease: boolean) {
 
 test("raw-mode lease keeps Ink's readable listener attached across composer shell swaps", async () => {
   const result = await runSwapScenario(true);
-  assert.equal(result.readableRemovals, 0, "Ink must never detach its 'readable' listener while the app runs");
+  assert.equal(
+    result.readableRemovals,
+    0,
+    "Ink must never detach its 'readable' listener while the app runs",
+  );
   assert.equal(result.flowingAfterSwap, false, "stdin must stay in paused (readable) mode");
   assert.deepEqual(result.received, ["x"], "useInput must still receive keys after the swap");
 });
 
 test("without the lease a shell swap plus key bump detaches Ink's readable listener", async () => {
   const result = await runSwapScenario(false);
-  assert.ok(result.readableRemovals >= 2, `expected >= 2 readable removals, got ${result.readableRemovals}`);
-  assert.equal(result.flowingAfterSwap, true, "two remove/add cycles in one tick flip stdin into flowing mode");
+  assert.ok(
+    result.readableRemovals >= 2,
+    `expected >= 2 readable removals, got ${result.readableRemovals}`,
+  );
+  assert.equal(
+    result.flowingAfterSwap,
+    true,
+    "two remove/add cycles in one tick flip stdin into flowing mode",
+  );
   assert.deepEqual(result.received, [], "Ink's readable consumer is starved once stdin is flowing");
 });
 

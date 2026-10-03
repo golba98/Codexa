@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
-import type { AssistantEvent, RunEvent, TimelineEvent, UserPromptEvent } from "./types.js";
-import { getRunPlanText, isBusy } from "./types.js";
-import { createInitialSessionState, reduceSessionState, type SessionState } from "./appSession.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
 import { isAnimatedBusyState } from "../ui/chrome/busyStatusAnimation.js";
+import { createInitialSessionState, reduceSessionState, type SessionState } from "./appSession.js";
+import type { AssistantEvent, RunEvent, TimelineEvent, UserPromptEvent } from "./types.js";
+import { getRunPlanText, isBusy } from "./types.js";
 
 function makeUserEvent(turnId: number): UserPromptEvent {
   return { id: 1, type: "user", createdAt: 1, prompt: "Do work", turnId };
@@ -58,10 +58,7 @@ function stateWithActiveRun(turnId: number): SessionState {
   const state = createInitialSessionState();
   return {
     ...state,
-    activeEvents: [
-      makeUserEvent(turnId),
-      makeRunEvent(turnId),
-    ],
+    activeEvents: [makeUserEvent(turnId), makeRunEvent(turnId)],
   };
 }
 
@@ -96,7 +93,10 @@ test("SUBMIT_PROMPT_RUN atomically clears composer, records history, appends one
   assert.equal(state.inputValue, "");
   assert.equal(state.cursor, 0);
   assert.deepEqual(state.history, ["hello", "older"]);
-  assert.deepEqual(state.activeEvents.map((event) => event.type), ["user", "run"]);
+  assert.deepEqual(
+    state.activeEvents.map((event) => event.type),
+    ["user", "run"],
+  );
   assert.equal(state.activeEvents.filter((event) => event.type === "user").length, 1);
   assert.equal(state.activeEvents.filter((event) => event.type === "run").length, 1);
   assert.deepEqual(state.uiState, { kind: "THINKING", turnId });
@@ -127,7 +127,10 @@ test("busy lifecycle preserves one canonical active turn until finalization", ()
     response: "Hello",
   });
 
-  assert.deepEqual(state.activeEvents.map((event) => event.type), ["user", "run", "assistant"]);
+  assert.deepEqual(
+    state.activeEvents.map((event) => event.type),
+    ["user", "run", "assistant"],
+  );
   assert.equal(state.activeEvents.filter((event) => event.type === "user").length, 1);
   assert.equal(state.activeEvents.filter((event) => event.type === "assistant").length, 1);
   assert.deepEqual(state.staticEvents, []);
@@ -142,7 +145,10 @@ test("busy lifecycle preserves one canonical active turn until finalization", ()
   });
 
   assert.deepEqual(state.activeEvents, []);
-  assert.deepEqual(state.staticEvents.map((event) => event.type), ["user", "run", "assistant"]);
+  assert.deepEqual(
+    state.staticEvents.map((event) => event.type),
+    ["user", "run", "assistant"],
+  );
   assert.equal(state.staticEvents.filter((event) => event.type === "user").length, 1);
   assert.equal(state.staticEvents.filter((event) => event.type === "assistant").length, 1);
   assert.equal(state.uiState.kind, "IDLE");
@@ -285,7 +291,8 @@ test("FINALIZE_RUN replaces streamed content when response differs", () => {
     turnId,
     status: "completed",
     response: "Full sanitized response with additional content",
-    assistantFactory: () => makeAssistantEvent(turnId, "Full sanitized response with additional content"),
+    assistantFactory: () =>
+      makeAssistantEvent(turnId, "Full sanitized response with additional content"),
   });
 
   const assistantEvent = state.staticEvents.find(
@@ -417,7 +424,10 @@ test("plan-mode chatter before a tool is demoted to prose and the plan block re-
 
   let activeRun = state.activeEvents.find((event): event is RunEvent => event.type === "run");
   assert.ok(activeRun);
-  assert.deepEqual(activeRun.streamItems?.map((item) => item.kind), ["response", "action"]);
+  assert.deepEqual(
+    activeRun.streamItems?.map((item) => item.kind),
+    ["response", "action"],
+  );
   assert.equal(activeRun.plan, null);
   assert.equal(activeRun.responseSegments?.[0]?.chunks.join(""), "Let me check.");
 
@@ -436,7 +446,10 @@ test("plan-mode chatter before a tool is demoted to prose and the plan block re-
 
   activeRun = state.activeEvents.find((event): event is RunEvent => event.type === "run");
   assert.ok(activeRun);
-  assert.deepEqual(activeRun.streamItems?.map((item) => item.kind), ["response", "action", "plan"]);
+  assert.deepEqual(
+    activeRun.streamItems?.map((item) => item.kind),
+    ["response", "action", "plan"],
+  );
   assert.equal(getRunPlanText(activeRun.plan), "1. Inspect\n2. Render panel");
 
   state = reduceSessionState(state, {
@@ -453,10 +466,19 @@ test("plan-mode chatter before a tool is demoted to prose and the plan block re-
   assert.ok(finalizedRun);
   assert.equal(finalizedRun.plan?.status, "completed");
   assert.equal(getRunPlanText(finalizedRun.plan), "1. Inspect\n2. Render panel");
-  assert.deepEqual(finalizedRun.streamItems?.map((item) => item.kind), ["response", "action", "plan"]);
-  assert.deepEqual(finalizedRun.streamItems?.map((item) => item.streamSeq), [1, 2, 4]);
+  assert.deepEqual(
+    finalizedRun.streamItems?.map((item) => item.kind),
+    ["response", "action", "plan"],
+  );
+  assert.deepEqual(
+    finalizedRun.streamItems?.map((item) => item.streamSeq),
+    [1, 2, 4],
+  );
   assert.equal(finalizedRun.responseSegments?.[0]?.chunks.join(""), "Let me check.");
-  assert.equal(state.staticEvents.some((event) => event.type === "assistant"), false);
+  assert.equal(
+    state.staticEvents.some((event) => event.type === "assistant"),
+    false,
+  );
 });
 
 test("RUN_MARK_FINAL_ANSWER_OBSERVED on a plan run does not synthesize a response segment", () => {
@@ -486,7 +508,10 @@ test("RUN_MARK_FINAL_ANSWER_OBSERVED on a plan run does not synthesize a respons
   const activeRun = state.activeEvents.find((event): event is RunEvent => event.type === "run");
   assert.ok(activeRun);
   assert.deepEqual(activeRun.responseSegments, []);
-  assert.deepEqual(activeRun.streamItems?.map((item) => item.kind), ["plan"]);
+  assert.deepEqual(
+    activeRun.streamItems?.map((item) => item.kind),
+    ["plan"],
+  );
   assert.equal(getRunPlanText(activeRun.plan), "1. Inspect");
 });
 
@@ -529,7 +554,10 @@ test("RUN_MARK_FINAL_ANSWER_OBSERVED on a plan run keeps demoted chatter intact"
   assert.ok(activeRun);
   assert.equal(activeRun.responseSegments?.length, 1);
   assert.equal(activeRun.responseSegments?.[0]?.chunks.join(""), "Let me check.");
-  assert.deepEqual(activeRun.streamItems?.map((item) => item.kind), ["response", "action", "plan"]);
+  assert.deepEqual(
+    activeRun.streamItems?.map((item) => item.kind),
+    ["response", "action", "plan"],
+  );
   assert.equal(getRunPlanText(activeRun.plan), "1. Inspect");
 });
 
@@ -562,8 +590,14 @@ test("FINALIZE_RUN with plan presentation creates visible plan from final respon
   assert.ok(finalizedRun);
   assert.equal(finalizedRun.plan?.status, "completed");
   assert.equal(getRunPlanText(finalizedRun.plan), "1. Inspect files\n2. Update the timeline cache");
-  assert.deepEqual(finalizedRun.streamItems?.map((item) => item.kind), ["action", "plan"]);
-  assert.equal(state.staticEvents.some((event) => event.type === "assistant"), false);
+  assert.deepEqual(
+    finalizedRun.streamItems?.map((item) => item.kind),
+    ["action", "plan"],
+  );
+  assert.equal(
+    state.staticEvents.some((event) => event.type === "assistant"),
+    false,
+  );
 });
 
 test("FINALIZE_RUN for approved plan execution keeps approved plan and records assistant response", () => {
@@ -602,11 +636,16 @@ test("FINALIZE_RUN for approved plan execution keeps approved plan and records a
   });
 
   const finalizedRun = state.staticEvents.find((event): event is RunEvent => event.type === "run");
-  const finalizedAssistant = state.staticEvents.find((event): event is AssistantEvent => event.type === "assistant");
+  const finalizedAssistant = state.staticEvents.find(
+    (event): event is AssistantEvent => event.type === "assistant",
+  );
   assert.ok(finalizedRun);
   assert.ok(finalizedAssistant);
   assert.equal(getRunPlanText(finalizedRun.plan), approvedPlan);
-  assert.deepEqual(finalizedRun.streamItems?.map((item) => item.kind), ["plan", "response"]);
+  assert.deepEqual(
+    finalizedRun.streamItems?.map((item) => item.kind),
+    ["plan", "response"],
+  );
   assert.equal(finalizedAssistant.content, "Implemented the approved plan.");
 });
 
@@ -691,9 +730,7 @@ test("RUN_APPLY_PROGRESS_UPDATES preserves separate entries and updates by id", 
   state = reduceSessionState(state, {
     type: "RUN_APPLY_PROGRESS_UPDATES",
     runId: 2,
-    updates: [
-      makeProgressUpdate("progress-1", "Checking files\n\nFound two candidates"),
-    ],
+    updates: [makeProgressUpdate("progress-1", "Checking files\n\nFound two candidates")],
   });
 
   const runEvent = state.activeEvents.find((event): event is RunEvent => event.type === "run");
@@ -720,7 +757,9 @@ test("RUN_APPLY_PROGRESS_UPDATES keeps completed block identities stable while t
     ],
   });
 
-  const afterFirstUpdate = state.activeEvents.find((event): event is RunEvent => event.type === "run");
+  const afterFirstUpdate = state.activeEvents.find(
+    (event): event is RunEvent => event.type === "run",
+  );
   assert.ok(afterFirstUpdate);
   const completedBlock = afterFirstUpdate.progressEntries[0]?.blocks[0];
   const activeBlock = afterFirstUpdate.progressEntries[0]?.blocks[1];
@@ -729,15 +768,23 @@ test("RUN_APPLY_PROGRESS_UPDATES keeps completed block identities stable while t
     type: "RUN_APPLY_PROGRESS_UPDATES",
     runId: 2,
     updates: [
-      makeProgressUpdate("progress-1", "Inspecting workspace\n\nSwitching to scratch files in repo root"),
+      makeProgressUpdate(
+        "progress-1",
+        "Inspecting workspace\n\nSwitching to scratch files in repo root",
+      ),
     ],
   });
 
-  const afterSecondUpdate = state.activeEvents.find((event): event is RunEvent => event.type === "run");
+  const afterSecondUpdate = state.activeEvents.find(
+    (event): event is RunEvent => event.type === "run",
+  );
   assert.ok(afterSecondUpdate);
   assert.strictEqual(afterSecondUpdate.progressEntries[0]?.blocks[0], completedBlock);
   assert.notStrictEqual(afterSecondUpdate.progressEntries[0]?.blocks[1], activeBlock);
-  assert.equal(afterSecondUpdate.progressEntries[0]?.blocks[1]?.text, "Switching to scratch files in repo root");
+  assert.equal(
+    afterSecondUpdate.progressEntries[0]?.blocks[1]?.text,
+    "Switching to scratch files in repo root",
+  );
 });
 
 test("reducer preserves response action response ordering across dispatched callbacks", () => {
@@ -772,7 +819,10 @@ test("reducer preserves response action response ordering across dispatched call
 
   const runEvent = state.activeEvents.find((event): event is RunEvent => event.type === "run");
   assert.ok(runEvent);
-  assert.deepEqual(runEvent.streamItems?.map((item) => item.kind), ["response", "action", "response"]);
+  assert.deepEqual(
+    runEvent.streamItems?.map((item) => item.kind),
+    ["response", "action", "response"],
+  );
   assert.equal(runEvent.responseSegments?.[0]?.chunks.join(""), "First segment.");
   assert.equal(runEvent.responseSegments?.[1]?.chunks.join(""), "Second segment.");
 });
@@ -820,7 +870,9 @@ test("RUN_APPLY_LIVE_UPDATES applies ordered busy updates in one reducer action"
   });
 
   const runEvent = state.activeEvents.find((event): event is RunEvent => event.type === "run");
-  const assistantEvent = state.activeEvents.find((event): event is AssistantEvent => event.type === "assistant");
+  const assistantEvent = state.activeEvents.find(
+    (event): event is AssistantEvent => event.type === "assistant",
+  );
   assert.ok(runEvent);
   assert.ok(assistantEvent);
   assert.equal(state.uiState.kind, "RESPONDING");
@@ -849,7 +901,10 @@ test("first prompt lifecycle exposes progress before finalization and preserves 
   });
 
   assert.equal(state.uiState.kind, "THINKING");
-  assert.deepEqual(state.activeEvents.map((event) => event.type), ["user", "run"]);
+  assert.deepEqual(
+    state.activeEvents.map((event) => event.type),
+    ["user", "run"],
+  );
   assert.equal((state.activeEvents[1] as RunEvent).summary, "Codex is starting...");
 
   state = reduceSessionState(state, {
@@ -897,7 +952,9 @@ test("first prompt lifecycle exposes progress before finalization and preserves 
   });
 
   const finalizedRun = state.staticEvents.find((event): event is RunEvent => event.type === "run");
-  const finalizedAssistant = state.staticEvents.find((event): event is AssistantEvent => event.type === "assistant");
+  const finalizedAssistant = state.staticEvents.find(
+    (event): event is AssistantEvent => event.type === "assistant",
+  );
   assert.ok(finalizedRun);
   assert.ok(finalizedAssistant);
   assert.deepEqual(
@@ -948,7 +1005,9 @@ test("FINALIZE_RUN preserves construction trail and appends final response after
   });
 
   const finalizedRun = state.staticEvents.find((event): event is RunEvent => event.type === "run");
-  const finalizedAssistant = state.staticEvents.find((event): event is AssistantEvent => event.type === "assistant");
+  const finalizedAssistant = state.staticEvents.find(
+    (event): event is AssistantEvent => event.type === "assistant",
+  );
   assert.ok(finalizedRun);
   assert.ok(finalizedAssistant);
   assert.deepEqual(
@@ -1019,5 +1078,9 @@ test("SUBMIT_PROMPT_RUN does not change externalCliStatus when provider is alrea
     events: [userEvent, runEvent],
   });
 
-  assert.equal(next.externalCliStatus, "ready", "externalCliStatus must remain 'ready' across prompts");
+  assert.equal(
+    next.externalCliStatus,
+    "ready",
+    "externalCliStatus must remain 'ready' across prompts",
+  );
 });

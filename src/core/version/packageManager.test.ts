@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CommandResult, CommandSpec, CommandStreamHandlers } from "../../core/process/CommandRunner.js";
+import type {
+  CommandResult,
+  CommandSpec,
+  CommandStreamHandlers,
+} from "../../core/process/CommandRunner.js";
 import {
   detectGlobalPackageManager,
   formatPermissionGuidance,
+  type GlobalPackageManager,
   getUpdateCommand,
   isPermissionError,
   runUpdateCommand,
-  type GlobalPackageManager,
 } from "./packageManager.js";
 
 function makeResult(overrides: Partial<CommandResult> = {}): CommandResult {
@@ -35,7 +39,10 @@ const DETECTION_CASES: Array<[string, GlobalPackageManager]> = [
   ["/home/user/.bun/install/global/node_modules/ubume/bin/ubume.js", "bun"],
   ["C:\\Users\\jorda\\.bun\\install\\global\\node_modules\\ubume\\bin\\ubume.js", "bun"],
   ["/home/user/.config/yarn/global/node_modules/ubume/bin/ubume.js", "yarn"],
-  ["C:\\Users\\jorda\\AppData\\Local\\Yarn\\config\\global\\node_modules\\ubume\\bin\\ubume.js", "yarn"],
+  [
+    "C:\\Users\\jorda\\AppData\\Local\\Yarn\\config\\global\\node_modules\\ubume\\bin\\ubume.js",
+    "yarn",
+  ],
 ];
 
 for (const [path, expected] of DETECTION_CASES) {
@@ -60,7 +67,10 @@ test("detectGlobalPackageManager prefers the explicit override over the environm
 // --- commands ---
 
 test("getUpdateCommand returns the right command per package manager", () => {
-  assert.equal(getUpdateCommand("npm").displayCommand, "npm install -g ubume@latest --prefer-online --legacy-peer-deps");
+  assert.equal(
+    getUpdateCommand("npm").displayCommand,
+    "npm install -g ubume@latest --prefer-online --legacy-peer-deps",
+  );
   assert.equal(getUpdateCommand("pnpm").displayCommand, "pnpm add -g ubume@latest");
   assert.equal(getUpdateCommand("yarn").displayCommand, "yarn global add ubume@latest");
   assert.equal(getUpdateCommand("bun").displayCommand, "bun add -g ubume@latest");
@@ -76,9 +86,18 @@ test("getUpdateCommand argv matches its display command", () => {
 // --- permission detection ---
 
 test("isPermissionError detects EACCES/EPERM spawn error codes", () => {
-  assert.equal(isPermissionError(makeResult({ status: "spawn_error", exitCode: null, errorCode: "EACCES" })), true);
-  assert.equal(isPermissionError(makeResult({ status: "spawn_error", exitCode: null, errorCode: "EPERM" })), true);
-  assert.equal(isPermissionError(makeResult({ status: "spawn_error", exitCode: null, errorCode: "ENOENT" })), false);
+  assert.equal(
+    isPermissionError(makeResult({ status: "spawn_error", exitCode: null, errorCode: "EACCES" })),
+    true,
+  );
+  assert.equal(
+    isPermissionError(makeResult({ status: "spawn_error", exitCode: null, errorCode: "EPERM" })),
+    true,
+  );
+  assert.equal(
+    isPermissionError(makeResult({ status: "spawn_error", exitCode: null, errorCode: "ENOENT" })),
+    false,
+  );
 });
 
 test("isPermissionError detects npm EACCES reported via stderr with nonzero exit", () => {
@@ -91,7 +110,12 @@ test("isPermissionError detects npm EACCES reported via stderr with nonzero exit
 });
 
 test("isPermissionError is false for ordinary failures", () => {
-  assert.equal(isPermissionError(makeResult({ status: "failed", exitCode: 1, stderr: "npm ERR! network timeout" })), false);
+  assert.equal(
+    isPermissionError(
+      makeResult({ status: "failed", exitCode: 1, stderr: "npm ERR! network timeout" }),
+    ),
+    false,
+  );
 });
 
 // --- guidance ---
@@ -117,18 +141,28 @@ test("runUpdateCommand uses argv spawn on POSIX", async () => {
     return { child: null as never, result: Promise.resolve(makeResult()), cancel: () => {} };
   };
 
-  const { result } = runUpdateCommand("npm", {}, {
-    platform: "linux",
-    runCommandFn: fakeRun,
-    runShellCommandFn: () => {
-      throw new Error("shell path must not be used on POSIX");
+  const { result } = runUpdateCommand(
+    "npm",
+    {},
+    {
+      platform: "linux",
+      runCommandFn: fakeRun,
+      runShellCommandFn: () => {
+        throw new Error("shell path must not be used on POSIX");
+      },
     },
-  });
+  );
   const res = await result;
   assert.equal(res.status, "completed");
   assert.equal(calls.length, 1);
   assert.equal(calls[0]!.executable, "npm");
-  assert.deepEqual(calls[0]!.args, ["install", "-g", "ubume@latest", "--prefer-online", "--legacy-peer-deps"]);
+  assert.deepEqual(calls[0]!.args, [
+    "install",
+    "-g",
+    "ubume@latest",
+    "--prefer-online",
+    "--legacy-peer-deps",
+  ]);
   assert.equal(calls[0]!.timeoutMs, 300_000);
 });
 
@@ -139,13 +173,17 @@ test("runUpdateCommand routes through the shell on Windows for .cmd shim support
     return { child: null as never, result: Promise.resolve(makeResult()), cancel: () => {} };
   };
 
-  const { result } = runUpdateCommand("pnpm", {}, {
-    platform: "win32",
-    runCommandFn: () => {
-      throw new Error("argv path must not be used on win32");
+  const { result } = runUpdateCommand(
+    "pnpm",
+    {},
+    {
+      platform: "win32",
+      runCommandFn: () => {
+        throw new Error("argv path must not be used on win32");
+      },
+      runShellCommandFn: fakeShell,
     },
-    runShellCommandFn: fakeShell,
-  });
+  );
   await result;
   assert.deepEqual(shellCalls, ["pnpm add -g ubume@latest"]);
 });

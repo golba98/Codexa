@@ -5,15 +5,17 @@ import path from "node:path";
 import test from "node:test";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
 import type { ProviderChatRequest } from "../providerRuntime/types.js";
-import { runAgentLoop, type AgentChatMessage } from "./loop.js";
+import { type AgentChatMessage, runAgentLoop } from "./loop.js";
 
 function request(workspaceRoot: string, prompt: string): ProviderChatRequest {
   return {
     prompt,
     workspaceRoot,
-    runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
-      policy: { sandboxMode: "danger-full-access", approvalPolicy: "never" },
-    })),
+    runtime: resolveRuntimeConfig(
+      normalizeRuntimeConfig({
+        policy: { sandboxMode: "danger-full-access", approvalPolicy: "never" },
+      }),
+    ),
     route: {
       providerId: "local",
       modelId: "test-model",
@@ -69,9 +71,11 @@ test("create a rust hello world project leads to write_file and final summary", 
 test("on-request local mutations wait for approval and denial prevents writes", async () => {
   await withTempWorkspace(async (workspaceRoot) => {
     const pending = request(workspaceRoot, "write a file");
-    pending.runtime = resolveRuntimeConfig(normalizeRuntimeConfig({
-      policy: { sandboxMode: "workspace-write", approvalPolicy: "on-request" },
-    }));
+    pending.runtime = resolveRuntimeConfig(
+      normalizeRuntimeConfig({
+        policy: { sandboxMode: "workspace-write", approvalPolicy: "on-request" },
+      }),
+    );
     const decisions: string[] = [];
     const replies = [
       '<tool_call>{"name":"write_file","arguments":{"path":"blocked.txt","content":"nope"}}</tool_call>',
@@ -123,9 +127,11 @@ test("plan intent advertises only inspection tools and blocks model mutations", 
 test("allow-for-run remembers an exact local action signature", async () => {
   await withTempWorkspace(async (workspaceRoot) => {
     const pending = request(workspaceRoot, "write, inspect, then repeat");
-    pending.runtime = resolveRuntimeConfig(normalizeRuntimeConfig({
-      policy: { sandboxMode: "workspace-write", approvalPolicy: "on-request" },
-    }));
+    pending.runtime = resolveRuntimeConfig(
+      normalizeRuntimeConfig({
+        policy: { sandboxMode: "workspace-write", approvalPolicy: "on-request" },
+      }),
+    );
     let approvals = 0;
     const replies = [
       '<tool_call>{"name":"write_file","arguments":{"path":"same.txt","content":"ok"}}</tool_call>',
@@ -167,7 +173,10 @@ test("open the main file and fix the bug performs read then write", async () => 
     });
 
     assert.equal(text, "Fixed main.ts.");
-    assert.equal(await readFile(path.join(workspaceRoot, "main.ts"), "utf8"), "const value = true;\n");
+    assert.equal(
+      await readFile(path.join(workspaceRoot, "main.ts"), "utf8"),
+      "const value = true;\n",
+    );
   });
 });
 
@@ -178,9 +187,10 @@ test("run it performs run_shell", async () => {
       handlers: handlers().handlers,
       includeSystemPrompt: true,
       sendMessages: async (_messages: readonly AgentChatMessage[], index) => ({
-        text: index === 0
-          ? '<tool_call>{"name":"run_shell","arguments":{"command":"printf ok"}}</tool_call>'
-          : "It prints ok.",
+        text:
+          index === 0
+            ? '<tool_call>{"name":"run_shell","arguments":{"command":"printf ok"}}</tool_call>'
+            : "It prints ok.",
       }),
     });
 
@@ -190,10 +200,14 @@ test("run it performs run_shell", async () => {
 
 test("broad workspace prompts receive a bounded automatic project summary", async () => {
   await withTempWorkspace(async (workspaceRoot) => {
-    await writeFile(path.join(workspaceRoot, "package.json"), JSON.stringify({
-      name: "sample-workspace",
-      description: "A focused local agent fixture",
-    }), "utf8");
+    await writeFile(
+      path.join(workspaceRoot, "package.json"),
+      JSON.stringify({
+        name: "sample-workspace",
+        description: "A focused local agent fixture",
+      }),
+      "utf8",
+    );
     await writeFile(path.join(workspaceRoot, "README.md"), "# Sample\n", "utf8");
     let initialMessages: readonly AgentChatMessage[] = [];
 
@@ -227,19 +241,26 @@ test("structured provider tool calls are executed before final text", async () =
       toolProtocol: "openai",
       sendMessages: async (_messages: readonly AgentChatMessage[], index) => ({
         text: index === 0 ? "" : "Created main.rs.",
-        toolCalls: index === 0
-          ? [{
-            id: "call_write",
-            name: "write_file",
-            arguments: { path: "main.rs", content: "fn main() { println!(\"hi\"); }\n" },
-            rawArguments: "{\"path\":\"main.rs\",\"content\":\"fn main() { println!(\\\"hi\\\"); }\\n\"}",
-          }]
-          : undefined,
+        toolCalls:
+          index === 0
+            ? [
+                {
+                  id: "call_write",
+                  name: "write_file",
+                  arguments: { path: "main.rs", content: 'fn main() { println!("hi"); }\n' },
+                  rawArguments:
+                    '{"path":"main.rs","content":"fn main() { println!(\\"hi\\"); }\\n"}',
+                },
+              ]
+            : undefined,
       }),
     });
 
     assert.equal(text, "Created main.rs.");
-    assert.equal(await readFile(path.join(workspaceRoot, "main.rs"), "utf8"), "fn main() { println!(\"hi\"); }\n");
+    assert.equal(
+      await readFile(path.join(workspaceRoot, "main.rs"), "utf8"),
+      'fn main() { println!("hi"); }\n',
+    );
   });
 });
 
@@ -260,12 +281,14 @@ test("native tool-call IDs are preserved and replayed IDs are not executed twice
             text: "",
             reasoning: chatCalls === 1 ? "Write the file." : "Retry the same call.",
             finishReason: "tool_calls",
-            toolCalls: [{
-              id: "stable_call_id",
-              name: "write_file",
-              arguments: { path: "once.txt", content: "once" },
-              rawArguments: "{\"path\":\"once.txt\",\"content\":\"once\"}",
-            }],
+            toolCalls: [
+              {
+                id: "stable_call_id",
+                name: "write_file",
+                arguments: { path: "once.txt", content: "once" },
+                rawArguments: '{"path":"once.txt","content":"once"}',
+              },
+            ],
           };
         }
         return { text: "Finished after one write.", finishReason: "stop" };
@@ -277,7 +300,10 @@ test("native tool-call IDs are preserved and replayed IDs are not executed twice
     const secondRequest = histories[1] ?? [];
     const assistant = secondRequest.find((message) => message.role === "assistant");
     const tool = secondRequest.find((message) => message.role === "tool");
-    assert.equal(assistant?.role === "assistant" ? assistant.reasoning_content : null, "Write the file.");
+    assert.equal(
+      assistant?.role === "assistant" ? assistant.reasoning_content : null,
+      "Write the file.",
+    );
     assert.equal(tool?.role === "tool" ? tool.tool_call_id : null, "stable_call_id");
   });
 });
@@ -290,9 +316,10 @@ test("Local agent completes more than ten tool calls without an artificial cutof
       handlers: handlers().handlers,
       includeSystemPrompt: true,
       sendMessages: async (_messages: readonly AgentChatMessage[], index) => ({
-        text: index < toolCount
-          ? `<tool_call>{"name":"write_file","arguments":{"path":"file-${index}.txt","content":"${index}"}}</tool_call>`
-          : "Created all requested files.",
+        text:
+          index < toolCount
+            ? `<tool_call>{"name":"write_file","arguments":{"path":"file-${index}.txt","content":"${index}"}}</tool_call>`
+            : "Created all requested files.",
       }),
     });
 
@@ -311,9 +338,13 @@ test("unchanged repeated tool results trigger a bounded blocker response", async
       maxConsecutiveNoProgressCalls: 1,
       sendMessages: async (messages: readonly AgentChatMessage[], index) => {
         const lastContent = messages.at(-1)?.content;
-        const recoveryRequested = typeof lastContent === "string"
-          && lastContent.includes("Repeated tool calls are no longer changing");
-        if (recoveryRequested) return { text: "I could not make further progress because the workspace listing stayed unchanged." };
+        const recoveryRequested =
+          typeof lastContent === "string" &&
+          lastContent.includes("Repeated tool calls are no longer changing");
+        if (recoveryRequested)
+          return {
+            text: "I could not make further progress because the workspace listing stayed unchanged.",
+          };
         return {
           text: `<tool_call>{"name":"list_files","arguments":{"path":"."}}</tool_call>`,
           finishReason: index < 2 ? "tool_calls" : "stop",

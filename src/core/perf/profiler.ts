@@ -56,7 +56,12 @@ function dur(session: PerfSession, from: string, to: string): string {
 
 const STAGE_ROWS: Array<[from: string, to: string, label: string, note?: string]> = [
   ["submit", "dispatch_start", "submit → dispatch_start", "pre-dispatch overhead"],
-  ["dispatch_start", "provider_run_start", "dispatch_start → provider_run_start", "orchestration setup"],
+  [
+    "dispatch_start",
+    "provider_run_start",
+    "dispatch_start → provider_run_start",
+    "orchestration setup",
+  ],
   ["exec_resolve_start", "exec_resolve_end", "exec_resolve", "cached after first run"],
   ["caps_probe_start", "caps_probe_end", "caps_probe", "cached after first run"],
   ["provider_run_start", "spawn_done", "provider_run_start → spawn_done", "spawn overhead"],
@@ -92,7 +97,9 @@ export function buildSummary(session: PerfSession): string {
   lines.push(
     `│  Counters   chunks=${c["chunks"] ?? 0}  flushes=${c["flushes"] ?? 0}  progress_updates=${c["progress_updates"] ?? 0}`,
   );
-  lines.push(`│  Sanitise   accumulated ${Math.round(a["sanitize_ms"] ?? 0)}ms across ${c["chunks"] ?? 0} chunks`);
+  lines.push(
+    `│  Sanitise   accumulated ${Math.round(a["sanitize_ms"] ?? 0)}ms across ${c["chunks"] ?? 0} chunks`,
+  );
 
   const metaEntries = Object.entries(session.metadata);
   if (metaEntries.length > 0) {

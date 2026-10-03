@@ -1,8 +1,25 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { parseTomlDocument } from "../../config/layeredConfig.js";
-import { clampText, envValue, forEachJsonLine, isRecord, mapWithConcurrency, readHeadJsonLines, resolveHome, sameFolder, stringField, titleFromText } from "./sessionIo.js";
-import type { ExternalSessionOptions, ExternalSessionScope, ExternalSessionSummary, ExternalTranscript, ExternalTranscriptEntry } from "./types.js";
+import {
+  clampText,
+  envValue,
+  forEachJsonLine,
+  isRecord,
+  mapWithConcurrency,
+  readHeadJsonLines,
+  resolveHome,
+  sameFolder,
+  stringField,
+  titleFromText,
+} from "./sessionIo.js";
+import type {
+  ExternalSessionOptions,
+  ExternalSessionScope,
+  ExternalSessionSummary,
+  ExternalTranscript,
+  ExternalTranscriptEntry,
+} from "./types.js";
 
 export async function vibeSessionDir(options: ExternalSessionOptions = {}): Promise<string> {
   const home = envValue(options, "VIBE_HOME") ?? join(resolveHome(options), ".vibe");
@@ -23,7 +40,9 @@ export async function vibeSessionDir(options: ExternalSessionOptions = {}): Prom
 function textContent(value: unknown): string {
   if (typeof value === "string") return value;
   if (!Array.isArray(value)) return "";
-  return value.flatMap((part) => isRecord(part) && typeof part.text === "string" ? [part.text] : []).join("\n");
+  return value
+    .flatMap((part) => (isRecord(part) && typeof part.text === "string" ? [part.text] : []))
+    .join("\n");
 }
 
 async function summarize(path: string): Promise<ExternalSessionSummary | null> {
@@ -40,44 +59,88 @@ async function summarize(path: string): Promise<ExternalSessionSummary | null> {
   const config = isRecord(metadata.config) ? metadata.config : {};
   const model = stringField(metadata, "model") ?? stringField(config, "active_model");
   return {
-    source: "vibe", id,
-    title: titleFromText(stringField(metadata, "title") ?? (textContent(prompt?.content) || "Untitled session")),
+    source: "vibe",
+    id,
+    title: titleFromText(
+      stringField(metadata, "title") ?? (textContent(prompt?.content) || "Untitled session"),
+    ),
     cwd: stringField(environment, "working_directory"),
-    updatedAt: info.mtime.toISOString(), filePath,
+    updatedAt: info.mtime.toISOString(),
+    filePath,
     ...(model ? { model } : {}),
-    ...(typeof metadata.total_messages === "number" ? { messageCount: metadata.total_messages } : {}),
+    ...(typeof metadata.total_messages === "number"
+      ? { messageCount: metadata.total_messages }
+      : {}),
   };
 }
 
-export async function listVibeSessions(scope: ExternalSessionScope, options: ExternalSessionOptions = {}): Promise<ExternalSessionSummary[]> {
+export async function listVibeSessions(
+  scope: ExternalSessionScope,
+  options: ExternalSessionOptions = {},
+): Promise<ExternalSessionSummary[]> {
   const root = await vibeSessionDir(options);
   let entries;
-  try { entries = await readdir(root, { withFileTypes: true }); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
-  const summaries = await mapWithConcurrency(entries.filter((entry) => entry.isDirectory()), 8, async (entry) => {
-    try { return await summarize(join(root, entry.name)); }
-    catch { return null; } // One malformed or actively-written session cannot hide others.
-  });
-  return summaries.filter((summary): summary is ExternalSessionSummary => summary !== null
-    && (scope.kind === "all" || summary.cwd !== null && sameFolder(summary.cwd, scope.root)))
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id));
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const summaries = await mapWithConcurrency(
+    entries.filter((entry) => entry.isDirectory()),
+    8,
+    async (entry) => {
+      try {
+        return await summarize(join(root, entry.name));
+      } catch {
+        return null;
+      } // One malformed or actively-written session cannot hide others.
+    },
+  );
+  return summaries
+    .filter(
+      (summary): summary is ExternalSessionSummary =>
+        summary !== null &&
+        (scope.kind === "all" || (summary.cwd !== null && sameFolder(summary.cwd, scope.root))),
+    )
+    .sort(
+      (left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id),
+    );
 }
 
-export async function readVibeTranscript(summary: ExternalSessionSummary): Promise<ExternalTranscript> {
+export async function readVibeTranscript(
+  summary: ExternalSessionSummary,
+): Promise<ExternalTranscript> {
   if (!summary.filePath) throw new Error("Mistral Vibe session has no transcript location.");
   const entries: ExternalTranscriptEntry[] = [];
   await forEachJsonLine(summary.filePath, (message) => {
     const role = message.role;
     const text = textContent(message.content);
-    if (text) entries.push({
-      id: `vibe-${entries.length}`, kind: role === "user" ? "user" : role === "assistant" ? "assistant" : role === "tool" ? "tool" : "note",
-      title: role === "tool" ? stringField(message, "name") ?? "Tool" : String(role ?? "Note"),
-      text: clampText(text, 64 * 1024),
-    });
-    if (Array.isArray(message.tool_calls)) for (const call of message.tool_calls) {
-      if (!isRecord(call) || !isRecord(call.function)) continue;
-      entries.push({ id: `vibe-${entries.length}`, kind: "tool", title: stringField(call.function, "name") ?? "Tool", text: clampText(stringField(call.function, "arguments") ?? "", 16 * 1024) });
-    }
+    if (text)
+      entries.push({
+        id: `vibe-${entries.length}`,
+        kind:
+          role === "user"
+            ? "user"
+            : role === "assistant"
+              ? "assistant"
+              : role === "tool"
+                ? "tool"
+                : "note",
+        title: role === "tool" ? (stringField(message, "name") ?? "Tool") : String(role ?? "Note"),
+        text: clampText(text, 64 * 1024),
+      });
+    if (Array.isArray(message.tool_calls))
+      for (const call of message.tool_calls) {
+        if (!isRecord(call) || !isRecord(call.function)) continue;
+        entries.push({
+          id: `vibe-${entries.length}`,
+          kind: "tool",
+          title: stringField(call.function, "name") ?? "Tool",
+          text: clampText(stringField(call.function, "arguments") ?? "", 16 * 1024),
+        });
+      }
   });
   return { summary, entries };
 }

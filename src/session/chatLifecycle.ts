@@ -1,10 +1,11 @@
-import { MAX_CHAT_LINES } from "../config/settings.js";
-import type { AvailableBackend } from "../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
-import type { BackendProgressUpdate } from "../core/providers/types.js";
-import { summarizeRunActivity, type RunFileActivity } from "../core/workspace/workspaceActivity.js";
+import type { AvailableBackend } from "../config/settings.js";
+import { MAX_CHAT_LINES } from "../config/settings.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
+import type { BackendProgressUpdate } from "../core/providers/types.js";
+import { type RunFileActivity, summarizeRunActivity } from "../core/workspace/workspaceActivity.js";
 import type {
+  ErrorEvent,
   RunEvent,
   RunPlanBlock,
   RunProgressBlock,
@@ -13,7 +14,6 @@ import type {
   RunStreamItem,
   RunToolActivity,
   SystemEvent,
-  ErrorEvent,
   TimelineEvent,
   UIState,
 } from "./types.js";
@@ -22,9 +22,16 @@ import { getRunPlanText } from "./types.js";
 // ─── Types & constants ────────────────────────────────────────────────────────
 
 export const RUN_OUTPUT_TRUNCATION_NOTICE = "Older output was truncated to keep the UI responsive.";
-const ACTION_REQUIRED_BLOCK_PATTERN = /\*{0,2}=+\*{0,2}\s*\n\*{0,2}\[ACTION REQUIRED\]\*{0,2}\s*\n\*{0,2}Verification Question:\*{0,2}\s*\n([\s\S]*?)\n\*{0,2}=+\*{0,2}/i;
+const ACTION_REQUIRED_BLOCK_PATTERN =
+  /\*{0,2}=+\*{0,2}\s*\n\*{0,2}\[ACTION REQUIRED\]\*{0,2}\s*\n\*{0,2}Verification Question:\*{0,2}\s*\n([\s\S]*?)\n\*{0,2}=+\*{0,2}/i;
 
-export type ConfigMutationKind = "backend" | "model" | "mode" | "reasoning" | "permissions" | "theme";
+export type ConfigMutationKind =
+  | "backend"
+  | "model"
+  | "mode"
+  | "reasoning"
+  | "permissions"
+  | "theme";
 export type UIStateAction =
   | { type: "PROMPT_RUN_STARTED"; turnId: number }
   | { type: "FIRST_ASSISTANT_DELTA"; turnId: number }
@@ -58,7 +65,10 @@ function stripBoldMarkers(text: string): string {
   return text.replace(/\*\*/g, "").trim();
 }
 
-export function extractAssistantActionRequired(text: string): { content: string; question: string | null } {
+export function extractAssistantActionRequired(text: string): {
+  content: string;
+  question: string | null;
+} {
   const normalized = text ?? "";
   const blockMatch = ACTION_REQUIRED_BLOCK_PATTERN.exec(normalized);
 
@@ -177,12 +187,12 @@ export function createRunEvent(params: {
   const now = params.startedAtMs ?? Date.now();
   const plan: RunPlanBlock | null = params.approvedPlan
     ? {
-      id: `plan-${params.id}`,
-      streamSeq: 1,
-      chunks: [params.approvedPlan],
-      status: "completed",
-      startedAt: now,
-    }
+        id: `plan-${params.id}`,
+        streamSeq: 1,
+        chunks: [params.approvedPlan],
+        status: "completed",
+        startedAt: now,
+      }
     : null;
   return {
     id: params.id,
@@ -203,9 +213,7 @@ export function createRunEvent(params: {
     touchedFileCount: 0,
     errorMessage: null,
     turnId: params.turnId,
-    streamItems: plan
-      ? [{ streamSeq: plan.streamSeq, kind: "plan" as const, refId: plan.id }]
-      : [],
+    streamItems: plan ? [{ streamSeq: plan.streamSeq, kind: "plan" as const, refId: plan.id }] : [],
     responseSegments: [],
     lastStreamSeq: plan ? plan.streamSeq : 0,
     activeResponseSegmentId: null,
@@ -223,7 +231,11 @@ function maxStreamSeq(event: RunEvent, items: RunStreamItem[] = event.streamItem
   return Math.max(event.lastStreamSeq ?? 0, ...items.map((item) => item.streamSeq));
 }
 
-function createPlanBlock(event: RunEvent, text = "", status: RunPlanBlock["status"] = "active"): RunPlanBlock {
+function createPlanBlock(
+  event: RunEvent,
+  text = "",
+  status: RunPlanBlock["status"] = "active",
+): RunPlanBlock {
   const streamSeq = maxStreamSeq(event) + 1;
   return {
     id: `plan-${event.id}`,
@@ -269,8 +281,8 @@ export function finalizePlanBlock(event: RunEvent, finalPlan?: string): RunEvent
   const text = finalPlan ?? event.plan?.chunks.join("") ?? "";
 
   if (event.plan) {
-    const streamItemsWithoutPlan = (event.streamItems ?? []).filter((item) =>
-      !(item.kind === "plan" && item.refId === event.plan?.id)
+    const streamItemsWithoutPlan = (event.streamItems ?? []).filter(
+      (item) => !(item.kind === "plan" && item.refId === event.plan?.id),
     );
     const streamSeq = maxStreamSeq(event, streamItemsWithoutPlan) + 1;
     return {
@@ -321,8 +333,8 @@ export function demoteActivePlanToResponseSegment(event: RunEvent): RunEvent {
   const plan = event.plan;
   if (!plan || plan.status !== "active" || event.approvedPlan) return event;
 
-  const streamItems = (event.streamItems ?? []).filter((item) =>
-    !(item.kind === "plan" && item.refId === plan.id)
+  const streamItems = (event.streamItems ?? []).filter(
+    (item) => !(item.kind === "plan" && item.refId === plan.id),
   );
   const text = getRunPlanText(plan);
   if (!text.trim()) {
@@ -341,9 +353,19 @@ export function demoteActivePlanToResponseSegment(event: RunEvent): RunEvent {
     plan: null,
     responseSegments: [
       ...(event.responseSegments ?? []),
-      { id, streamSeq: plan.streamSeq, chunks: [text], status: "completed", startedAt: plan.startedAt },
+      {
+        id,
+        streamSeq: plan.streamSeq,
+        chunks: [text],
+        status: "completed",
+        startedAt: plan.startedAt,
+      },
     ],
-    streamItems: appendStreamItem(streamItems, { streamSeq: plan.streamSeq, kind: "response", refId: id }),
+    streamItems: appendStreamItem(streamItems, {
+      streamSeq: plan.streamSeq,
+      kind: "response",
+      refId: id,
+    }),
     activeResponseSegmentId: null,
   };
 }
@@ -410,25 +432,25 @@ function finalizePendingToolActivities(
   finalStatus: "completed" | "failed" | "canceled",
 ): RunToolActivity[] {
   const fallbackStatus = finalStatus === "completed" ? "completed" : "failed";
-  const fallbackSummary = finalStatus === "completed"
-    ? "Completed"
-    : finalStatus === "canceled"
-      ? "Canceled"
-      : "Failed";
+  const fallbackSummary =
+    finalStatus === "completed" ? "Completed" : finalStatus === "canceled" ? "Canceled" : "Failed";
 
-  return toolActivities.map((item) => (
+  return toolActivities.map((item) =>
     item.status === "running"
       ? {
-        ...item,
-        status: fallbackStatus,
-        completedAt: item.completedAt ?? Date.now(),
-        summary: item.summary ?? fallbackSummary,
-      }
-      : item
-  ));
+          ...item,
+          status: fallbackStatus,
+          completedAt: item.completedAt ?? Date.now(),
+          summary: item.summary ?? fallbackSummary,
+        }
+      : item,
+  );
 }
 
-function mergeRunActivity(existing: RunFileActivity[], additions: RunFileActivity[]): RunFileActivity[] {
+function mergeRunActivity(
+  existing: RunFileActivity[],
+  additions: RunFileActivity[],
+): RunFileActivity[] {
   const merged = [...existing];
 
   for (const item of additions) {
@@ -460,9 +482,10 @@ export function appendRunActivity(event: RunEvent, additions: RunFileActivity[])
     activity,
     touchedFileCount,
     activitySummary: summarizeRunActivity(activity),
-    summary: touchedFileCount > 0
-      ? `${touchedFileCount} file${touchedFileCount === 1 ? "" : "s"} modified`
-      : "working...",
+    summary:
+      touchedFileCount > 0
+        ? `${touchedFileCount} file${touchedFileCount === 1 ? "" : "s"} modified`
+        : "working...",
   };
 }
 
@@ -475,7 +498,11 @@ function trimProgressText(text: string): string {
     .replace(/[ \t]+\n/g, "\n");
 }
 
-function createProgressBlock(entryId: string, sequence: number, createdAt: number): RunProgressBlock {
+function createProgressBlock(
+  entryId: string,
+  sequence: number,
+  createdAt: number,
+): RunProgressBlock {
   return {
     id: `${entryId}-block-${sequence}`,
     text: "",
@@ -489,8 +516,14 @@ function createProgressBlock(entryId: string, sequence: number, createdAt: numbe
 // Split streaming progress blocks at readable sentence and list boundaries.
 const MIN_PROGRESS_BLOCK_CHARS = 36;
 const TRANSITION_PHRASE_PATTERN = String.raw`(?:I(?:'|’)m going to|I(?:'|’)ll|I found|I(?:'|’)m checking|I'm checking|I am checking|Next(?:,|\s)|The highest-value improvements|The highest value improvements)`;
-const INLINE_TRANSITION_PATTERN = new RegExp(String.raw`[.!?]\s+(?=${TRANSITION_PHRASE_PATTERN}\b)`, "i");
-const NEWLINE_TRANSITION_PATTERN = new RegExp(String.raw`\n(?=${TRANSITION_PHRASE_PATTERN}\b)`, "i");
+const INLINE_TRANSITION_PATTERN = new RegExp(
+  String.raw`[.!?]\s+(?=${TRANSITION_PHRASE_PATTERN}\b)`,
+  "i",
+);
+const NEWLINE_TRANSITION_PATTERN = new RegExp(
+  String.raw`\n(?=${TRANSITION_PHRASE_PATTERN}\b)`,
+  "i",
+);
 const LIST_MARKER_PATTERN = /^\s*(?:[-*+]\s+|\d+[.)]\s+)/;
 const NEWLINE_LIST_MARKER_PATTERN = /\n(?=\s*(?:[-*+]\s+|\d+[.)]\s+))/;
 
@@ -528,9 +561,9 @@ function findReadableBoundary(text: string): { splitAt: number; trimLeft: boolea
     const before = text.slice(0, newlineListMatch.index);
     const after = text.slice(newlineListMatch.index + 1);
     if (
-      hasMeaningfulBlockText(before)
-      && !LIST_MARKER_PATTERN.test(before.split("\n").findLast((line) => line.trim()) ?? "")
-      && LIST_MARKER_PATTERN.test(after)
+      hasMeaningfulBlockText(before) &&
+      !LIST_MARKER_PATTERN.test(before.split("\n").findLast((line) => line.trim()) ?? "") &&
+      LIST_MARKER_PATTERN.test(after)
     ) {
       return { splitAt: newlineListMatch.index, trimLeft: true };
     }
@@ -677,10 +710,10 @@ function materializeProgressEntry(
   const blocks = rebuilt.blocks.map((block, index) => {
     const existing = entry.blocks[index];
     if (
-      existing
-      && existing.sequence === block.sequence
-      && existing.text === block.text
-      && existing.status === block.status
+      existing &&
+      existing.sequence === block.sequence &&
+      existing.text === block.text &&
+      existing.status === block.status
     ) {
       return existing;
     }
@@ -726,7 +759,12 @@ export function appendRunThinking(event: RunEvent, updates: BackendProgressUpdat
     const existingIndex = progressEntries.findIndex((entry) => entry.id === update.id);
     if (existingIndex >= 0) {
       const existing = progressEntries[existingIndex]!;
-      progressEntries[existingIndex] = materializeProgressEntry(existing, text, updatedAt, update.source);
+      progressEntries[existingIndex] = materializeProgressEntry(
+        existing,
+        text,
+        updatedAt,
+        update.source,
+      );
       continue;
     }
 
@@ -864,13 +902,15 @@ export function finalizeResponseSegments(event: RunEvent, finalResponse?: string
     const id = `response-final-${event.id}-${seq}`;
     return {
       ...event,
-      responseSegments: [{
-        id,
-        streamSeq: seq,
-        chunks: [finalResponse],
-        status: "completed",
-        startedAt: Date.now(),
-      }],
+      responseSegments: [
+        {
+          id,
+          streamSeq: seq,
+          chunks: [finalResponse],
+          status: "completed",
+          startedAt: Date.now(),
+        },
+      ],
       streamItems: appendStreamItem(event.streamItems ?? [], {
         streamSeq: seq,
         kind: "response",
@@ -898,10 +938,14 @@ export const appendRunOutput = appendRunThinking;
 
 // ─── Run lifecycle ────────────────────────────────────────────────────────────
 
-export function completeRunEvent(event: RunEvent, durationMs = Date.now() - event.startedAt): RunEvent {
-  const touchedSuffix = event.touchedFileCount > 0
-    ? ` · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
-    : "";
+export function completeRunEvent(
+  event: RunEvent,
+  durationMs = Date.now() - event.startedAt,
+): RunEvent {
+  const touchedSuffix =
+    event.touchedFileCount > 0
+      ? ` · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
+      : "";
 
   return {
     ...event,
@@ -910,9 +954,10 @@ export function completeRunEvent(event: RunEvent, durationMs = Date.now() - even
     activitySummary: summarizeRunActivity(event.activity),
     toolActivities: finalizePendingToolActivities(event.toolActivities, "completed"),
     errorMessage: null,
-    summary: event.progressEntries.length > 0 || event.activity.length > 0
-      ? `Run completed successfully${touchedSuffix}`
-      : "Run completed with no visible output",
+    summary:
+      event.progressEntries.length > 0 || event.activity.length > 0
+        ? `Run completed successfully${touchedSuffix}`
+        : "Run completed with no visible output",
   };
 }
 
@@ -929,13 +974,17 @@ export function failRunEvent(
     activitySummary: summarizeRunActivity(event.activity),
     toolActivities: finalizePendingToolActivities(event.toolActivities, "failed"),
     errorMessage: errorMessage ?? summary,
-    summary: event.touchedFileCount > 0
-      ? `${summary} · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
-      : summary,
+    summary:
+      event.touchedFileCount > 0
+        ? `${summary} · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
+        : summary,
   };
 }
 
-export function cancelRunEvent(event: RunEvent, durationMs = Date.now() - event.startedAt): RunEvent {
+export function cancelRunEvent(
+  event: RunEvent,
+  durationMs = Date.now() - event.startedAt,
+): RunEvent {
   return {
     ...event,
     status: "canceled",
@@ -943,15 +992,19 @@ export function cancelRunEvent(event: RunEvent, durationMs = Date.now() - event.
     activitySummary: summarizeRunActivity(event.activity),
     toolActivities: finalizePendingToolActivities(event.toolActivities, "canceled"),
     errorMessage: null,
-    summary: event.touchedFileCount > 0
-      ? `Run canceled · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
-      : "Run canceled",
+    summary:
+      event.touchedFileCount > 0
+        ? `Run canceled · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
+        : "Run canceled",
   };
 }
 
 // ─── Event routing ───────────────────────────────────────────────────────────
 
-export function appendStaticEvents(events: TimelineEvent[], additions: TimelineEvent[]): TimelineEvent[] {
+export function appendStaticEvents(
+  events: TimelineEvent[],
+  additions: TimelineEvent[],
+): TimelineEvent[] {
   const result = [...events];
   for (const addition of additions) {
     const last = result[result.length - 1];
@@ -960,7 +1013,8 @@ export function appendStaticEvents(events: TimelineEvent[], additions: TimelineE
       if (addition.type === "system" || addition.type === "error") {
         const lastTyped = last as SystemEvent | ErrorEvent;
         const additionTyped = addition as SystemEvent | ErrorEvent;
-        isDuplicate = lastTyped.title === additionTyped.title && lastTyped.content === additionTyped.content;
+        isDuplicate =
+          lastTyped.title === additionTyped.title && lastTyped.content === additionTyped.content;
       }
     }
 
@@ -975,7 +1029,10 @@ export function trimStaticEvents(events: TimelineEvent[]): TimelineEvent[] {
   return events;
 }
 
-export function guardConfigMutation(kind: ConfigMutationKind, busy: boolean): { allowed: boolean; message?: string } {
+export function guardConfigMutation(
+  kind: ConfigMutationKind,
+  busy: boolean,
+): { allowed: boolean; message?: string } {
   // Runs own an immutable runtime snapshot; composer settings apply to the next run.
   return { allowed: true };
 }

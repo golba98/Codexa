@@ -1,20 +1,33 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
+import test from "node:test";
 import { render } from "ink";
-import { ThemeProvider } from "../theme.js";
-import { getHorizontalArrowDirection, UpdatePromptPanel, type RunUpdateFn } from "./UpdatePromptPanel.js";
 import type { CommandResult } from "../../core/process/CommandRunner.js";
 import type { GlobalPackageManager } from "../../core/version/packageManager.js";
+import { ThemeProvider } from "../theme.js";
+import {
+  getHorizontalArrowDirection,
+  type RunUpdateFn,
+  UpdatePromptPanel,
+} from "./UpdatePromptPanel.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
-  setRawMode(): this { return this; }
-  override resume(): this { return this; }
-  override pause(): this { return this; }
-  ref(): this { return this; }
-  unref(): this { return this; }
+  setRawMode(): this {
+    return this;
+  }
+  override resume(): this {
+    return this;
+  }
+  override pause(): this {
+    return this;
+  }
+  ref(): this {
+    return this;
+  }
+  unref(): this {
+    return this;
+  }
 }
 
 class TestOutput extends PassThrough {
@@ -64,10 +77,9 @@ interface Harness {
   onRestartCalls: () => number;
 }
 
-function renderPanel(options: {
-  packageManager?: GlobalPackageManager;
-  runUpdate?: RunUpdateFn;
-} = {}): Harness {
+function renderPanel(
+  options: { packageManager?: GlobalPackageManager; runUpdate?: RunUpdateFn } = {},
+): Harness {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
@@ -86,8 +98,12 @@ function renderPanel(options: {
         latestVersion="1.0.5"
         packageManager={options.packageManager ?? "npm"}
         runUpdate={options.runUpdate}
-        onSkip={() => { skipCalls += 1; }}
-        onRestart={() => { restartCalls += 1; }}
+        onSkip={() => {
+          skipCalls += 1;
+        }}
+        onRestart={() => {
+          restartCalls += 1;
+        }}
       />
     </ThemeProvider>,
     {
@@ -152,12 +168,14 @@ test("Update now with a successful runner reaches the done phase", async () => {
 
 test("permission failure shows guidance without sudo", async () => {
   const runUpdate: RunUpdateFn = () => ({
-    result: Promise.resolve(makeResult({
-      status: "failed",
-      exitCode: 243,
-      stderr: "npm ERR! Error: EACCES: permission denied, access '/usr/local/lib/node_modules'",
-      userMessage: "npm ERR! Error: EACCES: permission denied",
-    })),
+    result: Promise.resolve(
+      makeResult({
+        status: "failed",
+        exitCode: 243,
+        stderr: "npm ERR! Error: EACCES: permission denied, access '/usr/local/lib/node_modules'",
+        userMessage: "npm ERR! Error: EACCES: permission denied",
+      }),
+    ),
     cancel: () => {},
   });
 
@@ -174,12 +192,14 @@ test("permission failure shows guidance without sudo", async () => {
 
 test("non-permission failure surfaces the runner's user message", async () => {
   const runUpdate: RunUpdateFn = () => ({
-    result: Promise.resolve(makeResult({
-      status: "failed",
-      exitCode: 1,
-      stderr: "npm ERR! network request failed",
-      userMessage: "npm ERR! network request failed",
-    })),
+    result: Promise.resolve(
+      makeResult({
+        status: "failed",
+        exitCode: 1,
+        stderr: "npm ERR! network request failed",
+        userMessage: "npm ERR! network request failed",
+      }),
+    ),
     cancel: () => {},
   });
 
@@ -225,7 +245,9 @@ test("installing replaces the available card and Esc cancels back to a clean ava
     handlers?.onStdout?.("downloading package\n");
     return {
       result: new Promise<CommandResult>((resolve) => resolvers.push(resolve)),
-      cancel: () => { cancelCalls += 1; },
+      cancel: () => {
+        cancelCalls += 1;
+      },
     };
   };
 
@@ -278,7 +300,9 @@ test("Escape immediately after install starts cannot surface stale installer sta
   let cancelCalls = 0;
   const runUpdate: RunUpdateFn = () => ({
     result: new Promise<CommandResult>(() => {}),
-    cancel: () => { cancelCalls += 1; },
+    cancel: () => {
+      cancelCalls += 1;
+    },
   });
   const harness = renderPanel({ runUpdate });
   await sleep();
@@ -290,7 +314,10 @@ test("Escape immediately after install starts cannot surface stale installer sta
 
   const transitionOutput = harness.output().slice(transitionStart);
   assert.match(transitionOutput, /Update available: Ubume 1\.0\.5/);
-  assert.doesNotMatch(transitionOutput.slice(transitionOutput.lastIndexOf("Update available")), /Installing Ubume/);
+  assert.doesNotMatch(
+    transitionOutput.slice(transitionOutput.lastIndexOf("Update available")),
+    /Installing Ubume/,
+  );
   assert.ok(cancelCalls <= 1, "an attempt that reached the runner is canceled at most once");
   assert.equal(harness.onSkipCalls(), 0);
   harness.cleanup();

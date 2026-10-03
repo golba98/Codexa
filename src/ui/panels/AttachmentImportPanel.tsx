@@ -1,7 +1,7 @@
-import React, { useState } from "react";
-import { Box, Text, useFocus, useInput } from "ink";
 import os from "node:os";
 import path from "node:path";
+import { Box, Text, useFocus, useInput } from "ink";
+import { useState } from "react";
 import { useTheme } from "../theme.js";
 
 export interface PendingImportFile {
@@ -43,19 +43,22 @@ export function AttachmentImportPanel({
   const { isFocused } = useFocus({ id: focusId, autoFocus: true });
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  useInput((input, key) => {
-    if (key.escape) {
-      onCancel();
-      return;
-    }
-    if (key.return) {
-      if (selectedIndex === 0) onConfirm();
-      else onCancel();
-      return;
-    }
-    if (key.leftArrow) setSelectedIndex(0);
-    if (key.rightArrow || key.tab) setSelectedIndex(1);
-  }, { isActive: isFocused });
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        onCancel();
+        return;
+      }
+      if (key.return) {
+        if (selectedIndex === 0) onConfirm();
+        else onCancel();
+        return;
+      }
+      if (key.leftArrow) setSelectedIndex(0);
+      if (key.rightArrow || key.tab) setSelectedIndex(1);
+    },
+    { isActive: isFocused },
+  );
 
   const relativeAttachmentsDir = path.relative(workspaceRoot, attachmentsDir).replace(/\\/g, "/");
   const displayedAttachmentsDir = relativeAttachmentsDir.startsWith("..")
@@ -67,14 +70,10 @@ export function AttachmentImportPanel({
 
   return (
     <Box flexDirection="column" width="100%" marginTop={1}>
-      <Box
-        borderStyle="round"
-        borderColor={theme.border}
-        paddingX={2}
-        paddingY={1}
-        width="100%"
-      >
-        <Text color={theme.accent} bold>IMPORT FILE  </Text>
+      <Box borderStyle="round" borderColor={theme.border} paddingX={2} paddingY={1} width="100%">
+        <Text color={theme.accent} bold>
+          IMPORT FILE{" "}
+        </Text>
         <Text color={theme.textMuted}>
           Copy {files.length} outside-workspace {fileLabel} into {displayedAttachmentsDir}?
         </Text>
@@ -93,25 +92,30 @@ export function AttachmentImportPanel({
           <Box key={i} marginBottom={i < files.length - 1 ? 1 : 0}>
             <Text color={theme.text}>{path.basename(file.srcPath)} </Text>
             <Text color={theme.textDim}>
-              {"→ "}{displayedAttachmentsDir}/{file.destFilename}
+              {"→ "}
+              {displayedAttachmentsDir}/{file.destFilename}
             </Text>
           </Box>
         ))}
 
         {showVisionWarning && (
           <Box marginTop={1}>
-            <Text color={theme.warning}>
-              Note: active model may not support images.
-            </Text>
+            <Text color={theme.warning}>Note: active model may not support images.</Text>
           </Box>
         )}
 
         <Box marginTop={1}>
-          <Text color={selectedIndex === 0 ? theme.accent : theme.textMuted} bold={selectedIndex === 0}>
+          <Text
+            color={selectedIndex === 0 ? theme.accent : theme.textMuted}
+            bold={selectedIndex === 0}
+          >
             {selectedIndex === 0 ? "› " : "  "}Import once
           </Text>
-          <Text color={theme.textDim}>  ·  </Text>
-          <Text color={selectedIndex === 1 ? theme.accent : theme.textMuted} bold={selectedIndex === 1}>
+          <Text color={theme.textDim}> · </Text>
+          <Text
+            color={selectedIndex === 1 ? theme.accent : theme.textMuted}
+            bold={selectedIndex === 1}
+          >
             {selectedIndex === 1 ? "› " : "  "}Cancel
           </Text>
         </Box>

@@ -9,7 +9,10 @@ test("reads PNG clipboard bytes through Wayland", async () => {
   const result = await readClipboardImage({
     platform: "linux",
     env: {},
-    run: async (file) => { calls.push(file); return PNG; },
+    run: async (file) => {
+      calls.push(file);
+      return PNG;
+    },
   });
   assert.equal(result.mediaType, "image/png");
   assert.deepEqual(result.data, PNG);
@@ -18,14 +21,18 @@ test("reads PNG clipboard bytes through Wayland", async () => {
 
 test("falls back from Wayland to X11 and rejects non-images", async () => {
   const calls: string[] = [];
-  await assert.rejects(() => readClipboardImage({
-    platform: "linux",
-    env: {},
-    run: async (file) => {
-      calls.push(file);
-      if (file === "wl-paste") throw new Error("missing");
-      return Buffer.from("plain text");
-    },
-  }), /supported PNG image/);
+  await assert.rejects(
+    () =>
+      readClipboardImage({
+        platform: "linux",
+        env: {},
+        run: async (file) => {
+          calls.push(file);
+          if (file === "wl-paste") throw new Error("missing");
+          return Buffer.from("plain text");
+        },
+      }),
+    /supported PNG image/,
+  );
   assert.deepEqual(calls, ["wl-paste", "xclip"]);
 });

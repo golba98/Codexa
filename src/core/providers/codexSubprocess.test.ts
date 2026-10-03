@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 test("codex subprocess attaches output handlers before writing stdin", () => {
-  const source = readFileSync(fileURLToPath(new URL("./codexSubprocess.ts", import.meta.url)), "utf8");
+  const source = readFileSync(
+    fileURLToPath(new URL("./codexSubprocess.ts", import.meta.url)),
+    "utf8",
+  );
   const spawnIndex = source.indexOf("proc = spawnCodexProcess");
   const stdoutIndex = source.indexOf('proc.stdout?.on("data"', spawnIndex);
   const stderrIndex = source.indexOf('proc.stderr?.on("data"', spawnIndex);
@@ -25,14 +28,20 @@ test("codex subprocess attaches output handlers before writing stdin", () => {
 });
 
 test("codex subprocess supports raw prompt passthrough before wrapped prompt fallback", () => {
-  const source = readFileSync(fileURLToPath(new URL("./codexSubprocess.ts", import.meta.url)), "utf8");
+  const source = readFileSync(
+    fileURLToPath(new URL("./codexSubprocess.ts", import.meta.url)),
+    "utf8",
+  );
 
   assert.match(source, /const promptPolicy = options\.promptPolicy \?\? "wrapped"/);
   assert.match(source, /promptPolicy === "raw"\s+\?\s+prompt\s+:\s+buildCodexPrompt/s);
 });
 
 test("codex subprocess cleanup skips kill after process close", () => {
-  const source = readFileSync(fileURLToPath(new URL("./codexSubprocess.ts", import.meta.url)), "utf8");
+  const source = readFileSync(
+    fileURLToPath(new URL("./codexSubprocess.ts", import.meta.url)),
+    "utf8",
+  );
   const closeIndex = source.indexOf('proc.on("close"', source.indexOf("proc = spawnCodexProcess"));
   const exitedIndex = source.indexOf("procExited = true", closeIndex);
   const cleanupIndex = source.indexOf("return () =>", exitedIndex);
@@ -49,7 +58,10 @@ test("codex subprocess cleanup skips kill after process close", () => {
 });
 
 test("codex subprocess reports lifecycle boundaries for terminal title reassertion", () => {
-  const source = readFileSync(fileURLToPath(new URL("./codexSubprocess.ts", import.meta.url)), "utf8");
+  const source = readFileSync(
+    fileURLToPath(new URL("./codexSubprocess.ts", import.meta.url)),
+    "utf8",
+  );
   const beforeSpawnIndex = source.indexOf('handlers.onProcessLifecycle?.("before-spawn")');
   const spawnIndex = source.indexOf("proc = spawnCodexProcess");
   const spawnedIndex = source.indexOf('handlers.onProcessLifecycle?.("spawned")', spawnIndex);
@@ -58,7 +70,10 @@ test("codex subprocess reports lifecycle boundaries for terminal title reasserti
   const errorIndex = source.indexOf('proc.on("error"', spawnIndex);
   const lifecycleErrorIndex = source.indexOf('handlers.onProcessLifecycle?.("error")', errorIndex);
   const cleanupIndex = source.indexOf("return () =>", spawnedIndex);
-  const lifecycleCleanupIndex = source.indexOf('handlers.onProcessLifecycle?.("cleanup")', cleanupIndex);
+  const lifecycleCleanupIndex = source.indexOf(
+    'handlers.onProcessLifecycle?.("cleanup")',
+    cleanupIndex,
+  );
 
   assert.ok(beforeSpawnIndex >= 0 && beforeSpawnIndex < spawnIndex);
   assert.ok(spawnedIndex > spawnIndex);

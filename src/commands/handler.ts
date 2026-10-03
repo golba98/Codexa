@@ -1,7 +1,4 @@
-import {
-  formatLayeredConfigStatus,
-  type LayeredConfigResult,
-} from "../config/layeredConfig.js";
+import { formatLayeredConfigStatus, type LayeredConfigResult } from "../config/layeredConfig.js";
 import {
   formatApprovalPolicyLabel,
   formatNetworkAccessLabel,
@@ -20,7 +17,7 @@ import {
   AVAILABLE_MODELS,
   AVAILABLE_THEMES,
   BUSY_LOADER_SETTING_VALUES,
-  WORKSPACE_DISPLAY_MODES,
+  type BusyLoaderSettingValue,
   formatAuthPreferenceLabel,
   formatBackendLabel,
   formatModeCommandHelp,
@@ -30,19 +27,17 @@ import {
   formatWorkspaceDisplayModeLabel,
   normalizeLegacyDirectoryDisplayMode,
   resolveModeCommand,
-  type BusyLoaderSettingValue,
   type TerminalTitleMode,
+  WORKSPACE_DISPLAY_MODES,
   type WorkspaceDisplayMode,
 } from "../config/settings.js";
-
-import type { WorkspaceCommandContext } from "../core/workspace/launchContext.js";
 import {
-  findModelCapability,
-  formatModelCapabilitiesList,
-  getSelectableModelCapabilities,
   type CodexModelCapabilities,
+  findModelCapability,
+  getSelectableModelCapabilities,
 } from "../core/models/codexModelCapabilities.js";
 import { dumpRenderCounts } from "../core/perf/renderDebug.js";
+import type { WorkspaceCommandContext } from "../core/workspace/launchContext.js";
 
 export type CommandAction =
   | "exit"
@@ -125,13 +120,20 @@ export interface CommandContext {
   modelCapabilities?: CodexModelCapabilities | null;
   routeStatusMessage?: string;
   activeRouteProviderLabel?: string;
-  projectInstructions?: import("../core/workspace/projectInstructions.js").ProjectInstructionsLoadResult | null;
+  projectInstructions?:
+    | import("../core/workspace/projectInstructions.js").ProjectInstructionsLoadResult
+    | null;
 }
 
 // Mirrors AVAILABLE_APPROVAL_POLICIES[].id from runtimeConfig.ts
 const APPROVAL_POLICY_VALUES = ["inherit", "untrusted", "on-request", "never"] as const;
 // Mirrors AVAILABLE_SANDBOX_MODES[].id from runtimeConfig.ts
-const SANDBOX_MODE_VALUES = ["inherit", "read-only", "workspace-write", "danger-full-access"] as const;
+const SANDBOX_MODE_VALUES = [
+  "inherit",
+  "read-only",
+  "workspace-write",
+  "danger-full-access",
+] as const;
 // Input aliases — "on"/"off" are mapped to "enabled"/"disabled" in the network case below
 const NETWORK_ACCESS_VALUES = ["inherit", "on", "off"] as const;
 // Mirrors AVAILABLE_SERVICE_TIERS[].id from runtimeConfig.ts
@@ -144,9 +146,7 @@ function isOneOf<T extends string>(value: string, list: readonly T[]): value is 
 }
 
 function formatWritableRoots(roots: readonly string[]): string {
-  return roots.length > 0
-    ? roots.map((root) => `  - ${root}`).join("\n")
-    : "  - none";
+  return roots.length > 0 ? roots.map((root) => `  - ${root}`).join("\n") : "  - none";
 }
 
 function expandReasoningAliases(arg: string): string {
@@ -218,11 +218,8 @@ function handlePolicyCommand(
       }
       if (isOneOf(normalizedRest, NETWORK_ACCESS_VALUES)) {
         // "on"/"off" are accepted aliases for "enabled"/"disabled"
-        const value: RuntimeNetworkAccess = normalizedRest === "on"
-          ? "enabled"
-          : normalizedRest === "off"
-            ? "disabled"
-            : "inherit";
+        const value: RuntimeNetworkAccess =
+          normalizedRest === "on" ? "enabled" : normalizedRest === "off" ? "disabled" : "inherit";
         return {
           action: "runtime_network_access",
           value,
@@ -465,13 +462,15 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       case "route":
         return {
           action: "route_status",
-          message: context.routeStatusMessage ?? [
-            "Route status:",
-            "  Workspace default: OpenAI",
-            `  Active chat route: OpenAI / ${context.runtime.model}`,
-            `  Active model: ${context.runtime.model}`,
-            "  Active provider mode: Usable inside Ubume",
-          ].join("\n"),
+          message:
+            context.routeStatusMessage ??
+            [
+              "Route status:",
+              "  Workspace default: OpenAI",
+              `  Active chat route: OpenAI / ${context.runtime.model}`,
+              `  Active model: ${context.runtime.model}`,
+              "  Active provider mode: Usable inside Ubume",
+            ].join("\n"),
         };
 
       case "model": {
@@ -479,9 +478,15 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
         const detectedModels = context.modelCapabilities
           ? getSelectableModelCapabilities(context.modelCapabilities)
           : [];
-        const detectedModel = detectedModels.find((model) => model.model === arg || model.id === arg);
+        const detectedModel = detectedModels.find(
+          (model) => model.model === arg || model.id === arg,
+        );
         if (detectedModel) {
-          return { action: "model", value: detectedModel.model, message: `Model switched to ${detectedModel.model}` };
+          return {
+            action: "model",
+            value: detectedModel.model,
+            message: `Model switched to ${detectedModel.model}`,
+          };
         }
         if (!context.modelCapabilities && (AVAILABLE_MODELS as readonly string[]).includes(arg)) {
           return { action: "model", value: arg, message: `Model switched to ${arg}` };
@@ -526,7 +531,10 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       case "reasoning": {
         if (!arg) return { action: "open_reasoning_picker" };
         const normalized = expandReasoningAliases(arg);
-        const modelCapability = findModelCapability(context.modelCapabilities, context.runtime.model);
+        const modelCapability = findModelCapability(
+          context.modelCapabilities,
+          context.runtime.model,
+        );
         const detectedLevels = modelCapability?.supportedReasoningLevels;
         if (detectedLevels && detectedLevels.some((item) => item.id === normalized)) {
           return {
@@ -577,7 +585,11 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           return { action: "open_settings_panel" };
         }
 
-        if (normalizedArg === "workspace" || normalizedArg === "workspace-display" || normalizedArg === "directory") {
+        if (
+          normalizedArg === "workspace" ||
+          normalizedArg === "workspace-display" ||
+          normalizedArg === "directory"
+        ) {
           return {
             action: "setting_workspace_display",
             message: [
@@ -590,7 +602,9 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           };
         }
 
-        const workspaceSettingPrefix = ["workspace ", "workspace-display ", "directory "].find((prefix) => normalizedArg.startsWith(prefix));
+        const workspaceSettingPrefix = ["workspace ", "workspace-display ", "directory "].find(
+          (prefix) => normalizedArg.startsWith(prefix),
+        );
         if (workspaceSettingPrefix) {
           const nextValue = normalizedArg.slice(workspaceSettingPrefix.length).trim();
           // "normal" was the legacy default label before "dir" was introduced
@@ -626,7 +640,9 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           };
         }
 
-        const terminalTitleSettingPrefix = ["terminal-title ", "terminal "].find((prefix) => normalizedArg.startsWith(prefix));
+        const terminalTitleSettingPrefix = ["terminal-title ", "terminal "].find((prefix) =>
+          normalizedArg.startsWith(prefix),
+        );
         if (terminalTitleSettingPrefix) {
           const nextValue = normalizedArg.slice(terminalTitleSettingPrefix.length).trim();
           if (WORKSPACE_DISPLAY_MODES.includes(nextValue as WorkspaceDisplayMode)) {
@@ -669,7 +685,8 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
 
         return {
           action: "unknown",
-          message: "Usage: /setting, /setting workspace [dir|name|simple], /setting terminal-title [dir|name|simple], or /setting busy-loader [true|false]",
+          message:
+            "Usage: /setting, /setting workspace [dir|name|simple], /setting terminal-title [dir|name|simple], or /setting busy-loader [true|false]",
         };
       }
 
@@ -689,9 +706,9 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       }
 
       case "backends": {
-        const list = AVAILABLE_BACKENDS
-          .map((item, index) => `  ${index + 1}. ${item.label} (${item.id})`)
-          .join("\n");
+        const list = AVAILABLE_BACKENDS.map(
+          (item, index) => `  ${index + 1}. ${item.label} (${item.id})`,
+        ).join("\n");
         return {
           action: "backends",
           message: `Available backends:\n${list}\n\nCurrent: ${formatBackendLabel(context.runtime.provider)}`,
@@ -755,7 +772,8 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
 
         return {
           action: "unknown",
-          message: "Unknown config command. Use /config, /config status, or /config trust [status|on|off].",
+          message:
+            "Unknown config command. Use /config, /config status, or /config trust [status|on|off].",
         };
       }
 
@@ -773,7 +791,8 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
         }
         return {
           action: "unknown",
-          message: "Unknown auth option. Use /auth, /auth status, or one of the documented preference ids.",
+          message:
+            "Unknown auth option. Use /auth, /auth status, or one of the documented preference ids.",
         };
       }
 
@@ -787,7 +806,9 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
               projectInstructions: context.projectInstructions ?? null,
             }),
             context.routeStatusMessage,
-          ].filter((line): line is string => Boolean(line)).join("\n\n"),
+          ]
+            .filter((line): line is string => Boolean(line))
+            .join("\n\n"),
         };
 
       case "permissions": {
@@ -834,17 +855,21 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
       case "paste-image":
         return { action: "paste_image" };
 
-      case "queue": return { action: "queue" };
-      case "transcript": return { action: "transcript" };
-      case "diff": return { action: "diff" };
-      case "rewind": return { action: "rewind" };
-      case "send-now": return { action: "send_now" };
+      case "queue":
+        return { action: "queue" };
+      case "transcript":
+        return { action: "transcript" };
+      case "diff":
+        return { action: "diff" };
+      case "rewind":
+        return { action: "rewind" };
+      case "send-now":
+        return { action: "send_now" };
       case "resume":
         return { action: "resume" };
 
       case "themes":
         return { action: "open_theme_picker" };
-
 
       case "verbose":
         return { action: "verbose_toggle" };
@@ -891,7 +916,7 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
           action: "unknown",
           message: `Unknown command: /${cmd}. Type /help for available commands.`,
         };
-      }
+    }
   }
 
   // "?cmd" is a common mistype of "/cmd" — suggest the corrected form

@@ -20,9 +20,15 @@ test("large paste labels use Unicode character counts and the 1000 character thr
 test("pasted labels expand to raw provider content in occurrence order", () => {
   const first = createPastedContentToken("x".repeat(1_000));
   const second = createPastedContentToken("y".repeat(1_000));
-  const registry = new Map([[first, ["first raw paste"]], [second, ["second raw paste"]]]);
+  const registry = new Map([
+    [first, ["first raw paste"]],
+    [second, ["second raw paste"]],
+  ]);
   assert.notEqual(first, second);
-  assert.equal(expandPastedContent(`before ${first} between ${second} after`, registry), "before first raw paste between second raw paste after");
+  assert.equal(
+    expandPastedContent(`before ${first} between ${second} after`, registry),
+    "before first raw paste between second raw paste after",
+  );
 });
 
 test("cursor movement and deletion treat a pasted label as an atomic span", () => {
@@ -30,8 +36,14 @@ test("cursor movement and deletion treat a pasted label as an atomic span", () =
   const value = `a${label}b`;
   assert.equal(moveAcrossPastedContent(value, 5, "right"), 1 + label.length);
   assert.equal(moveAcrossPastedContent(value, 5, "left"), 1);
-  assert.deepEqual(deleteAdjacentPastedContent(value, 1 + label.length, "backward"), { value: "ab", cursorOffset: 1 });
-  assert.deepEqual(deleteAdjacentPastedContent(value, 1, "forward"), { value: "ab", cursorOffset: 1 });
+  assert.deepEqual(deleteAdjacentPastedContent(value, 1 + label.length, "backward"), {
+    value: "ab",
+    cursorOffset: 1,
+  });
+  assert.deepEqual(deleteAdjacentPastedContent(value, 1, "forward"), {
+    value: "ab",
+    cursorOffset: 1,
+  });
 });
 
 test("cursor movement and deletion treat image attachment chips atomically", () => {
@@ -51,6 +63,16 @@ test("cursor movement and deletion treat image attachment chips atomically", () 
 test("unresolved attachments are rejected before expansion while attached literal labels remain valid", () => {
   const token = createAtomicContentToken("[File: example.ts]");
   assert.throws(() => assertAttachedContent(token, new Map(), new Map(), new Map()), /unresolved/);
-  assert.doesNotThrow(() => assertAttachedContent(token, new Map(), new Map(), new Map([[token, { content: "[File: literal]" }]])));
-  assert.throws(() => assertAttachedContent("[Image: missing.png]", new Map(), new Map(), new Map()), /image attachment/);
+  assert.doesNotThrow(() =>
+    assertAttachedContent(
+      token,
+      new Map(),
+      new Map(),
+      new Map([[token, { content: "[File: literal]" }]]),
+    ),
+  );
+  assert.throws(
+    () => assertAttachedContent("[Image: missing.png]", new Map(), new Map(), new Map()),
+    /image attachment/,
+  );
 });

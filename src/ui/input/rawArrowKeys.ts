@@ -18,7 +18,7 @@ const ARROW_PATTERN = new RegExp(`${ESC}(?:\\[[0-9;]*|O)([ABCD])`);
 /** Resolve an arrow key from a raw stdin chunk, or null when it holds none. */
 export function getArrowDirection(raw: string): ArrowDirection | null {
   const finalByte = ARROW_PATTERN.exec(raw)?.[1];
-  return finalByte ? FINAL_BYTE_DIRECTIONS[finalByte] ?? null : null;
+  return finalByte ? (FINAL_BYTE_DIRECTIONS[finalByte] ?? null) : null;
 }
 
 /** Horizontal-only variant for menus that ignore vertical movement. */

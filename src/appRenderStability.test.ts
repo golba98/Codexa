@@ -5,13 +5,43 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "app.tsx"), "utf8");
-const appShellSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "AppShell.tsx"), "utf8");
-const transcriptShellSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "timeline", "TranscriptShell.tsx"), "utf8");
-const composerSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "BottomComposer.tsx"), "utf8");
-const launcherSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "ubume.js"), "utf8");
-const indexSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "index.tsx"), "utf8");
-const layoutSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "ui", "layout.ts"), "utf8");
-const clearBoundarySource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "core", "terminal", "clearFrameBoundary.ts"), "utf8");
+const appShellSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "AppShell.tsx"),
+  "utf8",
+);
+const transcriptShellSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "ui", "timeline", "TranscriptShell.tsx"),
+  "utf8",
+);
+const composerSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "BottomComposer.tsx"),
+  "utf8",
+);
+const launcherSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "ubume.js"),
+  "utf8",
+);
+const indexSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "index.tsx"),
+  "utf8",
+);
+const layoutSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "ui", "layout.ts"),
+  "utf8",
+);
+const clearBoundarySource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "core", "terminal", "clearFrameBoundary.ts"),
+  "utf8",
+);
+
+/** Returns the source of a top-level `useCallback` in App, independent of formatting. */
+function callbackBody(source: string, name: string): string | undefined {
+  const start = source.indexOf(`const ${name} = useCallback(`);
+  if (start < 0) return undefined;
+  const rest = source.slice(start);
+  const end = rest.search(/\n  (?:\}, \[|\);)/);
+  return end < 0 ? undefined : rest.slice(0, end);
+}
 
 test("App does not start terminal title guards during busy rendering", () => {
   assert.doesNotMatch(appSource, /debugEventName: "busy-guard"/);
@@ -50,7 +80,10 @@ test("TranscriptShell owns native static history while AppShell remains the over
   assert.match(transcriptShellSource, /providerLabel: runtimeSummary\?\.providerLabel/);
   assert.doesNotMatch(transcriptShellSource, /staticOffsetRef/);
   assert.doesNotMatch(transcriptShellSource, /clear-offset-\$\{clearCount\}/);
-  assert.match(transcriptShellSource, /key=\{`clear-\$\{props\.clearCount \?\? 0\}-repaint-\$\{props\.repaintGeneration \?\? 0\}`\}/);
+  assert.match(
+    transcriptShellSource,
+    /key=\{`clear-\$\{props\.clearCount \?\? 0\}-repaint-\$\{props\.repaintGeneration \?\? 0\}`\}/,
+  );
   assert.match(appShellSource, /MemoizedTopHeader/);
   assert.doesNotMatch(appShellSource, /import \{[^}]*Static[^}]*\} from "ink"/);
   assert.doesNotMatch(appShellSource, /<Static\b/);
@@ -76,14 +109,17 @@ test("Local startup discovery refreshes active context metadata without a model 
 test("Update prompt owns the visible update notice so the header card is not duplicated", () => {
   assert.match(
     appSource,
-    /screen !== "update-prompt" && updateCheckResult\?\.status === "update-available"/,
+    /screen !== "update-prompt" &&\s*updateCheckResult\?\.status === "update-available"/,
   );
   assert.match(appSource, /screen === "update-prompt"[\s\S]*?<UpdatePromptPanel/);
 });
 
 test("startup update overlay defers TranscriptShell's first Static mount until main is visible", () => {
   assert.match(appSource, /const transcriptHasMountedRef = useRef\(screen === "main"\)/);
-  assert.match(appSource, /const shouldMountTranscript = screen === "main" \|\| transcriptHasMountedRef\.current/);
+  assert.match(
+    appSource,
+    /const shouldMountTranscript = screen === "main" \|\| transcriptHasMountedRef\.current/,
+  );
   assert.match(appSource, /\{shouldMountTranscript && \(\s*<TranscriptShell/);
   assert.match(appSource, /if \(screen === "main"\) \{\s*transcriptHasMountedRef\.current = true/);
   assert.doesNotMatch(appSource, /returnFromUpdateOverlay[\s\S]*?clearViewport/);
@@ -103,11 +139,14 @@ test("startup update checks run before the composer can accept input", () => {
 test("Startup provider migration notice is seeded before the first composer frame", () => {
   assert.match(appSource, /function createStartupStaticEvents/);
   assert.doesNotMatch(appSource, /createLaunchModeEvent|buildDevLaunchNotice/);
-  assert.match(appSource, /createProviderMigrationNoticeEvent\(providerWorkspaceConfig\.migrationNotice\)/);
+  assert.match(
+    appSource,
+    /createProviderMigrationNoticeEvent\(providerWorkspaceConfig\.migrationNotice\)/,
+  );
   assert.match(appSource, /useAppSessionState\(\(\) => \{\s*return createStartupStaticEvents\(/);
   assert.match(
     appSource,
-    /providerMigrationNoticeShownRef = useRef\(Boolean\(initialProviderWorkspaceConfig\.current\.migrationNotice\)\)/,
+    /providerMigrationNoticeShownRef = useRef\(\s*Boolean\(initialProviderWorkspaceConfig\.current\.migrationNotice\),?\s*\)/,
   );
   assert.doesNotMatch(appSource, /appendSystemEvent\(\s*"Provider migrated"/);
 });
@@ -129,26 +168,32 @@ test("TranscriptShell commits history natively and keeps only mutable rows live"
   assert.match(transcriptShellSource, /<Static\b/);
   assert.match(transcriptShellSource, /nativeTranscript\.liveRows/);
   assert.doesNotMatch(transcriptShellSource, /<Timeline\s|mouseCapture|History /);
-  assert.doesNotMatch(transcriptShellSource, /clearTranscript|clearViewport|resetInkOutputForFreshFrame/);
+  assert.doesNotMatch(
+    transcriptShellSource,
+    /clearTranscript|clearViewport|resetInkOutputForFreshFrame/,
+  );
 });
 
 test("/clear and conversation resume drop the timeline row caches", () => {
-  const clearBody = appSource.match(/const handleClear = useCallback\((?:async )?\(\) => \{([\s\S]*?)\n  \}, \[/);
+  const clearBody = callbackBody(appSource, "handleClear");
   assert.ok(clearBody, "handleClear should exist");
-  assert.match(clearBody[1]!, /resetTimelineMeasureCaches\(\)/);
-  const resumeBody = appSource.match(/const resumeConversation = useCallback\((?:async )?\(id: string\) => \{([\s\S]*?)\n  \}, \[/);
+  assert.match(clearBody, /resetTimelineMeasureCaches\(\)/);
+  const resumeBody = callbackBody(appSource, "resumeConversation");
   assert.ok(resumeBody, "resumeConversation should exist");
-  assert.match(resumeBody[1]!, /resetTimelineMeasureCaches\(\)/);
+  assert.match(resumeBody, /resetTimelineMeasureCaches\(\)/);
 });
 
 test("Settings panel workspace display save path does not append Settings transcript events", () => {
-  const match = appSource.match(/const saveSettingsFromPanel = useCallback\(\(nextSettings: UserSettingValues\) => \{([\s\S]*?)\n  \}, \[/);
-  assert.ok(match, "saveSettingsFromPanel callback should exist");
-  assert.doesNotMatch(match[1] ?? "", /appendSystemEvent\("Settings"/);
+  const body = callbackBody(appSource, "saveSettingsFromPanel");
+  assert.ok(body, "saveSettingsFromPanel callback should exist");
+  assert.doesNotMatch(body, /appendSystemEvent\(\s*"Settings"/);
 });
 
 test("Settings panel terminal title save path updates only persisted title state", () => {
-  assert.match(appSource, /if \(nextSettings\.terminalTitleMode !== terminalTitleMode\) \{\s*setTerminalTitleMode\(nextSettings\.terminalTitleMode\);/);
+  assert.match(
+    appSource,
+    /if \(nextSettings\.terminalTitleMode !== terminalTitleMode\) \{\s*setTerminalTitleMode\(nextSettings\.terminalTitleMode\);/,
+  );
   assert.doesNotMatch(appSource, /setIntendedTerminalTitle\(terminalTitleLabel/);
   assert.doesNotMatch(appSource, /refreshTerminalTitle\(/);
 });
@@ -170,7 +215,10 @@ test("Index owns a single startup terminal title write before Ink renders", () =
 test("Prompt and shell busy paths do not write titles before state dispatch", () => {
   assert.doesNotMatch(appSource, /writeCurrentTerminalTitleBeforeStateChange/);
   assert.match(appSource, /type: "SUBMIT_PROMPT_RUN"/);
-  assert.match(appSource, /dispatchSession\(\{ type: "UI_ACTION", action: \{ type: "SHELL_STARTED"/);
+  assert.match(
+    appSource,
+    /dispatchSession\(\{ type: "UI_ACTION", action: \{ type: "SHELL_STARTED"/,
+  );
 });
 
 test("Terminal title cold-start retries are not mounted inside App", () => {
@@ -215,36 +263,57 @@ test("Installed launcher does not own terminal titles for interactive TTY launch
 });
 
 test("/clear resolves the live Ink instance behind stdout and memoizes it", () => {
-  assert.match(appSource, /const inkInstance = useMemo\(\(\) => resolveInkRenderInstance\(stdout\), \[stdout\]\)/);
-  assert.match(appSource, /import \{ resolveInkRenderInstance, resetInkOutputForFreshFrame \} from "\.\/core\/terminal\/inkRenderReset\.js"/);
-  assert.match(appSource, /import \{ createClearFrameBoundaryController \} from "\.\/core\/terminal\/clearFrameBoundary\.js"/);
+  assert.match(
+    appSource,
+    /const inkInstance = useMemo\(\(\) => resolveInkRenderInstance\(stdout\), \[stdout\]\)/,
+  );
+  assert.match(
+    appSource,
+    /import \{[^}]*\bresolveInkRenderInstance\b[^}]*\} from "\.\/core\/terminal\/inkRenderReset\.js"/,
+  );
+  assert.match(
+    appSource,
+    /import \{ createClearFrameBoundaryController \} from "\.\/core\/terminal\/clearFrameBoundary\.js"/,
+  );
 });
 
 test("/clear arms a fresh render generation before transcript reset", () => {
-  const armMatch = appSource.match(/const armTranscriptReplacement = useCallback\(\(source: string\) => \{([\s\S]*?)\n  \}, \[/);
-  assert.ok(armMatch, "shared transcript-replacement arming should exist");
-  assert.ok((armMatch[1] ?? "").includes("beginClearGeneration(clearGeneration)"), "arming should begin a clear generation");
-  const handleClearMatch = appSource.match(/const handleClear = useCallback\((?:async )?\(\) => \{([\s\S]*?)\n  \}, \[/);
-  assert.ok(handleClearMatch, "handleClear callback should exist");
-  const body = handleClearMatch[1] ?? "";
+  const armBody = callbackBody(appSource, "armTranscriptReplacement");
+  assert.ok(armBody, "shared transcript-replacement arming should exist");
+  assert.ok(
+    armBody.includes("beginClearGeneration(clearGeneration)"),
+    "arming should begin a clear generation",
+  );
+  const body = callbackBody(appSource, "handleClear");
+  assert.ok(body, "handleClear callback should exist");
   const armBoundaryIndex = body.indexOf('armTranscriptReplacement("src/app.tsx:handleClear")');
   const seedEventsIndex = body.indexOf("createStartupStaticEvents({");
-  const resetToHomeIndex = body.indexOf("resetToHomeScreen(createStartupStaticEvents({");
+  const resetToHomeIndex = body.search(/resetToHomeScreen\(\s*createStartupStaticEvents\(\{/);
   const finishIndex = body.indexOf("replacement.finish()");
   assert.ok(armBoundaryIndex >= 0, "handleClear should arm clear-generation boundary");
   assert.ok(seedEventsIndex >= 0, "handleClear should create fresh home-screen seed events");
   assert.ok(resetToHomeIndex >= 0, "handleClear should reset through the shared home-screen path");
-  assert.ok(armBoundaryIndex < resetToHomeIndex, "clear generation should be armed before transcript reset");
+  assert.ok(
+    armBoundaryIndex < resetToHomeIndex,
+    "clear generation should be armed before transcript reset",
+  );
   assert.ok(finishIndex > resetToHomeIndex, "the fallback check runs after the transcript reset");
   assert.match(appSource, /const resetToHomeScreen = useCallback/);
-  assert.match(appSource, /type: "CLEAR_TRANSCRIPT",\s*seedEvents/s, "home reset should seed the transcript reset");
-  assert.match(appSource, /focusManager\.focus\(FOCUS_IDS\.composer\)/, "clear should return focus to the prompt");
+  assert.match(
+    appSource,
+    /type: "CLEAR_TRANSCRIPT",\s*seedEvents/s,
+    "home reset should seed the transcript reset",
+  );
+  assert.match(
+    appSource,
+    /focusManager\.focus\(FOCUS_IDS\.composer\)/,
+    "clear should return focus to the prompt",
+  );
 });
 
 test("/resume arms the clear boundary before swapping the transcript so the logo is not printed twice", () => {
-  const resumeMatch = appSource.match(/const resumeConversation = useCallback\((?:async )?\(id: string\) => \{([\s\S]*?)\n  \}, \[/);
-  assert.ok(resumeMatch, "resumeConversation callback should exist");
-  const body = resumeMatch[1] ?? "";
+  const body = callbackBody(appSource, "resumeConversation");
+  assert.ok(body, "resumeConversation callback should exist");
   const armIndex = body.indexOf('armTranscriptReplacement("src/app.tsx:resumeConversation")');
   const swapIndex = body.indexOf('type: "RESTORE_SESSION"');
   const finishIndex = body.indexOf("replacement.finish()");
@@ -259,7 +328,11 @@ test("Ink render-cache reset is reserved for explicit clear and redraw", () => {
   // atomically with the very frame it writes (no transient blank). It must NOT be
   // called from the out-of-band resize paths (index.tsx onResize / ui/layout.ts),
   // where a clear/reset would blank the screen until the next React commit.
-  assert.match(clearBoundarySource, /resetInkOutputForFreshFrame/, "render-path wrapper owns the cache reset");
+  assert.match(
+    clearBoundarySource,
+    /resetInkOutputForFreshFrame/,
+    "render-path wrapper owns the cache reset",
+  );
   const appResetCalls = appSource.match(/resetInkOutputForFreshFrame\(/g) ?? [];
   assert.equal(appResetCalls.length, 2, "app.tsx resets for clear fallback and explicit redraw");
   assert.doesNotMatch(appSource, /theme:viewportClear|updateOverlay:viewportClear/);
@@ -278,8 +351,9 @@ test("Width resize repaints the transcript through the frame boundary", () => {
   assert.match(appSource, /onWidthResizeRefresh: \(\) => bumpStaticRepaintGeneration/);
   // Viewport-only clears are reserved for the alternate screen buffer, which has
   // no scrollback (overlay enter / overlay resize) — never for the transcript.
-  const viewportClearReasons = [...clearBoundarySource.matchAll(/clearViewport\(`\$\{source\}:([a-zA-Z]+)`\)/g)]
-    .map((match) => match[1]);
+  const viewportClearReasons = [
+    ...clearBoundarySource.matchAll(/clearViewport\(`\$\{source\}:([a-zA-Z]+)`\)/g),
+  ].map((match) => match[1]);
   assert.ok(viewportClearReasons.length > 0, "overlay paths home/clear the alternate buffer");
   assert.equal(
     viewportClearReasons.every((reason) => reason?.startsWith("overlay")),
@@ -289,9 +363,8 @@ test("Width resize repaints the transcript through the frame boundary", () => {
 });
 
 test("/clear fallback preserves clear-then-reset ordering when boundary cannot arm", () => {
-  const armMatch = appSource.match(/const armTranscriptReplacement = useCallback\(\(source: string\) => \{([\s\S]*?)\n  \}, \[/);
-  assert.ok(armMatch, "shared transcript-replacement arming should exist");
-  const body = armMatch[1] ?? "";
+  const body = callbackBody(appSource, "armTranscriptReplacement");
+  assert.ok(body, "shared transcript-replacement arming should exist");
   const fallbackIndex = body.indexOf("if (clearBoundaryArmed) return;");
   const clearIndex = body.indexOf("terminalControl.clearTranscript(`${source}:fallback`)");
   const resetIndex = body.indexOf("resetInkOutputForFreshFrame({ instance: inkInstance");
@@ -306,7 +379,10 @@ test("/clear forces a deterministic post-clear repaint when the boundary signals
   // gate. The syncRenderState effect must consume the boundary's readiness signal
   // and force exactly one more commit so the authoritative post-clear frame is
   // flushed deterministically instead of waiting on an incidental later render.
-  assert.match(appSource, /const postClearRepaintPending = clearFrameBoundaryController\.syncRenderState\(/);
+  assert.match(
+    appSource,
+    /const postClearRepaintPending = clearFrameBoundaryController\.syncRenderState\(/,
+  );
   assert.match(appSource, /if \(postClearRepaintPending\) \{[\s\S]*?bumpPostClearRepaint\(/);
 });
 
@@ -317,7 +393,10 @@ test("Startup keeps a single resize listener and disables Ink's competing handle
   // onResize stays imperative-free: it must not force Ink renders or clears.
   const onResizeMatch = indexSource.match(/const onResize = \(\) => \{([\s\S]*?)\n  \};/);
   assert.ok(onResizeMatch, "onResize handler should exist");
-  assert.doesNotMatch(onResizeMatch[1] ?? "", /clearTranscript|clearViewport|resetInkOutputForFreshFrame|\.clear\(\)/);
+  assert.doesNotMatch(
+    onResizeMatch[1] ?? "",
+    /clearTranscript|clearViewport|resetInkOutputForFreshFrame|\.clear\(\)/,
+  );
 });
 
 test("Main UI starts in the normal buffer and overlays own alternate screen mode", () => {
@@ -357,6 +436,12 @@ test("App holds a process-lifetime stdin raw-mode lease so composer shell swaps 
   // composer moves between AppShell and TranscriptShell (overlay exit), which
   // removes/re-adds its 'readable' listener; two such cycles in one tick flip
   // stdin into flowing mode and Ink never receives input again.
-  assert.match(appSource, /import \{ useStdinRawModeLease \} from "\.\/ui\/input\/useStdinRawModeLease\.js"/);
-  assert.match(appSource, /const \{ stdin \} = useStdin\(\);\s*(?:\/\/[^\n]*\n\s*)*useStdinRawModeLease\(\);/);
+  assert.match(
+    appSource,
+    /import \{ useStdinRawModeLease \} from "\.\/ui\/input\/useStdinRawModeLease\.js"/,
+  );
+  assert.match(
+    appSource,
+    /const \{ stdin \} = useStdin\(\);\s*(?:\/\/[^\n]*\n\s*)*useStdinRawModeLease\(\);/,
+  );
 });

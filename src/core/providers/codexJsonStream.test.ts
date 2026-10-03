@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { BackendProgressUpdate } from "./types.js";
 import type { RunToolActivity } from "../../session/types.js";
 import { createCodexJsonStreamParser } from "./codexJsonStream.js";
+import type { BackendProgressUpdate } from "./types.js";
 
 test("streams incremental agent_message growth as assistant deltas", () => {
   const assistant: string[] = [];
@@ -12,21 +12,41 @@ test("streams incremental agent_message growth as assistant deltas", () => {
     onFinalAnswerObserved: (response) => observedFinalAnswers.push(response),
   });
 
-  assert.equal(parser.feedLine(JSON.stringify({
-    type: "item.started",
-    item: { id: "msg-1", type: "agent_message", text: "Hello" },
-  })), true);
-  assert.equal(parser.feedLine(JSON.stringify({
-    type: "item.updated",
-    item: { id: "msg-1", type: "agent_message", text: "Hello world" },
-  })), true);
-  assert.equal(parser.feedLine(JSON.stringify({
-    type: "item.completed",
-    item: { id: "msg-1", type: "agent_message", text: "Hello world!" },
-  })), true);
-  assert.equal(parser.feedLine(JSON.stringify({
-    type: "turn.completed",
-  })), true);
+  assert.equal(
+    parser.feedLine(
+      JSON.stringify({
+        type: "item.started",
+        item: { id: "msg-1", type: "agent_message", text: "Hello" },
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    parser.feedLine(
+      JSON.stringify({
+        type: "item.updated",
+        item: { id: "msg-1", type: "agent_message", text: "Hello world" },
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    parser.feedLine(
+      JSON.stringify({
+        type: "item.completed",
+        item: { id: "msg-1", type: "agent_message", text: "Hello world!" },
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    parser.feedLine(
+      JSON.stringify({
+        type: "turn.completed",
+      }),
+    ),
+    true,
+  );
 
   assert.deepEqual(assistant, ["Hello", " world", "!"]);
   assert.deepEqual(observedFinalAnswers, ["Hello world!"]);
@@ -39,27 +59,31 @@ test("surfaces command execution lifecycle as tool activity", () => {
     onToolActivity: (activity) => toolActivities.push(activity),
   });
 
-  parser.feedLine(JSON.stringify({
-    type: "item.started",
-    item: {
-      id: "cmd-1",
-      type: "command_execution",
-      command: "rg --files",
-      status: "in_progress",
-      aggregated_output: "",
-    },
-  }));
-  parser.feedLine(JSON.stringify({
-    type: "item.completed",
-    item: {
-      id: "cmd-1",
-      type: "command_execution",
-      command: "rg --files",
-      status: "completed",
-      aggregated_output: "src/app.tsx\nsrc/ui/Timeline.tsx\n",
-      exit_code: 0,
-    },
-  }));
+  parser.feedLine(
+    JSON.stringify({
+      type: "item.started",
+      item: {
+        id: "cmd-1",
+        type: "command_execution",
+        command: "rg --files",
+        status: "in_progress",
+        aggregated_output: "",
+      },
+    }),
+  );
+  parser.feedLine(
+    JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "cmd-1",
+        type: "command_execution",
+        command: "rg --files",
+        status: "completed",
+        aggregated_output: "src/app.tsx\nsrc/ui/Timeline.tsx\n",
+        exit_code: 0,
+      },
+    }),
+  );
 
   assert.equal(toolActivities.length, 2);
   assert.equal(toolActivities[0]?.status, "running");
@@ -74,29 +98,37 @@ test("emits progress updates for todo_list and reasoning items", () => {
     onProgress: (update) => progress.push(update),
   });
 
-  parser.feedLine(JSON.stringify({
-    type: "item.updated",
-    item: {
-      id: "todo-1",
-      type: "todo_list",
-      items: [
-        { text: "Inspect workspace", completed: true },
-        { text: "Write file", completed: false },
-      ],
-    },
-  }));
-  parser.feedLine(JSON.stringify({
-    type: "item.updated",
-    item: {
-      id: "reason-1",
-      type: "reasoning",
-      text: "Verifying the generated output\n\nChecking edge cases",
-    },
-  }));
+  parser.feedLine(
+    JSON.stringify({
+      type: "item.updated",
+      item: {
+        id: "todo-1",
+        type: "todo_list",
+        items: [
+          { text: "Inspect workspace", completed: true },
+          { text: "Write file", completed: false },
+        ],
+      },
+    }),
+  );
+  parser.feedLine(
+    JSON.stringify({
+      type: "item.updated",
+      item: {
+        id: "reason-1",
+        type: "reasoning",
+        text: "Verifying the generated output\n\nChecking edge cases",
+      },
+    }),
+  );
 
   assert.deepEqual(progress, [
     { id: "todo-1", source: "todo", text: "Todo 1/2: Write file" },
-    { id: "reason-1", source: "reasoning", text: "Verifying the generated output\n\nChecking edge cases" },
+    {
+      id: "reason-1",
+      source: "reasoning",
+      text: "Verifying the generated output\n\nChecking edge cases",
+    },
   ]);
 });
 
@@ -106,36 +138,46 @@ test("reuses the same progress id when a structured update grows", () => {
     onProgress: (update) => progress.push(update),
   });
 
-  parser.feedLine(JSON.stringify({
-    type: "item.updated",
-    item: {
-      id: "reason-7",
-      type: "reasoning",
-      text: "Inspecting the config",
-    },
-  }));
-  parser.feedLine(JSON.stringify({
-    type: "item.updated",
-    item: {
-      id: "reason-7",
-      type: "reasoning",
-      text: "Inspecting the config\n\nComparing runtime defaults",
-    },
-  }));
+  parser.feedLine(
+    JSON.stringify({
+      type: "item.updated",
+      item: {
+        id: "reason-7",
+        type: "reasoning",
+        text: "Inspecting the config",
+      },
+    }),
+  );
+  parser.feedLine(
+    JSON.stringify({
+      type: "item.updated",
+      item: {
+        id: "reason-7",
+        type: "reasoning",
+        text: "Inspecting the config\n\nComparing runtime defaults",
+      },
+    }),
+  );
 
   assert.deepEqual(progress, [
     { id: "reason-7", source: "reasoning", text: "Inspecting the config" },
-    { id: "reason-7", source: "reasoning", text: "Inspecting the config\n\nComparing runtime defaults" },
+    {
+      id: "reason-7",
+      source: "reasoning",
+      text: "Inspecting the config\n\nComparing runtime defaults",
+    },
   ]);
 });
 
 test("captures turn failures from structured events", () => {
   const parser = createCodexJsonStreamParser({});
 
-  parser.feedLine(JSON.stringify({
-    type: "turn.failed",
-    error: { message: "Permission denied" },
-  }));
+  parser.feedLine(
+    JSON.stringify({
+      type: "turn.failed",
+      error: { message: "Permission denied" },
+    }),
+  );
 
   assert.equal(parser.getFailureMessage(), "Permission denied");
 });

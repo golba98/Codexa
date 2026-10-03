@@ -1,4 +1,4 @@
-import React, { createContext, useContext, ReactNode } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import * as renderDebug from "../core/perf/renderDebug.js";
 
 export interface Theme {
@@ -251,7 +251,11 @@ interface ThemeProviderProps {
   children: ReactNode;
 }
 
-export function ThemeProvider({ theme: themeName = "dark", customTheme, children }: ThemeProviderProps) {
+export function ThemeProvider({
+  theme: themeName = "dark",
+  customTheme,
+  children,
+}: ThemeProviderProps) {
   renderDebug.useLifecycleDebug("ThemeProvider", {
     themeName,
     customTheme: Boolean(customTheme),
@@ -262,11 +266,7 @@ export function ThemeProvider({ theme: themeName = "dark", customTheme, children
   });
   const baseTheme = THEMES[themeName] || DARK_THEME;
   const activeTheme = themeName === "custom" ? { ...DARK_THEME, ...customTheme } : baseTheme;
-  return (
-    <ThemeContext.Provider value={activeTheme as Theme}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={activeTheme as Theme}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

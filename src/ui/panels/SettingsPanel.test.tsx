@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
-import { Box, Text, render } from "ink";
+import test from "node:test";
+import { Box, render, Text } from "ink";
+import React from "react";
 import type { SettingDefinition } from "../../config/settings.js";
-import { SettingsPanel } from "./SettingsPanel.js";
 import { ThemeProvider } from "../theme.js";
+import { SettingsPanel } from "./SettingsPanel.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;

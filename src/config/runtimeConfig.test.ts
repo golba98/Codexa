@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  DEFAULT_RUNTIME_CONFIG,
   addWritableRoot,
-  buildRuntimeSummary,
   buildCodexConfigOverrides,
+  buildRuntimeSummary,
+  DEFAULT_RUNTIME_CONFIG,
   diffRuntimeConfig,
   formatPermissionsStatus,
   formatRuntimeStatus,
@@ -39,14 +39,16 @@ test("mode inheritance resolves to expected approval and sandbox policies", () =
 });
 
 test("explicit policy overrides beat inherited mode defaults", () => {
-  const resolved = resolveRuntimeConfig(normalizeRuntimeConfig({
-    mode: "suggest",
-    policy: {
-      approvalPolicy: "never",
-      sandboxMode: "danger-full-access",
-      networkAccess: "enabled",
-    },
-  }));
+  const resolved = resolveRuntimeConfig(
+    normalizeRuntimeConfig({
+      mode: "suggest",
+      policy: {
+        approvalPolicy: "never",
+        sandboxMode: "danger-full-access",
+        networkAccess: "enabled",
+      },
+    }),
+  );
 
   assert.equal(resolved.policy.approvalPolicy, "never");
   assert.equal(resolved.policy.sandboxMode, "danger-full-access");
@@ -54,7 +56,10 @@ test("explicit policy overrides beat inherited mode defaults", () => {
 });
 
 test("writable roots normalize and dedupe", () => {
-  const withRoots = addWritableRoot(addWritableRoot(DEFAULT_RUNTIME_CONFIG, "C:/Repo"), "C:\\Repo\\");
+  const withRoots = addWritableRoot(
+    addWritableRoot(DEFAULT_RUNTIME_CONFIG, "C:/Repo"),
+    "C:\\Repo\\",
+  );
   assert.equal(withRoots.policy.writableRoots.length, 1);
 
   const removed = removeWritableRoot(withRoots, "c:/repo");
@@ -108,19 +113,21 @@ test("diffRuntimeConfig emits only fields that differ from the base", () => {
 });
 
 test("builds deterministic codex config overrides", () => {
-  const resolved = resolveRuntimeConfig(normalizeRuntimeConfig({
-    model: "gpt-5.4-mini",
-    mode: "suggest",
-    reasoningLevel: "medium",
-    policy: {
-      approvalPolicy: "never",
-      sandboxMode: "workspace-write",
-      networkAccess: "enabled",
-      writableRoots: ["C:/Repo/extra"],
-      serviceTier: "fast",
-      personality: "pragmatic",
-    },
-  }));
+  const resolved = resolveRuntimeConfig(
+    normalizeRuntimeConfig({
+      model: "gpt-5.4-mini",
+      mode: "suggest",
+      reasoningLevel: "medium",
+      policy: {
+        approvalPolicy: "never",
+        sandboxMode: "workspace-write",
+        networkAccess: "enabled",
+        writableRoots: ["C:/Repo/extra"],
+        serviceTier: "fast",
+        personality: "pragmatic",
+      },
+    }),
+  );
   const writableRoot = resolved.policy.writableRoots[0];
 
   assert.deepEqual(buildCodexConfigOverrides(resolved), [
@@ -134,12 +141,16 @@ test("builds deterministic codex config overrides", () => {
 });
 
 test("builds runtime summary with network and writable-root indicators", () => {
-  const summary = buildRuntimeSummary(resolveRuntimeConfig(normalizeRuntimeConfig({
-    policy: {
-      networkAccess: "enabled",
-      writableRoots: ["C:/Repo/extra"],
-    },
-  })));
+  const summary = buildRuntimeSummary(
+    resolveRuntimeConfig(
+      normalizeRuntimeConfig({
+        policy: {
+          networkAccess: "enabled",
+          writableRoots: ["C:/Repo/extra"],
+        },
+      }),
+    ),
+  );
 
   assert.equal(summary.networkLabel, "Net: on");
   assert.equal(summary.writableRootsLabel, "Roots: 1");

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTerminalModeController, setTerminalControlUIState, TERMINAL_SEQUENCES, writeTerminalControl } from "./terminalControl.js";
+import {
+  createTerminalModeController,
+  setTerminalControlUIState,
+  TERMINAL_SEQUENCES,
+  writeTerminalControl,
+} from "./terminalControl.js";
 
 test("mouse reporting enables only normal mouse tracking with SGR coordinates", () => {
   let writes = "";
@@ -12,7 +17,10 @@ test("mouse reporting enables only normal mouse tracking with SGR coordinates", 
 
   assert.equal(writes, "\x1b[?1000h\x1b[?1006h");
   assert.equal(TERMINAL_SEQUENCES.mouseEnable, "\x1b[?1000h\x1b[?1006h");
-  assert.doesNotMatch(writes, /\x1b\[\?1002h|\x1b\[\?1003h|\x1b\[\?1004h|\x1b\[\?1005h|\x1b\[\?1015h/);
+  assert.doesNotMatch(
+    writes,
+    /\x1b\[\?1002h|\x1b\[\?1003h|\x1b\[\?1004h|\x1b\[\?1005h|\x1b\[\?1015h/,
+  );
   assert.doesNotMatch(writes, /\x1b\[\?1049h|\x1b\[\?1049l|\x1b\[3J/);
 });
 
@@ -64,9 +72,14 @@ test("transcript clear is allowed while streaming state is active", () => {
   setTerminalControlUIState("RESPONDING");
 
   try {
-    writeTerminalControl((chunk) => {
-      writes += chunk;
-    }, "stdout", "test:transcriptClear", TERMINAL_SEQUENCES.transcriptClear);
+    writeTerminalControl(
+      (chunk) => {
+        writes += chunk;
+      },
+      "stdout",
+      "test:transcriptClear",
+      TERMINAL_SEQUENCES.transcriptClear,
+    );
   } finally {
     setTerminalControlUIState("IDLE");
   }

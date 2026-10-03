@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "child_process";
+import { type ChildProcess, spawn } from "child_process";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import { createTerminalTitleSequenceStripper } from "../terminal/terminalTitle.js";
 import { validateExecutableForSpawn } from "./processValidation.js";
@@ -62,7 +62,10 @@ function buildUserMessage(result: {
   signal: NodeJS.Signals | null;
   status: CommandResult["status"];
 }): string {
-  const stderrLine = sanitizeTerminalOutput(result.stderr).split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+  const stderrLine = sanitizeTerminalOutput(result.stderr)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
   if (result.status === "spawn_error" && result.code === "ENOENT") {
     return `\`${result.executable}\` is not installed or not available on PATH.`;
   }
@@ -90,7 +93,13 @@ function buildUserMessage(result: {
   return "Command completed.";
 }
 
-export function summarizeCommandResult(command: string, result: Pick<CommandResult, "status" | "exitCode" | "signal" | "stdout" | "stderr" | "userMessage">): string {
+export function summarizeCommandResult(
+  command: string,
+  result: Pick<
+    CommandResult,
+    "status" | "exitCode" | "signal" | "stdout" | "stderr" | "userMessage"
+  >,
+): string {
   if (result.status !== "completed" || result.exitCode !== 0 || result.signal) {
     return result.userMessage;
   }
@@ -127,7 +136,12 @@ export function summarizeCommandResult(command: string, result: Pick<CommandResu
 export function runCommand(
   spec: CommandSpec,
   handlers: CommandStreamHandlers = {},
-): { child: ChildProcess; result: Promise<CommandResult>; stopped?: Promise<void>; cancel: () => void } {
+): {
+  child: ChildProcess;
+  result: Promise<CommandResult>;
+  stopped?: Promise<void>;
+  cancel: () => void;
+} {
   return runProcess(spec, handlers);
 }
 
@@ -135,23 +149,37 @@ export function runShellCommand(
   command: string,
   options: Pick<CommandSpec, "cwd" | "env" | "timeoutMs">,
   handlers: CommandStreamHandlers = {},
-): { child: ChildProcess; result: Promise<CommandResult>; stopped?: Promise<void>; cancel: () => void } {
-  const shellSpec = process.platform === "win32"
-    ? { executable: "cmd.exe", args: ["/d", "/s", "/c", command] }
-    : { executable: "/bin/sh", args: ["-c", command] };
+): {
+  child: ChildProcess;
+  result: Promise<CommandResult>;
+  stopped?: Promise<void>;
+  cancel: () => void;
+} {
+  const shellSpec =
+    process.platform === "win32"
+      ? { executable: "cmd.exe", args: ["/d", "/s", "/c", command] }
+      : { executable: "/bin/sh", args: ["-c", command] };
 
-  return runProcess({
-    ...options,
-    executable: shellSpec.executable,
-    args: shellSpec.args,
-    displayExecutable: command,
-  }, handlers);
+  return runProcess(
+    {
+      ...options,
+      executable: shellSpec.executable,
+      args: shellSpec.args,
+      displayExecutable: command,
+    },
+    handlers,
+  );
 }
 
 function runProcess(
   spec: InternalCommandSpec,
   handlers: CommandStreamHandlers,
-): { child: ChildProcess; result: Promise<CommandResult>; stopped?: Promise<void>; cancel: () => void } {
+): {
+  child: ChildProcess;
+  result: Promise<CommandResult>;
+  stopped?: Promise<void>;
+  cancel: () => void;
+} {
   const startedAt = Date.now();
   const executable = validateExecutableForSpawn(spec.executable, {
     label: "Command executable",
@@ -185,7 +213,9 @@ function runProcess(
 
   if (spec.stdinData !== undefined) {
     try {
-      child.stdin?.on("error", () => { /* EPIPE when the process exits before reading stdin */ });
+      child.stdin?.on("error", () => {
+        /* EPIPE when the process exits before reading stdin */
+      });
       child.stdin?.write(spec.stdinData);
       child.stdin?.end();
     } catch {
@@ -194,19 +224,28 @@ function runProcess(
   }
 
   let resolveStopped: () => void = () => undefined;
-  const stopped = new Promise<void>((resolve) => { resolveStopped = resolve; });
+  const stopped = new Promise<void>((resolve) => {
+    resolveStopped = resolve;
+  });
   let killTimer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
   let stopping = false;
   const groupAlive = () => {
     if (process.platform === "win32" || !child.pid) return false;
-    try { process.kill(-child.pid, 0); return true; }
-    catch (error) { return (error as NodeJS.ErrnoException).code !== "ESRCH"; }
+    try {
+      process.kill(-child.pid, 0);
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code !== "ESRCH";
+    }
   };
   child.once("close", () => {
     closed = true;
     // A leader can exit while a detached descendant ignores SIGTERM.
-    if (!stopping || !groupAlive()) { if (killTimer) clearTimeout(killTimer); resolveStopped(); }
+    if (!stopping || !groupAlive()) {
+      if (killTimer) clearTimeout(killTimer);
+      resolveStopped();
+    }
   });
   const stop = () => {
     if (stopping) return;
@@ -214,16 +253,34 @@ function runProcess(
     const kill = (signal: NodeJS.Signals) => {
       try {
         if (process.platform !== "win32" && child.pid) process.kill(-child.pid, signal);
-        else if (process.platform === "win32" && child.pid) spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", shell: false }).on("error", () => child.kill(signal));
+        else if (process.platform === "win32" && child.pid)
+          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+            stdio: "ignore",
+            shell: false,
+          }).on("error", () => child.kill(signal));
         else child.kill(signal);
-      } catch { try { child.kill(signal); } catch { /* Already stopped. */ } }
+      } catch {
+        try {
+          child.kill(signal);
+        } catch {
+          /* Already stopped. */
+        }
+      }
     };
     kill("SIGTERM");
-    killTimer = setTimeout(() => { kill("SIGKILL"); if (closed) resolveStopped(); }, 1500);
+    killTimer = setTimeout(() => {
+      kill("SIGKILL");
+      if (closed) resolveStopped();
+    }, 1500);
     // Keep the escalation alive even after the group leader closes its stdio.
   };
   const result = new Promise<CommandResult>((resolve) => {
-    const finish = (partial: Omit<CommandResult, "stdout" | "stderr" | "startedAt" | "endedAt" | "durationMs" | "userMessage"> & { endedAt?: number }) => {
+    const finish = (
+      partial: Omit<
+        CommandResult,
+        "stdout" | "stderr" | "startedAt" | "endedAt" | "durationMs" | "userMessage"
+      > & { endedAt?: number },
+    ) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
       stdout += stdoutTitleStripper.flush();
       stderr += stderrTitleStripper.flush();

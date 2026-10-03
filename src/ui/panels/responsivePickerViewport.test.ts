@@ -16,8 +16,18 @@ test("shows every item when the list fits the calculated body rows", () => {
 });
 
 test("uses additional rows on larger terminals", () => {
-  const normal = calculateResponsivePickerViewport({ itemCount: 24, selectedIndex: 0, availableRows: 8, chromeRows: 1 });
-  const large = calculateResponsivePickerViewport({ itemCount: 24, selectedIndex: 0, availableRows: 24, chromeRows: 1 });
+  const normal = calculateResponsivePickerViewport({
+    itemCount: 24,
+    selectedIndex: 0,
+    availableRows: 8,
+    chromeRows: 1,
+  });
+  const large = calculateResponsivePickerViewport({
+    itemCount: 24,
+    selectedIndex: 0,
+    availableRows: 24,
+    chromeRows: 1,
+  });
   assert.ok(large.capacity > normal.capacity);
 });
 

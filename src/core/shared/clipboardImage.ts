@@ -14,20 +14,28 @@ type CommandRunner = (file: string, args: string[]) => Promise<Buffer>;
 
 function runBuffer(file: string, args: string[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { encoding: "buffer", maxBuffer: MAX_CLIPBOARD_IMAGE_BYTES + 1024 }, (error, stdout) => {
-      if (error) reject(error);
-      else resolve(Buffer.from(stdout));
-    });
+    execFile(
+      file,
+      args,
+      { encoding: "buffer", maxBuffer: MAX_CLIPBOARD_IMAGE_BYTES + 1024 },
+      (error, stdout) => {
+        if (error) reject(error);
+        else resolve(Buffer.from(stdout));
+      },
+    );
   });
 }
 
 function isPng(data: Buffer): boolean {
-  return data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  return (
+    data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+  );
 }
 
 function validatePng(data: Buffer): ClipboardImage {
   if (!isPng(data)) throw new Error("The clipboard does not contain a supported PNG image.");
-  if (data.length > MAX_CLIPBOARD_IMAGE_BYTES) throw new Error("The clipboard image exceeds the 20 MiB limit.");
+  if (data.length > MAX_CLIPBOARD_IMAGE_BYTES)
+    throw new Error("The clipboard image exceeds the 20 MiB limit.");
   return { data, mediaType: "image/png" };
 }
 
@@ -52,11 +60,16 @@ async function readMacClipboard(run: CommandRunner): Promise<Buffer> {
     const applePath = outputPath.replace(/\\/g, "\\\\").replace(/\"/g, '\\"');
     try {
       await run("osascript", [
-        "-e", "set imageData to the clipboard as «class PNGf»",
-        "-e", `set imageFile to open for access POSIX file \"${applePath}\" with write permission`,
-        "-e", "set eof imageFile to 0",
-        "-e", "write imageData to imageFile",
-        "-e", "close access imageFile",
+        "-e",
+        "set imageData to the clipboard as «class PNGf»",
+        "-e",
+        `set imageFile to open for access POSIX file \"${applePath}\" with write permission`,
+        "-e",
+        "set eof imageFile to 0",
+        "-e",
+        "write imageData to imageFile",
+        "-e",
+        "close access imageFile",
       ]);
       return await readFile(outputPath);
     } finally {
@@ -75,16 +88,23 @@ const WINDOWS_CLIPBOARD_SCRIPT = [
   "[Console]::Out.Write([Convert]::ToBase64String($stream.ToArray()));",
 ].join("");
 
-async function readWindowsClipboard(run: CommandRunner, executable = "powershell.exe"): Promise<Buffer> {
-  const encoded = await run(executable, ["-NoProfile", "-NonInteractive", "-STA", "-Command", WINDOWS_CLIPBOARD_SCRIPT]);
+async function readWindowsClipboard(
+  run: CommandRunner,
+  executable = "powershell.exe",
+): Promise<Buffer> {
+  const encoded = await run(executable, [
+    "-NoProfile",
+    "-NonInteractive",
+    "-STA",
+    "-Command",
+    WINDOWS_CLIPBOARD_SCRIPT,
+  ]);
   return Buffer.from(encoded.toString("utf8").trim(), "base64");
 }
 
-export async function readClipboardImage(options: {
-  platform?: NodeJS.Platform;
-  env?: NodeJS.ProcessEnv;
-  run?: CommandRunner;
-} = {}): Promise<ClipboardImage> {
+export async function readClipboardImage(
+  options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv; run?: CommandRunner } = {},
+): Promise<ClipboardImage> {
   const targetPlatform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
   const run = options.run ?? runBuffer;

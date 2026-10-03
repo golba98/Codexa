@@ -7,7 +7,10 @@ export function createImageAttachmentToken(attachment: ProviderImageAttachment):
   return createAtomicContentToken(`[Image: ${attachment.name}]`);
 }
 
-export function selectImageAttachments(value: string, registry: ImageAttachmentRegistry): ProviderImageAttachment[] {
+export function selectImageAttachments(
+  value: string,
+  registry: ImageAttachmentRegistry,
+): ProviderImageAttachment[] {
   IMAGE_ATTACHMENT_PATTERN.lastIndex = 0;
   const attachments: ProviderImageAttachment[] = [];
   for (const match of value.matchAll(IMAGE_ATTACHMENT_PATTERN)) {

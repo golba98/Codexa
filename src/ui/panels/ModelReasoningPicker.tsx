@@ -1,12 +1,12 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
-import {
-  type CodexModelCapability,
-  type ReasoningEffortCapability,
-  normalizeReasoningForModelCapabilities,
-} from "../../core/models/codexModelCapabilities.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatReasoningLabel } from "../../config/settings.js";
 import { traceInputDebug } from "../../core/debug/inputDebug.js";
+import {
+  type CodexModelCapability,
+  normalizeReasoningForModelCapabilities,
+  type ReasoningEffortCapability,
+} from "../../core/models/codexModelCapabilities.js";
 import { FOCUS_IDS } from "../input/focus.js";
 import { useTheme } from "../theme.js";
 
@@ -23,27 +23,28 @@ interface ModelReasoningPickerProps {
   onCancel: (reason?: ModelPickerCloseReason) => void;
 }
 
-function getModelReasoningLevels(model: CodexModelCapability): readonly ReasoningEffortCapability[] {
+function getModelReasoningLevels(
+  model: CodexModelCapability,
+): readonly ReasoningEffortCapability[] {
   return model.supportedReasoningLevels ?? [];
 }
 
 function getInitialReasoning(model: CodexModelCapability, currentReasoning: string): string {
-  return normalizeReasoningForModelCapabilities(
-    model.model,
-    currentReasoning,
-    {
-      status: "ready",
-      source: model.source,
-      models: [model],
-      discoveredAt: Date.now(),
-      executable: null,
-      error: null,
-    },
-  );
+  return normalizeReasoningForModelCapabilities(model.model, currentReasoning, {
+    status: "ready",
+    source: model.source,
+    models: [model],
+    discoveredAt: Date.now(),
+    executable: null,
+    error: null,
+  });
 }
 
 function getInitialCursor(models: readonly CodexModelCapability[], currentModel: string): number {
-  return Math.max(0, models.findIndex((model) => model.model === currentModel || model.id === currentModel));
+  return Math.max(
+    0,
+    models.findIndex((model) => model.model === currentModel || model.id === currentModel),
+  );
 }
 
 function buildPendingReasoning(
@@ -98,12 +99,10 @@ export function ModelReasoningPicker({
   const visibleModels = models;
   const initializedModelsRef = useRef(false);
 
-  const [cursor, setCursor] = useState(() =>
-    getInitialCursor(visibleModels, currentModel),
-  );
+  const [cursor, setCursor] = useState(() => getInitialCursor(visibleModels, currentModel));
 
   const [pendingReasoning, setPendingReasoning] = useState<Record<string, string>>(() =>
-    buildPendingReasoning(visibleModels, currentReasoning)
+    buildPendingReasoning(visibleModels, currentReasoning),
   );
 
   useEffect(() => {
@@ -179,7 +178,10 @@ export function ModelReasoningPicker({
 
       setPendingReasoning((prev) => {
         const currentValue = prev[model.model] ?? getInitialReasoning(model, currentReasoning);
-        const currentIdx = Math.max(0, available.findIndex((level) => level.id === currentValue));
+        const currentIdx = Math.max(
+          0,
+          available.findIndex((level) => level.id === currentValue),
+        );
         const nextIdx = Math.max(0, Math.min(available.length - 1, currentIdx + direction));
         if (nextIdx === currentIdx) return prev;
         return { ...prev, [model.model]: available[nextIdx]!.id };
@@ -219,7 +221,8 @@ export function ModelReasoningPicker({
           onCancel("empty-selection");
           return;
         }
-        const reasoning = pendingReasoning[model.model] ?? getInitialReasoning(model, currentReasoning);
+        const reasoning =
+          pendingReasoning[model.model] ?? getInitialReasoning(model, currentReasoning);
         traceInputDebug("model_selection_start", {
           handler: "ModelReasoningPicker.useInput",
           model: model.model,
@@ -288,16 +291,12 @@ function LoadingPickerView({
 }) {
   return (
     <Box flexDirection="column" width="100%">
-      <Box
-        borderStyle="round"
-        borderColor={theme.border}
-        paddingX={2}
-        paddingY={0}
-        width="100%"
-      >
+      <Box borderStyle="round" borderColor={theme.border} paddingX={2} paddingY={0} width="100%">
         <Box flexDirection="column" width="100%">
           <Box>
-            <Text color={theme.accent} bold>Select model  </Text>
+            <Text color={theme.accent} bold>
+              Select model{" "}
+            </Text>
             <Text color={theme.textMuted}>Esc cancel</Text>
           </Box>
           <Box marginTop={0}>
@@ -344,7 +343,8 @@ function InteractivePickerView({
   const subtitle = subtitleParts.join("  ·  ");
 
   const highlightedPending = highlightedModel
-    ? pendingReasoning[highlightedModel.model] ?? getInitialReasoning(highlightedModel, currentReasoning)
+    ? (pendingReasoning[highlightedModel.model] ??
+      getInitialReasoning(highlightedModel, currentReasoning))
     : currentReasoning;
   const reasoningHint = highlightedModel?.supportedReasoningLevels
     ? `Reasoning: ${formatReasoningLabel(highlightedPending)}`
@@ -360,22 +360,21 @@ function InteractivePickerView({
       flexDirection="column"
     >
       <Box>
-        <Text color={theme.accent} bold>Select model  </Text>
+        <Text color={theme.accent} bold>
+          Select model{" "}
+        </Text>
         <Text color={theme.textMuted}>{subtitle}</Text>
       </Box>
       <Box marginTop={0}>
         <Text color={theme.textDim}>{reasoningHint}</Text>
       </Box>
 
-      <Box
-        marginTop={0}
-        width="100%"
-        flexDirection="column"
-      >
+      <Box marginTop={0} width="100%" flexDirection="column">
         {rows.map((row, idx) => {
           const isHighlighted = idx === cursor;
           const isCommitted = row.model.model === currentModel || row.model.id === currentModel;
-          const pending = pendingReasoning[row.model.model] ?? getInitialReasoning(row.model, currentReasoning);
+          const pending =
+            pendingReasoning[row.model.model] ?? getInitialReasoning(row.model, currentReasoning);
 
           return (
             <ModelRow
@@ -425,7 +424,9 @@ function ModelRow({
     const color = !interactive
       ? theme.textDim
       : isActive
-        ? isHighlighted ? theme.accent : theme.text
+        ? isHighlighted
+          ? theme.accent
+          : theme.text
         : theme.textDim;
 
     return (

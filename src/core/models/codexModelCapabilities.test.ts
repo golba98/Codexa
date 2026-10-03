@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  type CodexModelCapabilities,
   clearCodexModelCapabilityCache,
   createFallbackModelCapabilities,
   findModelCapability,
@@ -9,7 +10,6 @@ import {
   getPreferredModelFromCapabilities,
   normalizeCodexModelListResponses,
   normalizeReasoningForModelCapabilities,
-  type CodexModelCapabilities,
 } from "./codexModelCapabilities.js";
 
 const SAMPLE_RESPONSE = {
@@ -58,21 +58,16 @@ test("normalizes model/list responses with per-model reasoning metadata", () => 
   assert.equal(capabilities.models.length, 2);
   assert.equal(capabilities.models[0]?.model, "gpt-5.4");
   assert.equal(capabilities.models[0]?.reasoningLevelCount, 4);
-  assert.deepEqual(capabilities.models[0]?.supportedReasoningLevels?.map((item) => item.id), [
-    "low",
-    "medium",
-    "high",
-    "xhigh",
-  ]);
+  assert.deepEqual(
+    capabilities.models[0]?.supportedReasoningLevels?.map((item) => item.id),
+    ["low", "medium", "high", "xhigh"],
+  );
   assert.equal(capabilities.models[1]?.label, "Codex Mini");
   assert.equal(capabilities.models[1]?.reasoningLevelCount, 2);
 });
 
 test("normalization rejects empty or malformed discovery output", () => {
-  assert.throws(
-    () => normalizeCodexModelListResponses([{ data: [] }]),
-    /no usable models/i,
-  );
+  assert.throws(() => normalizeCodexModelListResponses([{ data: [] }]), /no usable models/i);
   assert.throws(
     () => normalizeCodexModelListResponses([{ data: [{ id: "", model: "" }] }]),
     /no usable models/i,
@@ -96,10 +91,7 @@ test("fallback keeps models but does not invent reasoning support", () => {
 test("normalizes reasoning by keeping valid values and clamping invalid ones", () => {
   const capabilities = normalizeCodexModelListResponses([SAMPLE_RESPONSE]);
 
-  assert.equal(
-    normalizeReasoningForModelCapabilities("gpt-5.4", "high", capabilities),
-    "high",
-  );
+  assert.equal(normalizeReasoningForModelCapabilities("gpt-5.4", "high", capabilities), "high");
   assert.equal(
     normalizeReasoningForModelCapabilities("gpt-5.1-codex-mini", "xhigh", capabilities),
     "medium",
@@ -111,7 +103,10 @@ test("handles unavailable selected model with runtime default", () => {
 
   assert.equal(getPreferredModelFromCapabilities(capabilities, "missing-model"), "gpt-5.4");
   assert.equal(findModelCapability(capabilities, "Codex Mini"), null);
-  assert.equal(findModelCapability(capabilities, "gpt-5.1-codex-mini")?.model, "gpt-5.1-codex-mini");
+  assert.equal(
+    findModelCapability(capabilities, "gpt-5.1-codex-mini")?.model,
+    "gpt-5.1-codex-mini",
+  );
 });
 
 test("formats model list with dynamic reasoning counts", () => {
@@ -129,21 +124,24 @@ test("caches successful discovery and refreshes when forced", async () => {
 
   const discover = async () => {
     calls += 1;
-    return normalizeCodexModelListResponses([
-      {
-        data: [
-          {
-            id: `model-${calls}`,
-            model: `model-${calls}`,
-            displayName: `Model ${calls}`,
-            hidden: false,
-            isDefault: true,
-            defaultReasoningEffort: "medium",
-            supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Default" }],
-          },
-        ],
-      },
-    ], { discoveredAt: calls, executable: "codex" });
+    return normalizeCodexModelListResponses(
+      [
+        {
+          data: [
+            {
+              id: `model-${calls}`,
+              model: `model-${calls}`,
+              displayName: `Model ${calls}`,
+              hidden: false,
+              isDefault: true,
+              defaultReasoningEffort: "medium",
+              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Default" }],
+            },
+          ],
+        },
+      ],
+      { discoveredAt: calls, executable: "codex" },
+    );
   };
 
   const first = await getCodexModelCapabilities({
@@ -187,21 +185,24 @@ test("concurrent callers share a single in-flight discovery promise", async () =
   const discover = async () => {
     calls += 1;
     await gate;
-    return normalizeCodexModelListResponses([
-      {
-        data: [
-          {
-            id: "model-a",
-            model: "model-a",
-            displayName: "Model A",
-            hidden: false,
-            isDefault: true,
-            defaultReasoningEffort: "medium",
-            supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Default" }],
-          },
-        ],
-      },
-    ], { discoveredAt: 1, executable: "codex" });
+    return normalizeCodexModelListResponses(
+      [
+        {
+          data: [
+            {
+              id: "model-a",
+              model: "model-a",
+              displayName: "Model A",
+              hidden: false,
+              isDefault: true,
+              defaultReasoningEffort: "medium",
+              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Default" }],
+            },
+          ],
+        },
+      ],
+      { discoveredAt: 1, executable: "codex" },
+    );
   };
 
   const firstPromise = getCodexModelCapabilities({
@@ -300,9 +301,10 @@ test("failed discovery returns seeded capabilities and stays retryable", async (
     executable: "codex",
     discover: async () => {
       retried = true;
-      return normalizeCodexModelListResponses([
-        { data: [{ id: "model-live", model: "model-live", displayName: "Live" }] },
-      ], { discoveredAt: 2, executable: "codex" });
+      return normalizeCodexModelListResponses(
+        [{ data: [{ id: "model-live", model: "model-live", displayName: "Live" }] }],
+        { discoveredAt: 2, executable: "codex" },
+      );
     },
     seed: () => seeded,
     persist: () => {},
@@ -319,9 +321,11 @@ test("successful discovery is persisted for the next launch", async () => {
   const persisted: CodexModelCapabilities[] = [];
   const result = await getCodexModelCapabilities({
     executable: "codex",
-    discover: async () => normalizeCodexModelListResponses([
-      { data: [{ id: "model-p", model: "model-p", displayName: "Persist Me" }] },
-    ], { discoveredAt: 7, executable: "codex" }),
+    discover: async () =>
+      normalizeCodexModelListResponses(
+        [{ data: [{ id: "model-p", model: "model-p", displayName: "Persist Me" }] }],
+        { discoveredAt: 7, executable: "codex" },
+      ),
     seed: () => null,
     persist: (capabilities) => {
       persisted.push(capabilities);

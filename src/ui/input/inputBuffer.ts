@@ -1,6 +1,11 @@
-import type { WrappedTextRow } from "../render/textLayout.js";
-import { getTextUnits, getTextWidth, normalizeLineBreaks, wrapTextRows } from "../render/textLayout.js";
 import { sanitizeTerminalInput } from "../../core/terminal/terminalSanitize.js";
+import type { WrappedTextRow } from "../render/textLayout.js";
+import {
+  getTextUnits,
+  getTextWidth,
+  normalizeLineBreaks,
+  wrapTextRows,
+} from "../render/textLayout.js";
 
 export type WrappedInputRow = WrappedTextRow;
 
@@ -38,10 +43,10 @@ export function normalizeCursorOffset(text: string, cursorOffset: number): numbe
   const safeCursor = Math.max(0, Math.min(cursorOffset, text.length));
 
   if (
-    safeCursor > 0
-    && safeCursor < text.length
-    && isHighSurrogate(text.charCodeAt(safeCursor - 1))
-    && isLowSurrogate(text.charCodeAt(safeCursor))
+    safeCursor > 0 &&
+    safeCursor < text.length &&
+    isHighSurrogate(text.charCodeAt(safeCursor - 1)) &&
+    isLowSurrogate(text.charCodeAt(safeCursor))
   ) {
     return safeCursor - 1;
   }
@@ -56,7 +61,11 @@ export function moveCursorLeft(text: string, cursorOffset: number): number {
   if (safeCursor <= 0) return 0;
 
   let nextCursor = safeCursor - 1;
-  if (nextCursor > 0 && isLowSurrogate(text.charCodeAt(nextCursor)) && isHighSurrogate(text.charCodeAt(nextCursor - 1))) {
+  if (
+    nextCursor > 0 &&
+    isLowSurrogate(text.charCodeAt(nextCursor)) &&
+    isHighSurrogate(text.charCodeAt(nextCursor - 1))
+  ) {
     nextCursor -= 1;
   }
 
@@ -68,9 +77,9 @@ export function moveCursorRight(text: string, cursorOffset: number): number {
   if (safeCursor >= text.length) return text.length;
 
   if (
-    isHighSurrogate(text.charCodeAt(safeCursor))
-    && safeCursor + 1 < text.length
-    && isLowSurrogate(text.charCodeAt(safeCursor + 1))
+    isHighSurrogate(text.charCodeAt(safeCursor)) &&
+    safeCursor + 1 < text.length &&
+    isLowSurrogate(text.charCodeAt(safeCursor + 1))
   ) {
     return safeCursor + 2;
   }
@@ -80,11 +89,10 @@ export function moveCursorRight(text: string, cursorOffset: number): number {
 
 // ─── Text mutations ───────────────────────────────────────────────────────────
 
-export function insertInputText(params: {
+export function insertInputText(params: { value: string; cursorOffset: number; text: string }): {
   value: string;
   cursorOffset: number;
-  text: string;
-}): { value: string; cursorOffset: number } {
+} {
   const value = normalizeInputText(params.value);
   const safeCursor = normalizeCursorOffset(value, params.cursorOffset);
   const insertedText = normalizeInputText(params.text);
@@ -94,13 +102,13 @@ export function insertInputText(params: {
   };
 }
 
-export function deleteInputBackward(params: {
+export function deleteInputBackward(params: { value: string; cursorOffset: number }): {
   value: string;
   cursorOffset: number;
-}): { value: string; cursorOffset: number } {
+} {
   const value = normalizeInputText(params.value);
   const safeCursor = normalizeCursorOffset(value, params.cursorOffset);
-  
+
   if (safeCursor <= 0) {
     return { value, cursorOffset: 0 };
   }
@@ -112,10 +120,10 @@ export function deleteInputBackward(params: {
   };
 }
 
-export function deleteInputForward(params: {
+export function deleteInputForward(params: { value: string; cursorOffset: number }): {
   value: string;
   cursorOffset: number;
-}): { value: string; cursorOffset: number } {
+} {
   const value = normalizeInputText(params.value);
   const safeCursor = normalizeCursorOffset(value, params.cursorOffset);
 
@@ -187,7 +195,12 @@ export function createInputViewport(params: {
 }): InputViewport {
   const rows = wrapInputRows(params.text, params.width);
   const cursor = locateCursor(rows, params.cursorOffset);
-  const nextScrollRow = clampScrollToCursor(params.scrollRow ?? 0, cursor.row, params.maxVisibleRows, rows.length);
+  const nextScrollRow = clampScrollToCursor(
+    params.scrollRow ?? 0,
+    cursor.row,
+    params.maxVisibleRows,
+    rows.length,
+  );
 
   return {
     rows,
@@ -209,8 +222,10 @@ export const COMPOSER_ROW_CHROME = {
 
 export function getComposerRowLayout(totalWidth: number) {
   const chrome = COMPOSER_ROW_CHROME;
-  const bodyWidth = Math.max(0, totalWidth - chrome.borderLeft - chrome.borderRight
-    - chrome.paddingLeft - chrome.paddingRight);
+  const bodyWidth = Math.max(
+    0,
+    totalWidth - chrome.borderLeft - chrome.borderRight - chrome.paddingLeft - chrome.paddingRight,
+  );
   const promptWidth = getTextWidth(chrome.prompt);
   return { bodyWidth, promptWidth, editorWidth: Math.max(0, bodyWidth - promptWidth) };
 }
@@ -230,14 +245,19 @@ export function createInputRowWindow(text: string, width: number, cursorColumn?:
   let cursorIndex = units.length;
   const columns = units.map((unit, index) => {
     const start = column;
-    if (cursorColumn !== undefined && cursorIndex === units.length
-      && unit.width > 0 && start + unit.width > cursorColumn) cursorIndex = index;
+    if (
+      cursorColumn !== undefined &&
+      cursorIndex === units.length &&
+      unit.width > 0 &&
+      start + unit.width > cursorColumn
+    )
+      cursorIndex = index;
     column += unit.width;
     return start;
   });
   const hasCursor = cursorColumn !== undefined;
   const cursorStart = columns[cursorIndex] ?? column;
-  const current = hasCursor ? units[cursorIndex]?.text ?? " " : "";
+  const current = hasCursor ? (units[cursorIndex]?.text ?? " ") : "";
   const cursorWidth = getTextWidth(current);
   // A wide glyph cannot fit in a one-cell viewport: show a cursor cell instead.
   if (cursorWidth > safeWidth) return { before: "", current: " ", after: "", cursorColumn: 0 };

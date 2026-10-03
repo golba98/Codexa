@@ -1,21 +1,21 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import test, { afterEach, beforeEach } from "node:test";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import test, { afterEach, beforeEach } from "node:test";
-import { buildProviderRegistry } from "./registry.js";
 import { resetGeminiRouteValidationCacheForTests } from "../providerRuntime/gemini.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "../providerRuntime/local.js";
+import { buildProviderRegistry } from "./registry.js";
 import {
-  getProviderWorkspaceConfigFile,
   getLegacyProviderWorkspaceConfigFile,
+  getProviderWorkspaceConfigFile,
   loadProviderWorkspaceConfig,
   parseProviderWorkspaceConfig,
   saveProviderWorkspaceConfig,
   serializeProviderWorkspaceConfig,
   setProviderActiveRoute,
-  setProviderDefaultReasoning,
   setProviderDefaultModel,
+  setProviderDefaultReasoning,
   setProviderWorkspaceDefault,
 } from "./workspaceConfig.js";
 
@@ -34,10 +34,7 @@ afterEach(() => {
   rmSync(testDataRoot, { recursive: true, force: true });
 });
 
-function withGeminiEnv<T>(
-  env: Partial<NodeJS.ProcessEnv>,
-  callback: () => T,
-): T {
+function withGeminiEnv<T>(env: Partial<NodeJS.ProcessEnv>, callback: () => T): T {
   const originalGemini = process.env.GEMINI_API_KEY;
   const originalGoogle = process.env.GOOGLE_API_KEY;
 
@@ -114,7 +111,21 @@ test("parses provider workspace config from Ubume-owned JSON", () => {
 });
 
 test("Antigravity routes, defaults and explicit command paths survive configuration round trips", () => {
-  const config = parseProviderWorkspaceConfig({ workspaceDefaultProviderId: "antigravity", activeRoute: { providerId: "antigravity", modelId: "claude-sonnet-4.6-thinking", reasoning: "medium", backendKind: "antigravity-cli-auth" }, providers: { antigravity: { current_model: "claude-sonnet-4.6-thinking", antigravity_command_path: "/custom/agy" } } });
+  const config = parseProviderWorkspaceConfig({
+    workspaceDefaultProviderId: "antigravity",
+    activeRoute: {
+      providerId: "antigravity",
+      modelId: "claude-sonnet-4.6-thinking",
+      reasoning: "medium",
+      backendKind: "antigravity-cli-auth",
+    },
+    providers: {
+      antigravity: {
+        current_model: "claude-sonnet-4.6-thinking",
+        antigravity_command_path: "/custom/agy",
+      },
+    },
+  });
   assert.equal(config.workspaceDefaultProviderId, "antigravity");
   assert.equal(config.activeRoute?.providerId, "antigravity");
   assert.equal(config.providers?.antigravity?.antigravityCommandPath, "/custom/agy");
@@ -123,7 +134,13 @@ test("Antigravity routes, defaults and explicit command paths survive configurat
 });
 
 test("legacy agy backend alias normalizes to Antigravity CLI", () => {
-  const config = parseProviderWorkspaceConfig({ active_route: { provider_id: "openai", model_id: "claude-sonnet-4.6-thinking", backend_kind: "agy" } });
+  const config = parseProviderWorkspaceConfig({
+    active_route: {
+      provider_id: "openai",
+      model_id: "claude-sonnet-4.6-thinking",
+      backend_kind: "agy",
+    },
+  });
   assert.equal(config.activeRoute?.providerId, "antigravity");
   assert.equal(config.activeRoute?.backendKind, "antigravity-cli-auth");
   assert.equal(config.migrationNotice, undefined);
@@ -165,11 +182,15 @@ test("loads legacy provider settings without recreating the workspace directory"
     mkdirSync(join(legacyFile, ".."), { recursive: true });
     writeFileSync(legacyFile, JSON.stringify({ workspaceDefaultProviderId: "anthropic" }), "utf8");
 
-    assert.deepEqual(loadProviderWorkspaceConfig(tempRoot), { workspaceDefaultProviderId: "anthropic" });
+    assert.deepEqual(loadProviderWorkspaceConfig(tempRoot), {
+      workspaceDefaultProviderId: "anthropic",
+    });
     assert.equal(existsSync(getProviderWorkspaceConfigFile(tempRoot)), false);
 
     saveProviderWorkspaceConfig(tempRoot, { workspaceDefaultProviderId: "openai" });
-    assert.deepEqual(loadProviderWorkspaceConfig(tempRoot), { workspaceDefaultProviderId: "openai" });
+    assert.deepEqual(loadProviderWorkspaceConfig(tempRoot), {
+      workspaceDefaultProviderId: "openai",
+    });
     assert.equal(existsSync(legacyFile), true);
   } finally {
     if (previousDataRoot === undefined) delete process.env.UBUME_DATA_DIR;
@@ -182,7 +203,9 @@ test("loads legacy provider settings without recreating the workspace directory"
 test("Mistral Vibe workspace default and active route both round-trip", () => {
   const serialized = serializeProviderWorkspaceConfig({ workspaceDefaultProviderId: "mistral" });
   assert.deepEqual(serialized, { workspaceDefaultProviderId: "mistral" });
-  assert.deepEqual(parseProviderWorkspaceConfig(serialized), { workspaceDefaultProviderId: "mistral" });
+  assert.deepEqual(parseProviderWorkspaceConfig(serialized), {
+    workspaceDefaultProviderId: "mistral",
+  });
 
   const parsed = parseProviderWorkspaceConfig({
     workspaceDefaultProviderId: "mistral",
@@ -208,7 +231,10 @@ test("saved Google workspace default is migrated to OpenAI before registry const
       workspaceConfig: loadedConfig,
     });
 
-    assert.equal(providers.find((provider) => provider.id === "google"), undefined);
+    assert.equal(
+      providers.find((provider) => provider.id === "google"),
+      undefined,
+    );
     assert.equal(providers.find((provider) => provider.id === "openai")?.isDefault, true);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
@@ -268,7 +294,10 @@ test("active Anthropic route persists without secrets", () => {
         reasoning: "high",
       },
     });
-    assert.doesNotMatch(JSON.stringify(serializeProviderWorkspaceConfig(loaded)), /secret-test-key/);
+    assert.doesNotMatch(
+      JSON.stringify(serializeProviderWorkspaceConfig(loaded)),
+      /secret-test-key/,
+    );
   } finally {
     if (original === undefined) {
       delete process.env.ANTHROPIC_API_KEY;
@@ -281,19 +310,22 @@ test("active Anthropic route persists without secrets", () => {
 
 test("setProviderActiveRoute rejects unconfigured Gemini routes", () => {
   withGeminiEnv({}, () => {
-    const config = setProviderActiveRoute({
-      activeRoute: {
-        providerId: "openai",
-        modelId: "gpt-5.5",
-        backendKind: "codex-cli-auth",
+    const config = setProviderActiveRoute(
+      {
+        activeRoute: {
+          providerId: "openai",
+          modelId: "gpt-5.5",
+          backendKind: "codex-cli-auth",
+          reasoning: "high",
+        },
+      },
+      {
+        providerId: "google",
+        modelId: "gemini-2.5-flash",
+        backendKind: "gemini-cli-auth",
         reasoning: "high",
       },
-    }, {
-      providerId: "google",
-      modelId: "gemini-2.5-flash",
-      backendKind: "gemini-cli-auth",
-      reasoning: "high",
-    });
+    );
 
     assert.deepEqual(config.activeRoute, {
       providerId: "openai",
@@ -306,15 +338,21 @@ test("setProviderActiveRoute rejects unconfigured Gemini routes", () => {
 
 test("setProviderActiveRoute does not persist Google routes even when Gemini is configured", () => {
   withGeminiEnv({ GEMINI_API_KEY: "test-gemini-key" }, () => {
-    const config = setProviderActiveRoute({}, {
-      providerId: "google",
-      modelId: "gemini-2.5-flash",
-      backendKind: "gemini-api-key",
-      reasoning: "high",
-    });
+    const config = setProviderActiveRoute(
+      {},
+      {
+        providerId: "google",
+        modelId: "gemini-2.5-flash",
+        backendKind: "gemini-api-key",
+        reasoning: "high",
+      },
+    );
 
     assert.equal(config.activeRoute, undefined);
-    assert.doesNotMatch(JSON.stringify(serializeProviderWorkspaceConfig(config)), /test-gemini-key/);
+    assert.doesNotMatch(
+      JSON.stringify(serializeProviderWorkspaceConfig(config)),
+      /test-gemini-key/,
+    );
   });
 });
 
@@ -331,9 +369,17 @@ test("setProviderDefaultModel saves model without overwriting other provider fie
   };
   const updated = setProviderDefaultModel(initial, "anthropic", "sonnet");
   assert.equal(updated.providers?.["anthropic"]?.currentModel, "sonnet");
-  assert.equal(updated.providers?.["anthropic"]?.currentReasoning, "high", "reasoning must be preserved");
+  assert.equal(
+    updated.providers?.["anthropic"]?.currentReasoning,
+    "high",
+    "reasoning must be preserved",
+  );
   assert.equal(updated.providers?.["anthropic"]?.enabled, true, "enabled flag must be preserved");
-  assert.equal(updated.providers?.["google"]?.currentModel, "gemini-2.5-pro", "other provider unchanged");
+  assert.equal(
+    updated.providers?.["google"]?.currentModel,
+    "gemini-2.5-pro",
+    "other provider unchanged",
+  );
 });
 
 test("setProviderDefaultModel creates providers entry when none exists", () => {
@@ -389,7 +435,10 @@ test("Anthropic claudeCommandPath round-trips through serialize/parse", () => {
     },
   });
 
-  assert.equal(config.providers?.anthropic?.claudeCommandPath, "C:\\Users\\Example\\.local\\bin\\claude.exe");
+  assert.equal(
+    config.providers?.anthropic?.claudeCommandPath,
+    "C:\\Users\\Example\\.local\\bin\\claude.exe",
+  );
   const serialized = serializeProviderWorkspaceConfig(config);
   assert.deepEqual(serialized.providers, {
     anthropic: {
@@ -425,7 +474,10 @@ test("Codex codexCommandPath round-trips through serialize/parse", () => {
     },
   });
 
-  assert.equal(config.providers?.openai?.codexCommandPath, "C:\\Users\\Example\\AppData\\Roaming\\npm\\codex.cmd");
+  assert.equal(
+    config.providers?.openai?.codexCommandPath,
+    "C:\\Users\\Example\\AppData\\Roaming\\npm\\codex.cmd",
+  );
   const serialized = serializeProviderWorkspaceConfig(config);
   assert.deepEqual(serialized.providers, {
     openai: {
@@ -514,17 +566,23 @@ test("setProviderActiveRoute persists Local routes after endpoint discovery", as
         if (String(input).includes("/api/v0/")) {
           return new Response(null, { status: 404 });
         }
-        return new Response(JSON.stringify({
-          data: [{ id: "google/gemma-4-26b-a4b" }],
-        }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            data: [{ id: "google/gemma-4-26b-a4b" }],
+          }),
+          { status: 200 },
+        );
       }) as typeof fetch,
     });
-    const config = setProviderActiveRoute({}, {
-      providerId: "local",
-      modelId: "google/gemma-4-26b-a4b",
-      backendKind: "local-openai-compatible",
-      localBackend: "lm-studio",
-    });
+    const config = setProviderActiveRoute(
+      {},
+      {
+        providerId: "local",
+        modelId: "google/gemma-4-26b-a4b",
+        backendKind: "local-openai-compatible",
+        localBackend: "lm-studio",
+      },
+    );
 
     assert.deepEqual(config.activeRoute, {
       providerId: "local",
@@ -558,18 +616,24 @@ test("setProviderActiveRoute synchronizes the Local provider preference", async 
   resetLocalProviderStateForTests();
   try {
     await checkLocalProvider({
-      fetchImpl: (async (input) => String(input).includes("/api/v0/")
-        ? new Response(null, { status: 404 })
-        : new Response(JSON.stringify({ data: [{ id: "Qwen3.8-27B-UD-Q3_K_XL" }] }), { status: 200 })) as typeof fetch,
+      fetchImpl: (async (input) =>
+        String(input).includes("/api/v0/")
+          ? new Response(null, { status: 404 })
+          : new Response(JSON.stringify({ data: [{ id: "Qwen3.8-27B-UD-Q3_K_XL" }] }), {
+              status: 200,
+            })) as typeof fetch,
     });
-    const config = setProviderActiveRoute({
-      providers: { local: { localBackend: "lm-studio" } },
-    }, {
-      providerId: "local",
-      modelId: "Qwen3.8-27B-UD-Q3_K_XL",
-      backendKind: "local-openai-compatible",
-      localBackend: "unsloth",
-    });
+    const config = setProviderActiveRoute(
+      {
+        providers: { local: { localBackend: "lm-studio" } },
+      },
+      {
+        providerId: "local",
+        modelId: "Qwen3.8-27B-UD-Q3_K_XL",
+        backendKind: "local-openai-compatible",
+        localBackend: "unsloth",
+      },
+    );
 
     assert.equal(config.activeRoute?.localBackend, "unsloth");
     assert.equal(config.providers?.local?.localBackend, "unsloth");
@@ -683,14 +747,20 @@ test("Local model maxOutputTokens: 4096 round-trips; invalid values are rejected
 
 test("setProviderActiveRoute ignores Google routes when GOOGLE_API_KEY is configured", () => {
   withGeminiEnv({ GOOGLE_API_KEY: "test-google-key" }, () => {
-    const config = setProviderActiveRoute({}, {
-      providerId: "google",
-      modelId: "gemini-2.5-flash",
-      backendKind: "gemini-api-key",
-      reasoning: "high",
-    });
+    const config = setProviderActiveRoute(
+      {},
+      {
+        providerId: "google",
+        modelId: "gemini-2.5-flash",
+        backendKind: "gemini-api-key",
+        reasoning: "high",
+      },
+    );
 
     assert.equal(config.activeRoute, undefined);
-    assert.doesNotMatch(JSON.stringify(serializeProviderWorkspaceConfig(config)), /test-google-key/);
+    assert.doesNotMatch(
+      JSON.stringify(serializeProviderWorkspaceConfig(config)),
+      /test-google-key/,
+    );
   });
 });

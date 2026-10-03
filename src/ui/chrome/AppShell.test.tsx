@@ -1,18 +1,23 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
+import test from "node:test";
 import { Box, render, Text } from "ink";
-import type { Screen, TimelineEvent, UIState } from "../../session/types.js";
+import type React from "react";
 import { buildRuntimeSummary } from "../../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../../config/settings.js";
+import type { Screen, TimelineEvent, UIState } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
-import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
-import { AppShell, calculateColdStartSpacerRows, calculateHeaderToContentGapRows, calculateNativeSpacerRows } from "./AppShell.js";
 import { createLayoutSnapshot, useTerminalViewport } from "../layout.js";
-import { PlanActionPicker, measurePlanActionPickerRows } from "../panels/PlanActionPicker.js";
-import { buildStaticIntroRows, StaticIntroItem } from "../timeline/StaticIntroItem.js";
+import { measurePlanActionPickerRows, PlanActionPicker } from "../panels/PlanActionPicker.js";
 import { ThemeProvider } from "../theme.js";
+import { buildStaticIntroRows, StaticIntroItem } from "../timeline/StaticIntroItem.js";
+import {
+  AppShell,
+  calculateColdStartSpacerRows,
+  calculateHeaderToContentGapRows,
+  calculateNativeSpacerRows,
+} from "./AppShell.js";
+import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -46,7 +51,13 @@ class TestOutput extends PassThrough {
 
 const EVENTS: TimelineEvent[] = [
   { id: 1, type: "system", createdAt: 1, title: "Launch mode", content: "Dev shell attached" },
-  { id: 2, type: "user", createdAt: 2, prompt: "Reproduce the resize flicker and fix it.", turnId: 1 },
+  {
+    id: 2,
+    type: "user",
+    createdAt: 2,
+    prompt: "Reproduce the resize flicker and fix it.",
+    turnId: 1,
+  },
   {
     id: 3,
     type: "run",
@@ -71,7 +82,8 @@ const EVENTS: TimelineEvent[] = [
     id: 4,
     type: "assistant",
     createdAt: 4,
-    content: "Root cause looks like a layout gutter mismatch during resize.\n\nThis response is intentionally a bit longer to force wrapping at smaller widths.",
+    content:
+      "Root cause looks like a layout gutter mismatch during resize.\n\nThis response is intentionally a bit longer to force wrapping at smaller widths.",
     contentChunks: [],
     turnId: 1,
   },
@@ -296,20 +308,42 @@ test("header omits model/context while composer status row renders active model 
   assert.doesNotMatch(text, /Model:\s*Claude Code CLI/);
 
   const lines = text.split("\n");
-  const statusLineIndex = lines.findLastIndex((line) => line.includes("Claude Code CLI / Sonnet 4.6 (Low)"));
-  const promptLineIndex = lines.findLastIndex((line, index) => index < statusLineIndex && line.includes("❯") && line.includes("Ask Ubume"));
+  const statusLineIndex = lines.findLastIndex((line) =>
+    line.includes("Claude Code CLI / Sonnet 4.6 (Low)"),
+  );
+  const promptLineIndex = lines.findLastIndex(
+    (line, index) => index < statusLineIndex && line.includes("❯") && line.includes("Ask Ubume"),
+  );
   assert.ok(promptLineIndex >= 0, "composer prompt should render");
 
   const finalBottomChrome = lines.slice(Math.max(0, promptLineIndex - 2)).join("\n");
-  assert.equal(countOccurrences(finalBottomChrome, /Context:/g), 1, "context metadata should render exactly once in the final frame");
-  assert.equal(countOccurrences(finalBottomChrome, /Claude Code CLI \/ Sonnet 4\.6 \(Low\)/g), 1, "runtime metadata should render exactly once in the final frame");
-  assert.equal(statusLineIndex, promptLineIndex + 2, "runtime status row should directly follow the composer input border");
+  assert.equal(
+    countOccurrences(finalBottomChrome, /Context:/g),
+    1,
+    "context metadata should render exactly once in the final frame",
+  );
+  assert.equal(
+    countOccurrences(finalBottomChrome, /Claude Code CLI \/ Sonnet 4\.6 \(Low\)/g),
+    1,
+    "runtime metadata should render exactly once in the final frame",
+  );
+  assert.equal(
+    statusLineIndex,
+    promptLineIndex + 2,
+    "runtime status row should directly follow the composer input border",
+  );
 
   const statusLine = lines[statusLineIndex] ?? "";
   assert.match(statusLine, /Claude Code CLI \/ Sonnet 4\.6 \(Low\)/);
   assert.match(statusLine, /Context:\s*0 \/ 200K/);
-  assert.ok(statusLine.indexOf("Context:") > statusLine.indexOf("Claude Code CLI"), "context should be on the same row to the right of model text");
-  assert.ok(statusLine.indexOf("Context:") >= 90, "context should stay right-aligned at normal widths");
+  assert.ok(
+    statusLine.indexOf("Context:") > statusLine.indexOf("Claude Code CLI"),
+    "context should be on the same row to the right of model text",
+  );
+  assert.ok(
+    statusLine.indexOf("Context:") >= 90,
+    "context should stay right-aligned at normal widths",
+  );
 });
 
 test("100x22 bottom chrome renders runtime context once below composer", async () => {
@@ -396,11 +430,19 @@ test("100x22 bottom chrome renders runtime context once below composer", async (
   assert.match(text, /██████|UBUME|Ubume/);
   assert.match(text, /❯\s+Ask Ubume/);
 
-  const runtimeLineIndex = lines.findLastIndex((line) => line.includes("OpenAI Codex CLI / gpt-5.4-mini"));
-  const promptLineIndex = lines.findLastIndex((line, index) => index < runtimeLineIndex && line.includes("❯") && line.includes("Ask Ubume"));
+  const runtimeLineIndex = lines.findLastIndex((line) =>
+    line.includes("OpenAI Codex CLI / gpt-5.4-mini"),
+  );
+  const promptLineIndex = lines.findLastIndex(
+    (line, index) => index < runtimeLineIndex && line.includes("❯") && line.includes("Ask Ubume"),
+  );
   assert.ok(runtimeLineIndex >= 0, "runtime metadata should render");
   assert.ok(promptLineIndex >= 0, "composer prompt should render");
-  assert.equal(runtimeLineIndex, promptLineIndex + 2, "runtime metadata should sit directly below the composer input border");
+  assert.equal(
+    runtimeLineIndex,
+    promptLineIndex + 2,
+    "runtime metadata should sit directly below the composer input border",
+  );
 
   const finalBottomChrome = lines.slice(Math.max(0, promptLineIndex - 2)).join("\n");
   assert.equal(countOccurrences(finalBottomChrome, /Context:/g), 1);
@@ -725,7 +767,9 @@ test("model picker renders as a compact command panel with composer", async () =
   stdout.columns = 120;
   stdout.rows = 30;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
   const layout = createLayoutSnapshot(120, 30);
 
   const instance = render(
@@ -797,39 +841,51 @@ test("native spacer clamps when model update events fill the body", () => {
 
 test("cold-start header gap adapts to terminal height", () => {
   // micro 17-row: measureTopHeaderRows=1, headerToContentGap=0, shellHeight=16
-  assert.equal(calculateColdStartSpacerRows({
-    shellRows: 16,
-    headerRows: 1,
-    composerRows: 4,
-    layoutMode: "compact",
-    availableRows: 9,
-  }), 1);
+  assert.equal(
+    calculateColdStartSpacerRows({
+      shellRows: 16,
+      headerRows: 1,
+      composerRows: 4,
+      layoutMode: "compact",
+      availableRows: 9,
+    }),
+    1,
+  );
   // full 30-row medium: measureTopHeaderRows=7 (1+6+0), headerToContentGap=1, shellHeight=29
-  assert.equal(calculateColdStartSpacerRows({
-    shellRows: 29,
-    headerRows: 8,
-    composerRows: 7,
-    layoutMode: "regular",
-    availableRows: 11,
-  }), 1);
+  assert.equal(
+    calculateColdStartSpacerRows({
+      shellRows: 29,
+      headerRows: 8,
+      composerRows: 7,
+      layoutMode: "regular",
+      availableRows: 11,
+    }),
+    1,
+  );
   // full 40-row tall: measureTopHeaderRows=7 (1+6+0), headerToContentGap=1, shellHeight=39
-  assert.equal(calculateColdStartSpacerRows({
-    shellRows: 39,
-    headerRows: 9,
-    composerRows: 7,
-    layoutMode: "regular",
-    availableRows: 20,
-  }), 1);
+  assert.equal(
+    calculateColdStartSpacerRows({
+      shellRows: 39,
+      headerRows: 9,
+      composerRows: 7,
+      layoutMode: "regular",
+      availableRows: 20,
+    }),
+    1,
+  );
 });
 
 test("cold-start header gap is capped by available rows", () => {
-  assert.equal(calculateColdStartSpacerRows({
-    shellRows: 39,
-    headerRows: 9,
-    composerRows: 7,
-    layoutMode: "regular",
-    availableRows: 2,
-  }), 1);
+  assert.equal(
+    calculateColdStartSpacerRows({
+      shellRows: 39,
+      headerRows: 9,
+      composerRows: 7,
+      layoutMode: "regular",
+      availableRows: 2,
+    }),
+    1,
+  );
 });
 
 test("header-to-content gap is reserved outside the hero", () => {
@@ -890,8 +946,6 @@ test("main screen keeps the transcript visible while showing the plan action pic
   assert.doesNotMatch(frame, /Requestchanges/);
   assert.doesNotMatch(frame, /Addconstraints/);
 });
-
-
 
 test("memoized composer re-renders when only the terminal height changes", async () => {
   const stdin = new TestInput();
@@ -1159,7 +1213,11 @@ test("startup metadata stacks workspace between version and auth in the right bl
   assert.ok(versionIndex >= 0, "version metadata row should render");
   assert.ok(workspaceIndex >= 0, "workspace metadata row should render");
   assert.ok(authIndex >= 0, "auth metadata row should render");
-  assert.equal(workspaceIndex, versionIndex + 1, "workspace metadata should be directly below version");
+  assert.equal(
+    workspaceIndex,
+    versionIndex + 1,
+    "workspace metadata should be directly below version",
+  );
   assert.equal(authIndex, workspaceIndex + 1, "auth metadata should be directly below workspace");
   assert.doesNotMatch(rows.slice(workspaceIndex + 1).join("\n"), /Workspace:/);
 });
@@ -1170,7 +1228,9 @@ test("header renders before committed prompt and assistant transcript content", 
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
   const instance = render(buildShellNode(layout, EVENTS), {
@@ -1196,7 +1256,9 @@ test("header renders before command output and system notices", async () => {
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
   const commandAndNoticeEvents: TimelineEvent[] = [
@@ -1252,20 +1314,25 @@ test("settings panel renders below the header", async () => {
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
-  const instance = render(buildShellNode(layout, EVENTS, {
-    screen: "settings-panel",
-    panel: <Text>Settings panel marker</Text>,
-  }), {
-    stdin: stdin as unknown as NodeJS.ReadStream,
-    stdout: stdout as unknown as NodeJS.WriteStream,
-    stderr: stdout as unknown as NodeJS.WriteStream,
-    debug: false,
-    exitOnCtrlC: false,
-    patchConsole: false,
-  });
+  const instance = render(
+    buildShellNode(layout, EVENTS, {
+      screen: "settings-panel",
+      panel: <Text>Settings panel marker</Text>,
+    }),
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: false,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
 
   await sleep(100);
   instance.cleanup();
@@ -1336,8 +1403,16 @@ test("header remains topmost after multiple prompt and response cycles", async (
 
   assertHeaderBefore(raw, "Second prompt marker");
   assertHeaderBefore(raw, "Second assistant response marker");
-  assert.equal(maxCountPerWrite(writes, countLogoInOutput), 1, "each rendered frame should contain one header");
-  assert.equal(maxCountPerWrite(writes, countUbumeMetadataInOutput), 1, "each rendered frame should contain one metadata block");
+  assert.equal(
+    maxCountPerWrite(writes, countLogoInOutput),
+    1,
+    "each rendered frame should contain one header",
+  );
+  assert.equal(
+    maxCountPerWrite(writes, countUbumeMetadataInOutput),
+    1,
+    "each rendered frame should contain one metadata block",
+  );
 });
 
 test("header is not duplicated by provider migration and route switch transcript events", async () => {
@@ -1386,8 +1461,16 @@ test("header is not duplicated by provider migration and route switch transcript
 
   assert.match(stripAnsi(raw), /Provider migrated/);
   assert.match(stripAnsi(raw), /Provider route active/);
-  assert.equal(maxCountPerWrite(writes, countLogoInOutput), 1, "route switch events must not add a transcript banner");
-  assert.equal(maxCountPerWrite(writes, countUbumeMetadataInOutput), 1, "route switch events must not duplicate metadata");
+  assert.equal(
+    maxCountPerWrite(writes, countLogoInOutput),
+    1,
+    "route switch events must not add a transcript banner",
+  );
+  assert.equal(
+    maxCountPerWrite(writes, countUbumeMetadataInOutput),
+    1,
+    "route switch events must not duplicate metadata",
+  );
 });
 
 test("project instructions render with breathing room below the live header", async () => {
@@ -1434,7 +1517,11 @@ test("project instructions render with breathing room below the live header", as
   assert.ok(lastLogoRow >= 0, "logo should render");
   assert.ok(projectRow > lastLogoRow + 1, "project instructions should not touch the logo block");
   assertHeaderBefore(raw, "Project instructions");
-  assert.equal(maxCountPerWrite(writes, countLogoInOutput), 1, "project instruction notice must not add a transcript banner");
+  assert.equal(
+    maxCountPerWrite(writes, countLogoInOutput),
+    1,
+    "project instruction notice must not add a transcript banner",
+  );
 });
 
 test("live header remains visible when transitioning from startup frame to first prompt", async () => {
@@ -1444,7 +1531,9 @@ test("live header remains visible when transitioning from startup frame to first
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
 
@@ -1483,20 +1572,25 @@ test("workspace label updates on cold start without remounting the app shell", a
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
 
-  const instance = render(buildShellNode(layout, [], {
-    workspaceLabel: "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal",
-  }), {
-    stdin: stdin as unknown as NodeJS.ReadStream,
-    stdout: stdout as unknown as NodeJS.WriteStream,
-    stderr: stdout as unknown as NodeJS.WriteStream,
-    debug: false,
-    exitOnCtrlC: false,
-    patchConsole: false,
-  });
+  const instance = render(
+    buildShellNode(layout, [], {
+      workspaceLabel: "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal",
+    }),
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: false,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
 
   await sleep(100);
   instance.rerender(buildShellNode(layout, [], { workspaceLabel: "Ubume" }));
@@ -1508,7 +1602,10 @@ test("workspace label updates on cold start without remounting the app shell", a
   const output = stripAnsi(raw);
   assert.match(output, /Workspace:\s*Ubume/);
   assert.doesNotMatch(output, /Settings/);
-  assert.ok(countLogoInOutput(raw) <= 4, "workspace label changes should stay bounded to the live startup header");
+  assert.ok(
+    countLogoInOutput(raw) <= 4,
+    "workspace label changes should stay bounded to the live startup header",
+  );
 });
 
 test("post-clear empty native frame renders the live header and empty composer", async () => {
@@ -1517,7 +1614,9 @@ test("post-clear empty native frame renders the live header and empty composer",
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
 
@@ -1547,7 +1646,9 @@ test("clear transition physically reprints the intro after previous transcript o
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
 
@@ -1581,7 +1682,9 @@ test("live header remains visible when panel opens and then closes", async () =>
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
 
@@ -1621,7 +1724,9 @@ test("startup header remains bounded after a terminal resize on the startup fram
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
 
@@ -1646,7 +1751,10 @@ test("startup header remains bounded after a terminal resize on the startup fram
   instance.cleanup();
   await sleep(20);
 
-  assert.ok(countLogoInOutput(raw) <= 4, "resize should not replay an unbounded number of startup logos");
+  assert.ok(
+    countLogoInOutput(raw) <= 4,
+    "resize should not replay an unbounded number of startup logos",
+  );
 });
 
 test("live header updates auth state during startup without transcript output", async () => {
@@ -1655,7 +1763,9 @@ test("live header updates auth state during startup without transcript output", 
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
 
@@ -1663,20 +1773,25 @@ test("live header updates auth state during startup without transcript output", 
   const headerConfigWithAuth = { ...HEADER_CONFIG_DEFAULTS, showAuthStatus: true };
 
   // Start with auth in "checking" state (before auth resolves).
-  const instance = render(buildShellNode(layout, [], { authState: "checking", headerConfig: headerConfigWithAuth }), {
-    stdin: stdin as unknown as NodeJS.ReadStream,
-    stdout: stdout as unknown as NodeJS.WriteStream,
-    stderr: stdout as unknown as NodeJS.WriteStream,
-    debug: false,
-    exitOnCtrlC: false,
-    patchConsole: false,
-  });
+  const instance = render(
+    buildShellNode(layout, [], { authState: "checking", headerConfig: headerConfigWithAuth }),
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: false,
+      exitOnCtrlC: false,
+      patchConsole: false,
+    },
+  );
 
   await sleep(100);
 
   // Auth resolves — update to "authenticated".
   const authUpdateOffset = raw.length;
-  instance.rerender(buildShellNode(layout, [], { authState: "authenticated", headerConfig: headerConfigWithAuth }));
+  instance.rerender(
+    buildShellNode(layout, [], { authState: "authenticated", headerConfig: headerConfigWithAuth }),
+  );
   await sleep(100);
 
   instance.cleanup();
@@ -1698,7 +1813,9 @@ test("cold-start stability: opening and closing model picker does not expand UI"
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
 
@@ -1728,7 +1845,9 @@ test("cold-start stability: opening and closing model picker does not expand UI"
 
   // Verify the layout didn't expand to fill the full 40 rows.
   // In real mode, cumulative lines should be low.
-  const lines = stripAnsi(raw).split("\n").filter(l => l.trim().length > 0);
+  const lines = stripAnsi(raw)
+    .split("\n")
+    .filter((l) => l.trim().length > 0);
   assert.ok(lines.length < 40, "Output should remain bounded on cold start");
 });
 
@@ -1738,7 +1857,9 @@ test("cold-start stability: opening and closing provider picker does not duplica
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
 
@@ -1752,10 +1873,12 @@ test("cold-start stability: opening and closing provider picker does not duplica
   });
   await sleep(100);
 
-  instance.rerender(buildShellNode(layout, [], {
-    screen: "provider-picker",
-    panel: <Text>Provider Picker</Text>,
-  }));
+  instance.rerender(
+    buildShellNode(layout, [], {
+      screen: "provider-picker",
+      panel: <Text>Provider Picker</Text>,
+    }),
+  );
   await sleep(100);
 
   const closeOutputOffset = raw.length;
@@ -1769,8 +1892,16 @@ test("cold-start stability: opening and closing provider picker does not duplica
   assert.match(postCloseOutput, /██████/);
   assert.match(postCloseOutput, /Ubume v/);
   assert.match(postCloseOutput, /\n\s*╭[─]+╮\n\s*│ ❯/);
-  assert.equal(countLogoInOutput(postCloseOutput), 1, "provider picker close frame should have one logo");
-  assert.equal(countUbumeMetadataInOutput(postCloseOutput), 1, "provider picker close frame should have one metadata block");
+  assert.equal(
+    countLogoInOutput(postCloseOutput),
+    1,
+    "provider picker close frame should have one logo",
+  );
+  assert.equal(
+    countUbumeMetadataInOutput(postCloseOutput),
+    1,
+    "provider picker close frame should have one metadata block",
+  );
 });
 
 test("cold-start stability: system events do not break the startup frame", async () => {
@@ -1779,15 +1910,17 @@ test("cold-start stability: system events do not break the startup frame", async
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
-  const systemEvent: TimelineEvent = { 
-    id: 100, 
-    type: "system", 
-    title: "Model updated", 
+  const systemEvent: TimelineEvent = {
+    id: 100,
+    type: "system",
+    title: "Model updated",
     content: "Switching to gpt-4",
-    createdAt: Date.now() 
+    createdAt: Date.now(),
   };
 
   const instance = render(buildShellNode(layout, [systemEvent]), {
@@ -1808,7 +1941,7 @@ test("cold-start stability: system events do not break the startup frame", async
   assert.match(output, /██████/);
   assert.match(output, /Model updated/);
 
-  const lines = output.split("\n").filter(l => l.trim().length > 0);
+  const lines = output.split("\n").filter((l) => l.trim().length > 0);
   assert.ok(lines.length < 25, "Output should remain capped even with system events");
 });
 
@@ -1818,7 +1951,9 @@ test("cold-start stability: panel height is bounded on cold start", async () => 
   stdout.columns = 120;
   stdout.rows = 40;
   let raw = "";
-  stdout.on("data", (chunk) => { raw += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    raw += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 40);
 
@@ -1870,7 +2005,9 @@ function makeNativeShellInstance(uiState: UIState, activeEvents: TimelineEvent[]
   stdout.columns = 100;
   stdout.rows = 30;
   let rawOutput = "";
-  stdout.on("data", (chunk) => { rawOutput += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    rawOutput += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(100, 30);
   const composerRows = measureBottomComposerRows({
@@ -1947,7 +2084,10 @@ function makeNativeShellInstance(uiState: UIState, activeEvents: TimelineEvent[]
 }
 
 test("native mode: Page Up is not intercepted by an in-app pause indicator", async () => {
-  const { stdin, instance, getOutput, getRawLength } = makeNativeShellInstance({ kind: "RESPONDING", turnId: 1 });
+  const { stdin, instance, getOutput, getRawLength } = makeNativeShellInstance({
+    kind: "RESPONDING",
+    turnId: 1,
+  });
 
   try {
     await sleep(100);
@@ -1957,9 +2097,15 @@ test("native mode: Page Up is not intercepted by an in-app pause indicator", asy
     stdin.write("[5~");
     await sleep(100);
 
-    const frame = stripAnsi(getOutput().slice(stripAnsi(getOutput().slice(0, beforePageUp)).length - 1));
+    const frame = stripAnsi(
+      getOutput().slice(stripAnsi(getOutput().slice(0, beforePageUp)).length - 1),
+    );
     const output = getOutput();
-    assert.doesNotMatch(output, /End to follow|History \d+%/, "native terminal owns history navigation");
+    assert.doesNotMatch(
+      output,
+      /End to follow|History \d+%/,
+      "native terminal owns history navigation",
+    );
   } finally {
     instance.cleanup();
     await sleep(20);
@@ -1984,7 +2130,11 @@ test("native mode: End does not activate application history UI", async () => {
     //  no longer contains it by checking the total output ends without it)
     const outputLines = getOutput().split("\n");
     const trailingContent = outputLines.slice(-10).join("\n");
-    assert.doesNotMatch(trailingContent, /End to follow/, "pause indicator should disappear after End");
+    assert.doesNotMatch(
+      trailingContent,
+      /End to follow/,
+      "pause indicator should disappear after End",
+    );
   } finally {
     instance.cleanup();
     await sleep(20);

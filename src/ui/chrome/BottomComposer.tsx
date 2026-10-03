@@ -1,44 +1,47 @@
-import { InputUndo, lineBoundary, wordBoundary, verticalCursor, searchHistory } from "../input/editor.js";
-import { fuzzyFiles, listWorkspaceFiles } from "../../core/workspace/workspaceFiles.js";
-import { createAtomicContentToken } from "../input/pastedContent.js";
-import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
-import { formatContextCompact } from "../../core/providerRuntime/contextMetadata.js";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { getStdinDebugState, traceInputDebug } from "../../core/debug/inputDebug.js";
 import type { ModelSpec } from "../../core/models/modelSpecs.js";
+import * as renderDebug from "../../core/perf/renderDebug.js";
+import { formatContextCompact } from "../../core/providerRuntime/contextMetadata.js";
+import { fuzzyFiles, listWorkspaceFiles } from "../../core/workspace/workspaceFiles.js";
 import type { ExternalCliStatus, UIState } from "../../session/types.js";
+import {
+  InputUndo,
+  lineBoundary,
+  searchHistory,
+  verticalCursor,
+  wordBoundary,
+} from "../input/editor.js";
 import { FOCUS_IDS } from "../input/focus.js";
 import {
+  COMPOSER_ROW_CHROME,
+  createInputRowWindow,
   createInputViewport,
   deleteInputBackward,
   deleteInputForward,
-  COMPOSER_ROW_CHROME,
-  createInputRowWindow,
   getComposerRowLayout,
   insertInputText,
   moveCursorLeft,
   moveCursorRight,
-  normalizeInputText,
   normalizeCursorOffset,
+  normalizeInputText,
 } from "../input/inputBuffer.js";
-import { getModeDisplaySpec } from "../render/modeDisplay.js";
-import { ActivityIndicator } from "./ActivityIndicator.js";
-import { measureRunFooterRows, MemoizedRunFooter } from "./RunFooter.js";
-import { THEMES, useTheme } from "../theme.js";
-import { clampVisualText, type Layout } from "../layout.js";
-import { useThrottledValue } from "../useThrottledValue.js";
-import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
-import { getStdinDebugState, traceInputDebug } from "../../core/debug/inputDebug.js";
-import * as renderDebug from "../../core/perf/renderDebug.js";
-import { AnimatedStatusText } from "./AnimatedStatusText.js";
-import { isAnimatedBusyState } from "./busyStatusAnimation.js";
-import { Spinner } from "./Spinner.js";
-import { getSlashCommandSuggestions, type CommandSuggestion } from "../input/slashCommands.js";
 import {
+  createAtomicContentToken,
   createPastedContentToken,
   deleteAdjacentPastedContent,
   isLargePaste,
   moveAcrossPastedContent,
 } from "../input/pastedContent.js";
+import { type CommandSuggestion, getSlashCommandSuggestions } from "../input/slashCommands.js";
+import { clampVisualText, type Layout } from "../layout.js";
+import { getModeDisplaySpec } from "../render/modeDisplay.js";
+import { THEMES, useTheme } from "../theme.js";
+import { AnimatedStatusText } from "./AnimatedStatusText.js";
+import { isAnimatedBusyState } from "./busyStatusAnimation.js";
+import { MemoizedRunFooter, measureRunFooterRows } from "./RunFooter.js";
+import { Spinner } from "./Spinner.js";
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
@@ -74,7 +77,9 @@ function formatApprox(n: number): string {
 }
 
 function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const m = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0");
   const s = (seconds % 60).toString().padStart(2, "0");
   return `${m}:${s}`;
 }
@@ -92,9 +97,10 @@ export function getTokenBarDisplay(tokensUsed: number, modelSpec: ModelSpec) {
     };
   }
   const isEstimated = modelSpec.isEstimated === true;
-  const pct = modelSpec.contextWindow > 0
-    ? Math.min(100, Math.floor((tokensUsed / modelSpec.contextWindow) * 100))
-    : 0;
+  const pct =
+    modelSpec.contextWindow > 0
+      ? Math.min(100, Math.floor((tokensUsed / modelSpec.contextWindow) * 100))
+      : 0;
   return {
     usedText: tokensUsed.toLocaleString("en-US"),
     limitText: isEstimated
@@ -227,7 +233,9 @@ export function getCommandSuggestionState({
   const exactMatch = matchingSuggestions.find((command) => command.cmd === cmdPrefix);
   const exactMatchAliases = exactMatch && "aliases" in exactMatch ? exactMatch.aliases : undefined;
   const suppressExactMatch = exactMatch ? !(exactMatchAliases?.length ?? 0) : true;
-  const suggestions = matchingSuggestions.filter((command) => !(suppressExactMatch && command.cmd === cmdPrefix));
+  const suggestions = matchingSuggestions.filter(
+    (command) => !(suppressExactMatch && command.cmd === cmdPrefix),
+  );
 
   return {
     showSuggestions: canSuggest,
@@ -283,14 +291,14 @@ export function measureBottomComposerRows({
   const visiblePromptRows = inputLocked ? 1 : promptViewport.visibleRows.length;
 
   return (
-    visiblePromptRows
-    + 2
-    + (queueCount > 0 || /(?:^|\s)@[^\s]*$/.test(value.slice(0, cursor)) ? 1 : 0)
-    + (commandSuggestionState.reserveSuggestionRow ? 1 : 0)
-    + footerGapRows
-    + transientStatusRows
-    + 1
-    + bottomPadding
+    visiblePromptRows +
+    2 +
+    (queueCount > 0 || /(?:^|\s)@[^\s]*$/.test(value.slice(0, cursor)) ? 1 : 0) +
+    (commandSuggestionState.reserveSuggestionRow ? 1 : 0) +
+    footerGapRows +
+    transientStatusRows +
+    1 +
+    bottomPadding
   );
 }
 
@@ -320,7 +328,8 @@ function getStatusLine(
       const elapsed = runElapsedSeconds ?? 0;
       const timerStr = elapsed > 0 ? `  ${formatElapsed(elapsed)}` : "";
       if (elapsed >= 15) return `Still waiting for ${cliLabel}${timerStr}`;
-      if (elapsed >= 5) return `${cliLabel} is still starting. The upstream CLI can take a moment${timerStr}`;
+      if (elapsed >= 5)
+        return `${cliLabel} is still starting. The upstream CLI can take a moment${timerStr}`;
       return `Starting ${cliLabel}${timerStr}`;
     }
     return `✧ ${getProviderReadyLabel(activeProviderId ?? "") ?? "Ubume"} is working`;
@@ -356,10 +365,15 @@ export function getVisibleComposerStatusLine({
 }): string {
   if (stopping) return "✧ Stopping · Ctrl+C again to exit";
   const persona = getComposerPersona(uiState);
-  const rawStatusLine = getStatusLine(uiState, activeProviderId, runElapsedSeconds, externalCliStatus) ?? "";
+  const rawStatusLine =
+    getStatusLine(uiState, activeProviderId, runElapsedSeconds, externalCliStatus) ?? "";
   const isCommandDraft = allowCommands && value.startsWith("/");
 
-  if (rawStatusLine.length === 0 || persona === "answer" || (isCommandDraft && persona !== "busy")) {
+  if (
+    rawStatusLine.length === 0 ||
+    persona === "answer" ||
+    (isCommandDraft && persona !== "busy")
+  ) {
     return "";
   }
 
@@ -386,7 +400,11 @@ function renderFooterRuntime(displayStr: string, theme: any) {
   // e.g. "Claude Code CLI / Sonnet 4.6 (Low)"
   const slashIndex = displayStr.indexOf("/");
   if (slashIndex === -1) {
-    return <Text color={theme.model} wrap="truncate">{displayStr}</Text>;
+    return (
+      <Text color={theme.model} wrap="truncate">
+        {displayStr}
+      </Text>
+    );
   }
   const providerPart = displayStr.substring(0, slashIndex).trim();
   let remaining = displayStr.substring(slashIndex + 1).trim();
@@ -441,8 +459,16 @@ export function BottomComposer({
   onRegisterPaste,
   onPasteImage,
   onSubmit,
-  onInterrupt, onRedraw, onTranscript, onExternalEditor, onSendNow, onRegisterFile,
-  workspaceRoot, history = [], queueCount = 0, queuePaused = false,
+  onInterrupt,
+  onRedraw,
+  onTranscript,
+  onExternalEditor,
+  onSendNow,
+  onRegisterFile,
+  workspaceRoot,
+  history = [],
+  queueCount = 0,
+  queuePaused = false,
   onCancel,
   onChangeValue,
   onChangeCursor,
@@ -494,9 +520,7 @@ export function BottomComposer({
   // (provider, model, reasoning and context) cannot retain a stale inherited
   // token set during a theme transition. Custom themes remain sourced from the
   // provider because their merged tokens are supplied there.
-  const theme = themeName === "custom"
-    ? inheritedTheme
-    : (THEMES[themeName] ?? inheritedTheme);
+  const theme = themeName === "custom" ? inheritedTheme : (THEMES[themeName] ?? inheritedTheme);
   const { mode: layoutMode } = layout;
   const crampedViewport = layout.rows <= 24;
   const { isFocused } = useFocus({ id: FOCUS_IDS.composer, autoFocus: true });
@@ -515,12 +539,26 @@ export function BottomComposer({
   const fileMatch = value.slice(0, cursor).match(/(?:^|\s)@([^\s]*)$/);
   const fileQuery = fileMatch?.[1];
   const [dismissedFile, setDismissedFile] = useState<string | null>(null);
-  const fileSuggestions = fileQuery !== undefined && dismissedFile !== `${value}:${cursor}` ? fuzzyFiles(filePaths, fileQuery) : [];
+  const fileSuggestions =
+    fileQuery !== undefined && dismissedFile !== `${value}:${cursor}`
+      ? fuzzyFiles(filePaths, fileQuery)
+      : [];
   useEffect(() => {
     if (fileQuery === undefined || !workspaceRoot) return;
     let stale = false;
-    const timer = setTimeout(() => { void listWorkspaceFiles(workspaceRoot).then((paths) => { if (!stale) setFilePaths(paths); }).catch(() => { if (!stale) setFilePaths([]); }); }, 100);
-    return () => { stale = true; clearTimeout(timer); };
+    const timer = setTimeout(() => {
+      void listWorkspaceFiles(workspaceRoot)
+        .then((paths) => {
+          if (!stale) setFilePaths(paths);
+        })
+        .catch(() => {
+          if (!stale) setFilePaths([]);
+        });
+    }, 100);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
   }, [fileQuery, workspaceRoot]);
   const [runElapsedSeconds, setRunElapsedSeconds] = useState(0);
 
@@ -639,19 +677,28 @@ export function BottomComposer({
     .map((suggestion, index) => `${index === selectedIndex ? "›" : "·"} ${suggestion.cmd}`)
     .join("   ");
 
-  const rawStatusLine = getVisibleComposerStatusLine({ uiState, value, allowCommands, activeProviderId, runElapsedSeconds, externalCliStatus, stopping });
+  const rawStatusLine = getVisibleComposerStatusLine({
+    uiState,
+    value,
+    allowCommands,
+    activeProviderId,
+    runElapsedSeconds,
+    externalCliStatus,
+    stopping,
+  });
   const showStatusLine = rawStatusLine.length > 0;
   const showTransientStatusRow = showStatusLine || inputLocked;
   const footerGapRows = getComposerToFooterGapRows(layout);
 
   const promptViewport = useMemo(
-    () => createInputViewport({
-      text: value,
-      cursorOffset: normalizeCursorOffset(value, cursor),
-      width: promptWidth,
-      maxVisibleRows: MAX_VISIBLE_INPUT_ROWS,
-      scrollRow,
-    }),
+    () =>
+      createInputViewport({
+        text: value,
+        cursorOffset: normalizeCursorOffset(value, cursor),
+        width: promptWidth,
+        maxVisibleRows: MAX_VISIBLE_INPUT_ROWS,
+        scrollRow,
+      }),
     [cursor, promptWidth, scrollRow, value],
   );
   const placeholderText = clampVisualText(getPlaceholder(persona), Math.max(1, promptWidth - 1));
@@ -670,7 +717,10 @@ export function BottomComposer({
     const normalizedValue = normalizeInputText(nextValue);
     const normalizedCursor = normalizeCursorOffset(normalizedValue, nextCursor);
 
-    undo.current.record({ value: valueRef.current, cursor: cursorRef.current }, { value: normalizedValue, cursor: normalizedCursor });
+    undo.current.record(
+      { value: valueRef.current, cursor: cursorRef.current },
+      { value: normalizedValue, cursor: normalizedCursor },
+    );
     // Update refs immediately to avoid race conditions with fast input events
     valueRef.current = normalizedValue;
     cursorRef.current = normalizedCursor;
@@ -757,201 +807,322 @@ export function BottomComposer({
     }
   };
 
-  useInput((input, key) => {
-    if (mouseEventTickRef.current) {
-      return;
-    }
-
-    if (backtabEventTickRef.current) {
-      backtabEventTickRef.current = false;
-      if (backtabEventTimeoutRef.current) {
-        clearTimeout(backtabEventTimeoutRef.current);
-        backtabEventTimeoutRef.current = null;
+  useInput(
+    (input, key) => {
+      if (mouseEventTickRef.current) {
+        return;
       }
-      onCycleMode();
-      return;
-    }
 
-
-    // Ink exposes Shift+Tab directly on terminals whose parser understands the
-    // active keyboard protocol. Keep this path in addition to raw-sequence
-    // detection so the shortcut works in VTE, Kitty, and Windows terminals.
-    if (key.tab && key.shift) {
-      onCycleMode();
-      return;
-    }
-
-    if (ctrlMEventTickRef.current) {
-      ctrlMEventTickRef.current = false;
-      if (ctrlMEventTimeoutRef.current) {
-        clearTimeout(ctrlMEventTimeoutRef.current);
-        ctrlMEventTimeoutRef.current = null;
+      if (backtabEventTickRef.current) {
+        backtabEventTickRef.current = false;
+        if (backtabEventTimeoutRef.current) {
+          clearTimeout(backtabEventTimeoutRef.current);
+          backtabEventTimeoutRef.current = null;
+        }
+        onCycleMode();
+        return;
       }
-      if (!inputLocked) {
-        traceInputDebug("model_picker_shortcut_received", {
-          handler: "BottomComposer.useInput",
-          source: "ctrl-m-csi-u",
-          inputLocked,
-          allowCommands,
-          isFocused,
-          stdin: getStdinDebugState(stdin),
-        });
-        onOpenModelPicker();
-      }
-      return;
-    }
 
-    if (ctrlAltPEventTickRef.current) {
-      ctrlAltPEventTickRef.current = false;
-      if (ctrlAltPEventTimeoutRef.current) {
-        clearTimeout(ctrlAltPEventTimeoutRef.current);
-        ctrlAltPEventTimeoutRef.current = null;
+      // Ink exposes Shift+Tab directly on terminals whose parser understands the
+      // active keyboard protocol. Keep this path in addition to raw-sequence
+      // detection so the shortcut works in VTE, Kitty, and Windows terminals.
+      if (key.tab && key.shift) {
+        onCycleMode();
+        return;
       }
-      if (!inputLocked && allowCommands) {
-        onOpenProviderPicker();
-      }
-      return;
-    }
 
-    if (key.ctrl && input === "q") { onQuit(); return; }
-    if (key.ctrl && input === "c") { onInterrupt?.(); return; }
-    if (key.ctrl && input === "l") { onRedraw?.(); return; }
-    if (searchQuery !== null) {
-      if (key.escape) { commitInputChange(searchOriginal.current.value, searchOriginal.current.cursor); setSearchQuery(null); return; }
-      if (key.return) { setSearchQuery(null); return; }
-      let query = searchQuery;
-      let offset = 0;
-      if (key.ctrl && input === "r") offset = searchOffset + 1;
-      else if (key.backspace) query = Array.from(query).slice(0, -1).join("");
-      else if (!key.ctrl && !key.meta && input) query += input;
-      else return;
-      const match = searchHistory(history, query, offset);
-      setSearchQuery(query); setSearchOffset(offset);
-      if (match !== undefined) commitInputChange(match, match.length);
-      return;
-    }
-    if (key.escape && fileSuggestions.length) { setDismissedFile(`${value}:${cursor}`); return; }
-    if (key.escape) { onCancel(); return; }
-    if (chord.current) {
-      chord.current = false;
-      if (key.ctrl && input === "s") { onSendNow?.(); return; }
-    }
-    if (key.ctrl && input === "x") { chord.current = true; return; }
-    if (key.ctrl && input === "o") { onTranscript?.(); return; }
-    if (key.ctrl && input === "g") { onExternalEditor?.(); return; }
-    if (key.ctrl && input === "r") {
-      searchOriginal.current = { value: valueRef.current, cursor: cursorRef.current };
-      setSearchQuery(""); setSearchOffset(0);
-      const match = searchHistory(history, "");
-      if (match !== undefined) commitInputChange(match, match.length);
-      return;
-    }
-    if (key.meta && input === "p") { onOpenModelPicker(); return; }
-    const text = valueRef.current;
-    const position = cursorRef.current;
-    if (key.home || key.end) { desiredColumn.current = undefined; commitInputChange(text, lineBoundary(text, position, key.end)); return; }
-    if (key.ctrl && (input === "a" || input === "e")) { desiredColumn.current = undefined; commitInputChange(text, lineBoundary(text, position, input === "e")); return; }
-    if (key.ctrl && (input === "b" || input === "f")) { desiredColumn.current = undefined; commitInputChange(text, input === "b" ? moveAcrossPastedContent(text, position, "left") ?? moveCursorLeft(text, position) : moveAcrossPastedContent(text, position, "right") ?? moveCursorRight(text, position)); return; }
-    if (key.meta && (input === "b" || input === "f")) { desiredColumn.current = undefined; commitInputChange(text, wordBoundary(text, position, input === "b" ? -1 : 1)); return; }
-    if (key.ctrl && ["w", "u", "k"].includes(input)) {
-      const edge = input === "w" ? wordBoundary(text, position, -1, true) : lineBoundary(text, position, input === "k");
-      const from = Math.min(edge, position), to = Math.max(edge, position);
-      killText.current = text.slice(from, to);
-      commitInputChange(text.slice(0, from) + text.slice(to), from); return;
-    }
-    if (key.ctrl && input === "y") { insertText(killText.current); return; }
-    if (key.ctrl && (input === "_" || input === "\x1f")) {
-      const previous = undo.current.undo();
-      if (previous) { valueRef.current = previous.value; cursorRef.current = previous.cursor; onChangeInput(previous.value, previous.cursor); }
-      return;
-    }
-    if (key.ctrl && input === "v") { onPasteImage?.(); return; }
-    if (key.ctrl && key.return) { onSendNow?.(); return; }
-    if ((key.return && (key.shift || key.meta)) || (key.ctrl && (input === "j" || input === "\n"))) { insertText("\n"); return; }
-    if (key.upArrow || key.downArrow || (key.ctrl && (input === "p" || input === "n"))) {
-      const direction = key.upArrow || input === "p" ? -1 : 1;
-      const list = fileSuggestions.length ? fileSuggestions : showSuggestions ? suggestions : [];
-      if (list.length) { setSelectedIndex((index) => Math.max(0, Math.min(list.length - 1, index + direction))); return; }
-      const next = verticalCursor(text, position, promptWidth, direction, desiredColumn.current);
-      desiredColumn.current = next.column;
-      if (!next.boundary) commitInputChange(text, next.cursor);
-      else if (allowHistory) { direction < 0 ? onHistoryUp() : onHistoryDown(); desiredColumn.current = undefined; }
-      return;
-    }
-    desiredColumn.current = undefined;
-    if ((key.tab || key.return) && fileSuggestions.length && fileQuery !== undefined) {
-      const path = fileSuggestions[Math.min(selectedIndex, fileSuggestions.length - 1)]!;
-      const token = createAtomicContentToken(`[File: ${path}]`);
-      onRegisterFile?.(token, path);
-      const start = position - fileQuery.length - 1;
-      commitInputChange(text.slice(0, start) + token + " " + text.slice(position), start + token.length + 1); return;
-    }
-    if ((key.tab || key.rightArrow) && showSuggestions && suggestions.length > 0) {
-      const selected = suggestions[selectedIndex]?.cmd;
-      if (selected) commitInputChange(`${selected} `, selected.length + 1);
-      return;
-    }
-    if (key.return) {
-      if (text.slice(0, position).endsWith("\\")) { commitInputChange(text.slice(0, position - 1) + "\n" + text.slice(position), position); return; }
-      if (showSuggestions && suggestions.length > 0) {
-        const selected = suggestions[selectedIndex];
-        if (selected && text.trim().toLowerCase() !== selected.cmd && !("aliases" in selected && selected.aliases?.some((alias) => alias === text.trim().toLowerCase()))) {
-          commitInputChange(`${selected.cmd} `, selected.cmd.length + 1); return;
+      if (ctrlMEventTickRef.current) {
+        ctrlMEventTickRef.current = false;
+        if (ctrlMEventTimeoutRef.current) {
+          clearTimeout(ctrlMEventTimeoutRef.current);
+          ctrlMEventTimeoutRef.current = null;
+        }
+        if (!inputLocked) {
+          traceInputDebug("model_picker_shortcut_received", {
+            handler: "BottomComposer.useInput",
+            source: "ctrl-m-csi-u",
+            inputLocked,
+            allowCommands,
+            isFocused,
+            stdin: getStdinDebugState(stdin),
+          });
+          onOpenModelPicker();
+        }
+        return;
+      }
+
+      if (ctrlAltPEventTickRef.current) {
+        ctrlAltPEventTickRef.current = false;
+        if (ctrlAltPEventTimeoutRef.current) {
+          clearTimeout(ctrlAltPEventTimeoutRef.current);
+          ctrlAltPEventTimeoutRef.current = null;
+        }
+        if (!inputLocked && allowCommands) {
+          onOpenProviderPicker();
+        }
+        return;
+      }
+
+      if (key.ctrl && input === "q") {
+        onQuit();
+        return;
+      }
+      if (key.ctrl && input === "c") {
+        onInterrupt?.();
+        return;
+      }
+      if (key.ctrl && input === "l") {
+        onRedraw?.();
+        return;
+      }
+      if (searchQuery !== null) {
+        if (key.escape) {
+          commitInputChange(searchOriginal.current.value, searchOriginal.current.cursor);
+          setSearchQuery(null);
+          return;
+        }
+        if (key.return) {
+          setSearchQuery(null);
+          return;
+        }
+        let query = searchQuery;
+        let offset = 0;
+        if (key.ctrl && input === "r") offset = searchOffset + 1;
+        else if (key.backspace) query = Array.from(query).slice(0, -1).join("");
+        else if (!key.ctrl && !key.meta && input) query += input;
+        else return;
+        const match = searchHistory(history, query, offset);
+        setSearchQuery(query);
+        setSearchOffset(offset);
+        if (match !== undefined) commitInputChange(match, match.length);
+        return;
+      }
+      if (key.escape && fileSuggestions.length) {
+        setDismissedFile(`${value}:${cursor}`);
+        return;
+      }
+      if (key.escape) {
+        onCancel();
+        return;
+      }
+      if (chord.current) {
+        chord.current = false;
+        if (key.ctrl && input === "s") {
+          onSendNow?.();
+          return;
         }
       }
-      if (text.trim()) onSubmit();
-      return;
-    }
+      if (key.ctrl && input === "x") {
+        chord.current = true;
+        return;
+      }
+      if (key.ctrl && input === "o") {
+        onTranscript?.();
+        return;
+      }
+      if (key.ctrl && input === "g") {
+        onExternalEditor?.();
+        return;
+      }
+      if (key.ctrl && input === "r") {
+        searchOriginal.current = { value: valueRef.current, cursor: cursorRef.current };
+        setSearchQuery("");
+        setSearchOffset(0);
+        const match = searchHistory(history, "");
+        if (match !== undefined) commitInputChange(match, match.length);
+        return;
+      }
+      if (key.meta && input === "p") {
+        onOpenModelPicker();
+        return;
+      }
+      const text = valueRef.current;
+      const position = cursorRef.current;
+      if (key.home || key.end) {
+        desiredColumn.current = undefined;
+        commitInputChange(text, lineBoundary(text, position, key.end));
+        return;
+      }
+      if (key.ctrl && (input === "a" || input === "e")) {
+        desiredColumn.current = undefined;
+        commitInputChange(text, lineBoundary(text, position, input === "e"));
+        return;
+      }
+      if (key.ctrl && (input === "b" || input === "f")) {
+        desiredColumn.current = undefined;
+        commitInputChange(
+          text,
+          input === "b"
+            ? (moveAcrossPastedContent(text, position, "left") ?? moveCursorLeft(text, position))
+            : (moveAcrossPastedContent(text, position, "right") ?? moveCursorRight(text, position)),
+        );
+        return;
+      }
+      if (key.meta && (input === "b" || input === "f")) {
+        desiredColumn.current = undefined;
+        commitInputChange(text, wordBoundary(text, position, input === "b" ? -1 : 1));
+        return;
+      }
+      if (key.ctrl && ["w", "u", "k"].includes(input)) {
+        const edge =
+          input === "w"
+            ? wordBoundary(text, position, -1, true)
+            : lineBoundary(text, position, input === "k");
+        const from = Math.min(edge, position),
+          to = Math.max(edge, position);
+        killText.current = text.slice(from, to);
+        commitInputChange(text.slice(0, from) + text.slice(to), from);
+        return;
+      }
+      if (key.ctrl && input === "y") {
+        insertText(killText.current);
+        return;
+      }
+      if (key.ctrl && (input === "_" || input === "\x1f")) {
+        const previous = undo.current.undo();
+        if (previous) {
+          valueRef.current = previous.value;
+          cursorRef.current = previous.cursor;
+          onChangeInput(previous.value, previous.cursor);
+        }
+        return;
+      }
+      if (key.ctrl && input === "v") {
+        onPasteImage?.();
+        return;
+      }
+      if (key.ctrl && key.return) {
+        onSendNow?.();
+        return;
+      }
+      if (
+        (key.return && (key.shift || key.meta)) ||
+        (key.ctrl && (input === "j" || input === "\n"))
+      ) {
+        insertText("\n");
+        return;
+      }
+      if (key.upArrow || key.downArrow || (key.ctrl && (input === "p" || input === "n"))) {
+        const direction = key.upArrow || input === "p" ? -1 : 1;
+        const list = fileSuggestions.length ? fileSuggestions : showSuggestions ? suggestions : [];
+        if (list.length) {
+          setSelectedIndex((index) => Math.max(0, Math.min(list.length - 1, index + direction)));
+          return;
+        }
+        const next = verticalCursor(text, position, promptWidth, direction, desiredColumn.current);
+        desiredColumn.current = next.column;
+        if (!next.boundary) commitInputChange(text, next.cursor);
+        else if (allowHistory) {
+          direction < 0 ? onHistoryUp() : onHistoryDown();
+          desiredColumn.current = undefined;
+        }
+        return;
+      }
+      desiredColumn.current = undefined;
+      if ((key.tab || key.return) && fileSuggestions.length && fileQuery !== undefined) {
+        const path = fileSuggestions[Math.min(selectedIndex, fileSuggestions.length - 1)]!;
+        const token = createAtomicContentToken(`[File: ${path}]`);
+        onRegisterFile?.(token, path);
+        const start = position - fileQuery.length - 1;
+        commitInputChange(
+          text.slice(0, start) + token + " " + text.slice(position),
+          start + token.length + 1,
+        );
+        return;
+      }
+      if ((key.tab || key.rightArrow) && showSuggestions && suggestions.length > 0) {
+        const selected = suggestions[selectedIndex]?.cmd;
+        if (selected) commitInputChange(`${selected} `, selected.length + 1);
+        return;
+      }
+      if (key.return) {
+        if (text.slice(0, position).endsWith("\\")) {
+          commitInputChange(text.slice(0, position - 1) + "\n" + text.slice(position), position);
+          return;
+        }
+        if (showSuggestions && suggestions.length > 0) {
+          const selected = suggestions[selectedIndex];
+          if (
+            selected &&
+            text.trim().toLowerCase() !== selected.cmd &&
+            !(
+              "aliases" in selected &&
+              selected.aliases?.some((alias) => alias === text.trim().toLowerCase())
+            )
+          ) {
+            commitInputChange(`${selected.cmd} `, selected.cmd.length + 1);
+            return;
+          }
+        }
+        if (text.trim()) onSubmit();
+        return;
+      }
 
-    if (key.leftArrow) {
-      const nextCursor = moveAcrossPastedContent(valueRef.current, cursorRef.current, "left")
-        ?? moveCursorLeft(valueRef.current, cursorRef.current);
-      commitInputChange(valueRef.current, nextCursor);
-      return;
-    }
+      if (key.leftArrow) {
+        const nextCursor =
+          moveAcrossPastedContent(valueRef.current, cursorRef.current, "left") ??
+          moveCursorLeft(valueRef.current, cursorRef.current);
+        commitInputChange(valueRef.current, nextCursor);
+        return;
+      }
 
-    if (key.rightArrow) {
-      const nextCursor = moveAcrossPastedContent(valueRef.current, cursorRef.current, "right")
-        ?? moveCursorRight(valueRef.current, cursorRef.current);
-      commitInputChange(valueRef.current, nextCursor);
-      return;
-    }
+      if (key.rightArrow) {
+        const nextCursor =
+          moveAcrossPastedContent(valueRef.current, cursorRef.current, "right") ??
+          moveCursorRight(valueRef.current, cursorRef.current);
+        commitInputChange(valueRef.current, nextCursor);
+        return;
+      }
 
-    if (key.backspace || input === "\b" || (input === "\u007f" && !key.delete)) {
-      deleteIntentRef.current = null;
-      const next = deleteAdjacentPastedContent(valueRef.current, cursorRef.current, "backward") ?? deleteInputBackward({
-        value: valueRef.current,
-        cursorOffset: cursorRef.current,
-      });
-      commitInputChange(next.value, next.cursorOffset);
-      return;
-    }
-
-    if (key.delete || (input === "\u007f" && key.delete)) {
-      const deleteIntent = deleteIntentRef.current;
-      deleteIntentRef.current = null;
-
-      if (deleteIntent === "backspace") {
-        const next = deleteInputBackward({
-          value: valueRef.current,
-          cursorOffset: cursorRef.current,
-        });
+      if (key.backspace || input === "\b" || (input === "\u007f" && !key.delete)) {
+        deleteIntentRef.current = null;
+        const next =
+          deleteAdjacentPastedContent(valueRef.current, cursorRef.current, "backward") ??
+          deleteInputBackward({
+            value: valueRef.current,
+            cursorOffset: cursorRef.current,
+          });
         commitInputChange(next.value, next.cursorOffset);
         return;
       }
 
-      const next = deleteAdjacentPastedContent(valueRef.current, cursorRef.current, "forward") ?? deleteInputForward({
-        value: valueRef.current,
-        cursorOffset: cursorRef.current,
-      });
-      commitInputChange(next.value, next.cursorOffset);
-      return;
-    }
+      if (key.delete || (input === "\u007f" && key.delete)) {
+        const deleteIntent = deleteIntentRef.current;
+        deleteIntentRef.current = null;
 
-    if (!key.ctrl && !key.meta && !key.escape && input && input.length > 0 && input !== "\u007f" && input !== "\b") {
-      handlePastedInput(input);
-    }
-  }, { isActive: isFocused });
+        if (deleteIntent === "backspace") {
+          const next = deleteInputBackward({
+            value: valueRef.current,
+            cursorOffset: cursorRef.current,
+          });
+          commitInputChange(next.value, next.cursorOffset);
+          return;
+        }
+
+        const next =
+          deleteAdjacentPastedContent(valueRef.current, cursorRef.current, "forward") ??
+          deleteInputForward({
+            value: valueRef.current,
+            cursorOffset: cursorRef.current,
+          });
+        commitInputChange(next.value, next.cursorOffset);
+        return;
+      }
+
+      if (
+        !key.ctrl &&
+        !key.meta &&
+        !key.escape &&
+        input &&
+        input.length > 0 &&
+        input !== "\u007f" &&
+        input !== "\b"
+      ) {
+        handlePastedInput(input);
+      }
+    },
+    { isActive: isFocused },
+  );
 
   const tokenDisplay = getTokenBarDisplay(tokensUsed, modelSpec);
   const reasoningSuffix = reasoningLevel ? ` (${reasoningLevel})` : "";
@@ -965,12 +1136,19 @@ export function BottomComposer({
   const promptLine = (
     <Box flexDirection="row" width={rowLayout.bodyWidth}>
       <Box width={rowLayout.promptWidth} flexShrink={0}>
-        <Text color={promptPrefixColor} bold={!inputLocked}>{promptPrefix}</Text>
+        <Text color={promptPrefixColor} bold={!inputLocked}>
+          {promptPrefix}
+        </Text>
       </Box>
       <Box flexDirection="column" width={promptWidth} flexShrink={0} overflow="hidden">
         {value.length === 0 && !inputLocked ? (
           <Box width="100%" overflow="hidden">
-            <Text backgroundColor={cursorVisible && isFocused ? theme.text : undefined} color={cursorVisible && isFocused ? theme.surface : undefined}>{" "}</Text>
+            <Text
+              backgroundColor={cursorVisible && isFocused ? theme.text : undefined}
+              color={cursorVisible && isFocused ? theme.surface : undefined}
+            >
+              {" "}
+            </Text>
             <Text color={theme.textDim}>{placeholderText}</Text>
           </Box>
         ) : inputLocked ? (
@@ -981,15 +1159,21 @@ export function BottomComposer({
           promptViewport.visibleRows.map((row, index) => {
             const visibleCursorRow = promptViewport.cursorRow - promptViewport.scrollRow;
             const isCursorRow = index === visibleCursorRow;
-            const segments = createInputRowWindow(row.text, promptWidth,
-              isCursorRow ? promptViewport.cursorColumn : undefined);
+            const segments = createInputRowWindow(
+              row.text,
+              promptWidth,
+              isCursorRow ? promptViewport.cursorColumn : undefined,
+            );
 
             return (
               <Box key={`${row.start}-${row.end}-${index}`} width="100%" overflow="hidden">
                 {isCursorRow ? (
                   <>
                     <Text color={theme.text}>{segments.before}</Text>
-                    <Text backgroundColor={cursorVisible && isFocused ? theme.text : undefined} color={cursorVisible && isFocused ? theme.surface : undefined}>
+                    <Text
+                      backgroundColor={cursorVisible && isFocused ? theme.text : undefined}
+                      color={cursorVisible && isFocused ? theme.surface : undefined}
+                    >
                       {segments.current}
                     </Text>
                     <Text color={theme.text}>{segments.after}</Text>
@@ -1006,7 +1190,14 @@ export function BottomComposer({
   );
 
   if (showBusyFooter) {
-    return <MemoizedRunFooter uiState={uiState} showBusyLoader={showBusyLoader} onCancel={onCancel} onQuit={onQuit} />;
+    return (
+      <MemoizedRunFooter
+        uiState={uiState}
+        showBusyLoader={showBusyLoader}
+        onCancel={onCancel}
+        onQuit={onQuit}
+      />
+    );
   }
 
   return (
@@ -1040,26 +1231,43 @@ export function BottomComposer({
       )}
 
       {(fileQuery !== undefined || queueCount > 0) && (
-        <Box paddingX={1} height={1} overflow="hidden"><Text color={theme.textDim} wrap="truncate">{searchQuery !== null ? `History search: ${searchQuery} · Ctrl+R next · Enter accept · Esc cancel` : fileQuery !== undefined ? (fileSuggestions[selectedIndex] ? `@ ${fileSuggestions[selectedIndex]} · ↑↓ choose · Tab attach` : "No matching files") : `${queueCount} queued${queuePaused ? " (paused)" : ""} · /queue · Ctrl+X Ctrl+S send now`}</Text></Box>
+        <Box paddingX={1} height={1} overflow="hidden">
+          <Text color={theme.textDim} wrap="truncate">
+            {searchQuery !== null
+              ? `History search: ${searchQuery} · Ctrl+R next · Enter accept · Esc cancel`
+              : fileQuery !== undefined
+                ? fileSuggestions[selectedIndex]
+                  ? `@ ${fileSuggestions[selectedIndex]} · ↑↓ choose · Tab attach`
+                  : "No matching files"
+                : `${queueCount} queued${queuePaused ? " (paused)" : ""} · /queue · Ctrl+X Ctrl+S send now`}
+          </Text>
+        </Box>
       )}
       {commandSuggestionState.reserveSuggestionRow && (
         <Box paddingLeft={1} marginTop={0} width="100%" overflow="hidden">
-          <Text color={theme.textDim} wrap="truncate">{suggestionText || " "}</Text>
+          <Text color={theme.textDim} wrap="truncate">
+            {suggestionText || " "}
+          </Text>
         </Box>
       )}
 
-      {footerGapRows > 0 && (
-        <Box height={footerGapRows} />
-      )}
+      {footerGapRows > 0 && <Box height={footerGapRows} />}
 
       {showTransientStatusRow && (
-        <Box paddingX={1} marginTop={0} height={1} width="100%" justifyContent="space-between" overflow="hidden">
+        <Box
+          paddingX={1}
+          marginTop={0}
+          height={1}
+          width="100%"
+          justifyContent="space-between"
+          overflow="hidden"
+        >
           <>
             <Box flexShrink={1} flexGrow={1} overflow="hidden" flexDirection="row">
               {!!getExternalCliLabel(activeProviderId ?? "") && uiState.kind === "THINKING" && (
                 <>
                   <Spinner color={theme.accent} />
-                  <Text>{" "}</Text>
+                  <Text> </Text>
                 </>
               )}
               <AnimatedStatusText
@@ -1078,9 +1286,22 @@ export function BottomComposer({
         </Box>
       )}
 
-      <Box paddingLeft={1} paddingRight={1} marginTop={0} width="100%" justifyContent="space-between">
+      <Box
+        paddingLeft={1}
+        paddingRight={1}
+        marginTop={0}
+        width="100%"
+        justifyContent="space-between"
+      >
         <Box flexGrow={1} flexShrink={1} overflow="hidden" flexDirection="row">
-          {searchQuery !== null && fileQuery === undefined && queueCount === 0 ? <Text color={theme.textDim} wrap="truncate">{`History search: ${searchQuery} · Ctrl+R next · Enter accept · Esc cancel`}</Text> : renderFooterRuntime(footerRuntimeDisplay, theme)}
+          {searchQuery !== null && fileQuery === undefined && queueCount === 0 ? (
+            <Text
+              color={theme.textDim}
+              wrap="truncate"
+            >{`History search: ${searchQuery} · Ctrl+R next · Enter accept · Esc cancel`}</Text>
+          ) : (
+            renderFooterRuntime(footerRuntimeDisplay, theme)
+          )}
           {searchQuery !== null ? null : planMode ? (
             <Text color={theme.accent}>{"  · PLAN"}</Text>
           ) : mode ? (
@@ -1100,8 +1321,11 @@ export function BottomComposer({
               <Text color={theme.textMuted}>Context: </Text>
               <Text color={theme.context}>{tokenDisplay.usedText}</Text>
               <Text color={theme.textDim}>
-                {" / "}{tokenDisplay.limitText}
-                {tokenDisplay.percentage !== null ? ` · ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%` : ""}
+                {" / "}
+                {tokenDisplay.limitText}
+                {tokenDisplay.percentage !== null
+                  ? ` · ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%`
+                  : ""}
               </Text>
             </Box>
           ) : (
@@ -1112,7 +1336,6 @@ export function BottomComposer({
           )}
         </Box>
       </Box>
-
     </Box>
   );
 }
@@ -1137,7 +1360,10 @@ function getUiStateKey(uiState: UIState): string {
 // ─── Memoized export ─────────────────────────────────────────────────────────
 
 // Skips re-renders during streaming when props haven't meaningfully changed.
-export function areBottomComposerPropsEqual(prev: BottomComposerProps, next: BottomComposerProps): boolean {
+export function areBottomComposerPropsEqual(
+  prev: BottomComposerProps,
+  next: BottomComposerProps,
+): boolean {
   // Always re-render if the uiState kind changes to a different persona
   const prevKey = getUiStateKey(prev.uiState);
   const nextKey = getUiStateKey(next.uiState);
@@ -1150,11 +1376,22 @@ export function areBottomComposerPropsEqual(prev: BottomComposerProps, next: Bot
   if (prev.externalCliStatus !== next.externalCliStatus) return false;
 
   // Re-render if input-related props change
-  if (prev.queueCount !== next.queueCount || prev.queuePaused !== next.queuePaused || prev.history !== next.history) return false;
-  if (prev.onSubmit !== next.onSubmit || prev.onCancel !== next.onCancel || prev.onSendNow !== next.onSendNow || prev.onInterrupt !== next.onInterrupt) return false;
+  if (
+    prev.queueCount !== next.queueCount ||
+    prev.queuePaused !== next.queuePaused ||
+    prev.history !== next.history
+  )
+    return false;
+  if (
+    prev.onSubmit !== next.onSubmit ||
+    prev.onCancel !== next.onCancel ||
+    prev.onSendNow !== next.onSendNow ||
+    prev.onInterrupt !== next.onInterrupt
+  )
+    return false;
   if (prev.value !== next.value) return false;
   if (prev.cursor !== next.cursor) return false;
-  
+
   // Re-render if display props change
   if (prev.mode !== next.mode) return false;
   if (prev.model !== next.model) return false;
@@ -1164,17 +1401,17 @@ export function areBottomComposerPropsEqual(prev: BottomComposerProps, next: Bot
   if (prev.planMode !== next.planMode) return false;
   if (prev.showBusyLoader !== next.showBusyLoader || prev.stopping !== next.stopping) return false;
   if (prev.tokensUsed !== next.tokensUsed) return false;
-  
+
   // Re-render if layout changes
   if (prev.width !== next.width) return false;
   if (prev.layout.cols !== next.layout.cols) return false;
   if (prev.layout.rows !== next.layout.rows) return false;
   if (prev.layout.mode !== next.layout.mode) return false;
   if (prev.themeName !== next.themeName) return false;
-  
+
   if (prev.modelSpec?.status !== next.modelSpec?.status) return false;
   if (prev.modelSpec?.contextWindow !== next.modelSpec?.contextWindow) return false;
-  
+
   // Re-render if active provider changes (affects status line text)
   if (prev.activeProviderId !== next.activeProviderId) return false;
 

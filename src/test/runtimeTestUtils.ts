@@ -1,4 +1,9 @@
-import { resolveRuntimeConfig, type RuntimeConfig, DEFAULT_RUNTIME_CONFIG, type ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
+import {
+  DEFAULT_RUNTIME_CONFIG,
+  type ResolvedRuntimeConfig,
+  type RuntimeConfig,
+  resolveRuntimeConfig,
+} from "../config/runtimeConfig.js";
 
 export function makeResolvedRuntime(overrides: Partial<RuntimeConfig> = {}): ResolvedRuntimeConfig {
   return resolveRuntimeConfig({

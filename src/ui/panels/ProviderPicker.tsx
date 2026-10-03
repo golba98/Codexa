@@ -1,22 +1,27 @@
-import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useFocus, useInput } from "ink";
-import type { LocalBackendId, ProviderConfig, ProviderId, ProviderPickerAction } from "../../core/providerLauncher/types.js";
+import { useEffect, useMemo, useState } from "react";
 import { traceInputDebug } from "../../core/debug/inputDebug.js";
+import type {
+  LocalBackendId,
+  ProviderConfig,
+  ProviderId,
+  ProviderPickerAction,
+} from "../../core/providerLauncher/types.js";
 import { FOCUS_IDS } from "../input/focus.js";
 import {
+  type ActivePanelLayout,
   clampVisualText,
+  getAvailableRowsForPanel,
   getShellWidth,
   type Layout,
-  usePanelAvailableRows,
-  getAvailableRowsForPanel,
-  useAppLayoutBudget,
-  useActivePanelLayout,
-  type ActivePanelLayout,
   type PanelLayout,
+  useActivePanelLayout,
+  useAppLayoutBudget,
+  usePanelAvailableRows,
   usePanelLayout,
 } from "../layout.js";
-import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
 import { useTheme } from "../theme.js";
+import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
 
 // ─── Types & helpers ─────────────────────────────────────────────────────────
 
@@ -28,7 +33,11 @@ export interface LocalBackendStatus {
 interface ProviderPickerProps {
   layout?: Layout;
   providers: readonly ProviderConfig[];
-  onAction: (providerId: ProviderId, action: ProviderPickerAction, localBackend?: LocalBackendId) => void;
+  onAction: (
+    providerId: ProviderId,
+    action: ProviderPickerAction,
+    localBackend?: LocalBackendId,
+  ) => void;
   onCancel: () => void;
   /** When set, the picker mounts directly at this provider's action panel. */
   initialProviderId?: ProviderId;
@@ -58,7 +67,8 @@ export function groupCodexaNativeProviders(providers: readonly ProviderConfig[])
   const nativeProviders = providers.filter(isCodexaNativeProvider);
   if (nativeProviders.length === 0) return [...providers];
 
-  const primary = nativeProviders.find((provider) => provider.id === "codexa-native") ?? nativeProviders[0]!;
+  const primary =
+    nativeProviders.find((provider) => provider.id === "codexa-native") ?? nativeProviders[0]!;
   const active = nativeProviders.find((provider) => provider.isActiveRoute);
   const defaultProvider = nativeProviders.find((provider) => provider.isDefault);
   const grouped: ProviderConfig = {
@@ -69,18 +79,22 @@ export function groupCodexaNativeProviders(providers: readonly ProviderConfig[])
     isDefault: nativeProviders.some((provider) => provider.isDefault),
     isActiveRoute: nativeProviders.some((provider) => provider.isActiveRoute),
     routeUnavailableReason: nativeProviders.every((provider) => provider.routeUnavailableReason)
-      ? nativeProviders[0]?.routeUnavailableReason ?? null
+      ? (nativeProviders[0]?.routeUnavailableReason ?? null)
       : null,
   };
 
   const firstNativeIndex = providers.findIndex(isCodexaNativeProvider);
-  return providers.filter((provider, index) => {
-    if (!isCodexaNativeProvider(provider)) return true;
-    return index === firstNativeIndex;
-  }).map((provider) => isCodexaNativeProvider(provider) ? grouped : provider);
+  return providers
+    .filter((provider, index) => {
+      if (!isCodexaNativeProvider(provider)) return true;
+      return index === firstNativeIndex;
+    })
+    .map((provider) => (isCodexaNativeProvider(provider) ? grouped : provider));
 }
 
-export function getCodexaNativeModelProviders(providers: readonly ProviderConfig[]): ProviderConfig[] {
+export function getCodexaNativeModelProviders(
+  providers: readonly ProviderConfig[],
+): ProviderConfig[] {
   return providers.filter(isCodexaNativeProvider).map((provider) => ({
     ...provider,
     displayName: provider.id === "codexa-native" ? "Codexa PyTorch" : "Codexa CuPy",
@@ -98,8 +112,14 @@ export function getTableLayout(innerWidth: number, isMicro = false) {
     const status = Math.min(8, Math.max(6, columnWidthBudget - 20));
     const tool = innerWidth < 65 ? 0 : 4;
     const stream = innerWidth < 65 ? 0 : 4;
-    const context = innerWidth < 45 ? 0 : Math.min(11, Math.max(10, columnWidthBudget - status - (tool || 4) - (stream || 4) - 16));
-    const provider = Math.min(isMicro ? 10 : 14, Math.max(8, columnWidthBudget - status - tool - stream - context - 8));
+    const context =
+      innerWidth < 45
+        ? 0
+        : Math.min(11, Math.max(10, columnWidthBudget - status - (tool || 4) - (stream || 4) - 16));
+    const provider = Math.min(
+      isMicro ? 10 : 14,
+      Math.max(8, columnWidthBudget - status - tool - stream - context - 8),
+    );
     const model = Math.max(5, columnWidthBudget - provider - context - tool - stream - status);
     const trailingPadding = 0;
     return { provider, model, context, tool, stream, status, trailingPadding };
@@ -113,7 +133,7 @@ export function getTableLayout(innerWidth: number, isMicro = false) {
   const fixed = 5 + provider + 1 + context + 1 + tool + 1 + stream + 1 + status;
   const model = Math.max(10, innerWidth - fixed - 3);
   const trailingPadding = Math.max(0, innerWidth - (fixed + 1 + model + 1));
-  
+
   return {
     provider,
     model,
@@ -121,7 +141,7 @@ export function getTableLayout(innerWidth: number, isMicro = false) {
     tool,
     stream,
     status,
-    trailingPadding
+    trailingPadding,
   };
 }
 
@@ -149,23 +169,38 @@ export function ProviderPicker({
     const local = providers.find((provider) => provider.id === "local");
     if (!local) return [];
     return [
-      { ...local, displayName: "LM Studio", currentModel: activeLocalBackend === "lm-studio" ? local.currentModel : "Local server" },
-      { ...local, displayName: "Unsloth", currentModel: activeLocalBackend === "unsloth" ? local.currentModel : "Studio server" },
+      {
+        ...local,
+        displayName: "LM Studio",
+        currentModel: activeLocalBackend === "lm-studio" ? local.currentModel : "Local server",
+      },
+      {
+        ...local,
+        displayName: "Unsloth",
+        currentModel: activeLocalBackend === "unsloth" ? local.currentModel : "Studio server",
+      },
     ];
   }, [activeLocalBackend, providers]);
   const initialIndex = initialProviderId
-    ? Math.max(0, groupedProviders.findIndex((provider) =>
-        initialProviderId === "codexa-cupy"
-          ? provider.id === "codexa-native"
-          : provider.id === initialProviderId))
+    ? Math.max(
+        0,
+        groupedProviders.findIndex((provider) =>
+          initialProviderId === "codexa-cupy"
+            ? provider.id === "codexa-native"
+            : provider.id === initialProviderId,
+        ),
+      )
     : 0;
   const [providerIndex, setProviderIndex] = useState(initialIndex);
   const [mode, setMode] = useState<ProviderPickerMode>("providers");
   const [scrollOffset, setScrollOffset] = useState(0);
 
-  const pickerProviders = mode === "codexa-native-models"
-    ? codexaNativeModels
-    : mode === "local-backends" ? localBackends : groupedProviders;
+  const pickerProviders =
+    mode === "codexa-native-models"
+      ? codexaNativeModels
+      : mode === "local-backends"
+        ? localBackends
+        : groupedProviders;
   const selectedLocalBackend: LocalBackendId = providerIndex === 1 ? "unsloth" : "lm-studio";
 
   const contextLayout = useActivePanelLayout();
@@ -175,10 +210,7 @@ export function ProviderPicker({
   const shellWidth = getShellWidth(layout?.cols ?? 120);
   const panelWidth = activeLayout
     ? activeLayout.width
-    : Math.max(
-        42,
-        Math.min((layout as any)?.contentWidth ?? (shellWidth - 2), shellWidth - 2)
-      );
+    : Math.max(42, Math.min((layout as any)?.contentWidth ?? shellWidth - 2, shellWidth - 2));
 
   const hookPanelLayout = usePanelLayout();
   const hookAvailableRows = usePanelAvailableRows();
@@ -189,17 +221,31 @@ export function ProviderPicker({
     const mode = layout?.mode ?? "regular";
     const resolvedRows = activeLayout
       ? activeLayout.availableRows
-      : getAvailableRowsForPanel(layout || { cols: 120, rows: 24, mode: "regular" }, propAvailableRows ?? hookAvailableRows);
-    const resolvedCols = activeLayout
-      ? activeLayout.availableCols
-      : Math.max(30, shellWidth - 4);
+      : getAvailableRowsForPanel(
+          layout || { cols: 120, rows: 24, mode: "regular" },
+          propAvailableRows ?? hookAvailableRows,
+        );
+    const resolvedCols = activeLayout ? activeLayout.availableCols : Math.max(30, shellWidth - 4);
 
     return {
-      mode: (mode === "compact" || mode === "micro" as any) ? "compact" : mode === "expanded" || mode === "max" as any || mode === "wide" as any ? "expanded" : "regular",
+      mode:
+        mode === "compact" || mode === ("micro" as any)
+          ? "compact"
+          : mode === "expanded" || mode === ("max" as any) || mode === ("wide" as any)
+            ? "expanded"
+            : "regular",
       availableRows: resolvedRows,
       availableCols: resolvedCols,
     };
-  }, [panelLayout, hookPanelLayout, layout, activeLayout, propAvailableRows, shellWidth, hookAvailableRows]);
+  }, [
+    panelLayout,
+    hookPanelLayout,
+    layout,
+    activeLayout,
+    propAvailableRows,
+    shellWidth,
+    hookAvailableRows,
+  ]);
 
   const availableRows = resolvedPanelLayout.availableRows;
   const innerWidth = Math.max(1, Math.min(resolvedPanelLayout.availableCols, panelWidth - 4));
@@ -212,14 +258,15 @@ export function ProviderPicker({
   const compactStatusWidth = innerWidth >= 90 ? 8 : 6;
   const compactProviderWidth = Math.max(11, Math.min(14, Math.floor(innerWidth * 0.15)));
   const spacingWidth = 4;
-  const fixedWidth = markerWidth + compactProviderWidth + compactContextWidth + compactStatusWidth + spacingWidth;
+  const fixedWidth =
+    markerWidth + compactProviderWidth + compactContextWidth + compactStatusWidth + spacingWidth;
   const compactModelWidth = Math.max(12, innerWidth - fixedWidth);
   const compactWidths = {
     markerWidth,
     providerWidth: compactProviderWidth,
     modelWidth: compactModelWidth,
     contextWidth: compactContextWidth,
-    statusWidth: compactStatusWidth
+    statusWidth: compactStatusWidth,
   };
 
   // Regular columns:
@@ -231,13 +278,17 @@ export function ProviderPicker({
   const streamWidth = cols.stream;
   const statusWidth = cols.status;
 
-  const helpText = mode === "codexa-native-models"
-    ? "Enter use · Esc back"
-    : mode === "local-backends" ? "Enter use · Esc back"
-    : "Enter use · Esc close";
+  const helpText =
+    mode === "codexa-native-models"
+      ? "Enter use · Esc back"
+      : mode === "local-backends"
+        ? "Enter use · Esc back"
+        : "Enter use · Esc close";
 
   const openCodexaNativeModels = () => {
-    const selectedNativeIndex = codexaNativeModels.findIndex((provider) => provider.isActiveRoute || provider.isDefault);
+    const selectedNativeIndex = codexaNativeModels.findIndex(
+      (provider) => provider.isActiveRoute || provider.isDefault,
+    );
     setMode("codexa-native-models");
     setProviderIndex(Math.max(0, selectedNativeIndex));
     setScrollOffset(0);
@@ -254,14 +305,31 @@ export function ProviderPicker({
     const routeUnavailable = selectedProvider?.routeMode === "in-ubume";
     const disabledReason = routeUnavailable
       ? null
-      : selectedProvider?.routeUnavailableReason ?? "In-Ubume routing is not configured yet.";
+      : (selectedProvider?.routeUnavailableReason ?? "In-Ubume routing is not configured yet.");
 
     return [
       { value: "use-in-ubume", label: "Use in Ubume", disabledReason },
       { value: "select-model", label: "Select model", disabledReason },
-      { value: "refresh-models", label: selectedProvider?.id === "anthropic" ? "Refresh Claude capabilities" : selectedProvider?.id === "local" ? "Refresh LM Studio metadata" : "Refresh models", disabledReason },
+      {
+        value: "refresh-models",
+        label:
+          selectedProvider?.id === "anthropic"
+            ? "Refresh Claude capabilities"
+            : selectedProvider?.id === "local"
+              ? "Refresh LM Studio metadata"
+              : "Refresh models",
+        disabledReason,
+      },
       ...(selectedProvider?.id === "google" || selectedProvider?.id === "local"
-        ? [{ value: "run-diagnostics" as const, label: selectedProvider.id === "local" ? "Run Local diagnostics" : "Run Gemini diagnostics" }]
+        ? [
+            {
+              value: "run-diagnostics" as const,
+              label:
+                selectedProvider.id === "local"
+                  ? "Run Local diagnostics"
+                  : "Run Gemini diagnostics",
+            },
+          ]
         : []),
       { value: "launch", label: "Launch external CLI" },
       { value: "set-default", label: "Set as workspace default" },
@@ -269,95 +337,124 @@ export function ProviderPicker({
     ];
   }, [selectedProvider]);
 
-  useInput((input, key) => {
-    traceInputDebug("provider_picker_input", {
-      handler: "ProviderPicker.useInput",
-      input,
-      return: Boolean(key.return),
-      escape: Boolean(key.escape),
-      upArrow: Boolean(key.upArrow),
-      downArrow: Boolean(key.downArrow),
-      mode,
-      providerIndex,
-      actionIndex: null,
-    });
+  useInput(
+    (input, key) => {
+      traceInputDebug("provider_picker_input", {
+        handler: "ProviderPicker.useInput",
+        input,
+        return: Boolean(key.return),
+        escape: Boolean(key.escape),
+        upArrow: Boolean(key.upArrow),
+        downArrow: Boolean(key.downArrow),
+        mode,
+        providerIndex,
+        actionIndex: null,
+      });
 
-    if (key.ctrl && (input === "c" || input === "q")) {
-      onCancel();
-      return;
-    }
+      if (key.ctrl && (input === "c" || input === "q")) {
+        onCancel();
+        return;
+      }
 
-    if (key.escape) {
-      if (mode === "codexa-native-models" || mode === "local-backends") {
-        const groupedIndex = groupedProviders.findIndex((provider) => provider.id === (mode === "local-backends" ? "local" : "codexa-native"));
-        setMode("providers");
-        setProviderIndex(Math.max(0, groupedIndex));
-        setScrollOffset(0);
+      if (key.escape) {
+        if (mode === "codexa-native-models" || mode === "local-backends") {
+          const groupedIndex = groupedProviders.findIndex(
+            (provider) => provider.id === (mode === "local-backends" ? "local" : "codexa-native"),
+          );
+          setMode("providers");
+          setProviderIndex(Math.max(0, groupedIndex));
+          setScrollOffset(0);
+          return;
+        }
+        onCancel();
         return;
       }
-      onCancel();
-      return;
-    }
 
-    if (mode === "providers" || mode === "codexa-native-models" || mode === "local-backends") {
-      if (key.home) {
-        setProviderIndex(0);
-        return;
-      }
-      if (key.end) {
-        setProviderIndex(Math.max(0, pickerProviders.length - 1));
-        return;
-      }
-      if (key.pageUp) {
-        setProviderIndex((current) => clampIndex(current - Math.max(1, windowResult?.capacity ?? 1), pickerProviders.length));
-        return;
-      }
-      if (key.pageDown) {
-        setProviderIndex((current) => clampIndex(current + Math.max(1, windowResult?.capacity ?? 1), pickerProviders.length));
-        return;
-      }
-      if (key.upArrow || input === "k") {
-        setProviderIndex((current) => clampIndex(current - 1, pickerProviders.length));
-        return;
-      }
-      if (key.downArrow || input === "j") {
-        setProviderIndex((current) => clampIndex(current + 1, pickerProviders.length));
-        return;
-      }
-      if (input.toLowerCase() === "u" && selectedProvider) {
-        if (mode === "providers" && selectedProvider.id === "codexa-native" && codexaNativeModels.length > 0) {
-          openCodexaNativeModels();
+      if (mode === "providers" || mode === "codexa-native-models" || mode === "local-backends") {
+        if (key.home) {
+          setProviderIndex(0);
           return;
         }
-        if (mode === "providers" && selectedProvider.id === "local" && localBackends.length > 0) {
-          openLocalBackends();
+        if (key.end) {
+          setProviderIndex(Math.max(0, pickerProviders.length - 1));
           return;
         }
-        onAction(selectedProvider.id, "use-in-ubume", mode === "local-backends" ? selectedLocalBackend : undefined);
+        if (key.pageUp) {
+          setProviderIndex((current) =>
+            clampIndex(current - Math.max(1, windowResult?.capacity ?? 1), pickerProviders.length),
+          );
+          return;
+        }
+        if (key.pageDown) {
+          setProviderIndex((current) =>
+            clampIndex(current + Math.max(1, windowResult?.capacity ?? 1), pickerProviders.length),
+          );
+          return;
+        }
+        if (key.upArrow || input === "k") {
+          setProviderIndex((current) => clampIndex(current - 1, pickerProviders.length));
+          return;
+        }
+        if (key.downArrow || input === "j") {
+          setProviderIndex((current) => clampIndex(current + 1, pickerProviders.length));
+          return;
+        }
+        if (input.toLowerCase() === "u" && selectedProvider) {
+          if (
+            mode === "providers" &&
+            selectedProvider.id === "codexa-native" &&
+            codexaNativeModels.length > 0
+          ) {
+            openCodexaNativeModels();
+            return;
+          }
+          if (mode === "providers" && selectedProvider.id === "local" && localBackends.length > 0) {
+            openLocalBackends();
+            return;
+          }
+          onAction(
+            selectedProvider.id,
+            "use-in-ubume",
+            mode === "local-backends" ? selectedLocalBackend : undefined,
+          );
+          return;
+        }
+        if (input.toLowerCase() === "s" && selectedProvider) {
+          if (
+            mode === "providers" &&
+            selectedProvider.id === "codexa-native" &&
+            codexaNativeModels.length > 0
+          ) {
+            openCodexaNativeModels();
+            return;
+          }
+          onAction(selectedProvider.id, "set-default");
+          return;
+        }
+        if (key.return && selectedProvider) {
+          if (
+            mode === "providers" &&
+            selectedProvider.id === "codexa-native" &&
+            codexaNativeModels.length > 0
+          ) {
+            openCodexaNativeModels();
+            return;
+          }
+          if (mode === "providers" && selectedProvider.id === "local" && localBackends.length > 0) {
+            openLocalBackends();
+            return;
+          }
+          onAction(
+            selectedProvider.id,
+            "use-in-ubume",
+            mode === "local-backends" ? selectedLocalBackend : undefined,
+          );
+        }
         return;
       }
-      if (input.toLowerCase() === "s" && selectedProvider) {
-        if (mode === "providers" && selectedProvider.id === "codexa-native" && codexaNativeModels.length > 0) {
-          openCodexaNativeModels();
-          return;
-        }
-        onAction(selectedProvider.id, "set-default");
-        return;
-      }
-      if (key.return && selectedProvider) {
-        if (mode === "providers" && selectedProvider.id === "codexa-native" && codexaNativeModels.length > 0) {
-          openCodexaNativeModels();
-          return;
-        }
-        if (mode === "providers" && selectedProvider.id === "local" && localBackends.length > 0) {
-          openLocalBackends();
-          return;
-        }
-        onAction(selectedProvider.id, "use-in-ubume", mode === "local-backends" ? selectedLocalBackend : undefined);
-      }
-      return;
-    }
-  }, { isActive: isFocused });
+    },
+    { isActive: isFocused },
+  );
 
   // ─── Layout & Windowing ───────────────────────────────────────────────────
 
@@ -376,9 +473,10 @@ export function ProviderPicker({
       chromeRows,
       scrollOffset,
     });
-    let reserveCurrent = viewport.hasOverflow
-      && activeRouteIndex >= 0
-      && (activeRouteIndex < viewport.start || activeRouteIndex >= viewport.end);
+    let reserveCurrent =
+      viewport.hasOverflow &&
+      activeRouteIndex >= 0 &&
+      (activeRouteIndex < viewport.start || activeRouteIndex >= viewport.end);
     if (reserveCurrent) {
       viewport = calculateResponsivePickerViewport({
         itemCount: pickerProviders.length,
@@ -399,9 +497,20 @@ export function ProviderPicker({
       showTitle,
       showHeaders,
       reserveCurrent,
-      renderMode: useCompactRows ? ("compact" as const) : viewport.hasOverflow ? ("windowed" as const) : ("full" as const),
+      renderMode: useCompactRows
+        ? ("compact" as const)
+        : viewport.hasOverflow
+          ? ("windowed" as const)
+          : ("full" as const),
     };
-  }, [pickerProviders.length, providerIndex, availableRows, resolvedPanelLayout.mode, scrollOffset, activeRouteIndex]);
+  }, [
+    pickerProviders.length,
+    providerIndex,
+    availableRows,
+    resolvedPanelLayout.mode,
+    scrollOffset,
+    activeRouteIndex,
+  ]);
 
   useEffect(() => {
     setProviderIndex((current) => clampIndex(current, pickerProviders.length));
@@ -416,9 +525,13 @@ export function ProviderPicker({
     return pickerProviders.slice(windowResult.start, windowResult.end);
   }, [pickerProviders, windowResult]);
 
-  const titleText = (windowResult?.showRange)
-      ? `${mode === "codexa-native-models" ? "Codexa Native Models" : mode === "local-backends" ? "Local Backends" : "Providers"} · ${windowResult.selectedIndex + 1}/${pickerProviders.length}`
-      : mode === "codexa-native-models" ? "Codexa Native Models" : mode === "local-backends" ? "Local Backends" : "Providers";
+  const titleText = windowResult?.showRange
+    ? `${mode === "codexa-native-models" ? "Codexa Native Models" : mode === "local-backends" ? "Local Backends" : "Providers"} · ${windowResult.selectedIndex + 1}/${pickerProviders.length}`
+    : mode === "codexa-native-models"
+      ? "Codexa Native Models"
+      : mode === "local-backends"
+        ? "Local Backends"
+        : "Providers";
   const showCurrent = false;
 
   const body = useMemo(() => {
@@ -426,17 +539,30 @@ export function ProviderPicker({
       <ProviderRowSimple
         key={`${mode}-${provider.id}-${provider.displayName}`}
         provider={provider}
-        isHighlighted={(windowResult!.start + index) === providerIndex}
+        isHighlighted={windowResult!.start + index === providerIndex}
         width={innerWidth}
-        secondaryText={mode === "local-backends"
-          ? localBackendStatuses[windowResult!.start + index === 1 ? "unsloth" : "lm-studio"]?.label ?? "Checking…"
-          : undefined}
-        secondaryState={mode === "local-backends"
-          ? localBackendStatuses[windowResult!.start + index === 1 ? "unsloth" : "lm-studio"]?.state
-          : undefined}
+        secondaryText={
+          mode === "local-backends"
+            ? (localBackendStatuses[windowResult!.start + index === 1 ? "unsloth" : "lm-studio"]
+                ?.label ?? "Checking…")
+            : undefined
+        }
+        secondaryState={
+          mode === "local-backends"
+            ? localBackendStatuses[windowResult!.start + index === 1 ? "unsloth" : "lm-studio"]
+                ?.state
+            : undefined
+        }
       />
     ));
-  }, [innerWidth, localBackendStatuses, mode, providerIndex, visibleProviders, windowResult?.start]);
+  }, [
+    innerWidth,
+    localBackendStatuses,
+    mode,
+    providerIndex,
+    visibleProviders,
+    windowResult?.start,
+  ]);
 
   const showBorder = windowResult?.showBorder ?? true;
 
@@ -462,14 +588,21 @@ export function ProviderPicker({
         {!(windowResult?.showTitle ?? true) && windowResult?.showRange && (
           <Box width="100%" overflow="hidden" flexShrink={0}>
             <Text color={theme.accent}>
-              {mode === "codexa-native-models" ? "Codexa Native Models" : mode === "local-backends" ? "Local Backends" : "Providers"} · {windowResult.selectedIndex + 1}/{pickerProviders.length}
+              {mode === "codexa-native-models"
+                ? "Codexa Native Models"
+                : mode === "local-backends"
+                  ? "Local Backends"
+                  : "Providers"}{" "}
+              · {windowResult.selectedIndex + 1}/{pickerProviders.length}
             </Text>
           </Box>
         )}
 
         {windowResult?.showAbove && (
           <Box height={1} overflow="hidden" flexShrink={0}>
-            <Text color={theme.accent}>{isCompactLayout ? "↑ more" : `↑ ${windowResult.start} more`}</Text>
+            <Text color={theme.accent}>
+              {isCompactLayout ? "↑ more" : `↑ ${windowResult.start} more`}
+            </Text>
           </Box>
         )}
 
@@ -477,13 +610,11 @@ export function ProviderPicker({
           <Box width="100%" overflow="hidden" flexShrink={0}>
             <Text color={theme.textDim}>
               {"     "}
-              {clampVisualText("Provider", providerNameWidth)}
-              {" "}
+              {clampVisualText("Provider", providerNameWidth)}{" "}
               {clampVisualText("Model", modelWidth)}
               {contextWidth > 0 && " " + clampVisualText("Context", contextWidth)}
               {toolsWidth > 0 && " " + clampVisualText("Tool", toolsWidth)}
-              {streamWidth > 0 && " " + clampVisualText("Strm", streamWidth)}
-              {" "}
+              {streamWidth > 0 && " " + clampVisualText("Strm", streamWidth)}{" "}
               {clampVisualText("Status", statusWidth)}
             </Text>
           </Box>
@@ -496,14 +627,22 @@ export function ProviderPicker({
         {showCurrent && (
           <Box height={1} overflow="hidden" flexShrink={0}>
             <Text color={theme.textDim}>
-              Current: <Text color={theme.text}>{clampVisualText(`${pickerProviders[activeRouteIndex]!.displayName} / ${pickerProviders[activeRouteIndex]!.currentModel}`, Math.max(1, innerWidth - 9))}</Text>
+              Current:{" "}
+              <Text color={theme.text}>
+                {clampVisualText(
+                  `${pickerProviders[activeRouteIndex]!.displayName} / ${pickerProviders[activeRouteIndex]!.currentModel}`,
+                  Math.max(1, innerWidth - 9),
+                )}
+              </Text>
             </Text>
           </Box>
         )}
 
         {windowResult?.showBelow && (
           <Box height={1} overflow="hidden" flexShrink={0}>
-            <Text color={theme.accent}>{isCompactLayout ? "↓ more" : `↓ ${pickerProviders.length - windowResult.end} more`}</Text>
+            <Text color={theme.accent}>
+              {isCompactLayout ? "↓ more" : `↓ ${pickerProviders.length - windowResult.end} more`}
+            </Text>
           </Box>
         )}
       </Box>
@@ -511,7 +650,10 @@ export function ProviderPicker({
       {process.env.UBUME_DEBUG_LAYOUT === "1" && (
         <Box flexDirection="column" marginTop={1} flexShrink={0}>
           <Text color="red">
-            DEBUG layout: rows={layout?.rows} cols={layout?.cols} mode={layout?.mode} headerRows={budget?.headerRows ?? 6} panelRows={availableRows} bottomChromeRows={budget?.bottomChromeBudget.totalRows ?? 4} composerRows={budget?.composerRows ?? 3} providerRows={visibleProviders.length} renderMode={windowResult?.renderMode}
+            DEBUG layout: rows={layout?.rows} cols={layout?.cols} mode={layout?.mode} headerRows=
+            {budget?.headerRows ?? 6} panelRows={availableRows} bottomChromeRows=
+            {budget?.bottomChromeBudget.totalRows ?? 4} composerRows={budget?.composerRows ?? 3}{" "}
+            providerRows={visibleProviders.length} renderMode={windowResult?.renderMode}
           </Text>
         </Box>
       )}
@@ -636,14 +778,24 @@ function ProviderRowSimple({
   return (
     <Box width="100%" overflow="hidden" flexDirection="row" flexShrink={0}>
       <Box width={markerWidth} flexShrink={0}>
-        <Text color={isHighlighted ? theme.accent : theme.textDim}>{isHighlighted ? ">" : " "}</Text>
+        <Text color={isHighlighted ? theme.accent : theme.textDim}>
+          {isHighlighted ? ">" : " "}
+        </Text>
       </Box>
       <Box flexGrow={1} overflow="hidden">
         <Text color={isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted}>
           {provider.displayName}
         </Text>
         {secondaryText && (
-          <Text color={secondaryState === "ready" ? theme.success : secondaryState === "checking" ? theme.accent : theme.textDim}>
+          <Text
+            color={
+              secondaryState === "ready"
+                ? theme.success
+                : secondaryState === "checking"
+                  ? theme.accent
+                  : theme.textDim
+            }
+          >
             {` — ${secondaryText}`}
           </Text>
         )}
@@ -682,7 +834,9 @@ function ProviderRow({
   return (
     <Box width="100%" overflow="hidden" flexDirection="row" flexShrink={0}>
       <Box width={5} flexShrink={0}>
-        <Text color={isHighlighted ? theme.accent : theme.textDim}>{marker} {defaultMark} {activeMark}</Text>
+        <Text color={isHighlighted ? theme.accent : theme.textDim}>
+          {marker} {defaultMark} {activeMark}
+        </Text>
       </Box>
       <Box width={widths.providerNameWidth} flexShrink={0} overflow="hidden">
         <Text color={isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted}>
@@ -691,13 +845,17 @@ function ProviderRow({
       </Box>
       <Text> </Text>
       <Box width={widths.modelWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.textMuted}>{clampVisualText(provider.currentModel, widths.modelWidth)}</Text>
+        <Text color={theme.textMuted}>
+          {clampVisualText(provider.currentModel, widths.modelWidth)}
+        </Text>
       </Box>
       {widths.contextWidth > 0 && (
         <>
           <Text> </Text>
           <Box width={widths.contextWidth} flexShrink={0} overflow="hidden">
-            <Text color={theme.textMuted}>{clampVisualText(provider.contextLengthLabel ?? "Unknown", widths.contextWidth)}</Text>
+            <Text color={theme.textMuted}>
+              {clampVisualText(provider.contextLengthLabel ?? "Unknown", widths.contextWidth)}
+            </Text>
           </Box>
         </>
       )}
@@ -705,7 +863,12 @@ function ProviderRow({
         <>
           <Text> </Text>
           <Box width={widths.toolsWidth} flexShrink={0} overflow="hidden">
-            <Text color={theme.textMuted}>{clampVisualText(capabilityFlag(provider.capabilityProfile?.supportsToolCalls), widths.toolsWidth)}</Text>
+            <Text color={theme.textMuted}>
+              {clampVisualText(
+                capabilityFlag(provider.capabilityProfile?.supportsToolCalls),
+                widths.toolsWidth,
+              )}
+            </Text>
           </Box>
         </>
       )}
@@ -713,7 +876,12 @@ function ProviderRow({
         <>
           <Text> </Text>
           <Box width={widths.streamWidth} flexShrink={0} overflow="hidden">
-            <Text color={theme.textMuted}>{clampVisualText(capabilityFlag(provider.capabilityProfile?.supportsStreaming), widths.streamWidth)}</Text>
+            <Text color={theme.textMuted}>
+              {clampVisualText(
+                capabilityFlag(provider.capabilityProfile?.supportsStreaming),
+                widths.streamWidth,
+              )}
+            </Text>
           </Box>
         </>
       )}
@@ -741,10 +909,15 @@ function ActionRow({
   return (
     <Box width="100%" overflow="hidden">
       <Box width={2} flexShrink={0}>
-        <Text color={isHighlighted ? theme.accent : theme.textDim}>{isHighlighted ? ">" : " "}</Text>
+        <Text color={isHighlighted ? theme.accent : theme.textDim}>
+          {isHighlighted ? ">" : " "}
+        </Text>
       </Box>
       <Box width={Math.max(10, width - 2)} flexShrink={0} overflow="hidden">
-        <Text color={disabledReason ? theme.textDim : isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted && !disabledReason}>
+        <Text
+          color={disabledReason ? theme.textDim : isHighlighted ? theme.text : theme.textMuted}
+          bold={isHighlighted && !disabledReason}
+        >
           {clampVisualText(text, Math.max(10, width - 2))}
         </Text>
       </Box>

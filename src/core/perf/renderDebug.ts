@@ -17,26 +17,30 @@ let sessionId = `${Date.now()}-${process.pid}`;
 const counters = new Map<string, number>();
 
 function configureFromEnv(env: DebugEnv = process.env): void {
-  renderTraceEnabled = env["UBUME_DEBUG_RENDER_TRACE"] === "1" || env["CODEXA_DEBUG_RENDER_TRACE"] === "1";
+  renderTraceEnabled =
+    env["UBUME_DEBUG_RENDER_TRACE"] === "1" || env["CODEXA_DEBUG_RENDER_TRACE"] === "1";
   // Both UBUME_RENDER_DEBUG and UBUME_DEBUG_RENDER activate render debugging —
   // two names exist for historical reasons; either one is sufficient.
   // UBUME_TERMINAL_TRACE is a focused alias for diagnosing terminal/clear/resize
   // render-state issues; it lights up the same `terminal` trace channel.
-  enabled = env["UBUME_RENDER_DEBUG"] === "1"
-    || env["UBUME_DEBUG_MODEL_STATE"] === "1"
-    || env["UBUME_DEBUG_RENDER"] === "1"
-    || env["UBUME_TERMINAL_TRACE"] === "1"
-    || env["CODEXA_RENDER_DEBUG"] === "1"
-    || env["CODEXA_DEBUG_MODEL_STATE"] === "1"
-    || env["CODEXA_DEBUG_RENDER"] === "1"
-    || env["CODEXA_TERMINAL_TRACE"] === "1"
-    || renderTraceEnabled;
+  enabled =
+    env["UBUME_RENDER_DEBUG"] === "1" ||
+    env["UBUME_DEBUG_MODEL_STATE"] === "1" ||
+    env["UBUME_DEBUG_RENDER"] === "1" ||
+    env["UBUME_TERMINAL_TRACE"] === "1" ||
+    env["CODEXA_RENDER_DEBUG"] === "1" ||
+    env["CODEXA_DEBUG_MODEL_STATE"] === "1" ||
+    env["CODEXA_DEBUG_RENDER"] === "1" ||
+    env["CODEXA_TERMINAL_TRACE"] === "1" ||
+    renderTraceEnabled;
   lifecycleEnabled = env["UBUME_DEBUG_LIFECYCLE"] === "1" || env["CODEXA_DEBUG_LIFECYCLE"] === "1";
   flickerEnabled = env["UBUME_DEBUG_FLICKER"] === "1" || env["CODEXA_DEBUG_FLICKER"] === "1";
-  plainActionsEnabled = env["UBUME_DEBUG_PLAIN_ACTIONS"] === "1" || env["CODEXA_DEBUG_PLAIN_ACTIONS"] === "1";
-  logPath = env["UBUME_RENDER_DEBUG_FILE"]?.trim()
-    || env["CODEXA_RENDER_DEBUG_FILE"]?.trim()
-    || resolveUbumeDebugLogPath(env);
+  plainActionsEnabled =
+    env["UBUME_DEBUG_PLAIN_ACTIONS"] === "1" || env["CODEXA_DEBUG_PLAIN_ACTIONS"] === "1";
+  logPath =
+    env["UBUME_RENDER_DEBUG_FILE"]?.trim() ||
+    env["CODEXA_RENDER_DEBUG_FILE"]?.trim() ||
+    resolveUbumeDebugLogPath(env);
   sessionId = `${Date.now()}-${process.pid}`;
   configured = true;
 }
@@ -144,10 +148,7 @@ export function traceLifecycleEvent(
   writeRecord("lifecycle", { component, event, count, ...fields });
 }
 
-export function useLifecycleDebug(
-  component: string,
-  fields: Record<string, unknown> = {},
-): void {
+export function useLifecycleDebug(component: string, fields: Record<string, unknown> = {}): void {
   useEffect(() => {
     traceLifecycleEvent(component, "mount", fields);
     return () => {
@@ -156,21 +157,17 @@ export function useLifecycleDebug(
   }, []);
 }
 
-export function traceBlankFrame(
-  component: string,
-  fields: Record<string, unknown> = {},
-): void {
+export function traceBlankFrame(component: string, fields: Record<string, unknown> = {}): void {
   if (!isRenderDebugEnabled()) return;
   const count = nextCounter(`blankFrame.${component}`);
   writeRecord("blankFrame", { component, event: "blankFrame", count, ...fields });
 }
 
-export function traceLayoutValidity(
-  component: string,
-  fields: Record<string, unknown> = {},
-): void {
+export function traceLayoutValidity(component: string, fields: Record<string, unknown> = {}): void {
   if (!isRenderDebugEnabled()) return;
-  const values = Object.entries(fields).filter(([, value]) => typeof value === "number") as Array<[string, number]>;
+  const values = Object.entries(fields).filter(([, value]) => typeof value === "number") as Array<
+    [string, number]
+  >;
   const invalidValues = values
     .filter(([, value]) => !Number.isFinite(value) || value <= 0)
     .map(([key, value]) => ({ key, value }));
@@ -189,10 +186,7 @@ export function traceStateTransition(fields: Record<string, unknown>): void {
   writeRecord("state", { event: "transition", ...fields });
 }
 
-function diffKeys(
-  previous: Record<string, unknown> | null,
-  next: Record<string, unknown>,
-): string {
+function diffKeys(previous: Record<string, unknown> | null, next: Record<string, unknown>): string {
   if (!previous) return "mount";
   const changed: string[] = [];
   const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
@@ -221,11 +215,12 @@ function summarizeWatchedValue(value: unknown): unknown {
     if ("$$typeof" in record) {
       return {
         type: "reactElement",
-        name: typeof reactType === "string"
-          ? reactType
-          : typeof reactType === "function"
-            ? reactType.name
-            : "unknown",
+        name:
+          typeof reactType === "string"
+            ? reactType
+            : typeof reactType === "function"
+              ? reactType.name
+              : "unknown",
       };
     }
     if (typeof record["kind"] === "string") {
@@ -257,10 +252,7 @@ export function traceRender(
   writeRecord("render", { component, count, reason, ...fields });
 }
 
-export function useRenderDebug(
-  component: string,
-  watched: Record<string, unknown> = {},
-): void {
+export function useRenderDebug(component: string, watched: Record<string, unknown> = {}): void {
   const renderCount = useRef(0);
   const previous = useRef<Record<string, unknown> | null>(null);
   renderCount.current += 1;
@@ -276,10 +268,7 @@ export function useRenderDebug(
   previous.current = watched;
 }
 
-export function useFlickerDebug(
-  event: string,
-  watched: Record<string, unknown> = {},
-): void {
+export function useFlickerDebug(event: string, watched: Record<string, unknown> = {}): void {
   const renderCount = useRef(0);
   const previous = useRef<Record<string, unknown> | null>(null);
   renderCount.current += 1;
@@ -353,11 +342,12 @@ export function traceTerminalWrite(
   chunk: unknown,
 ): void {
   if (!isRenderDebugEnabled()) return;
-  const text = typeof chunk === "string"
-    ? chunk
-    : chunk instanceof Uint8Array
-      ? Buffer.from(chunk).toString("utf8")
-      : String(chunk ?? "");
+  const text =
+    typeof chunk === "string"
+      ? chunk
+      : chunk instanceof Uint8Array
+        ? Buffer.from(chunk).toString("utf8")
+        : String(chunk ?? "");
   writeRecord(stream, {
     event: "directWrite",
     count: nextCounter(`${stream}.directWrite`),
@@ -370,11 +360,17 @@ export function traceTerminalWrite(
     containsAlternateScreen: text.includes("\x1b[?1049h"),
     containsTitleSequence: text.includes("\x1b]0;") || text.includes("\x1b]2;"),
     containsBracketedPaste: text.includes("\x1b[?2004h") || text.includes("\x1b[?2004l"),
-    containsMouseMode: text.includes("\x1b[?1000h") || text.includes("\x1b[?1000l")
-      || text.includes("\x1b[?1002h") || text.includes("\x1b[?1002l")
-      || text.includes("\x1b[?1003h") || text.includes("\x1b[?1003l")
-      || text.includes("\x1b[?1006h") || text.includes("\x1b[?1006l")
-      || text.includes("\x1b[?1015h") || text.includes("\x1b[?1015l"),
+    containsMouseMode:
+      text.includes("\x1b[?1000h") ||
+      text.includes("\x1b[?1000l") ||
+      text.includes("\x1b[?1002h") ||
+      text.includes("\x1b[?1002l") ||
+      text.includes("\x1b[?1003h") ||
+      text.includes("\x1b[?1003l") ||
+      text.includes("\x1b[?1006h") ||
+      text.includes("\x1b[?1006l") ||
+      text.includes("\x1b[?1015h") ||
+      text.includes("\x1b[?1015l"),
   });
 }
 

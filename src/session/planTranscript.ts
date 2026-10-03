@@ -5,7 +5,10 @@ function normalizePlanText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-export function hasFinalizedTranscriptPlan(events: readonly TimelineEvent[], planText: string | null | undefined): boolean {
+export function hasFinalizedTranscriptPlan(
+  events: readonly TimelineEvent[],
+  planText: string | null | undefined,
+): boolean {
   const expected = normalizePlanText(planText ?? "");
   if (!expected) return false;
 

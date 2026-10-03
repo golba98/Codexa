@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  getRunGateDecision,
   getAuthStateLabel,
+  getRunGateDecision,
   inferAuthStateFromProbe,
   isLikelyAuthFailure,
 } from "./codexAuth.js";
@@ -13,11 +13,7 @@ test("infers authenticated from successful probe exit", () => {
 });
 
 test("infers unauthenticated from signed-out probe output", () => {
-  const state = inferAuthStateFromProbe(
-    1,
-    "No active session. Please login.",
-    "",
-  );
+  const state = inferAuthStateFromProbe(1, "No active session. Please login.", "");
   assert.equal(state, "unauthenticated");
 });
 

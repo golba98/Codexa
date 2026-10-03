@@ -1,9 +1,30 @@
-import React, { memo, useEffect, useMemo, useRef } from "react";
 import { Box, Static, Text } from "ink";
+import type React from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
 import type { CodexAuthState } from "../../core/auth/codexAuth.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
 import type { TimelineEvent, UIState } from "../../session/types.js";
+import {
+  getShellHeight,
+  getShellWidth,
+  resolveStartupHeaderMode,
+  type TerminalViewport,
+} from "../layout.js";
+import {
+  LOGO_COMPACT,
+  LOGO_COMPACT_MIN_COLS,
+  LOGO_LARGE,
+  LOGO_MEDIUM,
+  selectLogoVariant,
+} from "../render/logoVariants.js";
+import { useTheme } from "../theme.js";
+import { LIVE_WINDOW_SAFETY_ROWS, windowLiveRows } from "./liveViewportWindow.js";
+import {
+  buildStaticTranscript,
+  createStaticTranscriptCache,
+  type StaticTranscriptCache,
+} from "./staticTranscriptCache.js";
 import {
   buildActiveRenderItems,
   buildIntroRenderItem,
@@ -11,12 +32,11 @@ import {
   buildTimelineItems,
   TimelineRowView,
 } from "./Timeline.js";
-import { buildNativeTranscriptParts, type NativeTranscriptRowItem, type TimelineRow } from "./timelineMeasure.js";
-import { LIVE_WINDOW_SAFETY_ROWS, windowLiveRows } from "./liveViewportWindow.js";
-import { buildStaticTranscript, createStaticTranscriptCache, type StaticTranscriptCache } from "./staticTranscriptCache.js";
-import { getShellHeight, getShellWidth, resolveStartupHeaderMode, type TerminalViewport } from "../layout.js";
-import { LOGO_COMPACT, LOGO_COMPACT_MIN_COLS, LOGO_LARGE, LOGO_MEDIUM, selectLogoVariant } from "../render/logoVariants.js";
-import { useTheme } from "../theme.js";
+import {
+  buildNativeTranscriptParts,
+  type NativeTranscriptRowItem,
+  type TimelineRow,
+} from "./timelineMeasure.js";
 
 export interface TranscriptShellProps {
   layout: TerminalViewport;
@@ -37,7 +57,12 @@ export interface TranscriptShellProps {
 }
 
 function isTranscriptEvent(event: TimelineEvent): boolean {
-  return event.type === "user" || event.type === "assistant" || event.type === "run" || event.type === "shell";
+  return (
+    event.type === "user" ||
+    event.type === "assistant" ||
+    event.type === "run" ||
+    event.type === "shell"
+  );
 }
 
 export function isHomeScreenState({
@@ -49,12 +74,16 @@ export function isHomeScreenState({
   activeEvents: TimelineEvent[];
   uiState: UIState;
 }): boolean {
-  return uiState.kind === "IDLE"
-    && !staticEvents.some(isTranscriptEvent)
-    && !activeEvents.some(isTranscriptEvent);
+  return (
+    uiState.kind === "IDLE" &&
+    !staticEvents.some(isTranscriptEvent) &&
+    !activeEvents.some(isTranscriptEvent)
+  );
 }
 
-function getLogoVariantName(rows: readonly string[]): "large" | "medium" | "compact" | "wordmark" | "none" {
+function getLogoVariantName(
+  rows: readonly string[],
+): "large" | "medium" | "compact" | "wordmark" | "none" {
   if (rows.length === 0) return process.env["UBUME_NO_ASCII_LOGO"] === "1" ? "none" : "wordmark";
   if (rows === LOGO_LARGE || rows.join("\n") === LOGO_LARGE.join("\n")) return "large";
   if (rows === LOGO_MEDIUM || rows.join("\n") === LOGO_MEDIUM.join("\n")) return "medium";
@@ -96,22 +125,26 @@ function TranscriptShellInner({
 }: TranscriptShellProps) {
   const theme = useTheme();
   const startupHeaderMode = useMemo(
-    () => resolveStartupHeaderMode({
-      cols: layout.cols,
-      rows: layout.rows,
-      introRows: 8,
-      composerRows: composerRows ?? 5,
-    }),
+    () =>
+      resolveStartupHeaderMode({
+        cols: layout.cols,
+        rows: layout.rows,
+        introRows: 8,
+        composerRows: composerRows ?? 5,
+      }),
     [composerRows, layout.cols, layout.rows],
   );
   const homeScreenActive = visible && isHomeScreenState({ staticEvents, activeEvents, uiState });
   const shellWidth = getShellWidth(layout.cols);
   const introInnerWidth = Math.max(10, shellWidth - 2);
-  const selectedLogoRows = startupHeaderMode === "tiny"
-    ? []
-    : startupHeaderMode === "large"
-      ? selectLogoVariant(introInnerWidth)
-      : introInnerWidth >= LOGO_COMPACT_MIN_COLS ? LOGO_COMPACT : [];
+  const selectedLogoRows =
+    startupHeaderMode === "tiny"
+      ? []
+      : startupHeaderMode === "large"
+        ? selectLogoVariant(introInnerWidth)
+        : introInnerWidth >= LOGO_COMPACT_MIN_COLS
+          ? LOGO_COMPACT
+          : [];
   const selectedLogoVariant = getLogoVariantName(selectedLogoRows);
   const logoHiddenReason = getLogoHiddenReason({
     startupHeaderMode,
@@ -139,17 +172,26 @@ function TranscriptShellInner({
     getShellHeight(layout.rows) - (composerRows ?? 0) - (notice ? 1 : 0),
   );
 
-  const staticTimelineItems = useMemo(() => buildTimelineItems(renderedStaticEvents), [renderedStaticEvents]);
-  const activeTimelineItems = useMemo(() => buildTimelineItems(renderedActiveEvents), [renderedActiveEvents]);
+  const staticTimelineItems = useMemo(
+    () => buildTimelineItems(renderedStaticEvents),
+    [renderedStaticEvents],
+  );
+  const activeTimelineItems = useMemo(
+    () => buildTimelineItems(renderedActiveEvents),
+    [renderedActiveEvents],
+  );
   const staticTurnIds = useMemo(
-    () => staticTimelineItems.flatMap((item) => item.type === "turn" ? [item.turnId] : []),
+    () => staticTimelineItems.flatMap((item) => (item.type === "turn" ? [item.turnId] : [])),
     [staticTimelineItems],
   );
   const activeTurnIds = useMemo(
-    () => activeTimelineItems.flatMap((item) => item.type === "turn" ? [item.turnId] : []),
+    () => activeTimelineItems.flatMap((item) => (item.type === "turn" ? [item.turnId] : [])),
     [activeTimelineItems],
   );
-  const allTurnIds = useMemo(() => [...staticTurnIds, ...activeTurnIds], [staticTurnIds, activeTurnIds]);
+  const allTurnIds = useMemo(
+    () => [...staticTurnIds, ...activeTurnIds],
+    [staticTurnIds, activeTurnIds],
+  );
   const activeTurnId = activeTurnIds[0] ?? null;
 
   // Static half: intro + finalized turns, built incrementally. The cache ref
@@ -157,7 +199,8 @@ function TranscriptShellInner({
   // the shell) start from an empty cache.
   const staticCacheRef = useRef<StaticTranscriptCache | null>(null);
   const staticTranscript = useMemo(() => {
-    const cache = staticCacheRef.current ?? (staticCacheRef.current = createStaticTranscriptCache());
+    const cache =
+      staticCacheRef.current ?? (staticCacheRef.current = createStaticTranscriptCache());
     return buildStaticTranscript(
       cache,
       [
@@ -172,26 +215,42 @@ function TranscriptShellInner({
       ],
       { totalWidth: shellWidth, verboseMode, workspaceRoot },
     );
-  }, [activeTurnId, allTurnIds, authState, layout, runtimeSummary?.providerLabel, shellWidth, startupHeaderMode, staticTimelineItems, verboseMode, workspaceLabel, workspaceRoot]);
+  }, [
+    activeTurnId,
+    allTurnIds,
+    authState,
+    layout,
+    runtimeSummary?.providerLabel,
+    shellWidth,
+    startupHeaderMode,
+    staticTimelineItems,
+    verboseMode,
+    workspaceLabel,
+    workspaceRoot,
+  ]);
 
   // Live half: only the running turn, rebuilt per streaming flush.
   const activeTranscript = useMemo(
-    () => buildNativeTranscriptParts(
-      buildActiveRenderItems(activeTimelineItems, allTurnIds, renderedUiState),
-      {
-        totalWidth: shellWidth,
-        verboseMode,
-        debugLabel: "transcript-shell-native",
-        workspaceRoot,
-      },
-    ),
+    () =>
+      buildNativeTranscriptParts(
+        buildActiveRenderItems(activeTimelineItems, allTurnIds, renderedUiState),
+        {
+          totalWidth: shellWidth,
+          verboseMode,
+          debugLabel: "transcript-shell-native",
+          workspaceRoot,
+        },
+      ),
     [activeTimelineItems, allTurnIds, renderedUiState, shellWidth, verboseMode, workspaceRoot],
   );
 
-  const nativeTranscript = useMemo(() => ({
-    staticItems: [...staticTranscript.staticItems, ...activeTranscript.staticItems],
-    liveRows: [...staticTranscript.liveRows, ...activeTranscript.liveRows],
-  }), [activeTranscript, staticTranscript]);
+  const nativeTranscript = useMemo(
+    () => ({
+      staticItems: [...staticTranscript.staticItems, ...activeTranscript.staticItems],
+      liveRows: [...staticTranscript.liveRows, ...activeTranscript.liveRows],
+    }),
+    [activeTranscript, staticTranscript],
+  );
   const committedRows = useMemo(
     () => nativeTranscript.staticItems.reduce((total, item) => total + item.rows.length, 0),
     [nativeTranscript.staticItems],
@@ -271,7 +330,9 @@ function TranscriptShellInner({
 
       {visible && notice && (
         <Box width="100%" paddingX={1}>
-          <Text color={theme.success} wrap="truncate">{notice}</Text>
+          <Text color={theme.success} wrap="truncate">
+            {notice}
+          </Text>
         </Box>
       )}
       {visible && composer}
@@ -296,7 +357,9 @@ export const TranscriptShell = memo(function TranscriptShell(props: TranscriptSh
 function NativeRowsItem({ rows }: { rows: TimelineRow[] }) {
   return (
     <Box flexDirection="column">
-      {rows.map((row) => <TimelineRowView key={row.key} row={row} />)}
+      {rows.map((row) => (
+        <TimelineRowView key={row.key} row={row} />
+      ))}
     </Box>
   );
 }

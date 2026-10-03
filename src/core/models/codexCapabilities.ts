@@ -27,7 +27,10 @@ function normalizeHelpText(text: string): string {
 // Uses a hand-rolled word-boundary pattern rather than \b so that flag names
 // containing hyphens (e.g. --ask-for-approval) are matched reliably.
 function hasCliToken(helpText: string, token: string): boolean {
-  const pattern = new RegExp(`(^|[^a-z0-9-])${escapeRegExp(token.toLowerCase())}(?=$|[^a-z0-9-])`, "m");
+  const pattern = new RegExp(
+    `(^|[^a-z0-9-])${escapeRegExp(token.toLowerCase())}(?=$|[^a-z0-9-])`,
+    "m",
+  );
   return pattern.test(helpText);
 }
 
@@ -82,7 +85,9 @@ export async function getCodexCliCapabilities(executable: string): Promise<Codex
 
     return parseCodexCliCapabilities(
       execHelp.status === "fulfilled" ? `${execHelp.value.stdout}\n${execHelp.value.stderr}` : "",
-      topLevelHelp.status === "fulfilled" ? `${topLevelHelp.value.stdout}\n${topLevelHelp.value.stderr}` : "",
+      topLevelHelp.status === "fulfilled"
+        ? `${topLevelHelp.value.stdout}\n${topLevelHelp.value.stderr}`
+        : "",
     );
   })();
 

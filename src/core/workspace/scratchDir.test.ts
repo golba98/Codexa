@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -126,7 +134,8 @@ test("prunes stale session folders but keeps the active and fresh ones", () => {
   try {
     const scratchRoot = resolveScratchRoot(root);
     ensureSessionScratchDir(root, "active");
-    for (const name of ["active", "stale", "fresh"]) mkdirSync(join(scratchRoot, name), { recursive: true });
+    for (const name of ["active", "stale", "fresh"])
+      mkdirSync(join(scratchRoot, name), { recursive: true });
     const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     utimesSync(join(scratchRoot, "stale"), old, old);
     utimesSync(join(scratchRoot, "active"), old, old);

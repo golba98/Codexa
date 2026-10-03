@@ -1,11 +1,14 @@
 /** Native CLI whose saved sessions /resume can browse. */
 export type ExternalSessionSource = "claude" | "codex" | "antigravity" | "vibe";
 
-export const EXTERNAL_SESSION_SOURCES: readonly ExternalSessionSource[] = ["claude", "codex", "antigravity", "vibe"];
+export const EXTERNAL_SESSION_SOURCES: readonly ExternalSessionSource[] = [
+  "claude",
+  "codex",
+  "antigravity",
+  "vibe",
+];
 
-export type ExternalSessionScope =
-  | { kind: "workspace"; root: string }
-  | { kind: "all" };
+export type ExternalSessionScope = { kind: "workspace"; root: string } | { kind: "all" };
 
 export interface ExternalSessionSummary {
   source: ExternalSessionSource;
@@ -46,9 +49,13 @@ export interface ExternalSessionOptions {
 
 export function externalSourceLabel(source: ExternalSessionSource): string {
   switch (source) {
-    case "claude": return "Claude Code";
-    case "codex": return "Codex";
-    case "antigravity": return "Antigravity";
-    case "vibe": return "Mistral Vibe";
+    case "claude":
+      return "Claude Code";
+    case "codex":
+      return "Codex";
+    case "antigravity":
+      return "Antigravity";
+    case "vibe":
+      return "Mistral Vibe";
   }
 }

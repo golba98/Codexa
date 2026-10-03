@@ -1,19 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildProviderRegistry, getDefaultProviderId, isKnownProviderId } from "./registry.js";
-import { checkLocalProvider, resetLocalProviderStateForTests } from "../providerRuntime/local.js";
-import { setProviderActiveRoute, parseProviderWorkspaceConfig } from "./workspaceConfig.js";
-import { resolveActiveProviderRoute } from "../providerRuntime/registry.js";
+import type { runCommand } from "../process/CommandRunner.js";
 import {
   ANTIGRAVITY_DEFAULT_MODEL_ID,
   discoverAgyModels,
   resetAntigravityRouteValidationCacheForTests,
 } from "../providerRuntime/antigravity.js";
-import { runCommand } from "../process/CommandRunner.js";
+import { checkLocalProvider, resetLocalProviderStateForTests } from "../providerRuntime/local.js";
+import { resolveActiveProviderRoute } from "../providerRuntime/registry.js";
+import { buildProviderRegistry, getDefaultProviderId, isKnownProviderId } from "./registry.js";
+import { parseProviderWorkspaceConfig, setProviderActiveRoute } from "./workspaceConfig.js";
 
 test("provider registry exposes Codexa Native in local-dev channel and excludes it in production", () => {
-  const devProviders = buildProviderRegistry({ activeModel: "gpt-5.4", env: { UBUME_CHANNEL: "local-dev" } });
-  assert.deepEqual(devProviders.map((provider) => provider.id), ["openai", "anthropic", "mistral", "codexa-native", "codexa-cupy", "local", "antigravity"]);
+  const devProviders = buildProviderRegistry({
+    activeModel: "gpt-5.4",
+    env: { UBUME_CHANNEL: "local-dev" },
+  });
+  assert.deepEqual(
+    devProviders.map((provider) => provider.id),
+    ["openai", "anthropic", "mistral", "codexa-native", "codexa-cupy", "local", "antigravity"],
+  );
   assert.equal(devProviders[0]?.displayName, "OpenAI");
   assert.equal(devProviders[0]?.currentModel, "gpt-5.4");
   assert.deepEqual(devProviders[0]?.launchCommand, { executable: "codex", args: [] });
@@ -32,10 +38,22 @@ test("provider registry exposes Codexa Native in local-dev channel and excludes 
   assert.equal(devProviders[4]?.launchCommand, null);
   assert.deepEqual(devProviders[6]?.launchCommand, { executable: "agy", args: [] });
 
-  const prodProviders = buildProviderRegistry({ activeModel: "gpt-5.4", env: { UBUME_CHANNEL: "published" } });
-  assert.deepEqual(prodProviders.map((provider) => provider.id), ["openai", "anthropic", "mistral", "local", "antigravity"]);
-  assert.equal(prodProviders.find((p) => p.id === "codexa-native"), undefined);
-  assert.equal(prodProviders.find((p) => p.id === "codexa-cupy"), undefined);
+  const prodProviders = buildProviderRegistry({
+    activeModel: "gpt-5.4",
+    env: { UBUME_CHANNEL: "published" },
+  });
+  assert.deepEqual(
+    prodProviders.map((provider) => provider.id),
+    ["openai", "anthropic", "mistral", "local", "antigravity"],
+  );
+  assert.equal(
+    prodProviders.find((p) => p.id === "codexa-native"),
+    undefined,
+  );
+  assert.equal(
+    prodProviders.find((p) => p.id === "codexa-cupy"),
+    undefined,
+  );
 });
 
 test("Codexa Native remains a known provider ID so workspace config preserves overrides when saved", () => {
@@ -89,7 +107,10 @@ test("antigravity appears in the provider registry with correct defaults", async
       })) as typeof runCommand,
     });
 
-    const providers = buildProviderRegistry({ activeModel: "gpt-5.4", env: { UBUME_CHANNEL: "local-dev" } });
+    const providers = buildProviderRegistry({
+      activeModel: "gpt-5.4",
+      env: { UBUME_CHANNEL: "local-dev" },
+    });
     const antigravity = providers.find((p) => p.id === "antigravity");
 
     assert.ok(antigravity, "antigravity provider not found");
@@ -163,7 +184,10 @@ test("registry hides direct Google routes and falls back to OpenAI", () => {
     },
   });
 
-  assert.equal(providers.find((provider) => provider.id === "google"), undefined);
+  assert.equal(
+    providers.find((provider) => provider.id === "google"),
+    undefined,
+  );
   assert.equal(providers.find((provider) => provider.id === "openai")?.isActiveRoute, true);
 });
 
@@ -181,7 +205,10 @@ test("anthropic can be selected as an active in-Ubume route", () => {
 
   assert.equal(providers.find((provider) => provider.id === "anthropic")?.isActiveRoute, true);
   assert.equal(providers.find((provider) => provider.id === "anthropic")?.routeMode, "in-ubume");
-  assert.equal(providers.find((provider) => provider.id === "anthropic")?.currentModel, "claude-sonnet-4-20250514");
+  assert.equal(
+    providers.find((provider) => provider.id === "anthropic")?.currentModel,
+    "claude-sonnet-4-20250514",
+  );
   assert.equal(providers.find((provider) => provider.id === "openai")?.isActiveRoute, false);
 });
 
@@ -196,9 +223,12 @@ test("discovered local models enable local provider and display selected model",
       if (String(input).includes("/api/v0/")) {
         return new Response(null, { status: 404 });
       }
-      return new Response(JSON.stringify({
-        data: [{ id: "google/gemma-4-26b-a4b" }],
-      }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          data: [{ id: "google/gemma-4-26b-a4b" }],
+        }),
+        { status: 200 },
+      );
     }) as typeof fetch,
   });
 
@@ -236,20 +266,28 @@ test("LM Studio loaded Local model replaces stale active route in provider regis
       },
       fetchImpl: (async (input) => {
         if (String(input).includes("/api/v0/")) {
-          return new Response(JSON.stringify({
-            data: [{
-              id: "qwen/qwen3.6-27b",
-              state: "loaded",
-              loaded_context_length: 32000,
-              max_context_length: 262144,
-              capabilities: ["tool_use"],
-            }],
-            object: "list",
-          }), { status: 200 });
+          return new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: "qwen/qwen3.6-27b",
+                  state: "loaded",
+                  loaded_context_length: 32000,
+                  max_context_length: 262144,
+                  capabilities: ["tool_use"],
+                },
+              ],
+              object: "list",
+            }),
+            { status: 200 },
+          );
         }
-        return new Response(JSON.stringify({
-          data: [{ id: "google/gemma-4-26b-a4b" }, { id: "qwen/qwen3.6-27b" }],
-        }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            data: [{ id: "google/gemma-4-26b-a4b" }, { id: "qwen/qwen3.6-27b" }],
+          }),
+          { status: 200 },
+        );
       }) as typeof fetch,
     });
 

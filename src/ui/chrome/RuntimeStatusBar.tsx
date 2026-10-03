@@ -1,10 +1,14 @@
-import React from "react";
 import { Box, Text } from "ink";
-import { useTheme } from "../theme.js";
-import type { Layout } from "../layout.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
+import type { Layout } from "../layout.js";
+import { useTheme } from "../theme.js";
 
-export type RuntimeAvailability = "available" | "checking" | "reconnecting" | "unavailable" | "unknown";
+export type RuntimeAvailability =
+  | "available"
+  | "checking"
+  | "reconnecting"
+  | "unavailable"
+  | "unknown";
 
 export interface RuntimeStatusBarProps {
   layout: Layout;
@@ -29,7 +33,11 @@ function renderRuntimeDisplay(displayStr: string, theme: ReturnType<typeof useTh
   const safeDisplay = displayStr.trim() || "Local / Detecting...";
   const slashIndex = safeDisplay.indexOf("/");
   if (slashIndex === -1) {
-    return <Text color={theme.model} wrap="truncate">{safeDisplay}</Text>;
+    return (
+      <Text color={theme.model} wrap="truncate">
+        {safeDisplay}
+      </Text>
+    );
   }
 
   const providerPart = safeDisplay.substring(0, slashIndex).trim() || "Local";
@@ -95,13 +103,17 @@ export function RuntimeStatusBar({
         {availabilityLabel && (
           <>
             <Text color={theme.textMuted}>{" · "}</Text>
-            <Text color={availability === "unavailable" ? theme.warning : theme.info}>{availabilityLabel}</Text>
+            <Text color={availability === "unavailable" ? theme.warning : theme.info}>
+              {availabilityLabel}
+            </Text>
           </>
         )}
       </Box>
       <Box flexShrink={0}>
         <Text color={theme.textMuted}>{layout.cols >= 48 ? "Context: " : "Ctx: "}</Text>
-        <Text color={safeContextDisplay === "Unknown" ? theme.textDim : theme.context}>{safeContextDisplay}</Text>
+        <Text color={safeContextDisplay === "Unknown" ? theme.textDim : theme.context}>
+          {safeContextDisplay}
+        </Text>
       </Box>
     </Box>
   );

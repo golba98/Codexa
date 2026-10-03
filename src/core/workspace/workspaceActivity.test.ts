@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "fs";
+import test from "node:test";
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import test from "node:test";
 import {
   captureWorkspaceSnapshot,
-  createWorkspaceActivityTracker,
   createTextDiffExcerpt,
+  createWorkspaceActivityTracker,
   diffWorkspaceSnapshots,
 } from "./workspaceActivity.js";
 
@@ -102,23 +102,25 @@ test("workspace activity tracker can reuse a provided initial snapshot", async (
     writeFileSync(join(root, "edited.txt"), "after\n", "utf8");
     unlinkSync(join(root, "gone.txt"));
 
-    const activity = await new Promise<ReturnType<typeof diffWorkspaceSnapshots>>((resolve, reject) => {
-      let tracker: ReturnType<typeof createWorkspaceActivityTracker> | null = null;
-      const timeout = setTimeout(() => {
-        tracker?.stop();
-        reject(new Error("Timed out waiting for workspace activity."));
-      }, 500);
-      tracker = createWorkspaceActivityTracker({
-        rootDir: root,
-        initialSnapshot: before,
-        pollIntervalMs: 10,
-        onActivity: (items) => {
-          clearTimeout(timeout);
+    const activity = await new Promise<ReturnType<typeof diffWorkspaceSnapshots>>(
+      (resolve, reject) => {
+        let tracker: ReturnType<typeof createWorkspaceActivityTracker> | null = null;
+        const timeout = setTimeout(() => {
           tracker?.stop();
-          resolve(items);
-        },
-      });
-    });
+          reject(new Error("Timed out waiting for workspace activity."));
+        }, 500);
+        tracker = createWorkspaceActivityTracker({
+          rootDir: root,
+          initialSnapshot: before,
+          pollIntervalMs: 10,
+          onActivity: (items) => {
+            clearTimeout(timeout);
+            tracker?.stop();
+            resolve(items);
+          },
+        });
+      },
+    );
 
     const operationsByPath = new Map(activity.map((item) => [item.path, item.operation]));
     assert.equal(operationsByPath.get("new-file.ts"), "created");
@@ -158,8 +160,14 @@ test("creates green/red diff excerpts for mixed edits", () => {
   assert(diff);
   assert.equal(diff.addedLines, 2);
   assert.equal(diff.removedLines, 1);
-  assert.equal(diff.diffLines?.some((line) => line.kind === "added"), true);
-  assert.equal(diff.diffLines?.some((line) => line.kind === "removed"), true);
+  assert.equal(
+    diff.diffLines?.some((line) => line.kind === "added"),
+    true,
+  );
+  assert.equal(
+    diff.diffLines?.some((line) => line.kind === "removed"),
+    true,
+  );
 });
 
 test("ignores agent scratch files under .ubume/scratch", () => {
@@ -167,12 +175,19 @@ test("ignores agent scratch files under .ubume/scratch", () => {
   try {
     const before = captureWorkspaceSnapshot(root);
     mkdirSync(join(root, ".ubume", "scratch", "session-1"), { recursive: true });
-    writeFileSync(join(root, ".ubume", "scratch", "session-1", "_test_harness.html"), "<html></html>\n", "utf8");
+    writeFileSync(
+      join(root, ".ubume", "scratch", "session-1", "_test_harness.html"),
+      "<html></html>\n",
+      "utf8",
+    );
     writeFileSync(join(root, "index.html"), "<html></html>\n", "utf8");
     const after = captureWorkspaceSnapshot(root);
     const activity = diffWorkspaceSnapshots(before, after, 789);
 
-    assert.deepEqual(activity.map((item) => item.path), ["index.html"]);
+    assert.deepEqual(
+      activity.map((item) => item.path),
+      ["index.html"],
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

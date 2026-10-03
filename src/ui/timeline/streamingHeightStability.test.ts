@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { appendRunResponseChunk, createRunEvent, upsertRunToolActivity } from "../../session/chatLifecycle.js";
+import {
+  appendRunResponseChunk,
+  createRunEvent,
+  upsertRunToolActivity,
+} from "../../session/chatLifecycle.js";
 import type { RunEvent, RunToolActivity, UserPromptEvent } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
 import type { RenderTimelineItem } from "./Timeline.js";
@@ -91,7 +95,9 @@ test("native snapshot: a streaming turn's height never shrinks while the run is 
     heights.push(buildTimelineSnapshot([item], { totalWidth: 120 }).totalRows);
   }
   run = appendRunResponseChunk(run, "streamed answer begins\n");
-  heights.push(buildTimelineSnapshot([makeTurnItem(run, user, "streaming")], { totalWidth: 120 }).totalRows);
+  heights.push(
+    buildTimelineSnapshot([makeTurnItem(run, user, "streaming")], { totalWidth: 120 }).totalRows,
+  );
 
   for (let i = 1; i < heights.length; i += 1) {
     assert.ok(
@@ -113,7 +119,10 @@ test("stable (live) snapshot: a streaming turn's height never shrinks while the 
     heights.push(buildStableTimelineSnapshot([item], { totalWidth: 120 }).snapshot.totalRows);
   }
   run = appendRunResponseChunk(run, "streamed answer begins\n");
-  heights.push(buildStableTimelineSnapshot([makeTurnItem(run, user, "streaming")], { totalWidth: 120 }).snapshot.totalRows);
+  heights.push(
+    buildStableTimelineSnapshot([makeTurnItem(run, user, "streaming")], { totalWidth: 120 })
+      .snapshot.totalRows,
+  );
 
   for (let i = 1; i < heights.length; i += 1) {
     assert.ok(
@@ -133,12 +142,16 @@ test("action-burst compaction is suppressed while running and applied once final
     run = upsertRunToolActivity(run, readFileTool(i));
   }
 
-  const running = buildTimelineSnapshot([makeTurnItem(run, user, "streaming")], { totalWidth: 120 });
+  const running = buildTimelineSnapshot([makeTurnItem(run, user, "streaming")], {
+    totalWidth: 120,
+  });
   assert.equal(hasActionSummary(running.rows), false, "no action-summary while the run is running");
 
   // FINALIZE_RUN flips run.status to completed and moves the turn to history.
   const finalizedRun: RunEvent = { ...run, status: "completed", durationMs: 100 };
-  const finalized = buildTimelineSnapshot([makeTurnItem(finalizedRun, user, "none")], { totalWidth: 120 });
+  const finalized = buildTimelineSnapshot([makeTurnItem(finalizedRun, user, "none")], {
+    totalWidth: 120,
+  });
   assert.equal(hasActionSummary(finalized.rows), true, "action-summary appears once finalized");
   assert.ok(
     finalized.totalRows < running.totalRows,

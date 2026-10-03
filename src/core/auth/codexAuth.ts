@@ -1,5 +1,9 @@
-import { spawn } from "child_process";
-import { formatCodexLaunchError, resolveCodexExecutable, spawnCodexProcess } from "../executables/codexExecutable.js";
+import type { spawn } from "child_process";
+import {
+  formatCodexLaunchError,
+  resolveCodexExecutable,
+  spawnCodexProcess,
+} from "../executables/codexExecutable.js";
 
 export type CodexAuthState = "checking" | "authenticated" | "unauthenticated" | "unknown";
 
@@ -176,8 +180,10 @@ export function inferAuthStateFromProbe(
 
 export function isLikelyAuthFailure(message: string): boolean {
   const lower = message.toLowerCase();
-  return AUTH_FAILURE_PHRASES.some((phrase) => lower.includes(phrase))
-    || AUTH_FAILURE_STATUS_PATTERNS.some((pattern) => pattern.test(message));
+  return (
+    AUTH_FAILURE_PHRASES.some((phrase) => lower.includes(phrase)) ||
+    AUTH_FAILURE_STATUS_PATTERNS.some((pattern) => pattern.test(message))
+  );
 }
 
 export async function probeCodexAuthStatus(): Promise<CodexAuthProbeResult> {
@@ -349,8 +355,7 @@ function runCodexCommand(args: string[], timeoutMs = 6000): Promise<CommandResul
 
 function summarizeAttempt(args: string[], result: CommandResult): string {
   const status =
-    result.error?.code ??
-    (result.timedOut ? "timeout" : `exit:${result.exitCode ?? "null"}`);
+    result.error?.code ?? (result.timedOut ? "timeout" : `exit:${result.exitCode ?? "null"}`);
 
   const combined = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join(" | ");
   const output = combined.length > 140 ? `${combined.slice(0, 137)}...` : combined || "no output";

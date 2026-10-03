@@ -44,9 +44,9 @@ export async function fetchLmStudioModelInfo(options: {
       return null;
     }
     if (
-      typeof parsed !== "object"
-      || parsed === null
-      || typeof (parsed as { id?: unknown }).id !== "string"
+      typeof parsed !== "object" ||
+      parsed === null ||
+      typeof (parsed as { id?: unknown }).id !== "string"
     ) {
       return null;
     }
@@ -70,13 +70,23 @@ function parseModelInfo(value: unknown): LmStudioModelInfo | null {
     ...(typeof value.type === "string" ? { type: value.type } : {}),
     ...(typeof value.publisher === "string" ? { publisher: value.publisher } : {}),
     ...(typeof value.arch === "string" ? { arch: value.arch } : {}),
-    ...(typeof value.compatibility_type === "string" ? { compatibility_type: value.compatibility_type } : {}),
+    ...(typeof value.compatibility_type === "string"
+      ? { compatibility_type: value.compatibility_type }
+      : {}),
     ...(typeof value.quantization === "string" ? { quantization: value.quantization } : {}),
     ...(typeof value.state === "string" ? { state: value.state } : {}),
-    ...(typeof value.max_context_length === "number" ? { max_context_length: value.max_context_length } : {}),
-    ...(typeof value.loaded_context_length === "number" ? { loaded_context_length: value.loaded_context_length } : {}),
+    ...(typeof value.max_context_length === "number"
+      ? { max_context_length: value.max_context_length }
+      : {}),
+    ...(typeof value.loaded_context_length === "number"
+      ? { loaded_context_length: value.loaded_context_length }
+      : {}),
     ...(Array.isArray(value.capabilities)
-      ? { capabilities: value.capabilities.filter((item): item is string => typeof item === "string") }
+      ? {
+          capabilities: value.capabilities.filter(
+            (item): item is string => typeof item === "string",
+          ),
+        }
       : {}),
   };
 }

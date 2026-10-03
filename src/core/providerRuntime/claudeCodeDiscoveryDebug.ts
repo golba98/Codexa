@@ -22,9 +22,10 @@ async function main(): Promise<void> {
   const report = {
     claudeCommand: resolvedCommand,
     claudeBinaryPath: packageMetadata?.sourcePath ?? resolvedCommand,
-    claudeVersion: versionResult.status === "completed" && versionResult.exitCode === 0
-      ? versionResult.stdout.trim()
-      : null,
+    claudeVersion:
+      versionResult.status === "completed" && versionResult.exitCode === 0
+        ? versionResult.stdout.trim()
+        : null,
     discoverySourceUsed: discovery.modelSource,
     packageMetadataSource: packageMetadata?.sourcePath ?? null,
     rawDiscoveredModelEntries: packageMetadata?.rawModelIds ?? [],
@@ -38,9 +39,13 @@ async function main(): Promise<void> {
       isFallback: model.isFallback,
       discoveryKind: model.discoveryKind,
     })),
-    fallbackReason: discovery.modelSource === "fallback"
-      ? discovery.diagnostics ?? { reason: "No Claude Code command, package metadata, settings, or config model source returned versioned models." }
-      : null,
+    fallbackReason:
+      discovery.modelSource === "fallback"
+        ? (discovery.diagnostics ?? {
+            reason:
+              "No Claude Code command, package metadata, settings, or config model source returned versioned models.",
+          })
+        : null,
   };
 
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

@@ -11,7 +11,8 @@ export const MAX_DEFAULT_MAX_OUTPUT_TOKENS = 32_768;
  * and huge windows do not request absurd completions.
  */
 export function resolveDefaultMaxOutputTokens(contextWindow: number | undefined): number {
-  if (!contextWindow || !Number.isFinite(contextWindow) || contextWindow <= 0) return MIN_DEFAULT_MAX_OUTPUT_TOKENS;
+  if (!contextWindow || !Number.isFinite(contextWindow) || contextWindow <= 0)
+    return MIN_DEFAULT_MAX_OUTPUT_TOKENS;
   const scaled = Math.floor(contextWindow / 4);
   return Math.max(MIN_DEFAULT_MAX_OUTPUT_TOKENS, Math.min(MAX_DEFAULT_MAX_OUTPUT_TOKENS, scaled));
 }

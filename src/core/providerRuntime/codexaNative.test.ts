@@ -41,9 +41,18 @@ test("Codexa Native resolves explicit model paths", () => {
 test("Codexa Native defaults to the canonical PyTorch checkout", () => {
   const config = resolveCodexaNativeConfig({});
   assert.equal(config.modelRoot, DEFAULT_CODEXA_NATIVE_MODEL_ROOT);
-  assert.equal(config.bridgeScript, join(DEFAULT_CODEXA_NATIVE_MODEL_ROOT, "scripts", "native_chat_bridge.py"));
-  assert.equal(config.checkpoint, join(DEFAULT_CODEXA_NATIVE_MODEL_ROOT, "checkpoints", "codexa-900m-sft-v2", "latest.pt"));
-  assert.equal(config.tokenizer, join(DEFAULT_CODEXA_NATIVE_MODEL_ROOT, "checkpoints", "tokenizer-base-v1", "tokenizer.json"));
+  assert.equal(
+    config.bridgeScript,
+    join(DEFAULT_CODEXA_NATIVE_MODEL_ROOT, "scripts", "native_chat_bridge.py"),
+  );
+  assert.equal(
+    config.checkpoint,
+    join(DEFAULT_CODEXA_NATIVE_MODEL_ROOT, "checkpoints", "codexa-900m-sft-v2", "latest.pt"),
+  );
+  assert.equal(
+    config.tokenizer,
+    join(DEFAULT_CODEXA_NATIVE_MODEL_ROOT, "checkpoints", "tokenizer-base-v1", "tokenizer.json"),
+  );
 });
 
 test("Codexa Native discovery returns not-configured in production channel", () => {
@@ -86,7 +95,10 @@ test("Codexa Native discovery exposes the direct PyTorch model in local-dev chan
 });
 
 test("Codexa Native stitches overlapping context-window continuations", () => {
-  assert.equal(stitchNativeContinuation("The answer is partly", "partly complete."), "The answer is partly complete.");
+  assert.equal(
+    stitchNativeContinuation("The answer is partly", "partly complete."),
+    "The answer is partly complete.",
+  );
 });
 
 test("Codexa Native silently rolls over finish_reason=length", async () => {
@@ -102,7 +114,9 @@ test("Codexa Native silently rolls over finish_reason=length", async () => {
     handlers: {
       onResponse: () => {},
       onError: () => {},
-      onLocalContextCheckpoint: (checkpoint) => { checkpoints.push(checkpoint.summary); },
+      onLocalContextCheckpoint: (checkpoint) => {
+        checkpoints.push(checkpoint.summary);
+      },
     },
     send: async (_prompt, announceReady) => {
       sent.push(announceReady);
@@ -124,7 +138,11 @@ test("Codexa Native crosses 20 length windows without a fixed rollover cap", asy
         return { type: "response", text: `checkpoint ${answerCalls}`, finish_reason: "stop" };
       }
       answerCalls += 1;
-      return { type: "response", text: `window-${answerCalls} `, finish_reason: answerCalls <= 22 ? "length" : "stop" };
+      return {
+        type: "response",
+        text: `window-${answerCalls} `,
+        finish_reason: answerCalls <= 22 ? "length" : "stop",
+      };
     },
   });
   assert.equal(answerCalls, 23);

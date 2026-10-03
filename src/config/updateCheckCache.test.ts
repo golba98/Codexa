@@ -63,7 +63,11 @@ test("load returns null when required fields have wrong types", () => {
   const dir = makeTempDir();
   try {
     const filePath = join(dir, "update-check.json");
-    writeFileSync(filePath, JSON.stringify({ lastChecked: "yesterday", currentVersion: "1.0.4" }), "utf8");
+    writeFileSync(
+      filePath,
+      JSON.stringify({ lastChecked: "yesterday", currentVersion: "1.0.4" }),
+      "utf8",
+    );
     assert.equal(loadUpdateCheckCache(filePath), null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -127,7 +131,11 @@ test("isCacheValid: TTL expiry invalidates the cache", () => {
 
 test("isCacheValid: version mismatch invalidates (post-upgrade, still-running scenario)", () => {
   // A cache written by 1.0.4 must not be reused once the running app is 1.0.5.
-  const cache = makeCache({ currentVersion: "1.0.4", latestVersion: "1.0.4", updateAvailable: false });
+  const cache = makeCache({
+    currentVersion: "1.0.4",
+    latestVersion: "1.0.4",
+    updateAvailable: false,
+  });
   assert.equal(isCacheValid(cache, 6, "1.0.5"), false);
 });
 

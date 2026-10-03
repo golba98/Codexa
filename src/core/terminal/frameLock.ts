@@ -18,18 +18,14 @@ export function resetFrameLockForResize(stdout: object): void {
  * Wraps the stdout stream to enforce frame-level deduplication, a flush lock,
  * and width-safe row padding via ANSI clear-to-EOL (\x1b[K) injection.
  */
-export function wrapStdoutWithFrameLock({
-  stdout,
-  env,
-}: FrameLockOptions) {
+export function wrapStdoutWithFrameLock({ stdout, env }: FrameLockOptions) {
   let lastFrame = "";
   let isFlushing = false;
   let debugLogStream: fs.WriteStream | null = null;
 
   if (env.UBUME_RENDER_DEBUG === "1") {
     try {
-      const logPath = env.UBUME_RENDER_DEBUG_FILE?.trim()
-        || resolveUbumeDebugLogPath(env);
+      const logPath = env.UBUME_RENDER_DEBUG_FILE?.trim() || resolveUbumeDebugLogPath(env);
       const logDir = path.dirname(logPath);
       if (!fs.existsSync(logDir)) {
         fs.mkdirSync(logDir, { recursive: true });
@@ -84,7 +80,7 @@ export function wrapStdoutWithFrameLock({
     //
     // We inject \x1b[K before every newline and at the end of the frame.
     // padding via \x1b[K injection.
-    // Only apply if the chunk is non-empty and doesn't look like a control-only 
+    // Only apply if the chunk is non-empty and doesn't look like a control-only
     // sequence (e.g. terminal title OSC).
     let processed = chunk;
     const isControlSequence = chunk.includes("\x1b]");
@@ -99,7 +95,9 @@ export function wrapStdoutWithFrameLock({
     try {
       lastFrame = chunk;
       const resizing = isTerminalResizing();
-      logDebug(`Frame written: length=${processed.length} original=${chunk.length} resizing=${resizing}`);
+      logDebug(
+        `Frame written: length=${processed.length} original=${chunk.length} resizing=${resizing}`,
+      );
       return originalWrite(processed);
     } finally {
       isFlushing = false;

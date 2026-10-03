@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
-import { Box, Text, render } from "ink";
+import test from "node:test";
+import { Box, render, Text } from "ink";
+import React from "react";
+import { ThemeProvider } from "../theme.js";
 import {
   AttachmentImportPanel,
   compactHomePath,
   type PendingImportFile,
 } from "./AttachmentImportPanel.js";
-import { ThemeProvider } from "../theme.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -86,7 +86,8 @@ const TEST_FILE: PendingImportFile = {
   isImage: true,
 };
 
-const ATTACHMENTS_DIR = "C:\\Users\\jorda\\AppData\\Local\\Ubume\\workspaces\\example1\\attachments";
+const ATTACHMENTS_DIR =
+  "C:\\Users\\jorda\\AppData\\Local\\Ubume\\workspaces\\example1\\attachments";
 const WORKSPACE_ROOT = "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal";
 
 test("compactHomePath abbreviates attachment paths below the home directory", () => {
@@ -212,9 +213,7 @@ test("AttachmentImportPanel ignores vertical navigation", async () => {
 });
 
 test("AttachmentImportPanel shows vision warning when modelSupportsVision is false and file is image", async () => {
-  const harness = createInkHarness(
-    <AttachmentImportPanelHarness modelSupportsVision={false} />,
-  );
+  const harness = createInkHarness(<AttachmentImportPanelHarness modelSupportsVision={false} />);
   try {
     await sleep();
     const output = harness.getOutput();
@@ -225,9 +224,7 @@ test("AttachmentImportPanel shows vision warning when modelSupportsVision is fal
 });
 
 test("AttachmentImportPanel does NOT show vision warning when modelSupportsVision is null", async () => {
-  const harness = createInkHarness(
-    <AttachmentImportPanelHarness modelSupportsVision={null} />,
-  );
+  const harness = createInkHarness(<AttachmentImportPanelHarness modelSupportsVision={null} />);
   try {
     await sleep();
     const output = harness.getOutput();

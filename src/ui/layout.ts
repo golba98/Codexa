@@ -10,11 +10,11 @@
  *   max      maximized terminal → full decorative layout
  */
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useStdout } from "ink";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import stringWidth from "string-width";
 import * as renderDebug from "../core/perf/renderDebug.js";
-import { setTerminalResizing, isTerminalResizing } from "../core/terminal/terminalControl.js";
+import { setTerminalResizing } from "../core/terminal/terminalControl.js";
 
 export const BREAKPOINT_MAX = 180;
 export const BREAKPOINT_WIDE = 140;
@@ -146,10 +146,12 @@ export function normalizeDimension(value: number | undefined, fallback: number):
 }
 
 export function isRenderableViewport(cols: number | undefined, rows: number | undefined): boolean {
-  return isValidDimension(cols)
-    && isValidDimension(rows)
-    && Math.floor(cols) >= MIN_VIEWPORT_COLS
-    && Math.floor(rows) >= MIN_VIEWPORT_ROWS;
+  return (
+    isValidDimension(cols) &&
+    isValidDimension(rows) &&
+    Math.floor(cols) >= MIN_VIEWPORT_COLS &&
+    Math.floor(rows) >= MIN_VIEWPORT_ROWS
+  );
 }
 
 /** Returns true if the terminal is below the minimum supported size for a full UI. */
@@ -214,10 +216,8 @@ export function resolveStartupHeaderMode({
   }
 
   const shellHeight = getShellHeight(safeRows);
-  const fullStartupRows = introRows
-    + composerRows
-    + STARTUP_FULL_MIN_BODY_ROWS
-    + STARTUP_FULL_SAFE_PADDING_ROWS;
+  const fullStartupRows =
+    introRows + composerRows + STARTUP_FULL_MIN_BODY_ROWS + STARTUP_FULL_SAFE_PADDING_ROWS;
 
   if (safeCols >= STARTUP_FULL_MIN_COLS && shellHeight >= fullStartupRows) {
     return "large";
@@ -289,19 +289,14 @@ export function computeAppLayoutBudget({
   const shellHeight = getShellHeight(safeRows);
 
   const showNormalLogo =
-    process.env["UBUME_NO_ASCII_LOGO"] !== "1" && (
-      mode === "regular" ||
-      mode === "expanded" ||
-      (mode === "compact" && safeCols >= 72)
-    );
+    process.env["UBUME_NO_ASCII_LOGO"] !== "1" &&
+    (mode === "regular" || mode === "expanded" || (mode === "compact" && safeCols >= 72));
 
   const showCompactHeader = !showNormalLogo;
 
-  const placeMetadataBesideLogo =
-    showNormalLogo && safeCols >= 95;
+  const placeMetadataBesideLogo = showNormalLogo && safeCols >= 95;
 
-  const placeMetadataBelowLogo =
-    showNormalLogo && !placeMetadataBesideLogo;
+  const placeMetadataBelowLogo = showNormalLogo && !placeMetadataBesideLogo;
 
   const resolvedHeaderRows = headerRows ?? (showNormalLogo ? 6 : 1);
   const resolvedHeaderGapRows = headerGapRows ?? (mode === "compact" ? 0 : 1);
@@ -326,7 +321,7 @@ export function computeAppLayoutBudget({
 
   const activePanelRows = Math.max(1, shellHeight - baseReservedRows);
   const contentWidth = getContentWidth(safeCols);
-  
+
   const isCompact = mode === "compact";
   const borderRows = 2;
   const titleRows = 1;
@@ -352,7 +347,7 @@ export function computeAppLayoutBudget({
     showCompactHeader,
     placeMetadataBesideLogo,
     placeMetadataBelowLogo,
-    
+
     // Backward compatibility fields:
     transcriptRows: activePanelRows,
     panelRows: innerAvailableRows,
@@ -407,9 +402,8 @@ export function createTerminalViewport(
     ? { cols: fallback.cols, rows: fallback.rows, mode: fallback.mode }
     : undefined;
   const unstable = !isRenderableViewport(cols, rows);
-  const stableLayout = unstable && fallbackLayout
-    ? fallbackLayout
-    : createLayoutSnapshot(cols, rows, fallbackLayout);
+  const stableLayout =
+    unstable && fallbackLayout ? fallbackLayout : createLayoutSnapshot(cols, rows, fallbackLayout);
 
   const isCramped = isCrampedTerminal(cols, rows);
   const contentWidth = getContentWidth(stableLayout.cols);
@@ -433,7 +427,7 @@ export function advanceTerminalViewport(
   isResizing = false,
 ): TerminalViewport {
   const next = createTerminalViewport(cols, rows, current, isResizing);
-  
+
   if (process.env.UBUME_LAYOUT_DEBUG === "1") {
     renderDebug.traceEvent("layout", "advanceViewport", {
       cols: next.cols,
@@ -463,13 +457,20 @@ export function advanceTerminalViewport(
 /** React hook — returns live layout that ignores transient invalid restore sizes. */
 export function useTerminalViewport(): TerminalViewport {
   const { stdout } = useStdout();
-  const [viewport, setViewport] = useState<TerminalViewport>(() => createTerminalViewport(stdout.columns, stdout.rows));
+  const [viewport, setViewport] = useState<TerminalViewport>(() =>
+    createTerminalViewport(stdout.columns, stdout.rows),
+  );
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const commit = (isResizing = false) => {
       setViewport((current) => {
-        const nextViewport = advanceTerminalViewport(current, stdout.columns, stdout.rows, isResizing);
+        const nextViewport = advanceTerminalViewport(
+          current,
+          stdout.columns,
+          stdout.rows,
+          isResizing,
+        );
         if (
           current.cols === nextViewport.cols &&
           current.rows === nextViewport.rows &&
@@ -548,10 +549,7 @@ export function useTerminalViewport(): TerminalViewport {
  * Calculate available vertical rows for active panels, falling back to a layout-based
  * budget if availableRows is not explicitly provided.
  */
-export function getAvailableRowsForPanel(
-  layout: Layout,
-  passedAvailableRows?: number
-): number {
+export function getAvailableRowsForPanel(layout: Layout, passedAvailableRows?: number): number {
   if (passedAvailableRows !== undefined) {
     return passedAvailableRows;
   }

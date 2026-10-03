@@ -1,9 +1,15 @@
-import { type ChildProcess } from "child_process";
-import { APP_NAME, APP_VERSION, DEFAULT_MODEL, LEGACY_FALLBACK_MODELS, formatReasoningLabel } from "../../config/settings.js";
+import type { ChildProcess } from "child_process";
+import {
+  APP_NAME,
+  APP_VERSION,
+  DEFAULT_MODEL,
+  formatReasoningLabel,
+  LEGACY_FALLBACK_MODELS,
+} from "../../config/settings.js";
 import { resolveCodexExecutable, spawnCodexProcess } from "../executables/codexExecutable.js";
+import type { ProviderModel } from "../providerRuntime/types.js";
 import { loadSeededCodexCapabilities } from "./codexModelsCacheSeed.js";
 import { saveCachedProviderModels } from "./providerModelCache.js";
-import type { ProviderModel } from "../providerRuntime/types.js";
 
 export type ModelCapabilitySource = "runtime" | "fallback";
 export type ModelCapabilityStatus = "ready" | "fallback";
@@ -151,9 +157,13 @@ function normalizeRuntimeModel(raw: unknown): CodexModelCapability | null {
       ? raw.supported_reasoning_efforts
       : null;
   const supportedReasoningLevels = rawReasoning
-    ? rawReasoning.map(createReasoningEffortCapability).filter((item): item is ReasoningEffortCapability => Boolean(item))
+    ? rawReasoning
+        .map(createReasoningEffortCapability)
+        .filter((item): item is ReasoningEffortCapability => Boolean(item))
     : null;
-  const defaultReasoningLevel = normalizeString(raw.defaultReasoningEffort ?? raw.default_reasoning_effort);
+  const defaultReasoningLevel = normalizeString(
+    raw.defaultReasoningEffort ?? raw.default_reasoning_effort,
+  );
 
   return {
     id,
@@ -409,7 +419,11 @@ async function requestModelListFromAppServer(
         return;
       }
       const stderrSummary = stderr.trim() ? ` stderr: ${stderr.trim().slice(0, 300)}` : "";
-      fail(new Error(`Codex app-server exited before model discovery completed (code ${exitCode}).${stderrSummary}`));
+      fail(
+        new Error(
+          `Codex app-server exited before model discovery completed (code ${exitCode}).${stderrSummary}`,
+        ),
+      );
     });
 
     writeJsonLine(proc, {
@@ -432,7 +446,7 @@ async function requestModelListFromAppServer(
 export async function discoverCodexModelCapabilities(
   options: DiscoverCodexModelCapabilitiesOptions = {},
 ): Promise<CodexModelCapabilities> {
-  const executable = options.executable ?? await resolveCodexExecutable();
+  const executable = options.executable ?? (await resolveCodexExecutable());
   const includeHidden = options.includeHidden ?? false;
   const timeoutMs = options.timeoutMs ?? DEFAULT_DISCOVERY_TIMEOUT_MS;
   const discoveredAt = options.now?.() ?? Date.now();
@@ -476,7 +490,8 @@ export async function getCodexModelCapabilities(
   let liveDiscoverySucceeded = false;
 
   try {
-    executable = options.executable ?? await (options.resolveExecutable ?? resolveCodexExecutable)();
+    executable =
+      options.executable ?? (await (options.resolveExecutable ?? resolveCodexExecutable)());
     const cacheKey = `${executable}|hidden:${options.includeHidden ?? false}`;
     const cached = capabilityCache.get(cacheKey);
     if (!options.forceRefresh && cached && cached.expiresAt > now) {
@@ -489,25 +504,27 @@ export async function getCodexModelCapabilities(
       includeHidden: options.includeHidden,
       timeoutMs: options.timeoutMs,
       now: () => now,
-    }).then((discovered) => {
-      liveDiscoverySucceeded = true;
-      try {
-        persist(discovered);
-      } catch {
-        // Persistence must never fail a successful discovery.
-      }
-      return discovered;
-    }).catch((error) => {
-      try {
-        const seeded = seed();
-        if (seeded) {
-          return seeded;
+    })
+      .then((discovered) => {
+        liveDiscoverySucceeded = true;
+        try {
+          persist(discovered);
+        } catch {
+          // Persistence must never fail a successful discovery.
         }
-      } catch {
-        // Seed read failures fall through to the static list.
-      }
-      return createFallbackModelCapabilities(error, { discoveredAt: now, executable });
-    });
+        return discovered;
+      })
+      .catch((error) => {
+        try {
+          const seeded = seed();
+          if (seeded) {
+            return seeded;
+          }
+        } catch {
+          // Seed read failures fall through to the static list.
+        }
+        return createFallbackModelCapabilities(error, { discoveredAt: now, executable });
+      });
 
     capabilityCache.set(cacheKey, {
       expiresAt: now + ttlMs,
@@ -552,9 +569,12 @@ export function findModelCapability(
   }
 
   const normalized = model.toLowerCase();
-  return capabilities.models.find((candidate) =>
-    candidate.model.toLowerCase() === normalized || candidate.id.toLowerCase() === normalized
-  ) ?? null;
+  return (
+    capabilities.models.find(
+      (candidate) =>
+        candidate.model.toLowerCase() === normalized || candidate.id.toLowerCase() === normalized,
+    ) ?? null
+  );
 }
 
 export function isModelSelectable(
@@ -574,10 +594,12 @@ export function getPreferredModelFromCapabilities(
   }
 
   const selectable = getSelectableModelCapabilities(capabilities);
-  return selectable.find((model) => model.isDefault)?.model
-    ?? selectable[0]?.model
-    ?? currentModel
-    ?? DEFAULT_MODEL;
+  return (
+    selectable.find((model) => model.isDefault)?.model ??
+    selectable[0]?.model ??
+    currentModel ??
+    DEFAULT_MODEL
+  );
 }
 
 export function normalizeReasoningForModelCapabilities(
@@ -595,7 +617,10 @@ export function normalizeReasoningForModelCapabilities(
     return currentReasoning;
   }
 
-  if (capability.defaultReasoningLevel && supported.some((item) => item.id === capability.defaultReasoningLevel)) {
+  if (
+    capability.defaultReasoningLevel &&
+    supported.some((item) => item.id === capability.defaultReasoningLevel)
+  ) {
     return capability.defaultReasoningLevel;
   }
 
@@ -609,16 +634,18 @@ export function formatModelCapabilitiesList(
   const list = getSelectableModelCapabilities(capabilities)
     .map((model, index) => {
       const active = model.model === currentModel || model.id === currentModel ? "  *" : "";
-      const reasoning = model.reasoningLevelCount === null
-        ? "reasoning metadata unknown"
-        : `${model.reasoningLevelCount} reasoning ${model.reasoningLevelCount === 1 ? "level" : "levels"}`;
+      const reasoning =
+        model.reasoningLevelCount === null
+          ? "reasoning metadata unknown"
+          : `${model.reasoningLevelCount} reasoning ${model.reasoningLevelCount === 1 ? "level" : "levels"}`;
       return `  ${index + 1}. ${model.label} (${model.model}) - ${reasoning}${active}`;
     })
     .join("\n");
 
-  const source = capabilities.status === "ready"
-    ? "Detected from Codex runtime."
-    : `Fallback list; runtime discovery failed${capabilities.error ? `: ${capabilities.error}` : "."}`;
+  const source =
+    capabilities.status === "ready"
+      ? "Detected from Codex runtime."
+      : `Fallback list; runtime discovery failed${capabilities.error ? `: ${capabilities.error}` : "."}`;
 
   return `${source}\n${list || "  - none"}`;
 }

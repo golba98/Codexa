@@ -33,7 +33,10 @@ test("detects write intent for generated cleanup requests", () => {
 });
 
 test("detects narrow generated cleanup requests", () => {
-  assert.equal(isClearlySafeGeneratedCleanupRequest("Delete only clearly safe generated files and folders"), true);
+  assert.equal(
+    isClearlySafeGeneratedCleanupRequest("Delete only clearly safe generated files and folders"),
+    true,
+  );
   assert.equal(isClearlySafeGeneratedCleanupRequest("Prune build artifacts and caches"), true);
 });
 
@@ -51,10 +54,13 @@ test("auto-upgrades suggest mode for editing prompts", () => {
 });
 
 test("auto-upgrades suggest mode for generated cleanup prompts", () => {
-  assert.deepEqual(resolveExecutionMode("suggest", "Delete only clearly safe generated files and folders"), {
-    mode: "auto-edit",
-    autoUpgraded: true,
-  });
+  assert.deepEqual(
+    resolveExecutionMode("suggest", "Delete only clearly safe generated files and folders"),
+    {
+      mode: "auto-edit",
+      autoUpgraded: true,
+    },
+  );
 });
 
 test("keeps explicit full-auto mode unchanged", () => {
@@ -65,7 +71,11 @@ test("keeps explicit full-auto mode unchanged", () => {
 });
 
 test("read-only runtime policy overrides write-capable modes", () => {
-  const prompt = buildCodexPrompt("Create a weather app script with tests", "auto-edit", readOnlyPolicy);
+  const prompt = buildCodexPrompt(
+    "Create a weather app script with tests",
+    "auto-edit",
+    readOnlyPolicy,
+  );
   assert.match(prompt, /runtime permissions are read-only/i);
   assert.doesNotMatch(prompt, /write access/i);
   assert.doesNotMatch(prompt, /create or update files directly/i);
@@ -85,13 +95,20 @@ test("plan mode injects plan-first instructions without changing suggest semanti
   });
   assert.match(prompt, /Planning mode is enabled for this session/i);
   assert.match(prompt, /Start by giving a concise, repo-aware plan/i);
-  assert.match(prompt, /continue the task normally under the current mode and runtime permissions/i);
+  assert.match(
+    prompt,
+    /continue the task normally under the current mode and runtime permissions/i,
+  );
   assert.match(prompt, /still in suggest mode/i);
   assert.match(prompt, /without making file changes/i);
 });
 
 test("builds a write-enabled codex prompt for auto-edit when permissions allow it", () => {
-  const prompt = buildCodexPrompt("Create a weather app script with tests", "auto-edit", writePolicy);
+  const prompt = buildCodexPrompt(
+    "Create a weather app script with tests",
+    "auto-edit",
+    writePolicy,
+  );
   assert.match(prompt, /write access/i);
   assert.match(prompt, /create or update files directly/i);
   assert.match(prompt, /best-effort continuation/i);
@@ -126,7 +143,11 @@ test("injects project instructions before the task", () => {
 });
 
 test("adds fast generated cleanup safety instructions for write-enabled cleanup prompts", () => {
-  const prompt = buildCodexPrompt("Delete only clearly safe generated files and folders", "auto-edit", writePolicy);
+  const prompt = buildCodexPrompt(
+    "Delete only clearly safe generated files and folders",
+    "auto-edit",
+    writePolicy,
+  );
   assert.match(prompt, /Fast generated-file cleanup guidance/i);
   assert.match(prompt, /shallow workspace inspection/i);
   assert.match(prompt, /generated artifacts/i);
@@ -142,7 +163,10 @@ test("plan mode keeps write-enabled prompts actionable", () => {
     planMode: true,
   });
   assert.match(prompt, /Planning mode is enabled for this session/i);
-  assert.match(prompt, /continue the task normally under the current mode and runtime permissions/i);
+  assert.match(
+    prompt,
+    /continue the task normally under the current mode and runtime permissions/i,
+  );
   assert.match(prompt, /write access/i);
   assert.match(prompt, /create or update files directly/i);
 });
@@ -236,7 +260,8 @@ test("does not flag valid short responses with action confirmation", () => {
 });
 
 test("does not flag longer task completions", () => {
-  const longResponse = "I've created the file at src/utils/helper.ts with the requested utility functions. The module exports three helpers for string manipulation.";
+  const longResponse =
+    "I've created the file at src/utils/helper.ts with the requested utility functions. The module exports three helpers for string manipulation.";
   const result = detectHollowResponse("create a utility file", longResponse);
   assert.equal(result.isHollow, false);
 });

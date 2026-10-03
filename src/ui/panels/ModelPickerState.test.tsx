@@ -1,21 +1,34 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import React from "react";
-import { useEffect, useState } from "react";
 import { render } from "ink";
+import type React from "react";
+import { useEffect, useState } from "react";
+import {
+  type CodexModelCapability,
+  normalizeCodexModelListResponses,
+} from "../../core/models/codexModelCapabilities.js";
+import { createLayoutSnapshot } from "../layout.js";
 import { ThemeProvider } from "../theme.js";
 import { ModelPickerScreen } from "./ModelPickerScreen.js";
-import { createLayoutSnapshot } from "../layout.js";
-import { normalizeCodexModelListResponses, type CodexModelCapability } from "../../core/models/codexModelCapabilities.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
-  setRawMode(): this { return this; }
-  override resume(): this { return this; }
-  override pause(): this { return this; }
-  ref(): this { return this; }
-  unref(): this { return this; }
+  setRawMode(): this {
+    return this;
+  }
+  override resume(): this {
+    return this;
+  }
+  override pause(): this {
+    return this;
+  }
+  ref(): this {
+    return this;
+  }
+  unref(): this {
+    return this;
+  }
 }
 
 class TestOutput extends PassThrough {
@@ -39,17 +52,23 @@ function UncachedProviderPickerFlow(): React.ReactElement {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setModels(normalizeCodexModelListResponses([{
-        data: [{
-          id: "mistral-large-latest",
-          model: "mistral-large-latest",
-          displayName: "Mistral Large Latest",
-          hidden: false,
-          isDefault: true,
-          defaultReasoningEffort: "medium",
-          supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Medium" }],
-        }],
-      }]).models);
+      setModels(
+        normalizeCodexModelListResponses([
+          {
+            data: [
+              {
+                id: "mistral-large-latest",
+                model: "mistral-large-latest",
+                displayName: "Mistral Large Latest",
+                hidden: false,
+                isDefault: true,
+                defaultReasoningEffort: "medium",
+                supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Medium" }],
+              },
+            ],
+          },
+        ]).models,
+      );
       setLoading(false);
     }, 30);
     return () => clearTimeout(timer);
@@ -75,7 +94,9 @@ test("model picker displays grammar-correct selection message for OpenAI", async
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const { cleanup } = render(
     <ThemeProvider theme="purple">
@@ -89,7 +110,7 @@ test("model picker displays grammar-correct selection message for OpenAI", async
         onCancel={() => {}}
       />
     </ThemeProvider>,
-    { stdin: stdin as any, stdout: stdout as any, debug: true }
+    { stdin: stdin as any, stdout: stdout as any, debug: true },
   );
 
   try {
@@ -105,7 +126,9 @@ test("model picker displays grammar-correct selection message for Google", async
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const { cleanup } = render(
     <ThemeProvider theme="purple">
@@ -119,7 +142,7 @@ test("model picker displays grammar-correct selection message for Google", async
         onCancel={() => {}}
       />
     </ThemeProvider>,
-    { stdin: stdin as any, stdout: stdout as any, debug: true }
+    { stdin: stdin as any, stdout: stdout as any, debug: true },
   );
 
   try {
@@ -135,7 +158,9 @@ test("model picker displays reasoning: current/default when models are empty", a
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const { cleanup } = render(
     <ThemeProvider theme="purple">
@@ -148,7 +173,7 @@ test("model picker displays reasoning: current/default when models are empty", a
         onCancel={() => {}}
       />
     </ThemeProvider>,
-    { stdin: stdin as any, stdout: stdout as any, debug: true }
+    { stdin: stdin as any, stdout: stdout as any, debug: true },
   );
 
   try {
@@ -165,7 +190,9 @@ test("model picker displays emptyMessage when provided", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const { cleanup } = render(
     <ThemeProvider theme="purple">
@@ -179,7 +206,7 @@ test("model picker displays emptyMessage when provided", async () => {
         onCancel={() => {}}
       />
     </ThemeProvider>,
-    { stdin: stdin as any, stdout: stdout as any, debug: true }
+    { stdin: stdin as any, stdout: stdout as any, debug: true },
   );
 
   try {
@@ -195,7 +222,9 @@ test("uncached provider discovery populates the open picker in place", async () 
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const { cleanup } = render(
     <ThemeProvider theme="purple">

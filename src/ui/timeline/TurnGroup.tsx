@@ -1,39 +1,40 @@
-import React, { memo, useEffect, useState, useMemo } from "react";
 import { Box, Text } from "ink";
+import { memo, useMemo } from "react";
+import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
+import { normalizePlanReviewMarkdown } from "../../core/workspace/planStorage.js";
+import type { RunFileActivity } from "../../core/workspace/workspaceActivity.js";
 import type {
   AssistantEvent,
   RunEvent,
   RunProgressBlock,
   RunResponseSegment,
-  RunStreamItem,
   RunToolActivity,
   UIState,
   UserPromptEvent,
 } from "../../session/types.js";
-import { getAssistantContent, getResponseSegmentText, getRunPlanText } from "../../session/types.js";
-import { formatTerminalAnswerInline } from "../render/terminalAnswerFormat.js";
-import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
+import {
+  getAssistantContent,
+  getResponseSegmentText,
+  getRunPlanText,
+} from "../../session/types.js";
 import { DashCard } from "../chrome/DashCard.js";
-import { useTheme } from "../theme.js";
-import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
-import { wrapPlainText, wrapCommandText } from "../render/textLayout.js";
-import { selectVisibleRunActivity } from "./runActivityView.js";
-import type { RunFileActivity } from "../../core/workspace/workspaceActivity.js";
-import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../../session/chatLifecycle.js";
-import { formatProgressBlockBodyLines } from "./progressEntries.js";
+import { getFriendlyActionLabel, normalizeCommand } from "../input/commandNormalize.js";
 import { getUsableShellWidth, transcriptContentIndent } from "../layout.js";
 import { MemoizedRenderMessage } from "../render/Markdown.js";
 import {
-  sanitizeOutput,
-  sanitizeStreamChunk,
-  normalizeOutput,
   classifyOutput,
   formatForBox,
+  normalizeOutput,
+  sanitizeOutput,
+  sanitizeStreamChunk,
 } from "../render/outputPipeline.js";
-import { normalizeCommand, getFriendlyActionLabel } from "../input/commandNormalize.js";
-import * as renderDebug from "../../core/perf/renderDebug.js";
-import { normalizePlanReviewMarkdown } from "../../core/workspace/planStorage.js";
+import { formatTerminalAnswerInline } from "../render/terminalAnswerFormat.js";
+import { wrapCommandText, wrapPlainText } from "../render/textLayout.js";
+import { useTheme } from "../theme.js";
+import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
 import { AgentBlock } from "./AgentBlock.js";
+import { formatProgressBlockBodyLines } from "./progressEntries.js";
+import { selectVisibleRunActivity } from "./runActivityView.js";
 import { coalesceConsecutiveThinking } from "./streamCoalesce.js";
 
 export type TurnOpacity = "active" | "recent" | "dim";
@@ -61,15 +62,7 @@ function formatDuration(ms: number): string {
 // ─── User Input Card ─────────────────────────────────────────────────────────
 // User prompt wrapped in a rounded DashCard border.
 
-function UserInputCard({
-  prompt,
-  cols,
-  dim,
-}: {
-  prompt: string;
-  cols: number;
-  dim: boolean;
-}) {
+function UserInputCard({ prompt, cols, dim }: { prompt: string; cols: number; dim: boolean }) {
   const theme = useTheme();
   const borderColor = theme.border;
   const contentWidth = Math.max(1, cols - 7);
@@ -79,29 +72,23 @@ function UserInputCard({
     <DashCard cols={cols} title="PROMPT" borderColor={borderColor}>
       {lines.map((line, i) => (
         <Text key={i} color={dim ? theme.textDim : theme.text}>
-          {i === 0 ? "❯ " : "  "}{line}
+          {i === 0 ? "❯ " : "  "}
+          {line}
         </Text>
       ))}
     </DashCard>
   );
 }
 
-const MemoizedUserInputCard = memo(UserInputCard, (prev, next) => (
-  prev.prompt === next.prompt
-  && prev.cols === next.cols
-  && prev.dim === next.dim
-));
+const MemoizedUserInputCard = memo(
+  UserInputCard,
+  (prev, next) => prev.prompt === next.prompt && prev.cols === next.cols && prev.dim === next.dim,
+);
 
 // ─── Impact Summary ──────────────────────────────────────────────────────────
 // Compact file-change summary replacing FileScanCard + ActivityCard
 
-function ImpactSummary({
-  run,
-  cols,
-}: {
-  run: RunEvent;
-  cols: number;
-}) {
+function ImpactSummary({ run, cols }: { run: RunEvent; cols: number }) {
   const theme = useTheme();
   const summary = run.activitySummary;
   const hasFiles = run.touchedFileCount > 0;
@@ -115,38 +102,44 @@ function ImpactSummary({
 
   const opLabel = (op: string) => {
     switch (op) {
-      case "created": return "CREATED ";
-      case "modified": return "MODIFIED";
-      case "deleted": return "DELETED ";
-      default: return op.toUpperCase().padEnd(8);
+      case "created":
+        return "CREATED ";
+      case "modified":
+        return "MODIFIED";
+      case "deleted":
+        return "DELETED ";
+      default:
+        return op.toUpperCase().padEnd(8);
     }
   };
 
   const opColor = (op: string) => {
     switch (op) {
-      case "created": return theme.success;
-      case "deleted": return theme.error;
-      default: return theme.info;
+      case "created":
+        return theme.success;
+      case "deleted":
+        return theme.error;
+      default:
+        return theme.info;
     }
   };
 
   return (
     <Box flexDirection="column" width="100%" paddingX={1} marginTop={0}>
-      {hasDeletes && (
-        <Text color={theme.warning}>{"⚠ Destructive changes detected:"}</Text>
-      )}
+      {hasDeletes && <Text color={theme.warning}>{"⚠ Destructive changes detected:"}</Text>}
       {hasFiles && (
         <>
           <Text color={theme.textDim}>{"  Changes:"}</Text>
           {recentFiles.map((file: RunFileActivity, i: number) => {
-            const diffInfo = file.addedLines != null || file.removedLines != null
-              ? ` (+${file.addedLines ?? 0} -${file.removedLines ?? 0})`
-              : "";
+            const diffInfo =
+              file.addedLines != null || file.removedLines != null
+                ? ` (+${file.addedLines ?? 0} -${file.removedLines ?? 0})`
+                : "";
             return (
               <Text key={i}>
                 <Text color={theme.textDim}>{"    "}</Text>
                 <Text color={opColor(file.operation)}>{opLabel(file.operation)}</Text>
-                <Text color={theme.text}>{" "}{file.path}</Text>
+                <Text color={theme.text}> {file.path}</Text>
                 <Text color={theme.textDim}>{diffInfo}</Text>
               </Text>
             );
@@ -156,8 +149,10 @@ function ImpactSummary({
       <Text color={theme.textDim}>
         {"  "}
         <Text color={theme.success}>{"✔ "}</Text>
-        {run.touchedFileCount > 0 && `${run.touchedFileCount} file${run.touchedFileCount === 1 ? "" : "s"}`}
-        {hasTools && `${hasFiles ? " • " : ""}${run.toolActivities.length} action${run.toolActivities.length === 1 ? "" : "s"}`}
+        {run.touchedFileCount > 0 &&
+          `${run.touchedFileCount} file${run.touchedFileCount === 1 ? "" : "s"}`}
+        {hasTools &&
+          `${hasFiles ? " • " : ""}${run.toolActivities.length} action${run.toolActivities.length === 1 ? "" : "s"}`}
         {run.durationMs != null && ` • ${formatDuration(run.durationMs)}`}
       </Text>
     </Box>
@@ -173,12 +168,11 @@ function FileScanCard({ run, cols }: { run: RunEvent; cols: number }) {
 
   return (
     <DashCard cols={cols} title="Scanning workspace ..." rightBadge={badge}>
-      {hiddenCount > 0 && (
-        <Text color={theme.textDim}>{`... ${hiddenCount} more`}</Text>
-      )}
+      {hiddenCount > 0 && <Text color={theme.textDim}>{`... ${hiddenCount} more`}</Text>}
       {visible.map((file, i) => (
         <Text key={i} color={theme.success}>
-          {"● "}<Text color={theme.text}>{file.path}</Text>
+          {"● "}
+          <Text color={theme.text}>{file.path}</Text>
         </Text>
       ))}
     </DashCard>
@@ -214,7 +208,11 @@ function resolveStreamEvents(
   for (const item of items) {
     if (item.kind === "thinking") {
       const block = blocksById.get(item.refId);
-      if (block && block.text.trim().length > 0 && !(run.status === "running" && block.status === "active")) {
+      if (
+        block &&
+        block.text.trim().length > 0 &&
+        !(run.status === "running" && block.status === "active")
+      ) {
         resolved.push({ kind: "thinking", streamSeq: item.streamSeq, block });
       }
     } else if (item.kind === "action") {
@@ -224,9 +222,8 @@ function resolveStreamEvents(
       const segment = segmentsById.get(item.refId);
       if (segment) resolved.push({ kind: "response", streamSeq: item.streamSeq, segment });
     } else if (item.kind === "plan") {
-      const planText = run.plan?.id === item.refId
-        ? getRunPlanText(run.plan)
-        : run.approvedPlan ?? "";
+      const planText =
+        run.plan?.id === item.refId ? getRunPlanText(run.plan) : (run.approvedPlan ?? "");
       if (planText.trim()) {
         resolved.push({
           kind: "plan",
@@ -318,9 +315,14 @@ function PlanPanel({
   );
 }
 
-const MemoizedPlanPanel = memo(PlanPanel, (prev, next) => (
-  prev.planText === next.planText && prev.cols === next.cols && prev.approved === next.approved && prev.workspaceRoot === next.workspaceRoot
-));
+const MemoizedPlanPanel = memo(
+  PlanPanel,
+  (prev, next) =>
+    prev.planText === next.planText &&
+    prev.cols === next.cols &&
+    prev.approved === next.approved &&
+    prev.workspaceRoot === next.workspaceRoot,
+);
 
 function ActionEventCard({
   cols,
@@ -339,21 +341,38 @@ function ActionEventCard({
   const actionLabel = getFriendlyActionLabel(actionNormalized);
 
   const statusIcon = tool.status === "failed" ? "✕" : tool.status === "completed" ? "✔" : "▸";
-  const statusColor = tool.status === "failed" ? theme.error : tool.status === "completed" ? theme.success : theme.info;
-  const borderColor = dim ? theme.border : tool.status === "running" ? theme.borderFocused : theme.border;
-  const detailText = isLiveCursorTarget && tool.status === "running"
-    ? "▌"
-    : tool.summary?.trim() ? tool.summary : " ";
-  const detailColor = isLiveCursorTarget && tool.status === "running" ? theme.accent : theme.textMuted;
-  const duration = tool.completedAt != null
-    ? formatDuration(tool.completedAt - tool.startedAt)
-    : null;
+  const statusColor =
+    tool.status === "failed"
+      ? theme.error
+      : tool.status === "completed"
+        ? theme.success
+        : theme.info;
+  const borderColor = dim
+    ? theme.border
+    : tool.status === "running"
+      ? theme.borderFocused
+      : theme.border;
+  const detailText =
+    isLiveCursorTarget && tool.status === "running"
+      ? "▌"
+      : tool.summary?.trim()
+        ? tool.summary
+        : " ";
+  const detailColor =
+    isLiveCursorTarget && tool.status === "running" ? theme.accent : theme.textMuted;
+  const duration =
+    tool.completedAt != null ? formatDuration(tool.completedAt - tool.startedAt) : null;
 
   const commandBodyWidth = Math.max(1, cols - 6);
   const commandLines = wrapCommandText(actionNormalized, commandBodyWidth);
 
   return (
-    <DashCard cols={cols} title="action" rightBadge={duration || undefined} borderColor={borderColor}>
+    <DashCard
+      cols={cols}
+      title="action"
+      rightBadge={duration || undefined}
+      borderColor={borderColor}
+    >
       {actionLabel ? (
         <>
           <Box>
@@ -361,34 +380,44 @@ function ActionEventCard({
             <Text color={dim ? theme.textDim : theme.text}>{actionLabel}</Text>
           </Box>
           {commandLines.map((line, i) => (
-            <Text key={i} color={theme.textMuted}>{"  "}{line || " "}</Text>
+            <Text key={i} color={theme.textMuted}>
+              {"  "}
+              {line || " "}
+            </Text>
           ))}
         </>
       ) : (
         <>
           {commandLines.map((line, i) => (
             <Box key={i}>
-              <Text color={i === 0 ? statusColor : undefined}>{i === 0 ? statusIcon + " " : "  "}</Text>
+              <Text color={i === 0 ? statusColor : undefined}>
+                {i === 0 ? statusIcon + " " : "  "}
+              </Text>
               <Text color={dim ? theme.textDim : theme.text}>{line || " "}</Text>
             </Box>
           ))}
           <Text color={theme.textMuted}>{"   "}</Text>
         </>
       )}
-      <Text color={detailColor}>{"  "}{detailText}</Text>
+      <Text color={detailColor}>
+        {"  "}
+        {detailText}
+      </Text>
     </DashCard>
   );
 }
 
-const MemoizedActionEventCard = memo(ActionEventCard, (prev, next) =>
-  prev.tool.id            === next.tool.id            &&
-  prev.tool.status        === next.tool.status        &&
-  prev.tool.command       === next.tool.command       &&
-  prev.tool.completedAt   === next.tool.completedAt   &&
-  prev.tool.summary       === next.tool.summary       &&
-  prev.cols               === next.cols               &&
-  prev.opacity            === next.opacity            &&
-  prev.isLiveCursorTarget === next.isLiveCursorTarget
+const MemoizedActionEventCard = memo(
+  ActionEventCard,
+  (prev, next) =>
+    prev.tool.id === next.tool.id &&
+    prev.tool.status === next.tool.status &&
+    prev.tool.command === next.tool.command &&
+    prev.tool.completedAt === next.tool.completedAt &&
+    prev.tool.summary === next.tool.summary &&
+    prev.cols === next.cols &&
+    prev.opacity === next.opacity &&
+    prev.isLiveCursorTarget === next.isLiveCursorTarget,
 );
 
 function CodexThinkingBlock({
@@ -407,15 +436,17 @@ function CodexThinkingBlock({
 
   return (
     <Box flexDirection="column" width="100%" paddingLeft={transcriptContentIndent} paddingRight={1}>
-      <Text color={theme.textMuted} bold>Reasoning</Text>
+      <Text color={theme.textMuted} bold>
+        Reasoning
+      </Text>
       {formatProgressBlockBodyLines(block.text, contentWidth)
         .slice(0, verboseMode ? undefined : COMPACT_PROCESSING_BODY_LINE_CAP)
         .map((line, i) => (
-          <Text key={i} color={theme.textDim}>{line || " "}</Text>
+          <Text key={i} color={theme.textDim}>
+            {line || " "}
+          </Text>
         ))}
-      {isLiveCursorTarget && block.status === "active" && (
-        <Text color={theme.accent}>▌</Text>
-      )}
+      {isLiveCursorTarget && block.status === "active" && <Text color={theme.accent}>▌</Text>}
     </Box>
   );
 }
@@ -442,124 +473,133 @@ function CodexResponseBlock({
 
   const formatted = useMemo(() => {
     const raw = formatTerminalAnswerInline(getResponseSegmentText(segment));
-    const sanitized = segment.status === "active"
-      ? sanitizeStreamChunk(raw)
-      : sanitizeOutput(raw);
+    const sanitized = segment.status === "active" ? sanitizeStreamChunk(raw) : sanitizeOutput(raw);
     const normalized = normalizeOutput(sanitized);
     const classified = classifyOutput(normalized);
     return formatForBox(classified, contentWidth);
   }, [contentWidth, segment]);
 
   const segmentStreaming = segment.status === "active";
-  const showTail = !segmentStreaming && !verboseMode && formatted.length > COMPACT_STREAMING_TAIL_CAP;
+  const showTail =
+    !segmentStreaming && !verboseMode && formatted.length > COMPACT_STREAMING_TAIL_CAP;
 
   return (
     <Box flexDirection="column" width="100%" paddingLeft={transcriptContentIndent} paddingRight={1}>
-      <Text color={theme.textMuted} bold>Ubume</Text>
+      <Text color={theme.textMuted} bold>
+        Ubume
+      </Text>
       {run.status === "failed" && !streaming && isLast && (
         <Box flexDirection="column">
-          {wrapPlainText(sanitizeTerminalOutput(run.errorMessage ?? run.summary), contentWidth).map((row, i) => (
-            <Text key={i} color={theme.error}>{i === 0 ? `✕ ${row}` : `  ${row}`}</Text>
-          ))}
+          {wrapPlainText(sanitizeTerminalOutput(run.errorMessage ?? run.summary), contentWidth).map(
+            (row, i) => (
+              <Text key={i} color={theme.error}>
+                {i === 0 ? `✕ ${row}` : `  ${row}`}
+              </Text>
+            ),
+          )}
         </Box>
       )}
       <MemoizedRenderMessage
         segments={showTail ? formatted.slice(-COMPACT_STREAMING_TAIL_CAP) : formatted}
         width={contentWidth}
       />
-      {isLiveCursorTarget && segmentStreaming && (
-        <Text color={theme.accent}>▌</Text>
-      )}
+      {isLiveCursorTarget && segmentStreaming && <Text color={theme.accent}>▌</Text>}
     </Box>
   );
 }
 
-const StreamEventList = memo(function StreamEventList({
-  cols,
-  run,
-  assistant,
-  runPhase,
-  opacity,
-  verboseMode,
-  workspaceRoot,
-}: {
-  cols: number;
-  run: RunEvent;
-  assistant: AssistantEvent | null;
-  runPhase: TurnRunPhase;
-  opacity: TurnOpacity;
-  verboseMode: boolean;
-  workspaceRoot?: string | null;
-}) {
-  const streaming = runPhase === "streaming";
-  const events = useMemo(
-    () => resolveStreamEvents(run, assistant, streaming),
-    [run, assistant, streaming],
-  );
+const StreamEventList = memo(
+  function StreamEventList({
+    cols,
+    run,
+    assistant,
+    runPhase,
+    opacity,
+    verboseMode,
+    workspaceRoot,
+  }: {
+    cols: number;
+    run: RunEvent;
+    assistant: AssistantEvent | null;
+    runPhase: TurnRunPhase;
+    opacity: TurnOpacity;
+    verboseMode: boolean;
+    workspaceRoot?: string | null;
+  }) {
+    const streaming = runPhase === "streaming";
+    const events = useMemo(
+      () => resolveStreamEvents(run, assistant, streaming),
+      [run, assistant, streaming],
+    );
 
-  return (
-    <Box flexDirection="column" width="100%">
-      {events.map((event, index) => {
-        const isLast = index === events.length - 1;
-        const isLiveCursorTarget = run.status === "running" && isLast;
+    return (
+      <Box flexDirection="column" width="100%">
+        {events.map((event, index) => {
+          const isLast = index === events.length - 1;
+          const isLiveCursorTarget = run.status === "running" && isLast;
 
-        return (
-          <Box key={`${event.kind}-${event.streamSeq}`} flexDirection="column" marginTop={index > 0 ? 1 : 0}>
-            {event.kind === "thinking" && (
-              <CodexThinkingBlock
-                block={event.block}
-                cols={cols}
-                isLiveCursorTarget={isLiveCursorTarget}
-                verboseMode={verboseMode}
-              />
-            )}
-            {event.kind === "action" && (
-              <MemoizedActionEventCard
-                cols={cols}
-                tool={event.tool}
-                opacity={opacity}
-                isLiveCursorTarget={isLiveCursorTarget}
-              />
-            )}
-            {event.kind === "response" && (
-              <CodexResponseBlock
-                run={run}
-                segment={event.segment}
-                cols={cols}
-                streaming={streaming}
-                isLast={isLast}
-                isLiveCursorTarget={isLiveCursorTarget}
-                verboseMode={verboseMode}
-              />
-            )}
-            {event.kind === "plan" && (
-              <MemoizedPlanPanel
-                planText={event.planText}
-                cols={cols}
-                approved={event.approved}
-                workspaceRoot={workspaceRoot}
-              />
-            )}
+          return (
+            <Box
+              key={`${event.kind}-${event.streamSeq}`}
+              flexDirection="column"
+              marginTop={index > 0 ? 1 : 0}
+            >
+              {event.kind === "thinking" && (
+                <CodexThinkingBlock
+                  block={event.block}
+                  cols={cols}
+                  isLiveCursorTarget={isLiveCursorTarget}
+                  verboseMode={verboseMode}
+                />
+              )}
+              {event.kind === "action" && (
+                <MemoizedActionEventCard
+                  cols={cols}
+                  tool={event.tool}
+                  opacity={opacity}
+                  isLiveCursorTarget={isLiveCursorTarget}
+                />
+              )}
+              {event.kind === "response" && (
+                <CodexResponseBlock
+                  run={run}
+                  segment={event.segment}
+                  cols={cols}
+                  streaming={streaming}
+                  isLast={isLast}
+                  isLiveCursorTarget={isLiveCursorTarget}
+                  verboseMode={verboseMode}
+                />
+              )}
+              {event.kind === "plan" && (
+                <MemoizedPlanPanel
+                  planText={event.planText}
+                  cols={cols}
+                  approved={event.approved}
+                  workspaceRoot={workspaceRoot}
+                />
+              )}
+            </Box>
+          );
+        })}
+
+        {run.status !== "running" && !verboseMode && (
+          <Box marginTop={1}>
+            <ImpactSummary run={run} cols={cols} />
           </Box>
-        );
-      })}
-
-      {run.status !== "running" && !verboseMode && (
-        <Box marginTop={1}>
-          <ImpactSummary run={run} cols={cols} />
-        </Box>
-      )}
-    </Box>
-  );
-}, (prev, next) => (
-  prev.cols === next.cols
-  && prev.run === next.run
-  && prev.assistant === next.assistant
-  && prev.runPhase === next.runPhase
-  && prev.opacity === next.opacity
-  && prev.verboseMode === next.verboseMode
-  && prev.workspaceRoot === next.workspaceRoot
-));
+        )}
+      </Box>
+    );
+  },
+  (prev, next) =>
+    prev.cols === next.cols &&
+    prev.run === next.run &&
+    prev.assistant === next.assistant &&
+    prev.runPhase === next.runPhase &&
+    prev.opacity === next.opacity &&
+    prev.verboseMode === next.verboseMode &&
+    prev.workspaceRoot === next.workspaceRoot,
+);
 
 // ─── TurnGroup ───────────────────────────────────────────────────────────────
 
@@ -577,11 +617,7 @@ export function TurnGroup({
 }: TurnGroupProps) {
   return (
     <Box flexDirection="column" width="100%" marginBottom={1}>
-      <MemoizedUserInputCard
-        prompt={user.prompt}
-        cols={cols}
-        dim={opacity === "dim"}
-      />
+      <MemoizedUserInputCard prompt={user.prompt} cols={cols} dim={opacity === "dim"} />
 
       {run && (
         <Box marginTop={1}>

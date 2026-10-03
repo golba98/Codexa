@@ -1,7 +1,7 @@
+import * as renderDebug from "../core/perf/renderDebug.js";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
 import type { RunFileActivity } from "../core/workspace/workspaceActivity.js";
 import type { RunToolActivity } from "./types.js";
-import * as renderDebug from "../core/perf/renderDebug.js";
 
 export type LiveRenderUpdate =
   | { type: "assistant"; chunk: string }
@@ -158,7 +158,9 @@ export function createLiveRenderScheduler({
           }
           lastFlushMonotonicMs = startedAt;
           renderDebug.traceSchedulerFlush({
-            reason: updates.some((update) => update.type === "assistant" || update.type === "plan") ? "stream" : "progress",
+            reason: updates.some((update) => update.type === "assistant" || update.type === "plan")
+              ? "stream"
+              : "progress",
             updates: updates.length,
             assistantChunks: updates.filter((update) => update.type === "assistant").length,
             progressUpdates: updates.filter((update) => update.type === "progress").length,
@@ -206,7 +208,8 @@ export function createLiveRenderScheduler({
       return {
         providerEvents,
         flushes,
-        averageFlushIntervalMs: intervalCount > 0 ? Math.round(totalFlushIntervalMs / intervalCount) : 0,
+        averageFlushIntervalMs:
+          intervalCount > 0 ? Math.round(totalFlushIntervalMs / intervalCount) : 0,
         maxFlushIntervalMs,
       };
     },

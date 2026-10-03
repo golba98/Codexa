@@ -1,8 +1,5 @@
-import type {
-  AuthPreference,
-  AvailableBackend,
-} from "../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../config/runtimeConfig.js";
+import type { AvailableBackend } from "../config/settings.js";
 import type { RunActivitySummary, RunFileActivity } from "../core/workspace/workspaceActivity.js";
 
 // ─── Screen routing ──────────────────────────────────────────────────────────
@@ -56,10 +53,12 @@ export type UIState =
 
 /** Derive the legacy busy flag from UIState for guard functions. */
 export function isBusy(state: UIState): boolean {
-  return state.kind === "THINKING"
-    || state.kind === "RESPONDING"
-    || state.kind === "ANSWER_VISIBLE"
-    || state.kind === "SHELL_RUNNING";
+  return (
+    state.kind === "THINKING" ||
+    state.kind === "RESPONDING" ||
+    state.kind === "ANSWER_VISIBLE" ||
+    state.kind === "SHELL_RUNNING"
+  );
 }
 
 // ─── Timeline events ─────────────────────────────────────────────────────────
@@ -237,4 +236,10 @@ export interface ShellEvent extends TimelineBaseEvent {
   durationMs: number | null;
 }
 
-export type TimelineEvent = UserPromptEvent | AssistantEvent | SystemEvent | ErrorEvent | RunEvent | ShellEvent;
+export type TimelineEvent =
+  | UserPromptEvent
+  | AssistantEvent
+  | SystemEvent
+  | ErrorEvent
+  | RunEvent
+  | ShellEvent;

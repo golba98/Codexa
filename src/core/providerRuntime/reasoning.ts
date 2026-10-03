@@ -1,5 +1,5 @@
-import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
 import { formatReasoningLabel } from "../../config/settings.js";
+import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
 
 export const CLAUDE_CODE_EFFORT_LEVELS: readonly ReasoningEffortCapability[] = [
   { id: "low", label: "Low", description: "Claude Code low effort." },
@@ -11,10 +11,15 @@ export const CLAUDE_CODE_EFFORT_LEVELS: readonly ReasoningEffortCapability[] = [
 
 export const CLAUDE_CODE_EFFORT_IDS = new Set(CLAUDE_CODE_EFFORT_LEVELS.map((level) => level.id));
 
-export function getClaudeCodeEffortLevels(ids: readonly string[]): readonly ReasoningEffortCapability[] {
-  return ids.map((id) => CLAUDE_CODE_EFFORT_LEVELS.find((level) => level.id === id) ?? {
-    id,
-    label: formatReasoningLabel(id),
-    description: null,
-  });
+export function getClaudeCodeEffortLevels(
+  ids: readonly string[],
+): readonly ReasoningEffortCapability[] {
+  return ids.map(
+    (id) =>
+      CLAUDE_CODE_EFFORT_LEVELS.find((level) => level.id === id) ?? {
+        id,
+        label: formatReasoningLabel(id),
+        description: null,
+      },
+  );
 }

@@ -15,13 +15,16 @@ export function getInputDebugLogPath(): string {
 }
 
 export function getStdinDebugState(stdin: unknown): DebugDetails {
-  const input = stdin as {
-    isTTY?: boolean;
-    isRaw?: boolean;
-    readable?: boolean;
-    destroyed?: boolean;
-    isPaused?: () => boolean;
-  } | null | undefined;
+  const input = stdin as
+    | {
+        isTTY?: boolean;
+        isRaw?: boolean;
+        readable?: boolean;
+        destroyed?: boolean;
+        isPaused?: () => boolean;
+      }
+    | null
+    | undefined;
 
   return {
     isTTY: input?.isTTY ?? null,

@@ -1,23 +1,24 @@
 import "./legacyEnvBootstrap.js";
-import React from "react";
-import { render, type Instance, type RenderOptions } from "ink";
+import { type Instance, type RenderOptions, render } from "ink";
+import type React from "react";
 import { App } from "./app.js";
-import { parseLaunchArgs, type LaunchArgs } from "./config/launchArgs.js";
+import { type LaunchArgs, parseLaunchArgs } from "./config/launchArgs.js";
 import { loadSettings } from "./config/persistence.js";
 import { APP_NAME, formatTerminalTitlePath } from "./config/settings.js";
-import { getTerminalCapability } from "./core/terminal/terminalCapabilities.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
-import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
+import { resetFrameLockForResize, wrapStdoutWithFrameLock } from "./core/terminal/frameLock.js";
 import {
-  setIntendedTerminalTitle,
-} from "./core/terminal/terminalTitle.js";
-import { resolveWorkspaceRoot } from "./core/workspace/workspaceRoot.js";
+  type InkRenderInstance,
+  resolveInkRenderInstance,
+} from "./core/terminal/inkRenderReset.js";
+import { getTerminalCapability } from "./core/terminal/terminalCapabilities.js";
 import {
   createTerminalModeController,
   writeTerminalControl,
 } from "./core/terminal/terminalControl.js";
-import { resolveInkRenderInstance, type InkRenderInstance } from "./core/terminal/inkRenderReset.js";
-import { resetFrameLockForResize, wrapStdoutWithFrameLock } from "./core/terminal/frameLock.js";
+import { setIntendedTerminalTitle } from "./core/terminal/terminalTitle.js";
+import { resolveWorkspaceRoot } from "./core/workspace/workspaceRoot.js";
+import { MIN_VIEWPORT_COLS, MIN_VIEWPORT_ROWS } from "./ui/layout.js";
 
 type RenderHandle = Pick<Instance, "clear" | "cleanup" | "waitUntilExit">;
 
@@ -70,7 +71,11 @@ interface ActiveRootState {
 
 let activeRoot: ActiveRootState | null = null;
 
-function debugLaunch(env: Record<string, string | undefined>, write: (chunk: string, source: string) => boolean, fields: Record<string, unknown>): void {
+function debugLaunch(
+  env: Record<string, string | undefined>,
+  write: (chunk: string, source: string) => boolean,
+  fields: Record<string, unknown>,
+): void {
   if (env.UBUME_DEBUG_LAUNCH !== "1" && env.CODEXA_DEBUG_LAUNCH !== "1") {
     return;
   }
@@ -81,8 +86,12 @@ function debugLaunch(env: Record<string, string | undefined>, write: (chunk: str
 function hasInvalidRestoreDimensions(stdout: Pick<AppStdout, "columns" | "rows">): boolean {
   const cols = stdout.columns;
   const rows = stdout.rows;
-  return !Number.isFinite(cols) || !Number.isFinite(rows)
-    || (cols ?? 0) < MIN_VIEWPORT_COLS || (rows ?? 0) < MIN_VIEWPORT_ROWS;
+  return (
+    !Number.isFinite(cols) ||
+    !Number.isFinite(rows) ||
+    (cols ?? 0) < MIN_VIEWPORT_COLS ||
+    (rows ?? 0) < MIN_VIEWPORT_ROWS
+  );
 }
 
 export function startApp({

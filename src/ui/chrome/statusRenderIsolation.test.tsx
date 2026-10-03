@@ -4,16 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import React from "react";
 import { render } from "ink";
+import * as renderDebug from "../../core/perf/renderDebug.js";
 import type { TimelineEvent, UIState } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
-import * as renderDebug from "../../core/perf/renderDebug.js";
-import { AppShell } from "./AppShell.js";
-import { Timeline } from "../timeline/Timeline.js";
-import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 import { createLayoutSnapshot } from "../layout.js";
 import { ThemeProvider } from "../theme.js";
+import { Timeline } from "../timeline/Timeline.js";
+import { AppShell } from "./AppShell.js";
+import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -55,7 +54,10 @@ function readRecords(path: string): Array<Record<string, unknown>> {
   return text ? text.split("\n").map((line) => JSON.parse(line) as Record<string, unknown>) : [];
 }
 
-function countMatching(records: Array<Record<string, unknown>>, predicate: (record: Record<string, unknown>) => boolean): number {
+function countMatching(
+  records: Array<Record<string, unknown>>,
+  predicate: (record: Record<string, unknown>) => boolean,
+): number {
   return records.filter(predicate).length;
 }
 
@@ -73,13 +75,19 @@ function makeToolActivity(id: string, command: string, status: ActionStatus, str
   };
 }
 
-function makeActiveEvents(actionStatus: ActionStatus | null = "completed", secondActionStatus?: ActionStatus): TimelineEvent[] {
-  const toolActivities = actionStatus === null
-    ? []
-    : [
-        makeToolActivity("tool-1", "Get-Content README.md", actionStatus, 2),
-        ...(secondActionStatus ? [makeToolActivity("tool-2", "Get-Content package.json", secondActionStatus, 3)] : []),
-      ];
+function makeActiveEvents(
+  actionStatus: ActionStatus | null = "completed",
+  secondActionStatus?: ActionStatus,
+): TimelineEvent[] {
+  const toolActivities =
+    actionStatus === null
+      ? []
+      : [
+          makeToolActivity("tool-1", "Get-Content README.md", actionStatus, 2),
+          ...(secondActionStatus
+            ? [makeToolActivity("tool-2", "Get-Content package.json", secondActionStatus, 3)]
+            : []),
+        ];
   return [
     {
       id: 1,
@@ -98,24 +106,28 @@ function makeActiveEvents(actionStatus: ActionStatus | null = "completed", secon
       backendLabel: "Ubume",
       runtime: TEST_RUNTIME,
       prompt: "What is the point of 5-Date Verification",
-      progressEntries: [{
-        id: "thinking-1",
-        source: "reasoning",
-        text: "Checking the verification rule.",
-        sequence: 1,
-        createdAt: 2,
-        updatedAt: 2,
-        pendingNewlineCount: 0,
-        blocks: [{
-          id: "thinking-1-block-1",
+      progressEntries: [
+        {
+          id: "thinking-1",
+          source: "reasoning",
           text: "Checking the verification rule.",
           sequence: 1,
           createdAt: 2,
           updatedAt: 2,
-          status: "completed",
-          streamSeq: 1,
-        }],
-      }],
+          pendingNewlineCount: 0,
+          blocks: [
+            {
+              id: "thinking-1-block-1",
+              text: "Checking the verification rule.",
+              sequence: 1,
+              createdAt: 2,
+              updatedAt: 2,
+              status: "completed",
+              streamSeq: 1,
+            },
+          ],
+        },
+      ],
       status: "running",
       summary: "Running",
       truncatedOutput: false,
@@ -126,7 +138,11 @@ function makeActiveEvents(actionStatus: ActionStatus | null = "completed", secon
       turnId: 1,
       streamItems: [
         { kind: "thinking", streamSeq: 1, refId: "thinking-1-block-1" },
-        ...toolActivities.map((tool) => ({ kind: "action" as const, streamSeq: tool.streamSeq, refId: tool.id })),
+        ...toolActivities.map((tool) => ({
+          kind: "action" as const,
+          streamSeq: tool.streamSeq,
+          refId: tool.id,
+        })),
       ],
       responseSegments: [],
       lastStreamSeq: toolActivities.at(-1)?.streamSeq ?? 1,
@@ -167,7 +183,7 @@ function Harness({
         uiState={uiState}
         composerRows={composerRows}
         panel={null}
-        composer={(
+        composer={
           <BottomComposer
             layout={layout}
             uiState={uiState}
@@ -194,7 +210,7 @@ function Harness({
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
-        )}
+        }
       />
     </ThemeProvider>
   );
@@ -235,7 +251,7 @@ function AppShellHarness({
         uiState={uiState}
         composerRows={composerRows}
         panel={null}
-        composer={(
+        composer={
           <BottomComposer
             layout={layout}
             uiState={uiState}
@@ -262,7 +278,7 @@ function AppShellHarness({
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
-        )}
+        }
       />
     </ThemeProvider>
   );
@@ -300,12 +316,41 @@ test("status flow ticks do not invalidate timeline rendering", async () => {
     const afterTick = readRecords(logPath);
     const tickWindow = afterTick.slice(beforeTick.length);
 
-    assert.ok(countMatching(tickWindow, (record) => record.kind === "status" && record.event === "tick") >= 5);
-    assert(countMatching(tickWindow, (record) => record.kind === "render" && record.component === "Status") >= 1);
-    assert.equal(countMatching(tickWindow, (record) => record.kind === "render" && record.component === "Timeline"), 0);
-    assert.equal(countMatching(tickWindow, (record) => record.kind === "timeline" && record.event === "rowGeneration"), 0);
-    assert.equal(countMatching(tickWindow, (record) => record.kind === "viewport" && record.event === "slice"), 0);
-    assert.equal(countMatching(tickWindow, (record) => record.kind === "render" && record.component === "ActionLog"), 0);
+    assert.ok(
+      countMatching(tickWindow, (record) => record.kind === "status" && record.event === "tick") >=
+        5,
+    );
+    assert(
+      countMatching(
+        tickWindow,
+        (record) => record.kind === "render" && record.component === "Status",
+      ) >= 1,
+    );
+    assert.equal(
+      countMatching(
+        tickWindow,
+        (record) => record.kind === "render" && record.component === "Timeline",
+      ),
+      0,
+    );
+    assert.equal(
+      countMatching(
+        tickWindow,
+        (record) => record.kind === "timeline" && record.event === "rowGeneration",
+      ),
+      0,
+    );
+    assert.equal(
+      countMatching(tickWindow, (record) => record.kind === "viewport" && record.event === "slice"),
+      0,
+    );
+    assert.equal(
+      countMatching(
+        tickWindow,
+        (record) => record.kind === "render" && record.component === "ActionLog",
+      ),
+      0,
+    );
   } finally {
     if (previousNoColor !== undefined) process.env.NO_COLOR = previousNoColor;
     instance.unmount();
@@ -396,11 +441,15 @@ test("first action activity keeps the shell frame mounted and visible", async ()
     const unexpectedUnmounts = records
       .filter((record) => record.kind === "lifecycle" && record.event === "unmount")
       .map((record) => String(record.component ?? ""))
-      .filter((component) => ["AppShell", "Timeline", "Header", "Composer", "Status"].includes(component));
+      .filter((component) =>
+        ["AppShell", "Timeline", "Header", "Composer", "Status"].includes(component),
+      );
     assert.deepEqual(unexpectedUnmounts, []);
     assert.equal(
-      countMatching(records, (record) =>
-        record.kind === "blankFrame" && record.reason === "visible-rows-zero-with-events"
+      countMatching(
+        records,
+        (record) =>
+          record.kind === "blankFrame" && record.reason === "visible-rows-zero-with-events",
       ),
       0,
     );
@@ -437,7 +486,10 @@ test("appending a second action does not remount existing action rows", async ()
       .map((record) => String(record.rowKey ?? ""))
       .filter((rowKey) => rowKey.includes("-action-2-"));
 
-    assert.ok(firstActionMounts.length > 0, "expected first action rows to mount in the initial frame");
+    assert.ok(
+      firstActionMounts.length > 0,
+      "expected first action rows to mount in the initial frame",
+    );
 
     instance.rerender(<Harness actionStatus="completed" />);
     await sleep(100);
@@ -477,17 +529,21 @@ test("native AppShell finalize keeps transcript rows in one keyed tree", async (
 
   const runningEvents = makeActiveEvents("completed");
   const completedEvents = JSON.parse(JSON.stringify(runningEvents)) as TimelineEvent[];
-  const completedRun = completedEvents.find((event): event is Extract<TimelineEvent, { type: "run" }> => event.type === "run");
+  const completedRun = completedEvents.find(
+    (event): event is Extract<TimelineEvent, { type: "run" }> => event.type === "run",
+  );
   assert.ok(completedRun);
   completedRun.status = "completed";
   completedRun.durationMs = 1234;
-  completedRun.responseSegments = [{
-    id: "response-2-3",
-    streamSeq: 3,
-    chunks: ["Hello"],
-    status: "completed",
-    startedAt: 5,
-  }];
+  completedRun.responseSegments = [
+    {
+      id: "response-2-3",
+      streamSeq: 3,
+      chunks: ["Hello"],
+      status: "completed",
+      startedAt: 5,
+    },
+  ];
   completedRun.streamItems = [
     ...(completedRun.streamItems ?? []),
     { kind: "response", streamSeq: 3, refId: "response-2-3" },
@@ -551,7 +607,6 @@ test("native AppShell finalize keeps transcript rows in one keyed tree", async (
   }
 });
 
-
 test("THINKING -> RESPONDING -> FINALIZE_RUN preserves action rows and renders response below", async () => {
   const logPath = join(tmpdir(), `ubume-action-response-finalize-${process.pid}.jsonl`);
   rmSync(logPath, { force: true });
@@ -569,53 +624,62 @@ test("THINKING -> RESPONDING -> FINALIZE_RUN preserves action rows and renders r
 
   let runningEvents: TimelineEvent[] = makeActiveEvents("running");
   let uiState: UIState = { kind: "THINKING", turnId: 1 };
-  
+
   const TestTimeline = (props: {
     staticEvents: TimelineEvent[];
     activeEvents: TimelineEvent[];
     uiState: UIState;
   }) => {
     const layout = createLayoutSnapshot(120, 40);
-    return <Timeline
-      staticEvents={props.staticEvents}
-      activeEvents={props.activeEvents}
-      layout={layout}
-      uiState={props.uiState}
-      viewportRows={30}
-      verboseMode={true}
-    />;
+    return (
+      <Timeline
+        staticEvents={props.staticEvents}
+        activeEvents={props.activeEvents}
+        layout={layout}
+        uiState={props.uiState}
+        viewportRows={30}
+        verboseMode={true}
+      />
+    );
   };
 
-  const instance = render(<TestTimeline staticEvents={[]} activeEvents={runningEvents} uiState={uiState} />, {
-    stdin: stdin as unknown as NodeJS.ReadStream,
-    stdout: stdout as unknown as NodeJS.WriteStream,
-    stderr: stdout as unknown as NodeJS.WriteStream,
-    debug: true,
-    exitOnCtrlC: false,
-  });
+  const instance = render(
+    <TestTimeline staticEvents={[]} activeEvents={runningEvents} uiState={uiState} />,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: stdout as unknown as NodeJS.WriteStream,
+      debug: true,
+      exitOnCtrlC: false,
+    },
+  );
 
   try {
     await sleep(100);
     const beforeUpdates = readRecords(logPath);
-    
+
     // RESPONDING
     let streamingEvents = JSON.parse(JSON.stringify(runningEvents)) as TimelineEvent[];
     let streamingTurn = streamingEvents[1] as Extract<TimelineEvent, { type: "run" }>;
     streamingTurn.toolActivities[0].status = "completed";
-    streamingTurn.responseSegments = [{
-      id: "resp-1",
-      streamSeq: 3,
-      chunks: ["Final response text"],
-      status: "active",
-      startedAt: 5,
-    }];
+    streamingTurn.responseSegments = [
+      {
+        id: "resp-1",
+        streamSeq: 3,
+        chunks: ["Final response text"],
+        status: "active",
+        startedAt: 5,
+      },
+    ];
     streamingTurn.streamItems = [
       ...(streamingTurn.streamItems ?? []),
       { kind: "response", streamSeq: 3, refId: "resp-1" },
     ];
     uiState = { kind: "RESPONDING", turnId: 1 };
-    
-    instance.rerender(<TestTimeline staticEvents={[]} activeEvents={streamingEvents} uiState={uiState} />);
+
+    instance.rerender(
+      <TestTimeline staticEvents={[]} activeEvents={streamingEvents} uiState={uiState} />,
+    );
     await sleep(100);
 
     // FINALIZE_RUN
@@ -623,24 +687,25 @@ test("THINKING -> RESPONDING -> FINALIZE_RUN preserves action rows and renders r
     let completedTurn = completedEvents[1] as Extract<TimelineEvent, { type: "run" }>;
     completedTurn.status = "completed";
     completedTurn.responseSegments = (completedTurn.responseSegments ?? []).map((segment, index) =>
-      index === 0 ? { ...segment, status: "completed" } : segment
+      index === 0 ? { ...segment, status: "completed" } : segment,
     );
     uiState = { kind: "IDLE" };
-    
-    instance.rerender(<TestTimeline staticEvents={completedEvents} activeEvents={[]} uiState={uiState} />);
+
+    instance.rerender(
+      <TestTimeline staticEvents={completedEvents} activeEvents={[]} uiState={uiState} />,
+    );
     await sleep(100);
 
     const frame = stripAnsi(output);
-    
+
     const unmounts = readRecords(logPath)
       .filter((record) => record.kind === "flicker" && record.event === "timelineRowUnmount")
       .map((record) => String(record.rowKey ?? ""))
       .filter((rowKey) => rowKey.includes("-action-"));
-      
+
     assert.deepEqual(unmounts, [], "Action rows should not unmount during response and finalize");
     assert.match(frame, /Final response text/i, "Answer text should appear");
     assert.match(frame, /Read file/i, "Action row should remain");
-    
   } finally {
     instance.unmount();
     renderDebug.configureRenderDebug({});

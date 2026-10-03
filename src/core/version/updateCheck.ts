@@ -99,7 +99,7 @@ async function defaultFetchNpmMetadata(url: string): Promise<NpmRegistryMetadata
       headers: { "User-Agent": `${UBUME_NPM_PACKAGE}-update-checker/1.0` },
     });
     if (!res.ok) throw new Error(`npm registry returned HTTP ${res.status}`);
-    return await res.json() as NpmRegistryMetadata;
+    return (await res.json()) as NpmRegistryMetadata;
   } finally {
     clearTimeout(timer);
   }
@@ -112,7 +112,13 @@ export async function checkForUpdates(
   const currentVersion = normalizeVersion(overrides?.currentVersion ?? APP_VERSION);
 
   if (opts?.enabled === false) {
-    return { status: "unknown", currentVersion, latestVersion: null, checkedAt: Date.now(), source: "npm" };
+    return {
+      status: "unknown",
+      currentVersion,
+      latestVersion: null,
+      checkedAt: Date.now(),
+      source: "npm",
+    };
   }
 
   try {
@@ -144,7 +150,9 @@ export async function checkForUpdates(
       };
     }
 
-    const status = isNewerVersion(latestVersion, currentVersion) ? "update-available" : "up-to-date";
+    const status = isNewerVersion(latestVersion, currentVersion)
+      ? "update-available"
+      : "up-to-date";
     return { status, currentVersion, latestVersion, checkedAt: Date.now(), source: "npm" };
   } catch (err) {
     return {
@@ -181,9 +189,10 @@ export function formatUpdateInstructions(
     ].join("\n");
   }
 
-  const statusLine = result?.status === "update-available" && result.latestVersion
-    ? `Update available: Ubume ${formatVersionLabel(result.latestVersion)}`
-    : "Status unknown — could not reach npm registry.";
+  const statusLine =
+    result?.status === "update-available" && result.latestVersion
+      ? `Update available: Ubume ${formatVersionLabel(result.latestVersion)}`
+      : "Status unknown — could not reach npm registry.";
 
   return [
     `Current installed version: ${current}`,

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveRuntimeConfig, normalizeRuntimeConfig } from "../../config/runtimeConfig.js";
-import { prepareCodexExecLaunch } from "./codexLaunch.js";
+import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
 import type { CodexCliCapabilities } from "../models/codexCapabilities.js";
+import { prepareCodexExecLaunch } from "./codexLaunch.js";
 
 test("prepares a shared launch plan with resolved executable strategy and source metadata", async () => {
   const capabilities: CodexCliCapabilities = {
@@ -14,14 +14,16 @@ test("prepares a shared launch plan with resolved executable strategy and source
 
   const result = await prepareCodexExecLaunch(
     {
-      runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
-        model: "gpt-5.4",
-        reasoningLevel: "medium",
-        policy: {
-          approvalPolicy: "on-request",
-          sandboxMode: "workspace-write",
-        },
-      })),
+      runtime: resolveRuntimeConfig(
+        normalizeRuntimeConfig({
+          model: "gpt-5.4",
+          reasoningLevel: "medium",
+          policy: {
+            approvalPolicy: "on-request",
+            sandboxMode: "workspace-write",
+          },
+        }),
+      ),
       cwd: "C:/repo",
       structuredOutput: false,
       probeCapabilities: true,
@@ -76,14 +78,16 @@ test("launch diagnostics are injectable and silent by default", async () => {
   try {
     const silent = await prepareCodexExecLaunch(
       {
-        runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
-          model: "gpt-5.4",
-          reasoningLevel: "medium",
-          policy: {
-            approvalPolicy: "on-request",
-            sandboxMode: "workspace-write",
-          },
-        })),
+        runtime: resolveRuntimeConfig(
+          normalizeRuntimeConfig({
+            model: "gpt-5.4",
+            reasoningLevel: "medium",
+            policy: {
+              approvalPolicy: "on-request",
+              sandboxMode: "workspace-write",
+            },
+          }),
+        ),
         cwd: "C:/repo",
         structuredOutput: true,
       },
@@ -98,14 +102,16 @@ test("launch diagnostics are injectable and silent by default", async () => {
     const diagnostics: string[] = [];
     await prepareCodexExecLaunch(
       {
-        runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
-          model: "gpt-5.4",
-          reasoningLevel: "medium",
-          policy: {
-            approvalPolicy: "on-request",
-            sandboxMode: "workspace-write",
-          },
-        })),
+        runtime: resolveRuntimeConfig(
+          normalizeRuntimeConfig({
+            model: "gpt-5.4",
+            reasoningLevel: "medium",
+            policy: {
+              approvalPolicy: "on-request",
+              sandboxMode: "workspace-write",
+            },
+          }),
+        ),
         cwd: "C:/repo",
         structuredOutput: true,
       },
@@ -133,14 +139,16 @@ test("uses modern Codex capabilities by default without probing help output", as
 
   const result = await prepareCodexExecLaunch(
     {
-      runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
-        model: "gpt-5.4-mini",
-        reasoningLevel: "medium",
-        policy: {
-          approvalPolicy: "never",
-          sandboxMode: "danger-full-access",
-        },
-      })),
+      runtime: resolveRuntimeConfig(
+        normalizeRuntimeConfig({
+          model: "gpt-5.4-mini",
+          reasoningLevel: "medium",
+          policy: {
+            approvalPolicy: "never",
+            sandboxMode: "danger-full-access",
+          },
+        }),
+      ),
       cwd: "C:/repo",
       structuredOutput: true,
     },
@@ -169,14 +177,16 @@ test("can explicitly probe capabilities for compatibility fallback", async () =>
 
   const result = await prepareCodexExecLaunch(
     {
-      runtime: resolveRuntimeConfig(normalizeRuntimeConfig({
-        model: "gpt-5.4-mini",
-        reasoningLevel: "medium",
-        policy: {
-          approvalPolicy: "on-request",
-          sandboxMode: "workspace-write",
-        },
-      })),
+      runtime: resolveRuntimeConfig(
+        normalizeRuntimeConfig({
+          model: "gpt-5.4-mini",
+          reasoningLevel: "medium",
+          policy: {
+            approvalPolicy: "on-request",
+            sandboxMode: "workspace-write",
+          },
+        }),
+      ),
       cwd: "C:/repo",
       structuredOutput: false,
       probeCapabilities: true,

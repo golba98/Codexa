@@ -102,7 +102,10 @@ function addActiveReasoning(run: RunEvent, text: string): RunEvent {
   return {
     ...run,
     progressEntries: [...run.progressEntries, entry],
-    streamItems: [...(run.streamItems ?? []), { streamSeq, kind: "thinking", refId: REASONING_BLOCK_ID }],
+    streamItems: [
+      ...(run.streamItems ?? []),
+      { streamSeq, kind: "thinking", refId: REASONING_BLOCK_ID },
+    ],
     lastStreamSeq: streamSeq,
   };
 }
@@ -140,7 +143,11 @@ function makeTurnItem(
   };
 }
 
-function nativeParts(run: RunEvent, user: UserPromptEvent, runPhase: TurnRenderItem["renderState"]["runPhase"]): NativeTranscriptParts {
+function nativeParts(
+  run: RunEvent,
+  user: UserPromptEvent,
+  runPhase: TurnRenderItem["renderState"]["runPhase"],
+): NativeTranscriptParts {
   return buildNativeTranscriptParts([makeTurnItem(run, user, runPhase)], { totalWidth: 120 });
 }
 
@@ -156,7 +163,12 @@ const BLOCK_KEY_RE = /-(action-summary|codex-response|codex-thinking|plan|action
 function blockIdFromKey(key: string): string | null {
   const match = BLOCK_KEY_RE.exec(key);
   if (!match) return null;
-  const kind = match[1] === "codex-response" ? "response" : match[1] === "codex-thinking" ? "thinking" : match[1];
+  const kind =
+    match[1] === "codex-response"
+      ? "response"
+      : match[1] === "codex-thinking"
+        ? "thinking"
+        : match[1];
   return `${kind}-${match[2]}`;
 }
 
@@ -205,10 +217,7 @@ test("a streaming turn never reorders its live blocks; reasoning reflows in only
   run = upsertRunToolActivity(run, runningTool(2));
   const nativeOrder = (currentRun: RunEvent) => {
     const parts = nativeParts(currentRun, user, "streaming");
-    return blockOrder([
-      ...parts.staticItems.flatMap((item) => item.rows),
-      ...parts.liveRows,
-    ]);
+    return blockOrder([...parts.staticItems.flatMap((item) => item.rows), ...parts.liveRows]);
   };
   const f1 = nativeOrder(run);
 
@@ -272,7 +281,11 @@ test("a streaming turn never reorders its live blocks; reasoning reflows in only
   // 6) finish the turn → reasoning reflows in atomically at its creation slot.
   run = completeRunEvent(run);
   const finalOrder = blockOrder(staticRows(nativeParts(run, user, "none")));
-  assert.equal(finalOrder[0], "thinking-1", "reasoning appears at its creation slot once finalized");
+  assert.equal(
+    finalOrder[0],
+    "thinking-1",
+    "reasoning appears at its creation slot once finalized",
+  );
   assert.deepEqual(
     finalOrder,
     ["thinking-1", "action-2", "action-3", "response-4"],
@@ -319,5 +332,9 @@ test("plan-mode demotion changes a block's kind in place without reordering live
   run = appendRunPlanChunk(run, "1. Inspect\n2. Implement");
   const afterPlan = nativeParts(run, user, "streaming").liveRows;
   assert.deepEqual(blockOrder(afterPlan), ["response-1", "action-2", "plan-3"]);
-  assertAppendOnly(blockOrder(afterTool), blockOrder(afterPlan), "plan block re-opened at the tail");
+  assertAppendOnly(
+    blockOrder(afterTool),
+    blockOrder(afterPlan),
+    "plan block re-opened at the tail",
+  );
 });

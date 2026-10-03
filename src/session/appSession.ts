@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
+import * as renderDebug from "../core/perf/renderDebug.js";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
-import type { AssistantEvent, ExternalCliStatus, RunEvent, ShellEvent, TimelineEvent, UIState, UserPromptEvent } from "./types.js";
-import { getAssistantContent, getRunPlanText } from "./types.js";
+import type { RunFileActivity } from "../core/workspace/workspaceActivity.js";
 import {
   appendRunActivity,
   appendRunPlanChunk,
@@ -15,13 +15,21 @@ import {
   finalizeResponseSegments,
   markResponseSegmentsCompleted,
   reduceUIState,
-  upsertRunToolActivity,
   type UIStateAction,
+  upsertRunToolActivity,
 } from "./chatLifecycle.js";
-import type { RunFileActivity } from "../core/workspace/workspaceActivity.js";
-import type { RunToolActivity } from "./types.js";
 import type { LiveRenderUpdate } from "./liveRenderScheduler.js";
-import * as renderDebug from "../core/perf/renderDebug.js";
+import type {
+  AssistantEvent,
+  ExternalCliStatus,
+  RunEvent,
+  RunToolActivity,
+  ShellEvent,
+  TimelineEvent,
+  UIState,
+  UserPromptEvent,
+} from "./types.js";
+import { getAssistantContent, getRunPlanText } from "./types.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -44,9 +52,23 @@ export type SessionAction =
   | { type: "APPEND_STATIC_EVENTS"; events: TimelineEvent[] }
   | { type: "SET_INPUT"; value: string; cursor?: number }
   | { type: "RESET_INPUT" }
-  | { type: "RESTORE_SESSION"; events: TimelineEvent[]; value: string; cursor: number; history: string[]; uiState?: UIState }
+  | {
+      type: "RESTORE_SESSION";
+      events: TimelineEvent[];
+      value: string;
+      cursor: number;
+      history: string[];
+      uiState?: UIState;
+    }
   | { type: "PUSH_HISTORY"; value: string }
-  | { type: "SUBMIT_PROMPT_RUN"; historyValue?: string; preserveInput?: boolean; events: TimelineEvent[]; turnId: number; runId: number }
+  | {
+      type: "SUBMIT_PROMPT_RUN";
+      historyValue?: string;
+      preserveInput?: boolean;
+      events: TimelineEvent[];
+      turnId: number;
+      runId: number;
+    }
   | { type: "HISTORY_UP" }
   | { type: "HISTORY_DOWN" }
   | { type: "CLEAR_TRANSCRIPT"; seedEvents?: TimelineEvent[] }
@@ -55,43 +77,43 @@ export type SessionAction =
   | { type: "RUN_APPLY_PROGRESS_UPDATES"; runId: number; updates: BackendProgressUpdate[] }
   | { type: "RUN_UPSERT_TOOL_ACTIVITY"; runId: number; activity: RunToolActivity }
   | {
-    type: "RUN_APPEND_PLAN_DELTA";
-    turnId: number;
-    runId: number;
-    chunk: string;
-  }
+      type: "RUN_APPEND_PLAN_DELTA";
+      turnId: number;
+      runId: number;
+      chunk: string;
+    }
   | {
-    type: "RUN_APPEND_ASSISTANT_DELTA";
-    turnId: number;
-    runId: number;
-    chunk: string;
-    eventFactory: () => AssistantEvent;
-  }
+      type: "RUN_APPEND_ASSISTANT_DELTA";
+      turnId: number;
+      runId: number;
+      chunk: string;
+      eventFactory: () => AssistantEvent;
+    }
   | {
-    type: "RUN_MARK_FINAL_ANSWER_OBSERVED";
-    runId: number;
-    turnId: number;
-    response?: string;
-  }
+      type: "RUN_MARK_FINAL_ANSWER_OBSERVED";
+      runId: number;
+      turnId: number;
+      response?: string;
+    }
   | {
-    type: "RUN_APPLY_LIVE_UPDATES";
-    turnId: number;
-    runId: number;
-    updates: LiveRenderUpdate[];
-    assistantEventFactory: (chunk: string) => AssistantEvent;
-  }
+      type: "RUN_APPLY_LIVE_UPDATES";
+      turnId: number;
+      runId: number;
+      updates: LiveRenderUpdate[];
+      assistantEventFactory: (chunk: string) => AssistantEvent;
+    }
   | {
-    type: "FINALIZE_RUN";
-    runId: number;
-    turnId: number;
-    status: "completed" | "failed" | "canceled";
-    message?: string;
-    response?: string;
-    durationMs?: number;
-    responsePresentation?: "assistant" | "plan";
-    question?: string | null;
-    assistantFactory: () => AssistantEvent;
-  }
+      type: "FINALIZE_RUN";
+      runId: number;
+      turnId: number;
+      status: "completed" | "failed" | "canceled";
+      message?: string;
+      response?: string;
+      durationMs?: number;
+      responsePresentation?: "assistant" | "plan";
+      question?: string | null;
+      assistantFactory: () => AssistantEvent;
+    }
   | { type: "FINALIZE_SHELL"; shellId: number; finalEvent: ShellEvent }
   | { type: "UPDATE_SHELL_LINES"; shellId: number; stream: "stdout" | "stderr"; lines: string[] }
   | { type: "REMOVE_ACTIVE_RUNTIME"; runId: number; turnId?: number | null }
@@ -100,7 +122,9 @@ export type SessionAction =
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-export function createInitialSessionState(options: { staticEvents?: TimelineEvent[] } = {}): SessionState {
+export function createInitialSessionState(
+  options: { staticEvents?: TimelineEvent[] } = {},
+): SessionState {
   return {
     staticEvents: options.staticEvents ?? [],
     activeEvents: [],
@@ -116,7 +140,10 @@ export function createInitialSessionState(options: { staticEvents?: TimelineEven
   };
 }
 
-function updateShellLines(event: ShellEvent, action: Extract<SessionAction, { type: "UPDATE_SHELL_LINES" }>): ShellEvent {
+function updateShellLines(
+  event: ShellEvent,
+  action: Extract<SessionAction, { type: "UPDATE_SHELL_LINES" }>,
+): ShellEvent {
   if (action.stream === "stdout") {
     return { ...event, lines: [...event.lines, ...action.lines] };
   }
@@ -124,7 +151,9 @@ function updateShellLines(event: ShellEvent, action: Extract<SessionAction, { ty
 }
 
 export function findUserPrompt(events: TimelineEvent[], turnId: number): UserPromptEvent | null {
-  const event = events.find((entry): entry is UserPromptEvent => entry.type === "user" && entry.turnId === turnId);
+  const event = events.find(
+    (entry): entry is UserPromptEvent => entry.type === "user" && entry.turnId === turnId,
+  );
   return event ?? null;
 }
 
@@ -141,7 +170,7 @@ function reconcileAssistantContent(
   const sNorm = norm(streamed);
   const rNorm = norm(response);
 
-  if (sNorm === rNorm) return streamed;   // exact match → keep streamed formatting
+  if (sNorm === rNorm) return streamed; // exact match → keep streamed formatting
   // streamed is a prefix of response, or they differ — authoritative response wins either way
   return response;
 }
@@ -199,7 +228,9 @@ function reduceTracedUIState(
   return next;
 }
 
-function terminalActionForFinalize(action: Extract<SessionAction, { type: "FINALIZE_RUN" }>): UIStateAction {
+function terminalActionForFinalize(
+  action: Extract<SessionAction, { type: "FINALIZE_RUN" }>,
+): UIStateAction {
   if (action.status === "completed") {
     return action.question
       ? { type: "AWAITING_USER_ACTION", turnId: action.turnId, question: action.question }
@@ -222,17 +253,18 @@ function enforceFinalizePostCondition(
     return reduced;
   }
 
-  const forced: UIState = action.status === "completed" && action.question
-    ? { kind: "AWAITING_USER_ACTION", turnId: action.turnId, question: action.question }
-    : action.status === "failed"
-      ? { kind: "ERROR", turnId: action.turnId, message: action.message ?? "Run failed" }
-      : { kind: "IDLE" };
+  const forced: UIState =
+    action.status === "completed" && action.question
+      ? { kind: "AWAITING_USER_ACTION", turnId: action.turnId, question: action.question }
+      : action.status === "failed"
+        ? { kind: "ERROR", turnId: action.turnId, message: action.message ?? "Run failed" }
+        : { kind: "IDLE" };
 
   if (
-    reduced.kind === forced.kind
-    && getUIStateTurnId(reduced) === getUIStateTurnId(forced)
-    && (!("message" in forced) || ("message" in reduced && reduced.message === forced.message))
-    && (!("question" in forced) || ("question" in reduced && reduced.question === forced.question))
+    reduced.kind === forced.kind &&
+    getUIStateTurnId(reduced) === getUIStateTurnId(forced) &&
+    (!("message" in forced) || ("message" in reduced && reduced.message === forced.message)) &&
+    (!("question" in forced) || ("question" in reduced && reduced.question === forced.question))
   ) {
     return reduced;
   }
@@ -251,11 +283,10 @@ function reduceFinalizeUIState(
   state: UIState,
   action: Extract<SessionAction, { type: "FINALIZE_RUN" }>,
 ): UIState {
-  const reduced = reduceTracedUIState(
-    state,
-    terminalActionForFinalize(action),
-    { reason: `FINALIZE_RUN:${action.status}`, runId: action.runId },
-  );
+  const reduced = reduceTracedUIState(state, terminalActionForFinalize(action), {
+    reason: `FINALIZE_RUN:${action.status}`,
+    runId: action.runId,
+  });
   return enforceFinalizePostCondition(state, reduced, action);
 }
 
@@ -263,7 +294,8 @@ function preserveUIStateIdentity(previous: UIState, next: UIState): UIState {
   if (previous === next) return previous;
   if (previous.kind !== next.kind) return next;
   if ("message" in previous && "message" in next && previous.message !== next.message) return next;
-  if ("question" in previous && "question" in next && previous.question !== next.question) return next;
+  if ("question" in previous && "question" in next && previous.question !== next.question)
+    return next;
   if ("turnId" in previous && "turnId" in next && previous.turnId !== next.turnId) return next;
   return previous;
 }
@@ -289,16 +321,35 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
     case "RESET_INPUT":
       return { ...state, inputValue: "", cursor: 0, historyIndex: -1, historyDraft: null };
     case "RESTORE_SESSION":
-      return { ...state, staticEvents: action.events, activeEvents: [], uiState: action.uiState ?? { kind: "IDLE" }, externalCliStatus: "idle", inputValue: action.value, cursor: action.cursor, history: action.history, historyIndex: -1, historyDraft: null, clearCount: state.clearCount + 1, clearEpoch: state.clearEpoch + 1 };
+      return {
+        ...state,
+        staticEvents: action.events,
+        activeEvents: [],
+        uiState: action.uiState ?? { kind: "IDLE" },
+        externalCliStatus: "idle",
+        inputValue: action.value,
+        cursor: action.cursor,
+        history: action.history,
+        historyIndex: -1,
+        historyDraft: null,
+        clearCount: state.clearCount + 1,
+        clearEpoch: state.clearEpoch + 1,
+      };
     case "PUSH_HISTORY":
       return {
         ...state,
-        history: [action.value, ...state.history.filter((entry) => entry !== action.value)].slice(0, 50),
+        history: [action.value, ...state.history.filter((entry) => entry !== action.value)].slice(
+          0,
+          50,
+        ),
         historyIndex: -1,
       };
     case "SUBMIT_PROMPT_RUN": {
       const nextHistory = action.historyValue
-        ? [action.historyValue, ...state.history.filter((entry) => entry !== action.historyValue)].slice(0, 50)
+        ? [
+            action.historyValue,
+            ...state.history.filter((entry) => entry !== action.historyValue),
+          ].slice(0, 50)
         : state.history;
       return {
         ...state,
@@ -319,11 +370,26 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       if (state.history.length === 0) return state;
       const nextIndex = Math.min(state.historyIndex + 1, state.history.length - 1);
       const nextValue = state.history[nextIndex] ?? "";
-      return { ...state, historyDraft: state.historyIndex === -1 ? { value: state.inputValue, cursor: state.cursor } : state.historyDraft, historyIndex: nextIndex, inputValue: nextValue, cursor: nextValue.length };
+      return {
+        ...state,
+        historyDraft:
+          state.historyIndex === -1
+            ? { value: state.inputValue, cursor: state.cursor }
+            : state.historyDraft,
+        historyIndex: nextIndex,
+        inputValue: nextValue,
+        cursor: nextValue.length,
+      };
     }
     case "HISTORY_DOWN": {
       if (state.historyIndex <= 0) {
-        return { ...state, historyIndex: -1, inputValue: state.historyDraft?.value ?? "", cursor: state.historyDraft?.cursor ?? 0, historyDraft: null };
+        return {
+          ...state,
+          historyIndex: -1,
+          inputValue: state.historyDraft?.value ?? "",
+          cursor: state.historyDraft?.cursor ?? 0,
+          historyDraft: null,
+        };
       }
       const nextIndex = state.historyIndex - 1;
       const nextValue = state.history[nextIndex] ?? "";
@@ -349,9 +415,16 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         previousLength: state.activeEvents.length,
         nextLength: action.events.length,
         uiStateKind: state.uiState.kind,
-        preventedEmptyIntermediate: action.events.length === 0 && state.activeEvents.length > 0 && isAnimatedLifecycleKind(state.uiState.kind),
+        preventedEmptyIntermediate:
+          action.events.length === 0 &&
+          state.activeEvents.length > 0 &&
+          isAnimatedLifecycleKind(state.uiState.kind),
       });
-      if (action.events.length === 0 && state.activeEvents.length > 0 && isAnimatedLifecycleKind(state.uiState.kind)) {
+      if (
+        action.events.length === 0 &&
+        state.activeEvents.length > 0 &&
+        isAnimatedLifecycleKind(state.uiState.kind)
+      ) {
         renderDebug.traceBlankFrame("Session", {
           reason: "prevented-empty-active-events-replacement",
           previousActiveEventsLength: state.activeEvents.length,
@@ -369,7 +442,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         activeEvents: state.activeEvents.map((event) =>
           event.id === action.runId && event.type === "run"
             ? appendRunActivity(event as RunEvent, action.activity)
-            : event
+            : event,
         ),
       };
     }
@@ -382,7 +455,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         activeEvents: state.activeEvents.map((event) =>
           event.id === action.runId && event.type === "run"
             ? appendRunThinking(event as RunEvent, action.updates)
-            : event
+            : event,
         ),
       };
     }
@@ -400,7 +473,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         activeEvents: state.activeEvents.map((event) =>
           event.id === action.runId && event.type === "run"
             ? upsertRunToolActivity(event as RunEvent, action.activity)
-            : event
+            : event,
         ),
       };
     }
@@ -418,7 +491,7 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         activeEvents: state.activeEvents.map((event) =>
           event.id === action.runId && event.type === "run"
             ? appendRunPlanChunk(event as RunEvent, action.chunk)
-            : event
+            : event,
         ),
         uiState: reduceTracedUIState(
           state.uiState,
@@ -437,21 +510,24 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       }
 
       const existingAssistant = state.activeEvents.find(
-        (event): event is AssistantEvent => event.type === "assistant" && event.turnId === action.turnId,
+        (event): event is AssistantEvent =>
+          event.type === "assistant" && event.turnId === action.turnId,
       );
 
-      const updateRun = (event: TimelineEvent): TimelineEvent => (
+      const updateRun = (event: TimelineEvent): TimelineEvent =>
         event.id === action.runId && event.type === "run"
           ? appendRunResponseChunk(event as RunEvent, action.chunk)
-          : event
-      );
+          : event;
 
       if (existingAssistant) {
         return {
           ...state,
           activeEvents: state.activeEvents.map((event) => {
             if (event.type === "assistant" && event.turnId === action.turnId) {
-              return { ...event, contentChunks: [...(event as AssistantEvent).contentChunks, action.chunk] };
+              return {
+                ...event,
+                contentChunks: [...(event as AssistantEvent).contentChunks, action.chunk],
+              };
             }
             return updateRun(event);
           }),
@@ -483,7 +559,8 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       }
 
       const existingAssistant = state.activeEvents.find(
-        (event): event is AssistantEvent => event.type === "assistant" && event.turnId === action.turnId,
+        (event): event is AssistantEvent =>
+          event.type === "assistant" && event.turnId === action.turnId,
       );
       let nextRun = existingRun;
       let nextAssistant: AssistantEvent | null = existingAssistant ?? null;
@@ -530,19 +607,18 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         return event;
       });
 
-      const withAssistant = assistantCreated && nextAssistant
-        ? [...activeEvents, nextAssistant]
-        : activeEvents;
+      const withAssistant =
+        assistantCreated && nextAssistant ? [...activeEvents, nextAssistant] : activeEvents;
 
       return {
         ...state,
         activeEvents: withAssistant,
         uiState: sawAssistantOrPlanDelta
           ? reduceTracedUIState(
-            state.uiState,
-            { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId },
-            { runId: action.runId },
-          )
+              state.uiState,
+              { type: "FIRST_ASSISTANT_DELTA", turnId: action.turnId },
+              { runId: action.runId },
+            )
           : state.uiState,
       };
     }
@@ -560,12 +636,12 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         activeEvents: state.activeEvents.map((event) =>
           event.id === action.runId && event.type === "run"
             ? markResponseSegmentsCompleted(
-              event as RunEvent,
-              // Plan runs keep their text in the plan block; passing the final
-              // response here would synthesize a duplicate response segment.
-              (event as RunEvent).responsePresentation === "plan" ? undefined : action.response,
-            )
-            : event
+                event as RunEvent,
+                // Plan runs keep their text in the plan block; passing the final
+                // response here would synthesize a duplicate response segment.
+                (event as RunEvent).responsePresentation === "plan" ? undefined : action.response,
+              )
+            : event,
         ),
         uiState: reduceTracedUIState(
           state.uiState,
@@ -576,19 +652,22 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
     }
     case "FINALIZE_RUN": {
       const userEvent = state.activeEvents.find(
-        (event): event is UserPromptEvent => event.type === "user" && event.turnId === action.turnId,
+        (event): event is UserPromptEvent =>
+          event.type === "user" && event.turnId === action.turnId,
       );
       const runEvent = state.activeEvents.find(
         (event): event is RunEvent => event.type === "run" && event.id === action.runId,
       );
       const assistantEvent = state.activeEvents.find(
-        (event): event is AssistantEvent => event.type === "assistant" && event.turnId === action.turnId,
+        (event): event is AssistantEvent =>
+          event.type === "assistant" && event.turnId === action.turnId,
       );
 
-      const remainingEvents = state.activeEvents.filter((event) =>
-        !(event.type === "run" && event.id === action.runId)
-        && !(event.type === "assistant" && event.turnId === action.turnId)
-        && !(event.type === "user" && event.turnId === action.turnId),
+      const remainingEvents = state.activeEvents.filter(
+        (event) =>
+          !(event.type === "run" && event.id === action.runId) &&
+          !(event.type === "assistant" && event.turnId === action.turnId) &&
+          !(event.type === "user" && event.turnId === action.turnId),
       );
 
       if (!runEvent) {
@@ -608,7 +687,12 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         action.status === "completed"
           ? completeRunEvent(runEvent, action.durationMs)
           : action.status === "failed"
-            ? failRunEvent(runEvent, action.message ?? "Run failed", action.message ?? "Run failed", action.durationMs)
+            ? failRunEvent(
+                runEvent,
+                action.message ?? "Run failed",
+                action.message ?? "Run failed",
+                action.durationMs,
+              )
             : cancelRunEvent(runEvent, action.durationMs);
 
       const planPresentation = action.responsePresentation === "plan";
@@ -620,7 +704,10 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         const planContent = streamedPlan.trim()
           ? streamedPlan
           : reconcileAssistantContent("", action.response, action.status);
-        const finalizedRun = finalizePlanBlock(finalizeResponseSegments(baseFinalizedRun), planContent);
+        const finalizedRun = finalizePlanBlock(
+          finalizeResponseSegments(baseFinalizedRun),
+          planContent,
+        );
 
         const additions: TimelineEvent[] = [];
         if (userEvent) additions.push(userEvent);
@@ -647,9 +734,8 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       // shows the final answer in chronological position.
       const trimmedFinal = assistantContent.trim();
       const streamedTrim = streamedContent.trim();
-      const overrideSegmentText = trimmedFinal && trimmedFinal !== streamedTrim
-        ? assistantContent
-        : undefined;
+      const overrideSegmentText =
+        trimmedFinal && trimmedFinal !== streamedTrim ? assistantContent : undefined;
       const finalizedRun = finalizeResponseSegments(baseFinalizedRun, overrideSegmentText);
 
       const additions: TimelineEvent[] = [];
@@ -674,8 +760,13 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
       return {
         ...state,
         staticEvents: appendStaticEvents(state.staticEvents, [action.finalEvent]),
-        activeEvents: state.activeEvents.filter((event) => !(event.type === "shell" && event.id === action.shellId)),
-        uiState: reduceTracedUIState(state.uiState, { type: "SHELL_FINISHED", shellId: action.shellId }),
+        activeEvents: state.activeEvents.filter(
+          (event) => !(event.type === "shell" && event.id === action.shellId),
+        ),
+        uiState: reduceTracedUIState(state.uiState, {
+          type: "SHELL_FINISHED",
+          shellId: action.shellId,
+        }),
       };
     case "UPDATE_SHELL_LINES":
       return {
@@ -683,17 +774,22 @@ export function reduceSessionState(state: SessionState, action: SessionAction): 
         activeEvents: state.activeEvents.map((event) =>
           event.id === action.shellId && event.type === "shell"
             ? updateShellLines(event as ShellEvent, action)
-            : event
+            : event,
         ),
       };
     case "REMOVE_ACTIVE_RUNTIME":
       return {
         ...state,
-        activeEvents: state.activeEvents.filter((event) =>
-          !(event.type === "run" && event.id === action.runId)
-          && !(event.type === "assistant" && action.turnId != null && event.turnId === action.turnId)
-          && !(event.type === "shell" && event.id === action.runId)
-          && !(event.type === "user" && action.turnId != null && event.turnId === action.turnId),
+        activeEvents: state.activeEvents.filter(
+          (event) =>
+            !(event.type === "run" && event.id === action.runId) &&
+            !(
+              event.type === "assistant" &&
+              action.turnId != null &&
+              event.turnId === action.turnId
+            ) &&
+            !(event.type === "shell" && event.id === action.runId) &&
+            !(event.type === "user" && action.turnId != null && event.turnId === action.turnId),
         ),
       };
     case "UI_ACTION":
@@ -736,9 +832,9 @@ export function useAppSessionState(initialStaticEvents?: () => TimelineEvent[]) 
         const previousCount = eventCount(current);
         const nextCount = eventCount(next);
         if (
-          previousCount !== nextCount
-          || current.staticEvents.length !== next.staticEvents.length
-          || current.activeEvents.length !== next.activeEvents.length
+          previousCount !== nextCount ||
+          current.staticEvents.length !== next.staticEvents.length ||
+          current.activeEvents.length !== next.activeEvents.length
         ) {
           renderDebug.traceEvent("transcript", "eventArrayLengthChange", {
             actionTypes: queued.map((item) => item.type),

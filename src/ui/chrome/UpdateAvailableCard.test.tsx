@@ -1,19 +1,31 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
+import test from "node:test";
 import { render } from "ink";
 import { ThemeProvider } from "../theme.js";
-import { UpdateAvailableCard, UPDATE_CARD_ROWS, UPDATE_CARD_CONTENT_ROWS } from "./UpdateAvailableCard.js";
-import { getTextWidth } from "../render/textLayout.js";
+import {
+  UPDATE_CARD_CONTENT_ROWS,
+  UPDATE_CARD_ROWS,
+  UpdateAvailableCard,
+} from "./UpdateAvailableCard.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
-  setRawMode(): this { return this; }
-  override resume(): this { return this; }
-  override pause(): this { return this; }
-  ref(): this { return this; }
-  unref(): this { return this; }
+  setRawMode(): this {
+    return this;
+  }
+  override resume(): this {
+    return this;
+  }
+  override pause(): this {
+    return this;
+  }
+  ref(): this {
+    return this;
+  }
+  unref(): this {
+    return this;
+  }
 }
 
 class TestOutput extends PassThrough {
@@ -109,7 +121,11 @@ test("card with width clamps long lines to fit inside the box", async () => {
   // The install command is long; with width=40 the inner content width is 38.
   // clampVisualText should truncate it — the full command should not appear.
   const fullCommand = "npm install -g @golba98/ubume@latest";
-  assert.doesNotMatch(output, new RegExp(escapeRegExp(fullCommand)), "long command should be clamped to fit card width");
+  assert.doesNotMatch(
+    output,
+    new RegExp(escapeRegExp(fullCommand)),
+    "long command should be clamped to fit card width",
+  );
   // But the card content should still be present (just truncated)
   assert.match(output, /npm install/, "truncated command prefix should still appear");
 });

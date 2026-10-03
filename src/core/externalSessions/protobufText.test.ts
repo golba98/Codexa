@@ -5,7 +5,10 @@ import { extractProtobufStrings } from "./protobufText.js";
 function varint(value: number): number[] {
   const bytes: number[] = [];
   let remaining = value;
-  while (remaining > 0x7f) { bytes.push((remaining & 0x7f) | 0x80); remaining >>>= 7; }
+  while (remaining > 0x7f) {
+    bytes.push((remaining & 0x7f) | 0x80);
+    remaining >>>= 7;
+  }
   bytes.push(remaining);
   return bytes;
 }
@@ -19,7 +22,12 @@ function varintField(fieldNumber: number, value: number): number[] {
 
 test("extractProtobufStrings returns text fields in order, including nested messages", () => {
   const nested = field(3, [...field(1, "inner reply"), ...varintField(2, 300)]);
-  const message = new Uint8Array([...varintField(1, 7), ...field(2, "What model are you?"), ...nested, ...field(4, "tail")]);
+  const message = new Uint8Array([
+    ...varintField(1, 7),
+    ...field(2, "What model are you?"),
+    ...nested,
+    ...field(4, "tail"),
+  ]);
   assert.deepEqual(extractProtobufStrings(message), ["What model are you?", "inner reply", "tail"]);
 });
 

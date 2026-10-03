@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test, { afterEach, beforeEach, describe } from "node:test";
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "fs";
-import { join } from "path";
 import { tmpdir } from "os";
-import { resolvePlanDir, savePlan, readPlan } from "./planStorage.js";
+import { join } from "path";
+import { readPlan, resolvePlanDir, savePlan } from "./planStorage.js";
 
 describe("resolvePlanDir", () => {
   const savedEnv: Record<string, string | undefined> = {};
@@ -127,11 +127,15 @@ describe("savePlan", () => {
   test("does not write to process.cwd()", () => {
     const cwdPlanDir = join(process.cwd(), ".ubume");
     const beforeMarkdown = existsSync(cwdPlanDir)
-      ? readdirSync(cwdPlanDir).filter((name) => name.endsWith(".md")).sort()
+      ? readdirSync(cwdPlanDir)
+          .filter((name) => name.endsWith(".md"))
+          .sort()
       : [];
     savePlan("# Plan", process.cwd());
     const afterMarkdown = existsSync(cwdPlanDir)
-      ? readdirSync(cwdPlanDir).filter((name) => name.endsWith(".md")).sort()
+      ? readdirSync(cwdPlanDir)
+          .filter((name) => name.endsWith(".md"))
+          .sort()
       : [];
     assert.deepEqual(afterMarkdown, beforeMarkdown);
   });

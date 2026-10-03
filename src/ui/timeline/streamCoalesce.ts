@@ -13,7 +13,9 @@ interface ThinkingLikeEvent {
  * stacks one labeled block per sentence. Thoughts separated by a tool call or
  * response segment stay separate — only uninterrupted runs merge.
  */
-export function coalesceConsecutiveThinking<T extends { kind: string; streamSeq: number }>(events: T[]): T[] {
+export function coalesceConsecutiveThinking<T extends { kind: string; streamSeq: number }>(
+  events: T[],
+): T[] {
   const result: T[] = [];
   let index = 0;
   while (index < events.length) {

@@ -1,14 +1,12 @@
-import React from "react";
 import { Box, Text } from "ink";
 import type { RunEvent } from "../../session/types.js";
+import { DashCard } from "../chrome/DashCard.js";
 import { clampVisualText, getUsableShellWidth } from "../layout.js";
 import { useTheme } from "../theme.js";
-import { DashCard } from "../chrome/DashCard.js";
 import {
   formatProgressBlockBodyLines,
   getProgressUpdateCount,
   selectVisibleProgressBlocks,
-  type VisibleProgressBlock,
 } from "./progressEntries.js";
 
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
@@ -27,22 +25,19 @@ function getBlockMarker(isLive: boolean): string {
 
 export function ThinkingBlock({ cols, run }: ThinkingBlockProps) {
   const theme = useTheme();
-  const {
-    blocks,
-    hiddenCount,
-    totalCount,
-    latestBlock,
-    latestActiveBlock,
-  } = selectVisibleProgressBlocks(run.progressEntries ?? [], MAX_VISIBLE_PROGRESS_ENTRIES);
+  const { blocks, hiddenCount, totalCount, latestBlock, latestActiveBlock } =
+    selectVisibleProgressBlocks(run.progressEntries ?? [], MAX_VISIBLE_PROGRESS_ENTRIES);
   const contentWidth = Math.max(1, getUsableShellWidth(cols, 8));
   const updateCount = totalCount || getProgressUpdateCount(run.progressEntries ?? []);
   const currentBlock = latestActiveBlock ?? latestBlock;
   const currentText = currentBlock
-    ? clampVisualText(currentBlock.headline.replace(/^Current:\s*/i, ""), Math.max(1, contentWidth - 9))
+    ? clampVisualText(
+        currentBlock.headline.replace(/^Current:\s*/i, ""),
+        Math.max(1, contentWidth - 9),
+      )
     : null;
-  const rightBadge = run.status === "running"
-    ? "active"
-    : `${updateCount} update${updateCount === 1 ? "" : "s"}`;
+  const rightBadge =
+    run.status === "running" ? "active" : `${updateCount} update${updateCount === 1 ? "" : "s"}`;
 
   if (blocks.length === 0 && run.status === "running") {
     return null;
@@ -61,13 +56,17 @@ export function ThinkingBlock({ cols, run }: ThinkingBlockProps) {
         <Box flexDirection="column" width="100%">
           {currentText && run.status === "running" && (
             <Box width="100%">
-              <Text color={theme.info} bold>Current: </Text>
+              <Text color={theme.info} bold>
+                Current:{" "}
+              </Text>
               <Text color={theme.text}>{currentText}</Text>
             </Box>
           )}
           {hiddenCount > 0 && (
             <Box marginTop={currentText && run.status === "running" ? 1 : 0}>
-              <Text color={theme.textDim}>{`... ${hiddenCount} earlier update${hiddenCount === 1 ? "" : "s"}`}</Text>
+              <Text
+                color={theme.textDim}
+              >{`... ${hiddenCount} earlier update${hiddenCount === 1 ? "" : "s"}`}</Text>
             </Box>
           )}
           {blocks.map((block, blockIndex) => {
@@ -77,7 +76,13 @@ export function ThinkingBlock({ cols, run }: ThinkingBlockProps) {
                 key={block.key}
                 flexDirection="column"
                 width="100%"
-                marginTop={blockIndex === 0 && hiddenCount === 0 && !(currentText && run.status === "running") ? 0 : 1}
+                marginTop={
+                  blockIndex === 0 &&
+                  hiddenCount === 0 &&
+                  !(currentText && run.status === "running")
+                    ? 0
+                    : 1
+                }
               >
                 <Text color={isLive ? theme.accent : theme.info} bold={isLive}>
                   {`${getBlockMarker(isLive)} ${isLive ? "Live" : block.label}`}
@@ -87,9 +92,7 @@ export function ThinkingBlock({ cols, run }: ThinkingBlockProps) {
                     {line ? `${isLive ? "  | " : "    "}${line}` : " "}
                   </Text>
                 ))}
-                {isLive && (
-                  <Text color={theme.accent}>  | ▌</Text>
-                )}
+                {isLive && <Text color={theme.accent}> | ▌</Text>}
               </Box>
             );
           })}

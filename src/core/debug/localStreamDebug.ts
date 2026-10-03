@@ -7,8 +7,10 @@ export function isLocalStreamDebugEnabled(env: NodeJS.ProcessEnv = process.env):
 }
 
 export function getLocalStreamDebugLogPath(env: NodeJS.ProcessEnv = process.env): string {
-  return env.UBUME_DEBUG_LOCAL_STREAM_FILE?.trim()
-    || join(resolveUbumeDataDir(undefined, env), "debug", "local-stream.jsonl");
+  return (
+    env.UBUME_DEBUG_LOCAL_STREAM_FILE?.trim() ||
+    join(resolveUbumeDataDir(undefined, env), "debug", "local-stream.jsonl")
+  );
 }
 
 const SENSITIVE_DETAIL_KEY = /(?:raw|content|reasoning|analysis|arguments|prompt)/i;
@@ -20,8 +22,10 @@ function redactStreamDetails(value: unknown, key = ""): unknown {
   if (Array.isArray(value)) return value.map((item) => redactStreamDetails(item, key));
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .map(([childKey, childValue]) => [childKey, redactStreamDetails(childValue, childKey)]),
+      Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+        childKey,
+        redactStreamDetails(childValue, childKey),
+      ]),
     );
   }
   return value;
@@ -36,14 +40,17 @@ export function traceLocalStream(
   try {
     const logPath = getLocalStreamDebugLogPath(env);
     mkdirSync(dirname(logPath), { recursive: true });
-    const safeDetails = env.UBUME_DEBUG_LOCAL_STREAM_CONTENT === "1"
-      ? details
-      : redactStreamDetails(details);
-    appendFileSync(logPath, `${JSON.stringify({
-      ts: new Date().toISOString(),
-      event,
-      ...safeDetails as Record<string, unknown>,
-    })}\n`, "utf8");
+    const safeDetails =
+      env.UBUME_DEBUG_LOCAL_STREAM_CONTENT === "1" ? details : redactStreamDetails(details);
+    appendFileSync(
+      logPath,
+      `${JSON.stringify({
+        ts: new Date().toISOString(),
+        event,
+        ...(safeDetails as Record<string, unknown>),
+      })}\n`,
+      "utf8",
+    );
   } catch {
     // Diagnostics must never interfere with a Local request or the TUI.
   }

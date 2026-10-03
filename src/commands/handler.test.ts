@@ -3,7 +3,7 @@ import test from "node:test";
 import type { LayeredConfigResult } from "../config/layeredConfig.js";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../config/runtimeConfig.js";
 import { normalizeCodexModelListResponses } from "../core/models/codexModelCapabilities.js";
-import { handleCommand, type CommandContext } from "./handler.js";
+import { type CommandContext, handleCommand } from "./handler.js";
 
 const baseRuntime = normalizeRuntimeConfig({
   provider: "codex-subprocess",
@@ -22,7 +22,11 @@ const baseConfig: LayeredConfigResult = {
     cliOverrides: [],
     layers: [
       { label: "Built-in defaults", status: "loaded" as const },
-      { label: "User config", status: "missing" as const, path: "C:\\Users\\Test\\.codex\\config.toml" },
+      {
+        label: "User config",
+        status: "missing" as const,
+        path: "C:\\Users\\Test\\.codex\\config.toml",
+      },
     ],
     ignoredEntries: [],
     fieldSources: {
@@ -201,14 +205,41 @@ test("validates reasoning against detected levels for the active model", () => {
 });
 
 test("validates ultra from the active model's real metadata", () => {
-  const capabilities = normalizeCodexModelListResponses([{ data: [
-    { id: "gpt-5.6-sol", model: "gpt-5.6-sol", supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"].map((reasoningEffort) => ({ reasoningEffort })) },
-    { id: "gpt-5.5", model: "gpt-5.5", supportedReasoningEfforts: ["low", "medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort })) },
-  ] }]);
+  const capabilities = normalizeCodexModelListResponses([
+    {
+      data: [
+        {
+          id: "gpt-5.6-sol",
+          model: "gpt-5.6-sol",
+          supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"].map(
+            (reasoningEffort) => ({ reasoningEffort }),
+          ),
+        },
+        {
+          id: "gpt-5.5",
+          model: "gpt-5.5",
+          supportedReasoningEfforts: ["low", "medium", "high", "xhigh"].map((reasoningEffort) => ({
+            reasoningEffort,
+          })),
+        },
+      ],
+    },
+  ]);
   const solRuntime = normalizeRuntimeConfig({ model: "gpt-5.6-sol" });
-  assert.equal(runCommand("/reasoning ultra", { runtime: solRuntime, resolvedRuntime: resolveRuntimeConfig(solRuntime), modelCapabilities: capabilities })?.action, "reasoning");
+  assert.equal(
+    runCommand("/reasoning ultra", {
+      runtime: solRuntime,
+      resolvedRuntime: resolveRuntimeConfig(solRuntime),
+      modelCapabilities: capabilities,
+    })?.action,
+    "reasoning",
+  );
   const gpt55Runtime = normalizeRuntimeConfig({ model: "gpt-5.5" });
-  const rejected = runCommand("/reasoning ultra", { runtime: gpt55Runtime, resolvedRuntime: resolveRuntimeConfig(gpt55Runtime), modelCapabilities: capabilities });
+  const rejected = runCommand("/reasoning ultra", {
+    runtime: gpt55Runtime,
+    resolvedRuntime: resolveRuntimeConfig(gpt55Runtime),
+    modelCapabilities: capabilities,
+  });
   assert.equal(rejected?.action, "unknown");
   assert.match(rejected?.message ?? "", /Valid: low, medium, high, xhigh/);
 });
@@ -328,7 +359,10 @@ test("rejects invalid /setting usage with a short hint", () => {
 
   const invalidSetting = runCommand("/setting theme");
   assert.equal(invalidSetting?.action, "unknown");
-  assert.equal(invalidSetting?.message, "Usage: /setting, /setting workspace [dir|name|simple], /setting terminal-title [dir|name|simple], or /setting busy-loader [true|false]");
+  assert.equal(
+    invalidSetting?.message,
+    "Usage: /setting, /setting workspace [dir|name|simple], /setting terminal-title [dir|name|simple], or /setting busy-loader [true|false]",
+  );
 });
 
 test("shows effective runtime status", () => {
@@ -508,7 +542,10 @@ test("documents runtime commands in help", () => {
   assert.equal(result?.action, "help");
   assert.match(result?.message ?? "", /\/status\s+Show the effective runtime configuration/i);
   assert.match(result?.message ?? "", /\/config\s+Show layered config sources/i);
-  assert.match(result?.message ?? "", /\/permissions\s+Open or update permissions and sandbox controls/i);
+  assert.match(
+    result?.message ?? "",
+    /\/permissions\s+Open or update permissions and sandbox controls/i,
+  );
   assert.match(result?.message ?? "", /\/permissions approval-policy/i);
   assert.match(result?.message ?? "", /\/runtime approval-policy/i);
   assert.match(result?.message ?? "", /\/runtime writable-roots/i);
@@ -643,7 +680,11 @@ test("every command documented in help is recognized by the parser", () => {
   for (const cmd of documentedCommands) {
     if (requiresSubcommand.has(cmd)) continue;
     const result = runCommand(`/${cmd}`);
-    assert.notEqual(result?.action, "unknown", `Command /${cmd} documented in /help but handler returned 'unknown'`);
+    assert.notEqual(
+      result?.action,
+      "unknown",
+      `Command /${cmd} documented in /help but handler returned 'unknown'`,
+    );
   }
 
   // Verify specific multi-word commands mentioned in help
@@ -659,7 +700,11 @@ test("every command documented in help is recognized by the parser", () => {
   ] as const;
   for (const [cmd, expectedAction] of multiWord) {
     const result = runCommand(`/${cmd}`);
-    assert.equal(result?.action, expectedAction, `Multi-word command /${cmd} mentioned in help but returned action ${result?.action} instead of ${expectedAction}`);
+    assert.equal(
+      result?.action,
+      expectedAction,
+      `Multi-word command /${cmd} mentioned in help but returned action ${result?.action} instead of ${expectedAction}`,
+    );
   }
 });
 

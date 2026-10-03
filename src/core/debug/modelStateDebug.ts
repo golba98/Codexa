@@ -11,9 +11,11 @@ export function isModelStateDebugEnabled(): boolean {
 }
 
 export function getModelStateDebugLogPath(): string {
-  return process.env.UBUME_RENDER_DEBUG_FILE?.trim()
-    || process.env.UBUME_DEBUG_MODEL_STATE_LOG?.trim()
-    || resolveUbumeDebugLogPath();
+  return (
+    process.env.UBUME_RENDER_DEBUG_FILE?.trim() ||
+    process.env.UBUME_DEBUG_MODEL_STATE_LOG?.trim() ||
+    resolveUbumeDebugLogPath()
+  );
 }
 
 export function traceModelStateDebug(event: string, details: ModelStateDebugDetails = {}): void {

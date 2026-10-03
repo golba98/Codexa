@@ -11,10 +11,7 @@ export type ProjectInstructionsLoadResult =
   | { status: "missing" }
   | { status: "error"; path: string; message: string };
 
-const PROJECT_INSTRUCTION_CANDIDATES = [
-  "AGENTS.md",
-  join(".codex", "AGENTS.md"),
-] as const;
+const PROJECT_INSTRUCTION_CANDIDATES = ["AGENTS.md", join(".codex", "AGENTS.md")] as const;
 
 export function loadProjectInstructions(workspaceRoot: string): ProjectInstructionsLoadResult {
   let firstError: Extract<ProjectInstructionsLoadResult, { status: "error" }> | null = null;

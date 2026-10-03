@@ -1,19 +1,28 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import React from "react";
 import { render } from "ink";
 import { createLayoutSnapshot } from "../layout.js";
-import { ModelPickerScreen } from "./ModelPickerScreen.js";
 import { ThemeProvider } from "../theme.js";
+import { ModelPickerScreen } from "./ModelPickerScreen.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
-  setRawMode(): this { return this; }
-  override resume(): this { return this; }
-  override pause(): this { return this; }
-  ref(): this { return this; }
-  unref(): this { return this; }
+  setRawMode(): this {
+    return this;
+  }
+  override resume(): this {
+    return this;
+  }
+  override pause(): this {
+    return this;
+  }
+  ref(): this {
+    return this;
+  }
+  unref(): this {
+    return this;
+  }
 }
 
 class TestOutput extends PassThrough {
@@ -52,16 +61,22 @@ function captureConsoleMessages() {
 
 function assertNoAvailableRowsFragmentWarning(messages: readonly string[]) {
   assert.equal(
-    messages.some((message) => message.includes("Invalid prop `availableRows` supplied to `React.Fragment`")),
+    messages.some((message) =>
+      message.includes("Invalid prop `availableRows` supplied to `React.Fragment`"),
+    ),
     false,
   );
 }
 
-async function renderModelPicker(props: Partial<Parameters<typeof ModelPickerScreen>[0]> = {}): Promise<string> {
+async function renderModelPicker(
+  props: Partial<Parameters<typeof ModelPickerScreen>[0]> = {},
+): Promise<string> {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const instance = render(
     <ThemeProvider theme="purple">
@@ -145,10 +160,23 @@ test("ModelPickerScreen width follows layout.contentWidth", async () => {
   const layout = createLayoutSnapshot(180, 40);
   const output = await renderModelPicker({
     layout,
-    models: [{ id: "m1", model: "model-1", label: "Model 1", available: true, hidden: false, isDefault: false, defaultReasoningLevel: "", supportedReasoningLevels: null, reasoningLevelCount: null, source: "fallback" }] as any,
+    models: [
+      {
+        id: "m1",
+        model: "model-1",
+        label: "Model 1",
+        available: true,
+        hidden: false,
+        isDefault: false,
+        defaultReasoningLevel: "",
+        supportedReasoningLevels: null,
+        reasoningLevelCount: null,
+        source: "fallback",
+      },
+    ] as any,
   });
   const cleanOutput = output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
-  const borderLine = cleanOutput.split("\n").find(line => line.includes("╭"));
+  const borderLine = cleanOutput.split("\n").find((line) => line.includes("╭"));
   assert(borderLine, "Should find top border line");
   assert.equal(borderLine.trim().length, 171);
 });
@@ -204,11 +232,15 @@ test("ModelPickerScreen does not exceed available vertical rows", async () => {
   });
 
   const cleanOutput = output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
-  const renderedModelsCount = Array.from({ length: 15 }, (_, i) => `Model ${i}`)
-    .filter(label => cleanOutput.includes(label))
-    .length;
+  const renderedModelsCount = Array.from({ length: 15 }, (_, i) => `Model ${i}`).filter((label) =>
+    cleanOutput.includes(label),
+  ).length;
 
-  assert.equal(renderedModelsCount, 7, "Should use every calculated model row at this terminal size");
+  assert.equal(
+    renderedModelsCount,
+    7,
+    "Should use every calculated model row at this terminal size",
+  );
 });
 
 test("ModelPickerScreen at 100x21 shows all small model lists before windowing", async () => {
@@ -307,7 +339,9 @@ test("active model is shown in a Current line when outside the visible slice", a
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
-  stdout.on("data", (chunk) => { output += chunk.toString(); });
+  stdout.on("data", (chunk) => {
+    output += chunk.toString();
+  });
 
   const layout = createLayoutSnapshot(120, 13);
   const instance = render(

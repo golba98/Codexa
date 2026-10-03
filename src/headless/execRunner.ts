@@ -1,24 +1,27 @@
-import { resolveExecutionContext } from "./context.js";
-import type { BackendRunHandlers, ProviderRunControl } from "../core/providers/types.js";
-import type { ConversationRecord } from "../core/workspace/conversationStore.js";
-import { toProviderConversationHistory } from "../session/conversation.js";
-import {
-  resolveLayeredConfig,
-  type LayeredConfigResult,
-} from "../config/layeredConfig.js";
 import type { LaunchArgs } from "../config/launchArgs.js";
+import { type LayeredConfigResult, resolveLayeredConfig } from "../config/layeredConfig.js";
 import {
   mergeRuntimeConfig,
-  resolveRuntimeConfig,
   type ResolvedRuntimeConfig,
+  resolveRuntimeConfig,
 } from "../config/runtimeConfig.js";
-import { loadProjectInstructions, type ProjectInstructionsLoadResult } from "../core/workspace/projectInstructions.js";
-import { getBackendProvider } from "../core/providers/registry.js";
-import type { BackendProvider } from "../core/providers/types.js";
 import { isNoiseLine } from "../core/providers/codexTranscript.js";
+import { getBackendProvider } from "../core/providers/registry.js";
+import type {
+  BackendProvider,
+  BackendRunHandlers,
+  ProviderRunControl,
+} from "../core/providers/types.js";
 import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
+import type { ConversationRecord } from "../core/workspace/conversationStore.js";
+import {
+  loadProjectInstructions,
+  type ProjectInstructionsLoadResult,
+} from "../core/workspace/projectInstructions.js";
 import { resolveWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
+import { toProviderConversationHistory } from "../session/conversation.js";
 import type { RunToolActivity } from "../session/types.js";
+import { resolveExecutionContext } from "./context.js";
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
@@ -52,7 +55,10 @@ export interface HeadlessExecResult {
 
 export interface HeadlessExecDependencies {
   resolveWorkspaceRoot: () => string;
-  resolveLayeredConfig: (options: { workspaceRoot: string; launchArgs: LaunchArgs }) => LayeredConfigResult;
+  resolveLayeredConfig: (options: {
+    workspaceRoot: string;
+    launchArgs: LaunchArgs;
+  }) => LayeredConfigResult;
   resolveRuntimeConfig: typeof resolveRuntimeConfig;
   getBackendProvider: (id: string) => BackendProvider;
   loadProjectInstructions: (workspaceRoot: string) => ProjectInstructionsLoadResult;
@@ -83,13 +89,17 @@ export function createHeadlessExecTiming(options: {
       previousElapsedMs = elapsedMs;
       const formattedFields = Object.entries(fields)
         .map(([key, value]) => {
-          const serialized = Array.isArray(value) || typeof value === "string"
-            ? JSON.stringify(value)
-            : String(value);
+          const serialized =
+            Array.isArray(value) || typeof value === "string"
+              ? JSON.stringify(value)
+              : String(value);
           return `${key}=${serialized}`;
         })
         .join(" ");
-      writeLine(stderr, `[ubume exec timing] phase=${phase} elapsed_ms=${elapsedMs} delta_ms=${deltaMs}${formattedFields ? ` ${formattedFields}` : ""}`);
+      writeLine(
+        stderr,
+        `[ubume exec timing] phase=${phase} elapsed_ms=${elapsedMs} delta_ms=${deltaMs}${formattedFields ? ` ${formattedFields}` : ""}`,
+      );
     },
   };
 }
@@ -111,13 +121,14 @@ function writeLine(stream: Pick<NodeJS.WriteStream, "write">, line: string): voi
 }
 
 function formatDiagnosticText(value: string): string {
-  return sanitizeTerminalOutput(value)
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .trim();
+  return sanitizeTerminalOutput(value).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
 }
 
-function writeDiagnostic(stderr: Pick<NodeJS.WriteStream, "write">, kind: string, message: string): void {
+function writeDiagnostic(
+  stderr: Pick<NodeJS.WriteStream, "write">,
+  kind: string,
+  message: string,
+): void {
   const safeMessage = formatDiagnosticText(message);
   if (!safeMessage) return;
   writeLine(stderr, `[ubume exec] ${kind}: ${safeMessage.replace(/\n/g, "\n  ")}`);
@@ -139,8 +150,7 @@ function isStructuredCodexEventLine(line: string): boolean {
 
   try {
     const parsed = JSON.parse(trimmed) as { type?: unknown };
-    return typeof parsed.type === "string"
-      && /^(?:thread|turn|item)\./.test(parsed.type);
+    return typeof parsed.type === "string" && /^(?:thread|turn|item)\./.test(parsed.type);
   } catch {
     return false;
   }
@@ -158,11 +168,17 @@ function shouldSuppressAssistantChunk(chunk: string): boolean {
     .map((line) => line.trim())
     .filter(Boolean);
 
-  return lines.length > 0
-    && lines.every((line) => isStructuredCodexEventLine(line) || isProcessTerminationNoise(line));
+  return (
+    lines.length > 0 &&
+    lines.every((line) => isStructuredCodexEventLine(line) || isProcessTerminationNoise(line))
+  );
 }
 
-function formatRuntimeStartup(runtime: ResolvedRuntimeConfig, workspaceRoot: string, provider: BackendProvider): string {
+function formatRuntimeStartup(
+  runtime: ResolvedRuntimeConfig,
+  workspaceRoot: string,
+  provider: BackendProvider,
+): string {
   return [
     `workspace ${workspaceRoot}`,
     `provider ${provider.label} (${provider.id})`,
@@ -188,11 +204,20 @@ export async function runHeadlessExec(
   diagnostics?.mark("run_headless_start");
   const workspaceRoot = options.workspaceRoot ?? deps.resolveWorkspaceRoot();
   diagnostics?.mark("workspace_resolved", { workspace_root: workspaceRoot });
-  const context = options.context ?? (dependencies.getBackendProvider ? undefined : resolveExecutionContext(workspaceRoot, options.launchArgs, { providerId: options.providerId, saved: options.saved }));
-  const layeredConfig = context?.layered ?? deps.resolveLayeredConfig({
-    workspaceRoot,
-    launchArgs: options.launchArgs,
-  });
+  const context =
+    options.context ??
+    (dependencies.getBackendProvider
+      ? undefined
+      : resolveExecutionContext(workspaceRoot, options.launchArgs, {
+          providerId: options.providerId,
+          saved: options.saved,
+        }));
+  const layeredConfig =
+    context?.layered ??
+    deps.resolveLayeredConfig({
+      workspaceRoot,
+      launchArgs: options.launchArgs,
+    });
   diagnostics?.mark("layered_config_loaded");
   const runtimeConfig = mergeRuntimeConfig(layeredConfig.runtime, { planMode: false });
   const runtime = context?.runtime ?? deps.resolveRuntimeConfig(runtimeConfig);
@@ -202,15 +227,17 @@ export async function runHeadlessExec(
     prompt_policy: promptPolicy,
   });
 
-  const projectInstructionsLoad = promptPolicy === "wrapped"
-    ? deps.loadProjectInstructions(workspaceRoot)
-    : ({ status: "missing" } as ProjectInstructionsLoadResult);
-  const projectInstructions = projectInstructionsLoad.status === "loaded"
-    ? projectInstructionsLoad.instructions
-    : null;
+  const projectInstructionsLoad =
+    promptPolicy === "wrapped"
+      ? deps.loadProjectInstructions(workspaceRoot)
+      : ({ status: "missing" } as ProjectInstructionsLoadResult);
+  const projectInstructions =
+    projectInstructionsLoad.status === "loaded" ? projectInstructionsLoad.instructions : null;
   diagnostics?.mark("project_instructions_resolved", {
     whether_project_instructions_loaded: projectInstructionsLoad.status === "loaded",
-    project_instructions_path: projectInstructions?.path ?? ("path" in projectInstructionsLoad ? projectInstructionsLoad.path : null),
+    project_instructions_path:
+      projectInstructions?.path ??
+      ("path" in projectInstructionsLoad ? projectInstructionsLoad.path : null),
     project_instructions_character_count: projectInstructions?.content.length ?? 0,
   });
 
@@ -223,11 +250,19 @@ export async function runHeadlessExec(
   writeDiagnostic(io.stderr, "startup", formatRuntimeStartup(runtime, workspaceRoot, provider));
 
   if (layeredConfig.diagnostics.ignoredEntries.length > 0) {
-    writeDiagnostic(io.stderr, "config", `ignored ${layeredConfig.diagnostics.ignoredEntries.join("; ")}`);
+    writeDiagnostic(
+      io.stderr,
+      "config",
+      `ignored ${layeredConfig.diagnostics.ignoredEntries.join("; ")}`,
+    );
   }
 
   if (projectInstructionsLoad.status === "error") {
-    writeDiagnostic(io.stderr, "config", `could not load project instructions at ${projectInstructionsLoad.path}: ${projectInstructionsLoad.message}`);
+    writeDiagnostic(
+      io.stderr,
+      "config",
+      `could not load project instructions at ${projectInstructionsLoad.path}: ${projectInstructionsLoad.message}`,
+    );
   }
 
   if (!provider.run) {
@@ -248,23 +283,48 @@ export async function runHeadlessExec(
       resolve({ exitCode, text: finalText || streamedText, ...(error ? { error } : {}) });
     };
 
-    interrupt = () => { if (settled) return; cleanup?.(); settle(130, "Run interrupted."); };
+    interrupt = () => {
+      if (settled) return;
+      cleanup?.();
+      settle(130, "Run interrupted.");
+    };
     options.signal?.addEventListener("abort", interrupt, { once: true });
-    if (options.signal?.aborted) { interrupt(); return; }
+    if (options.signal?.aborted) {
+      interrupt();
+      return;
+    }
     try {
       const toolActivityIds = new Set<string>();
 
       const cancel = provider.run!(
         options.prompt,
-        { runtime, workspaceRoot, projectInstructions, promptPolicy,
-          conversationHistory: options.saved ? toProviderConversationHistory(options.saved.messages, { includeActivitySummaries: context?.route.providerId !== "local" && context?.route.providerId !== "mistral" }) : undefined,
+        {
+          runtime,
+          workspaceRoot,
+          projectInstructions,
+          promptPolicy,
+          conversationHistory: options.saved
+            ? toProviderConversationHistory(options.saved.messages, {
+                includeActivitySummaries:
+                  context?.route.providerId !== "local" && context?.route.providerId !== "mistral",
+              })
+            : undefined,
           localContextCheckpoint: options.saved?.metadata.localContextCheckpoint,
         },
         {
-          onRunControl: (value) => { control = value; options.handlers?.onRunControl?.(value); },
+          onRunControl: (value) => {
+            control = value;
+            options.handlers?.onRunControl?.(value);
+          },
           onToolApproval: async (request) => {
-            const decision = await options.handlers?.onToolApproval?.(request) ?? "deny";
-            if (decision === "deny") { const message = "This tool requires interactive approval. Use the TUI or configure an explicit approval policy."; writeDiagnostic(io.stderr, "approval", message); settle(3, message); cleanup?.(); }
+            const decision = (await options.handlers?.onToolApproval?.(request)) ?? "deny";
+            if (decision === "deny") {
+              const message =
+                "This tool requires interactive approval. Use the TUI or configure an explicit approval policy.";
+              writeDiagnostic(io.stderr, "approval", message);
+              settle(3, message);
+              cleanup?.();
+            }
             return decision;
           },
           onLocalContextCheckpoint: options.handlers?.onLocalContextCheckpoint,
@@ -300,10 +360,15 @@ export async function runHeadlessExec(
           },
           onResponse: (response) => {
             if (settled) return;
-            const safeResponse = sanitizeTerminalOutput(response, { preserveTabs: false, tabSize: 2 });
+            const safeResponse = sanitizeTerminalOutput(response, {
+              preserveTabs: false,
+              tabSize: 2,
+            });
             finalText = safeResponse;
-            if (safeResponse.startsWith(streamedText)) io.stdout.write(safeResponse.slice(streamedText.length));
-            else if (safeResponse && safeResponse !== streamedText) io.stdout.write(`${streamedText ? "\n" : ""}${safeResponse}`);
+            if (safeResponse.startsWith(streamedText))
+              io.stdout.write(safeResponse.slice(streamedText.length));
+            else if (safeResponse && safeResponse !== streamedText)
+              io.stdout.write(`${streamedText ? "\n" : ""}${safeResponse}`);
             options.handlers?.onResponse?.(safeResponse);
             settle(0);
           },
@@ -316,27 +381,35 @@ export async function runHeadlessExec(
             ? {
                 onProviderPrepStart: () => diagnostics.mark("provider_prep_start"),
                 onProviderPrepComplete: () => diagnostics.mark("provider_prep_complete"),
-                onProviderPromptPrepared: ({ policy, characterCount }) => diagnostics.mark("provider_prompt_prepared", {
-                  prompt_policy: policy,
-                  prompt_character_count_before_wrapping: options.prompt.length,
-                  prompt_character_count_after_wrapping: characterCount,
-                }),
-                onCodexProcessSpawned: ({ executable, argv }) => diagnostics.mark("codex_process_spawned", {
-                  codex_argv_preview: [executable, ...argv].join(" "),
-                }),
+                onProviderPromptPrepared: ({ policy, characterCount }) =>
+                  diagnostics.mark("provider_prompt_prepared", {
+                    prompt_policy: policy,
+                    prompt_character_count_before_wrapping: options.prompt.length,
+                    prompt_character_count_after_wrapping: characterCount,
+                  }),
+                onCodexProcessSpawned: ({ executable, argv }) =>
+                  diagnostics.mark("codex_process_spawned", {
+                    codex_argv_preview: [executable, ...argv].join(" "),
+                  }),
                 onFirstStdout: (observed = true) => diagnostics.mark("first_stdout", { observed }),
                 onFirstStderr: (observed = true) => diagnostics.mark("first_stderr", { observed }),
-                onCodexProcessExit: (exitCode) => diagnostics.mark("codex_process_exit", {
-                  exit_code: exitCode,
-                }),
+                onCodexProcessExit: (exitCode) =>
+                  diagnostics.mark("codex_process_exit", {
+                    exit_code: exitCode,
+                  }),
                 onCleanupStart: () => diagnostics.mark("cleanup_start"),
-                onCleanupComplete: ({ skipped }) => diagnostics.mark("cleanup_complete", { skipped }),
+                onCleanupComplete: ({ skipped }) =>
+                  diagnostics.mark("cleanup_complete", { skipped }),
               }
             : undefined,
         },
       );
       let canceled = false;
-      cleanup = () => { if (canceled) return; canceled = true; cancel(); };
+      cleanup = () => {
+        if (canceled) return;
+        canceled = true;
+        cancel();
+      };
       if (options.signal?.aborted) cleanup();
     } catch (error) {
       writeDiagnostic(io.stderr, "error", error instanceof Error ? error.message : String(error));
@@ -347,5 +420,7 @@ export async function runHeadlessExec(
     cleanup?.();
     if (control) await control.stopped;
     return result;
-  } finally { options.signal?.removeEventListener("abort", interrupt); }
+  } finally {
+    options.signal?.removeEventListener("abort", interrupt);
+  }
 }

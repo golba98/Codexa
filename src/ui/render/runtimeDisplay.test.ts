@@ -22,7 +22,11 @@ function capability(model: string, label = model): CodexModelCapability {
   };
 }
 
-function context(route: ActiveProviderRoute, contextLength: number | null, confidence: ModelContextMetadata["confidence"] = "known"): ModelContextMetadata {
+function context(
+  route: ActiveProviderRoute,
+  contextLength: number | null,
+  confidence: ModelContextMetadata["confidence"] = "known",
+): ModelContextMetadata {
   return {
     providerId: route.providerId,
     modelId: route.modelId,
@@ -83,11 +87,14 @@ test("OpenAI route display uses OpenAI model and unknown context without stale C
     backendKind: "codex-cli-auth",
     reasoning: "medium",
   };
-  const staleClaude = context({
-    providerId: "anthropic",
-    modelId: "sonnet",
-    backendKind: "claude-code-auth",
-  }, 200_000);
+  const staleClaude = context(
+    {
+      providerId: "anthropic",
+      modelId: "sonnet",
+      backendKind: "claude-code-auth",
+    },
+    200_000,
+  );
   const display = buildActiveRuntimeDisplay({
     route,
     reasoningLevel: "medium",

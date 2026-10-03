@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { TimelineRow } from "./timelineMeasure.js";
 import { LIVE_WINDOW_SAFETY_ROWS, windowLiveRows } from "./liveViewportWindow.js";
+import type { TimelineRow } from "./timelineMeasure.js";
 
 function rows(count: number): TimelineRow[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -18,11 +18,13 @@ function card(id: string, contentRows: number): TimelineRow[] {
     `${body}${"\u2500".repeat(Math.max(0, CARD_WIDTH - body.length - right.length))}${right}`;
   const boxed = (body: string) => `${body.padEnd(CARD_WIDTH - 2, " ")}\u2502`.slice(0, CARD_WIDTH);
 
-  const built: TimelineRow[] = [{
-    key: `${id}-top`,
-    spans: [{ text: fill(`\u256d\u2500\u2500 ${id} `, "\u256e"), tone: "accent" }],
-    frame: { id, role: "top" },
-  }];
+  const built: TimelineRow[] = [
+    {
+      key: `${id}-top`,
+      spans: [{ text: fill(`\u256d\u2500\u2500 ${id} `, "\u256e"), tone: "accent" }],
+      frame: { id, role: "top" },
+    },
+  ];
 
   for (let index = 0; index < contentRows; index += 1) {
     built.push({
@@ -50,14 +52,20 @@ test("returns the same array reference when the live rows fit the window", () =>
 test("keeps only the last maxRows rows when the live turn is taller than the window", () => {
   const input = rows(10);
   const windowed = windowLiveRows(input, 4);
-  assert.deepEqual(windowed.map((row) => row.key), ["row-6", "row-7", "row-8", "row-9"]);
+  assert.deepEqual(
+    windowed.map((row) => row.key),
+    ["row-6", "row-7", "row-8", "row-9"],
+  );
 });
 
 test("treats a non-positive or fractional window as a floored non-negative row budget", () => {
   const input = rows(3);
   assert.deepEqual(windowLiveRows(input, 0), []);
   assert.deepEqual(windowLiveRows(input, -2), []);
-  assert.deepEqual(windowLiveRows(input, 2.9).map((row) => row.key), ["row-1", "row-2"]);
+  assert.deepEqual(
+    windowLiveRows(input, 2.9).map((row) => row.key),
+    ["row-1", "row-2"],
+  );
 });
 
 test("exposes a one-row safety margin for composer measurement drift", () => {
@@ -78,7 +86,14 @@ test("re-caps a card the window cuts open instead of emitting a headless box", (
   // Six rows of budget remain after the two re-cap rows, and the tail is intact.
   assert.deepEqual(
     windowed.slice(2).map((row) => row.key),
-    ["plan-content-15", "plan-content-16", "plan-content-17", "plan-content-18", "plan-content-19", "plan-bottom"],
+    [
+      "plan-content-15",
+      "plan-content-16",
+      "plan-content-17",
+      "plan-content-18",
+      "plan-content-19",
+      "plan-bottom",
+    ],
   );
 });
 
@@ -103,16 +118,18 @@ test("leaves a clean cut between cards alone", () => {
 test("falls back to a plain slice when the budget cannot pay for a re-cap", () => {
   const input = card("plan", 20);
 
-  assert.deepEqual(windowLiveRows(input, 3).map((row) => row.key), [
-    "plan-content-18",
-    "plan-content-19",
-    "plan-bottom",
-  ]);
+  assert.deepEqual(
+    windowLiveRows(input, 3).map((row) => row.key),
+    ["plan-content-18", "plan-content-19", "plan-bottom"],
+  );
 });
 
 test("leaves unframed live rows on the plain slice path", () => {
   const input = rows(10);
-  assert.deepEqual(windowLiveRows(input, 4).map((row) => row.key), ["row-6", "row-7", "row-8", "row-9"]);
+  assert.deepEqual(
+    windowLiveRows(input, 4).map((row) => row.key),
+    ["row-6", "row-7", "row-8", "row-9"],
+  );
 });
 
 test("aligns the re-cap row with a card that carries outer padding", () => {

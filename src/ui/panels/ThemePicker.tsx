@@ -1,4 +1,3 @@
-import React from "react";
 import { AVAILABLE_THEMES, formatThemeLabel } from "../../config/settings.js";
 import { FOCUS_IDS } from "../input/focus.js";
 import { SelectionPanel } from "./SelectionPanel.js";
@@ -12,7 +11,8 @@ interface ThemePickerProps {
 
 export function ThemePicker({ currentTheme, onSelect, onHighlight, onCancel }: ThemePickerProps) {
   const items = AVAILABLE_THEMES.map((theme) => ({
-    label: theme.id === currentTheme ? `${formatThemeLabel(theme.id)}  ✓` : formatThemeLabel(theme.id),
+    label:
+      theme.id === currentTheme ? `${formatThemeLabel(theme.id)}  ✓` : formatThemeLabel(theme.id),
     value: theme.id,
   }));
 

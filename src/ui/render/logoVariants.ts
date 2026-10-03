@@ -35,9 +35,7 @@ export const LOGO_MEDIUM: readonly string[] = [
 ];
 
 /** 1-row compact logo. Requires cols ≥ LOGO_COMPACT_MIN_COLS. */
-export const LOGO_COMPACT: readonly string[] = [
-  "✦ UBUME",
-];
+export const LOGO_COMPACT: readonly string[] = ["✦ UBUME"];
 
 // ─── Breakpoints ──────────────────────────────────────────────────────────────
 

@@ -1,9 +1,9 @@
-import { createRunControl } from "./runControl.js";
 import { spawn } from "child_process";
-import { formatCodexLaunchError, spawnCodexProcess } from "../executables/codexExecutable.js";
+import { formatConversationHistory } from "../../session/conversation.js";
 import { prepareCodexExecLaunch } from "../codex/codexLaunch.js";
-import * as perf from "../perf/profiler.js";
 import { buildCodexPrompt } from "../codex/codexPrompt.js";
+import { formatCodexLaunchError, spawnCodexProcess } from "../executables/codexExecutable.js";
+import * as perf from "../perf/profiler.js";
 import { createTerminalTitleSequenceStripper } from "../terminal/terminalTitle.js";
 import { createCodexJsonStreamParser } from "./codexJsonStream.js";
 import {
@@ -14,13 +14,15 @@ import {
   stripAnsi,
   stripNonPrintableControls,
 } from "./codexTranscript.js";
+import { createRunControl } from "./runControl.js";
 import type { BackendProvider } from "./types.js";
-import { formatConversationHistory } from "../../session/conversation.js";
 
 // Detects CLI error messages that indicate --experimental-json is not supported.
 // When this fires the provider retries in legacy transcript mode.
 function looksLikeUnsupportedStructuredOutput(raw: string): boolean {
-  return /experimental-json|unknown option|unrecognized option|unexpected argument|unexpected option/i.test(raw);
+  return /experimental-json|unknown option|unrecognized option|unexpected argument|unexpected option/i.test(
+    raw,
+  );
 }
 
 function isProcessTerminationNoise(line: string): boolean {
@@ -159,7 +161,8 @@ export const codexSubprocessProvider: BackendProvider = {
             origin: "codex-cli",
           });
           const jsonParser = createCodexJsonStreamParser({
-            onThreadStarted: (sessionId) => handlers.onNativeSession?.({ source: "codex", sessionId }),
+            onThreadStarted: (sessionId) =>
+              handlers.onNativeSession?.({ source: "codex", sessionId }),
             onProgress: (update) => handlers.onProgress?.(update),
             onAssistantDelta: (chunk) => handlers.onAssistantDelta?.(chunk),
             onFinalAnswerObserved: emitFinalAnswerObserved,
@@ -167,7 +170,8 @@ export const codexSubprocessProvider: BackendProvider = {
           });
 
           const feedTranscript = (text: string, stream: "stdout" | "stderr") => {
-            const sanitizer = stream === "stdout" ? transcriptStdoutSanitizer : transcriptStderrSanitizer;
+            const sanitizer =
+              stream === "stdout" ? transcriptStdoutSanitizer : transcriptStderrSanitizer;
             const clean = sanitizer.process(text);
             if (clean) {
               transcriptParser.feed(clean);
@@ -194,10 +198,10 @@ export const codexSubprocessProvider: BackendProvider = {
                 if (!stdoutLineBuffer) return;
               }
 
-              const line = newlineIndex === -1
-                ? stdoutLineBuffer
-                : stdoutLineBuffer.slice(0, newlineIndex);
-              stdoutLineBuffer = newlineIndex === -1 ? "" : stdoutLineBuffer.slice(newlineIndex + 1);
+              const line =
+                newlineIndex === -1 ? stdoutLineBuffer : stdoutLineBuffer.slice(0, newlineIndex);
+              stdoutLineBuffer =
+                newlineIndex === -1 ? "" : stdoutLineBuffer.slice(newlineIndex + 1);
               const normalizedLine = line.replace(/\r$/, "");
               if (!normalizedLine.trim()) {
                 continue;
@@ -247,14 +251,22 @@ export const codexSubprocessProvider: BackendProvider = {
               .split("\n");
             for (const line of lines) {
               const trimmed = line.trim();
-              if (!trimmed || isStderrNoise(trimmed) || isProcessTerminationNoise(trimmed)) continue;
+              if (!trimmed || isStderrNoise(trimmed) || isProcessTerminationNoise(trimmed))
+                continue;
               emitLegacyProgress("stderr", trimmed);
             }
           };
 
           handlers.onProcessLifecycle?.("before-spawn");
-          proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, { stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
-          control.track(new Promise<void>((resolve) => { proc!.once("close", resolve); }));
+          proc = spawnCodexProcess(launchPlan.executable, launchPlan.args, {
+            stdio: ["pipe", "pipe", "pipe"],
+            detached: process.platform !== "win32",
+          });
+          control.track(
+            new Promise<void>((resolve) => {
+              proc!.once("close", resolve);
+            }),
+          );
           procExited = false;
           handlers.onProcessLifecycle?.("spawned");
           handlers.benchmarkHooks?.onCodexProcessSpawned?.({
@@ -311,10 +323,10 @@ export const codexSubprocessProvider: BackendProvider = {
             handlers.benchmarkHooks?.onCodexProcessExit?.(code);
 
             if (
-              structuredOutput
-              && code !== 0
-              && !jsonParser.hasStructuredEvents()
-              && looksLikeUnsupportedStructuredOutput(`${rawStdout}\n${rawStderr}`)
+              structuredOutput &&
+              code !== 0 &&
+              !jsonParser.hasStructuredEvents() &&
+              looksLikeUnsupportedStructuredOutput(`${rawStdout}\n${rawStderr}`)
             ) {
               currentRawOutput = "";
               currentRawStderr = "";
@@ -329,9 +341,11 @@ export const codexSubprocessProvider: BackendProvider = {
             }
 
             if (code === 0) {
-              const finalResponse = mode === "json"
-                ? jsonParser.getFinalResponse().trim() || sanitizeCodexTranscript(currentRawOutput)
-                : sanitizeCodexTranscript(currentRawOutput);
+              const finalResponse =
+                mode === "json"
+                  ? jsonParser.getFinalResponse().trim() ||
+                    sanitizeCodexTranscript(currentRawOutput)
+                  : sanitizeCodexTranscript(currentRawOutput);
               emitFinalAnswerObserved(finalResponse);
               finishSuccess(finalResponse);
               return;
@@ -351,11 +365,12 @@ export const codexSubprocessProvider: BackendProvider = {
           const history = options.conversationHistory?.length
             ? `Previous conversation:\n${formatConversationHistory(options.conversationHistory)}\n\n`
             : "";
-          const baseProviderPrompt = promptPolicy === "raw"
-            ? prompt
-            : buildCodexPrompt(prompt, options.runtime, undefined, {
-                projectInstructions: options.projectInstructions,
-              });
+          const baseProviderPrompt =
+            promptPolicy === "raw"
+              ? prompt
+              : buildCodexPrompt(prompt, options.runtime, undefined, {
+                  projectInstructions: options.projectInstructions,
+                });
           const providerPrompt = history ? `${history}${baseProviderPrompt}` : baseProviderPrompt;
           handlers.benchmarkHooks?.onProviderPromptPrepared?.({
             policy: promptPolicy,
@@ -388,20 +403,41 @@ export const codexSubprocessProvider: BackendProvider = {
       const kill = (signal: NodeJS.Signals) => {
         try {
           if (process.platform !== "win32" && stopping.pid) process.kill(-stopping.pid, signal);
-          else if (process.platform === "win32" && stopping.pid) spawn("taskkill", ["/pid", String(stopping.pid), "/T", "/F"], { stdio: "ignore", shell: false }).on("error", () => stopping.kill(signal));
+          else if (process.platform === "win32" && stopping.pid)
+            spawn("taskkill", ["/pid", String(stopping.pid), "/T", "/F"], {
+              stdio: "ignore",
+              shell: false,
+            }).on("error", () => stopping.kill(signal));
           else stopping.kill(signal);
-        } catch { try { stopping.kill(signal); } catch { /* Already stopped. */ } }
+        } catch {
+          try {
+            stopping.kill(signal);
+          } catch {
+            /* Already stopped. */
+          }
+        }
       };
       const shutdown = new Promise<void>((resolve) => {
         let closed = false;
         const groupAlive = () => {
           if (process.platform === "win32" || !stopping.pid) return false;
-          try { process.kill(-stopping.pid, 0); return true; } catch { return false; }
+          try {
+            process.kill(-stopping.pid, 0);
+            return true;
+          } catch {
+            return false;
+          }
         };
-        const escalation = setTimeout(() => { kill("SIGKILL"); if (closed) resolve(); }, 1500);
+        const escalation = setTimeout(() => {
+          kill("SIGKILL");
+          if (closed) resolve();
+        }, 1500);
         stopping.once("close", () => {
           closed = true;
-          if (!groupAlive()) { clearTimeout(escalation); resolve(); }
+          if (!groupAlive()) {
+            clearTimeout(escalation);
+            resolve();
+          }
         });
         kill("SIGTERM");
       });

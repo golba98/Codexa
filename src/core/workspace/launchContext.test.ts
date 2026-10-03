@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import test from "node:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import test from "node:test";
 import {
   buildWorkspaceStatusMessage,
   createWorkspaceRelaunchPlan,
@@ -42,7 +42,7 @@ test("falls back to bun repo launch metadata when no installed launcher env exis
     packageRoot: "C:/repo",
     execPath: "C:/tools/bun.exe",
     hasBunRuntime: true,
-    forwardArgs: ["--profile", "review", "--config", "model=\"gpt-5.4\""],
+    forwardArgs: ["--profile", "review", "--config", 'model="gpt-5.4"'],
     env: {},
   });
 
@@ -56,7 +56,7 @@ test("falls back to bun repo launch metadata when no installed launcher env exis
     "--profile",
     "review",
     "--config",
-    "model=\"gpt-5.4\"",
+    'model="gpt-5.4"',
   ]);
 });
 
@@ -142,13 +142,15 @@ test("blocks workspace relaunch while busy", () => {
 });
 
 test("describes dev launch mode with install guidance", () => {
-  const message = buildWorkspaceStatusMessage(resolveLaunchContext({
-    workspaceRoot: "C:/repo",
-    packageRoot: "C:/repo",
-    execPath: "C:/tools/bun.exe",
-    hasBunRuntime: true,
-    env: {},
-  }));
+  const message = buildWorkspaceStatusMessage(
+    resolveLaunchContext({
+      workspaceRoot: "C:/repo",
+      packageRoot: "C:/repo",
+      execPath: "C:/tools/bun.exe",
+      hasBunRuntime: true,
+      env: {},
+    }),
+  );
 
   assert.match(message, /Launch mode: dev\/repo launch/i);
   assert.match(message, /npm run install:dev-bin/i);

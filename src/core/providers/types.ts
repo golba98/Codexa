@@ -1,9 +1,14 @@
-import type { AvailableBackend } from "../../config/settings.js";
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
-import type { ProjectInstructions } from "../workspace/projectInstructions.js";
+import type { AvailableBackend } from "../../config/settings.js";
 import type { RunProgressSource, RunToolActivity } from "../../session/types.js";
-import type { ConversationContextCheckpoint, ConversationMessage, LocalHarnessSessionMetadata, NativeSessionReference } from "../workspace/conversationStore.js";
 import type { ProviderImageAttachment } from "../providerRuntime/types.js";
+import type {
+  ConversationContextCheckpoint,
+  ConversationMessage,
+  LocalHarnessSessionMetadata,
+  NativeSessionReference,
+} from "../workspace/conversationStore.js";
+import type { ProjectInstructions } from "../workspace/projectInstructions.js";
 
 export interface ProviderContextUsage {
   inputTokens: number;
@@ -63,7 +68,10 @@ export interface BackendRunHandlers {
   onProcessLifecycle?: (event: "before-spawn" | "spawned" | "exit" | "error" | "cleanup") => void;
   /** Lightweight hooks used only by headless benchmark diagnostics. */
   benchmarkHooks?: {
-    onProviderPromptPrepared?: (context: { policy: "raw" | "wrapped"; characterCount: number }) => void;
+    onProviderPromptPrepared?: (context: {
+      policy: "raw" | "wrapped";
+      characterCount: number;
+    }) => void;
     onProviderPrepStart?: () => void;
     onProviderPrepComplete?: () => void;
     onCodexProcessSpawned?: (context: { executable: string; argv: string[] }) => void;

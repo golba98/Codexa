@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import test from "node:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import test from "node:test";
 
 function writeText(filePath: string, contents: string): void {
   mkdirSync(join(filePath, ".."), { recursive: true });
@@ -23,36 +23,48 @@ test("resolves user config, trusted project config, profiles, and CLI overrides 
     mkdirSync(join(projectRoot, ".codex"), { recursive: true });
     mkdirSync(tempHome, { recursive: true });
 
-    writeFileSync(join(tempHome, "config.toml"), [
-      "model = \"gpt-5.2\"",
-      "[ubume]",
-      "backend = \"openai-native\"",
-      "",
-      "[profiles.review]",
-      "service_tier = \"fast\"",
-    ].join("\n"), "utf-8");
+    writeFileSync(
+      join(tempHome, "config.toml"),
+      [
+        'model = "gpt-5.2"',
+        "[ubume]",
+        'backend = "openai-native"',
+        "",
+        "[profiles.review]",
+        'service_tier = "fast"',
+      ].join("\n"),
+      "utf-8",
+    );
 
-    writeFileSync(join(projectRoot, ".codex", "config.toml"), [
-      "model = \"gpt-5.4\"",
-      "profile = \"review\"",
-      "[ubume]",
-      "mode = \"suggest\"",
-      "plan_mode = true",
-      "",
-      "[profiles.review]",
-      "approval_policy = \"never\"",
-      "",
-      "[profiles.review.sandbox_workspace_write]",
-      "network_access = true",
-      "writable_roots = [\"./roots/project\"]",
-    ].join("\n"), "utf-8");
+    writeFileSync(
+      join(projectRoot, ".codex", "config.toml"),
+      [
+        'model = "gpt-5.4"',
+        'profile = "review"',
+        "[ubume]",
+        'mode = "suggest"',
+        "plan_mode = true",
+        "",
+        "[profiles.review]",
+        'approval_policy = "never"',
+        "",
+        "[profiles.review.sandbox_workspace_write]",
+        "network_access = true",
+        'writable_roots = ["./roots/project"]',
+      ].join("\n"),
+      "utf-8",
+    );
 
-    writeFileSync(join(workspaceRoot, ".codex", "config.toml"), [
-      "personality = \"pragmatic\"",
-      "",
-      "[profiles.review]",
-      "model_reasoning_effort = \"high\"",
-    ].join("\n"), "utf-8");
+    writeFileSync(
+      join(workspaceRoot, ".codex", "config.toml"),
+      [
+        'personality = "pragmatic"',
+        "",
+        "[profiles.review]",
+        'model_reasoning_effort = "high"',
+      ].join("\n"),
+      "utf-8",
+    );
 
     const trustStore = await import(`./trustStore.js?layered-trust=${Date.now()}`);
     trustStore.setProjectTrust(projectRoot, true);
@@ -65,11 +77,7 @@ test("resolves user config, trusted project config, profiles, and CLI overrides 
         version: false,
         initialPrompt: null,
         profile: null,
-        configOverrides: [
-          "model=\"gpt-5.4-mini\"",
-          "ubume.mode=\"full-auto\"",
-          "mcp.enabled=true",
-        ],
+        configOverrides: ['model="gpt-5.4-mini"', 'ubume.mode="full-auto"', "mcp.enabled=true"],
         passthroughArgs: [],
         modelOverride: "gpt-5.4-mini",
       },
@@ -89,8 +97,13 @@ test("resolves user config, trusted project config, profiles, and CLI overrides 
     assert.equal(result.diagnostics.projectTrusted, true);
     assert.match(result.runtime.policy.writableRoots[0] ?? "", /roots[\\/]project/i);
     assert.match(result.diagnostics.fieldSources.model, /CLI override/i);
-    assert.match(result.diagnostics.fieldSources["policy.approvalPolicy"], /Profile review from Project config/i);
-    assert.ok(result.diagnostics.ignoredEntries.some((entry: string) => /mcp\.enabled/i.test(entry)));
+    assert.match(
+      result.diagnostics.fieldSources["policy.approvalPolicy"],
+      /Profile review from Project config/i,
+    );
+    assert.ok(
+      result.diagnostics.ignoredEntries.some((entry: string) => /mcp\.enabled/i.test(entry)),
+    );
   } finally {
     if (previousCodexHome === undefined) {
       delete process.env.CODEX_HOME;
@@ -114,8 +127,8 @@ test("blocks project config when the detected project root is untrusted", async 
     mkdirSync(join(projectRoot, ".codex"), { recursive: true });
     mkdirSync(tempHome, { recursive: true });
 
-    writeFileSync(join(tempHome, "config.toml"), "model = \"gpt-5.2\"\n", "utf-8");
-    writeFileSync(join(projectRoot, ".codex", "config.toml"), "model = \"gpt-5.4-mini\"\n", "utf-8");
+    writeFileSync(join(tempHome, "config.toml"), 'model = "gpt-5.2"\n', "utf-8");
+    writeFileSync(join(projectRoot, ".codex", "config.toml"), 'model = "gpt-5.4-mini"\n', "utf-8");
 
     const layeredConfig = await import(`./layeredConfig.js?untrusted=${Date.now()}`);
     const result = layeredConfig.resolveLayeredConfig({
@@ -133,7 +146,9 @@ test("blocks project config when the detected project root is untrusted", async 
 
     assert.equal(result.runtime.model, "gpt-5.2");
     assert.equal(result.diagnostics.projectTrusted, false);
-    assert.ok(result.diagnostics.layers.some((layer: { status: string }) => layer.status === "blocked"));
+    assert.ok(
+      result.diagnostics.layers.some((layer: { status: string }) => layer.status === "blocked"),
+    );
   } finally {
     if (previousCodexHome === undefined) {
       delete process.env.CODEX_HOME;

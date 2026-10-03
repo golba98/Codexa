@@ -1,22 +1,30 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
-import { Box, Text, render, useFocus, useFocusManager } from "ink";
+import test from "node:test";
+import { Box, render, Text, useFocus, useFocusManager } from "ink";
+import React from "react";
 import { handleCommand } from "../../commands/handler.js";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
-import { getNextRotatingMode, type AvailableMode, type AvailableModel, type ReasoningLevel } from "../../config/settings.js";
-import { createFallbackModelCapabilities, getSelectableModelCapabilities } from "../../core/models/codexModelCapabilities.js";
+import {
+  type AvailableMode,
+  type AvailableModel,
+  getNextRotatingMode,
+  type ReasoningLevel,
+} from "../../config/settings.js";
+import {
+  createFallbackModelCapabilities,
+  getSelectableModelCapabilities,
+} from "../../core/models/codexModelCapabilities.js";
 import { buildProviderRegistry } from "../../core/providerLauncher/registry.js";
 import { BottomComposer, isBacktabSequence } from "../chrome/BottomComposer.js";
-import { getFocusTargetForScreen } from "./focus.js";
+import { createLayoutSnapshot } from "../layout.js";
 import { ModelPickerScreen } from "../panels/ModelPickerScreen.js";
 import { PlanActionPicker } from "../panels/PlanActionPicker.js";
 import { ProviderPicker } from "../panels/ProviderPicker.js";
-import { createLayoutSnapshot } from "../layout.js";
 import { TextEntryPanel } from "../panels/TextEntryPanel.js";
 import { ThemeProvider } from "../theme.js";
 import { shouldBumpComposerInstance } from "../themeFlow.js";
+import { getFocusTargetForScreen } from "./focus.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -73,7 +81,11 @@ const TEST_COMMAND_CONTEXT = {
       cliOverrides: [],
       layers: [
         { label: "Built-in defaults", status: "loaded" as const },
-        { label: "User config", status: "missing" as const, path: "C:\\Users\\Test\\.codex\\config.toml" },
+        {
+          label: "User config",
+          status: "missing" as const,
+          path: "C:\\Users\\Test\\.codex\\config.toml",
+        },
       ],
       ignoredEntries: [],
       fieldSources: {
@@ -177,10 +189,18 @@ function createInkHarness(node: React.ReactElement) {
 
 function FocusProbe({ id, label }: { id: string; label: string }) {
   const { isFocused } = useFocus({ id, autoFocus: true });
-  return <Text>{label}:{isFocused ? "focused" : "blurred"}</Text>;
+  return (
+    <Text>
+      {label}:{isFocused ? "focused" : "blurred"}
+    </Text>
+  );
 }
 
-function FocusRoutingHarness({ screen }: { screen: "main" | "model-picker" | "permissions-panel" | "settings-panel" }) {
+function FocusRoutingHarness({
+  screen,
+}: {
+  screen: "main" | "model-picker" | "permissions-panel" | "settings-panel";
+}) {
   const focusManager = useFocusManager();
 
   React.useEffect(() => {
@@ -267,7 +287,15 @@ function ModelPickerComposerHarness() {
   );
 }
 
-function PasteComposerHarness({ onInterrupt, onRedraw, onQuit }: { onInterrupt?: () => void; onRedraw?: () => void; onQuit?: () => void } = {}) {
+function PasteComposerHarness({
+  onInterrupt,
+  onRedraw,
+  onQuit,
+}: {
+  onInterrupt?: () => void;
+  onRedraw?: () => void;
+  onQuit?: () => void;
+} = {}) {
   const [value, setValue] = React.useState("");
   const [cursor, setCursor] = React.useState(0);
   const [submitCount, setSubmitCount] = React.useState(0);
@@ -522,12 +550,16 @@ function ShortcutProviderPickerHarness() {
   );
 }
 
-function ShortcutModelReasoningPickerHarness({ delayedModels = false }: { delayedModels?: boolean } = {}) {
+function ShortcutModelReasoningPickerHarness({
+  delayedModels = false,
+}: {
+  delayedModels?: boolean;
+} = {}) {
   const focusManager = useFocusManager();
   const [screen, setScreen] = React.useState<"main" | "model-picker">("main");
   const [model, setModel] = React.useState<AvailableModel>("gpt-5.4");
   const [reasoningLevel, setReasoningLevel] = React.useState<ReasoningLevel>("high");
-  const [models, setModels] = React.useState(() => delayedModels ? [] : TEST_MODEL_CAPABILITIES);
+  const [models, setModels] = React.useState(() => (delayedModels ? [] : TEST_MODEL_CAPABILITIES));
   const [value, setValue] = React.useState("");
   const [cursor, setCursor] = React.useState(0);
   const [submitCount, setSubmitCount] = React.useState(0);
@@ -602,7 +634,11 @@ function ShortcutModelReasoningPickerHarness({ delayedModels = false }: { delaye
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
             onOpenBackendPicker={() => {}}
-            onOpenModelPicker={() => setScreen((currentScreen) => currentScreen === "model-picker" ? currentScreen : "model-picker")}
+            onOpenModelPicker={() =>
+              setScreen((currentScreen) =>
+                currentScreen === "model-picker" ? currentScreen : "model-picker",
+              )
+            }
             onOpenModePicker={() => {}}
             onOpenThemePicker={() => {}}
             onOpenAuthPanel={() => {}}
@@ -766,12 +802,7 @@ test("multi-chunk 8264-character paste is coalesced into one compact marker", as
   try {
     await sleep();
     harness.stdin.write("\u001b[200~");
-    const chunks = [
-      "x".repeat(2_048),
-      "x".repeat(2_048),
-      "x".repeat(2_048),
-      "x".repeat(2_120),
-    ];
+    const chunks = ["x".repeat(2_048), "x".repeat(2_048), "x".repeat(2_048), "x".repeat(2_120)];
     for (const chunk of chunks) harness.stdin.write(chunk);
     harness.stdin.write("\u001b[201~");
     await sleep(120);
@@ -1199,10 +1230,21 @@ test("keeps ANSI delete (ESC[3~) as forward delete behavior", async () => {
 
 test("global editing controls remain available during history search", async () => {
   const calls: string[] = [];
-  const harness = createInkHarness(<PasteComposerHarness onInterrupt={() => calls.push("interrupt")} onRedraw={() => calls.push("redraw")} onQuit={() => calls.push("quit")} />);
+  const harness = createInkHarness(
+    <PasteComposerHarness
+      onInterrupt={() => calls.push("interrupt")}
+      onRedraw={() => calls.push("redraw")}
+      onQuit={() => calls.push("quit")}
+    />,
+  );
   try {
     await sleep();
-    for (const key of ["\x12", "\x03", "\x0c", "\x11"]) { harness.stdin.write(key); await sleep(); }
+    for (const key of ["\x12", "\x03", "\x0c", "\x11"]) {
+      harness.stdin.write(key);
+      await sleep();
+    }
     assert.deepEqual(calls, ["interrupt", "redraw", "quit"]);
-  } finally { await harness.cleanup(); }
+  } finally {
+    await harness.cleanup();
+  }
 });

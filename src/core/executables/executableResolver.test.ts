@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCommand, type CommandResult } from "../process/CommandRunner.js";
-import { resolveExecutable, buildSpawnSpec } from "./executableResolver.js";
+import test from "node:test";
+import type { CommandResult, runCommand } from "../process/CommandRunner.js";
+import { buildSpawnSpec, resolveExecutable } from "./executableResolver.js";
 
 function commandResult(overrides: Partial<CommandResult>): CommandResult {
   return {
@@ -22,7 +22,10 @@ function commandResult(overrides: Partial<CommandResult>): CommandResult {
   };
 }
 
-function mockRunCommand(result: CommandResult, onCall?: (spec: Parameters<typeof runCommand>[0]) => void): typeof runCommand {
+function mockRunCommand(
+  result: CommandResult,
+  onCall?: (spec: Parameters<typeof runCommand>[0]) => void,
+): typeof runCommand {
   return ((spec) => {
     onCall?.(spec);
     return {
@@ -82,11 +85,12 @@ test("resolver: rejects environment override with shell metacharacters", async (
   process.env.TEST_EXECUTABLE = "custom-test & calc";
   try {
     await assert.rejects(
-      () => resolveExecutable({
-        commandNames: ["test"],
-        label: "test",
-        envOverrides: ["TEST_EXECUTABLE"],
-      }),
+      () =>
+        resolveExecutable({
+          commandNames: ["test"],
+          label: "test",
+          envOverrides: ["TEST_EXECUTABLE"],
+        }),
       /shell metacharacters|single executable name/i,
     );
   } finally {
@@ -108,11 +112,12 @@ test("resolver: rejects malicious environment executable candidates", async () =
   for (const executable of unsafeExecutables) {
     await withEnv({ TEST_EXECUTABLE: executable }, async () => {
       await assert.rejects(
-        () => resolveExecutable({
-          commandNames: ["test"],
-          label: "test",
-          envOverrides: ["TEST_EXECUTABLE"],
-        }),
+        () =>
+          resolveExecutable({
+            commandNames: ["test"],
+            label: "test",
+            envOverrides: ["TEST_EXECUTABLE"],
+          }),
         /shell metacharacters|single executable name/i,
         executable,
       );
@@ -122,11 +127,12 @@ test("resolver: rejects malicious environment executable candidates", async () =
 
 test("resolver: rejects configured executable values that include arguments", async () => {
   await assert.rejects(
-    () => resolveExecutable({
-      commandNames: ["test"],
-      label: "test",
-      configuredPath: "test --version",
-    }),
+    () =>
+      resolveExecutable({
+        commandNames: ["test"],
+        label: "test",
+        configuredPath: "test --version",
+      }),
     /single executable name/i,
   );
 });

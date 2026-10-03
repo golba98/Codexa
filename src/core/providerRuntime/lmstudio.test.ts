@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveLmStudioApiRoot, fetchLmStudioModelInfo, fetchLmStudioModels, parseLmStudioModelsResponse } from "./lmstudio.js";
+import {
+  deriveLmStudioApiRoot,
+  fetchLmStudioModelInfo,
+  fetchLmStudioModels,
+  parseLmStudioModelsResponse,
+} from "./lmstudio.js";
 
 const FIXTURE = {
   id: "google/gemma-4-26b-a4b",
@@ -29,9 +34,7 @@ const LIST_FIXTURE = {
       state: "loaded",
       max_context_length: 262144,
       loaded_context_length: 32000,
-      capabilities: [
-        "tool_use",
-      ],
+      capabilities: ["tool_use"],
     },
   ],
   object: "list",

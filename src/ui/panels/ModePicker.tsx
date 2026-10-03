@@ -13,8 +13,8 @@ export function ModePicker({ currentMode, planMode = false, onSelect, onCancel }
   const items = [
     { label: planMode ? "Plan  ✓" : "Plan", value: "plan" },
     ...AVAILABLE_MODES.map((mode) => ({
-    label: mode.key === currentMode ? `${mode.label}  ✓` : mode.label,
-    value: mode.key,
+      label: mode.key === currentMode ? `${mode.label}  ✓` : mode.label,
+      value: mode.key,
     })),
   ];
 

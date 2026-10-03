@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 /** Workspace-relative home for agent throwaway files (test harnesses, probe scripts, logs). */
@@ -23,7 +31,10 @@ export function resolveLegacyScratchRoot(workspaceRoot: string): string {
 }
 
 /** Name the session scratch folder without touching the filesystem. */
-export function describeSessionScratchDir(workspaceRoot: string, sessionId: string): SessionScratchDir {
+export function describeSessionScratchDir(
+  workspaceRoot: string,
+  sessionId: string,
+): SessionScratchDir {
   if (!SAFE_SESSION_ID.test(sessionId)) throw new Error(`Unsafe scratch session id: ${sessionId}`);
   return {
     absolutePath: join(resolveScratchRoot(workspaceRoot), sessionId),
@@ -44,7 +55,10 @@ export function mentionsScratchDir(value: string): boolean {
  * only once a tool actually targets the folder, so unused sessions leave no
  * trace in the project.
  */
-export function ensureSessionScratchDir(workspaceRoot: string, sessionId: string): SessionScratchDir {
+export function ensureSessionScratchDir(
+  workspaceRoot: string,
+  sessionId: string,
+): SessionScratchDir {
   const scratch = describeSessionScratchDir(workspaceRoot, sessionId);
   const root = resolveScratchRoot(workspaceRoot);
   mkdirSync(root, { recursive: true });

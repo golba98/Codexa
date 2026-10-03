@@ -34,8 +34,10 @@ const QUOTED_RELATIVE_PATH_PATTERN = /(["'`])((?:\.\.?[\\/])[^"'`\r\n]+?)\1/g;
 const WINDOWS_DRIVE_PATH_PATTERN = /(?:^|[\s([{\],;=])([A-Za-z]:[\\/][^\s"'`<>|]+)/g;
 const WINDOWS_UNC_PATH_PATTERN =
   /(?:^|[\s([{\],;=])(\\\\[^\\/\s"'`<>|]+[\\/][^\\/\s"'`<>|]+(?:[\\/][^\s"'`<>|]+)*)/g;
-const POSIX_ABSOLUTE_PATH_PATTERN = /(?:^|[\s([{\],;=])((?:\/|~\/)(?:[^\/\s"'`<>|]+\/)+[^\s"'`<>|]+)/g;
-const RELATIVE_PATH_PATTERN = /(?:^|[\s([{\],;=])((?:\.\.?[\\/])(?:[^\s"'`<>|]+(?:[\\/][^\s"'`<>|]+)*))/g;
+const POSIX_ABSOLUTE_PATH_PATTERN =
+  /(?:^|[\s([{\],;=])((?:\/|~\/)(?:[^\/\s"'`<>|]+\/)+[^\s"'`<>|]+)/g;
+const RELATIVE_PATH_PATTERN =
+  /(?:^|[\s([{\],;=])((?:\.\.?[\\/])(?:[^\s"'`<>|]+(?:[\\/][^\s"'`<>|]+)*))/g;
 const RUST_RELATIVE_DIAGNOSTIC_PATH_PATTERN =
   /(?:^|[\s([{\],;=])((?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+\.rs(?::\d+(?::\d+)?)?)/g;
 const TRAILING_PUNCTUATION_PATTERN = /[),.;:\]}]+$/;
@@ -124,7 +126,10 @@ function normalizeComparisonPath(pathValue: string, style: PathStyle): string {
   return style === "windows" ? normalized.toLowerCase() : normalized;
 }
 
-function normalizeAllowedRoots(workspaceRoot: string, allowedRoots: readonly string[] = []): string[] {
+function normalizeAllowedRoots(
+  workspaceRoot: string,
+  allowedRoots: readonly string[] = [],
+): string[] {
   const normalizedWorkspace = normalizeWorkspaceRoot(workspaceRoot);
   const roots = [normalizedWorkspace, ...allowedRoots];
   const seen = new Set<string>();
@@ -155,9 +160,8 @@ export function resolveWorkspacePath(pathValue: string, workspaceRoot: string): 
   const pathApi = getPathApi(workspaceStyle);
   // Normalize separators in relative paths to match the workspace style so
   // that Windows-style backslashes work correctly on POSIX systems and vice versa.
-  const separatorNormalized = workspaceStyle === "windows"
-    ? trimmed.replace(/\//g, "\\")
-    : trimmed.replace(/\\/g, "/");
+  const separatorNormalized =
+    workspaceStyle === "windows" ? trimmed.replace(/\//g, "\\") : trimmed.replace(/\\/g, "/");
   return normalizeAbsolutePath(pathApi.resolve(workspaceRoot, separatorNormalized), workspaceStyle);
 }
 
@@ -208,7 +212,12 @@ export function extractExplicitPathReferences(text: string): string[] {
 
   const addMatch = (candidate: string) => {
     const cleaned = stripTrailingPunctuation(stripWrappingQuotes(candidate.trim()));
-    if (!cleaned || (!detectPathStyle(cleaned) && !isExplicitRelativePath(cleaned) && !hasRustRelativeDiagnosticShape(cleaned))) {
+    if (
+      !cleaned ||
+      (!detectPathStyle(cleaned) &&
+        !isExplicitRelativePath(cleaned) &&
+        !hasRustRelativeDiagnosticShape(cleaned))
+    ) {
       return;
     }
 
@@ -245,9 +254,9 @@ export function formatSkippedDependencyPath(pathValue: string): string {
   const parts = pathValue.replace(/\\/g, "/").split("/");
   const registryIndex = parts.indexOf("registry");
   if (
-    registryIndex !== -1
-    && parts[registryIndex + 1] === "src"
-    && CARGO_REGISTRY_INDEX_DIRECTORY_PATTERN.test(parts[registryIndex + 2] ?? "")
+    registryIndex !== -1 &&
+    parts[registryIndex + 1] === "src" &&
+    CARGO_REGISTRY_INDEX_DIRECTORY_PATTERN.test(parts[registryIndex + 2] ?? "")
   ) {
     return parts.slice(registryIndex + 3).join("/");
   }
@@ -288,7 +297,8 @@ export function findOutsideWorkspacePaths(
       continue;
     }
 
-    const comparisonKey = explicitStyle === "windows" ? normalizedPath.toLowerCase() : normalizedPath;
+    const comparisonKey =
+      explicitStyle === "windows" ? normalizedPath.toLowerCase() : normalizedPath;
 
     if (seen.has(comparisonKey)) {
       continue;
@@ -312,15 +322,21 @@ function formatOutsidePathBlockMessage(
   allowedRoots: readonly string[] = [],
 ): string {
   const normalizedWorkspace = normalizeWorkspaceRoot(workspaceRoot);
-  const normalizedAllowedRoots = normalizeAllowedRoots(normalizedWorkspace, allowedRoots)
-    .filter((root) => normalizeComparisonPath(root, detectPathStyle(root) ?? "windows") !== normalizeComparisonPath(normalizedWorkspace, detectPathStyle(normalizedWorkspace) ?? "windows"));
+  const normalizedAllowedRoots = normalizeAllowedRoots(normalizedWorkspace, allowedRoots).filter(
+    (root) =>
+      normalizeComparisonPath(root, detectPathStyle(root) ?? "windows") !==
+      normalizeComparisonPath(
+        normalizedWorkspace,
+        detectPathStyle(normalizedWorkspace) ?? "windows",
+      ),
+  );
   const paths = violations.map((item) => `  - ${item.normalizedPath}`).join("\n");
-  const extraRootsBlock = normalizedAllowedRoots.length > 0
-    ? [
-      "Allowed writable roots:",
-      ...normalizedAllowedRoots.map((root) => `  - ${root}`),
-    ].join("\n")
-    : null;
+  const extraRootsBlock =
+    normalizedAllowedRoots.length > 0
+      ? ["Allowed writable roots:", ...normalizedAllowedRoots.map((root) => `  - ${root}`)].join(
+          "\n",
+        )
+      : null;
 
   return [
     heading,
@@ -329,7 +345,9 @@ function formatOutsidePathBlockMessage(
     "Outside path references:",
     paths,
     "Use relative paths inside this workspace, or relaunch the CLI from the folder you want to edit.",
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function getPromptWorkspaceGuardMessage(

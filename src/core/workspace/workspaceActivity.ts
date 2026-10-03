@@ -317,9 +317,10 @@ export function diffWorkspaceSnapshots(
     const contentChanged = before.content !== after.content;
     if (!metadataChanged && !contentChanged) continue;
 
-    const diff = before.content !== undefined && after.content !== undefined
-      ? createTextDiffExcerpt(before.content, after.content)
-      : undefined;
+    const diff =
+      before.content !== undefined && after.content !== undefined
+        ? createTextDiffExcerpt(before.content, after.content)
+        : undefined;
 
     activity.push({
       path,

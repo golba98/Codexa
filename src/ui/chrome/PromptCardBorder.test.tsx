@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import React from "react";
 import { PassThrough } from "node:stream";
+import test from "node:test";
 import { render } from "ink";
+import type React from "react";
 import type { RunEvent, UserPromptEvent } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
 import { ThemeProvider } from "../theme.js";

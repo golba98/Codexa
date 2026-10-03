@@ -1,8 +1,12 @@
 import { fileURLToPath } from "url";
-import { buildCodexExecArgs, type BuildCodexExecArgsOptions, type BuildCodexExecArgsResult } from "./codexExecArgs.js";
-import { getCodexCliCapabilities, type CodexCliCapabilities } from "../models/codexCapabilities.js";
 import { resolveCodexExecutable } from "../executables/codexExecutable.js";
+import { type CodexCliCapabilities, getCodexCliCapabilities } from "../models/codexCapabilities.js";
 import * as perf from "../perf/profiler.js";
+import {
+  type BuildCodexExecArgsOptions,
+  type BuildCodexExecArgsResult,
+  buildCodexExecArgs,
+} from "./codexExecArgs.js";
 
 // Assumed capability set when probeCapabilities is false — avoids a slow help-output probe on every run.
 const MODERN_CODEX_CLI_CAPABILITIES: CodexCliCapabilities = {
@@ -102,13 +106,15 @@ export async function prepareCodexExecLaunch(
   options: PrepareCodexExecLaunchOptions,
   responsibleModuleUrl: string,
   dependencies: PrepareCodexExecLaunchDependencies = {},
-): Promise<BuildCodexExecArgsResult & {
-  executable?: string;
-  capabilities?: CodexCliCapabilities;
-  responsibleModulePath?: string;
-  responsibleModuleKind?: PreparedCodexExecLaunch["responsibleModuleKind"];
-  launchContext?: PreparedCodexExecLaunch["launchContext"];
-}> {
+): Promise<
+  BuildCodexExecArgsResult & {
+    executable?: string;
+    capabilities?: CodexCliCapabilities;
+    responsibleModulePath?: string;
+    responsibleModuleKind?: PreparedCodexExecLaunch["responsibleModuleKind"];
+    launchContext?: PreparedCodexExecLaunch["launchContext"];
+  }
+> {
   const executableResolver = dependencies.resolveExecutable ?? resolveCodexExecutable;
   const capabilityResolver = dependencies.getCapabilities ?? getCodexCliCapabilities;
   const diagnosticsLogger = dependencies.diagnosticsLogger;

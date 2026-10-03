@@ -1,23 +1,27 @@
-import { createRunControl } from "../providers/runControl.js";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { createHash } from "node:crypto";
-
-import { isLocalDevChannel } from "../version/channel.js";
+import { formatConversationHistory } from "../../session/conversation.js";
+import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
+import { isLocalDevChannel } from "../version/channel.js";
 import type {
   ProviderChatRequest,
   ProviderModelDiscoveryResult,
   ProviderRouteValidationResult,
   ProviderRuntime,
 } from "./types.js";
-import { formatConversationHistory } from "../../session/conversation.js";
 
 export const CODEXA_NATIVE_MODEL_ID = "codexa-1b-sft-v2-native";
-export const DEFAULT_CODEXA_NATIVE_MODEL_ROOT = join(homedir(), "Development", "2-Python", "31-LLM (PyTorch)");
+export const DEFAULT_CODEXA_NATIVE_MODEL_ROOT = join(
+  homedir(),
+  "Development",
+  "2-Python",
+  "31-LLM (PyTorch)",
+);
 const BRIDGE_START_TIMEOUT_MS = 60_000;
 
 export interface CodexaNativeConfig {
@@ -66,24 +70,28 @@ export function buildCodexaNativePrompt(prompt: string): string {
   ].join("\n");
 }
 
-export function resolveCodexaNativeConfig(env: NodeJS.ProcessEnv = process.env): CodexaNativeConfig {
-  const modelRoot = env.CODEXA_NATIVE_MODEL_ROOT?.trim()
-    || DEFAULT_CODEXA_NATIVE_MODEL_ROOT;
+export function resolveCodexaNativeConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): CodexaNativeConfig {
+  const modelRoot = env.CODEXA_NATIVE_MODEL_ROOT?.trim() || DEFAULT_CODEXA_NATIVE_MODEL_ROOT;
   return {
     modelRoot,
     python: env.CODEXA_NATIVE_PYTHON?.trim() || join(modelRoot, ".venv", "bin", "python"),
     bridgeScript: join(modelRoot, "scripts", "native_chat_bridge.py"),
-    checkpoint: env.CODEXA_NATIVE_CHECKPOINT?.trim()
-      || join(modelRoot, "checkpoints", "codexa-900m-sft-v2", "latest.pt"),
-    tokenizer: env.CODEXA_NATIVE_TOKENIZER?.trim()
-      || join(modelRoot, "checkpoints", "tokenizer-base-v1", "tokenizer.json"),
+    checkpoint:
+      env.CODEXA_NATIVE_CHECKPOINT?.trim() ||
+      join(modelRoot, "checkpoints", "codexa-900m-sft-v2", "latest.pt"),
+    tokenizer:
+      env.CODEXA_NATIVE_TOKENIZER?.trim() ||
+      join(modelRoot, "checkpoints", "tokenizer-base-v1", "tokenizer.json"),
     device: env.CODEXA_NATIVE_DEVICE?.trim() || "cuda",
   };
 }
 
 function missingNativePaths(config: CodexaNativeConfig): string[] {
-  return [config.python, config.bridgeScript, config.checkpoint, config.tokenizer]
-    .filter((path) => !existsSync(path));
+  return [config.python, config.bridgeScript, config.checkpoint, config.tokenizer].filter(
+    (path) => !existsSync(path),
+  );
 }
 
 export function discoverCodexaNativeModels(
@@ -117,22 +125,24 @@ export function discoverCodexaNativeModels(
     status: "ready",
     providerId: "codexa-native",
     backendKind: "codexa-native-pytorch",
-    models: [{
-      id: CODEXA_NATIVE_MODEL_ID,
-      modelId: CODEXA_NATIVE_MODEL_ID,
-      label: "Codexa 1B SFT v2 (Native)",
-      description: "Direct PyTorch checkpoint inference; no LM Studio or GGUF.",
-      defaultReasoningLevel: null,
-      supportedReasoningLevels: null,
-      source: "config",
-      raw: {
-        context_length: 2048,
-        supportsStreaming: false,
-        supportsToolCalls: false,
-        supportsSystemPrompt: true,
-        supportsVision: false,
+    models: [
+      {
+        id: CODEXA_NATIVE_MODEL_ID,
+        modelId: CODEXA_NATIVE_MODEL_ID,
+        label: "Codexa 1B SFT v2 (Native)",
+        description: "Direct PyTorch checkpoint inference; no LM Studio or GGUF.",
+        defaultReasoningLevel: null,
+        supportedReasoningLevels: null,
+        source: "config",
+        raw: {
+          context_length: 2048,
+          supportsStreaming: false,
+          supportsToolCalls: false,
+          supportsSystemPrompt: true,
+          supportsVision: false,
+        },
       },
-    }],
+    ],
     diagnostics: {
       modelRoot: config.modelRoot,
       checkpoint: config.checkpoint,
@@ -161,16 +171,23 @@ function stopBridge(message = "Codexa Native process stopped."): void {
 function startBridge(config: CodexaNativeConfig, handlers: BackendRunHandlers): NativeBridge {
   if (bridge && !bridge.child.killed && bridge.child.exitCode === null) return bridge;
 
-  const child = spawn(config.python, [
-    config.bridgeScript,
-    "--checkpoint", config.checkpoint,
-    "--tokenizer", config.tokenizer,
-    "--device", config.device,
-  ], {
-    cwd: config.modelRoot,
-    stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, PYTHONUNBUFFERED: "1" },
-  });
+  const child = spawn(
+    config.python,
+    [
+      config.bridgeScript,
+      "--checkpoint",
+      config.checkpoint,
+      "--tokenizer",
+      config.tokenizer,
+      "--device",
+      config.device,
+    ],
+    {
+      cwd: config.modelRoot,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+    },
+  );
   const pending = new Map<string, PendingRequest>();
   let readyResolve: (response: BridgeResponse) => void = () => {};
   let readyReject: (error: Error) => void = () => {};
@@ -236,7 +253,8 @@ async function sendPrompt(
 ): Promise<BridgeResponse> {
   const config = resolveCodexaNativeConfig();
   const missing = missingNativePaths(config);
-  if (missing.length > 0) throw new Error(`Codexa Native is missing required files:\n${missing.join("\n")}`);
+  if (missing.length > 0)
+    throw new Error(`Codexa Native is missing required files:\n${missing.join("\n")}`);
   const nativeBridge = startBridge(config, handlers);
   const ready = await nativeBridge.ready;
   if (announceReady) {
@@ -250,7 +268,9 @@ async function sendPrompt(
   const response = new Promise<BridgeResponse>((resolve, reject) => {
     nativeBridge.pending.set(id, { resolve, reject });
   });
-  nativeBridge.child.stdin.write(`${JSON.stringify({ type: "chat", id, prompt: buildCodexaNativePrompt(prompt) })}\n`);
+  nativeBridge.child.stdin.write(
+    `${JSON.stringify({ type: "chat", id, prompt: buildCodexaNativePrompt(prompt) })}\n`,
+  );
   return response;
 }
 
@@ -309,14 +329,19 @@ export async function runCodexaNativeRollover(options: {
     ? `Previous conversation:\n${history}\n\nCurrent request:\n${options.request.prompt}`
     : options.request.prompt;
   const conversationHistory = options.request.conversationHistory ?? [];
-  const coveredMessages = [...conversationHistory, { role: "user", content: options.request.prompt }];
+  const coveredMessages = [
+    ...conversationHistory,
+    { role: "user", content: options.request.prompt },
+  ];
   const transcriptHash = hashNativeTranscript(coveredMessages);
-  let checkpoint = options.request.localContextCheckpoint?.modelId === CODEXA_NATIVE_MODEL_ID
-    && options.request.localContextCheckpoint.throughMessageCount <= conversationHistory.length
-    && hashNativeTranscript(conversationHistory.slice(0, options.request.localContextCheckpoint.throughMessageCount))
-      === options.request.localContextCheckpoint.transcriptHash
-    ? options.request.localContextCheckpoint.summary
-    : "";
+  let checkpoint =
+    options.request.localContextCheckpoint?.modelId === CODEXA_NATIVE_MODEL_ID &&
+    options.request.localContextCheckpoint.throughMessageCount <= conversationHistory.length &&
+    hashNativeTranscript(
+      conversationHistory.slice(0, options.request.localContextCheckpoint.throughMessageCount),
+    ) === options.request.localContextCheckpoint.transcriptHash
+      ? options.request.localContextCheckpoint.summary
+      : "";
   let prompt = fullPrompt;
 
   if (fullPrompt.length > NATIVE_TRANSCRIPT_BUDGET_CHARS) {

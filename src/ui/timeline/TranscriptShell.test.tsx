@@ -1,17 +1,22 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import React from "react";
 import { render, Text } from "ink";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
+import {
+  resetInkOutputForFreshFrame,
+  resolveInkRenderInstance,
+} from "../../core/terminal/inkRenderReset.js";
 import type { RunEvent, TimelineEvent, UIState, UserPromptEvent } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
-import { resetInkOutputForFreshFrame, resolveInkRenderInstance } from "../../core/terminal/inkRenderReset.js";
 import { createLayoutSnapshot } from "../layout.js";
 import { LOGO_COMPACT, LOGO_LARGE } from "../render/logoVariants.js";
 import { ThemeProvider } from "../theme.js";
 import { TranscriptShell } from "./TranscriptShell.js";
-import { __getNativeTurnBuildCountForTests, __resetNativeTurnBuildCountForTests } from "./timelineMeasure.js";
+import {
+  __getNativeTurnBuildCountForTests,
+  __resetNativeTurnBuildCountForTests,
+} from "./timelineMeasure.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -68,15 +73,14 @@ function countOccurrences(value: string, needle: string): number {
 function assertFullLargeLogoVisible(value: string): void {
   const text = stripAnsi(value);
   LOGO_LARGE.forEach((line) => {
-    assert.ok(
-      text.includes(line.trim()),
-      `expected full large logo row to be visible: ${line}`,
-    );
+    assert.ok(text.includes(line.trim()), `expected full large logo row to be visible: ${line}`);
   });
 }
 
 function firstLineIndex(value: string, needle: string): number {
-  return stripAnsi(value).split(/\r?\n/).findIndex((line) => line.includes(needle));
+  return stripAnsi(value)
+    .split(/\r?\n/)
+    .findIndex((line) => line.includes(needle));
 }
 
 function sleep(ms = 50): Promise<void> {
@@ -125,7 +129,7 @@ function userPromptEvent(turnId = 10, prompt = "hi"): UserPromptEvent {
 
 function runningRunEvent(turnId = 10, prompt = "hi"): RunEvent {
   return {
-    id: (turnId * 10) + 1,
+    id: turnId * 10 + 1,
     type: "run",
     createdAt: turnId,
     startedAt: turnId,
@@ -197,12 +201,14 @@ test("renders theme feedback in a replaceable row without adding transcript even
   const staticEvents: TimelineEvent[] = [];
   const { instance, getOutput } = renderTranscript(staticEvents, { cols: 100, rows: 22 });
 
-  instance.rerender(transcriptNode({
-    staticEvents,
-    cols: 100,
-    rows: 22,
-    notice: "Theme switched to Monochrome.",
-  }));
+  instance.rerender(
+    transcriptNode({
+      staticEvents,
+      cols: 100,
+      rows: 22,
+      notice: "Theme switched to Monochrome.",
+    }),
+  );
   await sleep();
 
   const output = stripAnsi(getOutput());
@@ -251,32 +257,63 @@ function detectBrandTier(value: string): "large" | "compact" | "wordmark" | "non
   return "none";
 }
 
-function assertHomeScreenFrame(value: string, size: { cols: number; rows: number }, expectedTier: "large" | "compact" | "wordmark") {
+function assertHomeScreenFrame(
+  value: string,
+  size: { cols: number; rows: number },
+  expectedTier: "large" | "compact" | "wordmark",
+) {
   const text = stripAnsi(value);
-  assert.equal(detectBrandTier(text), expectedTier, `${size.cols}x${size.rows} should use the same responsive brand tier`);
+  assert.equal(
+    detectBrandTier(text),
+    expectedTier,
+    `${size.cols}x${size.rows} should use the same responsive brand tier`,
+  );
   if (size.rows > 18 || size.cols < 60) {
     assert.match(text, /Ubume v/);
   }
   assert.match(text, /Workspace: ubume/);
   assert.match(text, /Provider: Local/);
-  assert.equal(countOccurrences(text, "│ ❯"), 1, `${size.cols}x${size.rows} should render one composer`);
-  assert.equal(countOccurrences(text, "Context:"), 1, `${size.cols}x${size.rows} should render one footer/status area`);
+  assert.equal(
+    countOccurrences(text, "│ ❯"),
+    1,
+    `${size.cols}x${size.rows} should render one composer`,
+  );
+  assert.equal(
+    countOccurrences(text, "Context:"),
+    1,
+    `${size.cols}x${size.rows} should render one footer/status area`,
+  );
 
   const lines = text.split(/\r?\n/);
-  const brandIndex = lines.findIndex((line) => line.includes("██████") || line.includes("✦ UBUME") || line.includes("UBUME") || line.includes("Ubume v") || line.includes("Workspace: ubume"));
+  const brandIndex = lines.findIndex(
+    (line) =>
+      line.includes("██████") ||
+      line.includes("✦ UBUME") ||
+      line.includes("UBUME") ||
+      line.includes("Ubume v") ||
+      line.includes("Workspace: ubume"),
+  );
   const composerIndex = lines.findIndex((line) => line.includes("│ ❯"));
   assert.ok(brandIndex >= 0, `${size.cols}x${size.rows} should render branding`);
-  assert.ok(composerIndex > brandIndex, `${size.cols}x${size.rows} should render branding before composer`);
+  assert.ok(
+    composerIndex > brandIndex,
+    `${size.cols}x${size.rows} should render branding before composer`,
+  );
 }
 
 test("keeps the Ubume intro present across prompt rerenders", async () => {
-  const { instance, getOutput } = renderTranscript([launchEvent(), systemEvent(2, "initial history line")]);
+  const { instance, getOutput } = renderTranscript([
+    launchEvent(),
+    systemEvent(2, "initial history line"),
+  ]);
   await sleep();
 
-  instance.rerender(transcriptNode({
-    staticEvents: [launchEvent(), systemEvent(2, "initial history line")],
-    prompt: "UPDATED LIVE PROMPT",
-  }));
+  instance.rerender(
+    transcriptNode({
+      staticEvents: [launchEvent(), systemEvent(2, "initial history line")],
+      prompt: "UPDATED LIVE PROMPT",
+    }),
+  );
   await sleep();
   instance.cleanup();
 
@@ -287,22 +324,34 @@ test("keeps the Ubume intro present across prompt rerenders", async () => {
 });
 
 test("preserves a single intro after an explicit frame-cache reset", async () => {
-  const { instance, stdout, getOutput } = renderTranscript([launchEvent(), systemEvent(2, "initial history line")]);
+  const { instance, stdout, getOutput } = renderTranscript([
+    launchEvent(),
+    systemEvent(2, "initial history line"),
+  ]);
   await sleep();
 
   const beforeOutput = getOutput();
   assert.equal(countOccurrences(beforeOutput, "Ubume v"), 1);
   assert.equal(countOccurrences(beforeOutput, "Launch mode"), 1);
 
-  resetInkOutputForFreshFrame({ instance: resolveInkRenderInstance(stdout), columns: stdout.columns });
-  instance.rerender(transcriptNode({
-    staticEvents: [launchEvent(), systemEvent(2, "initial history line")],
-  }));
+  resetInkOutputForFreshFrame({
+    instance: resolveInkRenderInstance(stdout),
+    columns: stdout.columns,
+  });
+  instance.rerender(
+    transcriptNode({
+      staticEvents: [launchEvent(), systemEvent(2, "initial history line")],
+    }),
+  );
   await sleep();
   instance.cleanup();
 
   const output = getOutput();
-  assert.equal(countOccurrences(output, "Ubume v"), 1, "cache resets must not duplicate committed history");
+  assert.equal(
+    countOccurrences(output, "Ubume v"),
+    1,
+    "cache resets must not duplicate committed history",
+  );
   assert.equal(countOccurrences(output, "Launch mode"), 1, "committed events remain single-copy");
   assert.match(stripAnsi(output), /LIVE PROMPT/, "the composer should still be present");
 });
@@ -312,12 +361,19 @@ test("clearCount change remounts TranscriptShell and repaints fresh static conte
   await sleep();
   assert.equal(countOccurrences(getOutput(), "Ubume v"), 1);
 
-  resetInkOutputForFreshFrame({ instance: resolveInkRenderInstance(stdout), columns: stdout.columns });
+  resetInkOutputForFreshFrame({
+    instance: resolveInkRenderInstance(stdout),
+    columns: stdout.columns,
+  });
   instance.rerender(transcriptNode({ staticEvents: [launchEvent()], clearCount: 1 }));
   await sleep();
   instance.cleanup();
 
-  assert.equal(countOccurrences(getOutput(), "Ubume v"), 2, "clearCount forces fresh static mount for clean post-clear frame");
+  assert.equal(
+    countOccurrences(getOutput(), "Ubume v"),
+    2,
+    "clearCount forces fresh static mount for clean post-clear frame",
+  );
 });
 
 test("fresh launch renders the banner before Launch mode as transcript content", async () => {
@@ -337,16 +393,9 @@ test("fresh launch renders the banner before Launch mode as transcript content",
 });
 
 test("fresh launch with provider migration keeps one logo, one composer, and one footer", async () => {
-  const { instance, getOutput } = renderTranscript(
-    [launchEvent(), providerMigrationEvent()],
-    {
-      prompt: [
-        "│ ❯",
-        "Local / qwen/qwen3.6-35b-a3b (High)",
-        "Context: 115 / 262K",
-      ].join("\n"),
-    },
-  );
+  const { instance, getOutput } = renderTranscript([launchEvent(), providerMigrationEvent()], {
+    prompt: ["│ ❯", "Local / qwen/qwen3.6-35b-a3b (High)", "Context: 115 / 262K"].join("\n"),
+  });
   await sleep();
   instance.cleanup();
 
@@ -354,8 +403,16 @@ test("fresh launch with provider migration keeps one logo, one composer, and one
   assertFullLargeLogoVisible(text);
   assert.equal(countOccurrences(text, "Provider migrated"), 1);
   assert.equal(countOccurrences(text, "Launch mode"), 1);
-  assert.equal(countOccurrences(text, "│ ❯"), 1, "migration startup must not create a second composer prompt");
-  assert.equal(countOccurrences(text, "Context:"), 1, "migration startup must not create a second runtime footer");
+  assert.equal(
+    countOccurrences(text, "│ ❯"),
+    1,
+    "migration startup must not create a second composer prompt",
+  );
+  assert.equal(
+    countOccurrences(text, "Context:"),
+    1,
+    "migration startup must not create a second runtime footer",
+  );
   assert.ok(text.indexOf("██████") < text.indexOf("Launch mode"));
   assert.ok(text.indexOf("Launch mode") < text.indexOf("Provider migrated"));
   assert.ok(text.indexOf("Provider migrated") < text.indexOf("│ ❯"));
@@ -376,12 +433,14 @@ test("first submitted prompt remains visible in the owned conversation viewport"
   const { instance, getOutput } = renderTranscript([launchEvent()]);
   await sleep();
 
-  instance.rerender(transcriptNode({
-    staticEvents: [launchEvent()],
-    activeEvents: [userPromptEvent(10, "hi"), runningRunEvent(10, "hi")],
-    uiState: { kind: "THINKING", turnId: 10 },
-    prompt: "BOTTOM COMPOSER AFTER SUBMIT",
-  }));
+  instance.rerender(
+    transcriptNode({
+      staticEvents: [launchEvent()],
+      activeEvents: [userPromptEvent(10, "hi"), runningRunEvent(10, "hi")],
+      uiState: { kind: "THINKING", turnId: 10 },
+      prompt: "BOTTOM COMPOSER AFTER SUBMIT",
+    }),
+  );
   await sleep();
   instance.cleanup();
 
@@ -395,7 +454,8 @@ test("first submitted prompt remains visible in the owned conversation viewport"
 });
 
 test("reflows the current running turn when the terminal becomes wider", async () => {
-  const prompt = "Update the README structure so every section is easier to read and then update the existing pull request";
+  const prompt =
+    "Update the README structure so every section is easier to read and then update the existing pull request";
   const activeEvents = [userPromptEvent(10, prompt), runningRunEvent(10, prompt)];
   const { instance, stdout, getOutput } = renderTranscript([launchEvent()], {
     activeEvents,
@@ -410,13 +470,15 @@ test("reflows the current running turn when the terminal becomes wider", async (
 
   const beforeResizeLength = getOutput().length;
   stdout.columns = 140;
-  instance.rerender(transcriptNode({
-    staticEvents: [launchEvent()],
-    activeEvents,
-    uiState: { kind: "THINKING", turnId: 10 },
-    cols: 140,
-    rows: 30,
-  }));
+  instance.rerender(
+    transcriptNode({
+      staticEvents: [launchEvent()],
+      activeEvents,
+      uiState: { kind: "THINKING", turnId: 10 },
+      cols: 140,
+      rows: 30,
+    }),
+  );
   await sleep();
 
   const wideFrame = stripAnsi(getOutput().slice(beforeResizeLength));
@@ -426,7 +488,10 @@ test("reflows the current running turn when the terminal becomes wider", async (
 });
 
 test("commits complete history to native scrollback without clearing the terminal", async () => {
-  const manyEvents = [launchEvent(90), ...Array.from({ length: 30 }, (_, index) => systemEvent(index + 100, `history line ${index}`))];
+  const manyEvents = [
+    launchEvent(90),
+    ...Array.from({ length: 30 }, (_, index) => systemEvent(index + 100, `history line ${index}`)),
+  ];
   const { instance, getOutput } = renderTranscript(manyEvents);
   await sleep();
   instance.cleanup();
@@ -442,7 +507,12 @@ test("commits complete history to native scrollback without clearing the termina
   );
 });
 
-function streamingRunEvent(turnId: number, prompt: string, toolCount: number, tail: string): RunEvent {
+function streamingRunEvent(
+  turnId: number,
+  prompt: string,
+  toolCount: number,
+  tail: string,
+): RunEvent {
   const toolActivities = Array.from({ length: toolCount }, (_, index) => ({
     id: `tool-${index}`,
     command: `cat file-${String(index).padStart(3, "0")}.txt`,
@@ -455,15 +525,21 @@ function streamingRunEvent(turnId: number, prompt: string, toolCount: number, ta
   return {
     ...runningRunEvent(turnId, prompt),
     toolActivities,
-    responseSegments: [{
-      id: "response-101-tail",
-      streamSeq: responseSeq,
-      chunks: [tail],
-      status: "active",
-      startedAt: turnId,
-    }],
+    responseSegments: [
+      {
+        id: "response-101-tail",
+        streamSeq: responseSeq,
+        chunks: [tail],
+        status: "active",
+        startedAt: turnId,
+      },
+    ],
     streamItems: [
-      ...toolActivities.map((tool) => ({ streamSeq: tool.streamSeq, kind: "action" as const, refId: tool.id })),
+      ...toolActivities.map((tool) => ({
+        streamSeq: tool.streamSeq,
+        kind: "action" as const,
+        refId: tool.id,
+      })),
       { streamSeq: responseSeq, kind: "response" as const, refId: "response-101-tail" },
     ],
     lastStreamSeq: responseSeq,
@@ -476,7 +552,10 @@ test("tail-windows a long streaming turn so it never overflows the terminal or c
   const rows = 14;
   const uiState: UIState = { kind: "RESPONDING", turnId: 10 };
   const { instance, getOutput } = renderTranscript([launchEvent()], {
-    activeEvents: [userPromptEvent(10, prompt), streamingRunEvent(10, prompt, 30, "Summary so far")],
+    activeEvents: [
+      userPromptEvent(10, prompt),
+      streamingRunEvent(10, prompt, 30, "Summary so far"),
+    ],
     uiState,
     cols: 100,
     rows,
@@ -484,23 +563,36 @@ test("tail-windows a long streaming turn so it never overflows the terminal or c
   await sleep();
 
   const streamingStart = getOutput().length;
-  for (const [toolCount, tail] of [[40, "Summary so far, more"], [50, "Summary complete"]] as const) {
-    instance.rerender(transcriptNode({
-      staticEvents: [launchEvent()],
-      activeEvents: [userPromptEvent(10, prompt), streamingRunEvent(10, prompt, toolCount, tail)],
-      uiState,
-      cols: 100,
-      rows,
-    }));
+  for (const [toolCount, tail] of [
+    [40, "Summary so far, more"],
+    [50, "Summary complete"],
+  ] as const) {
+    instance.rerender(
+      transcriptNode({
+        staticEvents: [launchEvent()],
+        activeEvents: [userPromptEvent(10, prompt), streamingRunEvent(10, prompt, toolCount, tail)],
+        uiState,
+        cols: 100,
+        rows,
+      }),
+    );
     await sleep();
   }
 
   const streamingOutput = getOutput().slice(streamingStart);
-  assert.doesNotMatch(streamingOutput, /\u001b\[2J|\u001b\[3J/, "streaming frames must never clear the terminal");
+  assert.doesNotMatch(
+    streamingOutput,
+    /\u001b\[2J|\u001b\[3J/,
+    "streaming frames must never clear the terminal",
+  );
   const lastFrame = stripAnsi(streamingOutput.slice(streamingOutput.lastIndexOf("\u001b[?2026h")));
   assert.match(lastFrame, /Summary complete/);
   assert.match(lastFrame, /file-049\.txt/);
-  assert.doesNotMatch(lastFrame, /file-000\.txt/, "the head of the live turn is windowed away while streaming");
+  assert.doesNotMatch(
+    lastFrame,
+    /file-000\.txt/,
+    "the head of the live turn is windowed away while streaming",
+  );
   const liveLineCount = lastFrame.split(/\r?\n/).length;
   assert.ok(liveLineCount < rows, `live frame has ${liveLineCount} lines; must stay below ${rows}`);
 
@@ -511,20 +603,33 @@ test("tail-windows a long streaming turn so it never overflows the terminal or c
     durationMs: 10,
     activeResponseSegmentId: null,
   };
-  completed.responseSegments = completed.responseSegments!.map((segment) => ({ ...segment, status: "completed" as const }));
-  instance.rerender(transcriptNode({
-    staticEvents: [launchEvent(), userPromptEvent(10, prompt), completed],
-    activeEvents: [],
-    uiState: IDLE,
-    cols: 100,
-    rows,
+  completed.responseSegments = completed.responseSegments!.map((segment) => ({
+    ...segment,
+    status: "completed" as const,
   }));
+  instance.rerender(
+    transcriptNode({
+      staticEvents: [launchEvent(), userPromptEvent(10, prompt), completed],
+      activeEvents: [],
+      uiState: IDLE,
+      cols: 100,
+      rows,
+    }),
+  );
   await sleep();
   instance.cleanup();
 
   const finalizeOutput = getOutput().slice(beforeFinalize);
-  assert.doesNotMatch(finalizeOutput, /\u001b\[2J|\u001b\[3J/, "finalize must append to scrollback without clearing");
-  assert.match(stripAnsi(finalizeOutput), /file-000\.txt/, "finalize commits the whole turn to scrollback");
+  assert.doesNotMatch(
+    finalizeOutput,
+    /\u001b\[2J|\u001b\[3J/,
+    "finalize must append to scrollback without clearing",
+  );
+  assert.match(
+    stripAnsi(finalizeOutput),
+    /file-000\.txt/,
+    "finalize commits the whole turn to scrollback",
+  );
   assert.match(stripAnsi(finalizeOutput), /Summary complete/);
 });
 
@@ -534,7 +639,15 @@ function finalizedTurnEvents(turnId: number): TimelineEvent[] {
     status: "completed",
     durationMs: 5,
     summary: "completed",
-    responseSegments: [{ id: `response-${turnId}`, streamSeq: 1, chunks: [`answer ${turnId}`], status: "completed", startedAt: turnId }],
+    responseSegments: [
+      {
+        id: `response-${turnId}`,
+        streamSeq: 1,
+        chunks: [`answer ${turnId}`],
+        status: "completed",
+        startedAt: turnId,
+      },
+    ],
     streamItems: [{ streamSeq: 1, kind: "response", refId: `response-${turnId}` }],
     lastStreamSeq: 1,
   };
@@ -542,24 +655,33 @@ function finalizedTurnEvents(turnId: number): TimelineEvent[] {
 }
 
 test("re-rendering with a new composer element does not rebuild finalized turns", async () => {
-  const staticEvents = [launchEvent(), ...Array.from({ length: 20 }, (_, index) => finalizedTurnEvents(index + 1)).flat()];
+  const staticEvents = [
+    launchEvent(),
+    ...Array.from({ length: 20 }, (_, index) => finalizedTurnEvents(index + 1)).flat(),
+  ];
   const { instance, getOutput } = renderTranscript(staticEvents, { rows: 40 });
   await sleep();
 
   __resetNativeTurnBuildCountForTests();
   instance.rerender(transcriptNode({ staticEvents, prompt: "UPDATED PROMPT" }));
   await sleep();
-  assert.equal(__getNativeTurnBuildCountForTests(), 0, "a keystroke-equivalent rerender must not rebuild static turns");
+  assert.equal(
+    __getNativeTurnBuildCountForTests(),
+    0,
+    "a keystroke-equivalent rerender must not rebuild static turns",
+  );
   assert.match(stripAnsi(getOutput()), /UPDATED PROMPT/);
 
   // A streaming turn rebuilds only the live turn, never the finalized ones.
   __resetNativeTurnBuildCountForTests();
-  instance.rerender(transcriptNode({
-    staticEvents,
-    activeEvents: [userPromptEvent(99, "live task"), runningRunEvent(99, "live task")],
-    uiState: { kind: "THINKING", turnId: 99 },
-    prompt: "UPDATED PROMPT",
-  }));
+  instance.rerender(
+    transcriptNode({
+      staticEvents,
+      activeEvents: [userPromptEvent(99, "live task"), runningRunEvent(99, "live task")],
+      uiState: { kind: "THINKING", turnId: 99 },
+      prompt: "UPDATED PROMPT",
+    }),
+  );
   await sleep();
   assert.equal(__getNativeTurnBuildCountForTests(), 1, "only the running turn is built");
   instance.cleanup();
@@ -571,28 +693,34 @@ test("hides transcript input during overlay mode and restores the owned viewport
   const { instance, getOutput } = renderTranscript(initialEvents);
   await sleep();
 
-  instance.rerender(transcriptNode({
-    staticEvents: initialEvents,
-    visible: false,
-    prompt: "HIDDEN PROMPT",
-  }));
+  instance.rerender(
+    transcriptNode({
+      staticEvents: initialEvents,
+      visible: false,
+      prompt: "HIDDEN PROMPT",
+    }),
+  );
   await sleep();
   const hiddenOutput = getOutput();
   assert.doesNotMatch(stripAnsi(hiddenOutput), /HIDDEN PROMPT/);
 
-  instance.rerender(transcriptNode({
-    staticEvents: hiddenEvents,
-    visible: false,
-    prompt: "STILL HIDDEN",
-  }));
+  instance.rerender(
+    transcriptNode({
+      staticEvents: hiddenEvents,
+      visible: false,
+      prompt: "STILL HIDDEN",
+    }),
+  );
   await sleep();
   assert.doesNotMatch(stripAnsi(getOutput()), /queued while overlay is visible/);
 
-  instance.rerender(transcriptNode({
-    staticEvents: hiddenEvents,
-    visible: true,
-    prompt: "RESTORED PROMPT",
-  }));
+  instance.rerender(
+    transcriptNode({
+      staticEvents: hiddenEvents,
+      visible: true,
+      prompt: "RESTORED PROMPT",
+    }),
+  );
   await sleep();
   instance.cleanup();
 
@@ -603,20 +731,19 @@ test("hides transcript input during overlay mode and restores the owned viewport
 });
 
 test("clear rerender shows fresh banner and launch text once without stale messages", async () => {
-  const beforeClearEvents = [
-    launchEvent(300),
-    systemEvent(301, "old message before clear"),
-  ];
+  const beforeClearEvents = [launchEvent(300), systemEvent(301, "old message before clear")];
   const afterClearEvents = [launchEvent(400)];
   const { instance, getOutput } = renderTranscript(beforeClearEvents);
   await sleep();
   const beforeClearLength = getOutput().length;
 
-  instance.rerender(transcriptNode({
-    staticEvents: afterClearEvents,
-    clearCount: 1,
-    prompt: "PROMPT AFTER CLEAR\nLocal / qwen/qwen3.6-35b-a3b (High)\nContext: 115 / 262K",
-  }));
+  instance.rerender(
+    transcriptNode({
+      staticEvents: afterClearEvents,
+      clearCount: 1,
+      prompt: "PROMPT AFTER CLEAR\nLocal / qwen/qwen3.6-35b-a3b (High)\nContext: 115 / 262K",
+    }),
+  );
   await sleep();
   instance.cleanup();
 
@@ -666,13 +793,15 @@ for (const testCase of CLEAR_HOME_SCREEN_CASES) {
     assert.equal(countOccurrences(freshOutput, "Provider migrated"), 1);
     assert.equal(countOccurrences(freshOutput, "Launch mode"), 1);
 
-    instance.rerender(transcriptNode({
-      staticEvents: [launchEvent(600), providerMigrationEvent(601)],
-      clearCount: 1,
-      prompt,
-      cols: testCase.cols,
-      rows: testCase.rows,
-    }));
+    instance.rerender(
+      transcriptNode({
+        staticEvents: [launchEvent(600), providerMigrationEvent(601)],
+        clearCount: 1,
+        prompt,
+        cols: testCase.cols,
+        rows: testCase.rows,
+      }),
+    );
     await sleep();
     instance.cleanup();
 

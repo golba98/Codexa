@@ -9,7 +9,9 @@ import {
 } from "./protocol.js";
 
 test("parses a valid single tool call block", () => {
-  const result = parseAgentToolCall('<tool_call>{"name":"read_file","arguments":{"path":"src/app.tsx"}}</tool_call>');
+  const result = parseAgentToolCall(
+    '<tool_call>{"name":"read_file","arguments":{"path":"src/app.tsx"}}</tool_call>',
+  );
 
   assert.equal(result.kind, "tool_call");
   if (result.kind !== "tool_call") return;
@@ -27,7 +29,9 @@ test("parses tool and args aliases without a closing tag", () => {
 });
 
 test("parses nested function format", () => {
-  const result = parseAgentToolCall('<tool_call>{"function":{"name":"read_file","arguments":{"path":"main.rs"}}}</tool_call>');
+  const result = parseAgentToolCall(
+    '<tool_call>{"function":{"name":"read_file","arguments":{"path":"main.rs"}}}</tool_call>',
+  );
 
   assert.equal(result.kind, "tool_call");
   if (result.kind !== "tool_call") return;
@@ -45,36 +49,44 @@ test("recovers from one extra trailing brace", () => {
 });
 
 test("parses OpenAI-style tool_calls", () => {
-  const result = parseOpenAiToolCalls([{
-    id: "call_1",
-    type: "function",
-    function: {
-      name: "write_file",
-      arguments: "{\"path\":\"main.rs\",\"content\":\"fn main() {}\\n\"}",
+  const result = parseOpenAiToolCalls([
+    {
+      id: "call_1",
+      type: "function",
+      function: {
+        name: "write_file",
+        arguments: '{"path":"main.rs","content":"fn main() {}\\n"}',
+      },
     },
-  }]);
+  ]);
 
-  assert.deepEqual(result, [{
-    id: "call_1",
-    name: "write_file",
-    arguments: { path: "main.rs", content: "fn main() {}\n" },
-    rawArguments: "{\"path\":\"main.rs\",\"content\":\"fn main() {}\\n\"}",
-  }]);
+  assert.deepEqual(result, [
+    {
+      id: "call_1",
+      name: "write_file",
+      arguments: { path: "main.rs", content: "fn main() {}\n" },
+      rawArguments: '{"path":"main.rs","content":"fn main() {}\\n"}',
+    },
+  ]);
 });
 
 test("preserves malformed OpenAI tool calls as protocol errors", () => {
-  const result = parseOpenAiToolCallsDetailed([{
-    id: "call_bad",
-    function: { name: "read_file", arguments: "{\"path\":" },
-  }]);
+  const result = parseOpenAiToolCallsDetailed([
+    {
+      id: "call_bad",
+      function: { name: "read_file", arguments: '{"path":' },
+    },
+  ]);
 
-  assert.deepEqual(result, [{
-    kind: "malformed",
-    id: "call_bad",
-    name: "read_file",
-    rawArguments: "{\"path\":" ,
-    error: "Tool call arguments were not valid JSON.",
-  }]);
+  assert.deepEqual(result, [
+    {
+      kind: "malformed",
+      id: "call_bad",
+      name: "read_file",
+      rawArguments: '{"path":',
+      error: "Tool call arguments were not valid JSON.",
+    },
+  ]);
 });
 
 test("native tool definitions exclude mutating tools in Plan mode", () => {
@@ -82,11 +94,15 @@ test("native tool definitions exclude mutating tools in Plan mode", () => {
     agentToolDefinitions("plan").map((definition) => definition.function.name),
     ["list_files", "read_file", "get_workspace_info"],
   );
-  assert.ok(agentToolDefinitions("normal").some((definition) => definition.function.name === "write_file"));
+  assert.ok(
+    agentToolDefinitions("normal").some((definition) => definition.function.name === "write_file"),
+  );
 });
 
 test("parses tool_calls embedded inside a tool_call block", () => {
-  const result = parseAgentToolCall('<tool_call>{"tool_calls":[{"function":{"name":"list_files","arguments":"{\\"path\\":\\".\\"}"}}]}</tool_call>');
+  const result = parseAgentToolCall(
+    '<tool_call>{"tool_calls":[{"function":{"name":"list_files","arguments":"{\\"path\\":\\".\\"}"}}]}</tool_call>',
+  );
 
   assert.equal(result.kind, "tool_call");
   if (result.kind !== "tool_call") return;

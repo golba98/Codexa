@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
 import { Text } from "ink";
-import type { UIState, ExternalCliStatus } from "../../session/types.js";
+import { useEffect, useState } from "react";
+import type { ExternalCliStatus, UIState } from "../../session/types.js";
 import { useTheme } from "../theme.js";
 
 const SPINNER_FRAMES = ["?", "?", "?", "?", "?", "?", "?", "?", "?", "?"];
@@ -54,5 +54,9 @@ export function ActivityIndicator({ uiState, externalCliStatus = "idle" }: Activ
     color = theme.textDim;
   }
 
-  return <Text color={color} bold={bold}>{glyph}</Text>;
+  return (
+    <Text color={color} bold={bold}>
+      {glyph}
+    </Text>
+  );
 }
