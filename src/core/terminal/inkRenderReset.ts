@@ -26,11 +26,6 @@ export interface InkRenderInstance {
   throttledLog?: { cancel?: () => void };
 }
 
-export interface AppStdoutLike {
-  columns?: number;
-  rows?: number;
-}
-
 /**
  * Resolve the real Ink class instance via Ink's internal WeakMap<stdout, Ink>.
  * Returns null if resolution fails (e.g. different Ink version, test mocks).
@@ -52,7 +47,7 @@ export function resolveInkRenderInstance(stdout: object): InkRenderInstance | nu
   }
 }
 
-export interface ResetInkOutputOptions {
+interface ResetInkOutputOptions {
   instance: InkRenderInstance | null;
   /** Current terminal column count, used to reseat lastTerminalWidth. */
   columns?: number;

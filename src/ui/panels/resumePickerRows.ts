@@ -3,7 +3,9 @@ import {
   type ExternalSessionSummary,
   externalSourceLabel,
 } from "../../core/externalSessions/types.js";
+import type { LocalBackendId } from "../../core/providerLauncher/types.js";
 import type { ConversationListEntry } from "../../core/workspace/conversationStore.js";
+import type { SessionSummary } from "../../session/sessionCatalog.js";
 
 export type ResumePickerTab =
   | "all"
@@ -20,7 +22,7 @@ export interface ResumePickerPosition {
   tab: ResumePickerTab;
   scope: ExternalListScope;
   selectedId: string | null;
-  backend?: import("../../core/providerLauncher/types.js").LocalBackendId | "all";
+  backend?: LocalBackendId | "all";
   model?: string;
   query?: string;
 }
@@ -58,7 +60,7 @@ export function activityLabel(value: string, now = new Date()): string {
   return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-export function providerLabel(providerId: string | null): string {
+function providerLabel(providerId: string | null): string {
   switch (providerId) {
     case "local":
       return "Local";
@@ -131,10 +133,7 @@ export function matchesQuery(
   return !needle || fields.some((field) => field?.toLowerCase().includes(needle));
 }
 
-export function sessionRowText(
-  session: import("../../session/sessionCatalog.js").SessionSummary,
-  scope: ExternalListScope,
-): string {
+export function sessionRowText(session: SessionSummary, scope: ExternalListScope): string {
   if (session.native) return externalRowText(session.native, scope);
   if (!session.conversation) return session.title;
   const text = ubumeRowText(session.conversation);

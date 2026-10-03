@@ -25,13 +25,6 @@ export const RUN_OUTPUT_TRUNCATION_NOTICE = "Older output was truncated to keep 
 const ACTION_REQUIRED_BLOCK_PATTERN =
   /\*{0,2}=+\*{0,2}\s*\n\*{0,2}\[ACTION REQUIRED\]\*{0,2}\s*\n\*{0,2}Verification Question:\*{0,2}\s*\n([\s\S]*?)\n\*{0,2}=+\*{0,2}/i;
 
-export type ConfigMutationKind =
-  | "backend"
-  | "model"
-  | "mode"
-  | "reasoning"
-  | "permissions"
-  | "theme";
 export type UIStateAction =
   | { type: "PROMPT_RUN_STARTED"; turnId: number }
   | { type: "FIRST_ASSISTANT_DELTA"; turnId: number }
@@ -54,7 +47,7 @@ export type UIStateAction =
 // Ordinary assistant prose must never enter blocking-question mode just because it
 // ends with a question mark. Only explicit hard-block markers should do that.
 
-export function detectAgentQuestion(text: string): string | null {
+function detectAgentQuestion(text: string): string | null {
   const explicit = text.match(/\[QUESTION\]:\s*(.+)/);
   if (explicit) return explicit[1]!.trim();
 
@@ -329,7 +322,7 @@ export function finalizePlanBlock(event: RunEvent, finalPlan?: string): RunEvent
  * transcript does not reorder) and drop the plan block; the next plan delta
  * then opens a fresh block at the tail. Approved plans are never demoted.
  */
-export function demoteActivePlanToResponseSegment(event: RunEvent): RunEvent {
+function demoteActivePlanToResponseSegment(event: RunEvent): RunEvent {
   const plan = event.plan;
   if (!plan || plan.status !== "active" || event.approvedPlan) return event;
 
@@ -934,8 +927,6 @@ export function markResponseSegmentsCompleted(event: RunEvent, finalResponse?: s
   return finalizeResponseSegments(event, finalResponse);
 }
 
-export const appendRunOutput = appendRunThinking;
-
 // ─── Run lifecycle ────────────────────────────────────────────────────────────
 
 export function completeRunEvent(
@@ -1023,18 +1014,6 @@ export function appendStaticEvents(
     }
   }
   return result;
-}
-
-export function trimStaticEvents(events: TimelineEvent[]): TimelineEvent[] {
-  return events;
-}
-
-export function guardConfigMutation(
-  kind: ConfigMutationKind,
-  busy: boolean,
-): { allowed: boolean; message?: string } {
-  // Runs own an immutable runtime snapshot; composer settings apply to the next run.
-  return { allowed: true };
 }
 
 export function isCurrentRun(activeRunId: number | null, runId: number): boolean {

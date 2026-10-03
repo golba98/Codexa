@@ -21,12 +21,12 @@ const FORCEFUL_DELETE_PATTERN = /\b(rm\s+-rf|rmdir\s+\/s|del\s+\/[fsq]|format|nu
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface ExecutionModeDecision {
+interface ExecutionModeDecision {
   mode: AvailableMode;
   autoUpgraded: boolean;
 }
 
-export interface PlanningPromptParams {
+interface PlanningPromptParams {
   task: string;
   constraints?: readonly string[];
   currentPlan?: string | null;
@@ -36,13 +36,13 @@ export interface PlanningPromptParams {
   } | null;
 }
 
-export interface PlanExecutionPromptParams {
+interface PlanExecutionPromptParams {
   task: string;
   approvedPlan: string;
   constraints?: readonly string[];
 }
 
-export interface CodexPromptOptions {
+interface CodexPromptOptions {
   projectInstructions?: ProjectInstructions | null;
 }
 
@@ -99,7 +99,7 @@ export function resolveExecutionMode(
   return { mode: requestedMode, autoUpgraded: false };
 }
 
-export function enrichFileCreationPrompt(prompt: string): string {
+function enrichFileCreationPrompt(prompt: string): string {
   const normalized = prompt.trim();
   if (!normalized) return prompt;
 

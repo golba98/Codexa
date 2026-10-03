@@ -19,22 +19,14 @@ import { parseHeadlessExecArgs } from "./execArgs.js";
 import { createHeadlessExecTiming, type HeadlessExecIo } from "./execRunner.js";
 import { runSavedExec } from "./savedExec.js";
 
-export const TERMINAL_COMMANDS = [
-  "exec",
-  "doctor",
-  "status",
-  "config",
-  "providers",
-  "models",
-  "sessions",
-] as const;
-export interface CommandEnvelope {
+interface CommandEnvelope {
   schemaVersion: 1;
   command: string;
   ok: boolean;
   data: unknown;
   error: { code: string; message: string } | null;
 }
+
 export const terminalHelp = `Ubume ${packageVersion()}
 Usage:
   ubume                           Open the interactive terminal UI.
@@ -71,7 +63,7 @@ function launchArgs(): LaunchArgs {
     noClear: false,
   };
 }
-export function commandWorkspace(cwd?: string): string {
+function commandWorkspace(cwd?: string): string {
   let workspace: string;
   try {
     workspace = realpathSync(cwd ? resolve(cwd) : resolveWorkspaceRoot());

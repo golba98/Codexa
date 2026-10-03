@@ -16,26 +16,16 @@ import stringWidth from "string-width";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import { setTerminalResizing } from "../core/terminal/terminalControl.js";
 
-export const BREAKPOINT_MAX = 180;
-export const BREAKPOINT_WIDE = 140;
-export const BREAKPOINT_NORMAL = 90;
-export const BREAKPOINT_COMPACT = 60;
-export const ROW_BREAKPOINT_MAX = 40;
-export const ROW_BREAKPOINT_WIDE = 30;
-export const ROW_BREAKPOINT_NORMAL = 20;
-export const ROW_BREAKPOINT_COMPACT = 14;
 export const MIN_TERMINAL_COLS = 20;
 export const MIN_TERMINAL_ROWS = 10;
 export const MIN_VIEWPORT_COLS = 20;
 export const MIN_VIEWPORT_ROWS = 10;
-export const RESTORE_SETTLE_MS = process.env.NODE_ENV === "test" ? 0 : 100;
-export const STARTUP_TINY_MIN_COLS = 40;
-export const STARTUP_TINY_MIN_ROWS = 14;
-export const STARTUP_FULL_MIN_COLS = 100; // matches LOGO_LARGE_MIN_COLS in logoVariants.ts
-export const STARTUP_FULL_MIN_BODY_ROWS = 4;
-export const STARTUP_FULL_SAFE_PADDING_ROWS = 1;
-export const STARTUP_COMPACT_INTRO_ROWS = 4;
-export const STARTUP_TINY_MESSAGE_ROWS = 3;
+const RESTORE_SETTLE_MS = process.env.NODE_ENV === "test" ? 0 : 100;
+const STARTUP_TINY_MIN_COLS = 40;
+const STARTUP_TINY_MIN_ROWS = 14;
+const STARTUP_FULL_MIN_COLS = 100; // matches LOGO_LARGE_MIN_COLS in logoVariants.ts
+const STARTUP_FULL_MIN_BODY_ROWS = 4;
+const STARTUP_FULL_SAFE_PADDING_ROWS = 1;
 export const transcriptContentIndent = 4; // 2 for DashCard border + 2 for prompt prefix
 const DEFAULT_COLUMNS = 120;
 const DEFAULT_ROWS = 24;
@@ -55,7 +45,7 @@ export type PanelLayout = {
   availableCols: number;
 };
 
-export type BottomChromeBudget = {
+type BottomChromeBudget = {
   runtimeMetadataRows: number;
   composerRows: number;
   transientStatusRows: number;
@@ -63,7 +53,7 @@ export type BottomChromeBudget = {
   totalRows: number;
 };
 
-export type AppLayoutBudget = {
+type AppLayoutBudget = {
   mode: LayoutMode;
   rows: number;
   cols: number;
@@ -82,12 +72,8 @@ export type AppLayoutBudget = {
   showCompactHeader: boolean;
   placeMetadataBesideLogo: boolean;
   placeMetadataBelowLogo: boolean;
-
-  // Backward compatibility fields:
   transcriptRows: number;
   panelRows: number;
-  showLargeLogo: boolean;
-  showPanelSeparators: boolean;
   showPanelColumnHeaders: boolean;
 };
 
@@ -136,7 +122,7 @@ function isValidDimension(value: number | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-export function normalizeDimension(value: number | undefined, fallback: number): number {
+function normalizeDimension(value: number | undefined, fallback: number): number {
   if (!isValidDimension(value)) {
     // If even the fallback is invalid, use an absolute floor.
     return isValidDimension(fallback) ? Math.floor(fallback) : 10;
@@ -145,7 +131,7 @@ export function normalizeDimension(value: number | undefined, fallback: number):
   return Math.floor(value);
 }
 
-export function isRenderableViewport(cols: number | undefined, rows: number | undefined): boolean {
+function isRenderableViewport(cols: number | undefined, rows: number | undefined): boolean {
   return (
     isValidDimension(cols) &&
     isValidDimension(rows) &&
@@ -155,7 +141,7 @@ export function isRenderableViewport(cols: number | undefined, rows: number | un
 }
 
 /** Returns true if the terminal is below the minimum supported size for a full UI. */
-export function isCrampedTerminal(cols: number | undefined, rows: number | undefined): boolean {
+function isCrampedTerminal(cols: number | undefined, rows: number | undefined): boolean {
   const safeCols = normalizeDimension(cols, DEFAULT_COLUMNS);
   const safeRows = normalizeDimension(rows, DEFAULT_ROWS);
   return safeCols < MIN_TERMINAL_COLS || safeRows < MIN_TERMINAL_ROWS;
@@ -195,7 +181,7 @@ export function getShellHeight(rows: number | undefined): number {
   return Math.max(10, (rows ?? DEFAULT_ROWS) - 1);
 }
 
-export interface StartupHeaderModeParams {
+interface StartupHeaderModeParams {
   cols: number | undefined;
   rows: number | undefined;
   introRows: number;
@@ -248,7 +234,7 @@ export function clampVisualText(text: string, maxWidth: number): string {
   return output + ellipsis;
 }
 
-export function computeMode(cols: number, rows: number): LayoutMode {
+function computeMode(cols: number, rows: number): LayoutMode {
   if (rows <= 24 || cols <= 100) {
     return "compact";
   }
@@ -262,11 +248,7 @@ export function isDecorativeLayoutMode(mode: LayoutMode): boolean {
   return mode === "expanded";
 }
 
-export function isCompactShellMode(mode: LayoutMode): boolean {
-  return mode === "compact" || mode === "regular";
-}
-
-export interface AppLayoutBudgetParams {
+interface AppLayoutBudgetParams {
   cols: number | undefined;
   rows: number | undefined;
   composerRows?: number;
@@ -347,12 +329,8 @@ export function computeAppLayoutBudget({
     showCompactHeader,
     placeMetadataBesideLogo,
     placeMetadataBelowLogo,
-
-    // Backward compatibility fields:
     transcriptRows: activePanelRows,
     panelRows: innerAvailableRows,
-    showLargeLogo: mode === "expanded",
-    showPanelSeparators: mode === "expanded",
     showPanelColumnHeaders: mode === "expanded",
   };
 }
@@ -386,10 +364,6 @@ export function createLayoutSnapshot(
     layoutEpoch: 0,
     isResizing: false,
   };
-}
-
-function snapshot(stdout: NodeJS.WriteStream, fallback?: Layout): Layout {
-  return createLayoutSnapshot(stdout.columns, stdout.rows, fallback);
 }
 
 export function createTerminalViewport(

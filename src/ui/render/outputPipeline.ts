@@ -53,12 +53,3 @@ export function normalizeOutput(clean: string): string {
 export function classifyOutput(normalized: string): Segment[] {
   return parseMarkdown(normalized);
 }
-
-/**
- * Format For Box: Intentional pass-through — segments are returned as-is.
- * Width-fitting is handled downstream by the layout engine in timelineMeasure.ts.
- * This function exists as a named pipeline stage for clarity and future extension.
- */
-export function formatForBox(classified: Segment[], boxWidth: number): Segment[] {
-  return classified;
-}

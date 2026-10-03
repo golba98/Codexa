@@ -6,7 +6,7 @@ import { getClaudeCodeEffortLevels } from "./reasoning.js";
 import type { ProviderModel } from "./types.js";
 
 export const GEMINI_DEFAULT_MODEL_ID = "gemini-3-flash-preview";
-export const GEMINI_VERIFIED_MODEL_IDS = [
+const GEMINI_VERIFIED_MODEL_IDS = [
   "gemini-3.1-pro-preview",
   "gemini-3-flash-preview",
   "gemini-3.1-flash-lite-preview",
@@ -15,7 +15,7 @@ export const GEMINI_VERIFIED_MODEL_IDS = [
   "gemini-2.5-flash-lite",
 ] as const;
 
-export function isVerifiedGeminiModelId(
+function isVerifiedGeminiModelId(
   modelId: string | null | undefined,
 ): modelId is (typeof GEMINI_VERIFIED_MODEL_IDS)[number] {
   return (

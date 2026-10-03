@@ -20,7 +20,7 @@ export function previewThemeSelection(
 }
 
 export function commitThemeSelection(
-  state: ThemeSelectionState,
+  _state: ThemeSelectionState,
   nextTheme: string,
 ): ThemeSelectionState {
   return {

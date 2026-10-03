@@ -2,7 +2,7 @@ import { appendFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
-export interface PerfSession {
+interface PerfSession {
   runId: string;
   marks: Record<string, number>;
   counters: Record<string, number>;
@@ -13,7 +13,7 @@ export interface PerfSession {
 let _enabled: boolean | null = null;
 let _session: PerfSession | null = null;
 
-export function isEnabled(): boolean {
+function isEnabled(): boolean {
   if (_enabled === null) {
     _enabled = process.env["UBUME_PERF"] === "1";
   }
@@ -46,13 +46,6 @@ export function getSession(): PerfSession | null {
 }
 
 // ─── Formatting ───────────────────────────────────────────────────────────────
-
-function dur(session: PerfSession, from: string, to: string): string {
-  const a = session.marks[from];
-  const b = session.marks[to];
-  if (a === undefined || b === undefined) return "   ?";
-  return String(Math.round(b - a)).padStart(4);
-}
 
 const STAGE_ROWS: Array<[from: string, to: string, label: string, note?: string]> = [
   ["submit", "dispatch_start", "submit → dispatch_start", "pre-dispatch overhead"],

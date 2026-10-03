@@ -5,7 +5,7 @@ import {
   resolveRuntimeConfig,
 } from "../config/runtimeConfig.js";
 
-export function makeResolvedRuntime(overrides: Partial<RuntimeConfig> = {}): ResolvedRuntimeConfig {
+function makeResolvedRuntime(overrides: Partial<RuntimeConfig> = {}): ResolvedRuntimeConfig {
   return resolveRuntimeConfig({
     ...DEFAULT_RUNTIME_CONFIG,
     ...overrides,

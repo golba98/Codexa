@@ -34,7 +34,7 @@ function parseInline(text: string): InlinePart[] {
 
 export type CodeSegment = { type: "code"; lang: string; lines: string[] };
 export type HeaderSegment = { type: "header"; level: 1 | 2 | 3; parts: InlinePart[] };
-export type ListItem = { num: number; parts: InlinePart[] };
+type ListItem = { num: number; parts: InlinePart[] };
 export type ListSegment = { type: "list"; ordered: boolean; items: ListItem[] };
 export type ParaSegment = { type: "para"; lines: InlinePart[][] };
 export type Segment = CodeSegment | HeaderSegment | ListSegment | ParaSegment;
@@ -231,7 +231,7 @@ function getDiffColor(kind: DiffRenderLineType, theme: ReturnType<typeof useThem
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function RenderMessage({
+function RenderMessage({
   segments,
   width,
   brightHeadings = false,

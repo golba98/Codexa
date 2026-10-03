@@ -40,7 +40,7 @@ const STEP_NOTICE =
   "Text is a best-effort extraction from Antigravity's binary format; o opens the exact view in agy.";
 const HISTORY_NOTICE = "Older Antigravity conversation: prompts only; o opens the replies in agy.";
 
-export function antigravityCliDir(options: ExternalSessionOptions = {}): string {
+function antigravityCliDir(options: ExternalSessionOptions = {}): string {
   return join(resolveHome(options), ".gemini", "antigravity-cli");
 }
 
@@ -63,7 +63,7 @@ function workspaceFolders(value: unknown): string[] {
 }
 
 /** `2026-09-30 02:59:07.896083311+00:00` → ISO (nanoseconds trimmed to milliseconds). */
-export function parseAntigravityTime(value: unknown): string {
+function parseAntigravityTime(value: unknown): string {
   if (typeof value !== "string") return new Date(0).toISOString();
   const normalized = value
     .trim()

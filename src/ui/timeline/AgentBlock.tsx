@@ -9,7 +9,6 @@ import { getUsableShellWidth } from "../layout.js";
 import { MemoizedRenderMessage } from "../render/Markdown.js";
 import {
   classifyOutput,
-  formatForBox,
   normalizeOutput,
   sanitizeOutput,
   sanitizeStreamChunk,
@@ -39,7 +38,7 @@ const MemoizedMessageBody = memo(
     segments,
     width,
   }: {
-    segments: ReturnType<typeof formatForBox>;
+    segments: ReturnType<typeof classifyOutput>;
     width: number;
   }) {
     return <MemoizedRenderMessage segments={segments} width={width} />;
@@ -77,10 +76,9 @@ export function AgentBlock({
       ? sanitizeStreamChunk(renderContent)
       : sanitizeOutput(renderContent);
     const normalized = normalizeOutput(sanitized);
-    const classified = classifyOutput(normalized);
-    const formatted = formatForBox(classified, contentWidth);
+    const formatted = classifyOutput(normalized);
     return { length: normalized.length, formatted };
-  }, [contentWidth, renderContent, streaming]);
+  }, [renderContent, streaming]);
 
   const failureMessage =
     run?.status === "failed" ? sanitizeTerminalOutput(run.errorMessage ?? run.summary) : null;

@@ -1,5 +1,5 @@
-export const MIN_DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
-export const MAX_DEFAULT_MAX_OUTPUT_TOKENS = 32_768;
+const MIN_DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
+const MAX_DEFAULT_MAX_OUTPUT_TOKENS = 32_768;
 
 /**
  * Output-token budget for a Local model that advertises no cap of its own.

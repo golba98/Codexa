@@ -60,21 +60,21 @@ export function isRenderDebugEnabled(): boolean {
   return enabled;
 }
 
-export function isRenderTraceEnabled(): boolean {
+function isRenderTraceEnabled(): boolean {
   if (!configured) {
     configureFromEnv();
   }
   return renderTraceEnabled;
 }
 
-export function isLifecycleDebugEnabled(): boolean {
+function isLifecycleDebugEnabled(): boolean {
   if (!configured) {
     configureFromEnv();
   }
   return lifecycleEnabled;
 }
 
-export function isFlickerDebugEnabled(): boolean {
+function isFlickerDebugEnabled(): boolean {
   if (!configured) {
     configureFromEnv();
   }

@@ -1,4 +1,4 @@
-export type CancelScheduledPromptRunStart = () => void;
+type CancelScheduledPromptRunStart = () => void;
 
 export function schedulePromptRunStartAfterVisibleCommit(
   start: () => void,

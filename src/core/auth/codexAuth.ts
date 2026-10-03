@@ -119,13 +119,13 @@ export function getAuthStatusMessage(result: CodexAuthProbeResult): string {
   ].join("\n");
 }
 
-export interface RunGateDecision {
+interface RunGateDecision {
   allowRun: boolean;
   blockMessage?: string;
   warningMessage?: string;
 }
 
-export interface RunGateDecisionOptions {
+interface RunGateDecisionOptions {
   warnOnUnknown?: boolean;
 }
 

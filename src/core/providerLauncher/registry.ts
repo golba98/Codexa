@@ -239,7 +239,7 @@ export function getDefaultProviderId(
   return isAvailable ? providerId : DEFAULT_PROVIDER_ID;
 }
 
-export function getActiveRouteProviderId(
+function getActiveRouteProviderId(
   config: ProviderWorkspaceConfig | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): ProviderId {

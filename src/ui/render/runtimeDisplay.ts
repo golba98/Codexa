@@ -1,17 +1,19 @@
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
 import { formatModeLabel, formatReasoningLabel } from "../../config/settings.js";
 import type { CodexModelCapability } from "../../core/models/codexModelCapabilities.js";
-import type { ModelSpec } from "../../core/models/modelSpecs.js";
 import { getAntigravityModelLabel } from "../../core/providerRuntime/antigravity.js";
 import { CODEXA_NATIVE_MODEL_ID } from "../../core/providerRuntime/codexaNative.js";
-import type { ModelContextMetadata } from "../../core/providerRuntime/contextMetadata.js";
+import type {
+  ModelContextMetadata,
+  ModelSpec,
+} from "../../core/providerRuntime/contextMetadata.js";
 import {
   contextMetadataToModelSpec,
   formatContextCompact,
 } from "../../core/providerRuntime/contextMetadata.js";
 import type { ActiveProviderRoute } from "../../core/providerRuntime/types.js";
 
-export interface ActiveRuntimeDisplayInput {
+interface ActiveRuntimeDisplayInput {
   route: ActiveProviderRoute;
   reasoningLevel: string;
   mode: string;
@@ -20,7 +22,7 @@ export interface ActiveRuntimeDisplayInput {
   contextMetadata?: ModelContextMetadata | null;
 }
 
-export interface ActiveRuntimeDisplay {
+interface ActiveRuntimeDisplay {
   providerLabel: string;
   modelDisplay: string;
   footerModelDisplay: string;

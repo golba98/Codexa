@@ -6,7 +6,7 @@ const BARE_EXECUTABLE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SHELL_METACHARACTER_PATTERN = /[;&|<>`$]/;
 const WINDOWS_BATCH_METACHARACTER_PATTERN = /[;&|<>`$^%!]/;
 
-export interface ExecutableValidationOptions {
+interface ExecutableValidationOptions {
   label: string;
   cwd?: string;
   requireExistingPath?: boolean;

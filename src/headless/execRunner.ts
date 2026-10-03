@@ -25,7 +25,6 @@ import { resolveExecutionContext } from "./context.js";
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
-export const HEADLESS_EXEC_PARSE_ERROR = 2;
 export const HEADLESS_EXEC_PROVIDER_UNAVAILABLE = 3;
 export const HEADLESS_EXEC_RUN_FAILED = 1;
 
@@ -53,7 +52,7 @@ export interface HeadlessExecResult {
   error?: string;
 }
 
-export interface HeadlessExecDependencies {
+interface HeadlessExecDependencies {
   resolveWorkspaceRoot: () => string;
   resolveLayeredConfig: (options: {
     workspaceRoot: string;
@@ -64,7 +63,7 @@ export interface HeadlessExecDependencies {
   loadProjectInstructions: (workspaceRoot: string) => ProjectInstructionsLoadResult;
 }
 
-export type HeadlessExecTimingValue = string | number | boolean | null | readonly string[];
+type HeadlessExecTimingValue = string | number | boolean | null | readonly string[];
 
 export interface HeadlessExecTiming {
   enabled: boolean;
@@ -103,8 +102,6 @@ export function createHeadlessExecTiming(options: {
     },
   };
 }
-
-export const createHeadlessBenchmarkDiagnostics = createHeadlessExecTiming;
 
 const DEFAULT_DEPENDENCIES: HeadlessExecDependencies = {
   resolveWorkspaceRoot,

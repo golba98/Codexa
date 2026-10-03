@@ -28,7 +28,6 @@ const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const ANTHROPIC_MAX_TOKENS = 1024;
 const ANTHROPIC_TIMEOUT_MS = 120_000;
-const ANTHROPIC_AUTH_CHECK_TIMEOUT_MS = 10_000;
 const ANTHROPIC_ROUTE_VALIDATION_TIMEOUT_MS = 15_000;
 const DISCOVERY_FAILURE_MESSAGE =
   "Claude Code model version discovery failed; using fallback aliases with unknown versions.";
@@ -47,7 +46,7 @@ function getAnthropicApiKey(): string | null {
   return process.env.ANTHROPIC_API_KEY?.trim() || null;
 }
 
-export function isAnthropicRouteConfigured(): boolean {
+function isAnthropicRouteConfigured(): boolean {
   return getAnthropicApiKey() !== null || claudeCodeValidated;
 }
 
@@ -156,10 +155,21 @@ export function tryParseStreamJsonDelta(line: string): string | null | false {
   return text || null;
 }
 
+/** One `message.content` block in Claude Code's stream-json output. */
+interface ClaudeStreamBlock {
+  type?: string;
+  id?: string;
+  name?: string;
+  input?: { command?: unknown };
+  tool_use_id?: string;
+  content?: string | Array<{ text?: string }>;
+  is_error?: boolean;
+}
+
 export function createClaudeToolParser(handlers: BackendRunHandlers): (line: string) => void {
   const tools = new Map<string, { command: string; startedAt: number }>();
   return (line) => {
-    let event: any;
+    let event: { message?: { content?: unknown } } | null;
     try {
       event = JSON.parse(line);
     } catch {
@@ -167,7 +177,7 @@ export function createClaudeToolParser(handlers: BackendRunHandlers): (line: str
     }
     const blocks = event?.message?.content;
     if (!Array.isArray(blocks)) return;
-    for (const block of blocks) {
+    for (const block of blocks as Array<ClaudeStreamBlock | null>) {
       if (block?.type === "tool_use" && typeof block.id === "string") {
         const command =
           typeof block.input?.command === "string"
@@ -185,7 +195,7 @@ export function createClaudeToolParser(handlers: BackendRunHandlers): (line: str
           typeof block.content === "string"
             ? block.content
             : Array.isArray(block.content)
-              ? block.content.map((entry: any) => entry.text ?? JSON.stringify(entry)).join("\n")
+              ? block.content.map((entry) => entry.text ?? JSON.stringify(entry)).join("\n")
               : "";
         handlers.onToolActivity?.({
           id: block.tool_use_id,

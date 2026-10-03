@@ -63,7 +63,7 @@ export function isBusy(state: UIState): boolean {
 
 // ─── Timeline events ─────────────────────────────────────────────────────────
 
-export interface TimelineBaseEvent {
+interface TimelineBaseEvent {
   id: number;
   createdAt: number;
 }

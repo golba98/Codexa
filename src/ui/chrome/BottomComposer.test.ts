@@ -3,7 +3,10 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { Box, render, renderToString } from "ink";
 import React from "react";
-import type { PendingModelSpec, VerifiedModelSpec } from "../../core/models/modelSpecs.js";
+import type {
+  PendingModelSpec,
+  VerifiedModelSpec,
+} from "../../core/providerRuntime/contextMetadata.js";
 import {
   createInputRowWindow,
   createInputViewport,
@@ -19,7 +22,6 @@ import {
   type BottomComposerProps,
   getCommandSuggestionState,
   getComposerPersona,
-  getComposerToFooterGapRows,
   getTokenBarDisplay,
   getVisibleComposerStatusLine,
   measureBottomComposerRows,
@@ -55,12 +57,6 @@ test("measures compact idle bottom chrome as metadata plus prompt border", () =>
   assert.equal(rows, 4);
 });
 
-test("keeps runtime footer directly attached to the composer", () => {
-  assert.equal(getComposerToFooterGapRows(createLayoutSnapshot(120, 30)), 0);
-  assert.equal(getComposerToFooterGapRows(createLayoutSnapshot(100, 24)), 0);
-  assert.equal(getComposerToFooterGapRows(createLayoutSnapshot(39, 30)), 0);
-});
-
 test("keeps the composer status row visible in normal 24-row terminals", () => {
   const rows = measureBottomComposerRows({
     layout: createLayoutSnapshot(80, 24),
@@ -76,7 +72,6 @@ test("does not render an exact slash command draft as a suggestion row", () => {
   const exact = getCommandSuggestionState({
     value: "/clear",
     allowCommands: true,
-    inputLocked: false,
   });
 
   assert.equal(exact.showSuggestions, true);
@@ -91,7 +86,6 @@ test("keeps partial slash command suggestions visible", () => {
   const partial = getCommandSuggestionState({
     value: "/clea",
     allowCommands: true,
-    inputLocked: false,
   });
 
   assert.equal(partial.showSuggestions, true);
@@ -106,7 +100,6 @@ test("surfaces the provider picker suggestion for root prefixes and alias input"
   const rootSuggestions = getCommandSuggestionState({
     value: "/",
     allowCommands: true,
-    inputLocked: false,
   });
 
   assert.equal(rootSuggestions.showSuggestions, true);
@@ -115,7 +108,6 @@ test("surfaces the provider picker suggestion for root prefixes and alias input"
   const pSuggestions = getCommandSuggestionState({
     value: "/p",
     allowCommands: true,
-    inputLocked: false,
   });
 
   assert.ok(pSuggestions.suggestions.map((suggestion) => suggestion.cmd).includes("/providers"));
@@ -123,7 +115,6 @@ test("surfaces the provider picker suggestion for root prefixes and alias input"
   const shortProviderSuggestions = getCommandSuggestionState({
     value: "/pro",
     allowCommands: true,
-    inputLocked: false,
   });
 
   assert.ok(
@@ -133,7 +124,6 @@ test("surfaces the provider picker suggestion for root prefixes and alias input"
   const prefixProviderSuggestions = getCommandSuggestionState({
     value: "/pr",
     allowCommands: true,
-    inputLocked: false,
   });
 
   assert.ok(
@@ -145,7 +135,6 @@ test("surfaces the provider picker suggestion for root prefixes and alias input"
   const providerSuggestions = getCommandSuggestionState({
     value: "/provider",
     allowCommands: true,
-    inputLocked: false,
   });
 
   assert.equal(providerSuggestions.showSuggestions, true);
@@ -157,7 +146,6 @@ test("surfaces the provider picker suggestion for root prefixes and alias input"
   const exactProviderSuggestions = getCommandSuggestionState({
     value: "/providers",
     allowCommands: true,
-    inputLocked: false,
   });
 
   assert.equal(exactProviderSuggestions.showSuggestions, true);
@@ -746,17 +734,9 @@ function composerProps(overrides: Partial<BottomComposerProps> = {}): BottomComp
     onChangeInput: noop,
     onSubmit: noop,
     onCancel: noop,
-    onChangeValue: noop,
-    onChangeCursor: noop,
     onHistoryUp: noop,
     onHistoryDown: noop,
-    onOpenBackendPicker: noop,
     onOpenModelPicker: noop,
-    onOpenModePicker: noop,
-    onOpenThemePicker: noop,
-    onOpenAuthPanel: noop,
-    onTogglePlanMode: noop,
-    onClear: noop,
     onCycleMode: noop,
     onQuit: noop,
     activeProviderId: "openai",

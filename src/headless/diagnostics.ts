@@ -11,7 +11,7 @@ import { getProviderRuntime, isProviderRoutableInUbume } from "../core/providerR
 import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import { resolveUbumeWorkspaceDataDir } from "../core/workspace/appData.js";
 
-export interface DiagnosticCheck {
+interface DiagnosticCheck {
   name: string;
   status: "pass" | "fail" | "warn" | "skipped";
   message: string;
@@ -91,7 +91,7 @@ export function findExecutable(command: string, cwd: string): string | null {
   }
   return null;
 }
-export async function diagnosticCommand(executable: string, args: string[], cwd: string) {
+async function diagnosticCommand(executable: string, args: string[], cwd: string) {
   const runner = runCommand({
     ...buildSpawnSpec(executable, args),
     cwd,

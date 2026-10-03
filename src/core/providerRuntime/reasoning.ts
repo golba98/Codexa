@@ -9,8 +9,6 @@ export const CLAUDE_CODE_EFFORT_LEVELS: readonly ReasoningEffortCapability[] = [
   { id: "max", label: "Max", description: "Claude Code maximum effort." },
 ] as const;
 
-export const CLAUDE_CODE_EFFORT_IDS = new Set(CLAUDE_CODE_EFFORT_LEVELS.map((level) => level.id));
-
 export function getClaudeCodeEffortLevels(
   ids: readonly string[],
 ): readonly ReasoningEffortCapability[] {

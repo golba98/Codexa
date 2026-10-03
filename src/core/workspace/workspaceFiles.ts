@@ -20,7 +20,7 @@ const excluded = new Set([
   ".turbo",
 ]);
 export const FILE_TEXT_LIMIT = 1024 * 1024;
-export function safeProjectPath(path: string): boolean {
+function safeProjectPath(path: string): boolean {
   return (
     !!path &&
     !path.includes("\0") &&

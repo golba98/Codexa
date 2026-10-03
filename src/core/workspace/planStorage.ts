@@ -24,10 +24,7 @@ function replaceAllLiteral(value: string, search: string, replacement: string): 
  * Strips absolute filesystem paths from plan text, replacing them with
  * relative paths or truncated versions to protect user privacy.
  */
-export function hidePlanReviewFilesystemDetails(
-  planText: string,
-  workspaceRoot?: string | null,
-): string {
+function hidePlanReviewFilesystemDetails(planText: string, workspaceRoot?: string | null): string {
   let output = planText;
   const normalizedRoot = workspaceRoot?.trim()
     ? normalizePathSeparators(workspaceRoot.trim()).replace(/\/+$/, "")

@@ -44,16 +44,16 @@ const GEMINI_ROUTE_VALIDATION_TIMEOUT_MS = 30_000;
 const GEMINI_READY_PROMPT = "Respond with READY only.";
 const GEMINI_REASONING_UNSUPPORTED_DIAGNOSTIC =
   "Gemini reasoning control is not supported by this CLI version.";
-export const GEMINI_ROUTE_SETUP_MESSAGE =
+const GEMINI_ROUTE_SETUP_MESSAGE =
   "Google/Gemini is not configured for in-Ubume routing yet. Sign in with Gemini CLI headless auth or set GEMINI_API_KEY / GOOGLE_API_KEY.";
 
 type CommandRunner = typeof runCommand;
-export type GeminiApprovalMode = "default" | "plan" | "auto_edit" | "yolo";
-export type GeminiOutputFormat = "text" | "json" | "stream-json";
-export type GeminiCommandMode = "readiness" | "prompt";
+type GeminiApprovalMode = "default" | "plan" | "auto_edit" | "yolo";
+type GeminiOutputFormat = "text" | "json" | "stream-json";
+type GeminiCommandMode = "readiness" | "prompt";
 type GeminiExtractionStatus = "assistant-text" | "completed-empty-assistant" | "not-completed";
 
-export interface GeminiCommandSpec {
+interface GeminiCommandSpec {
   file: string;
   args: string[];
   cwd: string;
@@ -83,7 +83,6 @@ interface GeminiPromptRunDiagnostics {
 }
 
 let geminiCliHeadlessValidated = false;
-let resolvedGeminiCommand: string | null = null;
 let lastPromptDiagnostics: GeminiPromptRunDiagnostics | null = null;
 
 function getGeminiApiKey(env: NodeJS.ProcessEnv = process.env): string | null {
@@ -100,7 +99,6 @@ export function isGeminiRouteConfigured(env: NodeJS.ProcessEnv = process.env): b
 
 export function resetGeminiRouteValidationCacheForTests(): void {
   geminiCliHeadlessValidated = false;
-  resolvedGeminiCommand = null;
   lastPromptDiagnostics = null;
 }
 
@@ -135,9 +133,7 @@ function getCombinedOutput(
   return sanitizeTerminalOutput(`${result.stderr}\n${result.stdout}\n${result.userMessage}`);
 }
 
-export function resolveGeminiApprovalMode(
-  runtime?: ResolvedRuntimeConfig | boolean,
-): GeminiApprovalMode {
+function resolveGeminiApprovalMode(runtime?: ResolvedRuntimeConfig | boolean): GeminiApprovalMode {
   if (typeof runtime === "boolean") {
     return runtime ? "plan" : "default";
   }
@@ -195,7 +191,6 @@ export async function buildGeminiCommand(options: {
     cwd: options.cwd,
     configuredPath: options.configuredPath,
   });
-  resolvedGeminiCommand = file;
 
   const approvalMode = resolveGeminiApprovalMode(options.runtime);
   const outputFormat = options.outputFormat ?? "text";
@@ -498,13 +493,6 @@ export async function runGeminiCliWithRunner(
   );
 
   throw new Error(formatGeminiFailure(first.command, first.result));
-}
-
-async function runGeminiCli(
-  request: ProviderChatRequest,
-  handlers?: CommandStreamHandlers,
-): Promise<string> {
-  return runGeminiCliWithRunner(request, runCommand, handlers);
 }
 
 export function classifyGeminiProbeFailure(

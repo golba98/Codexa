@@ -24,7 +24,7 @@ export const DEFAULT_CODEXA_NATIVE_MODEL_ROOT = join(
 );
 const BRIDGE_START_TIMEOUT_MS = 60_000;
 
-export interface CodexaNativeConfig {
+interface CodexaNativeConfig {
   modelRoot: string;
   python: string;
   bridgeScript: string;
@@ -33,7 +33,7 @@ export interface CodexaNativeConfig {
   device: string;
 }
 
-export interface BridgeResponse {
+interface BridgeResponse {
   type: string;
   id?: string;
   text?: string;
@@ -392,11 +392,6 @@ export async function runCodexaNativeRollover(options: {
     });
     prompt = nativeContinuationPrompt(checkpoint, accumulated.slice(-NATIVE_EXACT_TAIL_CHARS));
   }
-}
-
-export function resetCodexaNativeRuntimeForTests(): void {
-  stopBridge("Codexa Native test reset.");
-  requestSequence = 0;
 }
 
 export const codexaNativeRuntime: ProviderRuntime = {

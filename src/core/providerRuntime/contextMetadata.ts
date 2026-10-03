@@ -1,5 +1,25 @@
-import type { ModelSpec } from "../models/modelSpecs.js";
 import type { ProviderId, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
+
+/** Context-window facts for the active model, as shown in the composer token bar. */
+export interface VerifiedModelSpec {
+  status: "verified";
+  contextWindow: number;
+  maxOutputTokens: number;
+  sourceUrl: string;
+  verifiedAt: number;
+  isEstimated?: boolean;
+}
+
+export interface PendingModelSpec {
+  status: "loading" | "unknown";
+  contextWindow: null;
+  maxOutputTokens: null;
+  sourceUrl: string;
+  verifiedAt: null;
+  error: string | null;
+}
+
+export type ModelSpec = VerifiedModelSpec | PendingModelSpec;
 
 export type ContextLengthSource =
   | "api"
@@ -21,7 +41,7 @@ export interface ModelContextMetadata {
   error?: string;
 }
 
-export interface ResolveModelContextLengthOptions {
+interface ResolveModelContextLengthOptions {
   providerId: ProviderId;
   modelId: string;
   providerConfig?: ProviderWorkspaceOverride | null;

@@ -16,7 +16,7 @@ export interface LaunchContext {
   relaunchArgs: string[];
 }
 
-export interface ResolveLaunchContextOptions {
+interface ResolveLaunchContextOptions {
   env?: NodeJS.ProcessEnv;
   workspaceRoot?: string;
   packageRoot?: string;
@@ -30,7 +30,7 @@ export interface WorkspaceCommandContext {
   summaryMessage: string;
 }
 
-export interface WorkspaceRelaunchPlan {
+interface WorkspaceRelaunchPlan {
   executable: string;
   args: string[];
   cwd: string;
@@ -38,7 +38,7 @@ export interface WorkspaceRelaunchPlan {
   targetWorkspaceRoot: string;
 }
 
-export type WorkspaceRelaunchPlanResult =
+type WorkspaceRelaunchPlanResult =
   | { ok: true; plan: WorkspaceRelaunchPlan }
   | { ok: false; message: string };
 
@@ -181,17 +181,6 @@ export function buildWorkspaceStatusMessage(launchContext: LaunchContext): strin
   }
 
   return lines.join("\n");
-}
-
-export function buildDevLaunchNotice(launchContext: LaunchContext): string | null {
-  if (launchContext.launchKind !== "dev-run") {
-    return null;
-  }
-
-  return [
-    "Ready. Type a prompt, run !shell, or use /command.",
-    "Tip: /workspace relaunch <path>",
-  ].join("\n");
 }
 
 export function guardWorkspaceRelaunch(busy: boolean): { allowed: boolean; message?: string } {

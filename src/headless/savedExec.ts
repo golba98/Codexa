@@ -18,7 +18,7 @@ import {
   runHeadlessExec,
 } from "./execRunner.js";
 
-export interface SavedExecOptions extends HeadlessExecOptions {
+interface SavedExecOptions extends HeadlessExecOptions {
   noSave?: boolean;
   resumeId?: string;
   files?: string[];

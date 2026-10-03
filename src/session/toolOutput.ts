@@ -1,6 +1,6 @@
 import type { RunToolActivity } from "./types.js";
 export const TOOL_OUTPUT_BYTES = 256 * 1024;
-export const TURN_OUTPUT_BYTES = 8 * 1024 * 1024;
+const TURN_OUTPUT_BYTES = 8 * 1024 * 1024;
 export class ToolOutputBudget {
   private sizes = new Map<string, number>();
   bound(activity: RunToolActivity): RunToolActivity {

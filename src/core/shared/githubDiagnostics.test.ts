@@ -62,13 +62,6 @@ test("classifyDiagnostics: handles all status combinations", () => {
     blocker: "b",
     recommendedUse: false,
   };
-  const partial: DiagnosticResult = {
-    path: "p",
-    status: "PARTIAL",
-    evidence: "e",
-    blocker: "b",
-    recommendedUse: false,
-  };
 
   // 1. All PASS -> Local Git + GH CLI
   assert.equal(classifyDiagnostics(repo, pass, pass, pass, fail), "Local Git + GH CLI");

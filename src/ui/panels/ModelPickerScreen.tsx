@@ -27,7 +27,6 @@ import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js
 // ─── Types & helpers ─────────────────────────────────────────────────────────
 
 type ModelPickerCloseReason = "escape" | "empty-selection";
-type ModelRenderMode = "full" | "compact" | "windowed";
 
 interface ModelPickerScreenProps {
   layout: Layout & {
@@ -496,12 +495,7 @@ export function ModelPickerScreen({
     const resolvedCols = activeLayout ? activeLayout.availableCols : Math.max(20, shellWidth - 4);
 
     return {
-      mode:
-        mode === "compact" || mode === ("micro" as any)
-          ? "compact"
-          : mode === "expanded" || mode === ("max" as any) || mode === ("wide" as any)
-            ? "expanded"
-            : "regular",
+      mode,
       availableRows: resolvedRows,
       availableCols: resolvedCols,
     };
@@ -517,7 +511,7 @@ export function ModelPickerScreen({
 
   const panelWidth = activeLayout
     ? activeLayout.width
-    : Math.max(38, Math.min((layout as any).contentWidth ?? shellWidth, shellWidth - 2));
+    : Math.max(38, Math.min(layout.contentWidth ?? shellWidth, shellWidth - 2));
 
   const availableRows = resolvedPanelLayout.availableRows;
   const innerWidth = Math.max(1, Math.min(resolvedPanelLayout.availableCols, panelWidth - 4));
@@ -791,14 +785,12 @@ function ModelPickerRow({
   const theme = useTheme();
 
   let isCurrent = false;
+  const selection = model.raw as GeminiModelSelection | null | undefined;
   if (currentGeminiSelection?.kind === "auto") {
-    isCurrent =
-      (model.raw as GeminiModelSelection)?.kind === "auto" &&
-      (model.raw as any).family === currentGeminiSelection.family;
+    isCurrent = selection?.kind === "auto" && selection.family === currentGeminiSelection.family;
   } else if (currentGeminiSelection?.kind === "manual") {
     isCurrent =
-      (model.raw as GeminiModelSelection)?.kind === "manual" &&
-      (model.raw as any).modelId === currentGeminiSelection.modelId;
+      selection?.kind === "manual" && selection.modelId === currentGeminiSelection.modelId;
   } else {
     isCurrent =
       model.model === currentModel ||

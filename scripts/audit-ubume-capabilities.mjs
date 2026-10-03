@@ -106,13 +106,13 @@ const checks = {
 
   modelPicker() {
     const paths = [
-      join(repoRoot, "src", "ui", "panels", "ModelPicker.tsx"),
+      join(repoRoot, "src", "ui", "panels", "ModelPickerScreen.tsx"),
       join(repoRoot, "src", "config", "settings.ts")
     ];
     
     const exist = paths.filter(p => existsSync(p));
     const hasModels = exist.some(p => 
-      /AVAILABLE_MODELS/.test(readFileSync(p, "utf-8"))
+      /LEGACY_FALLBACK_MODELS/.test(readFileSync(p, "utf-8"))
     );
     
     return {

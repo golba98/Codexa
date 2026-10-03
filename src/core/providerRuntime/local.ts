@@ -865,17 +865,6 @@ async function checkUnslothProvider(options: {
   }
 }
 
-function getCachedSelectedModel(config: LocalProviderConfig, routeModel: string): string {
-  const candidate = discoveryCaches.get(config.localBackend);
-  const cache = candidate?.configKey === localConfigKey(config) ? candidate : null;
-  const discoveredIds = cache?.result.models.map((model) => model.modelId) ?? [];
-  if (cache?.selectedModel && discoveredIds.includes(cache.selectedModel))
-    return cache.selectedModel;
-  if (config.pinnedModel && discoveredIds.includes(config.pinnedModel)) return config.pinnedModel;
-  if (routeModel && discoveredIds.includes(routeModel)) return routeModel;
-  return selectFallbackLocalModel(config, discoveredIds) ?? routeModel;
-}
-
 async function resolveLocalAgentConfig(
   request: ProviderChatRequest,
   signal: AbortSignal,

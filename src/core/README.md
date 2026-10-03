@@ -13,7 +13,7 @@ folders-only — every file lives in a domain folder so the directory stays scan
 | `providerRuntime/` | **Multi-provider runtimes + discovery.** One runtime per provider (`anthropic`, `gemini`, `local`, `antigravity`) behind a shared interface, plus routing (`registry`), model/metadata helpers (`models`, `capabilityProfile`, `contextMetadata`, `reasoning`) and Claude Code discovery. |
 | `providerLauncher/` | **Workspace provider config + CLI launching.** Which provider is active per workspace (`workspaceConfig`), provider UI state (`registry`), and spawning provider CLIs (`launcher`). |
 | `codex/` | Codex CLI launch/prompt assembly: `codexExecArgs`, `codexLaunch`, `codexPrompt`. |
-| `models/` | Codex CLI capability discovery (`codexCapabilities`, `codexModelCapabilities`) and the legacy model-spec service (`modelSpecs`). |
+| `models/` | Codex CLI capability discovery (`codexCapabilities`, `codexModelCapabilities`) and model caches. |
 | `executables/` | Resolve external CLI binaries with PATH/env handling (`executableResolver` + per-CLI resolvers). |
 | `auth/` | Codex auth status probing. |
 | `process/` | Generic process spawning (`CommandRunner`) and executable-path validation. |

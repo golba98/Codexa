@@ -23,7 +23,6 @@ import { getUsableShellWidth, transcriptContentIndent } from "../layout.js";
 import { MemoizedRenderMessage } from "../render/Markdown.js";
 import {
   classifyOutput,
-  formatForBox,
   normalizeOutput,
   sanitizeOutput,
   sanitizeStreamChunk,
@@ -88,7 +87,7 @@ const MemoizedUserInputCard = memo(
 // ─── Impact Summary ──────────────────────────────────────────────────────────
 // Compact file-change summary replacing FileScanCard + ActivityCard
 
-function ImpactSummary({ run, cols }: { run: RunEvent; cols: number }) {
+function ImpactSummary({ run }: { run: RunEvent }) {
   const theme = useTheme();
   const summary = run.activitySummary;
   const hasFiles = run.touchedFileCount > 0;
@@ -96,7 +95,6 @@ function ImpactSummary({ run, cols }: { run: RunEvent; cols: number }) {
 
   if (!hasFiles && !hasTools) return null;
 
-  const contentWidth = Math.max(1, cols - 6);
   const recentFiles = summary?.recent ?? run.activity.slice(-6);
   const hasDeletes = (summary?.deleted ?? 0) > 0;
 
@@ -297,9 +295,8 @@ function PlanPanel({
 
   const formatted = useMemo(() => {
     const normalized = normalizePlanReviewMarkdown(planText, workspaceRoot);
-    const classified = classifyOutput(normalized);
-    return formatForBox(classified, contentWidth);
-  }, [planText, contentWidth, workspaceRoot]);
+    return classifyOutput(normalized);
+  }, [planText, workspaceRoot]);
 
   return (
     <DashCard
@@ -475,9 +472,8 @@ function CodexResponseBlock({
     const raw = formatTerminalAnswerInline(getResponseSegmentText(segment));
     const sanitized = segment.status === "active" ? sanitizeStreamChunk(raw) : sanitizeOutput(raw);
     const normalized = normalizeOutput(sanitized);
-    const classified = classifyOutput(normalized);
-    return formatForBox(classified, contentWidth);
-  }, [contentWidth, segment]);
+    return classifyOutput(normalized);
+  }, [segment]);
 
   const segmentStreaming = segment.status === "active";
   const showTail =
@@ -585,7 +581,7 @@ const StreamEventList = memo(
 
         {run.status !== "running" && !verboseMode && (
           <Box marginTop={1}>
-            <ImpactSummary run={run} cols={cols} />
+            <ImpactSummary run={run} />
           </Box>
         )}
       </Box>
@@ -658,24 +654,6 @@ export function TurnGroup({
     </Box>
   );
 }
-
-// Memoized wrapper to prevent re-renders of finalized turns
-export const MemoizedTurnGroup = memo(TurnGroup, (prev, next) => {
-  return (
-    prev.cols === next.cols &&
-    prev.turnIndex === next.turnIndex &&
-    prev.opacity === next.opacity &&
-    prev.question === next.question &&
-    prev.runPhase === next.runPhase &&
-    prev.streamPreviewRows === next.streamPreviewRows &&
-    prev.streamMode === next.streamMode &&
-    prev.verboseMode === next.verboseMode &&
-    prev.user === next.user &&
-    prev.run === next.run &&
-    prev.assistant === next.assistant &&
-    prev.workspaceRoot === next.workspaceRoot
-  );
-});
 
 export type TurnRunPhase = "none" | "thinking" | "streaming" | "final";
 

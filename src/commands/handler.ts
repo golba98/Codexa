@@ -14,7 +14,6 @@ import {
 import {
   AUTH_PREFERENCES,
   AVAILABLE_BACKENDS,
-  AVAILABLE_MODELS,
   AVAILABLE_THEMES,
   BUSY_LOADER_SETTING_VALUES,
   type BusyLoaderSettingValue,
@@ -25,6 +24,7 @@ import {
   formatReasoningLabel,
   formatThemeLabel,
   formatWorkspaceDisplayModeLabel,
+  LEGACY_FALLBACK_MODELS,
   normalizeLegacyDirectoryDisplayMode,
   resolveModeCommand,
   type TerminalTitleMode,
@@ -38,8 +38,9 @@ import {
 } from "../core/models/codexModelCapabilities.js";
 import { dumpRenderCounts } from "../core/perf/renderDebug.js";
 import type { WorkspaceCommandContext } from "../core/workspace/launchContext.js";
+import type { ProjectInstructionsLoadResult } from "../core/workspace/projectInstructions.js";
 
-export type CommandAction =
+type CommandAction =
   | "exit"
   | "clear"
   | "resume"
@@ -100,7 +101,7 @@ export type CommandAction =
   | "update"
   | "unknown";
 
-export interface CommandResult {
+interface CommandResult {
   action: CommandAction;
   message?: string;
   value?: string;
@@ -120,9 +121,7 @@ export interface CommandContext {
   modelCapabilities?: CodexModelCapabilities | null;
   routeStatusMessage?: string;
   activeRouteProviderLabel?: string;
-  projectInstructions?:
-    | import("../core/workspace/projectInstructions.js").ProjectInstructionsLoadResult
-    | null;
+  projectInstructions?: ProjectInstructionsLoadResult | null;
 }
 
 // Mirrors AVAILABLE_APPROVAL_POLICIES[].id from runtimeConfig.ts
@@ -488,7 +487,10 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
             message: `Model switched to ${detectedModel.model}`,
           };
         }
-        if (!context.modelCapabilities && (AVAILABLE_MODELS as readonly string[]).includes(arg)) {
+        if (
+          !context.modelCapabilities &&
+          (LEGACY_FALLBACK_MODELS as readonly string[]).includes(arg)
+        ) {
           return { action: "model", value: arg, message: `Model switched to ${arg}` };
         }
         return {

@@ -31,7 +31,6 @@ import {
   isBrowserTool,
   validateBrowserArguments,
 } from "../../../../bin/ubume-local-browser-tools.js";
-import { isDangerousShellCommand } from "../../agent/tools.js";
 import { BrowserManager } from "../../computerUse/browser.js";
 import { resolveBrowserCapability } from "../../computerUse/capability.js";
 import { traceLocalStream } from "../../debug/localStreamDebug.js";
@@ -52,6 +51,7 @@ import {
 } from "../../workspace/scratchDir.js";
 import {
   getShellWorkspaceGuardMessage,
+  isDangerousShellCommand,
   isPathInsideAllowedRoots,
 } from "../../workspace/workspaceGuard.js";
 import { resolveDefaultMaxOutputTokens } from "../localOutputBudget.js";

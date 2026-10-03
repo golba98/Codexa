@@ -137,17 +137,9 @@ test("AppShell renders ProviderPicker with all 5 providers at normal standard si
             onChangeInput={() => {}}
             onSubmit={() => {}}
             onCancel={() => {}}
-            onChangeValue={() => {}}
-            onChangeCursor={() => {}}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -239,17 +231,9 @@ test("canceling an install leaves the complete updater shell visible", async () 
       onChangeInput={() => {}}
       onSubmit={() => {}}
       onCancel={() => {}}
-      onChangeValue={() => {}}
-      onChangeCursor={() => {}}
       onHistoryUp={() => {}}
       onHistoryDown={() => {}}
-      onOpenBackendPicker={() => {}}
       onOpenModelPicker={() => {}}
-      onOpenModePicker={() => {}}
-      onOpenThemePicker={() => {}}
-      onOpenAuthPanel={() => {}}
-      onTogglePlanMode={() => {}}
-      onClear={() => {}}
       onCycleMode={() => {}}
       onQuit={() => {}}
     />

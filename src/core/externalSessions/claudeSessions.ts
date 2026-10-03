@@ -26,7 +26,7 @@ const HEAD_BYTES = 64 * 1024;
 const TAIL_BYTES = 64 * 1024;
 const TOOL_TEXT_LIMIT = 16 * 1024;
 
-export function claudeProjectsDir(options: ExternalSessionOptions = {}): string {
+function claudeProjectsDir(options: ExternalSessionOptions = {}): string {
   return join(
     envValue(options, "CLAUDE_CONFIG_DIR") ?? join(resolveHome(options), ".claude"),
     "projects",

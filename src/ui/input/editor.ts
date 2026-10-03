@@ -2,11 +2,11 @@ import { getTextWidth } from "../render/textLayout.js";
 import { locateCursor, normalizeCursorOffset, wrapInputRows } from "./inputBuffer.js";
 import { findPastedContentSpan } from "./pastedContent.js";
 
-export interface Draft {
+interface Draft {
   value: string;
   cursor: number;
 }
-export function atomicOffset(value: string, offset: number, direction: number): number {
+function atomicOffset(value: string, offset: number, direction: number): number {
   const span = findPastedContentSpan(value, offset);
   return span && offset > span.start && offset < span.end
     ? direction < 0

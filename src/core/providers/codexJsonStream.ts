@@ -62,7 +62,7 @@ type CodexThreadItem =
       message: string;
     };
 
-export interface CodexJsonStreamHandlers {
+interface CodexJsonStreamHandlers {
   onThreadStarted?: (id: string) => void;
   onAssistantDelta?: (chunk: string) => void;
   onFinalAnswerObserved?: (response: string) => void;

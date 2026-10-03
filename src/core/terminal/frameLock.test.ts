@@ -42,7 +42,7 @@ describe("frameLock", () => {
   test("frame lock drops concurrent writes", () => {
     let writeCount = 0;
     const stdout = {
-      write: (chunk: string) => {
+      write: (_chunk: string) => {
         writeCount++;
         // Trigger a nested write during the first write
         if (writeCount === 1) {

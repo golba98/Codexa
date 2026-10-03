@@ -17,7 +17,7 @@ export interface DiagnosticResult {
   recommendedUse: boolean;
 }
 
-export interface DiagnosticsReport {
+interface DiagnosticsReport {
   repo: RepoIdentity | null;
   defaultBranch: string | null;
   ghCliUser: string | null;
@@ -222,33 +222,4 @@ export function classifyDiagnostics(
   }
 
   return "Cannot publish yet";
-}
-
-export function printDiagnosticsTable(report: DiagnosticsReport) {
-  const rows = [
-    report.paths.ghCli,
-    report.paths.localGit,
-    report.paths.localGitWrite,
-    report.paths.connector,
-  ];
-
-  console.log("\nPath                | Status  | Evidence                      | Blocker");
-  console.log(
-    "--------------------|---------|-------------------------------|---------------------------",
-  );
-  for (const row of rows) {
-    const p = row.path.padEnd(20);
-    const s = row.status.padEnd(8);
-    const e = (row.evidence || "").substring(0, 30).padEnd(30);
-    const b = row.blocker || "";
-    console.log(`${p}| ${s}| ${e}| ${b}`);
-  }
-
-  console.log(
-    `\nResolved repo: ${report.repo ? `${report.repo.owner}/${report.repo.repo}` : "Unknown"}`,
-  );
-  console.log(`Default branch: ${report.defaultBranch || "Unknown"}`);
-  console.log(`Authenticated GH CLI user: ${report.ghCliUser || "Unknown"}`);
-  console.log(`Authenticated connector user: ${report.connectorUser || "Unknown"}`);
-  console.log(`Recommended PR flow: ${report.recommendedFlow}`);
 }

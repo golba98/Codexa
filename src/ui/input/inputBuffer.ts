@@ -7,9 +7,9 @@ import {
   wrapTextRows,
 } from "../render/textLayout.js";
 
-export type WrappedInputRow = WrappedTextRow;
+type WrappedInputRow = WrappedTextRow;
 
-export interface InputViewport {
+interface InputViewport {
   rows: WrappedInputRow[];
   visibleRows: WrappedInputRow[];
   cursorRow: number;
@@ -228,10 +228,6 @@ export function getComposerRowLayout(totalWidth: number) {
   );
   const promptWidth = getTextWidth(chrome.prompt);
   return { bodyWidth, promptWidth, editorWidth: Math.max(0, bodyWidth - promptWidth) };
-}
-
-export function getComposerBodyWidth(totalWidth: number): number {
-  return getComposerRowLayout(totalWidth).bodyWidth;
 }
 
 /** Bound a wrapped row, including its highlighted character or trailing cursor. */

@@ -1,3 +1,6 @@
+import type { ModelCapabilityProfile } from "../providerRuntime/capabilityProfile.js";
+import type { GeminiModelSelection, ProviderBackendKind } from "../providerRuntime/types.js";
+
 export type ProviderId =
   | "openai"
   | "anthropic"
@@ -44,7 +47,7 @@ export interface ProviderConfig {
   currentModel: string;
   contextLengthLabel?: string;
   contextLengthSource?: string;
-  capabilityProfile?: import("../providerRuntime/capabilityProfile.js").ModelCapabilityProfile;
+  capabilityProfile?: ModelCapabilityProfile;
   backendType: ProviderBackendType;
   routeMode: ProviderRouteMode;
   enabled: boolean;
@@ -71,9 +74,9 @@ export interface ProviderWorkspaceMigrationNotice {
 export interface ProviderActiveRoute {
   providerId: ProviderId;
   modelId: string;
-  backendKind?: import("../providerRuntime/types.js").ProviderBackendKind;
+  backendKind?: ProviderBackendKind;
   reasoning?: string;
-  modelSelection?: import("../providerRuntime/types.js").GeminiModelSelection;
+  modelSelection?: GeminiModelSelection;
   localBackend?: LocalBackendId;
 }
 

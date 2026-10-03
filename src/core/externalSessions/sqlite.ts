@@ -1,8 +1,8 @@
-export interface ReadonlyStatement {
+interface ReadonlyStatement {
   all: (...params: unknown[]) => unknown[];
 }
 
-export interface ReadonlyDatabase {
+interface ReadonlyDatabase {
   query: (sql: string) => ReadonlyStatement;
   close: () => void;
 }

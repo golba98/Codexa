@@ -12,7 +12,7 @@ import { getTextWidth } from "./textLayout.js";
 
 // Canonical Ubume brand wordmark — the ██ block art is the authoritative
 // large logo for wide/max layouts.
-export const UBUME_WORDMARK = [
+const UBUME_WORDMARK = [
   "██╗   ██╗██████╗ ██╗   ██╗███╗   ███╗███████╗",
   "██║   ██║██╔══██╗██║   ██║████╗ ████║██╔════╝",
   "██║   ██║██████╔╝██║   ██║██╔████╔██║█████╗  ",
@@ -20,8 +20,6 @@ export const UBUME_WORDMARK = [
   "╚██████╔╝██████╔╝╚██████╔╝██║ ╚═╝ ██║███████╗",
   " ╚═════╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝╚══════╝",
 ].join("\n");
-
-export const CODEXA_WORDMARK = UBUME_WORDMARK;
 
 /** 6-row ANSI Shadow block-char logo. Requires cols ≥ LOGO_LARGE_MIN_COLS. */
 export const LOGO_LARGE: readonly string[] = UBUME_WORDMARK.split("\n");

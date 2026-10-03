@@ -9,14 +9,14 @@ import {
   externalSourceLabel,
 } from "./types.js";
 
-export interface ExternalResumeLaunch {
+interface ExternalResumeLaunch {
   displayName: string;
   executable: string;
   args: string[];
   cwd: string;
 }
 
-export type ExternalResumeLaunchResult =
+type ExternalResumeLaunchResult =
   | { ok: true; launch: ExternalResumeLaunch }
   | { ok: false; message: string };
 

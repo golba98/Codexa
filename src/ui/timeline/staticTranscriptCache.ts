@@ -55,7 +55,7 @@ interface CachedEventEntry {
 
 type CachedEntry = CachedTurnEntry | CachedEventEntry;
 
-export interface StaticTranscriptBuildOptions {
+interface StaticTranscriptBuildOptions {
   totalWidth: number;
   verboseMode: boolean;
   workspaceRoot: string | null;
@@ -72,7 +72,7 @@ export function createStaticTranscriptCache(): StaticTranscriptCache {
   return { generation: "", entries: new Map(), placeholders: new Map() };
 }
 
-export function staticTranscriptGeneration(options: StaticTranscriptBuildOptions): string {
+function staticTranscriptGeneration(options: StaticTranscriptBuildOptions): string {
   return `${options.totalWidth}|${options.verboseMode ? 1 : 0}|${options.workspaceRoot ?? ""}`;
 }
 

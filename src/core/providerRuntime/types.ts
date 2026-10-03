@@ -17,6 +17,14 @@ import type {
   NativeSessionReference,
 } from "../workspace/conversationStore.js";
 
+/** Reachability of the active provider, shown while Local endpoints are probed. */
+export type RuntimeAvailability =
+  | "available"
+  | "checking"
+  | "reconnecting"
+  | "unavailable"
+  | "unknown";
+
 export type ProviderBackendKind =
   | "codex-cli-auth"
   | "gemini-cli-auth"
@@ -149,11 +157,6 @@ export interface ProviderImageAttachment {
   mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
   name: string;
   bytes: number;
-}
-
-export interface ProviderChatResponse {
-  text: string;
-  rawOutput?: string;
 }
 
 export interface ProviderRuntime {

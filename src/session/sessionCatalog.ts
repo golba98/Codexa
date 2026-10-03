@@ -20,7 +20,7 @@ import {
 } from "../core/workspace/conversationStore.js";
 import { normalizeWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
 
-export type SessionScope = "workspace" | "all";
+type SessionScope = "workspace" | "all";
 export type SessionRef =
   | { kind: "ubume"; conversationId: string; workspaceRoot: string | null; workspaceKey: string }
   | {
@@ -50,7 +50,7 @@ export interface SessionCatalogResult {
   sessions: SessionSummary[];
   errors: string[];
 }
-export interface SessionCatalogOptions {
+interface SessionCatalogOptions {
   dataDir?: string;
   legacyDataDir?: string;
   loadExternal?: typeof listExternalSessions;

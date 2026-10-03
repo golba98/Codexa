@@ -19,7 +19,6 @@
     "check": "biome ci src",
     "test": "bun test --max-concurrency=1",
     "audit:ubume-gap": "node scripts/audit-ubume-capabilities.mjs",
-    "audit:codexa-gap": "node scripts/audit-ubume-capabilities.mjs",
     "smoke:terminal-bench": "node scripts/smoke-terminal-bench.mjs",
     "gen-build-info": "node scripts/gen-build-info.mjs",
     "build": "bun run gen-build-info && bun run typecheck && bun run check",
