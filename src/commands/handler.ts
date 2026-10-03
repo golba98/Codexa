@@ -38,6 +38,7 @@ import {
 } from "../core/models/codexModelCapabilities.js";
 import { dumpRenderCounts } from "../core/perf/renderDebug.js";
 import type { WorkspaceCommandContext } from "../core/workspace/launchContext.js";
+import type { ProjectInstructionsLoadResult } from "../core/workspace/projectInstructions.js";
 
 export type CommandAction =
   | "exit"
@@ -120,9 +121,7 @@ export interface CommandContext {
   modelCapabilities?: CodexModelCapabilities | null;
   routeStatusMessage?: string;
   activeRouteProviderLabel?: string;
-  projectInstructions?:
-    | import("../core/workspace/projectInstructions.js").ProjectInstructionsLoadResult
-    | null;
+  projectInstructions?: ProjectInstructionsLoadResult | null;
 }
 
 // Mirrors AVAILABLE_APPROVAL_POLICIES[].id from runtimeConfig.ts

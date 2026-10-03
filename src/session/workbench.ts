@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderImageAttachment } from "../core/providerRuntime/types.js";
-import type { FileCheckpoint } from "../core/workspace/checkpoints.js";
+import type { FileBoundary, FileCheckpoint } from "../core/workspace/checkpoints.js";
 import type { PlanFlowState } from "./planFlow.js";
 import type { TimelineEvent, UIState } from "./types.js";
 
@@ -29,7 +29,7 @@ export interface WorkbenchSnapshot {
   files: [string, FileAttachment][];
   queue: QueuedPrompt[];
   checkpoints: FileCheckpoint[];
-  restoredFileBoundary?: import("../core/workspace/checkpoints.js").FileBoundary;
+  restoredFileBoundary?: FileBoundary;
 }
 export function queuedPrompt(
   display: string,

@@ -1,4 +1,5 @@
 import { join, posix, win32 } from "path";
+import type { ProjectInstructionsLoadResult } from "../core/workspace/projectInstructions.js";
 import {
   AVAILABLE_BACKENDS,
   AVAILABLE_MODES,
@@ -106,9 +107,7 @@ export interface ResolvedRuntimeConfig {
 export interface RuntimeStatusContext {
   workspaceRoot: string;
   tokensUsed?: number | null;
-  projectInstructions?:
-    | import("../core/workspace/projectInstructions.js").ProjectInstructionsLoadResult
-    | null;
+  projectInstructions?: ProjectInstructionsLoadResult | null;
 }
 
 export interface RuntimeSummary {

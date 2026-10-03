@@ -3,7 +3,10 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { Box, render, renderToString } from "ink";
 import React from "react";
-import type { PendingModelSpec, VerifiedModelSpec } from "../../core/models/modelSpecs.js";
+import type {
+  PendingModelSpec,
+  VerifiedModelSpec,
+} from "../../core/providerRuntime/contextMetadata.js";
 import {
   createInputRowWindow,
   createInputViewport,

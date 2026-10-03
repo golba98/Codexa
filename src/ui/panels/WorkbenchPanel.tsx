@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import type {
   CheckpointStore,
+  FileBoundary,
   FileCheckpoint,
   RestoreOperation,
 } from "../../core/workspace/checkpoints.js";
@@ -22,7 +23,7 @@ interface Props {
   queue: readonly QueuedPrompt[];
   paused: boolean;
   checkpoints: readonly FileCheckpoint[];
-  restoredFileBoundary?: import("../../core/workspace/checkpoints.js").FileBoundary;
+  restoredFileBoundary?: FileBoundary;
   store: CheckpointStore | null;
   onQueueAction: (action: QueueAction, id?: string) => void;
   onRewind: (

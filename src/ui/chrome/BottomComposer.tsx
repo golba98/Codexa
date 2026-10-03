@@ -1,8 +1,8 @@
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { getStdinDebugState, traceInputDebug } from "../../core/debug/inputDebug.js";
-import type { ModelSpec } from "../../core/models/modelSpecs.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
+import type { ModelSpec } from "../../core/providerRuntime/contextMetadata.js";
 import { formatContextCompact } from "../../core/providerRuntime/contextMetadata.js";
 import { fuzzyFiles, listWorkspaceFiles } from "../../core/workspace/workspaceFiles.js";
 import type { ExternalCliStatus, UIState } from "../../session/types.js";

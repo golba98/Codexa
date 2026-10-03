@@ -54,8 +54,6 @@ export const UBUME_TRUST_STORE_FILE = getUbumeTrustStoreFile();
 export const CODEXA_TRUST_STORE_FILE = getLegacyCodexaTrustStoreFile();
 export const SETTINGS_FILE = join(homedir(), ".ubume-settings.json");
 export const LEGACY_SETTINGS_FILE = join(homedir(), ".codexa-settings.json");
-export const MODEL_SPECS_FILE = join(homedir(), ".ubume-model-specs.json");
-export const LEGACY_MODEL_SPECS_FILE = join(homedir(), ".codexa-model-specs.json");
 
 export const AVAILABLE_BACKENDS = [
   {

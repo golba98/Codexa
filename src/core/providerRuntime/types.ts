@@ -17,6 +17,14 @@ import type {
   NativeSessionReference,
 } from "../workspace/conversationStore.js";
 
+/** Reachability of the active provider, shown while Local endpoints are probed. */
+export type RuntimeAvailability =
+  | "available"
+  | "checking"
+  | "reconnecting"
+  | "unavailable"
+  | "unknown";
+
 export type ProviderBackendKind =
   | "codex-cli-auth"
   | "gemini-cli-auth"

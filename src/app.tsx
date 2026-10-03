@@ -13,7 +13,15 @@ import {
 import { resolveAgyExecutable } from "./core/executables/antigravityExecutable.js";
 import { sameFolder } from "./core/externalSessions/sessionIo.js";
 import { createRoutedProvider } from "./core/providerRuntime/execution.js";
+import type {
+  GeminiModelSelection,
+  ProviderImageAttachment,
+  ProviderRoute,
+  RuntimeAvailability,
+} from "./core/providerRuntime/types.js";
+import type { ProviderRunControl } from "./core/providers/types.js";
 import { workspaceStorageKey } from "./core/workspace/appData.js";
+import type { FileBoundary, RestoreOperation } from "./core/workspace/checkpoints.js";
 import { acquireOwnership, type OwnershipLease } from "./core/workspace/ownership.js";
 import {
   assessSavedRoute,
@@ -27,84 +35,6 @@ import {
   sessionIsInWorkspace,
 } from "./session/sessionCatalog.js";
 import { SavedSessionViewer } from "./ui/panels/SavedSessionViewer.js";
-
-// Diagnostic tracing hook — no-op by default; wire to a real logger when debugging.
-function appDiagLog(msg: string): void {
-  void msg;
-}
-
-function normalizeRuntimeAvailability(value: unknown): RuntimeAvailability {
-  if (value === "checking" || value === "reconnecting") return value;
-  if (value === "available") return "available";
-  if (value === "unavailable" || value === "no-models") return "unavailable";
-  return "unknown";
-}
-
-function formatRuntimeProviderLabel(providerId: ProviderId): string {
-  if (providerId === "local") return "Local";
-  if (providerId === "codexa-native" || providerId === "codexa-cupy") return "Codexa Native";
-  if (providerId === "google") return "Google";
-  if (providerId === "anthropic") return "Anthropic";
-  if (providerId === "mistral") return "Mistral Vibe CLI";
-  if (providerId === "antigravity") return "Antigravity";
-  return "OpenAI";
-}
-
-interface ProviderSetupPlan {
-  installCommand: string | null;
-  setupCommand: string;
-}
-
-function getProviderSetupPlan(providerId: ProviderId, windows: boolean): ProviderSetupPlan {
-  switch (providerId) {
-    case "openai":
-      return { installCommand: "npm install -g @openai/codex", setupCommand: "codex login" };
-    case "anthropic":
-      return { installCommand: "npm install -g @anthropic-ai/claude-code", setupCommand: "claude" };
-    case "google":
-      return { installCommand: "npm install -g @google/gemini-cli", setupCommand: "gemini" };
-    case "mistral":
-      return windows
-        ? {
-            installCommand:
-              "if (Get-Command uv -ErrorAction SilentlyContinue) { uv tool install mistral-vibe } else { irm https://astral.sh/uv/install.ps1 | iex; uv tool install mistral-vibe }",
-            setupCommand: "vibe --setup",
-          }
-        : {
-            installCommand: "curl -LsSf https://mistral.ai/vibe/install.sh | bash",
-            setupCommand: "vibe --setup",
-          };
-    case "antigravity":
-      return windows
-        ? {
-            installCommand: "irm https://antigravity.google/cli/install.ps1 | iex",
-            setupCommand: "agy",
-          }
-        : {
-            installCommand: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
-            setupCommand: "agy",
-          };
-    default:
-      return { installCommand: null, setupCommand: "" };
-  }
-}
-
-function readDiagnosticString(
-  diagnostics: Record<string, string | number | boolean | null> | undefined,
-  keys: string[],
-): string | null {
-  if (!diagnostics) return null;
-  for (const key of keys) {
-    const value = diagnostics[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return String(value);
-    }
-  }
-  return null;
-}
 
 import { Box, Text, useApp, useFocusManager, useInput, useStdin, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
@@ -412,7 +342,6 @@ import {
 } from "./session/workbench.js";
 import { AppShell } from "./ui/chrome/AppShell.js";
 import { MemoizedBottomComposer, measureBottomComposerRows } from "./ui/chrome/BottomComposer.js";
-import type { RuntimeAvailability } from "./ui/chrome/RuntimeStatusBar.js";
 import { FOCUS_IDS, getFocusTargetForScreen } from "./ui/input/focus.js";
 import {
   createImageAttachmentToken,
@@ -470,6 +399,79 @@ import {
 } from "./ui/themeFlow.js";
 import { TranscriptShell } from "./ui/timeline/TranscriptShell.js";
 import { resetTimelineMeasureCaches } from "./ui/timeline/timelineMeasure.js";
+
+function normalizeRuntimeAvailability(value: unknown): RuntimeAvailability {
+  if (value === "checking" || value === "reconnecting") return value;
+  if (value === "available") return "available";
+  if (value === "unavailable" || value === "no-models") return "unavailable";
+  return "unknown";
+}
+
+function formatRuntimeProviderLabel(providerId: ProviderId): string {
+  if (providerId === "local") return "Local";
+  if (providerId === "codexa-native" || providerId === "codexa-cupy") return "Codexa Native";
+  if (providerId === "google") return "Google";
+  if (providerId === "anthropic") return "Anthropic";
+  if (providerId === "mistral") return "Mistral Vibe CLI";
+  if (providerId === "antigravity") return "Antigravity";
+  return "OpenAI";
+}
+
+interface ProviderSetupPlan {
+  installCommand: string | null;
+  setupCommand: string;
+}
+
+function getProviderSetupPlan(providerId: ProviderId, windows: boolean): ProviderSetupPlan {
+  switch (providerId) {
+    case "openai":
+      return { installCommand: "npm install -g @openai/codex", setupCommand: "codex login" };
+    case "anthropic":
+      return { installCommand: "npm install -g @anthropic-ai/claude-code", setupCommand: "claude" };
+    case "google":
+      return { installCommand: "npm install -g @google/gemini-cli", setupCommand: "gemini" };
+    case "mistral":
+      return windows
+        ? {
+            installCommand:
+              "if (Get-Command uv -ErrorAction SilentlyContinue) { uv tool install mistral-vibe } else { irm https://astral.sh/uv/install.ps1 | iex; uv tool install mistral-vibe }",
+            setupCommand: "vibe --setup",
+          }
+        : {
+            installCommand: "curl -LsSf https://mistral.ai/vibe/install.sh | bash",
+            setupCommand: "vibe --setup",
+          };
+    case "antigravity":
+      return windows
+        ? {
+            installCommand: "irm https://antigravity.google/cli/install.ps1 | iex",
+            setupCommand: "agy",
+          }
+        : {
+            installCommand: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+            setupCommand: "agy",
+          };
+    default:
+      return { installCommand: null, setupCommand: "" };
+  }
+}
+
+function readDiagnosticString(
+  diagnostics: Record<string, string | number | boolean | null> | undefined,
+  keys: string[],
+): string | null {
+  if (!diagnostics) return null;
+  for (const key of keys) {
+    const value = diagnostics[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+  return null;
+}
 
 // ─── Module Constants & Helpers ────────────────────────────────────────────────
 
@@ -557,7 +559,7 @@ interface PromptRunLifecycle {
   preserveInput?: boolean;
   queuedPromptIds?: readonly string[];
   runIntent?: "normal" | "plan" | "approved-execution";
-  imageAttachments?: readonly import("./core/providerRuntime/types.js").ProviderImageAttachment[];
+  imageAttachments?: readonly ProviderImageAttachment[];
   onCompleted?: (result: { response: string; turnId: number; runId: number }) => void;
   onFailed?: (result: { message: string; turnId: number; runId: number }) => void;
   onCanceled?: (result: { turnId: number; runId: number }) => void;
@@ -739,7 +741,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     () =>
       new ConversationStore(workspaceRoot, {
         ownership: true,
-        onDiagnostic: (message) => appDiagLog(`CONVERSATION_STORE: ${message}`),
       }),
     [workspaceRoot],
   );
@@ -749,9 +750,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView>("transcript");
   const fileAttachmentRegistryRef = useRef(new Map<string, FileAttachment>());
   const checkpointsRef = useRef<FileCheckpoint[]>([]);
-  const restoredFileBoundaryRef = useRef<
-    import("./core/workspace/checkpoints.js").FileBoundary | undefined
-  >(undefined);
+  const restoredFileBoundaryRef = useRef<FileBoundary | undefined>(undefined);
   const workspaceLeaseRef = useRef<OwnershipLease | undefined>(undefined);
   const stoppingRef = useRef<Promise<void>>(Promise.resolve());
   const [interruptStopping, setInterruptStopping] = useState(false);
@@ -769,7 +768,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   } | null>(null);
   const pendingCaptureRef = useRef<Promise<void>>(Promise.resolve());
   const deferredRouteCloseRef = useRef<string | undefined>(undefined);
-  const runControlRef = useRef<import("./core/providers/types.js").ProviderRunControl | null>(null);
+  const runControlRef = useRef<ProviderRunControl | null>(null);
   const processStoppedRef = useRef<Promise<void>>(Promise.resolve());
   const pipelineGenerationRef = useRef(0);
   // What the active run has produced so far, saved with its reply even when the
@@ -781,9 +780,9 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     tools: Map<string, string>;
     files: Map<string, PersistedFileActivity>;
   } | null>(null);
-  const [conversationRouteOverride, setConversationRouteOverride] = useState<
-    import("./core/providerRuntime/types.js").ProviderRoute | null
-  >(null);
+  const [conversationRouteOverride, setConversationRouteOverride] = useState<ProviderRoute | null>(
+    null,
+  );
   const preserveSavedRouteRef = useRef(false);
   const routeChoiceRequiredRef = useRef<string | null>(null);
   const startupResumeHandledRef = useRef(false);
@@ -3029,7 +3028,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       nextModel: string,
       nextReasoning: string,
       backendKindOverride?: ReturnType<typeof getProviderRuntime>["backendKind"],
-      modelSelection?: import("./core/providerRuntime/types.js").GeminiModelSelection,
+      modelSelection?: GeminiModelSelection,
       localBackend?: LocalBackendId,
     ) => {
       try {
@@ -3429,7 +3428,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       nextModel: AvailableModel,
       nextReasoning: ReasoningLevel,
       providerId: ProviderId = activeProviderRoute.providerId,
-      geminiSelection?: import("./core/providerRuntime/types.js").GeminiModelSelection,
+      geminiSelection?: GeminiModelSelection,
       localBackend?: LocalBackendId,
     ) => {
       const gate = guardConfigMutation("model", busy);
@@ -4123,9 +4122,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           reasoningLevel;
 
         if (isRealModel || isCurrentActive) {
-          let geminiSelection:
-            | import("./core/providerRuntime/types.js").GeminiModelSelection
-            | undefined;
+          let geminiSelection: GeminiModelSelection | undefined;
           if (providerId === "google") {
             if (isCurrentActive && activeRoute?.modelSelection) {
               geminiSelection = activeRoute.modelSelection;
@@ -4731,9 +4728,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       persistedResponse?: string,
     ) => {
       if (!isCurrentRun(activeRunIdRef.current, runId)) {
-        appDiagLog(
-          `FINALIZE_RUN_BOUNDARY: ignored stale runId=${runId} turnId=${turnId} status=${status} activeRunId=${activeRunIdRef.current}`,
-        );
         return false;
       }
       perf.mark("finalize_start");
@@ -4764,23 +4758,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       activeRunTimingRef.current = null;
       activeRunIdRef.current = null;
       activeTurnIdRef.current = null;
-      appDiagLog(
-        [
-          "FINALIZE_RUN_BOUNDARY:",
-          `provider=${activeProviderRoute.providerId}`,
-          `runId=${runId}`,
-          `turnId=${turnId}`,
-          `status=${status}`,
-          `responseProvided=${response !== undefined}`,
-          `responseLength=${response?.length ?? 0}`,
-          `messagePresent=${Boolean(message?.trim())}`,
-          `composerUnlockReason=finalizePromptRun:${status}`,
-        ].join(" "),
-      );
       focusManager.focus(FOCUS_IDS.composer);
-      appDiagLog(
-        `COMPOSER_ACTIVE_AGAIN: reason=finalizePromptRun:${status} activeRunCleared=true focusTarget=${FOCUS_IDS.composer}`,
-      );
       cleanup?.();
       const safeMessage = message ? sanitizeTerminalOutput(message) : undefined;
       // When response is undefined, signal the reducer to preserve streamed content as-is.
@@ -4804,19 +4782,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         completeResponse: safePersistedResponse,
         errorMessage: safeMessage,
       });
-      appDiagLog(
-        [
-          "FINALIZE_RUN_PAYLOAD:",
-          `provider=${activeProviderRoute.providerId}`,
-          `runId=${runId}`,
-          `turnId=${turnId}`,
-          `status=${status}`,
-          `safeResponseLength=${safeResponse?.length ?? 0}`,
-          `parsedContentLength=${parsed.content?.length ?? 0}`,
-          `assistantAppendCalledExpected=${Boolean(parsed.content?.trim())}`,
-          `finalRunState=${status}`,
-        ].join(" "),
-      );
       dispatchSession({
         type: "FINALIZE_RUN",
         runId,
@@ -5852,21 +5817,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           },
           {
             onAssistantDelta: (chunk) => {
-              const geminiBoundary = activeProviderRoute.providerId === "google";
-              appDiagLog(
-                `onAssistantDelta: provider=${activeProviderRoute.providerId} chunk.length=${chunk?.length ?? 0} isEmpty=${!chunk}`,
-              );
-              if (geminiBoundary) {
-                appDiagLog(
-                  `GEMINI_APP_BOUNDARY: onAssistantDelta received=yes nonEmpty=${Boolean(chunk)} runId=${runId} turnId=${turnId}`,
-                );
-              }
               if (!chunk || !isCurrentRun(activeRunIdRef.current, runId)) {
-                if (geminiBoundary) {
-                  appDiagLog(
-                    `GEMINI_APP_BOUNDARY: onAssistantDelta assistantAppendCalled=no reason=${!chunk ? "empty-chunk" : "stale-run"} runId=${runId} turnId=${turnId}`,
-                  );
-                }
                 return;
               }
               const t0 = performance.now();
@@ -5874,19 +5825,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               perf.accumulate("sanitize_ms", performance.now() - t0);
               perf.inc("chunks");
               if (!safeChunk) {
-                appDiagLog(
-                  `onAssistantDelta: safeChunk empty after sanitize → no content queued to liveScheduler`,
-                );
-                if (geminiBoundary) {
-                  appDiagLog(
-                    `GEMINI_APP_BOUNDARY: onAssistantDelta assistantAppendCalled=no reason=empty-after-sanitize runId=${runId} turnId=${turnId}`,
-                  );
-                }
                 return;
               }
-              appDiagLog(
-                `onAssistantDelta: ASSISTANT_APPEND_PATH reached — queuing ${safeChunk.length} chars (liveScheduler→RUN_APPLY_LIVE_UPDATES→assistantEvent in activeEvents→FINALIZE_RUN→staticEvents)`,
-              );
               markExternalCliReady();
               liveScheduler.enqueue({
                 type: lifecycle.responsePresentation === "plan" ? "plan" : "assistant",
@@ -5897,11 +5837,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                 activeRunCaptureRef.current.text += safeChunk;
               if (lifecycle.responsePresentation === "plan") {
                 planSectionContent += safeChunk;
-              }
-              if (geminiBoundary) {
-                appDiagLog(
-                  `GEMINI_APP_BOUNDARY: onAssistantDelta assistantAppendCalled=yes queuedLength=${safeChunk.length} totalStreamedLength=${streamedAssistantContent.length} runId=${runId} turnId=${turnId}`,
-                );
               }
             },
             onFinalAnswerObserved: (response) => {
@@ -5970,21 +5905,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                 setScreen("tool-approval");
               }),
             onResponse: (response) => {
-              const geminiBoundary = activeProviderRoute.providerId === "google";
-              appDiagLog(
-                `onResponse: provider=${activeProviderRoute.providerId} response.length=${response?.length ?? 0}`,
-              );
-              if (geminiBoundary) {
-                appDiagLog(
-                  `GEMINI_APP_BOUNDARY: onResponse received=yes nonEmpty=${Boolean(response?.trim())} runId=${runId} turnId=${turnId}`,
-                );
-              }
               if (!isCurrentRun(activeRunIdRef.current, runId)) {
-                if (geminiBoundary) {
-                  appDiagLog(
-                    `GEMINI_APP_BOUNDARY: onResponse finalizeCalled=no reason=stale-run runId=${runId} turnId=${turnId}`,
-                  );
-                }
                 return;
               }
               perf.mark("response_cb_start");
@@ -6055,29 +5976,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                             streamedNorm.length / responseNorm.length > 0.8))
                       ? undefined
                       : safeResponse;
-                appDiagLog(
-                  `onResponse.finalizeResponse: safeResponse.length=${safeResponse.length} streamedContent.length=${streamedAssistantContent.length} finalResponse=${finalResponse === undefined ? "undefined(use-streamed)" : `${finalResponse.length}chars`}`,
-                );
-                if (geminiBoundary) {
-                  const extractionStatus =
-                    safeResponse.trim() || streamedAssistantContent.trim()
-                      ? "assistant-text"
-                      : "completed-empty-assistant";
-                  appDiagLog(
-                    [
-                      "GEMINI_APP_BOUNDARY:",
-                      `onResponse finalizeCalled=yes`,
-                      `extractionStatus=${extractionStatus}`,
-                      `safeResponseLength=${safeResponse.length}`,
-                      `streamedAssistantContentLength=${streamedAssistantContent.length}`,
-                      `finalResponseProvided=${finalResponse !== undefined}`,
-                      `finalRunState=completed`,
-                      `reasonComposerBecomesActive=FINALIZE_RUN_COMPLETED`,
-                      `runId=${runId}`,
-                      `turnId=${turnId}`,
-                    ].join(" "),
-                  );
-                }
                 traceLiveRunDiagnostics("completed");
                 void finalizePromptRun(
                   runId,
@@ -6484,7 +6382,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     async (
       checkpoint: FileCheckpoint,
       recoveryMode: RecoveryMode,
-      operations: import("./core/workspace/checkpoints.js").RestoreOperation[],
+      operations: RestoreOperation[],
     ) => {
       if (activeRunIdRef.current !== null || submissionRef.current)
         throw new Error("Stop the current operation before rewinding.");
@@ -6598,7 +6496,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       displayPrompt: string,
       submitTiming?: PromptRunTiming,
       commitPrompt = false,
-      imageAttachments: readonly import("./core/providerRuntime/types.js").ProviderImageAttachment[] = [],
+      imageAttachments: readonly ProviderImageAttachment[] = [],
       preserveInput = false,
       queuedPromptIds?: readonly string[],
     ) => {
