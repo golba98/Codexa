@@ -1,0 +1,6 @@
+# Bulk formatting commits. Use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: format src with Biome
+693bcad447ec1f42cb22012c4a442234af02dda5
+# chore: normalize line endings to LF
+f77ec65d63bc324a8c67dcfd82af59f436af4cc1
