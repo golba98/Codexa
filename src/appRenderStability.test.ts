@@ -445,3 +445,22 @@ test("App holds a process-lifetime stdin raw-mode lease so composer shell swaps 
     /const \{ stdin \} = useStdin\(\);\s*(?:\/\/[^\n]*\n\s*)*useStdinRawModeLease\(\);/,
   );
 });
+
+test("provider setup failures are titled with the provider being set up", () => {
+  const body = callbackBody(appSource, "runProviderSetup");
+  assert.ok(body, "runProviderSetup callback should exist");
+  assert.doesNotMatch(body, /"Mistral Vibe setup failed"/);
+  assert.equal(body.match(/`\$\{label\} setup failed`/g)?.length, 2);
+});
+
+test("Composer clears every raw-key timeout when its stdin listener is removed", () => {
+  const cleanup = composerSource.match(/stdin\.off\("data", handleRawInput\);([\s\S]*?)\n {4}\};/);
+  assert.ok(cleanup, "raw-input effect cleanup should exist");
+  const timeoutRefs = [...composerSource.matchAll(/const (\w+EventTimeoutRef) = useRef/g)].map(
+    (match) => match[1],
+  );
+  assert.ok(timeoutRefs.length > 0);
+  for (const ref of timeoutRefs) {
+    assert.match(cleanup[1] ?? "", new RegExp(`clearTimeout\\(${ref}\\.current\\)`), ref);
+  }
+});

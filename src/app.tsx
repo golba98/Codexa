@@ -4101,6 +4101,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   const runProviderSetup = useCallback(
     (providerId: ProviderId) => {
       const provider = findProvider(providerRegistry, providerId);
+      const label = provider?.displayName ?? providerId;
       const windows = process.platform === "win32";
       const plan = getProviderSetupPlan(providerId, windows);
 
@@ -4135,19 +4136,16 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           });
 
       child.once("error", (error) => {
-        appendErrorEvent("Mistral Vibe setup failed", error.message);
+        appendErrorEvent(`${label} setup failed`, error.message);
       });
       child.once("close", (code) => {
         if (code === 0) {
           appendSystemEvent(
-            `${provider?.displayName ?? providerId} setup`,
+            `${label} setup`,
             "Installation and setup finished. Reopen the provider picker to launch it.",
           );
         } else if (code !== null) {
-          appendErrorEvent(
-            `${provider?.displayName ?? providerId} setup failed`,
-            `The setup process exited with code ${code}.`,
-          );
+          appendErrorEvent(`${label} setup failed`, `The setup process exited with code ${code}.`);
         }
       });
     },
