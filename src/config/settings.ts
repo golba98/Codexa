@@ -27,6 +27,10 @@ export const DEFAULT_SHOW_BUSY_LOADER = true;
 export const DEFAULT_AUTH_PREFERENCE = "chatgpt-login-goal";
 export const MAX_CHAT_LINES = 2000;
 
+export function getHomeDir(env: NodeJS.ProcessEnv = process.env): string {
+  return env.USERPROFILE ?? env.HOME ?? homedir();
+}
+
 export function getCodexHome(): string {
   return process.env.CODEX_HOME?.trim() || join(homedir(), ".codex");
 }

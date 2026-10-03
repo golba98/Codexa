@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { homedir } from "node:os";
 import test from "node:test";
 import {
   DEFAULT_MODE,
@@ -13,6 +14,7 @@ import {
   formatWorkspaceDisplayPath,
   getCodexConfigFile,
   getCodexHome,
+  getHomeDir,
   getLegacyCodexaTrustStoreFile,
   getNextMode,
   getNextRotatingMode,
@@ -139,4 +141,13 @@ test("resolves CODEX_HOME-derived paths from the live environment", () => {
       process.env.CODEX_HOME = previousCodexHome;
     }
   }
+});
+
+test("home resolution honors injected Windows and POSIX environments", () => {
+  assert.equal(
+    getHomeDir({ USERPROFILE: "C:\\Users\\tester", HOME: "/ignored" }),
+    "C:\\Users\\tester",
+  );
+  assert.equal(getHomeDir({ HOME: "/home/tester" }), "/home/tester");
+  assert.equal(getHomeDir({}), homedir());
 });

@@ -9,6 +9,8 @@ import {
   readClaudeTranscript,
 } from "./claudeSessions.js";
 
+import { resolveHome } from "./sessionIo.js";
+
 const workspace = "/work/my app";
 
 function fixtureHome(): string {
@@ -227,4 +229,12 @@ test("readClaudeTranscript pairs tool calls with results and skips injected cont
     ],
   );
   assert.equal(transcript.entries[1]?.timestamp, "2026-09-30T10:00:00.000Z");
+});
+
+test("external session home overrides precede injected USERPROFILE", () => {
+  assert.equal(resolveHome({ env: { USERPROFILE: "C:\\Users\\tester" } }), "C:\\Users\\tester");
+  assert.equal(
+    resolveHome({ home: "/fixtures", env: { USERPROFILE: "C:\\Users\\tester" } }),
+    "/fixtures",
+  );
 });

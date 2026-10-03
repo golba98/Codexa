@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { open } from "node:fs/promises";
-import { homedir } from "node:os";
 import { createInterface } from "node:readline";
+import { getHomeDir } from "../../config/settings.js";
 import { normalizeWorkspaceRoot } from "../workspace/workspaceRoot.js";
 import type { ExternalSessionOptions } from "./types.js";
 
@@ -17,7 +17,7 @@ export function stringField(record: JsonRecord, key: string): string | null {
 }
 
 export function resolveHome(options: ExternalSessionOptions = {}): string {
-  return options.home ?? options.env?.["HOME"] ?? homedir();
+  return options.home ?? getHomeDir(options.env);
 }
 
 export function envValue(options: ExternalSessionOptions, key: string): string | undefined {
