@@ -7,6 +7,7 @@ import {
   formatSkippedDependencyPath,
   getPromptWorkspaceGuardMessage,
   getShellWorkspaceGuardMessage,
+  isDangerousShellCommand,
   isPathInsideAllowedRoots,
   isPathInsideWorkspace,
   isSkippedExternalDependencyPath,
@@ -302,4 +303,18 @@ test("formats skipped dependency paths cleanly", () => {
     formatSkippedDependencyPath("/home/user/project/node_modules/pkg/index.js"),
     "index.js",
   );
+});
+
+test("isDangerousShellCommand flags destructive commands only", () => {
+  for (const command of [
+    "rm -rf build",
+    "sudo apt install x",
+    "dd if=a of=/dev/sda",
+    "mkfs.ext4 /dev/sdb",
+  ]) {
+    assert.equal(isDangerousShellCommand(command), true, command);
+  }
+  for (const command of ["ls -la", "rm notes.txt", "git status", "chmod 644 file"]) {
+    assert.equal(isDangerousShellCommand(command), false, command);
+  }
 });

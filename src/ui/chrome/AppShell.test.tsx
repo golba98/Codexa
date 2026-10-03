@@ -5,12 +5,19 @@ import { Box, render, Text } from "ink";
 import type React from "react";
 import { buildRuntimeSummary } from "../../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../../config/settings.js";
+import type { CodexAuthState } from "../../core/auth/codexAuth.js";
 import type { Screen, TimelineEvent, UIState } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
-import { createLayoutSnapshot, useTerminalViewport } from "../layout.js";
+import {
+  createLayoutSnapshot,
+  getShellWidth,
+  type Layout,
+  useTerminalViewport,
+} from "../layout.js";
 import { measurePlanActionPickerRows, PlanActionPicker } from "../panels/PlanActionPicker.js";
 import { ThemeProvider } from "../theme.js";
-import { buildStaticIntroRows, StaticIntroItem } from "../timeline/StaticIntroItem.js";
+import { buildIntroRenderItem } from "../timeline/Timeline.js";
+import { buildTimelineSnapshot, type TimelineRow } from "../timeline/timelineMeasure.js";
 import {
   AppShell,
   calculateColdStartSpacerRows,
@@ -708,59 +715,6 @@ test("non-main panel content updates while the active screen is unchanged", asyn
   }
 });
 
-test("startup intro workspace label updates when the intro component rerenders", async () => {
-  const stdin = new TestInput();
-  const stdout = new TestOutput();
-  let output = "";
-
-  stdout.on("data", (chunk) => {
-    output += chunk.toString();
-  });
-
-  const layout = createLayoutSnapshot(120, 34);
-  const instance = render(
-    <ThemeProvider theme="purple">
-      <StaticIntroItem
-        authState="authenticated"
-        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
-        layout={layout}
-        verboseMode={false}
-        workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
-      />
-    </ThemeProvider>,
-    {
-      stdin: stdin as unknown as NodeJS.ReadStream,
-      stdout: stdout as unknown as NodeJS.WriteStream,
-      stderr: stdout as unknown as NodeJS.WriteStream,
-      debug: true,
-      exitOnCtrlC: false,
-      patchConsole: false,
-    },
-  );
-
-  try {
-    await sleep(80);
-    instance.rerender(
-      <ThemeProvider theme="purple">
-        <StaticIntroItem
-          authState="authenticated"
-          workspaceLabel="Ubume"
-          layout={layout}
-          verboseMode={false}
-          workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
-        />
-      </ThemeProvider>,
-    );
-    await sleep(80);
-
-    const frame = stripAnsi(output);
-    assert.match(frame, /Workspace:\s*Ubume/);
-  } finally {
-    instance.cleanup();
-    await sleep(20);
-  }
-});
-
 test("model picker renders as a compact command panel with composer", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
@@ -1193,7 +1147,23 @@ function assertHeaderBefore(output: string, marker: string) {
   );
 }
 
-function rowText(row: ReturnType<typeof buildStaticIntroRows>[number]): string {
+function buildStaticIntroRows(options: {
+  authState: CodexAuthState;
+  workspaceLabel: string;
+  layout: Layout;
+  verboseMode: boolean;
+  workspaceRoot: string | null;
+}): TimelineRow[] {
+  const { verboseMode, workspaceRoot, ...intro } = options;
+  return buildTimelineSnapshot([buildIntroRenderItem(intro)], {
+    totalWidth: getShellWidth(options.layout.cols),
+    verboseMode,
+    debugLabel: "static-intro",
+    workspaceRoot,
+  }).rows;
+}
+
+function rowText(row: TimelineRow): string {
   return row.spans.map((span) => span.text).join("");
 }
 

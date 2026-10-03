@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { CodexAuthState } from "../../core/auth/codexAuth.js";
 import type { RunProgressEntry, TimelineEvent } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
-import { getShellWidth, getVisualWidth } from "../layout.js";
-import { buildStaticIntroRows } from "./StaticIntroItem.js";
+import { getShellWidth, getVisualWidth, type Layout } from "../layout.js";
 import {
   buildActiveRenderItems,
+  buildIntroRenderItem,
   buildStaticRenderItems,
   buildTimelineItems,
   createFinalizeContinuityViewport,
@@ -326,6 +327,22 @@ test("Ubume intro renders as a normal timeline item", () => {
   assert(versionLineIndex >= 0 && versionLineIndex < 6);
   assert.match(lines[versionLineIndex]!, /[█╔║╝]/);
 });
+
+function buildStaticIntroRows(options: {
+  authState: CodexAuthState;
+  workspaceLabel: string;
+  layout: Layout;
+  verboseMode: boolean;
+  workspaceRoot: string | null;
+}): TimelineRow[] {
+  const { verboseMode, workspaceRoot, ...intro } = options;
+  return buildTimelineSnapshot([buildIntroRenderItem(intro)], {
+    totalWidth: getShellWidth(options.layout.cols),
+    verboseMode,
+    debugLabel: "static-intro",
+    workspaceRoot,
+  }).rows;
+}
 
 test("static intro uses the padded timeline snapshot path", () => {
   const layout = {
