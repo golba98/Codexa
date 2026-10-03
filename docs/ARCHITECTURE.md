@@ -59,7 +59,7 @@ flowchart LR
   Launcher -->|interactive| Entry[src/index.tsx]
   Launcher -->|exec / benchmark| Exec[src/cli.ts]
 
-  Entry --> App[src/app.tsx]
+  Entry --> App[src/app/App.tsx]
   App --> Session[src/session]
   App --> UI[src/ui]
   App --> Config[src/config]
@@ -81,7 +81,7 @@ The launcher chooses a mode but does not own application state. `src/index.tsx` 
 
 ```mermaid
 flowchart TD
-  Entrypoints[Entrypoints<br/>index.tsx / cli.ts] --> Orchestrator[App orchestration<br/>app.tsx]
+  Entrypoints[Entrypoints<br/>index.tsx / cli.ts] --> Orchestrator[App orchestration<br/>app/App.tsx]
   Entrypoints --> Headless[Headless runner<br/>headless/]
   Orchestrator --> Session[Session state and reducers<br/>session/]
   Orchestrator --> Commands[Slash-command parsing<br/>commands/]
@@ -100,12 +100,12 @@ flowchart TD
 
 The intended ownership rules are:
 
-- `app.tsx` coordinates subsystems. It may wire hooks, state, providers, commands, and screens, but reusable domain logic should move to the appropriate folder.
+- `app/App.tsx` coordinates subsystems. It may wire hooks, state, providers, commands, and screens, but reusable domain logic should move to the appropriate folder.
 - `session/` owns serializable chat/timeline state, lifecycle reducers, streaming schedules, and plan flow. It must not render Ink components.
 - `ui/` owns terminal presentation and input behavior. It consumes session/config types but should not launch providers or persist workspace state.
 - `core/` owns non-UI runtime behavior: processes, providers, terminal control, workspace services, model discovery, and diagnostics.
 - `config/` owns configuration parsing, defaults, persistence, trust, and effective runtime policy.
-- `commands/` converts slash-command text into actions; `app.tsx` performs those actions.
+- `commands/` converts slash-command text into actions; `app/App.tsx` performs those actions.
 - `headless/` adapts the shared backend contracts to stdout, stderr, and process exit codes without constructing the Ink UI.
 
 ## Interactive startup and prompt flow
@@ -114,7 +114,7 @@ The intended ownership rules are:
 sequenceDiagram
   participant L as bin/ubume.js
   participant I as src/index.tsx
-  participant A as src/app.tsx
+  participant A as src/app/App.tsx
   participant S as src/session
   participant P as Provider backend
   participant U as src/ui
@@ -141,7 +141,7 @@ sequenceDiagram
 Important details:
 
 1. `src/index.tsx` wraps stdout with frame locking, configures terminal modes, installs resize and failure cleanup, and renders one `App` root.
-2. `src/app.tsx` resolves the current workspace, layered runtime, provider route, model metadata, permissions, and project instructions.
+2. `src/app/App.tsx` resolves the current workspace, layered runtime, provider route, model metadata, permissions, and project instructions.
 3. A submission creates linked user/run events with stable `turnId` and `runId` values.
 4. Provider callbacks are sanitized and batched by the live-render scheduler before entering the session reducer.
 5. The UI derives rows from session events. It does not directly parse provider output.
@@ -172,7 +172,7 @@ Three similarly named folders represent different layers and must remain distinc
 
 ```mermaid
 flowchart TD
-  App[app.tsx] --> LauncherLayer[providerLauncher/<br/>selection, workspace config, native CLI launch]
+  App[app/App.tsx] --> LauncherLayer[providerLauncher/<br/>selection, workspace config, native CLI launch]
   App --> RuntimeLayer[providerRuntime/<br/>route validation, discovery, metadata, provider runtimes]
   RuntimeLayer --> ProviderLayer[providers/<br/>low-level Codex subprocess and stream parsing]
 
@@ -311,7 +311,7 @@ Local completion explicitly flushes the Harness session journal before publishin
 ### Adding a slash command or panel
 
 1. Parse the command into a typed action in `commands/handler.ts` and expose discoverability through `ui/input/slashCommands.ts`.
-2. Perform side effects in `app.tsx`; keep the parser deterministic.
+2. Perform side effects in `app/App.tsx`; keep the parser deterministic.
 3. Put new panels under `ui/panels/` and shared screen chrome under `ui/chrome/`.
 4. Add keyboard/focus tests and small-terminal layout coverage when the screen changes row usage.
 
@@ -345,3 +345,9 @@ Update `docs/ARCHITECTURE.md` when a subsystem boundary, entry point, data flow,
 Local uses the DeepSeek Harness as the generic agent runtime for compatible local models. Agent-scoped structured browser tools join its existing tool registry; the same loop handles streaming calls, reasoning, approvals, results and sessions. `src/core/computerUse/` supervises a private Node/Playwright worker under `bin/`; this worker executes browser commands and owns no model client or agent loop. Browser environment availability is independent of model capability. Existing hosted search/fetch guards remain in place.
 
 The browser backend reuses an ephemeral context per live Harness session, provides bounded semantic snapshots and references, and supplies screenshots through Harness attachments. Session cleanup closes browsers; the supervisor also reaps owned processes after worker failure. See [Local browser setup, tools, permissions and lifecycle](LOCAL_BROWSER.md).
+
+### App and rendering ownership after cleanup
+
+`src/app/App.tsx` composes the hooks in `src/app/` while retaining clear-frame wiring and the first dispose/sync effects inline. Run refs have a stable owner; render-time assignments and synchronous composer value/cursor updates remain in render/input handlers. `OverlayPanels.tsx` stays un-memoized because AppShell does not compare panel closures.
+
+Timeline measurement lives in `ui/timeline/measure/`; its facade owns the public cache reset API. Viewport calculation, item construction, row rendering, and viewport effects have separate modules. Composer input/model/keymap logic lives in `ui/chrome/composer/`. Local harness configuration, profiles, event routing, policy decisions, and messages stay within its runtime folder; process and active-run identity guards remain at each asynchronous boundary.

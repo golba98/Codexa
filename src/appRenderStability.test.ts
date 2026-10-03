@@ -1,10 +1,22 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "app.tsx"), "utf8");
+function readAppSources(): string {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "app");
+  return readdirSync(root, { recursive: true, encoding: "utf8" })
+    .filter((file) => /\.tsx?$/.test(file))
+    .sort()
+    .map((file) => readFileSync(join(root, file), "utf8"))
+    .join("\n");
+}
+const appSource = readAppSources();
+const eventIdsSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "session", "eventIds.ts"),
+  "utf8",
+);
 const appShellSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "AppShell.tsx"),
   "utf8",
@@ -92,7 +104,7 @@ test("TranscriptShell owns native static history while AppShell remains the over
 test("App routes main chat to TranscriptShell and gates AppShell to overlays", () => {
   assert.match(appSource, /<TranscriptShell[\s\S]*visible=\{screen === "main"\}/);
   assert.match(appSource, /\{screen !== "main" && \(\s*<AppShell/);
-  assert.match(appSource, /panel=\{\s*<>\s*\{screen === "workbench-panel"/);
+  assert.match(appSource, /panel=\{\s*<OverlayPanels/);
   assert.match(appSource, /screen === "provider-picker"/);
   assert.match(appSource, /screen === "model-picker"/);
 });
@@ -137,10 +149,10 @@ test("startup update checks run before the composer can accept input", () => {
 });
 
 test("Startup provider migration notice is seeded before the first composer frame", () => {
-  assert.match(appSource, /function createStartupStaticEvents/);
+  assert.match(eventIdsSource, /function createStartupStaticEvents/);
   assert.doesNotMatch(appSource, /createLaunchModeEvent|buildDevLaunchNotice/);
   assert.match(
-    appSource,
+    eventIdsSource,
     /createProviderMigrationNoticeEvent\(providerWorkspaceConfig\.migrationNotice\)/,
   );
   assert.match(appSource, /useAppSessionState\(\(\) => \{\s*return createStartupStaticEvents\(/);
@@ -269,11 +281,11 @@ test("/clear resolves the live Ink instance behind stdout and memoizes it", () =
   );
   assert.match(
     appSource,
-    /import \{[^}]*\bresolveInkRenderInstance\b[^}]*\} from "\.\/core\/terminal\/inkRenderReset\.js"/,
+    /import \{[^}]*\bresolveInkRenderInstance\b[^}]*\} from "\.\.\/core\/terminal\/inkRenderReset\.js"/,
   );
   assert.match(
     appSource,
-    /import \{ createClearFrameBoundaryController \} from "\.\/core\/terminal\/clearFrameBoundary\.js"/,
+    /import \{ createClearFrameBoundaryController \} from "\.\.\/core\/terminal\/clearFrameBoundary\.js"/,
   );
 });
 
@@ -286,7 +298,9 @@ test("/clear arms a fresh render generation before transcript reset", () => {
   );
   const body = callbackBody(appSource, "handleClear");
   assert.ok(body, "handleClear callback should exist");
-  const armBoundaryIndex = body.indexOf('armTranscriptReplacement("src/app.tsx:handleClear")');
+  const armBoundaryIndex = body.indexOf(
+    'armTranscriptReplacement("src/app/useComposerEditing.ts:handleClear")',
+  );
   const seedEventsIndex = body.indexOf("createStartupStaticEvents({");
   const resetToHomeIndex = body.search(/resetToHomeScreen\(\s*createStartupStaticEvents\(\{/);
   const finishIndex = body.indexOf("replacement.finish()");
@@ -314,7 +328,9 @@ test("/clear arms a fresh render generation before transcript reset", () => {
 test("/resume arms the clear boundary before swapping the transcript so the logo is not printed twice", () => {
   const body = callbackBody(appSource, "resumeConversation");
   assert.ok(body, "resumeConversation callback should exist");
-  const armIndex = body.indexOf('armTranscriptReplacement("src/app.tsx:resumeConversation")');
+  const armIndex = body.search(
+    /armTranscriptReplacement\(\s*"src\/app\/useConversation\.ts:resumeConversation"\s*,?\s*\)/,
+  );
   const swapIndex = body.indexOf('type: "RESTORE_SESSION"');
   const finishIndex = body.indexOf("replacement.finish()");
   assert.ok(armIndex >= 0, "resume should arm the clear boundary");
@@ -438,7 +454,7 @@ test("App holds a process-lifetime stdin raw-mode lease so composer shell swaps 
   // stdin into flowing mode and Ink never receives input again.
   assert.match(
     appSource,
-    /import \{ useStdinRawModeLease \} from "\.\/ui\/input\/useStdinRawModeLease\.js"/,
+    /import \{ useStdinRawModeLease \} from "\.\.\/ui\/input\/useStdinRawModeLease\.js"/,
   );
   assert.match(
     appSource,

@@ -47,7 +47,7 @@ export interface SessionState {
   clearEpoch: number; // Incremented on each /clear to suppress stale async events
 }
 
-type SessionAction =
+export type SessionAction =
   | { type: "APPEND_STATIC_EVENT"; event: TimelineEvent }
   | { type: "APPEND_STATIC_EVENTS"; events: TimelineEvent[] }
   | { type: "SET_INPUT"; value: string; cursor?: number }
