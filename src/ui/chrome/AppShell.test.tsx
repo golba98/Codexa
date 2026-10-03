@@ -178,17 +178,9 @@ function renderShell(
             onChangeInput={() => {}}
             onSubmit={() => {}}
             onCancel={() => {}}
-            onChangeValue={() => {}}
-            onChangeCursor={() => {}}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -254,18 +246,10 @@ test("header omits model/context while composer status row renders active model 
       onChangeInput={() => {}}
       onSubmit={() => {}}
       onCancel={() => {}}
-      onChangeValue={() => {}}
-      onChangeCursor={() => {}}
       onHistoryUp={() => {}}
       onHistoryDown={() => {}}
-      onOpenBackendPicker={() => {}}
       onOpenProviderPicker={() => {}}
       onOpenModelPicker={() => {}}
-      onOpenModePicker={() => {}}
-      onOpenThemePicker={() => {}}
-      onOpenAuthPanel={() => {}}
-      onTogglePlanMode={() => {}}
-      onClear={() => {}}
       onCycleMode={() => {}}
       onQuit={() => {}}
     />
@@ -379,18 +363,10 @@ test("100x22 bottom chrome renders runtime context once below composer", async (
       onChangeInput={() => {}}
       onSubmit={() => {}}
       onCancel={() => {}}
-      onChangeValue={() => {}}
-      onChangeCursor={() => {}}
       onHistoryUp={() => {}}
       onHistoryDown={() => {}}
-      onOpenBackendPicker={() => {}}
       onOpenProviderPicker={() => {}}
       onOpenModelPicker={() => {}}
-      onOpenModePicker={() => {}}
-      onOpenThemePicker={() => {}}
-      onOpenAuthPanel={() => {}}
-      onTogglePlanMode={() => {}}
-      onClear={() => {}}
       onCycleMode={() => {}}
       onQuit={() => {}}
     />
@@ -513,17 +489,9 @@ function renderStartupShell(
             onChangeInput={() => {}}
             onSubmit={() => {}}
             onCancel={() => {}}
-            onChangeValue={() => {}}
-            onChangeCursor={() => {}}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -924,17 +892,9 @@ test("memoized composer re-renders when only the terminal height changes", async
         onChangeInput={() => {}}
         onSubmit={() => {}}
         onCancel={() => {}}
-        onChangeValue={() => {}}
-        onChangeCursor={() => {}}
         onHistoryUp={() => {}}
         onHistoryDown={() => {}}
-        onOpenBackendPicker={() => {}}
         onOpenModelPicker={() => {}}
-        onOpenModePicker={() => {}}
-        onOpenThemePicker={() => {}}
-        onOpenAuthPanel={() => {}}
-        onTogglePlanMode={() => {}}
-        onClear={() => {}}
         onCycleMode={() => {}}
         onQuit={() => {}}
       />
@@ -1048,17 +1008,9 @@ function buildComposerNode(layout: ReturnType<typeof createLayoutSnapshot>, uiSt
       onChangeInput={() => {}}
       onSubmit={() => {}}
       onCancel={() => {}}
-      onChangeValue={() => {}}
-      onChangeCursor={() => {}}
       onHistoryUp={() => {}}
       onHistoryDown={() => {}}
-      onOpenBackendPicker={() => {}}
       onOpenModelPicker={() => {}}
-      onOpenModePicker={() => {}}
-      onOpenThemePicker={() => {}}
-      onOpenAuthPanel={() => {}}
-      onTogglePlanMode={() => {}}
-      onClear={() => {}}
       onCycleMode={() => {}}
       onQuit={() => {}}
     />
@@ -1758,7 +1710,6 @@ test("live header updates auth state during startup without transcript output", 
   await sleep(100);
 
   // Auth resolves — update to "authenticated".
-  const authUpdateOffset = raw.length;
   instance.rerender(
     buildShellNode(layout, [], { authState: "authenticated", headerConfig: headerConfigWithAuth }),
   );
@@ -2016,17 +1967,9 @@ function makeNativeShellInstance(uiState: UIState, activeEvents: TimelineEvent[]
             onChangeInput={() => {}}
             onSubmit={() => {}}
             onCancel={() => {}}
-            onChangeValue={() => {}}
-            onChangeCursor={() => {}}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -2054,22 +1997,18 @@ function makeNativeShellInstance(uiState: UIState, activeEvents: TimelineEvent[]
 }
 
 test("native mode: Page Up is not intercepted by an in-app pause indicator", async () => {
-  const { stdin, instance, getOutput, getRawLength } = makeNativeShellInstance({
+  const { stdin, instance, getOutput } = makeNativeShellInstance({
     kind: "RESPONDING",
     turnId: 1,
   });
 
   try {
     await sleep(100);
-    const beforePageUp = getRawLength();
 
     // Send Page Up escape code
     stdin.write("[5~");
     await sleep(100);
 
-    const frame = stripAnsi(
-      getOutput().slice(stripAnsi(getOutput().slice(0, beforePageUp)).length - 1),
-    );
     const output = getOutput();
     assert.doesNotMatch(
       output,

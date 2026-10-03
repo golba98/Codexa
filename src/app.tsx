@@ -1,6 +1,7 @@
 import path from "node:path";
 import { spawn } from "child_process";
 import { existsSync } from "fs";
+import { Box, Text, useApp, useFocusManager, useInput, useStdin, useStdout } from "ink";
 import {
   startTransition,
   useCallback,
@@ -10,33 +11,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { resolveAgyExecutable } from "./core/executables/antigravityExecutable.js";
-import { sameFolder } from "./core/externalSessions/sessionIo.js";
-import { createRoutedProvider } from "./core/providerRuntime/execution.js";
-import type {
-  GeminiModelSelection,
-  ProviderImageAttachment,
-  ProviderRoute,
-  RuntimeAvailability,
-} from "./core/providerRuntime/types.js";
-import type { ProviderRunControl } from "./core/providers/types.js";
-import { workspaceStorageKey } from "./core/workspace/appData.js";
-import type { FileBoundary, RestoreOperation } from "./core/workspace/checkpoints.js";
-import { acquireOwnership, type OwnershipLease } from "./core/workspace/ownership.js";
-import {
-  assessSavedRoute,
-  createSessionWorkspaceRelaunch,
-  importNativeConversation,
-} from "./session/resumeCoordinator.js";
-import {
-  listSessionCatalog,
-  type SessionCatalogResult,
-  type SessionSummary,
-  sessionIsInWorkspace,
-} from "./session/sessionCatalog.js";
-import { SavedSessionViewer } from "./ui/panels/SavedSessionViewer.js";
-
-import { Box, Text, useApp, useFocusManager, useInput, useStdin, useStdout } from "ink";
 import { handleCommand } from "./commands/handler.js";
 import type { LaunchArgs } from "./config/launchArgs.js";
 import {
@@ -123,6 +97,7 @@ import {
 } from "./core/codex/codexPrompt.js";
 import { getStdinDebugState, traceInputDebug } from "./core/debug/inputDebug.js";
 import { traceModelStateDebug } from "./core/debug/modelStateDebug.js";
+import { resolveAgyExecutable } from "./core/executables/antigravityExecutable.js";
 import {
   buildExternalResumeLaunch,
   type ExternalSessionSummary,
@@ -131,6 +106,7 @@ import {
   listExternalSessions,
   readExternalTranscript,
 } from "./core/externalSessions/index.js";
+import { sameFolder } from "./core/externalSessions/sessionIo.js";
 import {
   type CodexModelCapabilities,
   createFallbackModelCapabilities,
@@ -179,6 +155,7 @@ import {
   type ModelContextMetadata,
   resolveModelContextLength,
 } from "./core/providerRuntime/contextMetadata.js";
+import { createRoutedProvider } from "./core/providerRuntime/execution.js";
 import { hasGeminiApiKey, runGeminiDiagnostics } from "./core/providerRuntime/gemini.js";
 import {
   type checkLocalProvider,
@@ -207,11 +184,18 @@ import {
   resolveActiveProviderRoute,
   validateProviderRouteActivation,
 } from "./core/providerRuntime/registry.js";
+import type {
+  GeminiModelSelection,
+  ProviderImageAttachment,
+  ProviderRoute,
+  RuntimeAvailability,
+} from "./core/providerRuntime/types.js";
 import { isNoiseLine } from "./core/providers/codexTranscript.js";
 import { getBackendProvider } from "./core/providers/registry.js";
 import type {
   BackendProgressUpdate,
   BackendProvider,
+  ProviderRunControl,
   ToolApprovalDecision,
   ToolApprovalRequest,
 } from "./core/providers/types.js";
@@ -259,7 +243,8 @@ import {
   shouldRunStartupUpdateCheck,
   type UpdateCheckResult,
 } from "./core/version/updateCheck.js";
-import { resolveUbumeAttachmentDir } from "./core/workspace/appData.js";
+import { resolveUbumeAttachmentDir, workspaceStorageKey } from "./core/workspace/appData.js";
+import type { FileBoundary, RestoreOperation } from "./core/workspace/checkpoints.js";
 import {
   assertFileRecoveryReady,
   CheckpointStore,
@@ -277,7 +262,8 @@ import {
   guardWorkspaceRelaunch,
   resolveLaunchContext,
 } from "./core/workspace/launchContext.js";
-import { normalizePlanReviewMarkdown, readPlan, savePlan } from "./core/workspace/planStorage.js";
+import { acquireOwnership, type OwnershipLease } from "./core/workspace/ownership.js";
+import { savePlan } from "./core/workspace/planStorage.js";
 import { loadProjectInstructions } from "./core/workspace/projectInstructions.js";
 import {
   captureWorkspaceSnapshot,
@@ -297,7 +283,6 @@ import {
   buildFollowUpPrompt,
   createRunEvent,
   extractAssistantActionRequired,
-  guardConfigMutation,
   isCurrentRun,
 } from "./session/chatLifecycle.js";
 import {
@@ -323,6 +308,17 @@ import {
   submitPlanFeedback,
 } from "./session/planFlow.js";
 import { schedulePromptRunStartAfterVisibleCommit } from "./session/promptRunSchedule.js";
+import {
+  assessSavedRoute,
+  createSessionWorkspaceRelaunch,
+  importNativeConversation,
+} from "./session/resumeCoordinator.js";
+import {
+  listSessionCatalog,
+  type SessionCatalogResult,
+  type SessionSummary,
+  sessionIsInWorkspace,
+} from "./session/sessionCatalog.js";
 import { ToolOutputBudget } from "./session/toolOutput.js";
 import type {
   RunEvent,
@@ -375,6 +371,7 @@ import { ProviderSetupPrompt } from "./ui/panels/ProviderSetupPrompt.js";
 import { ReasoningPicker } from "./ui/panels/ReasoningPicker.js";
 import { ResumePicker } from "./ui/panels/ResumePicker.js";
 import type { ExternalListScope, ResumePickerPosition } from "./ui/panels/resumePickerRows.js";
+import { SavedSessionViewer } from "./ui/panels/SavedSessionViewer.js";
 import { SelectionPanel } from "./ui/panels/SelectionPanel.js";
 import { SettingsPanel } from "./ui/panels/SettingsPanel.js";
 import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/panels/TextEntryPanel.js";
@@ -399,13 +396,6 @@ import {
 } from "./ui/themeFlow.js";
 import { TranscriptShell } from "./ui/timeline/TranscriptShell.js";
 import { resetTimelineMeasureCaches } from "./ui/timeline/timelineMeasure.js";
-
-function normalizeRuntimeAvailability(value: unknown): RuntimeAvailability {
-  if (value === "checking" || value === "reconnecting") return value;
-  if (value === "available") return "available";
-  if (value === "unavailable" || value === "no-models") return "unavailable";
-  return "unknown";
-}
 
 function formatRuntimeProviderLabel(providerId: ProviderId): string {
   if (providerId === "local") return "Local";
@@ -454,23 +444,6 @@ function getProviderSetupPlan(providerId: ProviderId, windows: boolean): Provide
     default:
       return { installCommand: null, setupCommand: "" };
   }
-}
-
-function readDiagnosticString(
-  diagnostics: Record<string, string | number | boolean | null> | undefined,
-  keys: string[],
-): string | null {
-  if (!diagnostics) return null;
-  for (const key of keys) {
-    const value = diagnostics[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return String(value);
-    }
-  }
-  return null;
 }
 
 // ─── Module Constants & Helpers ────────────────────────────────────────────────
@@ -1321,13 +1294,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     reasoningLevel,
     workspaceDefaultProvider,
   ]);
-  const selectableModelCapabilities = useMemo(
-    () =>
-      activeRouteModelCapabilities
-        ? getSelectableModelCapabilities(activeRouteModelCapabilities)
-        : [],
-    [activeRouteModelCapabilities],
-  );
   const currentModelCapability = useMemo(
     () => findModelCapability(activeRouteModelCapabilities, activeProviderRoute.modelId),
     [activeProviderRoute.modelId, activeRouteModelCapabilities],
@@ -1407,14 +1373,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     [resolvedRuntimeConfig],
   );
 
-  const hasPlanFileAvailable = useMemo(
-    () =>
-      planFlow.kind !== "idle" &&
-      planFlow.planFilePath !== null &&
-      existsSync(planFlow.planFilePath),
-    [planFlow],
-  );
-
   const activeRuntimeDisplay = useMemo(
     () =>
       buildActiveRuntimeDisplay({
@@ -1435,69 +1393,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     ],
   );
   const currentModelSpec = activeRuntimeDisplay.modelSpec;
-  const activeRuntimeAvailability = useMemo<RuntimeAvailability>(() => {
-    if (activeProviderRoute.providerId !== "local") {
-      return "available";
-    }
-    const diagnostics = providerDiagnosticsRef.current.local;
-    return normalizeRuntimeAvailability(
-      diagnostics?.availabilityStatus ?? diagnostics?.endpointCheckResult,
-    );
-    // registryNonce intentionally re-reads providerDiagnosticsRef.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProviderRoute.providerId, registryNonce]);
-  const visibleRuntimeModelState = useMemo(() => {
-    const diagnostics = providerDiagnosticsRef.current[activeProviderRoute.providerId];
-    const providerLabel =
-      activeRouteProvider?.displayName ??
-      formatRuntimeProviderLabel(activeProviderRoute.providerId);
-    const diagnosticModel = readDiagnosticString(diagnostics, [
-      "selectedModel",
-      "modelId",
-      "currentModel",
-      "defaultModel",
-    ]);
-    const routeModel = activeProviderRoute.modelId?.trim();
-    const modelLabel =
-      routeModel ||
-      diagnosticModel ||
-      (activeRuntimeAvailability === "checking" || activeRuntimeAvailability === "reconnecting"
-        ? "Detecting..."
-        : "Unknown");
-    const modelDisplay =
-      activeRuntimeDisplay.footerModelDisplay?.trim() || `${providerLabel} / ${modelLabel}`;
-    const diagnosticContext = readDiagnosticString(diagnostics, [
-      "contextDisplay",
-      "contextLength",
-    ]);
-    const contextDisplay =
-      activeRuntimeDisplay.contextDisplay?.trim() || diagnosticContext || "Unknown";
-    const nextState = {
-      selectedProvider: activeProviderRoute.providerId,
-      selectedModel: modelLabel,
-      modelDisplay,
-      contextDisplay,
-      availability: activeRuntimeAvailability,
-    };
-    traceModelStateDebug("runtime_model_display_derived", nextState);
-    return nextState;
-    // registryNonce intentionally re-reads providerDiagnosticsRef.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    activeProviderRoute.modelId,
-    activeProviderRoute.providerId,
-    activeRuntimeAvailability,
-    activeRuntimeDisplay.contextDisplay,
-    activeRuntimeDisplay.footerModelDisplay,
-    activeRouteProvider?.displayName,
-    registryNonce,
-  ]);
-
-  const hasUserPrompt = useMemo(
-    () =>
-      staticEvents.some((e) => e.type === "user") || activeEvents.some((e) => e.type === "user"),
-    [staticEvents, activeEvents],
-  );
 
   // Refs for mutable state values — used by stable callbacks below so they
   // always read the latest value without being listed as deps (which would
@@ -3146,15 +3041,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const setBackendWithNotice = useCallback(
     (nextBackend: AvailableBackend) => {
-      const gate = guardConfigMutation("backend", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing the backend.",
-        );
-        return;
-      }
-
       updateRuntimeConfig((current) => ({
         ...current,
         provider: nextBackend,
@@ -3173,15 +3059,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const setModeWithNotice = useCallback(
     (nextMode: AvailableMode) => {
-      const gate = guardConfigMutation("mode", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing the mode.",
-        );
-        return;
-      }
-
       updateRuntimeConfig((current) => ({
         ...current,
         mode: nextMode,
@@ -3195,12 +3072,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   );
 
   const cycleModeWithNotice = useCallback(() => {
-    const gate = guardConfigMutation("mode", busy);
-    if (!gate.allowed) {
-      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing the mode.");
-      return;
-    }
-
     const next = getNextRotatingMode(mode, planMode);
     updateRuntimeConfig((current) => ({
       ...current,
@@ -3219,15 +3090,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         appendErrorEvent("Select a route first", routeChoiceRequiredRef.current);
         return;
       }
-      const gate = guardConfigMutation("reasoning", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing the reasoning level.",
-        );
-        return;
-      }
-
       const supported = currentModelCapability?.supportedReasoningLevels;
       if (supported && !supported.some((item) => item.id === nextReasoningLevel)) {
         appendErrorEvent(
@@ -3285,15 +3147,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const setPlanModeWithNotice = useCallback(
     (nextEnabled: boolean) => {
-      const gate = guardConfigMutation("mode", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing plan mode.",
-        );
-        return;
-      }
-
       updateRuntimeConfig((current) => ({
         ...current,
         planMode: nextEnabled,
@@ -3313,23 +3166,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const setModelWithNotice = useCallback(
     async (nextModel: AvailableModel) => {
-      const gate = guardConfigMutation("model", busy);
-      if (!gate.allowed) {
-        traceInputDebug(
-          "model_selection_blocked",
-          getInputDebugSnapshot({
-            handler: "setModelWithNotice",
-            model: nextModel,
-            reason: "busy",
-          }),
-        );
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing the model.",
-        );
-        return;
-      }
-
       modelSelectionInFlightRef.current = true;
       traceInputDebug(
         "model_selection_app_start",
@@ -3431,25 +3267,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       geminiSelection?: GeminiModelSelection,
       localBackend?: LocalBackendId,
     ) => {
-      const gate = guardConfigMutation("model", busy);
-      if (!gate.allowed) {
-        traceInputDebug(
-          "model_selection_blocked",
-          getInputDebugSnapshot({
-            handler: "setModelAndReasoningWithNotice",
-            model: nextModel,
-            reasoning: nextReasoning,
-            reason: "busy",
-          }),
-        );
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing the model.",
-        );
-        returnToChatMode("selection-blocked");
-        return;
-      }
-
       const routeCapabilities =
         providerId === "openai"
           ? modelCapabilities
@@ -3691,15 +3508,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const setApprovalPolicyWithNotice = useCallback(
     (nextValue: RuntimeApprovalPolicy) => {
-      const gate = guardConfigMutation("mode", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing runtime policy.",
-        );
-        return;
-      }
-
       updateRuntimePolicy((current) => ({ ...current, approvalPolicy: nextValue }));
       appendSystemEvent(
         "Runtime policy",
@@ -3711,15 +3519,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const setSandboxModeWithNotice = useCallback(
     (nextValue: RuntimeSandboxMode) => {
-      const gate = guardConfigMutation("mode", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing runtime policy.",
-        );
-        return;
-      }
-
       updateRuntimePolicy((current) => ({ ...current, sandboxMode: nextValue }));
       appendSystemEvent(
         "Runtime policy",
@@ -3731,15 +3530,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const setNetworkAccessWithNotice = useCallback(
     (nextValue: RuntimeNetworkAccess) => {
-      const gate = guardConfigMutation("mode", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing runtime policy.",
-        );
-        return;
-      }
-
       updateRuntimePolicy((current) => ({ ...current, networkAccess: nextValue }));
       appendSystemEvent(
         "Runtime policy",
@@ -3751,15 +3541,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const addWritableRootWithNotice = useCallback(
     (pathValue: string) => {
-      const gate = guardConfigMutation("mode", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing runtime policy.",
-        );
-        return;
-      }
-
       const resolvedPath = resolveWritableRootCommandPath(pathValue, workspaceRoot);
       updateRuntimeConfig((current) => addWritableRoot(current, resolvedPath));
       appendSystemEvent("Runtime policy", `Writable root added: ${resolvedPath}.`);
@@ -3769,15 +3550,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const removeWritableRootWithNotice = useCallback(
     (pathValue: string) => {
-      const gate = guardConfigMutation("mode", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing runtime policy.",
-        );
-        return;
-      }
-
       const resolvedPath = resolveWritableRootCommandPath(pathValue, workspaceRoot);
       updateRuntimeConfig((current) => removeWritableRoot(current, resolvedPath));
       appendSystemEvent("Runtime policy", `Writable root removed: ${resolvedPath}.`);
@@ -3786,30 +3558,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   );
 
   const clearWritableRootsWithNotice = useCallback(() => {
-    const gate = guardConfigMutation("mode", busy);
-    if (!gate.allowed) {
-      appendSystemEvent(
-        "Busy",
-        gate.message ?? "Finish the current run before changing runtime policy.",
-      );
-      return;
-    }
-
     updateRuntimeConfig((current) => clearWritableRoots(current));
     appendSystemEvent("Runtime policy", "Writable roots cleared.");
   }, [appendSystemEvent, busy, updateRuntimeConfig]);
 
   const setServiceTierWithNotice = useCallback(
     (nextValue: RuntimeServiceTier) => {
-      const gate = guardConfigMutation("mode", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing runtime policy.",
-        );
-        return;
-      }
-
       updateRuntimePolicy((current) => ({ ...current, serviceTier: nextValue }));
       appendSystemEvent(
         "Runtime policy",
@@ -3821,15 +3575,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const setPersonalityWithNotice = useCallback(
     (nextValue: RuntimePersonality) => {
-      const gate = guardConfigMutation("mode", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing runtime policy.",
-        );
-        return;
-      }
-
       updateRuntimePolicy((current) => ({ ...current, personality: nextValue }));
       appendSystemEvent(
         "Runtime policy",
@@ -3841,15 +3586,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const setProjectTrustWithNotice = useCallback(
     (trusted: boolean) => {
-      const gate = guardConfigMutation("mode", busy);
-      if (!gate.allowed) {
-        appendSystemEvent(
-          "Busy",
-          gate.message ?? "Finish the current run before changing project trust.",
-        );
-        return;
-      }
-
       const projectRoot = baseLayeredConfig.diagnostics.projectRoot;
       setProjectTrust(projectRoot, trusted);
       reloadBaseLayeredConfig();
@@ -3862,15 +3598,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   );
 
   const openBackendPicker = useCallback(() => {
-    const gate = guardConfigMutation("backend", busy);
-    if (!gate.allowed) {
-      appendSystemEvent(
-        "Busy",
-        gate.message ?? "Finish the current run before changing the backend.",
-      );
-      return;
-    }
-
     setScreen("backend-picker");
   }, [appendSystemEvent, busy]);
 
@@ -3948,12 +3675,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     if (!modelSelectionInFlightRef.current) {
       setPendingRouteProviderId(null);
     }
-    const gate = guardConfigMutation("backend", busy);
-    if (!gate.allowed) {
-      appendSystemEvent("Busy", gate.message ?? "Finish the current run before opening providers.");
-      return;
-    }
-
     setScreen("provider-picker");
     providerDiagnosticsRef.current.mistral = {
       ...providerDiagnosticsRef.current.mistral,
@@ -4472,22 +4193,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       }),
     );
 
-    const gate = guardConfigMutation("model", busy);
-    if (!gate.allowed) {
-      traceInputDebug(
-        "model_picker_open_blocked",
-        getInputDebugSnapshot({
-          handler: "openModelPicker",
-          reason: "busy",
-        }),
-      );
-      appendSystemEvent(
-        "Busy",
-        gate.message ?? "Finish the current run before changing the model.",
-      );
-      return;
-    }
-
     if (screen === "model-picker") {
       modelPickerOpenRef.current = true;
       intendedInputModeRef.current = "model-picker";
@@ -4546,25 +4251,10 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   ]);
 
   const openModePicker = useCallback(() => {
-    const gate = guardConfigMutation("mode", busy);
-    if (!gate.allowed) {
-      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing the mode.");
-      return;
-    }
-
     setScreen("mode-picker");
   }, [appendSystemEvent, busy]);
 
   const openReasoningPicker = useCallback(() => {
-    const gate = guardConfigMutation("reasoning", busy);
-    if (!gate.allowed) {
-      appendSystemEvent(
-        "Busy",
-        gate.message ?? "Finish the current run before changing the reasoning level.",
-      );
-      return;
-    }
-
     if (!currentModelCapability?.supportedReasoningLevels?.length) {
       if (!modelCapabilitiesBusy) {
         void refreshModelCapabilities(true, true);
@@ -4587,25 +4277,10 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   ]);
 
   const openThemePicker = useCallback(() => {
-    const gate = guardConfigMutation("theme", busy);
-    if (!gate.allowed) {
-      appendSystemEvent(
-        "Busy",
-        gate.message ?? "Finish the current run before changing the theme.",
-      );
-      return;
-    }
-
     setScreen("theme-picker");
   }, [appendSystemEvent, busy]);
 
   const openSettingsPanel = useCallback(() => {
-    const gate = guardConfigMutation("mode", busy);
-    if (!gate.allowed) {
-      appendSystemEvent("Busy", gate.message ?? "Finish the current run before changing settings.");
-      return;
-    }
-
     setScreen("settings-panel");
   }, [appendSystemEvent, busy]);
 
@@ -4619,15 +4294,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   }, [appendSystemEvent, busy]);
 
   const openPermissionsPanel = useCallback(() => {
-    const gate = guardConfigMutation("mode", busy);
-    if (!gate.allowed) {
-      appendSystemEvent(
-        "Busy",
-        gate.message ?? "Finish the current run before changing runtime policy.",
-      );
-      return;
-    }
-
     setScreen("permissions-panel");
   }, [appendSystemEvent, busy]);
 
@@ -5046,31 +4712,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     [appendErrorEvent, workspaceRoot],
   );
 
-  const handleViewPlanFile = useCallback(
-    (planFilePath: string | null) => {
-      if (!planFilePath) {
-        appendErrorEvent(
-          "Plan file unavailable",
-          "There is no saved plan file to view for this review.",
-        );
-        return;
-      }
-
-      const contents = readPlan(planFilePath);
-      if (contents === null) {
-        appendErrorEvent(
-          "Plan file unavailable",
-          `The saved plan file is no longer available: ${planFilePath}`,
-        );
-        return;
-      }
-
-      const sanitized = normalizePlanReviewMarkdown(contents, workspaceRoot);
-      appendSystemEvent("Plan file", [`Path: ${planFilePath}`, "", sanitized].join("\n"));
-    },
-    [appendErrorEvent, appendSystemEvent, workspaceRoot],
-  );
-
   // ─── Stable composer-input callbacks ──────────────────────────────────────────
   // These use refs so the function identity never changes, avoiding
   // unnecessary downstream work even though the memo comparator on
@@ -5129,30 +4770,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       }
     },
     [appendErrorEvent, dispatchSession, runtimeConfig.policy.attachmentDir, workspaceRoot],
-  );
-
-  const handleChangeValue = useCallback(
-    (value: string) => {
-      const safeValue = sanitizeTerminalInput(value);
-      dispatchSession({
-        type: "SET_INPUT",
-        value: safeValue,
-        cursor: Math.min(cursorRef.current, safeValue.length),
-      });
-    },
-    [dispatchSession],
-  );
-
-  const handleChangeCursor = useCallback(
-    (nextCursor: number) => {
-      const safeValue = sanitizeTerminalInput(inputValueRef.current);
-      dispatchSession({
-        type: "SET_INPUT",
-        value: safeValue,
-        cursor: Math.min(nextCursor, safeValue.length),
-      });
-    },
-    [dispatchSession],
   );
 
   const handleClear = useCallback(async () => {
@@ -7546,18 +7163,10 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         queueCount={promptQueue.items.length}
         queuePaused={promptQueue.paused}
         onCancel={handleCancel}
-        onChangeValue={handleChangeValue}
-        onChangeCursor={handleChangeCursor}
         onHistoryUp={handleHistoryUp}
         onHistoryDown={handleHistoryDown}
-        onOpenBackendPicker={openBackendPicker}
         onOpenProviderPicker={openProviderPicker}
         onOpenModelPicker={openModelPicker}
-        onOpenModePicker={openModePicker}
-        onOpenThemePicker={openThemePicker}
-        onOpenAuthPanel={openAuthPanel}
-        onTogglePlanMode={togglePlanModeWithNotice}
-        onClear={handleClear}
         onCycleMode={cycleModeWithNotice}
         onQuit={handleQuit}
         activeProviderId={activeProviderRoute.providerId}
@@ -7570,7 +7179,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     handlePlanAction,
     handleCancel,
     handlePlanFeedbackSubmit,
-    activeTheme.textMuted,
     composerInstanceKey,
     composerWidth,
     terminalLayout,
@@ -7592,7 +7200,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     handleRegisterPaste,
     handlePasteImage,
     handleSubmit,
-    handleInterrupt,
     handleRedraw,
     openWorkbench,
     handleExternalEditor,
@@ -7600,18 +7207,10 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     workbenchVersion,
     sessionState.history,
     workspaceRoot,
-    handleChangeValue,
-    handleChangeCursor,
     handleHistoryUp,
     handleHistoryDown,
-    openBackendPicker,
     openProviderPicker,
     openModelPicker,
-    openModePicker,
-    openThemePicker,
-    openAuthPanel,
-    togglePlanModeWithNotice,
-    handleClear,
     cycleModeWithNotice,
     handleQuit,
     activeProviderRoute.providerId,

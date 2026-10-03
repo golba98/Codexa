@@ -4,11 +4,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
-function writeText(filePath: string, contents: string): void {
-  mkdirSync(join(filePath, ".."), { recursive: true });
-  writeFileSync(filePath, contents, "utf-8");
-}
-
 test("resolves user config, trusted project config, profiles, and CLI overrides deterministically", async () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "ubume-layered-config-"));
   const tempHome = join(tempRoot, "home");

@@ -27,7 +27,6 @@ import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js
 // ─── Types & helpers ─────────────────────────────────────────────────────────
 
 type ModelPickerCloseReason = "escape" | "empty-selection";
-type ModelRenderMode = "full" | "compact" | "windowed";
 
 interface ModelPickerScreenProps {
   layout: Layout & {

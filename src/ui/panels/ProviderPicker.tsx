@@ -49,12 +49,6 @@ interface ProviderPickerProps {
   panelLayout?: PanelLayout;
 }
 
-interface ProviderActionItem {
-  value: ProviderPickerAction;
-  label: string;
-  disabledReason?: string | null;
-}
-
 type ProviderPickerMode = "providers" | "codexa-native-models" | "local-backends";
 
 const CODEXA_NATIVE_PROVIDER_IDS = new Set<ProviderId>(["codexa-native", "codexa-cupy"]);
@@ -252,23 +246,6 @@ export function ProviderPicker({
 
   const isCompactLayout = resolvedPanelLayout.mode === "compact";
 
-  // Compact columns widths:
-  const markerWidth = 5;
-  const compactContextWidth = innerWidth >= 90 ? 6 : 5;
-  const compactStatusWidth = innerWidth >= 90 ? 8 : 6;
-  const compactProviderWidth = Math.max(11, Math.min(14, Math.floor(innerWidth * 0.15)));
-  const spacingWidth = 4;
-  const fixedWidth =
-    markerWidth + compactProviderWidth + compactContextWidth + compactStatusWidth + spacingWidth;
-  const compactModelWidth = Math.max(12, innerWidth - fixedWidth);
-  const compactWidths = {
-    markerWidth,
-    providerWidth: compactProviderWidth,
-    modelWidth: compactModelWidth,
-    contextWidth: compactContextWidth,
-    statusWidth: compactStatusWidth,
-  };
-
   // Regular columns:
   const cols = getTableLayout(innerWidth, false);
   const providerNameWidth = cols.provider;
@@ -300,42 +277,6 @@ export function ProviderPicker({
     setScrollOffset(0);
     onLocalBackendsOpen();
   };
-
-  const actions = useMemo<ProviderActionItem[]>(() => {
-    const routeUnavailable = selectedProvider?.routeMode === "in-ubume";
-    const disabledReason = routeUnavailable
-      ? null
-      : (selectedProvider?.routeUnavailableReason ?? "In-Ubume routing is not configured yet.");
-
-    return [
-      { value: "use-in-ubume", label: "Use in Ubume", disabledReason },
-      { value: "select-model", label: "Select model", disabledReason },
-      {
-        value: "refresh-models",
-        label:
-          selectedProvider?.id === "anthropic"
-            ? "Refresh Claude capabilities"
-            : selectedProvider?.id === "local"
-              ? "Refresh LM Studio metadata"
-              : "Refresh models",
-        disabledReason,
-      },
-      ...(selectedProvider?.id === "google" || selectedProvider?.id === "local"
-        ? [
-            {
-              value: "run-diagnostics" as const,
-              label:
-                selectedProvider.id === "local"
-                  ? "Run Local diagnostics"
-                  : "Run Gemini diagnostics",
-            },
-          ]
-        : []),
-      { value: "launch", label: "Launch external CLI" },
-      { value: "set-default", label: "Set as workspace default" },
-      { value: "cancel", label: "Cancel" },
-    ];
-  }, [selectedProvider]);
 
   useInput(
     (input, key) => {
@@ -663,103 +604,6 @@ export function ProviderPicker({
 
 // ─── Subcomponents ───────────────────────────────────────────────────────────
 
-function capabilityFlag(value: boolean | null | undefined): string {
-  if (value === true) return "Y";
-  if (value === false) return "N";
-  return "?";
-}
-
-function formatCompactStatus(status: string | undefined): string {
-  switch (status) {
-    case "Active":
-      return "Active";
-    case "Enabled":
-      return "Ready";
-    case "Needs config":
-      return "Config";
-    case "Disabled":
-      return "Off";
-    case "Unknown":
-    default:
-      return "?";
-  }
-}
-
-function formatCompactContext(value: string | number | undefined): string {
-  if (value === undefined || value === null) return "?";
-  const raw = String(value).trim();
-  if (!raw || raw === "Unknown" || raw === "?") return "?";
-  const numeric = Number(raw.replace(/,/g, ""));
-  if (!Number.isFinite(numeric)) return raw;
-  if (numeric >= 1_000_000) {
-    return `${(numeric / 1_000_000).toFixed(1)}M`;
-  }
-  if (numeric >= 1_000) {
-    return `${Math.round(numeric / 1_000)}K`;
-  }
-  return String(numeric);
-}
-
-function ProviderRowCompact({
-  provider,
-  isHighlighted,
-  widths,
-}: {
-  provider: ProviderConfig;
-  isHighlighted: boolean;
-  widths: {
-    markerWidth: number;
-    providerWidth: number;
-    modelWidth: number;
-    contextWidth: number;
-    statusWidth: number;
-  };
-}) {
-  const theme = useTheme();
-  const marker = isHighlighted ? ">" : " ";
-  const defaultMark = provider.isDefault ? "*" : " ";
-  const activeMark = provider.isActiveRoute ? "@" : " ";
-  const statusText = provider.isActiveRoute ? "Active" : provider.statusLabel;
-
-  const compactStatus = formatCompactStatus(statusText);
-  const compactContext = formatCompactContext(provider.contextLengthLabel);
-
-  const providerColor = isHighlighted ? theme.text : theme.textMuted;
-  const modelColor = theme.textDim;
-  const statusColor = provider.isActiveRoute
-    ? theme.success
-    : provider.enabled && !provider.routeUnavailableReason
-      ? theme.success
-      : theme.warning;
-
-  return (
-    <Box width="100%" overflow="hidden" flexDirection="row" flexShrink={0}>
-      <Box width={widths.markerWidth} flexShrink={0}>
-        <Text color={isHighlighted ? theme.accent : theme.textDim}>
-          {marker} {defaultMark} {activeMark}
-        </Text>
-      </Box>
-      <Box width={widths.providerWidth} flexShrink={0} overflow="hidden">
-        <Text color={providerColor} bold={isHighlighted}>
-          {clampVisualText(provider.displayName, widths.providerWidth)}
-        </Text>
-      </Box>
-      <Text> </Text>
-      <Box width={widths.modelWidth} flexShrink={0} overflow="hidden">
-        <Text color={modelColor}>{clampVisualText(provider.currentModel, widths.modelWidth)}</Text>
-      </Box>
-      <Text> </Text>
-      <Box width={widths.contextWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.textDim}>{clampVisualText(compactContext, widths.contextWidth)}</Text>
-      </Box>
-      <Text> </Text>
-      <Box width={widths.statusWidth} flexShrink={0} overflow="hidden">
-        <Text color={statusColor}>{clampVisualText(compactStatus, widths.statusWidth)}</Text>
-      </Box>
-    </Box>
-  );
-}
-
 function ProviderRowSimple({
   provider,
   isHighlighted,
@@ -799,127 +643,6 @@ function ProviderRowSimple({
             {` — ${secondaryText}`}
           </Text>
         )}
-      </Box>
-    </Box>
-  );
-}
-
-function ProviderRow({
-  provider,
-  isHighlighted,
-  widths,
-}: {
-  provider: ProviderConfig;
-  isHighlighted: boolean;
-  widths: {
-    providerNameWidth: number;
-    modelWidth: number;
-    contextWidth: number;
-    toolsWidth: number;
-    streamWidth: number;
-    statusWidth: number;
-  };
-}) {
-  const theme = useTheme();
-  const statusColor = provider.isActiveRoute
-    ? theme.success
-    : provider.enabled && !provider.routeUnavailableReason
-      ? theme.success
-      : theme.warning;
-  const marker = isHighlighted ? ">" : " ";
-  const defaultMark = provider.isDefault ? "*" : " ";
-  const activeMark = provider.isActiveRoute ? "@" : " ";
-  const statusText = provider.isActiveRoute ? "Active" : provider.statusLabel;
-
-  return (
-    <Box width="100%" overflow="hidden" flexDirection="row" flexShrink={0}>
-      <Box width={5} flexShrink={0}>
-        <Text color={isHighlighted ? theme.accent : theme.textDim}>
-          {marker} {defaultMark} {activeMark}
-        </Text>
-      </Box>
-      <Box width={widths.providerNameWidth} flexShrink={0} overflow="hidden">
-        <Text color={isHighlighted ? theme.text : theme.textMuted} bold={isHighlighted}>
-          {clampVisualText(provider.displayName, widths.providerNameWidth)}
-        </Text>
-      </Box>
-      <Text> </Text>
-      <Box width={widths.modelWidth} flexShrink={0} overflow="hidden">
-        <Text color={theme.textMuted}>
-          {clampVisualText(provider.currentModel, widths.modelWidth)}
-        </Text>
-      </Box>
-      {widths.contextWidth > 0 && (
-        <>
-          <Text> </Text>
-          <Box width={widths.contextWidth} flexShrink={0} overflow="hidden">
-            <Text color={theme.textMuted}>
-              {clampVisualText(provider.contextLengthLabel ?? "Unknown", widths.contextWidth)}
-            </Text>
-          </Box>
-        </>
-      )}
-      {widths.toolsWidth > 0 && (
-        <>
-          <Text> </Text>
-          <Box width={widths.toolsWidth} flexShrink={0} overflow="hidden">
-            <Text color={theme.textMuted}>
-              {clampVisualText(
-                capabilityFlag(provider.capabilityProfile?.supportsToolCalls),
-                widths.toolsWidth,
-              )}
-            </Text>
-          </Box>
-        </>
-      )}
-      {widths.streamWidth > 0 && (
-        <>
-          <Text> </Text>
-          <Box width={widths.streamWidth} flexShrink={0} overflow="hidden">
-            <Text color={theme.textMuted}>
-              {clampVisualText(
-                capabilityFlag(provider.capabilityProfile?.supportsStreaming),
-                widths.streamWidth,
-              )}
-            </Text>
-          </Box>
-        </>
-      )}
-      <Text> </Text>
-      <Box width={widths.statusWidth} flexShrink={0} overflow="hidden">
-        <Text color={statusColor}>{clampVisualText(statusText, widths.statusWidth)}</Text>
-      </Box>
-    </Box>
-  );
-}
-
-function ActionRow({
-  label,
-  disabledReason,
-  isHighlighted,
-  width,
-}: {
-  label: string;
-  disabledReason?: string | null;
-  isHighlighted: boolean;
-  width: number;
-}) {
-  const theme = useTheme();
-  const text = disabledReason ? `${label} unavailable` : label;
-  return (
-    <Box width="100%" overflow="hidden">
-      <Box width={2} flexShrink={0}>
-        <Text color={isHighlighted ? theme.accent : theme.textDim}>
-          {isHighlighted ? ">" : " "}
-        </Text>
-      </Box>
-      <Box width={Math.max(10, width - 2)} flexShrink={0} overflow="hidden">
-        <Text
-          color={disabledReason ? theme.textDim : isHighlighted ? theme.text : theme.textMuted}
-          bold={isHighlighted && !disabledReason}
-        >
-          {clampVisualText(text, Math.max(10, width - 2))}
-        </Text>
       </Box>
     </Box>
   );

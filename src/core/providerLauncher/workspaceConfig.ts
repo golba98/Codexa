@@ -225,7 +225,6 @@ function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
   const providerId =
     (value.backendKind ?? value.backend_kind) === "agy" ? "antigravity" : rawProviderId;
   const modelId = value.modelId ?? value.model_id;
-  const backendKind = value.backendKind ?? value.backend_kind;
   const reasoning = value.reasoning;
   const modelSelection = value.modelSelection ?? value.model_selection;
   const localBackend = value.localBackend ?? value.local_backend;

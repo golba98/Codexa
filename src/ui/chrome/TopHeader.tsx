@@ -28,9 +28,6 @@ const HEADER_PADDING_COLUMNS = 2;
 const SHELL_GUTTER_COLUMNS = 1;
 // Require 130+ cols for wide side-by-side so the UpdateAvailableCard has room.
 const WIDE_HEADER_MIN_COLUMNS = 130;
-// Require 72+ cols for medium side-by-side canonical-logo layout.
-const MEDIUM_HEADER_MIN_COLUMNS = LOGO_LARGE_MIN_COLS;
-const MIN_SIDE_BY_SIDE_METADATA_WIDTH = 18;
 const STACKED_METADATA_GAP_ROWS = 1;
 // Gap row between the UpdateAvailableCard and the metadata lines.
 const UPDATE_CARD_GAP_ROWS = 1;
@@ -124,7 +121,6 @@ export function getHeaderHeroLayout(
 ): HeaderHeroLayout {
   const { topMarginRows, bottomMarginRows } = getHeaderVerticalMargins(layout);
   const metadataRows = getMetadataRowCount(headerConfig);
-  const contentWidth = getHeaderContentWidth(layout.cols);
 
   const showNormalLogo =
     process.env["UBUME_NO_ASCII_LOGO"] !== "1" &&
@@ -144,7 +140,6 @@ export function getHeaderHeroLayout(
   }
 
   const logo = selectHeaderLogo(layout);
-  const logoWidth = logo.length > 0 ? getLogoWidth(logo) : 0;
 
   if (mode === "compact") {
     // Compact / micro text-only header.

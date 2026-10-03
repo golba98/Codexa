@@ -1083,8 +1083,6 @@ export const Timeline = memo(
       workspaceRoot,
     });
 
-    const theme = useTheme();
-
     const staticItems = useMemo(() => buildTimelineItems(staticEvents), [staticEvents]);
     const activeItems = useMemo(() => buildTimelineItems(activeEvents), [activeEvents]);
     const activeTurnId = getActiveTurnId(uiState);
@@ -1270,12 +1268,6 @@ export const Timeline = memo(
     if (liveSnapshot.totalRows > 0) {
       lastNonEmptySnapshotRef.current = liveSnapshot;
     }
-
-    const isBusy =
-      uiState.kind === "THINKING" ||
-      uiState.kind === "RESPONDING" ||
-      uiState.kind === "ANSWER_VISIBLE" ||
-      uiState.kind === "SHELL_RUNNING";
 
     const transcriptEventCount = staticEvents.length + activeEvents.length;
 

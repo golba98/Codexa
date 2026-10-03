@@ -47,13 +47,6 @@ export function getSession(): PerfSession | null {
 
 // ─── Formatting ───────────────────────────────────────────────────────────────
 
-function dur(session: PerfSession, from: string, to: string): string {
-  const a = session.marks[from];
-  const b = session.marks[to];
-  if (a === undefined || b === undefined) return "   ?";
-  return String(Math.round(b - a)).padStart(4);
-}
-
 const STAGE_ROWS: Array<[from: string, to: string, label: string, note?: string]> = [
   ["submit", "dispatch_start", "submit → dispatch_start", "pre-dispatch overhead"],
   [

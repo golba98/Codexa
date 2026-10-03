@@ -83,7 +83,6 @@ interface GeminiPromptRunDiagnostics {
 }
 
 let geminiCliHeadlessValidated = false;
-let resolvedGeminiCommand: string | null = null;
 let lastPromptDiagnostics: GeminiPromptRunDiagnostics | null = null;
 
 function getGeminiApiKey(env: NodeJS.ProcessEnv = process.env): string | null {
@@ -100,7 +99,6 @@ export function isGeminiRouteConfigured(env: NodeJS.ProcessEnv = process.env): b
 
 export function resetGeminiRouteValidationCacheForTests(): void {
   geminiCliHeadlessValidated = false;
-  resolvedGeminiCommand = null;
   lastPromptDiagnostics = null;
 }
 
@@ -195,7 +193,6 @@ export async function buildGeminiCommand(options: {
     cwd: options.cwd,
     configuredPath: options.configuredPath,
   });
-  resolvedGeminiCommand = file;
 
   const approvalMode = resolveGeminiApprovalMode(options.runtime);
   const outputFormat = options.outputFormat ?? "text";
@@ -498,13 +495,6 @@ export async function runGeminiCliWithRunner(
   );
 
   throw new Error(formatGeminiFailure(first.command, first.result));
-}
-
-async function runGeminiCli(
-  request: ProviderChatRequest,
-  handlers?: CommandStreamHandlers,
-): Promise<string> {
-  return runGeminiCliWithRunner(request, runCommand, handlers);
 }
 
 export function classifyGeminiProbeFailure(

@@ -188,7 +188,6 @@ function AppShellInner({
   headerConfig = HEADER_CONFIG_DEFAULTS,
   updateAvailable = null,
 }: AppShellProps) {
-  const theme = useTheme();
   renderDebug.useRenderDebug("AppShell", {
     cols: layout.cols,
     rows: layout.rows,
@@ -251,7 +250,6 @@ function AppShellInner({
   });
 
   const headerToContentGapRows = appLayoutBudget.headerGapRows;
-  const effectiveComposerRows = appLayoutBudget.composerRows;
   const bottomChromeRows = appLayoutBudget.bottomChromeBudget.totalRows;
 
   const finalTimelineRows = appLayoutBudget.transcriptRows;

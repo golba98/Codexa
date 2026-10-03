@@ -28,7 +28,6 @@ const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const ANTHROPIC_MAX_TOKENS = 1024;
 const ANTHROPIC_TIMEOUT_MS = 120_000;
-const ANTHROPIC_AUTH_CHECK_TIMEOUT_MS = 10_000;
 const ANTHROPIC_ROUTE_VALIDATION_TIMEOUT_MS = 15_000;
 const DISCOVERY_FAILURE_MESSAGE =
   "Claude Code model version discovery failed; using fallback aliases with unknown versions.";

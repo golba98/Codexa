@@ -388,10 +388,6 @@ export function createLayoutSnapshot(
   };
 }
 
-function snapshot(stdout: NodeJS.WriteStream, fallback?: Layout): Layout {
-  return createLayoutSnapshot(stdout.columns, stdout.rows, fallback);
-}
-
 export function createTerminalViewport(
   cols: number | undefined,
   rows: number | undefined,

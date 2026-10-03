@@ -268,17 +268,9 @@ function ModelPickerComposerHarness() {
           }}
           onSubmit={() => {}}
           onCancel={() => {}}
-          onChangeValue={setValue}
-          onChangeCursor={setCursor}
           onHistoryUp={() => {}}
           onHistoryDown={() => {}}
-          onOpenBackendPicker={() => {}}
           onOpenModelPicker={() => {}}
-          onOpenModePicker={() => {}}
-          onOpenThemePicker={() => {}}
-          onOpenAuthPanel={() => {}}
-          onTogglePlanMode={() => {}}
-          onClear={() => {}}
           onCycleMode={() => {}}
           onQuit={() => {}}
         />
@@ -318,17 +310,9 @@ function PasteComposerHarness({
             setSubmitCount((count) => count + 1);
           }}
           onCancel={() => {}}
-          onChangeValue={setValue}
-          onChangeCursor={setCursor}
           onHistoryUp={() => {}}
           onHistoryDown={() => {}}
-          onOpenBackendPicker={() => {}}
           onOpenModelPicker={() => {}}
-          onOpenModePicker={() => {}}
-          onOpenThemePicker={() => {}}
-          onOpenAuthPanel={() => {}}
-          onTogglePlanMode={() => {}}
-          onClear={() => {}}
           onCycleMode={() => {}}
           onInterrupt={onInterrupt}
           onRedraw={onRedraw}
@@ -368,17 +352,9 @@ function PlanToggleComposerHarness() {
             setSubmitCount((count) => count + 1);
           }}
           onCancel={() => {}}
-          onChangeValue={setValue}
-          onChangeCursor={setCursor}
           onHistoryUp={() => {}}
           onHistoryDown={() => {}}
-          onOpenBackendPicker={() => {}}
           onOpenModelPicker={() => {}}
-          onOpenModePicker={() => {}}
-          onOpenThemePicker={() => {}}
-          onOpenAuthPanel={() => {}}
-          onTogglePlanMode={() => setPlanMode((current) => !current)}
-          onClear={() => {}}
           onCycleMode={() => {
             const next = getNextRotatingMode(mode, planMode);
             setMode(next.mode);
@@ -454,17 +430,9 @@ function ShortcutModelPickerHarness() {
               setSubmitCount((count) => count + 1);
             }}
             onCancel={() => {}}
-            onChangeValue={setValue}
-            onChangeCursor={setCursor}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => setScreen("model-picker")}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -530,17 +498,9 @@ function ShortcutProviderPickerHarness() {
               setCursor(0);
             }}
             onCancel={() => {}}
-            onChangeValue={setValue}
-            onChangeCursor={setCursor}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -629,21 +589,13 @@ function ShortcutModelReasoningPickerHarness({
               setCursor(0);
             }}
             onCancel={() => {}}
-            onChangeValue={setValue}
-            onChangeCursor={setCursor}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() =>
               setScreen((currentScreen) =>
                 currentScreen === "model-picker" ? currentScreen : "model-picker",
               )
             }
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />

@@ -25,13 +25,6 @@ export const RUN_OUTPUT_TRUNCATION_NOTICE = "Older output was truncated to keep 
 const ACTION_REQUIRED_BLOCK_PATTERN =
   /\*{0,2}=+\*{0,2}\s*\n\*{0,2}\[ACTION REQUIRED\]\*{0,2}\s*\n\*{0,2}Verification Question:\*{0,2}\s*\n([\s\S]*?)\n\*{0,2}=+\*{0,2}/i;
 
-export type ConfigMutationKind =
-  | "backend"
-  | "model"
-  | "mode"
-  | "reasoning"
-  | "permissions"
-  | "theme";
 export type UIStateAction =
   | { type: "PROMPT_RUN_STARTED"; turnId: number }
   | { type: "FIRST_ASSISTANT_DELTA"; turnId: number }
@@ -1027,14 +1020,6 @@ export function appendStaticEvents(
 
 export function trimStaticEvents(events: TimelineEvent[]): TimelineEvent[] {
   return events;
-}
-
-export function guardConfigMutation(
-  kind: ConfigMutationKind,
-  busy: boolean,
-): { allowed: boolean; message?: string } {
-  // Runs own an immutable runtime snapshot; composer settings apply to the next run.
-  return { allowed: true };
 }
 
 export function isCurrentRun(activeRunId: number | null, runId: number): boolean {

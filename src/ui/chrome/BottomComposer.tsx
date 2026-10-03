@@ -40,7 +40,6 @@ import { getModeDisplaySpec } from "../render/modeDisplay.js";
 import { THEMES, useTheme } from "../theme.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
 import { isAnimatedBusyState } from "./busyStatusAnimation.js";
-import { MemoizedRunFooter, measureRunFooterRows } from "./RunFooter.js";
 import { Spinner } from "./Spinner.js";
 
 // ─── Types & constants ────────────────────────────────────────────────────────
@@ -68,12 +67,6 @@ function resolveDeleteIntentFromRawInput(raw: string): DeleteIntent | null {
   }
 
   return null;
-}
-
-function formatApprox(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return `${n}`;
 }
 
 function formatElapsed(seconds: number): string {
@@ -144,18 +137,10 @@ export interface BottomComposerProps {
   queueCount?: number;
   queuePaused?: boolean;
   onCancel: () => void;
-  onChangeValue: (value: string) => void;
-  onChangeCursor: (cursor: number) => void;
   onHistoryUp: () => void;
   onHistoryDown: () => void;
-  onOpenBackendPicker: () => void;
   onOpenProviderPicker?: () => void;
   onOpenModelPicker: () => void;
-  onOpenModePicker: () => void;
-  onOpenThemePicker: () => void;
-  onOpenAuthPanel: () => void;
-  onTogglePlanMode: () => void;
-  onClear: () => void;
   onCycleMode: () => void;
   onQuit: () => void;
   activeProviderId?: string;
@@ -209,26 +194,16 @@ export function getComposerPersona(uiState: UIState): ComposerPersona {
   return "idle";
 }
 
-export function shouldRenderBusyFooter(layout: Layout, uiState: UIState): boolean {
-  return false;
-}
-
-export function getComposerToFooterGapRows(layout: Layout): number {
-  return 0;
-}
-
 export function getCommandSuggestionState({
   value,
   allowCommands,
-  inputLocked,
 }: {
   value: string;
   allowCommands: boolean;
-  inputLocked: boolean;
 }): CommandSuggestionState {
   const isCmdPrefix = allowCommands && value.startsWith("/");
   const cmdPrefix = value.split(" ")[0]?.toLowerCase() ?? "";
-  const canSuggest = !inputLocked && isCmdPrefix && !value.includes(" ");
+  const canSuggest = isCmdPrefix && !value.includes(" ");
   const matchingSuggestions = canSuggest ? getSlashCommandSuggestions(cmdPrefix) : [];
   const exactMatch = matchingSuggestions.find((command) => command.cmd === cmdPrefix);
   const exactMatchAliases = exactMatch && "aliases" in exactMatch ? exactMatch.aliases : undefined;
@@ -253,12 +228,7 @@ export function measureBottomComposerRows({
   queueCount = 0,
   stopping = false,
 }: BottomComposerMeasureParams): number {
-  if (shouldRenderBusyFooter(layout, uiState)) {
-    return measureRunFooterRows();
-  }
-
   const persona = getComposerPersona(uiState);
-  const inputLocked = false;
   const allowCommands = persona !== "answer";
   const { editorWidth: promptWidth } = getComposerRowLayout(width);
   const normalizedValue = normalizeInputText(value);
@@ -273,29 +243,23 @@ export function measureBottomComposerRows({
   const commandSuggestionState = getCommandSuggestionState({
     value: normalizedValue,
     allowCommands,
-    inputLocked,
   });
 
   const bottomPadding = layout.mode === "compact" ? 0 : 1;
-  const footerGapRows = getComposerToFooterGapRows(layout);
   const visibleStatusLine = getVisibleComposerStatusLine({
     uiState,
     stopping,
     value: normalizedValue,
     allowCommands,
   });
-  // Parity with render: the transient status row is shown whenever input is
-  // locked, even when the status text is suppressed for a slash-command draft.
-  const transientStatusRows = visibleStatusLine.length > 0 || inputLocked ? 1 : 0;
-
-  const visiblePromptRows = inputLocked ? 1 : promptViewport.visibleRows.length;
+  const transientStatusRows = visibleStatusLine.length > 0 ? 1 : 0;
+  const visiblePromptRows = promptViewport.visibleRows.length;
 
   return (
     visiblePromptRows +
     2 +
     (queueCount > 0 || /(?:^|\s)@[^\s]*$/.test(value.slice(0, cursor)) ? 1 : 0) +
     (commandSuggestionState.reserveSuggestionRow ? 1 : 0) +
-    footerGapRows +
     transientStatusRows +
     1 +
     bottomPadding
@@ -470,18 +434,10 @@ export function BottomComposer({
   queueCount = 0,
   queuePaused = false,
   onCancel,
-  onChangeValue,
-  onChangeCursor,
   onHistoryUp,
   onHistoryDown,
-  onOpenBackendPicker,
   onOpenProviderPicker = () => undefined,
   onOpenModelPicker,
-  onOpenModePicker,
-  onOpenThemePicker,
-  onOpenAuthPanel,
-  onTogglePlanMode,
-  onClear,
   onCycleMode,
   onQuit,
   activeProviderId = "",
@@ -522,9 +478,7 @@ export function BottomComposer({
   // provider because their merged tokens are supplied there.
   const theme = themeName === "custom" ? inheritedTheme : (THEMES[themeName] ?? inheritedTheme);
   const { mode: layoutMode } = layout;
-  const crampedViewport = layout.rows <= 24;
   const { isFocused } = useFocus({ id: FOCUS_IDS.composer, autoFocus: true });
-  const [cursorVisible, setCursorVisible] = useState(true);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollRow, setScrollRow] = useState(0);
   const persona = getComposerPersona(uiState);
@@ -574,7 +528,6 @@ export function BottomComposer({
     return () => clearInterval(interval);
   }, [uiState.kind]);
 
-  const inputLocked = false;
   const allowCommands = persona !== "answer";
   const allowHistory = persona !== "answer";
   const promptPrefix = COMPOSER_ROW_CHROME.prompt;
@@ -670,7 +623,6 @@ export function BottomComposer({
   const commandSuggestionState = getCommandSuggestionState({
     value,
     allowCommands,
-    inputLocked,
   });
   const { showSuggestions, suggestions } = commandSuggestionState;
   const suggestionText = suggestions
@@ -687,8 +639,7 @@ export function BottomComposer({
     stopping,
   });
   const showStatusLine = rawStatusLine.length > 0;
-  const showTransientStatusRow = showStatusLine || inputLocked;
-  const footerGapRows = getComposerToFooterGapRows(layout);
+  const showTransientStatusRow = showStatusLine;
 
   const promptViewport = useMemo(
     () =>
@@ -837,17 +788,14 @@ export function BottomComposer({
           clearTimeout(ctrlMEventTimeoutRef.current);
           ctrlMEventTimeoutRef.current = null;
         }
-        if (!inputLocked) {
-          traceInputDebug("model_picker_shortcut_received", {
-            handler: "BottomComposer.useInput",
-            source: "ctrl-m-csi-u",
-            inputLocked,
-            allowCommands,
-            isFocused,
-            stdin: getStdinDebugState(stdin),
-          });
-          onOpenModelPicker();
-        }
+        traceInputDebug("model_picker_shortcut_received", {
+          handler: "BottomComposer.useInput",
+          source: "ctrl-m-csi-u",
+          allowCommands,
+          isFocused,
+          stdin: getStdinDebugState(stdin),
+        });
+        onOpenModelPicker();
         return;
       }
 
@@ -857,7 +805,7 @@ export function BottomComposer({
           clearTimeout(ctrlAltPEventTimeoutRef.current);
           ctrlAltPEventTimeoutRef.current = null;
         }
-        if (!inputLocked && allowCommands) {
+        if (allowCommands) {
           onOpenProviderPicker();
         }
         return;
@@ -1128,32 +1076,25 @@ export function BottomComposer({
   const reasoningSuffix = reasoningLevel ? ` (${reasoningLevel})` : "";
   const footerRuntimeDisplay = footerModelDisplay ?? `${model}${reasoningSuffix}`;
   const isAnswerMode = persona === "answer";
-  const showBusyFooter = shouldRenderBusyFooter(layout, uiState);
-  const promptPrefixColor = inputLocked ? theme.textDim : theme.text;
-  const lockedInputText = promptViewport.visibleRows[0]?.text ?? " ";
 
   // The prompt line is shared between bordered and non-bordered layouts.
   const promptLine = (
     <Box flexDirection="row" width={rowLayout.bodyWidth}>
       <Box width={rowLayout.promptWidth} flexShrink={0}>
-        <Text color={promptPrefixColor} bold={!inputLocked}>
+        <Text color={theme.text} bold>
           {promptPrefix}
         </Text>
       </Box>
       <Box flexDirection="column" width={promptWidth} flexShrink={0} overflow="hidden">
-        {value.length === 0 && !inputLocked ? (
+        {value.length === 0 ? (
           <Box width="100%" overflow="hidden">
             <Text
-              backgroundColor={cursorVisible && isFocused ? theme.text : undefined}
-              color={cursorVisible && isFocused ? theme.surface : undefined}
+              backgroundColor={isFocused ? theme.text : undefined}
+              color={isFocused ? theme.surface : undefined}
             >
               {" "}
             </Text>
             <Text color={theme.textDim}>{placeholderText}</Text>
-          </Box>
-        ) : inputLocked ? (
-          <Box key="busy-locked-input" width="100%" overflow="hidden">
-            <Text color={theme.textDim}>{lockedInputText || " "}</Text>
           </Box>
         ) : (
           promptViewport.visibleRows.map((row, index) => {
@@ -1171,8 +1112,8 @@ export function BottomComposer({
                   <>
                     <Text color={theme.text}>{segments.before}</Text>
                     <Text
-                      backgroundColor={cursorVisible && isFocused ? theme.text : undefined}
-                      color={cursorVisible && isFocused ? theme.surface : undefined}
+                      backgroundColor={isFocused ? theme.text : undefined}
+                      color={isFocused ? theme.surface : undefined}
                     >
                       {segments.current}
                     </Text>
@@ -1188,17 +1129,6 @@ export function BottomComposer({
       </Box>
     </Box>
   );
-
-  if (showBusyFooter) {
-    return (
-      <MemoizedRunFooter
-        uiState={uiState}
-        showBusyLoader={showBusyLoader}
-        onCancel={onCancel}
-        onQuit={onQuit}
-      />
-    );
-  }
 
   return (
     <Box flexDirection="column" paddingBottom={layoutMode === "compact" ? 0 : 1} width={width}>
@@ -1250,8 +1180,6 @@ export function BottomComposer({
           </Text>
         </Box>
       )}
-
-      {footerGapRows > 0 && <Box height={footerGapRows} />}
 
       {showTransientStatusRow && (
         <Box

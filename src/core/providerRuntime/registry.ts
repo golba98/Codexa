@@ -72,24 +72,6 @@ const openAiRuntime: ProviderRuntime = {
   },
 };
 
-function unavailableRuntime(providerId: ProviderId, label: string): ProviderRuntime {
-  return {
-    providerId,
-    label,
-    backendKind: "unavailable",
-    routeAvailable: false,
-    routeStatus: `${label} is available as a launcher, but in-Ubume routing is not configured yet.`,
-    launchAvailable: providerId !== "local",
-    discoverModels: (): ProviderModelDiscoveryResult => ({
-      status: "not-configured",
-      providerId,
-      backendKind: "unavailable",
-      models: [],
-      message: `${label} is available as a launcher, but in-Ubume routing is not configured yet.`,
-    }),
-  };
-}
-
 const PROVIDER_RUNTIMES: Record<ProviderId, ProviderRuntime> = {
   openai: openAiRuntime,
   anthropic: anthropicRuntime,

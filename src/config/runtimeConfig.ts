@@ -13,7 +13,6 @@ import {
   formatBackendLabel,
   formatModeLabel,
   formatReasoningLabel,
-  normalizeReasoningForModel,
   type ReasoningLevel,
 } from "./settings.js";
 
@@ -137,7 +136,7 @@ export const DEFAULT_RUNTIME_POLICY: RuntimePolicyConfig = {
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   provider: DEFAULT_BACKEND,
   model: DEFAULT_MODEL,
-  reasoningLevel: normalizeReasoningForModel(DEFAULT_MODEL, DEFAULT_REASONING_LEVEL),
+  reasoningLevel: DEFAULT_REASONING_LEVEL,
   mode: DEFAULT_MODE,
   planMode: false,
   policy: DEFAULT_RUNTIME_POLICY,
@@ -259,7 +258,7 @@ export function normalizeRuntimeConfig(
     ...(typeof input?.geminiCommandPath === "string" && input.geminiCommandPath.trim()
       ? { geminiCommandPath: input.geminiCommandPath.trim() }
       : {}),
-    reasoningLevel: normalizeReasoningForModel(model, reasoningInput),
+    reasoningLevel: reasoningInput || DEFAULT_REASONING_LEVEL,
     policy: normalizeRuntimePolicy(input?.policy),
   };
 }
@@ -379,7 +378,7 @@ export function resolveRuntimeConfig(config: RuntimeConfig): ResolvedRuntimeConf
     mode: normalized.mode,
     planMode: normalized.planMode,
     ...(normalized.geminiCommandPath ? { geminiCommandPath: normalized.geminiCommandPath } : {}),
-    reasoningLevel: normalizeReasoningForModel(normalized.model, normalized.reasoningLevel),
+    reasoningLevel: normalized.reasoningLevel || DEFAULT_REASONING_LEVEL,
     policy: {
       approvalPolicy,
       sandboxMode,

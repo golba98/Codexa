@@ -395,17 +395,6 @@ export const HEADER_CONFIG_DEFAULTS: HeaderConfig = {
   showAuthStatus: false,
 };
 
-export function getRecommendedReasoningForModel(model: AvailableModel): ReasoningLevel {
-  return DEFAULT_REASONING_LEVEL;
-}
-
-export function normalizeReasoningForModel(
-  model: AvailableModel,
-  reasoningLevel: ReasoningLevel,
-): ReasoningLevel {
-  return reasoningLevel || getRecommendedReasoningForModel(model);
-}
-
 export function formatAuthPreferenceLabel(preference: string): string {
   const found = AUTH_PREFERENCES.find((item) => item.id === preference);
   return found?.label ?? preference;

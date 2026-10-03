@@ -17,17 +17,8 @@ import {
   getNextMode,
   getNextRotatingMode,
   getUbumeTrustStoreFile,
-  normalizeReasoningForModel,
   USER_SETTING_DEFINITIONS,
 } from "./settings.js";
-
-test("keeps supported reasoning levels for gpt-5.4-mini", () => {
-  assert.equal(normalizeReasoningForModel("gpt-5.4-mini", "high"), "high");
-});
-
-test("keeps reasoning unchanged for non-mini models", () => {
-  assert.equal(normalizeReasoningForModel("gpt-5.4", "low"), "low");
-});
 
 test("formats codex-style mode labels", () => {
   assert.equal(formatModeLabel("suggest"), "Read-only");

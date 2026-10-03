@@ -29,19 +29,13 @@ import {
 import { isShellCodeLanguage, type Segment } from "../render/Markdown.js";
 import {
   classifyOutput,
-  formatForBox,
   normalizeOutput,
   sanitizeOutput,
   sanitizeStreamChunk,
 } from "../render/outputPipeline.js";
 import { formatTerminalAnswerInline } from "../render/terminalAnswerFormat.js";
 import { getTextWidth, splitTextAtColumn, wrapPlainText } from "../render/textLayout.js";
-import {
-  formatProgressBlockBodyLines,
-  getProgressUpdateCount,
-  selectVisibleProgressBlocks,
-  type VisibleProgressBlock,
-} from "./progressEntries.js";
+import { formatProgressBlockBodyLines } from "./progressEntries.js";
 import { selectVisibleRunActivity } from "./runActivityView.js";
 import { coalesceConsecutiveThinking } from "./streamCoalesce.js";
 import type { RenderTimelineItem } from "./Timeline.js";
@@ -124,7 +118,6 @@ interface MarkdownInlinePart {
 }
 
 const MAX_SHELL_FAILURE_EXCERPT_LINES = 3;
-const MAX_VISIBLE_PROGRESS_ENTRIES = 3;
 const COMPACT_PROCESSING_BODY_LINE_CAP = 4;
 const COMPACT_STREAMING_TAIL_CAP = 6;
 const VISIBLE_THINKING_SOURCES = new Set(["reasoning", "todo"]);
@@ -437,17 +430,6 @@ function buildIndentedRows(
   );
 }
 
-function buildPlainRows(
-  keyPrefix: string,
-  lines: string[],
-  width: number,
-  tone?: TimelineTone,
-): TimelineRowSpan[][] {
-  return lines.flatMap((line, index) =>
-    wrapPlainText(line, Math.max(1, width)).map((row, rowIndex) => [createSpan(row || " ", tone)]),
-  );
-}
-
 function buildTopBorder(width: number, title: string, rightBadge?: string): TimelineRowSpan[] {
   const safeWidth = Math.max(4, width);
   const prefixWidth = 4;
@@ -658,56 +640,6 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function buildTaskStatusRow(
-  item: Extract<RenderTimelineItem, { type: "turn" }>,
-  width: number,
-): TimelineRow {
-  const run = item.item.run!;
-  // PERF: Do NOT call Date.now() here — this function runs inside buildTimelineSnapshot
-  // which is computed inside a useMemo in Timeline.tsx.  Using Date.now() prevents the
-  // snapshot from ever fully stabilising, causing unnecessary downstream invalidation.
-  // We use a static frame so the data-layer row is deterministic and memo-stable.
-  const spinnerPlaceholder = "⠿";
-  const isActive = run.status === "running";
-
-  if (!isActive) {
-    // Completed state — clean summary line
-    const icon = run.status === "failed" ? "✕" : "✔";
-    const iconTone: TimelineTone = run.status === "failed" ? "error" : "success";
-    const label =
-      run.status === "failed" ? "Failed" : run.status === "canceled" ? "Canceled" : "Complete";
-    const durationText = run.durationMs != null ? ` • ${formatDuration(run.durationMs)}` : "";
-    return createRow(
-      `${item.key}-status`,
-      [
-        createSpan(" "),
-        createSpan(`${icon} `, iconTone),
-        createSpan(`${label}${durationText}`, "dim"),
-      ],
-      width,
-    );
-  }
-
-  // Active state — static concise status. The bottom status slot owns the
-  // live busy animation so transcript rows do not repaint on animation ticks.
-  const statusText =
-    item.renderState.runPhase === "streaming"
-      ? "Ubume is streaming"
-      : item.renderState.runPhase === "final"
-        ? "Ubume response complete"
-        : "Ubume is thinking";
-
-  return createRow(
-    `${item.key}-status`,
-    [
-      createSpan(" "),
-      createSpan(`${spinnerPlaceholder} `, "info"),
-      createSpan(statusText, "muted"),
-    ],
-    width,
-  );
-}
-
 function getShellFailureExcerpt(event: ShellEvent): string[] {
   const source = event.stderrLines.length > 0 ? event.stderrLines : event.lines;
   const summary = sanitizeTerminalOutput(event.summary ?? "")
@@ -718,146 +650,6 @@ function getShellFailureExcerpt(event: ShellEvent): string[] {
     .filter(Boolean)
     .filter((line, index) => !(index === 0 && summary && line.toLowerCase() === summary))
     .slice(0, MAX_SHELL_FAILURE_EXCERPT_LINES);
-}
-
-function getProgressBlockMarker(isLive: boolean): { text: string; tone: TimelineTone } {
-  if (isLive) {
-    return { text: "▸ ", tone: "accent" };
-  }
-  return { text: "• ", tone: "info" };
-}
-
-function getCurrentProgressText(
-  block: VisibleProgressBlock | null,
-  latestTool: RunEvent["toolActivities"][number] | null,
-): string | null {
-  if (latestTool?.status === "running") {
-    return latestTool.command;
-  }
-
-  if (!block) {
-    return null;
-  }
-
-  return block.headline.replace(/^Current:\s*/i, "");
-}
-
-/**
- * Verbose mode renders the full reasoning card.
- * Default mode renders a compact live-activity card only when there are
- * meaningful progress, tool, or file signals to show.
- */
-function buildThinkingRows(run: RunEvent, width: number, verbose: boolean): TimelineRow[] {
-  const latestTool = run.toolActivities[run.toolActivities.length - 1] ?? null;
-  const progressEntries = run.progressEntries ?? [];
-  const recentActivity = run.activity.slice(-2);
-  const contentWidth = Math.max(1, width - 4);
-  const contentRows: TimelineRowSpan[][] = [];
-  const totalProgressBlocks = getProgressUpdateCount(progressEntries);
-  const maxVisibleEntries = verbose ? totalProgressBlocks : MAX_VISIBLE_PROGRESS_ENTRIES;
-  const {
-    blocks: visibleBlocks,
-    hiddenCount,
-    totalCount,
-    latestBlock,
-    latestActiveBlock,
-  } = selectVisibleProgressBlocks(progressEntries, maxVisibleEntries);
-  const updateCount = totalCount || totalProgressBlocks;
-  const currentProgressText = getCurrentProgressText(latestActiveBlock ?? latestBlock, latestTool);
-
-  if (currentProgressText && run.status === "running") {
-    contentRows.push([
-      createSpan("Current: ", "info", { bold: true }),
-      createSpan(clampVisualText(currentProgressText, Math.max(1, contentWidth - 9)), "text"),
-    ]);
-  }
-
-  if (hiddenCount > 0) {
-    if (contentRows.length > 0) contentRows.push([createSpan(" ", "dim")]);
-    contentRows.push([
-      createSpan(`... ${hiddenCount} earlier update${hiddenCount === 1 ? "" : "s"}`, "dim"),
-    ]);
-  }
-
-  visibleBlocks.forEach((block, blockIndex) => {
-    const isLive = run.status === "running" && block.isActive;
-    if (contentRows.length > 0 && (blockIndex > 0 || hiddenCount > 0)) {
-      contentRows.push([createSpan(" ", "dim")]);
-    }
-
-    const marker = getProgressBlockMarker(isLive);
-    const label = isLive ? "Live" : block.label;
-    contentRows.push([
-      createSpan(marker.text, marker.tone),
-      createSpan(label, isLive ? "accent" : "info", { bold: isLive }),
-    ]);
-
-    const bodyLines = formatProgressBlockBodyLines(block.text, Math.max(1, contentWidth - 4));
-    const lineCap = verbose ? bodyLines.length : COMPACT_PROCESSING_BODY_LINE_CAP;
-    const visibleBodyLines = bodyLines.slice(0, lineCap);
-    const overflowCount = bodyLines.length - visibleBodyLines.length;
-
-    visibleBodyLines.forEach((line) => {
-      contentRows.push([
-        createSpan(isLive ? "  │ " : "    ", isLive ? "accent" : undefined),
-        createSpan(line || " ", "dim"),
-      ]);
-    });
-
-    if (overflowCount > 0) {
-      contentRows.push([
-        createSpan("    "),
-        createSpan(`… (${overflowCount} more line${overflowCount === 1 ? "" : "s"})`, "dim"),
-      ]);
-    }
-  });
-
-  if (run.status === "running" && latestTool) {
-    const toolPrefix =
-      latestTool.status === "failed" ? "✕ " : latestTool.status === "completed" ? "✓ " : "• ";
-    const toolTone =
-      latestTool.status === "failed"
-        ? "error"
-        : latestTool.status === "completed"
-          ? "success"
-          : "info";
-    const toolText =
-      latestTool.status === "running"
-        ? latestTool.command
-        : (latestTool.summary ?? latestTool.command);
-    const clampedTool = clampVisualText(toolText, Math.max(1, contentWidth - 2));
-    if (clampedTool.trim()) {
-      if (contentRows.length > 0) contentRows.push([createSpan(" ", "dim")]);
-      contentRows.push([createSpan(toolPrefix, toolTone), createSpan(clampedTool, toolTone)]);
-    }
-  }
-
-  if (run.status === "running") {
-    recentActivity.forEach((file, index) => {
-      const prefix =
-        file.operation === "created" ? "+ " : file.operation === "deleted" ? "- " : "~ ";
-      const tone =
-        file.operation === "created" ? "success" : file.operation === "deleted" ? "error" : "info";
-      const text = clampVisualText(file.path, Math.max(1, contentWidth - 2));
-      if (!text.trim()) return;
-      if (contentRows.length > 0 && index === 0) contentRows.push([createSpan(" ", "dim")]);
-      contentRows.push([createSpan(prefix, tone), createSpan(text, tone)]);
-    });
-  }
-
-  if (contentRows.length === 0) {
-    return [];
-  }
-
-  return buildDashCardRows({
-    keyPrefix: `${run.turnId}-thinking`,
-    width,
-    title: "Processing",
-    rightBadge:
-      run.status === "running" ? "active" : `${updateCount} update${updateCount === 1 ? "" : "s"}`,
-    borderTone: run.status === "running" ? "borderActive" : "borderSubtle",
-    contentRows,
-  });
 }
 
 /**
@@ -1003,12 +795,11 @@ function inlinePartsToSpans(parts: MarkdownInlinePart[], tone: TimelineTone): Ti
 }
 
 function buildWrappedMarkdownLine(
-  keyPrefix: string,
   parts: MarkdownInlinePart[],
   width: number,
   tone: TimelineTone,
 ): TimelineRowSpan[][] {
-  return wrapStyledSpans(inlinePartsToSpans(parts, tone), width).map((row, index) =>
+  return wrapStyledSpans(inlinePartsToSpans(parts, tone), width).map((row) =>
     padSpansToWidth(row, width),
   );
 }
@@ -1174,14 +965,7 @@ function buildMarkdownRows(segments: Segment[], width: number): TimelineRowSpan[
         return;
       }
 
-      rows.push(
-        ...buildWrappedMarkdownLine(
-          `para-${segmentIndex}-${lineIndex}`,
-          normalizedParts,
-          width,
-          "text",
-        ),
-      );
+      rows.push(...buildWrappedMarkdownLine(normalizedParts, width, "text"));
     });
   });
 
@@ -1189,21 +973,6 @@ function buildMarkdownRows(segments: Segment[], width: number): TimelineRowSpan[
 }
 
 // ─── Row cache ────────────────────────────────────────────────────────────────
-// During streaming, we cache previously computed markdown rows and only re-run
-// the pipeline on new content from the last safe paragraph boundary onward.
-// This reduces per-frame work from O(total_content) to O(new_delta + tail_paragraph).
-interface StreamingRowCache {
-  turnKey: string;
-  width: number;
-  /** Content length up to the last safe boundary that produced cachedRows. */
-  safeBoundaryOffset: number;
-  /** Rows computed for content up to safeBoundaryOffset. */
-  cachedRows: TimelineRowSpan[][];
-  /** Total content length when this cache was last updated. */
-  contentLength: number;
-}
-
-let _streamingRowCache: StreamingRowCache | null = null;
 
 // Per-entry row cache for completed (non-streaming) timeline entries.
 // Key: `${item.key}:${width}:${verboseMode}` — automatically invalidated when
@@ -1295,7 +1064,6 @@ function getCachedFrozenRows(cacheKey: string, build: () => TimelineRow[]): Time
  * otherwise keep rows for turns that no longer exist for the whole process.
  */
 export function resetTimelineMeasureCaches(): void {
-  _streamingRowCache = null;
   _rowContentCache.clear();
   _staticRowCache.clear();
   _blankRowCache.clear();
@@ -1327,193 +1095,7 @@ export function __wrapStyledSpansForTests(
   return wrapStyledSpans(spans, width);
 }
 
-/** Find the last safe paragraph boundary (double newline or closed code fence)
- *  that we can split content at for incremental rendering. */
-function findSafeBoundary(content: string, searchFrom: number): number {
-  // Look for the last double-newline before the end of content
-  let boundary = content.lastIndexOf("\n\n", content.length - 1);
-  // Only accept boundaries past the previous safe offset
-  if (boundary > searchFrom) return boundary + 2; // include the \n\n
-
-  // Fallback: look for single newline that's past searchFrom
-  boundary = content.lastIndexOf("\n", content.length - 1);
-  if (boundary > searchFrom) return boundary + 1;
-
-  // No safe boundary found — must re-process from searchFrom
-  return searchFrom;
-}
-
 // ─── Agent & action builders ──────────────────────────────────────────────────
-
-function buildAgentRows(
-  item: Extract<RenderTimelineItem, { type: "turn" }>,
-  width: number,
-  verbose = false,
-): TimelineRow[] {
-  const run = item.item.run!;
-  const assistant = item.item.assistant;
-  const streaming = item.renderState.runPhase === "streaming";
-  const dim = item.renderState.opacity !== "active";
-  const contentWidth = Math.max(1, width - 4);
-  const rawContent = splitSentenceWall(getAssistantContent(assistant));
-
-  let contentRows: TimelineRowSpan[][];
-
-  if (streaming && rawContent.length > 0) {
-    // During streaming, content was already sanitized in onAssistantDelta (app.tsx).
-    // Skip redundant sanitizeStreamChunk call — pass directly to normalize.
-    const turnKey = item.key;
-    const cache = _streamingRowCache;
-
-    if (
-      cache &&
-      cache.turnKey === turnKey &&
-      cache.width === contentWidth &&
-      rawContent.length >= cache.contentLength
-    ) {
-      // Content is a strict extension of what we cached — incremental update.
-      const newBoundary = findSafeBoundary(rawContent, cache.safeBoundaryOffset);
-
-      // Re-process only content from the last safe boundary onward
-      const tailContent = rawContent.slice(cache.safeBoundaryOffset);
-      const tailNormalized = normalizeOutput(tailContent);
-      const tailSegments = formatForBox(classifyOutput(tailNormalized), contentWidth);
-      const tailRows = buildMarkdownRows(tailSegments, contentWidth);
-      contentRows = [...cache.cachedRows, ...tailRows];
-
-      if (newBoundary > cache.safeBoundaryOffset) {
-        // New safe boundary found — compute cached rows up to boundary
-        const safePart = rawContent.slice(cache.safeBoundaryOffset, newBoundary);
-        const safeNormalized = normalizeOutput(safePart);
-        const safeSegments = formatForBox(classifyOutput(safeNormalized), contentWidth);
-        const safeRows = buildMarkdownRows(safeSegments, contentWidth);
-
-        _streamingRowCache = {
-          turnKey,
-          width: contentWidth,
-          safeBoundaryOffset: newBoundary,
-          cachedRows: [...cache.cachedRows, ...safeRows],
-          contentLength: rawContent.length,
-        };
-      } else {
-        // No new safe boundary — keep cache as-is, just update content length
-        _streamingRowCache = {
-          ...cache,
-          contentLength: rawContent.length,
-        };
-      }
-    } else {
-      // Cache miss — full rebuild and seed the cache
-      const normalized = normalizeOutput(rawContent);
-      const segments = formatForBox(classifyOutput(normalized), contentWidth);
-      contentRows = buildMarkdownRows(segments, contentWidth);
-
-      const boundary = findSafeBoundary(rawContent, 0);
-      if (boundary > 0 && boundary < rawContent.length) {
-        const safeNormalized = normalizeOutput(rawContent.slice(0, boundary));
-        const safeSegments = formatForBox(classifyOutput(safeNormalized), contentWidth);
-        const safeRows = buildMarkdownRows(safeSegments, contentWidth);
-
-        _streamingRowCache = {
-          turnKey,
-          width: contentWidth,
-          safeBoundaryOffset: boundary,
-          cachedRows: safeRows,
-          contentLength: rawContent.length,
-        };
-      } else {
-        _streamingRowCache = {
-          turnKey,
-          width: contentWidth,
-          safeBoundaryOffset: 0,
-          cachedRows: [],
-          contentLength: rawContent.length,
-        };
-      }
-    }
-  } else {
-    // Not streaming or empty — full pipeline, invalidate cache
-    if (!streaming) _streamingRowCache = null;
-    const sanitized = sanitizeOutput(rawContent);
-    const normalized = normalizeOutput(sanitized);
-    const segments = formatForBox(classifyOutput(normalized), contentWidth);
-    contentRows = buildMarkdownRows(segments, contentWidth);
-  }
-
-  if (!streaming && run.status === "failed") {
-    const failureMessage = sanitizeTerminalOutput(run.errorMessage ?? run.summary);
-    const failureRows: TimelineRowSpan[][] = [];
-    wrapPlainText(failureMessage, Math.max(1, contentWidth - 2)).forEach((row, index) => {
-      failureRows.push([
-        createSpan(index === 0 ? "✕ " : "  ", "error"),
-        createSpan(row || " ", "error"),
-      ]);
-    });
-    contentRows = [...failureRows, ...contentRows];
-  }
-
-  if (streaming && !verbose && contentRows.length > COMPACT_STREAMING_TAIL_CAP) {
-    const hiddenRowCount = contentRows.length - COMPACT_STREAMING_TAIL_CAP;
-    contentRows = [
-      [createSpan(`… (${hiddenRowCount} line${hiddenRowCount === 1 ? "" : "s"} above)`, "dim")],
-      ...contentRows.slice(-COMPACT_STREAMING_TAIL_CAP),
-    ];
-  }
-
-  if (streaming) {
-    contentRows.push([createSpan("  "), createSpan("▌", "accent")]);
-  }
-
-  if (!streaming && run.status !== "running") {
-    if (run.status === "canceled") {
-      wrapPlainText(sanitizeTerminalOutput(run.summary), contentWidth).forEach((wrapped) => {
-        contentRows.push([createSpan(wrapped || " ", "warning")]);
-      });
-    } else if (run.status === "completed" && rawContent.trim().length === 0) {
-      contentRows.push([createSpan("(no output)", "dim")]);
-    }
-
-    if (run.truncatedOutput) {
-      contentRows.push([createSpan(RUN_OUTPUT_TRUNCATION_NOTICE, "dim")]);
-    }
-  }
-
-  const heading = run.runtime.model ? run.runtime.model.toUpperCase().replace(/-/g, " ") : "Codex";
-  const runStatus = streaming
-    ? "streaming"
-    : run.status === "completed"
-      ? "complete"
-      : (run.status ?? "running");
-  const rightBadge =
-    run.durationMs != null && !streaming
-      ? `${runStatus} • ${formatDuration(run.durationMs)}`
-      : runStatus;
-
-  const borderTone = dim ? "borderSubtle" : streaming ? "borderActive" : "borderSubtle";
-  const actionBorderTone = item.renderState.opacity === "dim" ? "borderSubtle" : "borderActive";
-
-  const rows: TimelineRow[] = [];
-
-  // 1. Add top margin for separation from the task status line above.
-  rows.push(createBlankRow(`${item.key}-agent-top-gap`, width));
-
-  // 2. Render the Codex output inside a DashCard — visually consistent with
-  //    every other block in the timeline: USER INPUT, Processing, File Scan,
-  //    and Activity all use the same ╭──...──╮ frame.  The title is the model
-  //    name (e.g. "GPT 4O") or the generic "Codex" fallback.
-  rows.push(
-    ...buildDashCardRows({
-      keyPrefix: `${item.key}-agent`,
-      width,
-      title: heading,
-      rightBadge,
-      borderTone,
-      contentRows,
-    }),
-  );
-
-  return rows;
-}
 
 function buildFileScanRows(
   item: Extract<RenderTimelineItem, { type: "turn" }>,
@@ -1536,48 +1118,6 @@ function buildFileScanRows(
     width,
     title: "Scanning workspace ...",
     rightBadge: `${run.touchedFileCount} file${run.touchedFileCount === 1 ? "" : "s"}`,
-    contentRows,
-  });
-}
-
-function buildActivityRows(
-  item: Extract<RenderTimelineItem, { type: "turn" }>,
-  width: number,
-): TimelineRow[] {
-  const run = item.item.run!;
-  const contentWidth = Math.max(1, width - 4);
-  const contentRows: TimelineRowSpan[][] = [];
-
-  run.toolActivities.forEach((tool, index) => {
-    const icon = tool.status === "failed" ? "✕" : "✓";
-    const iconTone = tool.status === "failed" ? "error" : "success";
-    const duration =
-      tool.completedAt && tool.startedAt
-        ? ` • ${formatDuration(tool.completedAt - tool.startedAt)}`
-        : "";
-    const headRows = wrapPlainText(tool.command, Math.max(1, contentWidth - 2));
-    headRows.forEach((row, rowIndex) => {
-      contentRows.push([
-        createSpan(rowIndex === 0 ? `${icon} ` : "  ", iconTone),
-        createSpan(row || " ", "text"),
-        ...(rowIndex === 0 && duration ? [createSpan(duration, "dim")] : []),
-      ]);
-    });
-    if (tool.summary) {
-      wrapPlainText(tool.summary, Math.max(1, contentWidth - 2)).forEach((row) => {
-        contentRows.push([createSpan("  "), createSpan(row || " ", "muted")]);
-      });
-    }
-    if (index < run.toolActivities.length - 1) {
-      contentRows.push([createSpan("")]);
-    }
-  });
-
-  return buildDashCardRows({
-    keyPrefix: `${item.key}-activity`,
-    width,
-    title: "Activity",
-    rightBadge: "done",
     contentRows,
   });
 }
@@ -2418,12 +1958,11 @@ function buildCodexResponseRows(params: {
     const contentWidth = Math.max(1, params.width - transcriptContentIndent);
     const rawContent = splitSentenceWall(formatTerminalAnswerInline(segmentText));
 
-    if (!params.streaming) _streamingRowCache = null;
     const sanitized = segmentStreaming
       ? sanitizeStreamChunk(rawContent)
       : sanitizeOutput(rawContent);
     const normalized = normalizeOutput(sanitized);
-    const segments = formatForBox(classifyOutput(normalized), contentWidth);
+    const segments = classifyOutput(normalized);
     responseRows = buildMarkdownRows(segments, contentWidth);
 
     if (!params.streaming && params.run.status === "failed" && params.isLastEvent) {
@@ -2484,8 +2023,7 @@ function buildApprovedPlanRows(params: {
 }): TimelineRow[] {
   const contentWidth = Math.max(1, params.width - 4);
   const normalized = normalizePlanReviewMarkdown(params.planText, params.workspaceRoot);
-  const classified = classifyOutput(normalized);
-  const formatted = formatForBox(classified, contentWidth);
+  const formatted = classifyOutput(normalized);
   const contentRows = buildMarkdownRows(formatted, contentWidth);
 
   return buildDashCardRows({
@@ -2736,7 +2274,6 @@ function buildTurnRows(
   width: number,
   options: { verbose?: boolean; workspaceRoot?: string | null } = {},
 ): TimelineRow[] {
-  const verbose = options.verbose ?? false;
   const rows: TimelineRow[] = [];
 
   rows.push(...buildUserInputRows(item, width));
@@ -3493,8 +3030,7 @@ export function buildTimelineSnapshot(
     } else {
       const { runPhase, opacity } = item.renderState;
       // Only cache completed turns (runPhase "none"/"final") at a stable
-      // opacity.  Streaming and thinking items change every tick and use the
-      // _streamingRowCache instead.
+      // opacity. Streaming and thinking items change every tick.
       const cacheable = runPhase !== "streaming" && runPhase !== "thinking";
       if (cacheable) {
         const cacheKey = rowCacheKey([

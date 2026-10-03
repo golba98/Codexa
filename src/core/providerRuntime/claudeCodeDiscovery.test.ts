@@ -256,7 +256,7 @@ test("discoverClaudeCodeCapabilities: full success with model list --json as arr
     cwd: process.cwd(),
     metadataPaths: [],
     settingsPath: null,
-    runCommandImpl: mockRunCommand((executable, args) => {
+    runCommandImpl: mockRunCommand((_executable, args) => {
       if (args[0] === "auth")
         return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "--help")
@@ -294,7 +294,7 @@ test("discoverClaudeCodeCapabilities: full success with model list --json return
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
     settingsPath: null,
-    runCommandImpl: mockRunCommand((executable, args) => {
+    runCommandImpl: mockRunCommand((_executable, args) => {
       if (args[0] === "auth")
         return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "--help")
@@ -332,7 +332,7 @@ test("discoverClaudeCodeCapabilities: full success with model list --json return
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
     settingsPath: null,
-    runCommandImpl: mockRunCommand((executable, args) => {
+    runCommandImpl: mockRunCommand((_executable, args) => {
       if (args[0] === "auth")
         return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "--help")
@@ -364,7 +364,7 @@ test("discoverClaudeCodeCapabilities: applies CLI effort truth and settings defa
       cwd: process.cwd(),
       settingsPath,
       metadataPaths: [],
-      runCommandImpl: mockRunCommand((executable, args) => {
+      runCommandImpl: mockRunCommand((_executable, args) => {
         if (args[0] === "auth")
           return commandResult({ stdout: JSON.stringify({ loggedIn: true }) });
         if (args[0] === "--help")
@@ -403,7 +403,7 @@ test("discoverClaudeCodeCapabilities: normalizes versioned Claude Code IDs into 
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
     settingsPath: null,
-    runCommandImpl: mockRunCommand((executable, args) => {
+    runCommandImpl: mockRunCommand((_executable, args) => {
       if (args[0] === "auth")
         return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
@@ -432,7 +432,7 @@ test("discoverClaudeCodeCapabilities: aliases are marked version unknown when Cl
     cwd: process.cwd(),
     metadataPaths: [],
     settingsPath: null,
-    runCommandImpl: mockRunCommand((executable, args) => {
+    runCommandImpl: mockRunCommand((_executable, args) => {
       if (args[0] === "auth")
         return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
@@ -472,7 +472,7 @@ test("discoverClaudeCodeCapabilities: resolves alias-only command output using i
       cwd: process.cwd(),
       metadataPaths: [metadataPath],
       settingsPath: null,
-      runCommandImpl: mockRunCommand((executable, args) => {
+      runCommandImpl: mockRunCommand((_executable, args) => {
         if (args[0] === "auth")
           return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
         if (args[0] === "model" && args[1] === "list" && args[2] === "--json") {
@@ -590,7 +590,7 @@ test("discoverClaudeCodeCapabilities: uses package metadata before fallback when
       cwd: process.cwd(),
       metadataPaths: [metadataPath],
       settingsPath: null,
-      runCommandImpl: mockRunCommand((executable, args) => {
+      runCommandImpl: mockRunCommand((_executable, args) => {
         if (args[0] === "auth")
           return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
         return commandResult({ exitCode: 1 });
@@ -631,7 +631,7 @@ test("discoverClaudeCodeCapabilities: settings fallback when CLI has no model js
       cwd: process.cwd(),
       settingsPath,
       metadataPaths: [],
-      runCommandImpl: mockRunCommand((executable, args) => {
+      runCommandImpl: mockRunCommand((_executable, args) => {
         if (args[0] === "auth")
           return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
         if (args[0] === "--help")
@@ -670,7 +670,7 @@ test("discoverClaudeCodeCapabilities: settings fallback with availableModels, al
       cwd: process.cwd(),
       settingsPath,
       metadataPaths: [],
-      runCommandImpl: mockRunCommand((executable, args) => {
+      runCommandImpl: mockRunCommand((_executable, args) => {
         if (args[0] === "auth")
           return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
         if (args[0] === "--help")
@@ -707,7 +707,7 @@ test("discoverClaudeCodeCapabilities: complete fallback when CLI fails and no se
       cwd: process.cwd(),
       settingsPath,
       metadataPaths: [],
-      runCommandImpl: mockRunCommand((executable, args) => {
+      runCommandImpl: mockRunCommand((_executable, args) => {
         if (args[0] === "auth") return commandResult({ exitCode: 1, stdout: "" });
         if (args[0] === "--help") return commandResult({ exitCode: 1, stdout: "" });
         return commandResult({ exitCode: 1 });
@@ -736,7 +736,7 @@ test("direct-probe regression: discovery succeeds when help text has NO matching
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
     settingsPath: null,
-    runCommandImpl: mockRunCommand((executable, args) => {
+    runCommandImpl: mockRunCommand((_executable, args) => {
       if (args[0] === "auth")
         return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) });
       // Help text deliberately contains NO matching "model list --json" substring.
@@ -795,7 +795,7 @@ test("direct-probe regression: normalises model objects using 'name' field when 
   const discovery = await discoverClaudeCodeCapabilities({
     cwd: process.cwd(),
     settingsPath: null,
-    runCommandImpl: mockRunCommand((executable, args) => {
+    runCommandImpl: mockRunCommand((_executable, args) => {
       if (args[0] === "auth")
         return commandResult({ exitCode: 0, stdout: JSON.stringify({ loggedIn: false }) });
       if (args[0] === "--help") return commandResult({ exitCode: 0, stdout: "model list --json" });

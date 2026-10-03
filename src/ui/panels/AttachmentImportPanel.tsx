@@ -44,7 +44,7 @@ export function AttachmentImportPanel({
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   useInput(
-    (input, key) => {
+    (_input, key) => {
       if (key.escape) {
         onCancel();
         return;
