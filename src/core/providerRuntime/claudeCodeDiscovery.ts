@@ -1,10 +1,13 @@
-import { existsSync, readFileSync, realpathSync } from "fs";
-import { dirname, join } from "path";
-import { buildClaudeSpawnSpec, resolveClaudeExecutable } from "../executables/claudeExecutable.js";
-import type { CommandResult } from "../process/CommandRunner.js";
-import { runCommand } from "../process/CommandRunner.js";
-import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
-import { getClaudeCodeEffortLevels } from "./reasoning.js";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
+import {
+  buildClaudeSpawnSpec,
+  resolveClaudeExecutable,
+} from "../executables/executableResolver.js";
+import type { CommandResult } from "../process/commandRunner.js";
+import { runCommand } from "../process/commandRunner.js";
+import { isRecord } from "../shared/values.js";
+import { ANTHROPIC_FALLBACK_MODELS, getClaudeCodeEffortLevels } from "./models.js";
 import type { ProviderModel } from "./types.js";
 
 type CommandRunner = typeof runCommand;
@@ -82,10 +85,6 @@ interface ClaudeSettingsInfo {
   effortLevel?: string;
   availableModels?: readonly string[];
   models?: readonly ClaudeCodeModel[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readString(value: unknown): string | undefined {

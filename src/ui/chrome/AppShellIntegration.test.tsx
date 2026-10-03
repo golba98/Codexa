@@ -4,7 +4,7 @@ import test from "node:test";
 import { render } from "ink";
 import { buildRuntimeSummary } from "../../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS } from "../../config/settings.js";
-import type { CommandResult } from "../../core/process/CommandRunner.js";
+import type { CommandResult } from "../../core/process/commandRunner.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
 import { createTerminalViewport } from "../layout.js";
 import { ProviderPicker } from "../panels/ProviderPicker.js";

@@ -1,53 +1,43 @@
 import { createHash } from "node:crypto";
 import { cpSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { isAbsolute, join, normalize } from "node:path";
+import { getHomeDir } from "../../config/settings.js";
 
 type Platform = "win32" | "darwin" | "linux" | string;
 type Environment = Record<string, string | undefined>;
 
-export function resolveLegacyCodexaDataDir(
-  platformOverride?: Platform,
-  env: Environment = process.env,
-  home = homedir(),
-): string {
-  const configuredDir = env["CODEXA_DATA_DIR"]?.trim();
-  if (configuredDir) return configuredDir;
-
-  const platform = platformOverride ?? process.platform;
+function resolveDataDir(platform: Platform, env: Environment, home: string, name: string): string {
   if (platform === "win32") {
     return join(
       env["LOCALAPPDATA"]?.trim() || env["APPDATA"]?.trim() || join(home, "AppData", "Local"),
-      "Codexa",
+      name,
     );
   }
-  if (platform === "darwin") {
-    return join(home, "Library", "Application Support", "Codexa");
-  }
+  if (platform === "darwin") return join(home, "Library", "Application Support", name);
+  return join(env["XDG_DATA_HOME"]?.trim() || join(home, ".local", "share"), name.toLowerCase());
+}
 
-  return join(env["XDG_DATA_HOME"]?.trim() || join(home, ".local", "share"), "codexa");
+export function resolveLegacyCodexaDataDir(
+  platformOverride?: Platform,
+  env: Environment = process.env,
+  home = getHomeDir(),
+): string {
+  return (
+    env["CODEXA_DATA_DIR"]?.trim() ||
+    resolveDataDir(platformOverride ?? process.platform, env, home, "Codexa")
+  );
 }
 
 export function resolveUbumeDataDir(
   platformOverride?: Platform,
   env: Environment = process.env,
-  home = homedir(),
+  home = getHomeDir(),
 ): string {
-  const configuredDir = env["UBUME_DATA_DIR"]?.trim() || env["CODEXA_DATA_DIR"]?.trim();
-  if (configuredDir) return configuredDir;
-
-  const platform = platformOverride ?? process.platform;
-  if (platform === "win32") {
-    return join(
-      env["LOCALAPPDATA"]?.trim() || env["APPDATA"]?.trim() || join(home, "AppData", "Local"),
-      "Ubume",
-    );
-  }
-  if (platform === "darwin") {
-    return join(home, "Library", "Application Support", "Ubume");
-  }
-
-  return join(env["XDG_DATA_HOME"]?.trim() || join(home, ".local", "share"), "ubume");
+  return (
+    env["UBUME_DATA_DIR"]?.trim() ||
+    env["CODEXA_DATA_DIR"]?.trim() ||
+    resolveDataDir(platformOverride ?? process.platform, env, home, "Ubume")
+  );
 }
 
 let dataMigrated = false;
@@ -55,7 +45,7 @@ let dataMigrated = false;
 export function maybeMigrateLegacyData(
   platformOverride?: Platform,
   env: Environment = process.env,
-  home = homedir(),
+  home = getHomeDir(),
 ): void {
   if (dataMigrated) return;
   dataMigrated = true;

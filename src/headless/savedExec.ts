@@ -6,9 +6,8 @@ import { acquireOwnership } from "../core/workspace/ownership.js";
 import { expandFileAttachments, readFileAttachment } from "../core/workspace/workspaceFiles.js";
 import { createRunEvent } from "../session/chatLifecycle.js";
 import { conversationMessagesToTimeline } from "../session/conversation.js";
-import { ToolOutputBudget } from "../session/toolOutput.js";
 import type { AssistantEvent } from "../session/types.js";
-import { restoredEvents, type WorkbenchSnapshot } from "../session/workbench.js";
+import { restoredEvents, ToolOutputBudget, type WorkbenchSnapshot } from "../session/workbench.js";
 import { CommandError, resolveExecutionContext } from "./context.js";
 import { redact } from "./diagnostics.js";
 import {

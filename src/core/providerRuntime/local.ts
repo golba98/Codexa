@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { resolveBrowserCapability } from "../computerUse/capability.js";
 import type { LocalBackendId, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
 import { createRunControl } from "../providers/runControl.js";
+import { errorMessage, isRecord } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import {
   clearModelCapabilityProfileCache,
@@ -16,9 +17,10 @@ import {
   fetchLmStudioModels,
   type LmStudioModelInfo,
   type LmStudioModelList,
-} from "./lmstudio.js";
+  resolveUnslothConnection,
+} from "./localBackends.js";
+import { resolveDefaultMaxOutputTokens } from "./localHarness/config.js";
 import { runLocalHarness } from "./localHarness/runtime.js";
-import { resolveDefaultMaxOutputTokens } from "./localOutputBudget.js";
 import type {
   ProviderChatRequest,
   ProviderModel,
@@ -27,7 +29,6 @@ import type {
   ProviderRuntime,
   ResolvedLocalAgentConfig,
 } from "./types.js";
-import { resolveUnslothConnection } from "./unsloth.js";
 
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:1234/v1";
 const DEFAULT_LOCAL_API_KEY = "lm-studio";
@@ -68,10 +69,6 @@ function normalizeBaseUrl(value: string): string {
 
 function nonEmpty(value: string | undefined | null): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function setLocalProviderConfig(
@@ -637,20 +634,18 @@ export async function checkLocalProvider(
       diagnostics: result.diagnostics,
     };
   } catch (error) {
-    const errorMessage =
+    const failure =
       controller.signal.aborted && !options.signal?.aborted
         ? "Local backend check timed out."
-        : error instanceof Error
-          ? error.message
-          : String(error);
+        : errorMessage(error);
     const message = [
-      errorMessage.includes("timed out")
+      failure.includes("timed out")
         ? "Local backend check timed out."
         : "Local provider unavailable",
       `Could not reach ${config.baseUrl}`,
       "Start LM Studio, load a model, and enable the local server.",
     ].join("\n");
-    const result = notConfiguredResult(config, message, "unavailable", errorMessage);
+    const result = notConfiguredResult(config, message, "unavailable", failure);
     discoveryCaches.set(localBackend, {
       configKey: key,
       result,
@@ -833,18 +828,16 @@ async function checkUnslothProvider(options: {
       diagnostics: result.diagnostics,
     };
   } catch (error) {
-    const errorMessage =
+    const failure =
       controller.signal.aborted && !options.signal?.aborted
         ? "Local backend check timed out."
-        : error instanceof Error
-          ? error.message
-          : String(error);
+        : errorMessage(error);
     const message = [
       "Unsloth provider unavailable",
       "Start Unsloth Studio and load a model.",
-      errorMessage,
+      failure,
     ].join("\n");
-    const result = notConfiguredResult(initialConfig, message, "unavailable", errorMessage);
+    const result = notConfiguredResult(initialConfig, message, "unavailable", failure);
     discoveryCaches.set("unsloth", {
       configKey: localConfigKey(initialConfig),
       result,
@@ -1095,7 +1088,7 @@ export const localRuntime: ProviderRuntime = {
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
-        const detail = error instanceof Error ? error.message : "Local agent harness failed.";
+        const detail = errorMessage(error, "Local agent harness failed.");
         const message =
           detail.startsWith("Local agent request failed") || detail.startsWith("Local Harness")
             ? detail

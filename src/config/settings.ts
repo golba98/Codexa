@@ -1,15 +1,11 @@
-import { homedir } from "os";
-import { basename, join, parse, win32 } from "path";
-
-function isWindowsStylePath(p: string): boolean {
-  return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p);
-}
+import { homedir } from "node:os";
+import { basename, join, parse, win32 } from "node:path";
+import { getAppVersion } from "../core/version/channel.js";
+import { isWindowsStylePath } from "../core/workspace/workspaceRoot.js";
 
 function smartJoin(base: string, ...parts: string[]): string {
   return isWindowsStylePath(base) ? win32.join(base, ...parts) : join(base, ...parts);
 }
-
-import { getAppVersion } from "./appVersion.js";
 
 // Authoritative runtime version: resolved from the installed package.json at
 // startup (buildInfo.ts is only the committed fallback and can drift).
@@ -27,8 +23,12 @@ export const DEFAULT_SHOW_BUSY_LOADER = true;
 export const DEFAULT_AUTH_PREFERENCE = "chatgpt-login-goal";
 export const MAX_CHAT_LINES = 2000;
 
+export function getHomeDir(env: NodeJS.ProcessEnv = process.env): string {
+  return env.USERPROFILE ?? env.HOME ?? homedir();
+}
+
 export function getCodexHome(): string {
-  return process.env.CODEX_HOME?.trim() || join(homedir(), ".codex");
+  return process.env.CODEX_HOME?.trim() || join(getHomeDir(), ".codex");
 }
 
 export function getCodexConfigFile(): string {
@@ -371,4 +371,29 @@ export const HEADER_CONFIG_DEFAULTS: HeaderConfig = {
 export function formatAuthPreferenceLabel(preference: string): string {
   const found = AUTH_PREFERENCES.find((item) => item.id === preference);
   return found?.label ?? preference;
+}
+
+export interface Theme {
+  bg: string;
+  surface: string;
+  surfaceMuted: string;
+  border: string;
+  borderFocused: string;
+  text: string;
+  textMuted: string;
+  textDim: string;
+  accent: string;
+  accentMuted: string;
+  success: string;
+  warning: string;
+  error: string;
+  info: string;
+  command: string;
+  prompt: string;
+  model: string;
+  provider: string;
+  context: string;
+  logoPrimary: string;
+  logoSecondary: string;
+  logoShadow: string;
 }

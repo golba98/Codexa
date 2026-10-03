@@ -5,7 +5,7 @@ import {
   BUSY_STATUS_FRAMES,
   getBusyStatusFrame,
   isAnimatedBusyState,
-} from "./busyStatusAnimation.js";
+} from "./statusIndicators.js";
 
 test("busy status frames advance in a fixed-width dot slot", () => {
   assert.deepEqual([0, 1, 2, 3, 4].map(getBusyStatusFrame), [

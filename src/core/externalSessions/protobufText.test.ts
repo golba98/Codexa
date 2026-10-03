@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractProtobufStrings } from "./protobufText.js";
+import { extractProtobufStrings } from "./storeIo.js";
 
 function varint(value: number): number[] {
   const bytes: number[] = [];

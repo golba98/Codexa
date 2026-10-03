@@ -14,3 +14,5 @@ export function applyLegacyEnvAliases(env: NodeJS.ProcessEnv = process.env): voi
     if (env[ubumeKey] === undefined) env[ubumeKey] = value;
   }
 }
+
+applyLegacyEnvAliases();

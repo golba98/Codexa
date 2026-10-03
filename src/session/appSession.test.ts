@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
 import { TEST_RUNTIME } from "../test/runtimeTestUtils.js";
-import { isAnimatedBusyState } from "../ui/chrome/busyStatusAnimation.js";
+import { isAnimatedBusyState } from "../ui/chrome/statusIndicators.js";
 import { createInitialSessionState, reduceSessionState, type SessionState } from "./appSession.js";
 import type { AssistantEvent, RunEvent, TimelineEvent, UserPromptEvent } from "./types.js";
 import { getRunPlanText, isBusy } from "./types.js";

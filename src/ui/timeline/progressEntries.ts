@@ -1,5 +1,5 @@
+import { normalizeLineBreaks, wrapPlainText } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
-import { wrapPlainText } from "../render/textLayout.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -7,10 +7,7 @@ import { wrapPlainText } from "../render/textLayout.js";
 
 export function formatProgressBlockBodyLines(text: string, width: number): string[] {
   const contentWidth = Math.max(1, width);
-  const normalized = sanitizeTerminalOutput(text)
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/[ \t]+\n/g, "\n");
+  const normalized = normalizeLineBreaks(sanitizeTerminalOutput(text)).replace(/[ \t]+\n/g, "\n");
 
   if (!normalized.trim()) {
     return [" "];

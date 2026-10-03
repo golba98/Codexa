@@ -4,6 +4,7 @@ import { prepareCodexExecLaunch } from "../codex/codexLaunch.js";
 import { buildCodexPrompt } from "../codex/codexPrompt.js";
 import { formatCodexLaunchError, spawnCodexProcess } from "../executables/codexExecutable.js";
 import * as perf from "../perf/profiler.js";
+import { normalizeLineBreaks } from "../shared/text.js";
 import { createTerminalTitleSequenceStripper } from "../terminal/terminalTitle.js";
 import { createCodexJsonStreamParser } from "./codexJsonStream.js";
 import {
@@ -245,10 +246,9 @@ export const codexSubprocessProvider: BackendProvider = {
               return;
             }
 
-            const lines = stripNonPrintableControls(stripAnsi(text))
-              .replace(/\r\n/g, "\n")
-              .replace(/\r/g, "\n")
-              .split("\n");
+            const lines = normalizeLineBreaks(stripNonPrintableControls(stripAnsi(text))).split(
+              "\n",
+            );
             for (const line of lines) {
               const trimmed = line.trim();
               if (!trimmed || isStderrNoise(trimmed) || isProcessTerminationNoise(trimmed))

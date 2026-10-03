@@ -16,14 +16,14 @@ import {
   getSelectableModelCapabilities,
 } from "../../core/models/codexModelCapabilities.js";
 import { buildProviderRegistry } from "../../core/providerLauncher/registry.js";
-import { BottomComposer, isBacktabSequence } from "../chrome/BottomComposer.js";
+import { BottomComposer } from "../chrome/BottomComposer.js";
+import { isBacktabSequence } from "../chrome/composer/composerKeymap.js";
 import { createLayoutSnapshot } from "../layout.js";
 import { ModelPickerScreen } from "../panels/ModelPickerScreen.js";
 import { PlanActionPicker } from "../panels/PlanActionPicker.js";
 import { ProviderPicker } from "../panels/ProviderPicker.js";
 import { TextEntryPanel } from "../panels/TextEntryPanel.js";
-import { ThemeProvider } from "../theme.js";
-import { shouldBumpComposerInstance } from "../themeFlow.js";
+import { shouldBumpComposerInstance, ThemeProvider } from "../theme.js";
 import { getFocusTargetForScreen } from "./focus.js";
 
 class TestInput extends PassThrough {

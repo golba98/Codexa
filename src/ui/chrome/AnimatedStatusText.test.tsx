@@ -6,7 +6,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { render } from "ink";
 import { ThemeProvider } from "../theme.js";
-import { AnimatedStatusText } from "./AnimatedStatusText.js";
+import { AnimatedStatusText } from "./statusIndicators.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -49,7 +49,7 @@ function sleep(ms = 50): Promise<void> {
 const here = dirname(fileURLToPath(import.meta.url));
 
 test("busy status text owns the local animation timer", () => {
-  const source = readFileSync(join(here, "AnimatedStatusText.tsx"), "utf8");
+  const source = readFileSync(join(here, "statusIndicators.tsx"), "utf8");
 
   assert.match(source, /setInterval/);
   assert.match(source, /useEffect/);

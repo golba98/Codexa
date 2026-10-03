@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { errorMessage } from "../shared/values.js";
 
 export interface ProjectInstructions {
   path: string;
@@ -38,7 +39,7 @@ export function loadProjectInstructions(workspaceRoot: string): ProjectInstructi
       firstError ??= {
         status: "error",
         path: candidatePath,
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage(error),
       };
     }
   }

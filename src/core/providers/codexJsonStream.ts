@@ -1,4 +1,5 @@
 import type { RunToolActivity } from "../../session/types.js";
+import { normalizeLineBreaks } from "../shared/text.js";
 import type { BackendProgressUpdate } from "./types.js";
 
 type CodexThreadEvent =
@@ -72,9 +73,7 @@ interface CodexJsonStreamHandlers {
 
 function normalizeProgressText(text: string | undefined): string | null {
   if (!text) return null;
-  const normalized = text
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
+  const normalized = normalizeLineBreaks(text)
     .replace(/[ \t]+\n/g, "\n")
     .trim();
   return normalized || null;
@@ -82,9 +81,7 @@ function normalizeProgressText(text: string | undefined): string | null {
 
 function firstMeaningfulLine(text: string | undefined): string | null {
   if (!text) return null;
-  const line = text
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
+  const line = normalizeLineBreaks(text)
     .split("\n")
     .map((part) => part.trim())
     .find(Boolean);

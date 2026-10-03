@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
-import { saveCachedProviderModels } from "../models/providerModelCache.js";
-import type { CommandResult, CommandSpec, runCommand } from "../process/CommandRunner.js";
+import { saveCachedProviderModels } from "../models/modelCache.js";
+import type { CommandResult, CommandSpec, runCommand } from "../process/commandRunner.js";
 import {
   ANTIGRAVITY_DEFAULT_MODEL_ID,
   ANTIGRAVITY_DEFAULT_REASONING,

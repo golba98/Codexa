@@ -1,8 +1,13 @@
 import { existsSync, readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
+import { errorMessage, isRecord } from "../core/shared/values.js";
 import { normalizeWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
 import type { LaunchArgs } from "./launchArgs.js";
 import {
+  AVAILABLE_APPROVAL_POLICIES,
+  AVAILABLE_PERSONALITIES,
+  AVAILABLE_SANDBOX_MODES,
+  AVAILABLE_SERVICE_TIERS,
   DEFAULT_RUNTIME_CONFIG,
   formatApprovalPolicyLabel,
   formatNetworkAccessLabel,
@@ -30,7 +35,6 @@ import {
   getCodexConfigFile,
   type ReasoningLevel,
 } from "./settings.js";
-import { isRecord } from "./toml-serialize.js";
 import { isProjectTrusted } from "./trustStore.js";
 
 const RUNTIME_FIELD_PATHS = [
@@ -144,6 +148,204 @@ function parseWritableRoots(
   return value.map((item) => resolveConfigPath(configFilePath, item));
 }
 
+interface FieldSpec {
+  keys: readonly string[];
+  apply: (
+    data: Record<string, unknown>,
+    patch: PartialRuntimeConfig,
+    touchedFields: Set<RuntimeFieldPath>,
+    ignoredEntries: string[],
+    configFilePath: string,
+  ) => void;
+}
+const FIELD_SPECS: readonly FieldSpec[] = [
+  {
+    keys: ["model"],
+    apply: (data, patch, touchedFields, ignoredEntries, _configFilePath) => {
+      if ("model" in data) {
+        if (typeof data.model === "string" && data.model.trim().length > 0) {
+          patch.model = data.model.trim() as AvailableModel;
+          addTouchedField(touchedFields, "model");
+        } else {
+          ignoredEntries.push("model");
+        }
+      }
+    },
+  },
+  {
+    keys: ["model_reasoning_effort"],
+    apply: (data, patch, touchedFields, ignoredEntries, _configFilePath) => {
+      if ("model_reasoning_effort" in data) {
+        const value = data.model_reasoning_effort;
+        if (typeof value === "string" && value.trim().length > 0) {
+          patch.reasoningLevel = value.trim() as ReasoningLevel;
+          addTouchedField(touchedFields, "reasoningLevel");
+        } else {
+          ignoredEntries.push("model_reasoning_effort");
+        }
+      }
+    },
+  },
+  {
+    keys: [],
+    apply: (data, patch, touchedFields, ignoredEntries, _configFilePath) => {
+      const geminiCommandPath = data.geminiCommandPath ?? data.gemini_command_path;
+      if (geminiCommandPath !== undefined) {
+        if (typeof geminiCommandPath === "string" && geminiCommandPath.trim().length > 0) {
+          patch.geminiCommandPath = geminiCommandPath.trim();
+          addTouchedField(touchedFields, "geminiCommandPath");
+        } else {
+          ignoredEntries.push("gemini_command_path");
+        }
+      }
+    },
+  },
+  {
+    keys: ["approval_policy"],
+    apply: (data, patch, touchedFields, ignoredEntries, _configFilePath) => {
+      if ("approval_policy" in data) {
+        const value = data.approval_policy;
+        const validValues = AVAILABLE_APPROVAL_POLICIES.map((option) => option.id).filter(
+          (id) => id !== "inherit",
+        );
+        if (typeof value === "string" && (validValues as readonly string[]).includes(value)) {
+          assignPolicyValue(patch, "approvalPolicy", value as RuntimeApprovalPolicy);
+          addTouchedField(touchedFields, "policy.approvalPolicy");
+        } else {
+          ignoredEntries.push("approval_policy");
+        }
+      }
+    },
+  },
+  {
+    keys: ["sandbox_mode"],
+    apply: (data, patch, touchedFields, ignoredEntries, _configFilePath) => {
+      if ("sandbox_mode" in data) {
+        const value = data.sandbox_mode;
+        const validValues = AVAILABLE_SANDBOX_MODES.map((option) => option.id).filter(
+          (id) => id !== "inherit",
+        );
+        if (typeof value === "string" && (validValues as readonly string[]).includes(value)) {
+          assignPolicyValue(patch, "sandboxMode", value as RuntimeSandboxMode);
+          addTouchedField(touchedFields, "policy.sandboxMode");
+        } else {
+          ignoredEntries.push("sandbox_mode");
+        }
+      }
+    },
+  },
+  {
+    keys: ["service_tier"],
+    apply: (data, patch, touchedFields, ignoredEntries, _configFilePath) => {
+      if ("service_tier" in data) {
+        const value = data.service_tier;
+        const validValues = AVAILABLE_SERVICE_TIERS.map((option) => option.id);
+        if (typeof value === "string" && validValues.includes(value as RuntimeServiceTier)) {
+          assignPolicyValue(patch, "serviceTier", value as RuntimeServiceTier);
+          addTouchedField(touchedFields, "policy.serviceTier");
+        } else {
+          ignoredEntries.push("service_tier");
+        }
+      }
+    },
+  },
+  {
+    keys: ["personality"],
+    apply: (data, patch, touchedFields, ignoredEntries, _configFilePath) => {
+      if ("personality" in data) {
+        const value = data.personality;
+        const validValues = AVAILABLE_PERSONALITIES.map((option) => option.id);
+        if (typeof value === "string" && validValues.includes(value as RuntimePersonality)) {
+          assignPolicyValue(patch, "personality", value as RuntimePersonality);
+          addTouchedField(touchedFields, "policy.personality");
+        } else {
+          ignoredEntries.push("personality");
+        }
+      }
+    },
+  },
+  {
+    keys: ["sandbox_workspace_write.network_access", "sandbox_workspace_write.writable_roots"],
+    apply: (data, patch, touchedFields, ignoredEntries, configFilePath) => {
+      const sandboxTable = data.sandbox_workspace_write;
+      if ("sandbox_workspace_write" in data) {
+        if (!isRecord(sandboxTable)) {
+          ignoredEntries.push("sandbox_workspace_write");
+        } else {
+          if ("network_access" in sandboxTable) {
+            if (typeof sandboxTable.network_access === "boolean") {
+              const networkAccess: RuntimeNetworkAccess = sandboxTable.network_access
+                ? "enabled"
+                : "disabled";
+              assignPolicyValue(patch, "networkAccess", networkAccess);
+              addTouchedField(touchedFields, "policy.networkAccess");
+            } else {
+              ignoredEntries.push("sandbox_workspace_write.network_access");
+            }
+          }
+
+          if ("writable_roots" in sandboxTable) {
+            const writableRoots = parseWritableRoots(
+              sandboxTable.writable_roots,
+              configFilePath,
+              ignoredEntries,
+            );
+            if (writableRoots) {
+              assignPolicyValue(patch, "writableRoots", writableRoots);
+              addTouchedField(touchedFields, "policy.writableRoots");
+            }
+          }
+        }
+      }
+    },
+  },
+  {
+    keys: ["ubume.backend", "ubume.mode", "codexa.backend", "codexa.mode"],
+    apply: (data, patch, touchedFields, ignoredEntries, _configFilePath) => {
+      const ubumeTable = data.ubume ?? data.codexa;
+      const tableKey = "ubume" in data ? "ubume" : "codexa" in data ? "codexa" : null;
+      if (tableKey) {
+        if (!isRecord(ubumeTable)) {
+          ignoredEntries.push(tableKey);
+        } else {
+          if ("backend" in ubumeTable) {
+            if (
+              typeof ubumeTable.backend === "string" &&
+              AVAILABLE_BACKENDS.some((item) => item.id === ubumeTable.backend)
+            ) {
+              patch.provider = ubumeTable.backend as AvailableBackend;
+              addTouchedField(touchedFields, "provider");
+            } else {
+              ignoredEntries.push(`${tableKey}.backend`);
+            }
+          }
+
+          if ("mode" in ubumeTable) {
+            if (
+              typeof ubumeTable.mode === "string" &&
+              AVAILABLE_MODES.some((item) => item.key === ubumeTable.mode)
+            ) {
+              patch.mode = ubumeTable.mode as AvailableMode;
+              addTouchedField(touchedFields, "mode");
+            } else {
+              ignoredEntries.push(`${tableKey}.mode`);
+            }
+          }
+
+          if ("plan_mode" in ubumeTable) {
+            if (typeof ubumeTable.plan_mode === "boolean") {
+              patch.planMode = ubumeTable.plan_mode;
+              addTouchedField(touchedFields, "planMode");
+            } else {
+              ignoredEntries.push(`${tableKey}.plan_mode`);
+            }
+          }
+        }
+      }
+    },
+  },
+];
+
 function extractRuntimePatch(
   data: Record<string, unknown>,
   sourceLabel: string,
@@ -153,151 +355,9 @@ function extractRuntimePatch(
   const touchedFields = new Set<RuntimeFieldPath>();
   const ignoredEntries: string[] = [];
 
-  if ("model" in data) {
-    if (typeof data.model === "string" && data.model.trim().length > 0) {
-      patch.model = data.model.trim() as AvailableModel;
-      addTouchedField(touchedFields, "model");
-    } else {
-      ignoredEntries.push("model");
-    }
+  for (const spec of FIELD_SPECS) {
+    spec.apply(data, patch, touchedFields, ignoredEntries, configFilePath);
   }
-
-  if ("model_reasoning_effort" in data) {
-    const value = data.model_reasoning_effort;
-    if (typeof value === "string" && value.trim().length > 0) {
-      patch.reasoningLevel = value.trim() as ReasoningLevel;
-      addTouchedField(touchedFields, "reasoningLevel");
-    } else {
-      ignoredEntries.push("model_reasoning_effort");
-    }
-  }
-
-  const geminiCommandPath = data.geminiCommandPath ?? data.gemini_command_path;
-  if (geminiCommandPath !== undefined) {
-    if (typeof geminiCommandPath === "string" && geminiCommandPath.trim().length > 0) {
-      patch.geminiCommandPath = geminiCommandPath.trim();
-      addTouchedField(touchedFields, "geminiCommandPath");
-    } else {
-      ignoredEntries.push("gemini_command_path");
-    }
-  }
-
-  if ("approval_policy" in data) {
-    const value = data.approval_policy;
-    const validValues = ["untrusted", "on-request", "never"] as const;
-    if (typeof value === "string" && (validValues as readonly string[]).includes(value)) {
-      assignPolicyValue(patch, "approvalPolicy", value as RuntimeApprovalPolicy);
-      addTouchedField(touchedFields, "policy.approvalPolicy");
-    } else {
-      ignoredEntries.push("approval_policy");
-    }
-  }
-
-  if ("sandbox_mode" in data) {
-    const value = data.sandbox_mode;
-    const validValues = ["read-only", "workspace-write", "danger-full-access"] as const;
-    if (typeof value === "string" && (validValues as readonly string[]).includes(value)) {
-      assignPolicyValue(patch, "sandboxMode", value as RuntimeSandboxMode);
-      addTouchedField(touchedFields, "policy.sandboxMode");
-    } else {
-      ignoredEntries.push("sandbox_mode");
-    }
-  }
-
-  if ("service_tier" in data) {
-    const value = data.service_tier;
-    const validValues = ["flex", "fast"] as const;
-    if (typeof value === "string" && validValues.includes(value as RuntimeServiceTier)) {
-      assignPolicyValue(patch, "serviceTier", value as RuntimeServiceTier);
-      addTouchedField(touchedFields, "policy.serviceTier");
-    } else {
-      ignoredEntries.push("service_tier");
-    }
-  }
-
-  if ("personality" in data) {
-    const value = data.personality;
-    const validValues = ["none", "friendly", "pragmatic"] as const;
-    if (typeof value === "string" && validValues.includes(value as RuntimePersonality)) {
-      assignPolicyValue(patch, "personality", value as RuntimePersonality);
-      addTouchedField(touchedFields, "policy.personality");
-    } else {
-      ignoredEntries.push("personality");
-    }
-  }
-
-  const sandboxTable = data.sandbox_workspace_write;
-  if ("sandbox_workspace_write" in data) {
-    if (!isRecord(sandboxTable)) {
-      ignoredEntries.push("sandbox_workspace_write");
-    } else {
-      if ("network_access" in sandboxTable) {
-        if (typeof sandboxTable.network_access === "boolean") {
-          const networkAccess: RuntimeNetworkAccess = sandboxTable.network_access
-            ? "enabled"
-            : "disabled";
-          assignPolicyValue(patch, "networkAccess", networkAccess);
-          addTouchedField(touchedFields, "policy.networkAccess");
-        } else {
-          ignoredEntries.push("sandbox_workspace_write.network_access");
-        }
-      }
-
-      if ("writable_roots" in sandboxTable) {
-        const writableRoots = parseWritableRoots(
-          sandboxTable.writable_roots,
-          configFilePath,
-          ignoredEntries,
-        );
-        if (writableRoots) {
-          assignPolicyValue(patch, "writableRoots", writableRoots);
-          addTouchedField(touchedFields, "policy.writableRoots");
-        }
-      }
-    }
-  }
-
-  const ubumeTable = data.ubume ?? data.codexa;
-  const tableKey = "ubume" in data ? "ubume" : "codexa" in data ? "codexa" : null;
-  if (tableKey) {
-    if (!isRecord(ubumeTable)) {
-      ignoredEntries.push(tableKey);
-    } else {
-      if ("backend" in ubumeTable) {
-        if (
-          typeof ubumeTable.backend === "string" &&
-          AVAILABLE_BACKENDS.some((item) => item.id === ubumeTable.backend)
-        ) {
-          patch.provider = ubumeTable.backend as AvailableBackend;
-          addTouchedField(touchedFields, "provider");
-        } else {
-          ignoredEntries.push(`${tableKey}.backend`);
-        }
-      }
-
-      if ("mode" in ubumeTable) {
-        if (
-          typeof ubumeTable.mode === "string" &&
-          AVAILABLE_MODES.some((item) => item.key === ubumeTable.mode)
-        ) {
-          patch.mode = ubumeTable.mode as AvailableMode;
-          addTouchedField(touchedFields, "mode");
-        } else {
-          ignoredEntries.push(`${tableKey}.mode`);
-        }
-      }
-
-      if ("plan_mode" in ubumeTable) {
-        if (typeof ubumeTable.plan_mode === "boolean") {
-          patch.planMode = ubumeTable.plan_mode;
-          addTouchedField(touchedFields, "planMode");
-        } else {
-          ignoredEntries.push(`${tableKey}.plan_mode`);
-        }
-      }
-    }
-  }
-
   return {
     patch,
     touchedFields: Array.from(touchedFields),
@@ -342,7 +402,7 @@ function tryLoadConfigLayer(
           : null,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown TOML parse failure";
+    const message = errorMessage(error, "Unknown TOML parse failure");
     return {
       label,
       status: "error",
@@ -400,46 +460,12 @@ function extractRuntimePatchFromOverride(
   const configPath = join(workspaceRoot, ".codex", "config.toml");
 
   const overrideData: Record<string, unknown> = {};
-  switch (key) {
-    case "model":
-      overrideData.model = value;
-      break;
-    case "model_reasoning_effort":
-      overrideData.model_reasoning_effort = value;
-      break;
-    case "approval_policy":
-      overrideData.approval_policy = value;
-      break;
-    case "sandbox_mode":
-      overrideData.sandbox_mode = value;
-      break;
-    case "sandbox_workspace_write.network_access":
-      overrideData.sandbox_workspace_write = { network_access: value };
-      break;
-    case "sandbox_workspace_write.writable_roots":
-      overrideData.sandbox_workspace_write = { writable_roots: value };
-      break;
-    case "service_tier":
-      overrideData.service_tier = value;
-      break;
-    case "personality":
-      overrideData.personality = value;
-      break;
-    case "ubume.backend":
-    case "codexa.backend":
-      overrideData.ubume = { backend: value };
-      break;
-    case "ubume.mode":
-    case "codexa.mode":
-      overrideData.ubume = { mode: value };
-      break;
-    default:
-      return {
-        patch: {},
-        touchedFields: [],
-        ignoredEntries: [`${sourceLabel}: unsupported key`],
-      };
-  }
+  const spec = FIELD_SPECS.find((entry) => entry.keys.includes(key));
+  if (!spec)
+    return { patch: {}, touchedFields: [], ignoredEntries: [`${sourceLabel}: unsupported key`] };
+  // Legacy Codexa override keys use the same current table as before.
+  const path = (key.startsWith("codexa.") ? key.replace(/^codexa\./, "ubume.") : key).split(".");
+  setNestedValue(overrideData, path, value);
 
   return extractRuntimePatch(overrideData, sourceLabel, configPath);
 }

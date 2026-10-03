@@ -3,6 +3,7 @@ import type { AvailableBackend } from "../config/settings.js";
 import { MAX_CHAT_LINES } from "../config/settings.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
+import { normalizeLineBreaks } from "../core/shared/text.js";
 import { type RunFileActivity, summarizeRunActivity } from "../core/workspace/workspaceActivity.js";
 import type {
   ErrorEvent,
@@ -485,10 +486,7 @@ export function appendRunActivity(event: RunEvent, additions: RunFileActivity[])
 // ─── Progress blocks ─────────────────────────────────────────────────────────
 
 function trimProgressText(text: string): string {
-  return text
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/[ \t]+\n/g, "\n");
+  return normalizeLineBreaks(text).replace(/[ \t]+\n/g, "\n");
 }
 
 function createProgressBlock(
@@ -929,27 +927,39 @@ export function markResponseSegmentsCompleted(event: RunEvent, finalResponse?: s
 
 // ─── Run lifecycle ────────────────────────────────────────────────────────────
 
+function finishRunEvent(
+  event: RunEvent,
+  status: "completed" | "failed" | "canceled",
+  summary: string,
+  errorMessage: string | null,
+  durationMs: number,
+): RunEvent {
+  return {
+    ...event,
+    status,
+    durationMs,
+    activitySummary: summarizeRunActivity(event.activity),
+    toolActivities: finalizePendingToolActivities(event.toolActivities, status),
+    errorMessage,
+    summary,
+  };
+}
+
+function touchedFileSuffix(event: RunEvent): string {
+  return event.touchedFileCount > 0
+    ? ` · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
+    : "";
+}
+
 export function completeRunEvent(
   event: RunEvent,
   durationMs = Date.now() - event.startedAt,
 ): RunEvent {
-  const touchedSuffix =
-    event.touchedFileCount > 0
-      ? ` · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
-      : "";
-
-  return {
-    ...event,
-    status: "completed",
-    durationMs,
-    activitySummary: summarizeRunActivity(event.activity),
-    toolActivities: finalizePendingToolActivities(event.toolActivities, "completed"),
-    errorMessage: null,
-    summary:
-      event.progressEntries.length > 0 || event.activity.length > 0
-        ? `Run completed successfully${touchedSuffix}`
-        : "Run completed with no visible output",
-  };
+  const summary =
+    event.progressEntries.length > 0 || event.activity.length > 0
+      ? `Run completed successfully${touchedFileSuffix(event)}`
+      : "Run completed with no visible output";
+  return finishRunEvent(event, "completed", summary, null, durationMs);
 }
 
 export function failRunEvent(
@@ -958,36 +968,26 @@ export function failRunEvent(
   errorMessage?: string,
   durationMs = Date.now() - event.startedAt,
 ): RunEvent {
-  return {
-    ...event,
-    status: "failed",
+  return finishRunEvent(
+    event,
+    "failed",
+    `${summary}${touchedFileSuffix(event)}`,
+    errorMessage ?? summary,
     durationMs,
-    activitySummary: summarizeRunActivity(event.activity),
-    toolActivities: finalizePendingToolActivities(event.toolActivities, "failed"),
-    errorMessage: errorMessage ?? summary,
-    summary:
-      event.touchedFileCount > 0
-        ? `${summary} · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
-        : summary,
-  };
+  );
 }
 
 export function cancelRunEvent(
   event: RunEvent,
   durationMs = Date.now() - event.startedAt,
 ): RunEvent {
-  return {
-    ...event,
-    status: "canceled",
+  return finishRunEvent(
+    event,
+    "canceled",
+    `Run canceled${touchedFileSuffix(event)}`,
+    null,
     durationMs,
-    activitySummary: summarizeRunActivity(event.activity),
-    toolActivities: finalizePendingToolActivities(event.toolActivities, "canceled"),
-    errorMessage: null,
-    summary:
-      event.touchedFileCount > 0
-        ? `Run canceled · ${event.touchedFileCount} file${event.touchedFileCount === 1 ? "" : "s"} touched`
-        : "Run canceled",
-  };
+  );
 }
 
 // ─── Event routing ───────────────────────────────────────────────────────────

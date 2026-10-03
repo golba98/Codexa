@@ -9,7 +9,7 @@ import {
   formatWorkspaceDisplayPath,
   HEADER_CONFIG_DEFAULTS,
 } from "../../config/settings.js";
-import type { CodexAuthState } from "../../core/auth/codexAuth.js";
+import type { CodexAuthState } from "../../core/codex/codexAuth.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
 import { createLayoutSnapshot } from "../layout.js";
 import { LOGO_LARGE, LOGO_LARGE_MIN_COLS, LOGO_MEDIUM } from "../render/logoVariants.js";

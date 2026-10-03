@@ -7,12 +7,13 @@ import {
 } from "../../session/chatLifecycle.js";
 import type { RunEvent, TimelineEvent, UserPromptEvent } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
+import type { RenderTimelineItem } from "./measure/types.js";
 import {
   buildStaticTranscript,
   createStaticTranscriptCache,
   MAX_RETAINED_STATIC_TURNS,
 } from "./staticTranscriptCache.js";
-import { buildStaticRenderItems, buildTimelineItems, type RenderTimelineItem } from "./Timeline.js";
+import { buildStaticRenderItems, buildTimelineItems } from "./timelineItems.js";
 import {
   __getNativeTurnBuildCountForTests,
   __resetNativeTurnBuildCountForTests,

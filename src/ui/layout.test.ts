@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { clampVisualText, getTextWidth } from "../core/shared/text.js";
 import { getHeaderHeroLayout, measureTopHeaderRows } from "./chrome/TopHeader.js";
 import {
   advanceTerminalViewport,
-  clampVisualText,
   computeAppLayoutBudget,
   createLayoutSnapshot,
   createTerminalViewport,
@@ -11,7 +11,6 @@ import {
   getShellHeight,
   getShellWidth,
   getUsableShellWidth,
-  getVisualWidth,
   resolveStartupHeaderMode,
 } from "./layout.js";
 
@@ -233,7 +232,7 @@ test("bumps the layout epoch when the terminal recovers from an unstable restore
 
 test("measures visual width instead of raw string length", () => {
   assert.equal("⚡".length, 1);
-  assert.equal(getVisualWidth("⚡"), 2);
+  assert.equal(getTextWidth("⚡"), 2);
 });
 
 test("clamps text to a visual width budget", () => {

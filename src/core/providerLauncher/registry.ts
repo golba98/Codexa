@@ -1,9 +1,10 @@
 import { DEFAULT_MODEL } from "../../config/settings.js";
 import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "../providerRuntime/antigravity.js";
 import { resolveModelCapabilityProfileCached } from "../providerRuntime/capabilityProfile.js";
-import { CODEXA_CUPY_MODEL_ID, discoverCodexaCupyModels } from "../providerRuntime/codexaCupy.js";
 import {
+  CODEXA_CUPY_MODEL_ID,
   CODEXA_NATIVE_MODEL_ID,
+  discoverCodexaCupyModels,
   discoverCodexaNativeModels,
 } from "../providerRuntime/codexaNative.js";
 import {

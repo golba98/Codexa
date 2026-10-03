@@ -1,5 +1,6 @@
 import { Box, Text, useFocus, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import { wrapPlainText } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import type {
   CheckpointStore,
@@ -9,10 +10,9 @@ import type {
 } from "../../core/workspace/checkpoints.js";
 import type { TimelineEvent } from "../../session/types.js";
 import type { QueuedPrompt } from "../../session/workbench.js";
+import { inspectionEntries } from "../../session/workbench.js";
 import { usePanelLayout } from "../layout.js";
-import { wrapPlainText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
-import { inspectionEntries } from "../timeline/inspection.js";
 
 export type WorkbenchView = "queue" | "transcript" | "diff" | "rewind";
 export type QueueAction = "edit" | "remove" | "up" | "down" | "pause" | "continue";

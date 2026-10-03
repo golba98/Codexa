@@ -8,8 +8,8 @@ import {
 } from "../../config/settings.js";
 import { resolveCodexExecutable, spawnCodexProcess } from "../executables/codexExecutable.js";
 import type { ProviderModel } from "../providerRuntime/types.js";
-import { loadSeededCodexCapabilities } from "./codexModelsCacheSeed.js";
-import { saveCachedProviderModels } from "./providerModelCache.js";
+import { isRecord } from "../shared/values.js";
+import { loadSeededCodexCapabilities, saveCachedProviderModels } from "./modelCache.js";
 
 export type ModelCapabilitySource = "runtime" | "fallback";
 export type ModelCapabilityStatus = "ready" | "fallback";
@@ -87,10 +87,6 @@ const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 const MODEL_LIST_LIMIT = 100;
 
 const capabilityCache = new Map<string, CapabilityCacheEntry>();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function normalizeString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;

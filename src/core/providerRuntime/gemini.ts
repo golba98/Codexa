@@ -1,13 +1,14 @@
-import { appendFileSync } from "fs";
 import { formatConversationHistory } from "../../session/conversation.js";
-import { resolveGeminiExecutable } from "../executables/geminiExecutable.js";
+import { resolveGeminiExecutable } from "../executables/executableResolver.js";
+import { createDebugLog } from "../perf/debugLog.js";
 import {
   type CommandResult,
   type CommandStreamHandlers,
   runCommand,
-} from "../process/CommandRunner.js";
+} from "../process/commandRunner.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
+import { errorMessage } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import {
   GEMINI_DEFAULT_MODEL_ID,
@@ -32,7 +33,7 @@ function isGeminiDiagEnabled(): boolean {
 function diagLog(msg: string): void {
   if (!isGeminiDiagEnabled()) return;
   try {
-    appendFileSync(GEMINI_DIAG_LOG, `[${new Date().toISOString()}] ${msg}\n`);
+    geminiLog(`[${new Date().toISOString()}] ${msg}\n`);
   } catch {
     /* ignore */
   }
@@ -601,7 +602,7 @@ export async function validateGeminiRoute(options: {
     });
   } catch (error) {
     geminiCliHeadlessValidated = false;
-    const message = error instanceof Error ? error.message : "Gemini CLI executable was not found.";
+    const message = errorMessage(error, "Gemini CLI executable was not found.");
     return {
       status: hasGeminiApiKey(options.env) ? "ready" : "not-configured",
       providerId: "google",
@@ -689,28 +690,28 @@ export async function validateGeminiRoute(options: {
     };
   }
 
-  let errorMessage = GEMINI_ROUTE_SETUP_MESSAGE;
+  let failureMessage = GEMINI_ROUTE_SETUP_MESSAGE;
   if (failureReason === "shell wrapper/function conflict") {
-    errorMessage = `PowerShell wrapper detected. Ubume is bypassing it and using:\n${command.file}`;
+    failureMessage = `PowerShell wrapper detected. Ubume is bypassing it and using:\n${command.file}`;
   } else if (result.status === "completed" && result.exitCode === 0) {
-    errorMessage =
+    failureMessage =
       "Gemini CLI responded, but Ubume could not validate the headless route. The probe returned unexpected output.";
   } else if (!looksFound) {
-    errorMessage =
+    failureMessage =
       "Gemini CLI was not found as a real executable file. Install Gemini CLI or set GEMINI_EXECUTABLE to a known working command/path.";
   } else if (result.status === "timeout") {
-    errorMessage = "Installed but headless probe timed out.";
+    failureMessage = "Installed but headless probe timed out.";
   } else if (result.status === "completed" && result.exitCode !== 0) {
-    errorMessage = `Gemini CLI installed, auth unknown or headless mode failed. Run: ${command.file} --model ${command.model ?? GEMINI_DEFAULT_MODEL_ID} -p "Respond with READY only."`;
+    failureMessage = `Gemini CLI installed, auth unknown or headless mode failed. Run: ${command.file} --model ${command.model ?? GEMINI_DEFAULT_MODEL_ID} -p "Respond with READY only."`;
   } else if (result.status === "failed") {
-    errorMessage = `Gemini CLI installed, auth unknown or headless mode failed. Run: ${command.file} --model ${command.model ?? GEMINI_DEFAULT_MODEL_ID} -p "Respond with READY only."`;
+    failureMessage = `Gemini CLI installed, auth unknown or headless mode failed. Run: ${command.file} --model ${command.model ?? GEMINI_DEFAULT_MODEL_ID} -p "Respond with READY only."`;
   }
 
   return {
     status: "not-configured",
     providerId: "google",
     backendKind: "unavailable",
-    message: errorMessage,
+    message: failureMessage,
     diagnostics,
   };
 }
@@ -914,8 +915,7 @@ export const geminiRuntime: ProviderRuntime = {
           `REJECTED: cancelled=${cancelled} errorType=${error instanceof Error ? error.name : typeof error}`,
         );
         if (cancelled) return;
-        const message =
-          error instanceof Error ? error.message : "Google/Gemini in-Ubume routing failed.";
+        const message = errorMessage(error, "Google/Gemini in-Ubume routing failed.");
         diagLog(`CALLING: onError`);
         handlers.onError(message);
       });
@@ -931,3 +931,5 @@ export const geminiRuntime: ProviderRuntime = {
     };
   },
 };
+
+const geminiLog = createDebugLog(isGeminiDiagEnabled, GEMINI_DIAG_LOG);

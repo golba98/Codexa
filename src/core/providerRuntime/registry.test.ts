@@ -4,7 +4,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { CommandResult, runCommand } from "../process/CommandRunner.js";
+import type { CommandResult, runCommand } from "../process/commandRunner.js";
+import { resetAnthropicRouteValidationCacheForTests, validateAnthropicRoute } from "./anthropic.js";
+import {
+  ANTIGRAVITY_DEFAULT_MODEL_ID,
+  discoverAgyModels,
+  resetAntigravityRouteValidationCacheForTests,
+} from "./antigravity.js";
+import { resetGeminiRouteValidationCacheForTests } from "./gemini.js";
+import { checkLocalProvider, resetLocalProviderStateForTests } from "./local.js";
 import {
   discoverProviderModels,
   getDefaultRouteModel,
@@ -21,15 +29,6 @@ test("every supported external provider exposes the shared planning run path", (
     assert.equal(typeof runtime.run, "function", `${providerId} must accept shared plan requests`);
   }
 });
-
-import { resetAnthropicRouteValidationCacheForTests, validateAnthropicRoute } from "./anthropic.js";
-import {
-  ANTIGRAVITY_DEFAULT_MODEL_ID,
-  discoverAgyModels,
-  resetAntigravityRouteValidationCacheForTests,
-} from "./antigravity.js";
-import { resetGeminiRouteValidationCacheForTests } from "./gemini.js";
-import { checkLocalProvider, resetLocalProviderStateForTests } from "./local.js";
 
 test("google runtime exposes configured Gemini models for in-Ubume routing", () => {
   const runtime = getProviderRuntime("google");

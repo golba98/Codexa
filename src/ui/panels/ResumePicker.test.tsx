@@ -3,9 +3,10 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { render, renderToString } from "ink";
 import type React from "react";
+import { getTextWidth } from "../../core/shared/text.js";
 import { conversationSummary, mergeSessionSummaries } from "../../session/sessionCatalog.js";
 import { createAtomicContentToken } from "../input/pastedContent.js";
-import { getVisualWidth, PanelLayoutContext } from "../layout.js";
+import { PanelLayoutContext } from "../layout.js";
 import { ThemeProvider } from "../theme.js";
 import { ResumePicker, visibleResumeTabs } from "./ResumePicker.js";
 
@@ -73,11 +74,7 @@ test("ResumePicker keeps its side borders aligned for pasted titles at different
     assert.match(frame, /\[Pasted Content 22,703 chars\]/);
     assert.doesNotMatch(frame, /\u2063[\uFE00-\uFE09]+\u2063/);
     for (const line of lines)
-      assert.equal(
-        getVisualWidth(line),
-        columns,
-        `misaligned border at ${columns} columns: ${line}`,
-      );
+      assert.equal(getTextWidth(line), columns, `misaligned border at ${columns} columns: ${line}`);
     for (const line of lines.slice(1, -1)) {
       assert.ok(line.startsWith("│ "));
       assert.ok(line.endsWith(" │"));

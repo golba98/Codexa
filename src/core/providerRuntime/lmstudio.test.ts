@@ -5,7 +5,7 @@ import {
   fetchLmStudioModelInfo,
   fetchLmStudioModels,
   parseLmStudioModelsResponse,
-} from "./lmstudio.js";
+} from "./localBackends.js";
 
 const FIXTURE = {
   id: "google/gemma-4-26b-a4b",

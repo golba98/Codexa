@@ -1,6 +1,6 @@
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
-import { spawn } from "child_process";
-import { existsSync } from "fs";
 import { Box, Text, useApp, useFocusManager, useInput, useStdin, useStdout } from "ink";
 import {
   startTransition,
@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { handleCommand } from "./commands/handler.js";
+import { formatWritableRoots, handleCommand } from "./commands/handler.js";
 import type { LaunchArgs } from "./config/launchArgs.js";
 import {
   applyLayeredRuntimeOverride,
@@ -73,11 +73,6 @@ import {
 } from "./config/settings.js";
 import { setProjectTrust } from "./config/trustStore.js";
 import {
-  isCacheForRunningVersion,
-  loadUpdateCheckCache,
-  saveUpdateCheckCache,
-} from "./config/updateCheckCache.js";
-import {
   type CodexAuthProbeResult,
   getAuthStatusMessage,
   getLoginGuidance,
@@ -85,17 +80,20 @@ import {
   getRunGateDecision,
   isLikelyAuthFailure,
   probeCodexAuthStatus,
-} from "./core/auth/codexAuth.js";
+} from "./core/codex/codexAuth.js";
 import {
   buildPlanExecutionPrompt,
   buildPlanningPrompt,
   detectHollowResponse,
+  formatHollowResponse,
+  getBlockedCleanupFailure,
   isClearlySafeGeneratedCleanupRequest,
   resolveExecutionMode,
 } from "./core/codex/codexPrompt.js";
-import { getStdinDebugState, traceInputDebug } from "./core/debug/inputDebug.js";
-import { traceModelStateDebug } from "./core/debug/modelStateDebug.js";
-import { resolveAgyExecutable } from "./core/executables/antigravityExecutable.js";
+import {
+  resolveAgyExecutable,
+  resolveVibeExecutable,
+} from "./core/executables/executableResolver.js";
 import {
   buildExternalResumeLaunch,
   type ExternalSessionSummary,
@@ -104,7 +102,6 @@ import {
   listExternalSessions,
   readExternalTranscript,
 } from "./core/externalSessions/index.js";
-import { sameFolder } from "./core/externalSessions/sessionIo.js";
 import {
   type CodexModelCapabilities,
   createFallbackModelCapabilities,
@@ -114,10 +111,11 @@ import {
   getSelectableModelCapabilities,
   normalizeReasoningForModelCapabilities,
 } from "./core/models/codexModelCapabilities.js";
-import { loadSeededCodexCapabilities } from "./core/models/codexModelsCacheSeed.js";
+import { loadSeededCodexCapabilities } from "./core/models/modelCache.js";
+import { getStdinDebugState, traceInputDebug, traceModelStateDebug } from "./core/perf/debugLog.js";
 import * as perf from "./core/perf/profiler.js";
 import * as renderDebug from "./core/perf/renderDebug.js";
-import { runShellCommand, summarizeCommandResult } from "./core/process/CommandRunner.js";
+import { runShellCommand, summarizeCommandResult } from "./core/process/commandRunner.js";
 import {
   commandExistsOnPath,
   launchCliCommand,
@@ -153,7 +151,6 @@ import {
   type ModelContextMetadata,
   resolveModelContextLength,
 } from "./core/providerRuntime/contextMetadata.js";
-import { createRoutedProvider } from "./core/providerRuntime/execution.js";
 import { hasGeminiApiKey, runGeminiDiagnostics } from "./core/providerRuntime/gemini.js";
 import {
   type checkLocalProvider,
@@ -166,13 +163,10 @@ import {
   closeLocalHarnessSession,
   shutdownLocalHarness,
 } from "./core/providerRuntime/localHarness/runtime.js";
-import {
-  detectVibeActiveModel,
-  launchMistralVibeCli,
-  resolveVibeExecutable,
-} from "./core/providerRuntime/mistralVibe.js";
+import { detectVibeActiveModel, launchMistralVibeCli } from "./core/providerRuntime/mistralVibe.js";
 import { providerModelsToCodexCapabilities } from "./core/providerRuntime/models.js";
 import {
+  createRoutedProvider,
   discoverProviderModels,
   getProviderRouteSetupMessage,
   getProviderRuntime,
@@ -197,15 +191,7 @@ import type {
   ToolApprovalDecision,
   ToolApprovalRequest,
 } from "./core/providers/types.js";
-import {
-  importExternalFile,
-  isImageFile,
-  rewritePromptWithImportedPaths,
-  saveClipboardImage,
-} from "./core/shared/attachments.js";
-import { getBlockedCleanupFailure } from "./core/shared/cleanupFastFail.js";
-import { copyToClipboard } from "./core/shared/clipboard.js";
-import { readClipboardImage } from "./core/shared/clipboardImage.js";
+import { copyToClipboard, readClipboardImage } from "./core/shared/clipboard.js";
 import {
   checkGhCli,
   checkLocalGitRemote,
@@ -215,7 +201,7 @@ import {
   getLocalGitRemoteUrl,
   parseRepoIdentity,
 } from "./core/shared/githubDiagnostics.js";
-import { formatHollowResponse } from "./core/shared/hollowResponseFormat.js";
+import { errorMessage } from "./core/shared/values.js";
 import { createClearFrameBoundaryController } from "./core/terminal/clearFrameBoundary.js";
 import { editExternalPrompt } from "./core/terminal/externalEditor.js";
 import {
@@ -238,10 +224,19 @@ import {
   checkForUpdates,
   formatLocalDevUpdateStatus,
   formatUpdateInstructions,
+  isCacheForRunningVersion,
+  loadUpdateCheckCache,
+  saveUpdateCheckCache,
   shouldRunStartupUpdateCheck,
   type UpdateCheckResult,
 } from "./core/version/updateCheck.js";
 import { resolveUbumeAttachmentDir, workspaceStorageKey } from "./core/workspace/appData.js";
+import {
+  importExternalFile,
+  isImageFile,
+  rewritePromptWithImportedPaths,
+  saveClipboardImage,
+} from "./core/workspace/attachments.js";
 import type { FileBoundary, RestoreOperation } from "./core/workspace/checkpoints.js";
 import {
   assertFileRecoveryReady,
@@ -275,7 +270,11 @@ import {
   getPromptWorkspaceGuardMessage,
   getShellWorkspaceGuardMessage,
 } from "./core/workspace/workspaceGuard.js";
-import { normalizeWorkspaceRoot, resolveWorkspaceRoot } from "./core/workspace/workspaceRoot.js";
+import {
+  normalizeWorkspaceRoot,
+  resolveWorkspaceRoot,
+  sameFolder,
+} from "./core/workspace/workspaceRoot.js";
 import { findUserPrompt, useAppSessionState } from "./session/appSession.js";
 import {
   buildFollowUpPrompt,
@@ -288,7 +287,11 @@ import {
   selectConversationContext,
   toProviderConversationHistory,
 } from "./session/conversation.js";
-import { createLiveRenderScheduler, type LiveRenderUpdate } from "./session/liveRenderScheduler.js";
+import {
+  createLiveRenderScheduler,
+  type LiveRenderUpdate,
+  schedulePromptRunStartAfterVisibleCommit,
+} from "./session/liveRenderScheduler.js";
 import {
   buildPersistedAssistantMessage,
   type PersistedFileActivity,
@@ -305,19 +308,15 @@ import {
   startPlanGeneration,
   submitPlanFeedback,
 } from "./session/planFlow.js";
-import { schedulePromptRunStartAfterVisibleCommit } from "./session/promptRunSchedule.js";
 import {
   assessSavedRoute,
   createSessionWorkspaceRelaunch,
   importNativeConversation,
-} from "./session/resumeCoordinator.js";
-import {
   listSessionCatalog,
   type SessionCatalogResult,
   type SessionSummary,
   sessionIsInWorkspace,
 } from "./session/sessionCatalog.js";
-import { ToolOutputBudget } from "./session/toolOutput.js";
 import type {
   RunEvent,
   Screen,
@@ -332,20 +331,20 @@ import {
   PromptQueue,
   queuedPrompt,
   restoredEvents,
+  ToolOutputBudget,
   type WorkbenchSnapshot,
 } from "./session/workbench.js";
 import { AppShell } from "./ui/chrome/AppShell.js";
-import { MemoizedBottomComposer, measureBottomComposerRows } from "./ui/chrome/BottomComposer.js";
+import { MemoizedBottomComposer } from "./ui/chrome/BottomComposer.js";
+import { measureBottomComposerRows } from "./ui/chrome/composer/composerModel.js";
 import { FOCUS_IDS, getFocusTargetForScreen } from "./ui/input/focus.js";
 import {
-  createImageAttachmentToken,
-  type ImageAttachmentRegistry,
-  selectImageAttachments,
-} from "./ui/input/imageAttachments.js";
-import {
   assertAttachedContent,
+  createImageAttachmentToken,
   expandPastedContent,
+  type ImageAttachmentRegistry,
   type PastedContentRegistry,
+  selectImageAttachments,
 } from "./ui/input/pastedContent.js";
 import { useStdinRawModeLease } from "./ui/input/useStdinRawModeLease.js";
 import { getContentWidth, resolveStartupHeaderMode, useTerminalViewport } from "./ui/layout.js";
@@ -354,9 +353,8 @@ import {
   type PendingImportFile,
 } from "./ui/panels/AttachmentImportPanel.js";
 import { AuthPanel } from "./ui/panels/AuthPanel.js";
-import { ExternalSessionViewer } from "./ui/panels/ExternalSessionViewer.js";
+import { ExternalSessionViewer, SavedSessionViewer } from "./ui/panels/ExternalSessionViewer.js";
 import { ModelPickerScreen } from "./ui/panels/ModelPickerScreen.js";
-import { ModePicker } from "./ui/panels/ModePicker.js";
 import { PermissionsPanel, type PermissionsPanelAction } from "./ui/panels/PermissionsPanel.js";
 import {
   measurePlanActionPickerRows,
@@ -365,14 +363,12 @@ import {
 } from "./ui/panels/PlanActionPicker.js";
 import { type LocalBackendStatus, ProviderPicker } from "./ui/panels/ProviderPicker.js";
 import { ProviderSetupPrompt } from "./ui/panels/ProviderSetupPrompt.js";
-import { ReasoningPicker } from "./ui/panels/ReasoningPicker.js";
 import { ResumePicker } from "./ui/panels/ResumePicker.js";
 import type { ExternalListScope, ResumePickerPosition } from "./ui/panels/resumePickerRows.js";
-import { SavedSessionViewer } from "./ui/panels/SavedSessionViewer.js";
 import { SelectionPanel } from "./ui/panels/SelectionPanel.js";
 import { SettingsPanel } from "./ui/panels/SettingsPanel.js";
+import { ModePicker, ReasoningPicker, ThemePicker } from "./ui/panels/SimplePickers.js";
 import { measureTextEntryPanelRows, TextEntryPanel } from "./ui/panels/TextEntryPanel.js";
-import { ThemePicker } from "./ui/panels/ThemePicker.js";
 import { ToolApprovalPanel } from "./ui/panels/ToolApprovalPanel.js";
 import { UpdatePromptPanel } from "./ui/panels/UpdatePromptPanel.js";
 import {
@@ -382,15 +378,16 @@ import {
   type WorkbenchView,
 } from "./ui/panels/WorkbenchPanel.js";
 import { buildActiveRuntimeDisplay, runtimeDisplayToSummary } from "./ui/render/runtimeDisplay.js";
-import { THEMES, ThemeProvider } from "./ui/theme.js";
 import {
   cancelThemeSelection,
   commitThemeSelection,
   getDisplayedThemeName,
   previewThemeSelection,
   shouldBumpComposerInstance,
+  THEMES,
+  ThemeProvider,
   type ThemeSelectionState,
-} from "./ui/themeFlow.js";
+} from "./ui/theme.js";
 import { TranscriptShell } from "./ui/timeline/TranscriptShell.js";
 import { resetTimelineMeasureCaches } from "./ui/timeline/timelineMeasure.js";
 
@@ -455,10 +452,6 @@ const PROGRESS_ONLY_FLUSH_MS = 175;
 // alternate screen inside that write, so a child CLI waits this long before it
 // takes the terminal.
 const OVERLAY_EXIT_SETTLE_MS = 80;
-
-function formatWritableRootsMessage(roots: readonly string[]): string {
-  return roots.length > 0 ? roots.map((root) => `  - ${root}`).join("\n") : "  - none";
-}
 
 function createEventId(): number {
   return nextEventId++;
@@ -1802,31 +1795,14 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     [dispatchSession],
   );
 
-  const appendSystemEvent = useCallback(
-    (title: string, content: string) => {
-      const safeTitle = sanitizeTerminalOutput(title);
-      const safeContent = sanitizeTerminalOutput(content, { preserveTabs: false, tabSize: 2 });
+  const appendEvent = useCallback(
+    (type: "system" | "error", title: string, content: string) => {
       appendStaticEvent({
         id: createEventId(),
-        type: "system",
+        type,
         createdAt: Date.now(),
-        title: safeTitle,
-        content: safeContent,
-      });
-    },
-    [appendStaticEvent],
-  );
-
-  const appendErrorEvent = useCallback(
-    (title: string, content: string) => {
-      const safeTitle = sanitizeTerminalOutput(title);
-      const safeContent = sanitizeTerminalOutput(content, { preserveTabs: false, tabSize: 2 });
-      appendStaticEvent({
-        id: createEventId(),
-        type: "error",
-        createdAt: Date.now(),
-        title: safeTitle,
-        content: safeContent,
+        title: sanitizeTerminalOutput(title),
+        content: sanitizeTerminalOutput(content, { preserveTabs: false, tabSize: 2 }),
       });
     },
     [appendStaticEvent],
@@ -1856,8 +1832,9 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       conversationStore.save({ ...next, session: snapshotRef.current?.() });
       lastSaveErrorRef.current = null;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Filesystem error";
-      if (lastSaveErrorRef.current !== message) appendErrorEvent("Session save failed", message);
+      const message = errorMessage(error, "Filesystem error");
+      if (lastSaveErrorRef.current !== message)
+        appendEvent("error", "Session save failed", message);
       lastSaveErrorRef.current = message;
     }
   }, [activeProviderRoute, conversationStore]);
@@ -1916,7 +1893,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         else saveWorkbenchRef.current?.();
       })
       .catch((error) => {
-        appendErrorEvent("Checkpoint unavailable", (error as Error).message);
+        appendEvent("error", "Checkpoint unavailable", (error as Error).message);
       })
       .finally(() => lease?.release());
     stoppingRef.current = work;
@@ -1939,8 +1916,9 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         conversationStore.save({ ...next, session: snapshotRef.current?.() });
         lastSaveErrorRef.current = null;
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Filesystem error";
-        if (lastSaveErrorRef.current !== message) appendErrorEvent("Session save failed", message);
+        const message = errorMessage(error, "Filesystem error");
+        if (lastSaveErrorRef.current !== message)
+          appendEvent("error", "Session save failed", message);
         lastSaveErrorRef.current = message;
       }
     },
@@ -2014,7 +1992,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const openResumePicker = useCallback(() => {
     if (busy) {
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Resume unavailable",
         "Finish the active run before switching conversations.",
       );
@@ -2025,7 +2004,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     catalogListsRef.current.clear();
     resumePickerPositionRef.current = undefined;
     setScreen("resume-picker");
-  }, [appendSystemEvent, busy, conversationStore, saveActiveConversation]);
+  }, [appendEvent, busy, conversationStore, saveActiveConversation]);
 
   const loadResumeSessions = useCallback(
     (scope: ExternalListScope) => {
@@ -2046,7 +2025,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       resume: { conversationId: string } | { source: string; sessionId: string },
     ) => {
       if (activeRunIdRef.current !== null || submissionRef.current || recoveryRef.current) {
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Resume unavailable",
           "Stop the active operation before switching workspaces.",
         );
@@ -2054,7 +2034,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       }
       const prepared = createSessionWorkspaceRelaunch(target, launchContext, resume);
       if (!prepared.ok) {
-        appendErrorEvent("Workspace unavailable", prepared.message);
+        appendEvent("error", "Workspace unavailable", prepared.message);
         return;
       }
       recoveryRef.current = true;
@@ -2069,7 +2049,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         workspaceLeaseRef.current?.release();
         workspaceLeaseRef.current = undefined;
         setScreen("main");
-        appendSystemEvent("Opening saved workspace", prepared.plan.targetWorkspaceRoot);
+        appendEvent("system", "Opening saved workspace", prepared.plan.targetWorkspaceRoot);
         await new Promise((resolve) => setTimeout(resolve, OVERLAY_EXIT_SETTLE_MS));
         const child = spawn(prepared.plan.executable, prepared.plan.args, {
           cwd: prepared.plan.cwd,
@@ -2078,18 +2058,15 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         });
         child.once("error", (error) => {
           recoveryRef.current = false;
-          appendErrorEvent("Workspace resume failed", error.message);
+          appendEvent("error", "Workspace resume failed", error.message);
         });
         child.once("spawn", () => exit());
       } catch (error) {
         recoveryRef.current = false;
-        appendErrorEvent(
-          "Workspace resume failed",
-          error instanceof Error ? error.message : String(error),
-        );
+        appendEvent("error", "Workspace resume failed", errorMessage(error));
       }
     },
-    [appendErrorEvent, appendSystemEvent, conversationStore, exit, launchContext],
+    [appendEvent, appendEvent, conversationStore, exit, launchContext],
   );
 
   const rememberResumePickerPosition = useCallback((position: ResumePickerPosition) => {
@@ -2118,7 +2095,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   const resumeExternalSessionNative = useCallback(
     async (summary: ExternalSessionSummary) => {
       if (busyRef.current || activeRunIdRef.current !== null) {
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Resume unavailable",
           "Finish the active run before opening another CLI.",
         );
@@ -2148,30 +2126,28 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         });
         if (!isMountedRef.current) return;
         if (!prepared.ok) {
-          appendErrorEvent(`${label} resume unavailable`, prepared.message);
+          appendEvent("error", `${label} resume unavailable`, prepared.message);
           return;
         }
         const { launch } = prepared;
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Resume in native CLI",
           `Suspending Ubume and resuming "${summary.title}" in ${label} (${launch.cwd}). Ubume will resume when ${label} exits.`,
         );
         const result = await launchCliCommand(launch.displayName, launch, externalCliLaunchHooks);
         if (!isMountedRef.current) return;
         if (result.status === "completed")
-          appendSystemEvent("Resume in native CLI", result.message);
-        else appendErrorEvent(`${label} resume failed`, result.message);
+          appendEvent("system", "Resume in native CLI", result.message);
+        else appendEvent("error", `${label} resume failed`, result.message);
       } catch (error) {
         if (isMountedRef.current)
-          appendErrorEvent(
-            `${label} resume failed`,
-            error instanceof Error ? error.message : "Launch failed.",
-          );
+          appendEvent("error", `${label} resume failed`, errorMessage(error, "Launch failed."));
       }
     },
     [
-      appendErrorEvent,
-      appendSystemEvent,
+      appendEvent,
+      appendEvent,
       externalCliLaunchHooks,
       workspaceRoot,
       providerWorkspaceConfig.providers,
@@ -2181,7 +2157,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   const resumeConversation = useCallback(
     async (id: string) => {
       if (activeRunIdRef.current !== null || submissionRef.current || recoveryRef.current) {
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Resume unavailable",
           "Stop the active operation before switching sessions.",
         );
@@ -2199,12 +2176,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             conversationStore.acquire(id);
             loaded = conversationStore.load(id);
           } catch (error) {
-            appendErrorEvent("Resume unavailable", (error as Error).message);
+            appendEvent("error", "Resume unavailable", (error as Error).message);
             return;
           }
         }
         if (!loaded) {
-          appendErrorEvent("Resume failed", "That conversation could not be loaded.");
+          appendEvent("error", "Resume failed", "That conversation could not be loaded.");
           setScreen("main");
           return;
         }
@@ -2281,7 +2258,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         const lease = acquireOwnership(workspaceRoot, "execution");
         try {
           if (await new CheckpointStore(workspaceRoot, id).recover())
-            appendSystemEvent("File recovery", "Rolled back an interrupted restoration.");
+            appendEvent("system", "File recovery", "Rolled back an interrupted restoration.");
         } finally {
           lease.release();
         }
@@ -2309,17 +2286,18 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           assessment.status === "unavailable" ? assessment.message : null;
         setConversationRouteOverride(assessment.route ?? null);
         if (assessment.status === "unavailable")
-          appendSystemEvent(
+          appendEvent(
+            "system",
             "Original route unavailable",
             `${assessment.message} History has been restored for viewing.`,
           );
-        else appendSystemEvent("Conversation resumed", loaded.metadata.title);
+        else appendEvent("system", "Conversation resumed", loaded.metadata.title);
         setScreen("main");
 
         intendedFocusTargetRef.current = FOCUS_IDS.composer;
         focusManager.focus(FOCUS_IDS.composer);
       } catch (error) {
-        appendErrorEvent("Resume failed", (error as Error).message);
+        appendEvent("error", "Resume failed", (error as Error).message);
       } finally {
         recoveryRef.current = false;
         bumpWorkbench((value) => value + 1);
@@ -2329,8 +2307,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       }
     },
     [
-      appendErrorEvent,
-      appendSystemEvent,
+      appendEvent,
+      appendEvent,
       armTranscriptReplacement,
       conversationStore,
       dispatchSession,
@@ -2343,14 +2321,16 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   const continueExternalSession = useCallback(
     async (summary: ExternalSessionSummary) => {
       if (activeRunIdRef.current !== null || submissionRef.current || recoveryRef.current) {
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Resume unavailable",
           "Stop the active operation before importing history.",
         );
         return;
       }
       if (!summary.cwd) {
-        appendErrorEvent(
+        appendEvent(
+          "error",
           "Original workspace unknown",
           "This session does not record its original folder. Open its transcript for viewing.",
         );
@@ -2377,20 +2357,21 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         recoveryRef.current = false;
         await resumeConversation(record.metadata.id);
         if (activeConversationRef.current?.metadata.id === record.metadata.id) {
-          appendSystemEvent(
+          appendEvent(
+            "system",
             "Continuing in Ubume",
             `Imported “${summary.title}” from ${externalSourceLabel(summary.source)}.${transcript.notice ? ` ${transcript.notice}` : ""}`,
           );
         }
       } catch (error) {
-        appendErrorEvent("Continue failed", error instanceof Error ? error.message : String(error));
+        appendEvent("error", "Continue failed", errorMessage(error));
       } finally {
         recoveryRef.current = false;
       }
     },
     [
-      appendErrorEvent,
-      appendSystemEvent,
+      appendEvent,
+      appendEvent,
       conversationStore,
       providerRegistry,
       relaunchSavedSession,
@@ -2428,7 +2409,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       if (!session || session.ref.kind !== "ubume") return;
       const folder = normalizeWorkspaceRoot(value);
       if (workspaceStorageKey(folder) !== session.ref.workspaceKey) {
-        appendErrorEvent(
+        appendEvent(
+          "error",
           "Workspace does not match",
           "Select the original project folder; its identity must match this saved chat.",
         );
@@ -2440,7 +2422,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         ref: { ...session.ref, workspaceRoot: folder },
       });
     },
-    [appendErrorEvent, savedViewerSession, selectResumeSession],
+    [appendEvent, savedViewerSession, selectResumeSession],
   );
 
   useEffect(() => {
@@ -2461,14 +2443,9 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       if (!summary)
         throw new Error("The selected native session was not found in its original workspace.");
       await continueExternalSession(summary);
-    })().catch((error) =>
-      appendErrorEvent(
-        "Startup resume failed",
-        error instanceof Error ? error.message : String(error),
-      ),
-    );
+    })().catch((error) => appendEvent("error", "Startup resume failed", errorMessage(error)));
   }, [
-    appendErrorEvent,
+    appendEvent,
     continueExternalSession,
     launchArgs.importSession,
     launchArgs.resumeId,
@@ -2497,12 +2474,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     }
 
     if (projectInstructionsLoad.status === "error") {
-      appendErrorEvent(
+      appendEvent(
+        "error",
         "Project instructions",
         `Could not read ${projectInstructionsLoad.path}: ${projectInstructionsLoad.message}`,
       );
     }
-  }, [appendErrorEvent, projectInstructionsLoad]);
+  }, [appendEvent, projectInstructionsLoad]);
 
   const refreshModelCapabilities = useCallback(
     (forceRefresh = false, announce = false): Promise<CodexModelCapabilities> => {
@@ -2556,7 +2534,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             const modelCount = getSelectableModelCapabilities(capabilities).length;
             const source =
               capabilities.status === "ready" ? "Codex runtime" : "fallback compatibility list";
-            appendSystemEvent("Model discovery", `Loaded ${modelCount} models from ${source}.`);
+            appendEvent("system", "Model discovery", `Loaded ${modelCount} models from ${source}.`);
           }
           return capabilities;
         } catch (error) {
@@ -2565,11 +2543,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           traceInputDebug(
             "model_loading_failure",
             getInputDebugSnapshot({
-              error: error instanceof Error ? error.message : String(error),
+              error: errorMessage(error),
             }),
           );
           if (modelDiscoveryAnnounceRef.current) {
-            appendErrorEvent(
+            appendEvent(
+              "error",
               "Model discovery failed",
               fallback.error ?? "Unable to discover Codex models.",
             );
@@ -2589,7 +2568,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       modelDiscoveryInFlightRef.current = promise;
       return promise;
     },
-    [appendErrorEvent, appendSystemEvent, getInputDebugSnapshot],
+    [appendEvent, appendEvent, getInputDebugSnapshot],
   );
 
   const ensureProviderModels = useCallback(
@@ -2644,7 +2623,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           return discovery;
         })
         .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = errorMessage(error);
           setProviderModelErrors((current) => ({ ...current, [providerId]: message }));
           setRegistryNonce((current) => current + 1);
           return null;
@@ -2683,10 +2662,10 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         const result = await probeCodexAuthStatus();
         setAuthStatus(result);
         if (announce) {
-          appendSystemEvent("Auth status", getAuthStatusMessage(result));
+          appendEvent("system", "Auth status", getAuthStatusMessage(result));
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown auth probe failure";
+        const message = errorMessage(error, "Unknown auth probe failure");
         const fallback: CodexAuthProbeResult = {
           state: "unknown",
           checkedAt: Date.now(),
@@ -2695,13 +2674,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         };
         setAuthStatus(fallback);
         if (announce) {
-          appendErrorEvent("Auth status probe failed", message);
+          appendEvent("error", "Auth status probe failed", message);
         }
       } finally {
         setAuthStatusBusy(false);
       }
     },
-    [appendErrorEvent, appendSystemEvent],
+    [appendEvent, appendEvent],
   );
 
   useEffect(() => {
@@ -2956,11 +2935,11 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           };
         setProviderWorkspaceConfig(nextConfig);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unable to save active route.";
-        appendErrorEvent("Route save failed", message);
+        const message = errorMessage(error, "Unable to save active route.");
+        appendEvent("error", "Route save failed", message);
       }
     },
-    [appendErrorEvent, providerWorkspaceConfig, workspaceRoot],
+    [appendEvent, providerWorkspaceConfig, workspaceRoot],
   );
 
   const persistProviderDefaultModelAndReasoning = useCallback(
@@ -2971,12 +2950,11 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         saveProviderWorkspaceConfig(workspaceRoot, nextConfig);
         setProviderWorkspaceConfig(nextConfig);
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unable to save provider defaults.";
-        appendErrorEvent("Provider defaults save failed", message);
+        const message = errorMessage(error, "Unable to save provider defaults.");
+        appendEvent("error", "Provider defaults save failed", message);
       }
     },
-    [appendErrorEvent, providerWorkspaceConfig, workspaceRoot],
+    [appendEvent, providerWorkspaceConfig, workspaceRoot],
   );
 
   // Auto-correct the runtime model when capabilities load and the configured model is
@@ -3015,19 +2993,21 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     }
 
     if (nextModel !== model) {
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Model updated",
         `Configured model ${model} is unavailable in the detected Codex runtime. Active model is now ${nextModel}.`,
       );
     } else if (nextReasoning !== reasoningLevel) {
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Reasoning updated",
         `Reasoning level is now ${formatReasoningLabel(nextReasoning)} for ${nextModel}.`,
       );
     }
   }, [
     activeProviderRoute.providerId,
-    appendSystemEvent,
+    appendEvent,
     launchArgs.modelOverride,
     model,
     modelCapabilities,
@@ -3045,9 +3025,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       }));
       saveRuntimeModePreference(nextMode, false);
       setScreen("main");
-      appendSystemEvent("Mode updated", `Execution mode switched to ${formatModeLabel(nextMode)}.`);
+      appendEvent(
+        "system",
+        "Mode updated",
+        `Execution mode switched to ${formatModeLabel(nextMode)}.`,
+      );
     },
-    [appendSystemEvent, busy, updateRuntimeConfig],
+    [appendEvent, busy, updateRuntimeConfig],
   );
 
   const cycleModeWithNotice = useCallback(() => {
@@ -3061,17 +3045,18 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     if (!next.planMode) {
       setPlanFlow(resetPlanFlow());
     }
-  }, [appendSystemEvent, busy, mode, planMode, updateRuntimeConfig]);
+  }, [appendEvent, busy, mode, planMode, updateRuntimeConfig]);
 
   const setReasoningWithNotice = useCallback(
     (nextReasoningLevel: ReasoningLevel) => {
       if (routeChoiceRequiredRef.current) {
-        appendErrorEvent("Select a route first", routeChoiceRequiredRef.current);
+        appendEvent("error", "Select a route first", routeChoiceRequiredRef.current);
         return;
       }
       const supported = currentModelCapability?.supportedReasoningLevels;
       if (supported && !supported.some((item) => item.id === nextReasoningLevel)) {
-        appendErrorEvent(
+        appendEvent(
+          "error",
           "Reasoning unavailable",
           `${model} does not advertise ${formatReasoningLabel(nextReasoningLevel)} reasoning in the detected Codex runtime.`,
         );
@@ -3101,7 +3086,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         );
       }
       setScreen("main");
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Reasoning updated",
         `Reasoning level is now ${formatReasoningLabel(nextReasoningLevel)}.`,
       );
@@ -3111,8 +3097,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       activeProviderRoute.modelId,
       activeProviderRoute.modelSelection,
       activeProviderRoute.providerId,
-      appendErrorEvent,
-      appendSystemEvent,
+      appendEvent,
+      appendEvent,
       busy,
       currentModelCapability,
       launchArgs.modelOverride,
@@ -3134,9 +3120,9 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       if (!nextEnabled) {
         setPlanFlow(resetPlanFlow());
       }
-      appendSystemEvent("Plan mode", `Plan mode ${nextEnabled ? "enabled" : "disabled"}.`);
+      appendEvent("system", "Plan mode", `Plan mode ${nextEnabled ? "enabled" : "disabled"}.`);
     },
-    [appendSystemEvent, busy, mode, updateRuntimeConfig],
+    [appendEvent, busy, mode, updateRuntimeConfig],
   );
 
   const togglePlanModeWithNotice = useCallback(() => {
@@ -3176,7 +3162,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           localConfig: providerWorkspaceConfig.providers?.local,
         });
         if (validation.status !== "ready") {
-          appendSystemEvent(
+          appendEvent(
+            "system",
             "Provider route unavailable",
             `${validation.message ?? getProviderRouteSetupMessage(routeProviderId)} Previous active route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeProviderRoute.modelId}.`,
           );
@@ -3199,12 +3186,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             model: nextModel,
           }),
         );
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Model updated",
           `Active model is now ${nextModel}. Reasoning set to ${formatReasoningLabel(normalizedReasoning)}.`,
         );
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         traceInputDebug(
           "model_selection_app_failure",
           getInputDebugSnapshot({
@@ -3213,7 +3201,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             error: message,
           }),
         );
-        appendErrorEvent("Model selection failed", message);
+        appendEvent("error", "Model selection failed", message);
       } finally {
         modelSelectionInFlightRef.current = false;
         returnToChatMode("selection");
@@ -3224,8 +3212,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       activeProviderRoute.providerId,
       activeRouteModelCapabilities,
       activeRouteProvider,
-      appendErrorEvent,
-      appendSystemEvent,
+      appendEvent,
+      appendEvent,
       busy,
       getInputDebugSnapshot,
       persistActiveRoute,
@@ -3257,7 +3245,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         supported.length > 0 &&
         !supported.some((item) => item.id === nextReasoning)
       ) {
-        appendErrorEvent(
+        appendEvent(
+          "error",
           "Reasoning unavailable",
           `${nextModel} does not advertise ${formatReasoningLabel(nextReasoning)} reasoning in the detected Codex runtime.`,
         );
@@ -3344,20 +3333,22 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               error: validation.message ?? getProviderRouteSetupMessage(providerId),
             }),
           );
-          const errorMessage = validation.message ?? getProviderRouteSetupMessage(providerId);
-          if (providerRouteErrorsRef.current[providerId] !== errorMessage) {
-            appendSystemEvent(
+          const routeError = validation.message ?? getProviderRouteSetupMessage(providerId);
+          if (providerRouteErrorsRef.current[providerId] !== routeError) {
+            appendEvent(
+              "system",
               "Provider route unavailable",
-              `${errorMessage} Previous active route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeProviderRoute.modelId}.`,
+              `${routeError} Previous active route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${activeProviderRoute.modelId}.`,
             );
-            providerRouteErrorsRef.current[providerId] = errorMessage;
+            providerRouteErrorsRef.current[providerId] = routeError;
           }
           if (!modelPickerOpenRef.current) setPendingRouteProviderId(null);
           return;
         }
 
         if (providerRouteErrorsRef.current[providerId]) {
-          appendSystemEvent(
+          appendEvent(
+            "system",
             "Provider route available",
             validation.message ??
               (providerId === "google"
@@ -3394,7 +3385,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
         // Route changes are reflected reactively in the BottomComposer metadata row.
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         traceInputDebug(
           "model_selection_app_failure",
           getInputDebugSnapshot({
@@ -3405,7 +3396,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           }),
         );
         if (!modelPickerOpenRef.current) setPendingRouteProviderId(null);
-        appendErrorEvent("Model selection failed", message);
+        appendEvent("error", "Model selection failed", message);
       } finally {
         setRouteSwitchBusy(false);
         modelSelectionInFlightRef.current = false;
@@ -3416,8 +3407,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       activeProviderRoute.modelId,
       activeProviderRoute.providerId,
       activeRouteProvider,
-      appendErrorEvent,
-      appendSystemEvent,
+      appendEvent,
+      appendEvent,
       busy,
       getInputDebugSnapshot,
       markProviderAvailability,
@@ -3434,12 +3425,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   const setAuthPreferenceWithNotice = useCallback(
     (nextPreference: AuthPreference) => {
       setAuthPreference(nextPreference);
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Auth preference updated",
         `Preference set to ${formatAuthPreferenceLabel(nextPreference)}.`,
       );
     },
-    [appendSystemEvent],
+    [appendEvent],
   );
 
   const applyWorkspaceDisplayMode = useCallback((nextMode: WorkspaceDisplayMode) => {
@@ -3456,12 +3448,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   const setTerminalTitleModeWithNotice = useCallback(
     (nextMode: TerminalTitleMode) => {
       setTerminalTitleMode(nextMode);
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Settings",
         `Terminal title set to ${formatWorkspaceDisplayModeLabel(nextMode)} (${nextMode}).`,
       );
     },
-    [appendSystemEvent],
+    [appendEvent],
   );
 
   const saveSettingsFromPanel = useCallback(
@@ -3488,79 +3481,84 @@ export function App({ launchArgs, providerOverride }: AppProps) {
   const setApprovalPolicyWithNotice = useCallback(
     (nextValue: RuntimeApprovalPolicy) => {
       updateRuntimePolicy((current) => ({ ...current, approvalPolicy: nextValue }));
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Runtime policy",
         `Approval policy set to ${formatApprovalPolicyLabel(nextValue)}.`,
       );
     },
-    [appendSystemEvent, busy, updateRuntimePolicy],
+    [appendEvent, busy, updateRuntimePolicy],
   );
 
   const setSandboxModeWithNotice = useCallback(
     (nextValue: RuntimeSandboxMode) => {
       updateRuntimePolicy((current) => ({ ...current, sandboxMode: nextValue }));
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Runtime policy",
         `Sandbox mode set to ${formatSandboxModeLabel(nextValue)}.`,
       );
     },
-    [appendSystemEvent, busy, updateRuntimePolicy],
+    [appendEvent, busy, updateRuntimePolicy],
   );
 
   const setNetworkAccessWithNotice = useCallback(
     (nextValue: RuntimeNetworkAccess) => {
       updateRuntimePolicy((current) => ({ ...current, networkAccess: nextValue }));
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Runtime policy",
         `Network access set to ${formatNetworkAccessLabel(nextValue)}.`,
       );
     },
-    [appendSystemEvent, busy, updateRuntimePolicy],
+    [appendEvent, busy, updateRuntimePolicy],
   );
 
   const addWritableRootWithNotice = useCallback(
     (pathValue: string) => {
       const resolvedPath = resolveWritableRootCommandPath(pathValue, workspaceRoot);
       updateRuntimeConfig((current) => addWritableRoot(current, resolvedPath));
-      appendSystemEvent("Runtime policy", `Writable root added: ${resolvedPath}.`);
+      appendEvent("system", "Runtime policy", `Writable root added: ${resolvedPath}.`);
     },
-    [appendSystemEvent, busy, updateRuntimeConfig, workspaceRoot],
+    [appendEvent, busy, updateRuntimeConfig, workspaceRoot],
   );
 
   const removeWritableRootWithNotice = useCallback(
     (pathValue: string) => {
       const resolvedPath = resolveWritableRootCommandPath(pathValue, workspaceRoot);
       updateRuntimeConfig((current) => removeWritableRoot(current, resolvedPath));
-      appendSystemEvent("Runtime policy", `Writable root removed: ${resolvedPath}.`);
+      appendEvent("system", "Runtime policy", `Writable root removed: ${resolvedPath}.`);
     },
-    [appendSystemEvent, busy, updateRuntimeConfig, workspaceRoot],
+    [appendEvent, busy, updateRuntimeConfig, workspaceRoot],
   );
 
   const clearWritableRootsWithNotice = useCallback(() => {
     updateRuntimeConfig((current) => clearWritableRoots(current));
-    appendSystemEvent("Runtime policy", "Writable roots cleared.");
-  }, [appendSystemEvent, busy, updateRuntimeConfig]);
+    appendEvent("system", "Runtime policy", "Writable roots cleared.");
+  }, [appendEvent, busy, updateRuntimeConfig]);
 
   const setServiceTierWithNotice = useCallback(
     (nextValue: RuntimeServiceTier) => {
       updateRuntimePolicy((current) => ({ ...current, serviceTier: nextValue }));
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Runtime policy",
         `Service tier set to ${formatServiceTierLabel(nextValue)}.`,
       );
     },
-    [appendSystemEvent, busy, updateRuntimePolicy],
+    [appendEvent, busy, updateRuntimePolicy],
   );
 
   const setPersonalityWithNotice = useCallback(
     (nextValue: RuntimePersonality) => {
       updateRuntimePolicy((current) => ({ ...current, personality: nextValue }));
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Runtime policy",
         `Personality set to ${formatPersonalityLabel(nextValue)}.`,
       );
     },
-    [appendSystemEvent, busy, updateRuntimePolicy],
+    [appendEvent, busy, updateRuntimePolicy],
   );
 
   const setProjectTrustWithNotice = useCallback(
@@ -3568,12 +3566,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       const projectRoot = baseLayeredConfig.diagnostics.projectRoot;
       setProjectTrust(projectRoot, trusted);
       reloadBaseLayeredConfig();
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Config trust",
         `${trusted ? "Trusted" : "Untrusted"} project root: ${projectRoot}.`,
       );
     },
-    [appendSystemEvent, baseLayeredConfig.diagnostics.projectRoot, busy, reloadBaseLayeredConfig],
+    [appendEvent, baseLayeredConfig.diagnostics.projectRoot, busy, reloadBaseLayeredConfig],
   );
 
   const probeLocalBackend = useCallback(
@@ -3620,7 +3619,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         })
         .catch((error) => {
           if (isMountedRef.current) {
-            const message = error instanceof Error ? error.message : String(error);
+            const message = errorMessage(error);
             setLocalBackendStatuses((current) => ({
               ...current,
               [localBackend]: /api key|authentication|authenticate|identity/i.test(message)
@@ -3678,13 +3677,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         };
         setRegistryNonce((n) => n + 1);
       });
-  }, [appendSystemEvent, busy, workspaceRoot]);
+  }, [appendEvent, busy, workspaceRoot]);
 
   const setWorkspaceDefaultProviderWithNotice = useCallback(
     (providerId: ProviderId) => {
       const provider = findProvider(providerRegistry, providerId);
       if (!provider) {
-        appendErrorEvent("Provider unavailable", `Unknown provider: ${providerId}`);
+        appendEvent("error", "Provider unavailable", `Unknown provider: ${providerId}`);
         return;
       }
 
@@ -3694,7 +3693,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         setProviderWorkspaceConfig(nextConfig);
         setScreen("main");
         const routeConfigured = isProviderRouteConfigured(providerId);
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Provider default updated",
           provider.routeMode === "launch-only"
             ? `${provider.displayName} is now the workspace default external CLI. Active chat route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${model}.`
@@ -3703,15 +3703,14 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               : `${provider.displayName} is set as the workspace default, but in-Ubume routing is not configured yet. Active chat route remains ${activeRouteProvider?.displayName ?? "OpenAI"} / ${model}.`,
         );
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unable to save provider workspace config.";
-        appendErrorEvent("Provider default failed", message);
+        const message = errorMessage(error, "Unable to save provider workspace config.");
+        appendEvent("error", "Provider default failed", message);
       }
     },
     [
       activeRouteProvider,
-      appendErrorEvent,
-      appendSystemEvent,
+      appendEvent,
+      appendEvent,
       model,
       providerRegistry,
       providerWorkspaceConfig,
@@ -3739,7 +3738,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       const provider = findProvider(providerRegistry, providerId);
       if (!provider) {
         setScreen("main");
-        appendErrorEvent("Provider unavailable", `Unknown provider: ${providerId}`);
+        appendEvent("error", "Provider unavailable", `Unknown provider: ${providerId}`);
         return;
       }
 
@@ -3749,7 +3748,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             ? `${provider.displayName} is set as the workspace default, but in-Ubume routing is not configured yet.`
             : `${provider.displayName} in-Ubume routing is not configured yet.`;
           if (providerRouteErrorsRef.current[providerId] !== message) {
-            appendSystemEvent("Provider route unavailable", message);
+            appendEvent("system", "Provider route unavailable", message);
             providerRouteErrorsRef.current[providerId] = message;
           }
           return;
@@ -3870,7 +3869,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             ? `${provider.displayName} is set as the workspace default, but in-Ubume routing is not configured yet.`
             : `${provider.displayName} in-Ubume routing is not configured yet.`;
           if (providerRouteErrorsRef.current[providerId] !== message) {
-            appendSystemEvent("Provider route unavailable", message);
+            appendEvent("system", "Provider route unavailable", message);
             providerRouteErrorsRef.current[providerId] = message;
           }
           return;
@@ -3878,11 +3877,16 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
         if (providerId === "openai") {
           void refreshModelCapabilities(true, true);
-          appendSystemEvent("Model discovery", `Refreshing models for ${provider.displayName}.`);
+          appendEvent(
+            "system",
+            "Model discovery",
+            `Refreshing models for ${provider.displayName}.`,
+          );
         } else {
           const runtime = getProviderRuntime(providerId);
           if (runtime.refreshModels) {
-            appendSystemEvent(
+            appendEvent(
+              "system",
               "Model discovery",
               providerId === "anthropic"
                 ? "Refreshing Claude capabilities..."
@@ -3910,7 +3914,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                 } else if (discovery.message) {
                   providerRouteErrorsRef.current[providerId] = discovery.message;
                 }
-                appendSystemEvent(
+                appendEvent(
+                  "system",
                   "Model discovery",
                   discovery.status === "ready"
                     ? (discovery.message ??
@@ -3922,7 +3927,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               });
           } else {
             const discovery = discoverProviderModels(providerId);
-            appendSystemEvent(
+            appendEvent(
+              "system",
               "Model discovery",
               discovery.status === "ready"
                 ? `Loaded ${discovery.models.length} configured models for ${provider.displayName}.`
@@ -3936,7 +3942,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
       if (action === "run-diagnostics") {
         if (providerId !== "google" && providerId !== "local") {
-          appendErrorEvent(
+          appendEvent(
+            "error",
             "Provider diagnostics unavailable",
             `Diagnostics are not implemented for ${provider.displayName}.`,
           );
@@ -3945,7 +3952,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
         setScreen("main");
         if (providerId === "local") {
-          appendSystemEvent("Local diagnostics", "Running Local provider diagnostics...");
+          appendEvent("system", "Local diagnostics", "Running Local provider diagnostics...");
           void runLocalDiagnostics({
             localConfig: providerWorkspaceConfig.providers?.local,
           })
@@ -3963,20 +3970,17 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               } else if (discovery.message) {
                 providerRouteErrorsRef.current["local"] = discovery.message;
               }
-              appendSystemEvent("Local diagnostics", message);
+              appendEvent("system", "Local diagnostics", message);
               setRegistryNonce((n) => n + 1);
             })
             .catch((error) => {
               if (!isMountedRef.current) return;
-              appendErrorEvent(
-                "Local diagnostics failed",
-                error instanceof Error ? error.message : String(error),
-              );
+              appendEvent("error", "Local diagnostics failed", errorMessage(error));
             });
           return;
         }
 
-        appendSystemEvent("Gemini diagnostics", "Running Gemini diagnostics...");
+        appendEvent("system", "Gemini diagnostics", "Running Gemini diagnostics...");
         const geminiCommandPath =
           providerWorkspaceConfig.providers?.google?.geminiCommandPath ??
           runtimeConfig.geminiCommandPath;
@@ -3998,12 +4002,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         })
           .then((message) => {
             if (!isMountedRef.current) return;
-            appendSystemEvent("Gemini diagnostics", message);
+            appendEvent("system", "Gemini diagnostics", message);
           })
           .catch((error) => {
             if (!isMountedRef.current) return;
-            const message = error instanceof Error ? error.message : "Gemini diagnostics failed.";
-            appendErrorEvent("Gemini diagnostics failed", message);
+            const message = errorMessage(error, "Gemini diagnostics failed.");
+            appendEvent("error", "Gemini diagnostics failed", message);
           });
         return;
       }
@@ -4037,12 +4041,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       providerLaunchBypassRef.current = false;
 
       if (busyRef.current) {
-        appendSystemEvent("Busy", "Finish the current run before launching a provider CLI.");
+        appendEvent("system", "Busy", "Finish the current run before launching a provider CLI.");
         return;
       }
 
       setScreen("main");
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Provider launch",
         `Suspending Ubume and launching ${provider.displayName}${providerId === "mistral" ? ` / ${provider.currentModel}` : ""}. Ubume will resume when the external CLI exits.`,
       );
@@ -4060,21 +4065,21 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             providerId === "mistral" &&
             (result.status === "missing-command" || result.status === "spawn-error")
           ) {
-            appendErrorEvent("Mistral Vibe launch failed", result.message);
+            appendEvent("error", "Mistral Vibe launch failed", result.message);
           } else {
-            appendSystemEvent("Provider launch", result.message);
+            appendEvent("system", "Provider launch", result.message);
           }
         })
         .catch((error) => {
           if (!isMountedRef.current) return;
-          const message = error instanceof Error ? error.message : "Provider launch failed.";
-          appendErrorEvent("Provider launch failed", message);
+          const message = errorMessage(error, "Provider launch failed.");
+          appendEvent("error", "Provider launch failed", message);
         });
     },
     [
       activeProviderRoute,
-      appendErrorEvent,
-      appendSystemEvent,
+      appendEvent,
+      appendEvent,
       ensureProviderModels,
       providerRegistry,
       probeLocalBackend,
@@ -4136,20 +4141,25 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           });
 
       child.once("error", (error) => {
-        appendErrorEvent(`${label} setup failed`, error.message);
+        appendEvent("error", `${label} setup failed`, error.message);
       });
       child.once("close", (code) => {
         if (code === 0) {
-          appendSystemEvent(
+          appendEvent(
+            "system",
             `${label} setup`,
             "Installation and setup finished. Reopen the provider picker to launch it.",
           );
         } else if (code !== null) {
-          appendErrorEvent(`${label} setup failed`, `The setup process exited with code ${code}.`);
+          appendEvent(
+            "error",
+            `${label} setup failed`,
+            `The setup process exited with code ${code}.`,
+          );
         }
       });
     },
-    [appendErrorEvent, appendSystemEvent, providerRegistry, workspaceRoot],
+    [appendEvent, appendEvent, providerRegistry, workspaceRoot],
   );
 
   const openModelPicker = useCallback(() => {
@@ -4212,7 +4222,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     );
   }, [
     activeProviderRoute.providerId,
-    appendSystemEvent,
+    appendEvent,
     busy,
     ensureProviderModels,
     focusManager,
@@ -4225,14 +4235,15 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const openModePicker = useCallback(() => {
     setScreen("mode-picker");
-  }, [appendSystemEvent, busy]);
+  }, [appendEvent, busy]);
 
   const openReasoningPicker = useCallback(() => {
     if (!currentModelCapability?.supportedReasoningLevels?.length) {
       if (!modelCapabilitiesBusy) {
         void refreshModelCapabilities(true, true);
       }
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Reasoning unavailable",
         `Codex has not provided reasoning metadata for ${model}. No guessed reasoning levels will be shown.`,
       );
@@ -4241,7 +4252,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
     setScreen("reasoning-picker");
   }, [
-    appendSystemEvent,
+    appendEvent,
     busy,
     currentModelCapability,
     model,
@@ -4251,24 +4262,24 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const openThemePicker = useCallback(() => {
     setScreen("theme-picker");
-  }, [appendSystemEvent, busy]);
+  }, [appendEvent, busy]);
 
   const openSettingsPanel = useCallback(() => {
     setScreen("settings-panel");
-  }, [appendSystemEvent, busy]);
+  }, [appendEvent, busy]);
 
   const openAuthPanel = useCallback(() => {
     if (busy) {
-      appendSystemEvent("Busy", "Finish the current run before opening auth guidance.");
+      appendEvent("system", "Busy", "Finish the current run before opening auth guidance.");
       return;
     }
 
     setScreen("auth-panel");
-  }, [appendSystemEvent, busy]);
+  }, [appendEvent, busy]);
 
   const openPermissionsPanel = useCallback(() => {
     setScreen("permissions-panel");
-  }, [appendSystemEvent, busy]);
+  }, [appendEvent, busy]);
 
   const openPermissionsApprovalPicker = useCallback(() => {
     setScreen("permissions-approval-picker");
@@ -4288,12 +4299,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
   const openPermissionsRemoveWritableRoot = useCallback(() => {
     if (runtimeConfig.policy.writableRoots.length === 0) {
-      appendSystemEvent("Runtime policy", "No writable roots are configured.");
+      appendEvent("system", "Runtime policy", "No writable roots are configured.");
       return;
     }
 
     setScreen("permissions-remove-writable-root");
-  }, [appendSystemEvent, runtimeConfig.policy.writableRoots.length]);
+  }, [appendEvent, runtimeConfig.policy.writableRoots.length]);
 
   const handlePermissionsPanelAction = useCallback(
     (action: PermissionsPanelAction) => {
@@ -4308,9 +4319,10 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           openPermissionsNetworkPicker();
           return;
         case "writable-roots-summary":
-          appendSystemEvent(
+          appendEvent(
+            "system",
             "Runtime policy",
-            `Writable roots:\n${formatWritableRootsMessage(runtimeConfig.policy.writableRoots)}`,
+            `Writable roots:\n${formatWritableRoots(runtimeConfig.policy.writableRoots)}`,
           );
           return;
         case "writable-roots-add":
@@ -4327,7 +4339,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       }
     },
     [
-      appendSystemEvent,
+      appendEvent,
       clearWritableRootsWithNotice,
       openPermissionsAddWritableRoot,
       openPermissionsApprovalPicker,
@@ -4580,7 +4592,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     }
     if (planFlow.kind === "awaiting_action") {
       setPlanFlow(resetPlanFlow());
-      appendSystemEvent("Plan review", "Plan review canceled. No changes were made.");
+      appendEvent("system", "Plan review", "Plan review canceled. No changes were made.");
       return;
     }
     if (uiState.kind === "AWAITING_USER_ACTION" || uiState.kind === "ERROR") {
@@ -4588,7 +4600,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       resetComposer();
     }
   }, [
-    appendSystemEvent,
+    appendEvent,
     busy,
     cancelActiveRun,
     dispatchSession,
@@ -4659,21 +4671,22 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
     const ok = await copyToClipboard(transcript);
     const turnWord = turns.size === 1 ? "1 turn" : `${turns.size} turns`;
-    appendSystemEvent(
+    appendEvent(
+      "system",
       "Clipboard",
       ok ? `Copied full conversation (${turnWord}) to clipboard.` : "Clipboard unavailable.",
     );
-  }, [appendSystemEvent, staticEvents]);
+  }, [appendEvent, staticEvents]);
 
   const savePlanFile = useCallback(
     (planContent: string): string | null => {
       const filePath = savePlan(planContent, workspaceRoot);
       if (!filePath) {
-        appendErrorEvent("Plan file unavailable", "The generated plan could not be saved.");
+        appendEvent("error", "Plan file unavailable", "The generated plan could not be saved.");
       }
       return filePath;
     },
-    [appendErrorEvent, workspaceRoot],
+    [appendEvent, workspaceRoot],
   );
 
   // ─── Stable composer-input callbacks ──────────────────────────────────────────
@@ -4727,13 +4740,14 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         const nextCursor = currentCursor + inserted.length;
         dispatchSession({ type: "SET_INPUT", value: nextValue, cursor: nextCursor });
       } catch (error) {
-        appendErrorEvent(
+        appendEvent(
+          "error",
           "Clipboard image unavailable",
-          error instanceof Error ? error.message : "Could not read an image from the clipboard.",
+          errorMessage(error, "Could not read an image from the clipboard."),
         );
       }
     },
-    [appendErrorEvent, dispatchSession, runtimeConfig.policy.attachmentDir, workspaceRoot],
+    [appendEvent, dispatchSession, runtimeConfig.policy.attachmentDir, workspaceRoot],
   );
 
   const handleClear = useCallback(async () => {
@@ -4804,7 +4818,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         allowedWritableRoots,
       );
       if (guardMessage) {
-        appendErrorEvent("Shell command blocked", guardMessage);
+        appendEvent("error", "Shell command blocked", guardMessage);
         return;
       }
 
@@ -4819,7 +4833,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           throw error;
         }
       } catch (error) {
-        appendErrorEvent("Workspace busy", (error as Error).message);
+        appendEvent("error", "Workspace busy", (error as Error).message);
         return;
       }
       if (
@@ -4926,7 +4940,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         lease.release();
         activeRunIdRef.current = null;
         dispatchSession({ type: "UI_ACTION", action: { type: "DISMISS_TRANSIENT" } });
-        appendErrorEvent("Shell command failed", (error as Error).message);
+        appendEvent("error", "Shell command failed", (error as Error).message);
         return;
       }
       processStoppedRef.current = (runner.stopped ?? runner.result.then(() => undefined)).finally(
@@ -4962,14 +4976,15 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         dispatchSession({ type: "FINALIZE_SHELL", shellId, finalEvent });
       });
     },
-    [allowedWritableRoots, appendErrorEvent, dispatchSession, focusManager, workspaceRoot],
+    [allowedWritableRoots, appendEvent, dispatchSession, focusManager, workspaceRoot],
   );
 
   const handleWorkspaceRelaunch = useCallback(
     (targetPath: string) => {
       const gate = guardWorkspaceRelaunch(busy);
       if (!gate.allowed) {
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Busy",
           gate.message ?? "Finish the current run before relaunching into another workspace.",
         );
@@ -4978,7 +4993,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
       const relaunchResult = createWorkspaceRelaunchPlan(targetPath, launchContext);
       if (!relaunchResult.ok) {
-        appendErrorEvent("Workspace relaunch failed", relaunchResult.message);
+        appendEvent("error", "Workspace relaunch failed", relaunchResult.message);
         return;
       }
 
@@ -4992,18 +5007,18 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         let launched = false;
         child.once("error", (error) => {
           if (launched) return;
-          appendErrorEvent("Workspace relaunch failed", error.message);
+          appendEvent("error", "Workspace relaunch failed", error.message);
         });
         child.once("spawn", () => {
           launched = true;
           exit();
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown relaunch failure";
-        appendErrorEvent("Workspace relaunch failed", message);
+        const message = errorMessage(error, "Unknown relaunch failure");
+        appendEvent("error", "Workspace relaunch failed", message);
       }
     },
-    [appendErrorEvent, appendSystemEvent, busy, exit, launchContext],
+    [appendEvent, appendEvent, busy, exit, launchContext],
   );
 
   const handleHistoryUp = useCallback(() => {
@@ -5025,14 +5040,15 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     (displayPrompt: string, providerPrompt: string, lifecycle: PromptRunLifecycle = {}) => {
       if (activeRunIdRef.current !== null || recoveryRef.current) return false;
       if (routeChoiceRequiredRef.current) {
-        appendErrorEvent("Select a route first", routeChoiceRequiredRef.current);
+        appendEvent("error", "Select a route first", routeChoiceRequiredRef.current);
         return false;
       }
       const submitTiming = lifecycle.submitTiming ?? createPromptRunTiming();
       const safeDisplayPrompt = sanitizeTerminalInput(displayPrompt).trim();
       const safeProviderPrompt = sanitizeTerminalInput(providerPrompt).trim();
       if (!safeDisplayPrompt || !safeProviderPrompt) {
-        appendErrorEvent(
+        appendEvent(
+          "error",
           "Prompt blocked",
           "The prompt only contained non-printable/control characters after sanitization.",
         );
@@ -5045,7 +5061,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         allowedWritableRoots,
       );
       if (guardMessage) {
-        appendErrorEvent("Workspace boundary", guardMessage);
+        appendEvent("error", "Workspace boundary", guardMessage);
         return false;
       }
       const imageAttachments = lifecycle.imageAttachments ?? [];
@@ -5059,7 +5075,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             activeProviderRoute.providerId === "local"
               ? "The active Local model is not configured with supports_vision: true. Switch to a vision model or remove the image."
               : `${formatRuntimeProviderLabel(activeProviderRoute.providerId)} does not have verified image transport in Ubume yet. Switch to Ubume/OpenAI or a vision-enabled Local model.`;
-          appendErrorEvent("Image not supported", detail);
+          appendEvent("error", "Image not supported", detail);
           return false;
         }
       }
@@ -5091,20 +5107,23 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         });
       }
       if (executionModeDecision.autoUpgraded) {
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Mode auto-upgraded",
           "This prompt looks like a file-editing request, so the run is using Auto instead of Read-only.",
         );
       }
       if (fastCleanupRun) {
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Fast cleanup path",
           "Using a low-latency cleanup profile: shallow inspection, generated artifacts only, no branch/bootstrap setup.",
         );
       }
 
       if (!provider.run) {
-        appendErrorEvent(
+        appendEvent(
+          "error",
           "Backend unavailable",
           `${provider.label} is a planned provider placeholder. Use Ubume Core for runnable execution in v1.`,
         );
@@ -5121,14 +5140,15 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           warnOnUnknown: authStatus.checkedAt > 0,
         });
         if (!decision.allowRun) {
-          appendErrorEvent(
+          appendEvent(
+            "error",
             "Authentication required",
             decision.blockMessage ?? "Please sign in with `codex login`.",
           );
           return false;
         }
         if (decision.warningMessage) {
-          appendSystemEvent("Auth warning", decision.warningMessage);
+          appendEvent("system", "Auth warning", decision.warningMessage);
         }
       }
 
@@ -5327,7 +5347,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         } catch (error) {
           workspaceLeaseRef.current?.release();
           workspaceLeaseRef.current = undefined;
-          appendErrorEvent("Workspace busy", (error as Error).message);
+          appendEvent("error", "Workspace busy", (error as Error).message);
           finalizePromptRun(runId, turnId, "failed", (error as Error).message);
           return;
         }
@@ -5356,7 +5376,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           try {
             await capture;
           } catch (error) {
-            appendErrorEvent("Checkpoint unavailable", (error as Error).message);
+            appendEvent("error", "Checkpoint unavailable", (error as Error).message);
           }
           saveWorkbenchRef.current?.();
         }
@@ -5587,7 +5607,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                 const codexAuthFailure =
                   activeProviderRoute.providerId === "openai" &&
                   isLikelyAuthFailure(combinedOutput);
-                const errorMessage = codexAuthFailure
+                const failureMessage = codexAuthFailure
                   ? [
                       "Ubume reported an authentication/session error.",
                       "Recovery:",
@@ -5604,7 +5624,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                 }
 
                 traceLiveRunDiagnostics("failed");
-                void finalizePromptRun(runId, turnId, "failed", errorMessage);
+                void finalizePromptRun(runId, turnId, "failed", failureMessage);
               };
 
               if (flushedLiveUpdates) {
@@ -5647,9 +5667,10 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               try {
                 conversationStore.save({ ...next, session: snapshotRef.current?.() });
               } catch (error) {
-                appendErrorEvent(
+                appendEvent(
+                  "error",
                   "Context checkpoint save failed",
-                  error instanceof Error ? error.message : "Filesystem error",
+                  errorMessage(error, "Filesystem error"),
                 );
               }
             },
@@ -5684,12 +5705,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               try {
                 conversationStore.save({ ...next, session: snapshotRef.current?.() });
               } catch (error) {
-                appendErrorEvent(
+                appendEvent(
+                  "error",
                   "Local chat save failed",
-                  error instanceof Error ? error.message : "Filesystem error",
+                  errorMessage(error, "Filesystem error"),
                 );
-                lastSaveErrorRef.current =
-                  error instanceof Error ? error.message : "Filesystem error";
+                lastSaveErrorRef.current = errorMessage(error, "Filesystem error");
               }
             },
             onRunControl: (control) => {
@@ -5750,8 +5771,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       activeRouteProvider,
       activeContextMetadata,
       appendConversationMessage,
-      appendErrorEvent,
-      appendSystemEvent,
+      appendEvent,
+      appendEvent,
       authStatus.checkedAt,
       authStatus.state,
       finalizePromptRun,
@@ -5779,7 +5800,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         promptQueue.move(id, action === "up" ? -1 : 1);
       else if (id && action === "edit") {
         if (getSessionState().inputValue.trim()) {
-          appendSystemEvent(
+          appendEvent(
+            "system",
             "Draft retained",
             "Clear or submit the current draft before editing a queued instruction.",
           );
@@ -5807,7 +5829,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       saveWorkbenchRef.current?.();
       bumpWorkbench((value) => value + 1);
     },
-    [appendSystemEvent, dispatchSession, getSessionState, promptQueue],
+    [appendEvent, dispatchSession, getSessionState, promptQueue],
   );
   const handleRedraw = useCallback(() => {
     terminalControl.write("\x1b[2J\x1b[H", "user:redraw");
@@ -5844,9 +5866,9 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     if (now - quitHintTime.current < 1000) handleQuit();
     else {
       quitHintTime.current = now;
-      appendSystemEvent("Exit", "Press Ctrl+C again to exit, or keep working.");
+      appendEvent("system", "Exit", "Press Ctrl+C again to exit, or keep working.");
     }
-  }, [appendSystemEvent, getSessionState, handleCancel, handleQuit, promptQueue, resetComposer]);
+  }, [appendEvent, getSessionState, handleCancel, handleQuit, promptQueue, resetComposer]);
   useInput((input, key) => {
     if (!key.ctrl) return;
     if (input === "c") handleInterrupt();
@@ -5873,19 +5895,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       const edited = await editExternalPrompt(text, (action) => suspendTerminal(action));
       dispatchSession({ type: "SET_INPUT", value: edited });
     } catch (error) {
-      appendErrorEvent("External editor", (error as Error).message);
+      appendEvent("error", "External editor", (error as Error).message);
     } finally {
       submissionRef.current = false;
       handleRedraw();
     }
-  }, [
-    appendErrorEvent,
-    dispatchSession,
-    getSessionState,
-    handleRedraw,
-    suspendTerminal,
-    workspaceRoot,
-  ]);
+  }, [appendEvent, dispatchSession, getSessionState, handleRedraw, suspendTerminal, workspaceRoot]);
   const handleSendNow = useCallback(async () => {
     if (
       submissionRef.current ||
@@ -5945,14 +5960,14 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         if (started) batch.forEach((item) => promptQueue.remove(item.id));
       }
     } catch (error) {
-      appendErrorEvent("Send now failed", (error as Error).message);
+      appendEvent("error", "Send now failed", (error as Error).message);
     } finally {
       submissionRef.current = false;
       saveWorkbenchRef.current?.();
       bumpWorkbench((value) => value + 1);
     }
   }, [
-    appendErrorEvent,
+    appendEvent,
     cancelActiveRun,
     getSessionState,
     planFlow.kind,
@@ -5987,7 +6002,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             ...point,
             recoveryInvalidated: true,
           }));
-          appendSystemEvent(
+          appendEvent(
+            "system",
             "File recovery",
             "Restored supported file edits. Earlier checkpoints remain available for conversation rewind.",
           );
@@ -6044,9 +6060,10 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           replacements.push({ rawPath: file.rawPath, replacementPath: destPath });
         }
       } catch (err) {
-        appendErrorEvent(
+        appendEvent(
+          "error",
           "Import failed",
-          `Could not import ${path.basename(file.srcPath)}: ${err instanceof Error ? err.message : String(err)}`,
+          `Could not import ${path.basename(file.srcPath)}: ${errorMessage(err)}`,
         );
       }
     }
@@ -6060,7 +6077,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       submitTiming: createPromptRunTiming(),
       commitPrompt: true,
     });
-  }, [pendingImport, workspaceRoot, startPromptRun, appendErrorEvent]);
+  }, [pendingImport, workspaceRoot, startPromptRun, appendEvent]);
 
   const handleImportCancel = useCallback(() => {
     if (!pendingImport) return;
@@ -6109,7 +6126,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             const nextPlan = response.trim();
             if (!nextPlan) {
               setPlanFlow(resetPlanFlow());
-              appendErrorEvent(
+              appendEvent(
+                "error",
                 "Plan generation failed",
                 "Plan mode expected a concrete plan, but the response was empty.",
               );
@@ -6133,7 +6151,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
       return started;
     },
-    [appendErrorEvent, savePlanFile, startPromptRun],
+    [appendEvent, savePlanFile, startPromptRun],
   );
 
   const startApprovedPlanExecution = useCallback(
@@ -6182,12 +6200,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         planMode: false,
       }));
       saveRuntimeModePreference("auto-edit", false);
-      appendSystemEvent(
+      appendEvent(
+        "system",
         "Plan mode",
         `Plan approved. Plan mode off · ${formatModeLabel("auto-edit")}.`,
       );
     },
-    [appendSystemEvent, startPromptRun, updateRuntimeConfig],
+    [appendEvent, startPromptRun, updateRuntimeConfig],
   );
 
   const planActionInFlightRef = useRef(false);
@@ -6220,13 +6239,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         }
         case "cancel":
           setPlanFlow(resetPlanFlow());
-          appendSystemEvent("Plan review", "Plan review canceled. No changes were made.");
+          appendEvent("system", "Plan review", "Plan review canceled. No changes were made.");
           return;
         default:
           return;
       }
     },
-    [appendSystemEvent, planFlow, runPlanGeneration, startApprovedPlanExecution],
+    [appendEvent, planFlow, runPlanGeneration, startApprovedPlanExecution],
   );
 
   const handlePlanFeedbackSubmit = useCallback(
@@ -6237,7 +6256,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
       const feedback = sanitizeTerminalInput(value).trim();
       if (!feedback) {
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Plan review",
           "Add a short revision note or constraint before submitting.",
         );
@@ -6252,7 +6272,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       setPlanFlow(nextState);
       runPlanGeneration(nextState, feedback, createPromptRunTiming());
     },
-    [appendSystemEvent, planFlow, runPlanGeneration],
+    [appendEvent, planFlow, runPlanGeneration],
   );
 
   useEffect(() => {
@@ -6273,7 +6293,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       allowedWritableRoots,
     );
     if (workspaceGuardMessage) {
-      appendErrorEvent("Workspace boundary", workspaceGuardMessage);
+      appendEvent("error", "Workspace boundary", workspaceGuardMessage);
       return;
     }
 
@@ -6290,7 +6310,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     });
   }, [
     allowedWritableRoots,
-    appendErrorEvent,
+    appendEvent,
     busy,
     dispatchSession,
     launchArgs.initialPrompt,
@@ -6357,7 +6377,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         }
       })
       .catch((error) => {
-        appendErrorEvent("Queue paused", (error as Error).message);
+        appendEvent("error", "Queue paused", (error as Error).message);
         saveWorkbenchRef.current?.();
         bumpWorkbench((value) => value + 1);
       });
@@ -6386,7 +6406,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       const summary = session
         ? perf.buildSummary(session)
         : "No perf data recorded yet. Set UBUME_PERF=1 and send a prompt first.";
-      appendSystemEvent("Perf report", summary);
+      appendEvent("system", "Perf report", summary);
       dispatchSession({ type: "PUSH_HISTORY", value });
       resetComposer();
       return;
@@ -6469,7 +6489,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           if (commandResult.value) {
             setModeWithNotice(commandResult.value as AvailableMode);
           } else if (commandResult.message) {
-            appendSystemEvent("Mode", commandResult.message);
+            appendEvent("system", "Mode", commandResult.message);
           }
           return;
         case "reasoning":
@@ -6481,28 +6501,28 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           if (commandResult.value) {
             setPlanModeWithNotice(commandResult.value === "on");
           } else if (commandResult.message) {
-            appendSystemEvent("Plan mode", commandResult.message);
+            appendEvent("system", "Plan mode", commandResult.message);
           }
           return;
         case "status":
         case "runtime_writable_roots_list":
           if (commandResult.message) {
-            appendSystemEvent("Runtime status", commandResult.message);
+            appendEvent("system", "Runtime status", commandResult.message);
           }
           return;
         case "route_status":
           if (commandResult.message) {
-            appendSystemEvent("Route status", commandResult.message);
+            appendEvent("system", "Route status", commandResult.message);
           }
           return;
         case "config_status":
           if (commandResult.message) {
-            appendSystemEvent("Config", commandResult.message);
+            appendEvent("system", "Config", commandResult.message);
           }
           return;
         case "config_trust_status":
           if (commandResult.message) {
-            appendSystemEvent("Config trust", commandResult.message);
+            appendEvent("system", "Config trust", commandResult.message);
           }
           return;
         case "config_trust_set":
@@ -6512,28 +6532,28 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           return;
         case "permissions_status":
           if (commandResult.message) {
-            appendSystemEvent("Permissions", commandResult.message);
+            appendEvent("system", "Permissions", commandResult.message);
           }
           return;
         case "runtime_approval_policy":
           if (commandResult.value) {
             setApprovalPolicyWithNotice(commandResult.value as RuntimeApprovalPolicy);
           } else if (commandResult.message) {
-            appendSystemEvent("Runtime policy", commandResult.message);
+            appendEvent("system", "Runtime policy", commandResult.message);
           }
           return;
         case "runtime_sandbox_mode":
           if (commandResult.value) {
             setSandboxModeWithNotice(commandResult.value as RuntimeSandboxMode);
           } else if (commandResult.message) {
-            appendSystemEvent("Runtime policy", commandResult.message);
+            appendEvent("system", "Runtime policy", commandResult.message);
           }
           return;
         case "runtime_network_access":
           if (commandResult.value) {
             setNetworkAccessWithNotice(commandResult.value as RuntimeNetworkAccess);
           } else if (commandResult.message) {
-            appendSystemEvent("Runtime policy", commandResult.message);
+            appendEvent("system", "Runtime policy", commandResult.message);
           }
           return;
         case "runtime_writable_roots_add":
@@ -6553,7 +6573,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           if (commandResult.value) {
             setServiceTierWithNotice(commandResult.value as RuntimeServiceTier);
           } else if (commandResult.message) {
-            appendSystemEvent("Runtime policy", commandResult.message);
+            appendEvent("system", "Runtime policy", commandResult.message);
           }
           return;
         case "diagnose_github": {
@@ -6581,7 +6601,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             connector,
           );
 
-          // Instead of console.log, we'll format a message for appendSystemEvent
+          // Instead of console.log, we'll format a message for appendEvent
           const tableLines = [
             "Path                | Status  | Evidence                      | Blocker",
             "--------------------|---------|-------------------------------|---------------------------",
@@ -6598,14 +6618,14 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             `Recommended PR flow: ${recommendedFlow}`,
           ].join("\n");
 
-          appendSystemEvent("GitHub Diagnostics", summary);
+          appendEvent("system", "GitHub Diagnostics", summary);
           return;
         }
         case "runtime_personality":
           if (commandResult.value) {
             setPersonalityWithNotice(commandResult.value as RuntimePersonality);
           } else if (commandResult.message) {
-            appendSystemEvent("Runtime policy", commandResult.message);
+            appendEvent("system", "Runtime policy", commandResult.message);
           }
           return;
         case "auth":
@@ -6650,38 +6670,39 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               if (diag[key] != null) lines.push(`    ${label}: ${diag[key]}`);
             }
           }
-          appendSystemEvent("Provider diagnostics", lines.join("\n"));
+          appendEvent("system", "Provider diagnostics", lines.join("\n"));
           return;
         }
         case "setting_status":
           if (commandResult.message) {
-            appendSystemEvent("Settings", commandResult.message);
+            appendEvent("system", "Settings", commandResult.message);
           }
           return;
         case "setting_workspace_display":
           if (commandResult.value) {
             setWorkspaceDisplayModeWithNotice(commandResult.value as WorkspaceDisplayMode);
           } else if (commandResult.message) {
-            appendSystemEvent("Settings", commandResult.message);
+            appendEvent("system", "Settings", commandResult.message);
           }
           return;
         case "setting_terminal_title":
           if (commandResult.value) {
             setTerminalTitleModeWithNotice(commandResult.value as TerminalTitleMode);
           } else if (commandResult.message) {
-            appendSystemEvent("Settings", commandResult.message);
+            appendEvent("system", "Settings", commandResult.message);
           }
           return;
         case "setting_busy_loader":
           if (commandResult.value) {
             const nextShowBusyLoader = commandResult.value === "true";
             setShowBusyLoader(nextShowBusyLoader);
-            appendSystemEvent(
+            appendEvent(
+              "system",
               "Settings",
               `Busy loader ${nextShowBusyLoader ? "enabled" : "disabled"}.`,
             );
           } else if (commandResult.message) {
-            appendSystemEvent("Settings", commandResult.message);
+            appendEvent("system", "Settings", commandResult.message);
           }
           return;
         case "theme":
@@ -6691,14 +6712,14 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           return;
         case "themes":
           if (commandResult.message) {
-            appendSystemEvent("Themes", commandResult.message);
+            appendEvent("system", "Themes", commandResult.message);
           }
           return;
         case "login":
-          appendSystemEvent("Login guidance", getLoginGuidance());
+          appendEvent("system", "Login guidance", getLoginGuidance());
           return;
         case "logout":
-          appendSystemEvent("Logout guidance", getLogoutGuidance());
+          appendEvent("system", "Logout guidance", getLogoutGuidance());
           return;
         case "auth_status":
           void refreshAuthStatus(true);
@@ -6729,11 +6750,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           return;
         case "verbose_toggle": {
           if (commandResult.message) {
-            appendSystemEvent("Debug", commandResult.message);
+            appendEvent("system", "Debug", commandResult.message);
             return;
           }
           setVerboseMode((current) => !current);
-          appendSystemEvent(
+          appendEvent(
+            "system",
             "Verbose mode",
             verboseMode
               ? "Verbose mode disabled — showing concise output."
@@ -6755,7 +6777,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         case "workspace":
         case "backends":
           if (commandResult.message) {
-            appendSystemEvent("Command", commandResult.message);
+            appendEvent("system", "Command", commandResult.message);
           }
           return;
         case "models":
@@ -6763,13 +6785,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             void refreshModelCapabilities(false, true);
           }
           if (commandResult.message) {
-            appendSystemEvent("Command", commandResult.message);
+            appendEvent("system", "Command", commandResult.message);
           }
           return;
         case "update": {
           const arg = commandResult.value ?? "status";
           if (isLocalDevChannel() && arg !== "check") {
-            appendSystemEvent("Update", formatLocalDevUpdateStatus());
+            appendEvent("system", "Update", formatLocalDevUpdateStatus());
             return;
           }
           void (async () => {
@@ -6793,7 +6815,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
             if (freshResult?.status === "update-available" && freshResult.latestVersion) {
               setScreen("update-prompt");
             } else {
-              appendSystemEvent(
+              appendEvent(
+                "system",
                 "Update",
                 formatUpdateInstructions(
                   freshResult,
@@ -6807,12 +6830,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         case "help":
         case "unknown":
           if (commandResult.message) {
-            appendSystemEvent("Command", commandResult.message);
+            appendEvent("system", "Command", commandResult.message);
           }
           return;
         default:
           if (commandResult.message) {
-            appendSystemEvent("Command", commandResult.message);
+            appendEvent("system", "Command", commandResult.message);
           }
           return;
       }
@@ -6841,7 +6864,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       if (generation !== pipelineGenerationRef.current) return;
       await stoppingRef.current;
     } catch (error) {
-      appendErrorEvent("Prompt unavailable", (error as Error).message);
+      appendEvent("error", "Prompt unavailable", (error as Error).message);
       return;
     } finally {
       submissionRef.current = false;
@@ -6851,7 +6874,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     if (uiState.kind === "AWAITING_USER_ACTION") {
       const originalUserEvent = findUserPromptForTurn(uiState.turnId);
       if (!originalUserEvent) {
-        appendErrorEvent(
+        appendEvent(
+          "error",
           "Follow-up unavailable",
           "The original turn could not be found, so the answer could not be resumed.",
         );
@@ -6892,7 +6916,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
     if (skippedExternalPaths.length > 0) {
       for (const skipped of skippedExternalPaths) {
-        appendSystemEvent(
+        appendEvent(
+          "system",
           "Dependency skipped",
           `Skipped external dependency source: ${formatSkippedDependencyPath(skipped)}`,
         );
@@ -6926,7 +6951,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         allowedWritableRoots,
       );
       if (workspaceGuardMessage) {
-        appendErrorEvent("Workspace boundary", workspaceGuardMessage);
+        appendEvent("error", "Workspace boundary", workspaceGuardMessage);
         return;
       }
     }
@@ -6941,8 +6966,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     startPromptRun(value, providerValue, { submitTiming, commitPrompt: true, imageAttachments });
   }, [
     allowedWritableRoots,
-    appendErrorEvent,
-    appendSystemEvent,
+    appendEvent,
+    appendEvent,
     busy,
     buildFollowUpPrompt,
     conversationChars,
@@ -7354,7 +7379,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                       // Non-active provider: save as provider default without switching the active route.
                       // User must click "Use in Ubume" to validate and activate.
                       persistProviderDefaultModelAndReasoning(pendingRouteProviderId, m, r);
-                      appendSystemEvent(
+                      appendEvent(
+                        "system",
                         "Provider model saved",
                         `${modelPickerProviderLabel} default model set to ${m} with reasoning ${formatReasoningLabel(r)}. Choose "Use in Ubume" to activate this provider.`,
                       );
@@ -7496,7 +7522,11 @@ export function App({ launchArgs, providerOverride }: AppProps) {
                   footerHint="Esc to close · Enter to confirm"
                   onSubmit={(value) => {
                     if (!value.trim()) {
-                      appendSystemEvent("Runtime policy", "Writable root path cannot be empty.");
+                      appendEvent(
+                        "system",
+                        "Runtime policy",
+                        "Writable root path cannot be empty.",
+                      );
                       return;
                     }
                     addWritableRootWithNotice(value);
