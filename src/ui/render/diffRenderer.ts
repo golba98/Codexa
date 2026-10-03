@@ -1,4 +1,4 @@
-import { normalizeLineBreaks } from "../../core/shared/values.js";
+import { normalizeLineBreaks } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 
 export type DiffRenderLineType = "file" | "hunk" | "add" | "remove" | "context" | "meta";

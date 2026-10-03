@@ -2,6 +2,7 @@ import { Box, Text, useFocus, useInput } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExternalSessionSummary } from "../../core/externalSessions/types.js";
 import type { LocalBackendId } from "../../core/providerLauncher/types.js";
+import { clampVisualText, getTextWidth } from "../../core/shared/text.js";
 import { errorMessage } from "../../core/shared/values.js";
 import { isLocalDevChannel } from "../../core/version/channel.js";
 import { workspaceStorageKey } from "../../core/workspace/appData.js";
@@ -13,7 +14,6 @@ import {
   type SessionSummary,
 } from "../../session/sessionCatalog.js";
 import { usePanelLayout } from "../layout.js";
-import { clampVisualText, getTextWidth } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
 import {

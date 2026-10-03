@@ -8,7 +8,7 @@ import {
   assessSavedRoute,
   createSessionWorkspaceRelaunch,
   importNativeConversation,
-} from "./resumeCoordinator.js";
+} from "./sessionCatalog.js";
 
 test("saved routes keep model, reasoning and backend and require explicit choice for missing routes", () => {
   const saved = {

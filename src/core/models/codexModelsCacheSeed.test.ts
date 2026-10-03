@@ -7,8 +7,8 @@ import {
   loadCodexSeedModels,
   loadSeededCodexCapabilities,
   loadSeededOpenAiModels,
-} from "./codexModelsCacheSeed.js";
-import { saveCachedProviderModels } from "./providerModelCache.js";
+  saveCachedProviderModels,
+} from "./modelCache.js";
 
 // Mirrors the real ~/.codex/models_cache.json shape written by codex-cli.
 const SEED_FIXTURE = {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createImageAttachmentToken, selectImageAttachments } from "./imageAttachments.js";
+import { createImageAttachmentToken, selectImageAttachments } from "./pastedContent.js";
 
 test("selects multiple image attachments in composer order", () => {
   const first = {

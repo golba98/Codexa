@@ -4,7 +4,7 @@ import { prepareCodexExecLaunch } from "../codex/codexLaunch.js";
 import { buildCodexPrompt } from "../codex/codexPrompt.js";
 import { formatCodexLaunchError, spawnCodexProcess } from "../executables/codexExecutable.js";
 import * as perf from "../perf/profiler.js";
-import { normalizeLineBreaks } from "../shared/values.js";
+import { normalizeLineBreaks } from "../shared/text.js";
 import { createTerminalTitleSequenceStripper } from "../terminal/terminalTitle.js";
 import { createCodexJsonStreamParser } from "./codexJsonStream.js";
 import {

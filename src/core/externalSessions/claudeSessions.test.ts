@@ -9,7 +9,7 @@ import {
   readClaudeTranscript,
 } from "./claudeSessions.js";
 
-import { resolveHome } from "./sessionIo.js";
+import { resolveHome } from "./storeIo.js";
 
 const workspace = "/work/my app";
 

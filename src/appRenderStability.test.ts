@@ -148,7 +148,7 @@ test("Startup provider migration notice is seeded before the first composer fram
     appSource,
     /providerMigrationNoticeShownRef = useRef\(\s*Boolean\(initialProviderWorkspaceConfig\.current\.migrationNotice\),?\s*\)/,
   );
-  assert.doesNotMatch(appSource, /appendSystemEvent\(\s*"Provider migrated"/);
+  assert.doesNotMatch(appSource, /appendEvent\(\s*"system"\s*,\s*"Provider migrated"/);
 });
 
 test("TranscriptShell never keeps its composer mounted while hidden behind an overlay", () => {
@@ -186,7 +186,7 @@ test("/clear and conversation resume drop the timeline row caches", () => {
 test("Settings panel workspace display save path does not append Settings transcript events", () => {
   const body = callbackBody(appSource, "saveSettingsFromPanel");
   assert.ok(body, "saveSettingsFromPanel callback should exist");
-  assert.doesNotMatch(body, /appendSystemEvent\(\s*"Settings"/);
+  assert.doesNotMatch(body, /appendEvent\(\s*"system"\s*,\s*"Settings"/);
 });
 
 test("Settings panel terminal title save path updates only persisted title state", () => {

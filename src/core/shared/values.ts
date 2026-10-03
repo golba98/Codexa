@@ -14,13 +14,6 @@ export function errorMessage(error: unknown, fallback?: string): string {
   return fallback ?? String(error);
 }
 
-/** Converts CRLF and lone CR line breaks to LF. */
-export function normalizeLineBreaks(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-}
-
-/** Formats a duration as `850ms` below one second, otherwise `4.2s`. */
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+export function clampIndex(index: number, count: number): number {
+  return count <= 0 ? 0 : Math.max(0, Math.min(count - 1, index));
 }

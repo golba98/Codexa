@@ -12,7 +12,8 @@ import type {
   BackendRunHandlers,
   ProviderRunControl,
 } from "../core/providers/types.js";
-import { errorMessage, normalizeLineBreaks } from "../core/shared/values.js";
+import { normalizeLineBreaks } from "../core/shared/text.js";
+import { errorMessage } from "../core/shared/values.js";
 import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import type { ConversationRecord } from "../core/workspace/conversationStore.js";
 import {

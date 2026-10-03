@@ -1,7 +1,7 @@
-import { fileURLToPath } from "url";
+import { fileURLToPath } from "node:url";
 import { resolveCodexExecutable } from "../executables/codexExecutable.js";
-import { type CodexCliCapabilities, getCodexCliCapabilities } from "../models/codexCapabilities.js";
 import * as perf from "../perf/profiler.js";
+import { type CodexCliCapabilities, getCodexCliCapabilities } from "./codexCapabilities.js";
 import {
   type BuildCodexExecArgsOptions,
   type BuildCodexExecArgsResult,

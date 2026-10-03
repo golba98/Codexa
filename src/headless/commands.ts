@@ -5,6 +5,7 @@ import { isKnownProviderId } from "../core/providerLauncher/registry.js";
 import { discoverLocalModels } from "../core/providerRuntime/local.js";
 import { discoverProviderModels, getProviderRuntime } from "../core/providerRuntime/registry.js";
 import { errorMessage } from "../core/shared/values.js";
+import { getAppVersion } from "../core/version/channel.js";
 import {
   resolveUbumeConversationDir,
   resolveUbumeWorkspaceDataDir,
@@ -13,9 +14,9 @@ import { CheckpointStore, pendingFileRecoveries } from "../core/workspace/checkp
 import { ConversationStore } from "../core/workspace/conversationStore.js";
 import { inspectOwnership } from "../core/workspace/ownership.js";
 import { resolveWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
-import { inspectionEntries } from "../ui/timeline/inspection.js";
+import { inspectionEntries } from "../session/workbench.js";
 import { CommandError, resolveExecutionContext } from "./context.js";
-import { doctor, listProviderStatus, packageVersion, redact } from "./diagnostics.js";
+import { doctor, listProviderStatus, redact } from "./diagnostics.js";
 import { parseHeadlessExecArgs } from "./execArgs.js";
 import { createHeadlessExecTiming, type HeadlessExecIo } from "./execRunner.js";
 import { runSavedExec } from "./savedExec.js";
@@ -28,7 +29,7 @@ interface CommandEnvelope {
   error: { code: string; message: string } | null;
 }
 
-export const terminalHelp = `Ubume ${packageVersion()}
+export const terminalHelp = `Ubume ${getAppVersion()}
 Usage:
   ubume                           Open the interactive terminal UI.
   ubume doctor [--probe]           Diagnose local setup; --probe checks auth/network.
@@ -343,7 +344,7 @@ export async function runTerminalCommand(
     if (command === "providers") return emit(listProviderStatus(context.config, workspace));
     if (command === "status")
       return emit({
-        version: packageVersion(),
+        version: getAppVersion(),
         workspace,
         route: context.route,
         storage: dataRoot,

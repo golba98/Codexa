@@ -3,7 +3,7 @@ import type { AvailableBackend } from "../config/settings.js";
 import { MAX_CHAT_LINES } from "../config/settings.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
 import type { BackendProgressUpdate } from "../core/providers/types.js";
-import { normalizeLineBreaks } from "../core/shared/values.js";
+import { normalizeLineBreaks } from "../core/shared/text.js";
 import { type RunFileActivity, summarizeRunActivity } from "../core/workspace/workspaceActivity.js";
 import type {
   ErrorEvent,

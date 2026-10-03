@@ -1,6 +1,6 @@
 import { parse, resolve, win32 } from "path";
 
-function isWindowsStylePath(p: string): boolean {
+export function isWindowsStylePath(p: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p);
 }
 
@@ -41,4 +41,8 @@ export function resolveWorkspaceRoot(): string {
   }
 
   return normalizeWorkspaceRoot(process.cwd());
+}
+
+export function sameFolder(left: string, right: string): boolean {
+  return normalizeWorkspaceRoot(left) === normalizeWorkspaceRoot(right);
 }

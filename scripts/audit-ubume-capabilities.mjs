@@ -181,9 +181,9 @@ const checks = {
   },
 
   commandExecution() {
-    const path = join(repoRoot, "src", "core", "process", "CommandRunner.ts");
+    const path = join(repoRoot, "src", "core", "process", "commandRunner.ts");
     if (!existsSync(path)) {
-      return { pass: false, evidence: [], reason: "CommandRunner.ts not found" };
+      return { pass: false, evidence: [], reason: "commandRunner.ts not found" };
     }
 
     const content = readFileSync(path, "utf-8");
@@ -306,7 +306,7 @@ const checks = {
   },
 
   debugLogging() {
-    const debugPath = join(repoRoot, "src", "core", "debug", "inputDebug.ts");
+    const debugPath = join(repoRoot, "src", "core", "perf", "debugLog.ts");
     const envPath = join(repoRoot, "bin", "ubume.js");
     
     const debugExists = existsSync(debugPath);

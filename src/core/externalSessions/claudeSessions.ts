@@ -1,8 +1,9 @@
 import { readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { clampText, titleFromText } from "../shared/text.js";
 import { isRecord } from "../shared/values.js";
+import { sameFolder } from "../workspace/workspaceRoot.js";
 import {
-  clampText,
   envValue,
   forEachJsonLine,
   type JsonRecord,
@@ -10,10 +11,8 @@ import {
   readHeadJsonLines,
   readTailJsonLines,
   resolveHome,
-  sameFolder,
   stringField,
-  titleFromText,
-} from "./sessionIo.js";
+} from "./storeIo.js";
 import type {
   ExternalSessionOptions,
   ExternalSessionScope,

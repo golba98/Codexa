@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
+import { wrapPlainText } from "../../core/shared/text.js";
 import { getUsableShellWidth } from "../layout.js";
-import { wrapPlainText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 
 interface ActionRequiredBlockProps {

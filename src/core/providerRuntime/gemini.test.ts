@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
-import { resetGeminiExecutableCacheForTests } from "../executables/geminiExecutable.js";
-import type { CommandResult, runCommand } from "../process/CommandRunner.js";
+import { resetGeminiExecutableCacheForTests } from "../executables/executableResolver.js";
+import type { CommandResult, runCommand } from "../process/commandRunner.js";
 import {
   buildGeminiCliPromptArgs,
   buildGeminiCliValidationArgs,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveDefaultMaxOutputTokens } from "./localOutputBudget.js";
+import { resolveDefaultMaxOutputTokens } from "./localHarness/runtime.js";
 
 test("default output budget scales with the context window inside fixed bounds", () => {
   assert.equal(resolveDefaultMaxOutputTokens(32_768), 8_192);

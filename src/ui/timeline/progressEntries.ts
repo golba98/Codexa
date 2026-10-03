@@ -1,6 +1,5 @@
-import { normalizeLineBreaks } from "../../core/shared/values.js";
+import { normalizeLineBreaks, wrapPlainText } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
-import { wrapPlainText } from "../render/textLayout.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

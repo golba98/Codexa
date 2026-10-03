@@ -1,5 +1,11 @@
 import * as renderDebug from "../../core/perf/renderDebug.js";
-import { formatDuration } from "../../core/shared/values.js";
+import {
+  clampVisualText,
+  formatDuration,
+  getTextWidth,
+  splitTextAtColumn,
+  wrapPlainText,
+} from "../../core/shared/text.js";
 import {
   sanitizeTerminalLines,
   sanitizeTerminalOutput,
@@ -18,7 +24,6 @@ import {
   getResponseSegmentText,
   getRunPlanText,
 } from "../../session/types.js";
-import { getFriendlyActionLabel, normalizeCommand } from "../input/commandNormalize.js";
 import { transcriptContentIndent } from "../layout.js";
 import { type DiffRenderLineType, maybeRenderDiff } from "../render/diffRenderer.js";
 import {
@@ -27,18 +32,16 @@ import {
   LOGO_LARGE_MIN_COLS,
   selectLogoVariant,
 } from "../render/logoVariants.js";
-import { isShellCodeLanguage, type Segment } from "../render/Markdown.js";
-import { classifyOutput, normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
+import { isShellCodeLanguage, parseMarkdown, type Segment } from "../render/Markdown.js";
+import { normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
 import { formatTerminalAnswerInline } from "../render/terminalAnswerFormat.js";
-import {
-  clampVisualText,
-  getTextWidth,
-  splitTextAtColumn,
-  wrapPlainText,
-} from "../render/textLayout.js";
 import { formatProgressBlockBodyLines } from "./progressEntries.js";
-import { selectVisibleRunActivity } from "./runActivityView.js";
-import { coalesceConsecutiveThinking } from "./streamCoalesce.js";
+import {
+  coalesceConsecutiveThinking,
+  getFriendlyActionLabel,
+  normalizeCommand,
+  selectVisibleRunActivity,
+} from "./runActivityView.js";
 import type { RenderTimelineItem } from "./Timeline.js";
 
 // ─── Exported types ───────────────────────────────────────────────────────────
@@ -1956,7 +1959,7 @@ function buildCodexResponseRows(params: {
 
     const sanitized = sanitizeOutput(rawContent);
     const normalized = normalizeOutput(sanitized);
-    const segments = classifyOutput(normalized);
+    const segments = parseMarkdown(normalized);
     responseRows = buildMarkdownRows(segments, contentWidth);
 
     if (!params.streaming && params.run.status === "failed" && params.isLastEvent) {
@@ -2017,7 +2020,7 @@ function buildApprovedPlanRows(params: {
 }): TimelineRow[] {
   const contentWidth = Math.max(1, params.width - 4);
   const normalized = normalizePlanReviewMarkdown(params.planText, params.workspaceRoot);
-  const formatted = classifyOutput(normalized);
+  const formatted = parseMarkdown(normalized);
   const contentRows = buildMarkdownRows(formatted, contentWidth);
 
   return buildDashCardRows({

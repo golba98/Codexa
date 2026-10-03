@@ -6,7 +6,10 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["src/**", "!src/config/buildInfo.ts"]
+    "includes": [
+      "src/**",
+      "!src/config/buildInfo.ts"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -37,7 +40,8 @@
       "recommended": false,
       "correctness": {
         "noUnusedImports": "error",
-        "noSwitchDeclarations": "error"
+        "noSwitchDeclarations": "error",
+        "noUnusedVariables": "error"
       },
       "style": {
         "useImportType": "error"
@@ -50,7 +54,11 @@
   },
   "overrides": [
     {
-      "includes": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"],
+      "includes": [
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/test/**"
+      ],
       "linter": {
         "rules": {
           "suspicious": {

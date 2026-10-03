@@ -17,9 +17,9 @@ import {
   fetchLmStudioModels,
   type LmStudioModelInfo,
   type LmStudioModelList,
-} from "./lmstudio.js";
-import { runLocalHarness } from "./localHarness/runtime.js";
-import { resolveDefaultMaxOutputTokens } from "./localOutputBudget.js";
+  resolveUnslothConnection,
+} from "./localBackends.js";
+import { resolveDefaultMaxOutputTokens, runLocalHarness } from "./localHarness/runtime.js";
 import type {
   ProviderChatRequest,
   ProviderModel,
@@ -28,7 +28,6 @@ import type {
   ProviderRuntime,
   ResolvedLocalAgentConfig,
 } from "./types.js";
-import { resolveUnslothConnection } from "./unsloth.js";
 
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:1234/v1";
 const DEFAULT_LOCAL_API_KEY = "lm-studio";

@@ -1,9 +1,9 @@
-import { accessSync, constants, existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
-import { buildSpawnSpec } from "../core/executables/executableResolver.js";
-import { runCommand } from "../core/process/CommandRunner.js";
-import { normalizeExecutableValue } from "../core/process/processValidation.js";
+import { accessSync, constants, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { getHomeDir } from "../config/settings.js";
+import { buildSpawnSpec, findExecutable } from "../core/executables/executableResolver.js";
+import { runCommand } from "../core/process/commandRunner.js";
+
 import { getProviderOrder } from "../core/providerLauncher/registry.js";
 import type { ProviderId, ProviderWorkspaceConfig } from "../core/providerLauncher/types.js";
 import { resolveLocalProviderConfig } from "../core/providerRuntime/local.js";
@@ -60,37 +60,6 @@ export function providerExecutable(id: ProviderId, config: ProviderWorkspaceConf
       : (override?.command?.executable ?? process.env.VIBE_EXECUTABLE ?? "vibe");
   return null;
 }
-export function findExecutable(command: string, cwd: string): string | null {
-  try {
-    command = normalizeExecutableValue(command, {
-      label: "Provider executable",
-      cwd,
-      requireExistingPath: false,
-      allowBareExecutable: true,
-    });
-  } catch {
-    return null;
-  }
-  const candidates = /[\\/]/.test(command)
-    ? [isAbsolute(command) ? command : resolve(cwd, command)]
-    : (process.env.PATH ?? "").split(delimiter).flatMap((dir) =>
-        process.platform === "win32"
-          ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT")
-              .split(";")
-              .map((ext) => join(dir, `${command}${ext.toLowerCase()}`))
-              .concat(join(dir, command))
-          : [join(dir, command)],
-      );
-  for (const path of candidates) {
-    try {
-      accessSync(path, process.platform === "win32" ? constants.F_OK : constants.X_OK);
-      return path;
-    } catch {
-      /* Next candidate. */
-    }
-  }
-  return null;
-}
 async function diagnosticCommand(executable: string, args: string[], cwd: string) {
   const runner = runCommand({
     ...buildSpawnSpec(executable, args),
@@ -126,7 +95,7 @@ export function listProviderStatus(config: ProviderWorkspaceConfig, cwd: string)
         id === "anthropic" && process.env.ANTHROPIC_API_KEY
           ? "API key present (unverified)"
           : id === "openai" &&
-              existsSync(join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "auth.json"))
+              existsSync(join(process.env.CODEX_HOME ?? join(getHomeDir(), ".codex"), "auth.json"))
             ? "Auth file present (unverified)"
             : "Not checked; use doctor --probe",
     };
@@ -274,11 +243,4 @@ export async function doctor(
       checks.push({ name: "git", status: "warn", message: "Workspace is not a Git repository." });
   }
   return checks;
-}
-export function packageVersion(): string {
-  return (
-    JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
-      version: string;
-    }
-  ).version;
 }

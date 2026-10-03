@@ -1,10 +1,9 @@
-import { appendFileSync, mkdirSync } from "fs";
-import { dirname } from "path";
 import {
   APP_NAME,
   formatTerminalTitlePath,
   type TerminalTitleMode,
 } from "../../config/settings.js";
+import { createDebugLog } from "../perf/debugLog.js";
 import * as renderDebug from "../perf/renderDebug.js";
 import { resolveUbumeDebugLogPath } from "../workspace/appData.js";
 
@@ -75,16 +74,13 @@ function debugLog(msg: string): void {
 function writeTerminalTitleDebugRecord(fields: Record<string, unknown>): void {
   if (!DEBUG_TERMINAL_TITLE) return;
   try {
-    mkdirSync(dirname(TERMINAL_TITLE_DEBUG_LOG_PATH), { recursive: true });
-    appendFileSync(
-      TERMINAL_TITLE_DEBUG_LOG_PATH,
+    terminalTitleLog(
       JSON.stringify({
         ts: Date.now(),
         pid: process.pid,
         lifecycleState: terminalTitleLifecycleState,
         ...fields,
       }) + "\n",
-      "utf8",
     );
   } catch {
     // Diagnostics must never disturb the TUI.
@@ -392,3 +388,7 @@ export function reassertTerminalTitle(
 ): void {
   write(buildTerminalTitleSequence(title));
 }
+
+const terminalTitleLog = createDebugLog(() => DEBUG_TERMINAL_TITLE, TERMINAL_TITLE_DEBUG_LOG_PATH, {
+  createParent: true,
+});

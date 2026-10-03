@@ -4,6 +4,10 @@ import { errorMessage, isRecord } from "../core/shared/values.js";
 import { normalizeWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
 import type { LaunchArgs } from "./launchArgs.js";
 import {
+  AVAILABLE_APPROVAL_POLICIES,
+  AVAILABLE_PERSONALITIES,
+  AVAILABLE_SANDBOX_MODES,
+  AVAILABLE_SERVICE_TIERS,
   DEFAULT_RUNTIME_CONFIG,
   formatApprovalPolicyLabel,
   formatNetworkAccessLabel,
@@ -184,7 +188,9 @@ function extractRuntimePatch(
 
   if ("approval_policy" in data) {
     const value = data.approval_policy;
-    const validValues = ["untrusted", "on-request", "never"] as const;
+    const validValues = AVAILABLE_APPROVAL_POLICIES.map((option) => option.id).filter(
+      (id) => id !== "inherit",
+    );
     if (typeof value === "string" && (validValues as readonly string[]).includes(value)) {
       assignPolicyValue(patch, "approvalPolicy", value as RuntimeApprovalPolicy);
       addTouchedField(touchedFields, "policy.approvalPolicy");
@@ -195,7 +201,9 @@ function extractRuntimePatch(
 
   if ("sandbox_mode" in data) {
     const value = data.sandbox_mode;
-    const validValues = ["read-only", "workspace-write", "danger-full-access"] as const;
+    const validValues = AVAILABLE_SANDBOX_MODES.map((option) => option.id).filter(
+      (id) => id !== "inherit",
+    );
     if (typeof value === "string" && (validValues as readonly string[]).includes(value)) {
       assignPolicyValue(patch, "sandboxMode", value as RuntimeSandboxMode);
       addTouchedField(touchedFields, "policy.sandboxMode");
@@ -206,7 +214,7 @@ function extractRuntimePatch(
 
   if ("service_tier" in data) {
     const value = data.service_tier;
-    const validValues = ["flex", "fast"] as const;
+    const validValues = AVAILABLE_SERVICE_TIERS.map((option) => option.id);
     if (typeof value === "string" && validValues.includes(value as RuntimeServiceTier)) {
       assignPolicyValue(patch, "serviceTier", value as RuntimeServiceTier);
       addTouchedField(touchedFields, "policy.serviceTier");
@@ -217,7 +225,7 @@ function extractRuntimePatch(
 
   if ("personality" in data) {
     const value = data.personality;
-    const validValues = ["none", "friendly", "pragmatic"] as const;
+    const validValues = AVAILABLE_PERSONALITIES.map((option) => option.id);
     if (typeof value === "string" && validValues.includes(value as RuntimePersonality)) {
       assignPolicyValue(patch, "personality", value as RuntimePersonality);
       addTouchedField(touchedFields, "policy.personality");

@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { isNoiseLine } from "../providers/codexTranscript.js";
-import { normalizeLineBreaks } from "../shared/values.js";
+import { normalizeLineBreaks } from "../shared/text.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import { resolveUbumeDataDir } from "./appData.js";
 

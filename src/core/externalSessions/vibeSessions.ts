@@ -1,18 +1,17 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { parseTomlDocument } from "../../config/layeredConfig.js";
+import { clampText, titleFromText } from "../shared/text.js";
 import { isRecord } from "../shared/values.js";
+import { sameFolder } from "../workspace/workspaceRoot.js";
 import {
-  clampText,
   envValue,
   forEachJsonLine,
   mapWithConcurrency,
   readHeadJsonLines,
   resolveHome,
-  sameFolder,
   stringField,
-  titleFromText,
-} from "./sessionIo.js";
+} from "./storeIo.js";
 import type {
   ExternalSessionOptions,
   ExternalSessionScope,

@@ -22,8 +22,7 @@ import { ModelPickerScreen } from "../panels/ModelPickerScreen.js";
 import { PlanActionPicker } from "../panels/PlanActionPicker.js";
 import { ProviderPicker } from "../panels/ProviderPicker.js";
 import { TextEntryPanel } from "../panels/TextEntryPanel.js";
-import { ThemeProvider } from "../theme.js";
-import { shouldBumpComposerInstance } from "../themeFlow.js";
+import { shouldBumpComposerInstance, ThemeProvider } from "../theme.js";
 import { getFocusTargetForScreen } from "./focus.js";
 
 class TestInput extends PassThrough {

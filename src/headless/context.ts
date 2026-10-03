@@ -1,13 +1,12 @@
 import type { LaunchArgs } from "../config/launchArgs.js";
 import { resolveLayeredConfig } from "../config/layeredConfig.js";
 import { mergeRuntimeConfig, resolveRuntimeConfig } from "../config/runtimeConfig.js";
+import { findExecutable } from "../core/executables/executableResolver.js";
 import { isKnownProviderId } from "../core/providerLauncher/registry.js";
 import { loadProviderWorkspaceConfig } from "../core/providerLauncher/workspaceConfig.js";
 import {
   createRoutedProvider,
   effectiveProviderRuntime,
-} from "../core/providerRuntime/execution.js";
-import {
   getDefaultRouteModel,
   getProviderRuntime,
   isProviderRoutableInUbume,
@@ -16,7 +15,7 @@ import type { ProviderRoute } from "../core/providerRuntime/types.js";
 import { getBackendProvider } from "../core/providers/registry.js";
 import type { ConversationRecord } from "../core/workspace/conversationStore.js";
 import { buildResumedProviderRoute } from "../session/conversation.js";
-import { findExecutable, providerExecutable } from "./diagnostics.js";
+import { providerExecutable } from "./diagnostics.js";
 
 export class CommandError extends Error {
   constructor(

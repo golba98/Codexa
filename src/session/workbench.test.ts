@@ -3,7 +3,6 @@ import { expect, test } from "bun:test";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../config/runtimeConfig.js";
 import { createInitialSessionState, reduceSessionState } from "./appSession.js";
 import { toProviderConversationHistory } from "./conversation.js";
-import { TOOL_OUTPUT_BYTES, ToolOutputBudget } from "./toolOutput.js";
 import type { RunEvent } from "./types.js";
 import {
   eventsBeforeTurn,
@@ -11,6 +10,8 @@ import {
   parseWorkbench,
   queuedPrompt,
   restoredEvents,
+  TOOL_OUTPUT_BYTES,
+  ToolOutputBudget,
   type WorkbenchSnapshot,
 } from "./workbench.js";
 

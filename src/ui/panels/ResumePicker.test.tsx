@@ -3,10 +3,10 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { render, renderToString } from "ink";
 import type React from "react";
+import { getTextWidth } from "../../core/shared/text.js";
 import { conversationSummary, mergeSessionSummaries } from "../../session/sessionCatalog.js";
 import { createAtomicContentToken } from "../input/pastedContent.js";
 import { PanelLayoutContext } from "../layout.js";
-import { getTextWidth } from "../render/textLayout.js";
 import { ThemeProvider } from "../theme.js";
 import { ResumePicker, visibleResumeTabs } from "./ResumePicker.js";
 

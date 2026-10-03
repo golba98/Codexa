@@ -1,6 +1,6 @@
-import { appendFileSync } from "fs";
-import { homedir } from "os";
 import { join } from "path";
+import { getHomeDir } from "../../config/settings.js";
+import { createDebugLog } from "./debugLog.js";
 
 interface PerfSession {
   runId: string;
@@ -116,9 +116,9 @@ export function buildSummary(session: PerfSession): string {
 // Sessions are appended as JSONL to ~/.ubume-perf.jsonl for offline analysis.
 export function persistSession(session: PerfSession): void {
   try {
-    const logPath = join(homedir(), ".ubume-perf.jsonl");
+    const logPath = join(getHomeDir(), ".ubume-perf.jsonl");
     const line = JSON.stringify({ ...session, ts: Date.now() }) + "\n";
-    appendFileSync(logPath, line, "utf8");
+    createDebugLog(() => true, logPath)(line);
   } catch {
     // Profiling must never crash the app.
   }

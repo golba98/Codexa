@@ -1,19 +1,19 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { readdir, readFile } from "fs/promises";
-import { homedir } from "os";
-import { dirname, join, resolve } from "path";
 import { parseTomlDocument } from "../../config/layeredConfig.js";
+import { getHomeDir } from "../../config/settings.js";
 import { formatConversationHistory } from "../../session/conversation.js";
+import { resolveVibeExecutable } from "../executables/executableResolver.js";
 import { vibeSessionDir } from "../externalSessions/vibeSessions.js";
 import {
   type CommandResult,
   type CommandSpec,
   type CommandStreamHandlers,
   runCommand,
-  runShellCommand,
-} from "../process/CommandRunner.js";
-import { normalizeExecutableValue } from "../process/processValidation.js";
+} from "../process/commandRunner.js";
+
 import {
   type LaunchProviderCliOptions,
   launchProviderCli,
@@ -32,7 +32,6 @@ import type {
   ProviderRuntime,
 } from "./types.js";
 
-const VIBE_LOOKUP_TIMEOUT_MS = 5_000;
 const VIBE_RUN_TIMEOUT_MS = 600_000;
 const VIBE_DEFAULT_MODEL_LABEL = "Vibe default";
 
@@ -41,18 +40,6 @@ export const MISTRAL_VIBE_MISSING_MESSAGE =
 
 export const MISTRAL_VIBE_AUTH_MESSAGE =
   "Mistral Vibe CLI is not authenticated. Run `vibe` in a terminal and sign in, then retry.";
-
-type CommandResultSubset = Pick<CommandResult, "status" | "exitCode" | "stdout">;
-type ShellCommandRunner = (
-  command: string,
-  options: { cwd: string; timeoutMs?: number },
-) => { result: Promise<CommandResultSubset> };
-type DirectCommandRunner = (spec: {
-  executable: string;
-  args: string[];
-  cwd: string;
-  timeoutMs?: number;
-}) => { result: Promise<CommandResultSubset> };
 
 interface VibeModelDetection {
   modelId: string;
@@ -95,7 +82,7 @@ export function detectVibeActiveModel(
     return { modelId: environmentModel, source: "environment", configPath: null };
   }
 
-  const homeDirectory = options.homeDirectory ?? homedir();
+  const homeDirectory = options.homeDirectory ?? getHomeDir();
   const vibeHome = env.VIBE_HOME?.trim() || join(homeDirectory, ".vibe");
   const projectConfig = findProjectVibeConfig(options.cwd ?? process.cwd(), vibeHome);
   if (projectConfig) {
@@ -169,7 +156,7 @@ export function listVibeConfiguredModels(
   options: { cwd?: string; env?: NodeJS.ProcessEnv; homeDirectory?: string } = {},
 ): { models: ProviderModel[]; configPath: string | null } {
   const env = options.env ?? process.env;
-  const homeDirectory = options.homeDirectory ?? homedir();
+  const homeDirectory = options.homeDirectory ?? getHomeDir();
   const vibeHome = env.VIBE_HOME?.trim() || join(homeDirectory, ".vibe");
   const projectConfig = findProjectVibeConfig(options.cwd ?? process.cwd(), vibeHome);
   const userConfig = join(vibeHome, "config.toml");
@@ -232,63 +219,6 @@ export function discoverMistralVibeModels(cwd = process.cwd()): ProviderModelDis
   };
 }
 
-function firstOutputLine(result: CommandResultSubset): string | null {
-  if (result.status !== "completed" || result.exitCode !== 0) return null;
-  return (
-    result.stdout
-      .split(/[\r\n]+/)
-      .map((line) => line.trim())
-      .find(Boolean) ?? null
-  );
-}
-
-export async function resolveVibeExecutable(
-  options: {
-    cwd?: string;
-    platform?: NodeJS.Platform;
-    runShellCommandImpl?: ShellCommandRunner;
-    runCommandImpl?: DirectCommandRunner;
-  } = {},
-): Promise<string | null> {
-  const cwd = options.cwd ?? process.cwd();
-  const platform = options.platform ?? process.platform;
-  let candidate: string | null;
-  const configured = process.env.VIBE_EXECUTABLE?.trim();
-  if (configured)
-    return normalizeExecutableValue(configured, {
-      label: "Mistral Vibe executable",
-      cwd,
-      allowBareExecutable: true,
-    });
-
-  if (platform === "win32") {
-    const runner = (options.runCommandImpl ?? (runCommand as DirectCommandRunner))({
-      executable: "where.exe",
-      args: ["vibe"],
-      cwd,
-      timeoutMs: VIBE_LOOKUP_TIMEOUT_MS,
-    });
-    candidate = firstOutputLine(await runner.result);
-  } else {
-    const runner = (options.runShellCommandImpl ?? (runShellCommand as ShellCommandRunner))(
-      "command -v vibe",
-      { cwd, timeoutMs: VIBE_LOOKUP_TIMEOUT_MS },
-    );
-    candidate = firstOutputLine(await runner.result);
-  }
-
-  if (!candidate) return null;
-  try {
-    return normalizeExecutableValue(candidate, {
-      label: "Mistral Vibe executable",
-      cwd,
-      allowBareExecutable: true,
-    });
-  } catch {
-    return null;
-  }
-}
-
 export async function launchMistralVibeCli(
   provider: ProviderConfig,
   options: LaunchProviderCliOptions & {
@@ -323,7 +253,7 @@ export async function findLatestVibeSession(options: {
 }): Promise<string | null> {
   try {
     const env = options.env ?? process.env;
-    const homeDirectory = options.homeDirectory ?? homedir();
+    const homeDirectory = options.homeDirectory ?? getHomeDir();
     const sessionRoot = await vibeSessionDir({ env, home: homeDirectory });
     const workspaceRoot = resolve(options.workspaceRoot);
     const entries = await readdir(sessionRoot);

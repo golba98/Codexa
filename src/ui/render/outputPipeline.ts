@@ -1,7 +1,6 @@
 import { isNoiseLine } from "../../core/providers/codexTranscript.js";
-import { normalizeLineBreaks } from "../../core/shared/values.js";
+import { normalizeLineBreaks } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
-import { parseMarkdown, type Segment } from "./Markdown.js";
 
 /**
  * Sanitize: Strip ANSI escape sequences and non-printable control characters.
@@ -34,16 +33,4 @@ export function normalizeOutput(clean: string): string {
   const filteredLines = lines.filter((line) => !isNoiseLine(line));
 
   return filteredLines.join("\n");
-}
-
-/**
- * Classify: Segments the normalized string into typed semantic blocks
- * such as prose, code blocks, diffs, lists, and headers.
- *
- * Diff colouring is applied at render time via getDiffTone() in
- * timelineMeasure.ts, which maps each diff line to a TimelineTone that
- * the theme system resolves to the correct terminal colour.
- */
-export function classifyOutput(normalized: string): Segment[] {
-  return parseMarkdown(normalized);
 }

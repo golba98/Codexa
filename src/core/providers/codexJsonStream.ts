@@ -1,5 +1,5 @@
 import type { RunToolActivity } from "../../session/types.js";
-import { normalizeLineBreaks } from "../shared/values.js";
+import { normalizeLineBreaks } from "../shared/text.js";
 import type { BackendProgressUpdate } from "./types.js";
 
 type CodexThreadEvent =

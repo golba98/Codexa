@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseTomlDocument } from "./layeredConfig.js";
-import { formatTomlKey, formatTomlPath, serializeTomlDocument } from "./toml-serialize.js";
+import { formatTomlKey, formatTomlPath, serializeTomlDocument } from "./tomlSerialize.js";
 
 test("formatTomlKey quotes keys only when necessary", () => {
   assert.equal(formatTomlKey("model"), "model");

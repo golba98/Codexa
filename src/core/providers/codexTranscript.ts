@@ -1,5 +1,5 @@
 import type { RunToolActivity } from "../../session/types.js";
-import { normalizeLineBreaks } from "../shared/values.js";
+import { normalizeLineBreaks } from "../shared/text.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 
 const ANSI_ESCAPE_PATTERN =

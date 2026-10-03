@@ -17,6 +17,7 @@ import { parseWorkbench, type WorkbenchSnapshot } from "../../session/workbench.
 import type { ExternalSessionSource } from "../externalSessions/types.js";
 import type { LocalBackendId, ProviderId } from "../providerLauncher/types.js";
 import type { ProviderBackendKind } from "../providerRuntime/types.js";
+import { titleFromText } from "../shared/text.js";
 import { errorMessage, isRecord } from "../shared/values.js";
 import {
   resolveLegacyCodexaDataDir,
@@ -269,8 +270,7 @@ function parseMetadata(value: unknown, fallbackId: string): ConversationMetadata
 function titleFromMessages(messages: ConversationMessage[]): string {
   const firstUser = messages.find((message) => message.role === "user" && message.content.trim());
   if (!firstUser) return "Untitled conversation";
-  const title = firstUser.content.replace(/\s+/g, " ").trim();
-  return title.length > 72 ? `${title.slice(0, 69).trimEnd()}...` : title;
+  return titleFromText(firstUser.content);
 }
 
 function isNativeSessionReference(value: unknown): value is NativeSessionReference {

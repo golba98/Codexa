@@ -9,8 +9,7 @@ import {
 import { resolveCodexExecutable, spawnCodexProcess } from "../executables/codexExecutable.js";
 import type { ProviderModel } from "../providerRuntime/types.js";
 import { isRecord } from "../shared/values.js";
-import { loadSeededCodexCapabilities } from "./codexModelsCacheSeed.js";
-import { saveCachedProviderModels } from "./providerModelCache.js";
+import { loadSeededCodexCapabilities, saveCachedProviderModels } from "./modelCache.js";
 
 export type ModelCapabilitySource = "runtime" | "fallback";
 export type ModelCapabilityStatus = "ready" | "fallback";

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join, relative, sep } from "path";
-import { normalizeLineBreaks } from "../shared/values.js";
+import { normalizeLineBreaks } from "../shared/text.js";
 import { SCRATCH_RELATIVE_DIR } from "./scratchDir.js";
 
 export type RunFileOperation = "created" | "modified" | "deleted";

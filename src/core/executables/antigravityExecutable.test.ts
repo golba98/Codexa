@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
 import test from "node:test";
-import type { CommandResult, runCommand } from "../process/CommandRunner.js";
-import { resetAgyExecutableCacheForTests, resolveAgyExecutable } from "./antigravityExecutable.js";
+import type { CommandResult, runCommand } from "../process/commandRunner.js";
+import { resetAgyExecutableCacheForTests, resolveAgyExecutable } from "./executableResolver.js";
 
 function commandResult(overrides: Partial<CommandResult>): CommandResult {
   return {

@@ -2,7 +2,7 @@ import { Box, Static, Text } from "ink";
 import type React from "react";
 import { memo, useEffect, useMemo, useRef } from "react";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
-import type { CodexAuthState } from "../../core/auth/codexAuth.js";
+import type { CodexAuthState } from "../../core/codex/codexAuth.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
 import type { TimelineEvent, UIState } from "../../session/types.js";
 import {

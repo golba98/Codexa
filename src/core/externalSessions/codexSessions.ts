@@ -1,20 +1,20 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { clampText, titleFromText } from "../shared/text.js";
 import { isRecord } from "../shared/values.js";
+import { sameFolder } from "../workspace/workspaceRoot.js";
 import {
-  clampText,
   envValue,
   forEachJsonLine,
   type JsonRecord,
   mapWithConcurrency,
+  openReadonlyDatabase,
   parseJsonLines,
   readHeadJsonLines,
   resolveHome,
-  sameFolder,
   stringField,
-  titleFromText,
-} from "./sessionIo.js";
-import { openReadonlyDatabase, tableColumns } from "./sqlite.js";
+  tableColumns,
+} from "./storeIo.js";
 import type {
   ExternalSessionOptions,
   ExternalSessionScope,

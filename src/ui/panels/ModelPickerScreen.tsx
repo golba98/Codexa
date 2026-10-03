@@ -1,13 +1,14 @@
 import { Box, Text, useFocus, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import { formatReasoningLabel } from "../../config/settings.js";
-import { traceInputDebug } from "../../core/debug/inputDebug.js";
 import {
   type CodexModelCapability,
   normalizeReasoningForModelCapabilities,
   type ReasoningEffortCapability,
 } from "../../core/models/codexModelCapabilities.js";
+import { traceInputDebug } from "../../core/perf/debugLog.js";
 import type { GeminiModelSelection } from "../../core/providerRuntime/types.js";
+import { clampVisualText } from "../../core/shared/text.js";
 import { FOCUS_IDS } from "../input/focus.js";
 import {
   type ActivePanelLayout,
@@ -20,7 +21,6 @@ import {
   usePanelAvailableRows,
   usePanelLayout,
 } from "../layout.js";
-import { clampVisualText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
 

@@ -1,10 +1,10 @@
 import { Box, Text, useFocus, useInput } from "ink";
 import { AUTH_PREFERENCES, formatAuthPreferenceLabel } from "../../config/settings.js";
-import type { CodexAuthProbeResult } from "../../core/auth/codexAuth.js";
-import { getAuthStateLabel } from "../../core/auth/codexAuth.js";
+import type { CodexAuthProbeResult } from "../../core/codex/codexAuth.js";
+import { getAuthStateLabel } from "../../core/codex/codexAuth.js";
 import type { BackendProvider } from "../../core/providers/types.js";
+import { clampVisualText } from "../../core/shared/text.js";
 import { usePanelLayout } from "../layout.js";
-import { clampVisualText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 
 interface AuthPanelProps {

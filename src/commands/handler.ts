@@ -1,5 +1,9 @@
 import { formatLayeredConfigStatus, type LayeredConfigResult } from "../config/layeredConfig.js";
 import {
+  AVAILABLE_APPROVAL_POLICIES,
+  AVAILABLE_PERSONALITIES,
+  AVAILABLE_SANDBOX_MODES,
+  AVAILABLE_SERVICE_TIERS,
   formatApprovalPolicyLabel,
   formatNetworkAccessLabel,
   formatPermissionsStatus,
@@ -123,26 +127,21 @@ export interface CommandContext {
 }
 
 // Mirrors AVAILABLE_APPROVAL_POLICIES[].id from runtimeConfig.ts
-const APPROVAL_POLICY_VALUES = ["inherit", "untrusted", "on-request", "never"] as const;
+const APPROVAL_POLICY_VALUES = AVAILABLE_APPROVAL_POLICIES.map((option) => option.id);
 // Mirrors AVAILABLE_SANDBOX_MODES[].id from runtimeConfig.ts
-const SANDBOX_MODE_VALUES = [
-  "inherit",
-  "read-only",
-  "workspace-write",
-  "danger-full-access",
-] as const;
+const SANDBOX_MODE_VALUES = AVAILABLE_SANDBOX_MODES.map((option) => option.id);
 // Input aliases — "on"/"off" are mapped to "enabled"/"disabled" in the network case below
 const NETWORK_ACCESS_VALUES = ["inherit", "on", "off"] as const;
 // Mirrors AVAILABLE_SERVICE_TIERS[].id from runtimeConfig.ts
-const SERVICE_TIER_VALUES = ["flex", "fast"] as const;
+const SERVICE_TIER_VALUES = AVAILABLE_SERVICE_TIERS.map((option) => option.id);
 // Mirrors AVAILABLE_PERSONALITIES[].id from runtimeConfig.ts
-const PERSONALITY_VALUES = ["none", "friendly", "pragmatic"] as const;
+const PERSONALITY_VALUES = AVAILABLE_PERSONALITIES.map((option) => option.id);
 
 function isOneOf<T extends string>(value: string, list: readonly T[]): value is T {
   return (list as readonly string[]).includes(value);
 }
 
-function formatWritableRoots(roots: readonly string[]): string {
+export function formatWritableRoots(roots: readonly string[]): string {
   return roots.length > 0 ? roots.map((root) => `  - ${root}`).join("\n") : "  - none";
 }
 

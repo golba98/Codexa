@@ -1,16 +1,15 @@
 import { Box, Text } from "ink";
 import { memo, useDeferredValue, useMemo } from "react";
-import { formatDuration } from "../../core/shared/values.js";
+import { formatDuration, wrapPlainText } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../../session/chatLifecycle.js";
 import type { AssistantEvent, RunEvent } from "../../session/types.js";
 import { getAssistantContent } from "../../session/types.js";
-import { DashCard } from "../chrome/DashCard.js";
 import { getUsableShellWidth } from "../layout.js";
-import { MemoizedRenderMessage } from "../render/Markdown.js";
-import { classifyOutput, normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
-import { wrapPlainText } from "../render/textLayout.js";
+import { MemoizedRenderMessage, parseMarkdown } from "../render/Markdown.js";
+import { normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
 import { useTheme } from "../theme.js";
+import { DashCard } from "./DashCard.js";
 
 interface AgentBlockProps {
   cols: number;
@@ -29,7 +28,7 @@ const MemoizedMessageBody = memo(
     segments,
     width,
   }: {
-    segments: ReturnType<typeof classifyOutput>;
+    segments: ReturnType<typeof parseMarkdown>;
     width: number;
   }) {
     return <MemoizedRenderMessage segments={segments} width={width} />;
@@ -65,7 +64,7 @@ export function AgentBlock({
   const pipelineState = useMemo(() => {
     const sanitized = sanitizeOutput(renderContent);
     const normalized = normalizeOutput(sanitized);
-    const formatted = classifyOutput(normalized);
+    const formatted = parseMarkdown(normalized);
     return { length: normalized.length, formatted };
   }, [renderContent, streaming]);
 

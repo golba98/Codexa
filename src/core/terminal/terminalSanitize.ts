@@ -1,4 +1,4 @@
-import { normalizeLineBreaks } from "../shared/values.js";
+import { normalizeLineBreaks } from "../shared/text.js";
 
 // ─── terminalSanitize ─────────────────────────────────────────────────────────
 // Strips unsafe ANSI/control sequences from subprocess and user input.

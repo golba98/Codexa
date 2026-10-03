@@ -7,6 +7,7 @@ import type {
   PendingModelSpec,
   VerifiedModelSpec,
 } from "../../core/providerRuntime/contextMetadata.js";
+import { getTextWidth } from "../../core/shared/text.js";
 import {
   createInputRowWindow,
   createInputViewport,
@@ -15,7 +16,6 @@ import {
 import { createAtomicContentToken } from "../input/pastedContent.js";
 import { getSlashCommandSuggestions } from "../input/slashCommands.js";
 import { createLayoutSnapshot, getContentWidth } from "../layout.js";
-import { getTextWidth } from "../render/textLayout.js";
 import {
   areBottomComposerPropsEqual,
   BottomComposer,

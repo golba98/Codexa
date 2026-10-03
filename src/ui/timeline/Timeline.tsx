@@ -1,8 +1,8 @@
 import { Box, Text } from "ink";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { APP_VERSION } from "../../config/settings.js";
-import type { CodexAuthState } from "../../core/auth/codexAuth.js";
-import { getAuthStateLabel } from "../../core/auth/codexAuth.js";
+import type { CodexAuthState } from "../../core/codex/codexAuth.js";
+import { getAuthStateLabel } from "../../core/codex/codexAuth.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
 import { formatUbumeVersionLabel } from "../../core/version/channel.js";
 import {

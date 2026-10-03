@@ -1,18 +1,13 @@
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { getStdinDebugState, traceInputDebug } from "../../core/debug/inputDebug.js";
+import type { Theme } from "../../config/settings.js";
+import { getStdinDebugState, traceInputDebug } from "../../core/perf/debugLog.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
 import type { ModelSpec } from "../../core/providerRuntime/contextMetadata.js";
 import { formatContextCompact } from "../../core/providerRuntime/contextMetadata.js";
+import { clampVisualText } from "../../core/shared/text.js";
 import { fuzzyFiles, listWorkspaceFiles } from "../../core/workspace/workspaceFiles.js";
 import type { ExternalCliStatus, UIState } from "../../session/types.js";
-import {
-  InputUndo,
-  lineBoundary,
-  searchHistory,
-  verticalCursor,
-  wordBoundary,
-} from "../input/editor.js";
 import { FOCUS_IDS } from "../input/focus.js";
 import {
   COMPOSER_ROW_CHROME,
@@ -21,11 +16,16 @@ import {
   deleteInputBackward,
   deleteInputForward,
   getComposerRowLayout,
+  InputUndo,
   insertInputText,
+  lineBoundary,
   moveCursorLeft,
   moveCursorRight,
   normalizeCursorOffset,
   normalizeInputText,
+  searchHistory,
+  verticalCursor,
+  wordBoundary,
 } from "../input/inputBuffer.js";
 import {
   createAtomicContentToken,
@@ -36,12 +36,9 @@ import {
 } from "../input/pastedContent.js";
 import { type CommandSuggestion, getSlashCommandSuggestions } from "../input/slashCommands.js";
 import type { Layout } from "../layout.js";
-import { getModeDisplaySpec } from "../render/modeDisplay.js";
-import { clampVisualText } from "../render/textLayout.js";
-import { THEMES, type Theme, useTheme } from "../theme.js";
-import { AnimatedStatusText } from "./AnimatedStatusText.js";
-import { isAnimatedBusyState } from "./busyStatusAnimation.js";
-import { Spinner } from "./Spinner.js";
+import { getModeDisplaySpec } from "../render/runtimeDisplay.js";
+import { THEMES, useTheme } from "../theme.js";
+import { AnimatedStatusText, isAnimatedBusyState, Spinner } from "./statusIndicators.js";
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 

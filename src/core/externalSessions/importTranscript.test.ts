@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  externalProviderId,
-  externalTranscriptToConversationMessages,
-} from "./importTranscript.js";
+import { externalProviderId, externalTranscriptToConversationMessages } from "./index.js";
 import type { ExternalTranscript, ExternalTranscriptEntry } from "./types.js";
 
 let nextId = 0;

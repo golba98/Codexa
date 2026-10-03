@@ -1,11 +1,11 @@
-import { appendFileSync } from "fs";
 import { formatConversationHistory } from "../../session/conversation.js";
-import { resolveGeminiExecutable } from "../executables/geminiExecutable.js";
+import { resolveGeminiExecutable } from "../executables/executableResolver.js";
+import { createDebugLog } from "../perf/debugLog.js";
 import {
   type CommandResult,
   type CommandStreamHandlers,
   runCommand,
-} from "../process/CommandRunner.js";
+} from "../process/commandRunner.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { errorMessage } from "../shared/values.js";
@@ -33,7 +33,7 @@ function isGeminiDiagEnabled(): boolean {
 function diagLog(msg: string): void {
   if (!isGeminiDiagEnabled()) return;
   try {
-    appendFileSync(GEMINI_DIAG_LOG, `[${new Date().toISOString()}] ${msg}\n`);
+    geminiLog(`[${new Date().toISOString()}] ${msg}\n`);
   } catch {
     /* ignore */
   }
@@ -931,3 +931,5 @@ export const geminiRuntime: ProviderRuntime = {
     };
   },
 };
+
+const geminiLog = createDebugLog(isGeminiDiagEnabled, GEMINI_DIAG_LOG);

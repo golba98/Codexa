@@ -1,3 +1,12 @@
+import { statSync } from "node:fs";
+import { resolveCodexExecutable } from "../executables/codexExecutable.js";
+import {
+  resolveAgyExecutable,
+  resolveClaudeExecutable,
+  resolveVibeExecutable,
+} from "../executables/executableResolver.js";
+import type { ProviderId } from "../providerLauncher/types.js";
+import type { ConversationMessage } from "../workspace/conversationStore.js";
 import { listAntigravitySessions, readAntigravityTranscript } from "./antigravitySessions.js";
 import { listClaudeSessions, readClaudeTranscript } from "./claudeSessions.js";
 import { listCodexSessions, readCodexTranscript } from "./codexSessions.js";
@@ -8,13 +17,9 @@ import type {
   ExternalSessionSummary,
   ExternalTranscript,
 } from "./types.js";
+import { externalSourceLabel } from "./types.js";
 import { listVibeSessions, readVibeTranscript } from "./vibeSessions.js";
 
-export {
-  externalProviderId,
-  externalTranscriptToConversationMessages,
-} from "./importTranscript.js";
-export { buildExternalResumeLaunch } from "./resumeLaunch.js";
 export * from "./types.js";
 
 /** Native sessions for one CLI, newest first. Stores are read-only inputs; missing stores yield []. */
@@ -49,4 +54,167 @@ export function readExternalTranscript(
     case "vibe":
       return readVibeTranscript(summary);
   }
+}
+
+interface ExternalResumeLaunch {
+  displayName: string;
+  executable: string;
+  args: string[];
+  cwd: string;
+}
+
+type ExternalResumeLaunchResult =
+  | { ok: true; launch: ExternalResumeLaunch }
+  | { ok: false; message: string };
+
+interface ResumeLaunchOptions {
+  /** Current folder retained for API compatibility; unknown original workspaces are never guessed. */
+  fallbackCwd: string;
+  resolveExecutable?: (source: ExternalSessionSource) => Promise<string>;
+  folderExists?: (path: string) => boolean;
+}
+
+function resumeArgs(summary: ExternalSessionSummary): string[] {
+  switch (summary.source) {
+    case "claude":
+      return ["--resume", summary.id];
+    case "codex":
+      return ["resume", summary.id];
+    case "antigravity":
+      return ["--conversation", summary.id];
+    case "vibe":
+      return ["--resume", summary.id];
+  }
+}
+
+/** Honors CLAUDE_EXECUTABLE / CODEX_EXECUTABLE / AGY_EXECUTABLE like the provider runtimes do. */
+function resolveSourceExecutable(source: ExternalSessionSource): Promise<string> {
+  switch (source) {
+    case "claude":
+      return resolveClaudeExecutable();
+    case "codex":
+      return resolveCodexExecutable();
+    case "antigravity":
+      return resolveAgyExecutable();
+    case "vibe":
+      return resolveVibeExecutable().then((path) => {
+        if (!path) throw new Error("Mistral Vibe executable is unavailable.");
+        return path;
+      });
+  }
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+export async function buildExternalResumeLaunch(
+  summary: ExternalSessionSummary,
+  options: ResumeLaunchOptions,
+): Promise<ExternalResumeLaunchResult> {
+  const displayName = externalSourceLabel(summary.source);
+  // Claude Code looks sessions up by the project folder they were started in.
+  if (!summary.cwd) {
+    return {
+      ok: false,
+      message: `${displayName} resumes a session from its original folder, which this session does not record.`,
+    };
+  }
+  const cwd = summary.cwd ?? options.fallbackCwd;
+  if (!(options.folderExists ?? isDirectory)(cwd)) {
+    return { ok: false, message: `The session's folder no longer exists: ${cwd}` };
+  }
+  const executable = await (options.resolveExecutable ?? resolveSourceExecutable)(summary.source);
+  return { ok: true, launch: { displayName, executable, args: resumeArgs(summary), cwd } };
+}
+
+/** Imported history is replayed to the provider on every turn, so keep it bounded. */
+const DEFAULT_MAX_CHARS = 200_000;
+
+export function externalProviderId(source: ExternalSessionSource): ProviderId {
+  switch (source) {
+    case "claude":
+      return "anthropic";
+    case "codex":
+      return "openai";
+    case "antigravity":
+      return "antigravity";
+    case "vibe":
+      return "mistral";
+  }
+}
+
+function toolName(title: string): string {
+  return title.split(" · ")[0]?.trim() || "Tool";
+}
+
+function formatToolCounts(counts: Map<string, number>): string {
+  return `Tools used: ${[...counts].map(([name, count]) => (count > 1 ? `${name} ×${count}` : name)).join(", ")}`;
+}
+
+/**
+ * Converts a native transcript into Ubume conversation messages: prompts and
+ * replies become alternating user/assistant messages, tool calls are folded
+ * into the reply's activity summary, and command notes are dropped.
+ */
+export function externalTranscriptToConversationMessages(
+  transcript: ExternalTranscript,
+  options: { maxChars?: number } = {},
+): ConversationMessage[] {
+  const messages: ConversationMessage[] = [];
+  let tools = new Map<string, number>();
+  const flushTools = () => {
+    if (tools.size === 0) return;
+    const last = messages.at(-1);
+    if (last?.role === "assistant") last.activitySummary = formatToolCounts(tools);
+    else
+      messages.push({
+        role: "assistant",
+        content: "[No reply text; tool activity only]",
+        activitySummary: formatToolCounts(tools),
+      });
+    tools = new Map();
+  };
+
+  for (const entry of transcript.entries) {
+    if (entry.kind === "user") {
+      flushTools();
+      const last = messages.at(-1);
+      if (last?.role === "user") last.content = `${last.content}\n\n${entry.text}`;
+      else messages.push({ role: "user", content: entry.text });
+    } else if (entry.kind === "assistant") {
+      const last = messages.at(-1);
+      if (last?.role === "assistant") last.content = `${last.content}\n\n${entry.text}`;
+      else messages.push({ role: "assistant", content: entry.text });
+    } else if (entry.kind === "tool") {
+      const name = toolName(entry.title);
+      tools.set(name, (tools.get(name) ?? 0) + 1);
+    }
+  }
+  flushTools();
+
+  const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
+  let total = messages.reduce((sum, message) => sum + message.content.length, 0);
+  let omitted = 0;
+  // Drop whole turns from the front so the kept history still starts with a prompt.
+  while (total > maxChars && messages.length > 2) {
+    const dropped = messages.shift()!;
+    total -= dropped.content.length;
+    omitted += 1;
+    while (messages.length > 1 && messages[0]?.role !== "user") {
+      total -= messages.shift()!.content.length;
+      omitted += 1;
+    }
+  }
+  if (omitted > 0 && messages[0]) {
+    messages[0] = {
+      ...messages[0],
+      content: `[Imported from ${externalSourceLabel(transcript.summary.source)} session ${transcript.summary.id}; ${omitted} earlier messages omitted]\n\n${messages[0].content}`,
+    };
+  }
+  return messages;
 }

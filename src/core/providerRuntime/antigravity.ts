@@ -1,12 +1,12 @@
 import { formatConversationHistory } from "../../session/conversation.js";
 import {
+  buildSpawnSpec,
   resetAgyExecutableCacheForTests,
   resolveAgyExecutable,
-} from "../executables/antigravityExecutable.js";
-import { buildSpawnSpec } from "../executables/executableResolver.js";
+} from "../executables/executableResolver.js";
 import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
-import { loadCachedProviderModels } from "../models/providerModelCache.js";
-import { runCommand } from "../process/CommandRunner.js";
+import { loadCachedProviderModels } from "../models/modelCache.js";
+import { runCommand } from "../process/commandRunner.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { errorMessage } from "../shared/values.js";

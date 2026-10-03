@@ -2,8 +2,8 @@ import { formatConversationHistory } from "../../session/conversation.js";
 import {
   buildClaudeSpawnSpec,
   resetClaudeExecutableCacheForTests,
-} from "../executables/claudeExecutable.js";
-import { type CommandResult, runCommand } from "../process/CommandRunner.js";
+} from "../executables/executableResolver.js";
+import { type CommandResult, runCommand } from "../process/commandRunner.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { errorMessage } from "../shared/values.js";

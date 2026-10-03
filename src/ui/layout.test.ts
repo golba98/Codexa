@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { clampVisualText, getTextWidth } from "../core/shared/text.js";
 import { getHeaderHeroLayout, measureTopHeaderRows } from "./chrome/TopHeader.js";
 import {
   advanceTerminalViewport,
@@ -12,7 +13,6 @@ import {
   getUsableShellWidth,
   resolveStartupHeaderMode,
 } from "./layout.js";
-import { clampVisualText, getTextWidth } from "./render/textLayout.js";
 
 test("leaves a one-column gutter to avoid edge-triggered scrollbars", () => {
   assert.equal(getShellWidth(120), 119);

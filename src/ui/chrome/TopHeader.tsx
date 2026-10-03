@@ -3,9 +3,10 @@ import type React from "react";
 import { memo } from "react";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../../config/settings.js";
-import type { CodexAuthState } from "../../core/auth/codexAuth.js";
-import { getAuthStateLabel } from "../../core/auth/codexAuth.js";
+import type { CodexAuthState } from "../../core/codex/codexAuth.js";
+import { getAuthStateLabel } from "../../core/codex/codexAuth.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
+import { clampVisualText, getTextWidth } from "../../core/shared/text.js";
 import { formatUbumeBrandLabel } from "../../core/version/channel.js";
 import { formatVersionLabel, UBUME_UPDATE_COMMAND } from "../../core/version/updateCheck.js";
 import { isDecorativeLayoutMode, type Layout } from "../layout.js";
@@ -16,7 +17,6 @@ import {
   LOGO_LARGE_MIN_COLS,
   LOGO_LARGE_MIN_ROWS,
 } from "../render/logoVariants.js";
-import { clampVisualText, getTextWidth } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 import { UPDATE_CARD_ROWS, UpdateAvailableCard } from "./UpdateAvailableCard.js";
 

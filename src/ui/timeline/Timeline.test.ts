@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CodexAuthState } from "../../core/auth/codexAuth.js";
+import type { CodexAuthState } from "../../core/codex/codexAuth.js";
+import { getTextWidth } from "../../core/shared/text.js";
 import type { RunProgressEntry, TimelineEvent } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
 import { getShellWidth, type Layout } from "../layout.js";
-import { getTextWidth } from "../render/textLayout.js";
 import {
   buildActiveRenderItems,
   buildIntroRenderItem,

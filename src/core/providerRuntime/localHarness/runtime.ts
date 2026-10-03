@@ -1,4 +1,5 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID, scryptSync } from "node:crypto";
 import {
   cpSync,
@@ -33,7 +34,7 @@ import {
 } from "../../../../bin/ubume-local-browser-tools.js";
 import { BrowserManager } from "../../computerUse/browser.js";
 import { resolveBrowserCapability } from "../../computerUse/capability.js";
-import { traceLocalStream } from "../../debug/localStreamDebug.js";
+import { traceLocalStream } from "../../perf/debugLog.js";
 import type { BackendRunHandlers, ToolApprovalDecision } from "../../providers/types.js";
 import { errorMessage, isRecord } from "../../shared/values.js";
 import {
@@ -55,7 +56,6 @@ import {
   isDangerousShellCommand,
   isPathInsideAllowedRoots,
 } from "../../workspace/workspaceGuard.js";
-import { resolveDefaultMaxOutputTokens } from "../localOutputBudget.js";
 import type { ProviderChatRequest } from "../types.js";
 
 const HARNESS_VERSION = "0.1.1-rc.2";
@@ -1740,3 +1740,22 @@ export const localHarnessTestUtils = {
   secretFingerprint,
   profilePatch,
 };
+
+const MIN_DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
+const MAX_DEFAULT_MAX_OUTPUT_TOKENS = 32_768;
+
+/**
+ * Output-token budget for a Local model that advertises no cap of its own.
+ *
+ * Reasoning models spend output tokens thinking before they answer; a flat
+ * 8K budget on a 131K-context model was hit entirely inside the reasoning
+ * channel, ending the turn with no answer at all. Scale with the context
+ * window (a quarter of it), bounded so small windows keep the old default
+ * and huge windows do not request absurd completions.
+ */
+export function resolveDefaultMaxOutputTokens(contextWindow: number | undefined): number {
+  if (!contextWindow || !Number.isFinite(contextWindow) || contextWindow <= 0)
+    return MIN_DEFAULT_MAX_OUTPUT_TOKENS;
+  const scaled = Math.floor(contextWindow / 4);
+  return Math.max(MIN_DEFAULT_MAX_OUTPUT_TOKENS, Math.min(MAX_DEFAULT_MAX_OUTPUT_TOKENS, scaled));
+}

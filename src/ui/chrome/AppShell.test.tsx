@@ -5,7 +5,7 @@ import { Box, render, Text } from "ink";
 import type React from "react";
 import { buildRuntimeSummary } from "../../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../../config/settings.js";
-import type { CodexAuthState } from "../../core/auth/codexAuth.js";
+import type { CodexAuthState } from "../../core/codex/codexAuth.js";
 import type { Screen, TimelineEvent, UIState } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
 import {

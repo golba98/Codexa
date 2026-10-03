@@ -1,12 +1,14 @@
 import { Box, Text, useFocus, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
-import { traceInputDebug } from "../../core/debug/inputDebug.js";
+import { traceInputDebug } from "../../core/perf/debugLog.js";
 import type {
   LocalBackendId,
   ProviderConfig,
   ProviderId,
   ProviderPickerAction,
 } from "../../core/providerLauncher/types.js";
+import { clampVisualText } from "../../core/shared/text.js";
+import { clampIndex } from "../../core/shared/values.js";
 import { FOCUS_IDS } from "../input/focus.js";
 import {
   type ActivePanelLayout,
@@ -19,7 +21,6 @@ import {
   usePanelAvailableRows,
   usePanelLayout,
 } from "../layout.js";
-import { clampVisualText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
 
@@ -93,11 +94,6 @@ export function getCodexaNativeModelProviders(
     ...provider,
     displayName: provider.id === "codexa-native" ? "Codexa PyTorch" : "Codexa CuPy",
   }));
-}
-
-function clampIndex(index: number, length: number): number {
-  if (length <= 0) return 0;
-  return Math.max(0, Math.min(length - 1, index));
 }
 
 export function getTableLayout(innerWidth: number, isMicro = false) {
