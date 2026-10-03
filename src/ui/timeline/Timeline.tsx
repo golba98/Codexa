@@ -101,7 +101,6 @@ export type RenderTimelineItem =
 // Re-enter follow-tail mode when the user scrolls within this many rows of the
 // tail, preventing a "stuck just above bottom" state after a near-end wheel scroll.
 const NEAR_BOTTOM_THRESHOLD = 3;
-const STABLE_RENDER_ENABLED = process.env.UBUME_STABLE_RENDER !== "0";
 
 export interface TimelineViewportState {
   anchorRow: number;
@@ -1118,91 +1117,25 @@ export const Timeline = memo(
         }),
       [snapshotWidth, staticRenderItems, verboseMode, workspaceRoot],
     );
-    // Partition active items: non-assistant items are stable during streaming
-    const isStreaming = uiState.kind === "RESPONDING";
-    const activeStableItems = useMemo(
-      () =>
-        isStreaming
-          ? activeRenderItems.filter((item) => !(item.type === "turn" && item.item.assistant))
-          : [],
-      [activeRenderItems, isStreaming],
-    );
-    const activeStreamingItems = useMemo(
-      () =>
-        isStreaming
-          ? activeRenderItems.filter((item) => item.type === "turn" && item.item.assistant)
-          : activeRenderItems,
-      [activeRenderItems, isStreaming],
-    );
-    const activeStableSnapshot = useMemo(
-      () =>
-        STABLE_RENDER_ENABLED
-          ? { items: [], rows: [], totalRows: 0, itemCount: 0 }
-          : activeStableItems.length > 0
-            ? buildTimelineSnapshot(activeStableItems, {
-                totalWidth: snapshotWidth,
-                verboseMode,
-                debugLabel: "active-stable",
-                workspaceRoot,
-              })
-            : { items: [], rows: [], totalRows: 0, itemCount: 0 },
-      [snapshotWidth, activeStableItems, verboseMode, workspaceRoot],
-    );
-    const activeStreamingSnapshot = useMemo(
-      () =>
-        STABLE_RENDER_ENABLED
-          ? { items: [], rows: [], totalRows: 0, itemCount: 0 }
-          : buildTimelineSnapshot(activeStreamingItems, {
-              totalWidth: snapshotWidth,
-              verboseMode,
-              debugLabel: "active-streaming",
-              workspaceRoot,
-            }),
-      [snapshotWidth, activeStreamingItems, verboseMode, workspaceRoot],
-    );
     const stableActiveSnapshot = useMemo(
       () =>
-        STABLE_RENDER_ENABLED
-          ? buildStableTimelineSnapshot(activeRenderItems, {
-              totalWidth: snapshotWidth,
-              verboseMode,
-              debugLabel: "active-stable-render",
-              workspaceRoot,
-            })
-          : null,
+        buildStableTimelineSnapshot(activeRenderItems, {
+          totalWidth: snapshotWidth,
+          verboseMode,
+          debugLabel: "active-stable-render",
+          workspaceRoot,
+        }),
       [snapshotWidth, activeRenderItems, verboseMode, workspaceRoot],
     );
-    const liveSnapshot = useMemo(() => {
-      if (stableActiveSnapshot) {
-        return {
-          items: [...staticSnapshot.items, ...stableActiveSnapshot.snapshot.items],
-          rows: [...staticSnapshot.rows, ...stableActiveSnapshot.snapshot.rows],
-          totalRows: staticSnapshot.totalRows + stableActiveSnapshot.snapshot.totalRows,
-          itemCount: staticSnapshot.itemCount + stableActiveSnapshot.snapshot.itemCount,
-        };
-      }
-
-      return {
-        items: [
-          ...staticSnapshot.items,
-          ...activeStableSnapshot.items,
-          ...activeStreamingSnapshot.items,
-        ],
-        rows: [
-          ...staticSnapshot.rows,
-          ...activeStableSnapshot.rows,
-          ...activeStreamingSnapshot.rows,
-        ],
-        totalRows:
-          staticSnapshot.totalRows +
-          activeStableSnapshot.totalRows +
-          activeStreamingSnapshot.totalRows,
-        itemCount:
-          staticSnapshot.itemCount +
-          activeStableSnapshot.itemCount +
-          activeStreamingSnapshot.itemCount,
-      };
-    }, [staticSnapshot, stableActiveSnapshot, activeStableSnapshot, activeStreamingSnapshot]);
+    const liveSnapshot = useMemo(
+      () => ({
+        items: [...staticSnapshot.items, ...stableActiveSnapshot.snapshot.items],
+        rows: [...staticSnapshot.rows, ...stableActiveSnapshot.snapshot.rows],
+        totalRows: staticSnapshot.totalRows + stableActiveSnapshot.snapshot.totalRows,
+        itemCount: staticSnapshot.itemCount + stableActiveSnapshot.snapshot.itemCount,
+      }),
+      [staticSnapshot, stableActiveSnapshot],
+    );
 
     const lastNonEmptySnapshotRef = useRef<TimelineSnapshot>(liveSnapshot);
     if (liveSnapshot.totalRows > 0) {
