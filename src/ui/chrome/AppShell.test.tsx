@@ -16,7 +16,7 @@ import {
 } from "../layout.js";
 import { measurePlanActionPickerRows, PlanActionPicker } from "../panels/PlanActionPicker.js";
 import { ThemeProvider } from "../theme.js";
-import { buildIntroRenderItem } from "../timeline/Timeline.js";
+import { buildIntroRenderItem } from "../timeline/timelineItems.js";
 import { buildTimelineSnapshot, type TimelineRow } from "../timeline/timelineMeasure.js";
 import {
   AppShell,
@@ -24,7 +24,8 @@ import {
   calculateHeaderToContentGapRows,
   calculateNativeSpacerRows,
 } from "./AppShell.js";
-import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
+import { BottomComposer } from "./BottomComposer.js";
+import { measureBottomComposerRows } from "./composer/composerModel.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;

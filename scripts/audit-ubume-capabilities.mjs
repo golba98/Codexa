@@ -223,7 +223,7 @@ const checks = {
     const rendererPath = join(repoRoot, "src", "ui", "render", "diffRenderer.ts");
     const testPath = join(repoRoot, "src", "ui", "render", "diffRenderer.test.ts");
     const markdownPath = join(repoRoot, "src", "ui", "render", "Markdown.tsx");
-    const timelinePath = join(repoRoot, "src", "ui", "timeline", "timelineMeasure.ts");
+    const timelinePath = join(repoRoot, "src", "ui", "timeline", "measure", "markdownRows.ts");
     const paths = [rendererPath, testPath, markdownPath, timelinePath];
     const existing = paths.filter(p => existsSync(p));
 

@@ -25,13 +25,13 @@ import {
   createStaticTranscriptCache,
   type StaticTranscriptCache,
 } from "./staticTranscriptCache.js";
+import { TimelineRowView } from "./TimelineRows.js";
 import {
   buildActiveRenderItems,
   buildIntroRenderItem,
   buildStaticRenderItems,
   buildTimelineItems,
-  TimelineRowView,
-} from "./Timeline.js";
+} from "./timelineItems.js";
 import {
   buildNativeTranscriptParts,
   type NativeTranscriptRowItem,
