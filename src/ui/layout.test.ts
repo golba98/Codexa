@@ -109,7 +109,6 @@ test("compact size does not show logo tiers if too narrow", () => {
 
   assert.equal(budget.mode, "compact");
   assert.equal(budget.showNormalLogo, false);
-  assert.equal(budget.showLargeLogo, false);
   assert.equal(budget.showCompactHeader, true);
 });
 
@@ -121,7 +120,6 @@ test("expanded size shows the large logo tier", () => {
   });
 
   assert.equal(budget.mode, "expanded");
-  assert.equal(budget.showLargeLogo, true);
   assert.equal(budget.showNormalLogo, true);
   assert.equal(budget.showCompactHeader, false);
 });

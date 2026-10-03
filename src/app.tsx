@@ -4540,25 +4540,16 @@ export function App({ launchArgs, providerOverride }: AppProps) {
 
       if (retainHistory) {
         if (shellEvent) {
-          activeRunLifecycleRef.current = null;
-          activeRunTimingRef.current = null;
           dispatchSession({
             type: "FINALIZE_SHELL",
             shellId: runId,
             finalEvent: { ...shellEvent, status: "failed", exitCode: -1, durationMs: null },
           });
         } else {
+          // A run event would have been finalized above, so only the prompt remains.
           dispatchSession({ type: "REMOVE_ACTIVE_RUNTIME", runId, turnId: promptTurnId });
-          const runEvent = activeEvents.find(
-            (event) => event.type === "run" && event.id === runId,
-          ) as RunEvent | undefined;
-          if (runEvent) {
-            void finalizePromptRun(runId, runEvent.turnId, "canceled");
-          } else {
-            if (promptTurnId !== null) {
-              lifecycle?.onCanceled?.({ turnId: promptTurnId, runId });
-            }
-            dispatchSession({ type: "REMOVE_ACTIVE_RUNTIME", runId, turnId: promptTurnId });
+          if (promptTurnId !== null) {
+            lifecycle?.onCanceled?.({ turnId: promptTurnId, runId });
           }
         }
       } else {
@@ -6077,10 +6068,10 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         if (destPath) {
           replacements.push({ rawPath: file.rawPath, replacementPath: destPath });
         }
-      } catch (err: any) {
+      } catch (err) {
         appendErrorEvent(
           "Import failed",
-          `Could not import ${path.basename(file.srcPath)}: ${err.message}`,
+          `Could not import ${path.basename(file.srcPath)}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }

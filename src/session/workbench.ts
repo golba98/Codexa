@@ -87,6 +87,9 @@ export class PromptQueue {
   }
 }
 
+// Persisted snapshots are validated field by field; `any` keeps those chained
+// shape checks readable, and every value is type-checked before use.
+// biome-ignore lint/suspicious/noExplicitAny: guard for untyped JSON shape validation
 function record(value: unknown): value is Record<string, any> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -253,14 +256,15 @@ export function parseWorkbench(value: unknown): WorkbenchSnapshot | undefined {
   }
   if (
     !value.pastes.every(
-      (v: any[]) => Array.isArray(v[1]) && v[1].every((text: unknown) => typeof text === "string"),
+      (v: [string, unknown]) =>
+        Array.isArray(v[1]) && v[1].every((text: unknown) => typeof text === "string"),
     )
   )
     return undefined;
-  if (!value.images.every((v: any[]) => image(v[1]))) return undefined;
+  if (!value.images.every((v: [string, unknown]) => image(v[1]))) return undefined;
   if (
     !value.files.every(
-      (v: any[]) =>
+      (v: [string, unknown]) =>
         record(v[1]) &&
         typeof v[1].path === "string" &&
         (v[1].content === undefined || typeof v[1].content === "string"),

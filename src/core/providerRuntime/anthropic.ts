@@ -155,10 +155,21 @@ export function tryParseStreamJsonDelta(line: string): string | null | false {
   return text || null;
 }
 
+/** One `message.content` block in Claude Code's stream-json output. */
+interface ClaudeStreamBlock {
+  type?: string;
+  id?: string;
+  name?: string;
+  input?: { command?: unknown };
+  tool_use_id?: string;
+  content?: string | Array<{ text?: string }>;
+  is_error?: boolean;
+}
+
 export function createClaudeToolParser(handlers: BackendRunHandlers): (line: string) => void {
   const tools = new Map<string, { command: string; startedAt: number }>();
   return (line) => {
-    let event: any;
+    let event: { message?: { content?: unknown } } | null;
     try {
       event = JSON.parse(line);
     } catch {
@@ -166,7 +177,7 @@ export function createClaudeToolParser(handlers: BackendRunHandlers): (line: str
     }
     const blocks = event?.message?.content;
     if (!Array.isArray(blocks)) return;
-    for (const block of blocks) {
+    for (const block of blocks as Array<ClaudeStreamBlock | null>) {
       if (block?.type === "tool_use" && typeof block.id === "string") {
         const command =
           typeof block.input?.command === "string"
@@ -184,7 +195,7 @@ export function createClaudeToolParser(handlers: BackendRunHandlers): (line: str
           typeof block.content === "string"
             ? block.content
             : Array.isArray(block.content)
-              ? block.content.map((entry: any) => entry.text ?? JSON.stringify(entry)).join("\n")
+              ? block.content.map((entry) => entry.text ?? JSON.stringify(entry)).join("\n")
               : "";
         handlers.onToolActivity?.({
           id: block.tool_use_id,

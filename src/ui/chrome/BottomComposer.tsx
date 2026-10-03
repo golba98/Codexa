@@ -37,7 +37,7 @@ import {
 import { type CommandSuggestion, getSlashCommandSuggestions } from "../input/slashCommands.js";
 import { clampVisualText, type Layout } from "../layout.js";
 import { getModeDisplaySpec } from "../render/modeDisplay.js";
-import { THEMES, useTheme } from "../theme.js";
+import { THEMES, type Theme, useTheme } from "../theme.js";
 import { AnimatedStatusText } from "./AnimatedStatusText.js";
 import { isAnimatedBusyState } from "./busyStatusAnimation.js";
 import { Spinner } from "./Spinner.js";
@@ -360,7 +360,7 @@ function getPlaceholder(persona: ComposerPersona): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-function renderFooterRuntime(displayStr: string, theme: any) {
+function renderFooterRuntime(displayStr: string, theme: Theme) {
   // e.g. "Claude Code CLI / Sonnet 4.6 (Low)"
   const slashIndex = displayStr.indexOf("/");
   if (slashIndex === -1) {

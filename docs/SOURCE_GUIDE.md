@@ -81,19 +81,6 @@ Keep this folder's top level folders-only except for its README. Update that ove
 | --- | --- |
 | `src/core/README.md` | Documents the core folder map, provider-layer distinction, and intentional diagnostic modules. |
 
-### `src/core/agent/` — Legacy internal agent compatibility utilities
-
-Keep the protocol strict, validate tool inputs and workspace boundaries, and test malformed calls, cancellation, and platform command behavior.
-
-| File | Purpose |
-| --- | --- |
-| `src/core/agent/loop.test.ts` | Verifies loop behavior and regression contracts in the core/agent area. |
-| `src/core/agent/loop.ts` | Retained internal compatibility utility; it is not used by the active Local provider, which delegates its loop to DeepSeek Harness. |
-| `src/core/agent/protocol.test.ts` | Verifies protocol behavior and regression contracts in the core/agent area. |
-| `src/core/agent/protocol.ts` | Parses and validates the structured tool-call protocol exchanged with the internal agent loop. |
-| `src/core/agent/tools.test.ts` | Verifies tools behavior and regression contracts in the core/agent area. |
-| `src/core/agent/tools.ts` | Implements internal compatibility tools and exports the shared destructive-command classifier used by the Local Harness approval adapter. |
-
 ### `src/core/auth/` — Provider authentication probes
 
 Authentication checks must be read-only, non-destructive, and tolerant of missing or partially configured external CLIs.
@@ -179,8 +166,6 @@ Preserve runtime-truth discovery, last-good cache behavior, model/reasoning comp
 | `src/core/models/codexModelCapabilities.ts` | Normalizes selectable Codex models, reasoning levels, defaults, lookup, and display formatting. |
 | `src/core/models/codexModelsCacheSeed.test.ts` | Verifies codex Models Cache Seed behavior and regression contracts in the core/models area. |
 | `src/core/models/codexModelsCacheSeed.ts` | Seeds startup model capabilities from Codex and Ubume last-good cache files without blocking live discovery. |
-| `src/core/models/modelSpecs.test.ts` | Verifies model Specs behavior and regression contracts in the core/models area. |
-| `src/core/models/modelSpecs.ts` | Maintains legacy known-model specifications and compatibility metadata. |
 | `src/core/models/providerModelCache.test.ts` | Verifies provider Model Cache behavior and regression contracts in the core/models area. |
 | `src/core/models/providerModelCache.ts` | Persists and loads last-good model discovery results per provider. |
 
@@ -298,8 +283,6 @@ Maintain single ownership of terminal modes, paired cleanup, sanitized output, r
 | `src/core/terminal/frameLock.ts` | Serializes and normalizes Ink stdout frames to prevent interleaving, duplicates, width residue, and resize corruption. |
 | `src/core/terminal/inkRenderReset.test.ts` | Verifies ink Render Reset behavior and regression contracts in the core/terminal area. |
 | `src/core/terminal/inkRenderReset.ts` | Locates Ink internals and resets render caches when a deliberately fresh frame is required. |
-| `src/core/terminal/startupClear.test.ts` | Verifies startup Clear behavior and regression contracts in the core/terminal area. |
-| `src/core/terminal/startupClear.ts` | Determines whether startup terminal clearing is safe and emits the controlled startup clear sequence. |
 | `src/core/terminal/terminalCapabilities.test.ts` | Verifies terminal Capabilities behavior and regression contracts in the core/terminal area. |
 | `src/core/terminal/terminalCapabilities.ts` | Detects supported TTY environments and reports blocking errors or compatibility warnings. |
 | `src/core/terminal/terminalControl.test.ts` | Verifies terminal Control behavior and regression contracts in the core/terminal area. |
@@ -343,7 +326,7 @@ Normalize paths consistently, keep mutable Ubume state outside projects, honor r
 | `src/core/workspace/workspaceActivity.test.ts` | Verifies workspace Activity behavior and regression contracts in the core/workspace area. |
 | `src/core/workspace/workspaceActivity.ts` | Snapshots workspace files, detects changes, aggregates activity, and tracks modifications during runs. |
 | `src/core/workspace/workspaceGuard.test.ts` | Verifies workspace Guard behavior and regression contracts in the core/workspace area. |
-| `src/core/workspace/workspaceGuard.ts` | Normalizes diagnostic paths and blocks or explains paths and commands outside the active workspace. |
+| `src/core/workspace/workspaceGuard.ts` | Normalizes diagnostic paths, blocks or explains paths and commands outside the active workspace, and classifies destructive shell commands. |
 | `src/core/workspace/workspaceRoot.test.ts` | Verifies workspace Root behavior and regression contracts in the core/workspace area. |
 | `src/core/workspace/workspaceRoot.ts` | Resolves, normalizes, and compares the active workspace root across platforms and launch modes. |
 
@@ -375,8 +358,6 @@ Reducers are the lifecycle source of truth. Preserve run/turn identity, stream o
 | `src/session/planFlow.test.ts` | Verifies plan Flow behavior and regression contracts in the session area. |
 | `src/session/persistedResponse.ts` | Builds the assistant message saved for each run (completed, canceled, failed) with a compact files-changed / commands-run summary for `/resume`. |
 | `src/session/planFlow.ts` | Models plan-mode transitions, approval/revision decisions, and execution hand-off. |
-| `src/session/planTranscript.test.ts` | Verifies plan Transcript behavior and regression contracts in the session area. |
-| `src/session/planTranscript.ts` | Extracts, normalizes, and reconciles plan content from streamed and finalized responses. |
 | `src/session/promptRunSchedule.test.ts` | Verifies prompt Run Schedule behavior and regression contracts in the session area. |
 | `src/session/promptRunSchedule.ts` | Schedules provider start after the submitted prompt frame has had an opportunity to render. |
 | `src/session/types.ts` | Defines screens, UI lifecycle states, timeline events, run stream items, tool activity, and shared session helpers. |
@@ -389,24 +370,13 @@ Keep helpers deterministic and production-like; avoid hiding timing, cleanup, or
 | --- | --- |
 | `src/test/runtimeTestUtils.ts` | Provides reusable runtime/config fixtures and environment isolation for tests. |
 
-### `src/types/` — Ambient type declarations
-
-Keep shims minimal and remove them when upstream type packages provide the same contract.
-
-| File | Purpose |
-| --- | --- |
-| `src/types/react-dom.d.ts` | Supplies the minimal react-dom declaration required by the current Ink/TypeScript dependency combination. |
-
 ### `src/ui/chrome/` — Application shell and persistent live-tail chrome
 
 Keep one owner for header, composer, footer, and status rows. Recalculate row budgets and test normal and constrained terminals after layout changes.
 
 | File | Purpose |
 | --- | --- |
-| `src/ui/chrome/ActivityBars.tsx` | Renders compact animated activity bars for live run status. |
-| `src/ui/chrome/ActivityIndicator.test.tsx` | Verifies Activity Indicator behavior and regression contracts in the ui/chrome area. |
-| `src/ui/chrome/ActivityIndicator.tsx` | Renders the current activity message and animation according to UI lifecycle state. |
-| `src/ui/chrome/AnimatedStatusText.test.ts` | Verifies Animated Status Text behavior and regression contracts in the ui/chrome area. |
+| `src/ui/chrome/AnimatedStatusText.test.tsx` | Verifies the status animation timer, inactive frames, and the static-status debug flag. |
 | `src/ui/chrome/AnimatedStatusText.tsx` | Displays width-aware animated status text without destabilizing surrounding rows. |
 | `src/ui/chrome/AppShell.test.tsx` | Verifies App Shell behavior and regression contracts in the ui/chrome area. |
 | `src/ui/chrome/AppShell.tsx` | Owns responsive overlay and panel composition plus reusable shell row budgeting; TranscriptShell remains the main-chat/native-scrollback owner. |
@@ -415,8 +385,6 @@ Keep one owner for header, composer, footer, and status rows. Recalculate row bu
 | `src/ui/chrome/BottomComposer.tsx` | Renders the single prompt composer and its provider/model/context status area. |
 | `src/ui/chrome/DashCard.tsx` | Provides a reusable dashed-border informational card. |
 | `src/ui/chrome/PromptCardBorder.test.tsx` | Verifies Prompt Card Border behavior and regression contracts in the ui/chrome area. |
-| `src/ui/chrome/RunFooter.tsx` | Renders completed/running turn metadata and concise run outcome information. |
-| `src/ui/chrome/RuntimeStatusBar.tsx` | Formats and renders effective provider, model, reasoning, context, mode, and permission status. |
 | `src/ui/chrome/Spinner.tsx` | Provides the shared spinner animation primitive. |
 | `src/ui/chrome/TopHeader.test.tsx` | Verifies Top Header behavior and regression contracts in the ui/chrome area. |
 | `src/ui/chrome/TopHeader.tsx` | Renders responsive Ubume branding and workspace/auth/provider header content. |
@@ -424,7 +392,6 @@ Keep one owner for header, composer, footer, and status rows. Recalculate row bu
 | `src/ui/chrome/UpdateAvailableCard.tsx` | Renders an actionable notice when a newer Ubume version is available. |
 | `src/ui/chrome/busyStatusAnimation.test.ts` | Verifies busy Status Animation behavior and regression contracts in the ui/chrome area. |
 | `src/ui/chrome/busyStatusAnimation.ts` | Calculates deterministic frames and labels for busy-state animations. |
-| `src/ui/chrome/runLifecycleView.test.tsx` | Verifies run Lifecycle View behavior and regression contracts in the ui/chrome area. |
 | `src/ui/chrome/statusRenderIsolation.test.tsx` | Verifies status Render Isolation behavior and regression contracts in the ui/chrome area. |
 
 ### `src/ui/input/` — Keyboard, focus, buffer, and command discovery
@@ -457,7 +424,6 @@ Only cross-domain layout, theme, and hooks belong at this root. Domain-specific 
 | `src/ui/theme.tsx` | Defines theme palettes, the React theme provider, and the useTheme hook. |
 | `src/ui/themeFlow.test.ts` | Verifies theme Flow behavior and regression contracts in the ui area. |
 | `src/ui/themeFlow.ts` | Normalizes theme changes and determines persisted/current theme transitions. |
-| `src/ui/useThrottledValue.ts` | Provides a small React hook for rate-limiting rapidly changing display values. |
 
 ### `src/ui/panels/` — Overlay and selection panels
 
@@ -470,13 +436,11 @@ Use shared selection/panel primitives, inject available-row budgets, preserve ke
 | `src/ui/panels/AuthPanel.tsx` | Displays authentication state and login/logout guidance. |
 | `src/ui/panels/BackendPicker.tsx` | Selects the low-level backend implementation. |
 | `src/ui/panels/ModePicker.tsx` | Selects execution mode and explains its behavior. |
-| `src/ui/panels/ModelPicker.tsx` | Provides the base model-selection list and capability labels. |
 | `src/ui/panels/ModelPickerProviderScope.test.tsx` | Verifies Model Picker Provider Scope behavior and regression contracts in the ui/panels area. |
 | `src/ui/panels/ModelPickerScreen.test.tsx` | Verifies Model Picker Screen behavior and regression contracts in the ui/panels area. |
 | `src/ui/panels/ModelPickerScreen.tsx` | Coordinates provider-scoped model discovery, loading/error states, selection, and reasoning hand-off. |
 | `src/ui/panels/ModelPickerState.test.tsx` | Verifies Model Picker State behavior and regression contracts in the ui/panels area. |
-| `src/ui/panels/ModelReasoningPicker.test.tsx` | Verifies Model Reasoning Picker behavior and regression contracts in the ui/panels area. |
-| `src/ui/panels/ModelReasoningPicker.tsx` | Selects reasoning effort constrained by the chosen provider model. |
+| `src/ui/panels/ReasoningPicker.test.tsx` | Verifies the reasoning picker and the model picker screen's reasoning controls. |
 | `src/ui/panels/Panel.tsx` | Provides common bordered panel layout and hint treatment. |
 | `src/ui/panels/PermissionsPanel.tsx` | Displays and edits approval, sandbox, network, writable-root, service-tier, and personality settings. |
 | `src/ui/panels/PlanActionPicker.tsx` | Offers execute, revise, or cancel actions after a plan is produced. |
@@ -529,8 +493,6 @@ Preserve semantic row identity, stream order, scroll anchors, follow-tail behavi
 | `src/ui/timeline/ActionRequiredBlock.tsx` | Renders questions or actions that require explicit user input. |
 | `src/ui/timeline/AgentBlock.test.ts` | Verifies Agent Block behavior and regression contracts in the ui/timeline area. |
 | `src/ui/timeline/AgentBlock.tsx` | Renders assistant response segments, tool actions, progress, and run metadata in stream order. |
-| `src/ui/timeline/StaticIntroItem.tsx` | Renders the scrollable Ubume intro/header as transcript content. |
-| `src/ui/timeline/ThinkingBlock.tsx` | Renders structured reasoning/progress blocks with active/completed styling. |
 | `src/ui/timeline/Timeline.test.ts` | Verifies Timeline behavior and regression contracts in the ui/timeline area. |
 | `src/ui/timeline/Timeline.tsx` | Builds turn/event items, manages scroll/follow-tail navigation, and renders the measured transcript viewport. |
 | `src/ui/timeline/liveViewportWindow.test.ts` | Verifies the live tail window keeps only the last rows that fit the viewport and preserves array identity when nothing is hidden. |
@@ -541,7 +503,6 @@ Preserve semantic row identity, stream order, scroll anchors, follow-tail behavi
 | `src/ui/timeline/TranscriptShell.tsx` | Commits static transcript rows and live-tail rows while preserving native terminal scrollback behavior. |
 | `src/ui/timeline/TurnGroup.test.tsx` | Verifies Turn Group behavior and regression contracts in the ui/timeline area. |
 | `src/ui/timeline/TurnGroup.tsx` | Groups a user prompt, run, and assistant response and derives phase/opacity presentation. |
-| `src/ui/timeline/layoutListWindow.ts` | Calculates the visible slice and selection position for bounded terminal lists. |
 | `src/ui/timeline/liveTurnOrderStability.test.ts` | Verifies live Turn Order Stability behavior and regression contracts in the ui/timeline area. |
 | `src/ui/timeline/progressEntries.ts` | Normalizes provider progress entries into stable visible thinking blocks. |
 | `src/ui/timeline/runActivityView.test.ts` | Verifies run Activity View behavior and regression contracts in the ui/timeline area. |

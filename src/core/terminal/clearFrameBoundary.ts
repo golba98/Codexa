@@ -122,7 +122,6 @@ interface CreateClearFrameBoundaryOptions {
 
 interface FrameMarkerCounts {
   ubumeLogoCount: number;
-  codexaLogoCount: number;
   providerMigratedCount: number;
   launchModeCount: number;
   composerCount: number;
@@ -165,7 +164,6 @@ export function __resetClearFrameBoundaryTraceStatsForTests(): void {
 
 const EMPTY_MARKER_COUNTS: FrameMarkerCounts = Object.freeze({
   ubumeLogoCount: 0,
-  codexaLogoCount: 0,
   providerMigratedCount: 0,
   launchModeCount: 0,
   composerCount: 0,
@@ -188,10 +186,8 @@ function countMatches(text: string, pattern: RegExp): number {
 function countFrameMarkers(text: string): FrameMarkerCounts {
   markerScanCount += 1;
   const plainText = text.replace(ANSI_SEQUENCE, "");
-  const logoMatches = countMatches(plainText, LOGO_LINE);
   return {
-    ubumeLogoCount: logoMatches,
-    codexaLogoCount: logoMatches,
+    ubumeLogoCount: countMatches(plainText, LOGO_LINE),
     providerMigratedCount: countMatches(plainText, PROVIDER_MIGRATED),
     launchModeCount: countMatches(plainText, LAUNCH_MODE),
     composerCount: countMatches(plainText, COMPOSER),

@@ -31,7 +31,7 @@ export interface LocalBackendStatus {
 }
 
 interface ProviderPickerProps {
-  layout?: Layout;
+  layout?: Layout & { contentWidth?: number };
   providers: readonly ProviderConfig[];
   onAction: (
     providerId: ProviderId,
@@ -204,7 +204,7 @@ export function ProviderPicker({
   const shellWidth = getShellWidth(layout?.cols ?? 120);
   const panelWidth = activeLayout
     ? activeLayout.width
-    : Math.max(42, Math.min((layout as any)?.contentWidth ?? shellWidth - 2, shellWidth - 2));
+    : Math.max(42, Math.min(layout?.contentWidth ?? shellWidth - 2, shellWidth - 2));
 
   const hookPanelLayout = usePanelLayout();
   const hookAvailableRows = usePanelAvailableRows();
@@ -222,12 +222,7 @@ export function ProviderPicker({
     const resolvedCols = activeLayout ? activeLayout.availableCols : Math.max(30, shellWidth - 4);
 
     return {
-      mode:
-        mode === "compact" || mode === ("micro" as any)
-          ? "compact"
-          : mode === "expanded" || mode === ("max" as any) || mode === ("wide" as any)
-            ? "expanded"
-            : "regular",
+      mode,
       availableRows: resolvedRows,
       availableCols: resolvedCols,
     };

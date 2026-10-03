@@ -1,4 +1,5 @@
 import type { RunToolActivity } from "../../session/types.js";
+import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 
 const ANSI_ESCAPE_PATTERN =
   // Strip ANSI color/control sequences before attempting transcript parsing.
@@ -102,11 +103,6 @@ export function createStdoutSanitizer(): {
   process(chunk: string): string;
   flush(): string;
 } {
-  // Lazy-import to avoid circular deps at module parse time.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { sanitizeTerminalOutput } =
-    require("../terminal/terminalSanitize.js") as typeof import("../terminal/terminalSanitize.js");
-
   let carryover = "";
 
   const sanitize = (text: string): string => {

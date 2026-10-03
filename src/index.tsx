@@ -249,7 +249,8 @@ export function startApp({
   const kittyKeyboard = resolveKittyKeyboardOptions(env);
   renderHandle = renderApp(<App launchArgs={launchArgs} />, {
     ...(kittyKeyboard ? { kittyKeyboard } : {}),
-    stdout: wrappedStdout as any,
+    // AppStdout is the narrow surface the app uses; Ink wants the full stream type.
+    stdout: wrappedStdout as unknown as NodeJS.WriteStream,
   });
 
   // Resolve the real Ink class instance to get access to lastOutput,

@@ -72,12 +72,8 @@ type AppLayoutBudget = {
   showCompactHeader: boolean;
   placeMetadataBesideLogo: boolean;
   placeMetadataBelowLogo: boolean;
-
-  // Backward compatibility fields:
   transcriptRows: number;
   panelRows: number;
-  showLargeLogo: boolean;
-  showPanelSeparators: boolean;
   showPanelColumnHeaders: boolean;
 };
 
@@ -333,12 +329,8 @@ export function computeAppLayoutBudget({
     showCompactHeader,
     placeMetadataBesideLogo,
     placeMetadataBelowLogo,
-
-    // Backward compatibility fields:
     transcriptRows: activePanelRows,
     panelRows: innerAvailableRows,
-    showLargeLogo: mode === "expanded",
-    showPanelSeparators: mode === "expanded",
     showPanelColumnHeaders: mode === "expanded",
   };
 }
