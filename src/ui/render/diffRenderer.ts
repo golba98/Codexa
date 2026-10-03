@@ -1,3 +1,4 @@
+import { normalizeLineBreaks } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 
 export type DiffRenderLineType = "file" | "hunk" | "add" | "remove" | "context" | "meta";
@@ -20,9 +21,7 @@ const ADD_LINE_PATTERN = /^\+(?!\+\+)/;
 const REMOVE_LINE_PATTERN = /^-(?!--)/;
 
 function normalizeDiffText(text: string): string {
-  return sanitizeTerminalOutput(text, { preserveTabs: false, tabSize: 2 })
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n");
+  return normalizeLineBreaks(sanitizeTerminalOutput(text, { preserveTabs: false, tabSize: 2 }));
 }
 
 function getDiffLines(text: string): string[] {

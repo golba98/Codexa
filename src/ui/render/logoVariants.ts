@@ -1,4 +1,4 @@
-import { getTextWidth } from "./textLayout.js";
+import { getTextWidth } from "../../core/shared/text.js";
 
 // ─── Logo constants ───────────────────────────────────────────────────────────
 // Each variant is an array of exact terminal rows.

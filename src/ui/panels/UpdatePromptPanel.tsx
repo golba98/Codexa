@@ -1,6 +1,6 @@
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
 import { useEffect, useRef, useState } from "react";
-import type { CommandResult, CommandStreamHandlers } from "../../core/process/CommandRunner.js";
+import type { CommandResult, CommandStreamHandlers } from "../../core/process/commandRunner.js";
 import {
   formatPermissionGuidance,
   type GlobalPackageManager,

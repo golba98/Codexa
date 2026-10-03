@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getClaudeCodeEffortLevels } from "./reasoning.js";
+import { getClaudeCodeEffortLevels } from "./models.js";
 
 test("getClaudeCodeEffortLevels preserves unknown CLI effort ids", () => {
   assert.deepEqual(getClaudeCodeEffortLevels(["low", "ultra"]), [

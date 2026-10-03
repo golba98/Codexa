@@ -181,9 +181,9 @@ const checks = {
   },
 
   commandExecution() {
-    const path = join(repoRoot, "src", "core", "process", "CommandRunner.ts");
+    const path = join(repoRoot, "src", "core", "process", "commandRunner.ts");
     if (!existsSync(path)) {
-      return { pass: false, evidence: [], reason: "CommandRunner.ts not found" };
+      return { pass: false, evidence: [], reason: "commandRunner.ts not found" };
     }
 
     const content = readFileSync(path, "utf-8");
@@ -223,7 +223,7 @@ const checks = {
     const rendererPath = join(repoRoot, "src", "ui", "render", "diffRenderer.ts");
     const testPath = join(repoRoot, "src", "ui", "render", "diffRenderer.test.ts");
     const markdownPath = join(repoRoot, "src", "ui", "render", "Markdown.tsx");
-    const timelinePath = join(repoRoot, "src", "ui", "timeline", "timelineMeasure.ts");
+    const timelinePath = join(repoRoot, "src", "ui", "timeline", "measure", "markdownRows.ts");
     const paths = [rendererPath, testPath, markdownPath, timelinePath];
     const existing = paths.filter(p => existsSync(p));
 
@@ -306,7 +306,7 @@ const checks = {
   },
 
   debugLogging() {
-    const debugPath = join(repoRoot, "src", "core", "debug", "inputDebug.ts");
+    const debugPath = join(repoRoot, "src", "core", "perf", "debugLog.ts");
     const envPath = join(repoRoot, "bin", "ubume.js");
     
     const debugExists = existsSync(debugPath);

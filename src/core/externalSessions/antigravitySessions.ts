@@ -2,18 +2,18 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractProtobufStrings } from "./protobufText.js";
+import { clampText, titleFromText } from "../shared/text.js";
+import { isRecord } from "../shared/values.js";
+import { sameFolder } from "../workspace/workspaceRoot.js";
 import {
-  clampText,
-  isRecord,
+  extractProtobufStrings,
   type JsonRecord,
+  openReadonlyDatabase,
   parseJsonLines,
   resolveHome,
-  sameFolder,
   stringField,
-  titleFromText,
-} from "./sessionIo.js";
-import { openReadonlyDatabase, tableColumns } from "./sqlite.js";
+  tableColumns,
+} from "./storeIo.js";
 import type {
   ExternalSessionOptions,
   ExternalSessionScope,

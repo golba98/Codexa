@@ -1,4 +1,5 @@
 import type { RunToolActivity } from "../../session/types.js";
+import { normalizeLineBreaks } from "../shared/text.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 
 const ANSI_ESCAPE_PATTERN =
@@ -161,9 +162,7 @@ interface CodexTranscriptStreamHandlers {
 }
 
 function normalizeLines(raw: string): string[] {
-  return stripNonPrintableControls(stripAnsi(raw))
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
+  return normalizeLineBreaks(stripNonPrintableControls(stripAnsi(raw)))
     .split("\n")
     .map((line) => line.replace(/\s+$/g, ""));
 }
@@ -511,7 +510,7 @@ export function createCodexTranscriptStreamParser(handlers: CodexTranscriptStrea
     }
 
     pending += chunk;
-    const normalized = pending.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const normalized = normalizeLineBreaks(pending);
     const lines = normalized.split("\n");
     pending = lines.pop() ?? "";
 

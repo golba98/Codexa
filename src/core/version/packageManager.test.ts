@@ -4,7 +4,7 @@ import type {
   CommandResult,
   CommandSpec,
   CommandStreamHandlers,
-} from "../../core/process/CommandRunner.js";
+} from "../process/commandRunner.js";
 import {
   detectGlobalPackageManager,
   formatPermissionGuidance,

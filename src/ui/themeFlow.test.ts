@@ -7,7 +7,7 @@ import {
   previewThemeSelection,
   shouldBumpComposerInstance,
   type ThemeSelectionState,
-} from "./themeFlow.js";
+} from "./theme.js";
 
 function createThemeState(overrides: Partial<ThemeSelectionState> = {}): ThemeSelectionState {
   return {

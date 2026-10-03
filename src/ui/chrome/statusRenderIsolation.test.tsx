@@ -12,7 +12,8 @@ import { createLayoutSnapshot } from "../layout.js";
 import { ThemeProvider } from "../theme.js";
 import { Timeline } from "../timeline/Timeline.js";
 import { AppShell } from "./AppShell.js";
-import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
+import { BottomComposer } from "./BottomComposer.js";
+import { measureBottomComposerRows } from "./composer/composerModel.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;

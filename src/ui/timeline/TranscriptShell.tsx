@@ -2,7 +2,7 @@ import { Box, Static, Text } from "ink";
 import type React from "react";
 import { memo, useEffect, useMemo, useRef } from "react";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
-import type { CodexAuthState } from "../../core/auth/codexAuth.js";
+import type { CodexAuthState } from "../../core/codex/codexAuth.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
 import type { TimelineEvent, UIState } from "../../session/types.js";
 import {
@@ -25,13 +25,13 @@ import {
   createStaticTranscriptCache,
   type StaticTranscriptCache,
 } from "./staticTranscriptCache.js";
+import { TimelineRowView } from "./TimelineRows.js";
 import {
   buildActiveRenderItems,
   buildIntroRenderItem,
   buildStaticRenderItems,
   buildTimelineItems,
-  TimelineRowView,
-} from "./Timeline.js";
+} from "./timelineItems.js";
 import {
   buildNativeTranscriptParts,
   type NativeTranscriptRowItem,

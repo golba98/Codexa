@@ -2,10 +2,11 @@ import { formatConversationHistory } from "../../session/conversation.js";
 import {
   buildClaudeSpawnSpec,
   resetClaudeExecutableCacheForTests,
-} from "../executables/claudeExecutable.js";
-import { type CommandResult, runCommand } from "../process/CommandRunner.js";
+} from "../executables/executableResolver.js";
+import { type CommandResult, runCommand } from "../process/commandRunner.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
+import { errorMessage } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import {
   type ClaudeCodeCapabilityDiscovery,
@@ -476,7 +477,7 @@ export function runClaudeCodeWithRunner(
       .catch((error) => {
         control.finish();
         if (canceled) return;
-        const message = error instanceof Error ? error.message : "Claude Code execution failed.";
+        const message = errorMessage(error, "Claude Code execution failed.");
         handlers.onError(message);
       });
   };
@@ -514,7 +515,7 @@ export async function validateAnthropicRoute(options: {
       timeoutMs: options.timeoutMs ?? ANTHROPIC_ROUTE_VALIDATION_TIMEOUT_MS,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to resolve Claude executable.";
+    const message = errorMessage(error, "Failed to resolve Claude executable.");
     return {
       status: "not-configured",
       providerId: "anthropic",
@@ -651,7 +652,7 @@ export const anthropicRuntime: ProviderRuntime = {
     try {
       discovery = await discoverClaudeCodeCapabilities({ cwd, runCommandImpl: runCommand });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Claude capability refresh failed.";
+      const message = errorMessage(error, "Claude capability refresh failed.");
       return {
         status: "ready",
         providerId: "anthropic",
@@ -710,8 +711,7 @@ export const anthropicRuntime: ProviderRuntime = {
         })
         .catch((error) => {
           if (cancelled) return;
-          const message =
-            error instanceof Error ? error.message : "Anthropic/Claude in-Ubume routing failed.";
+          const message = errorMessage(error, "Anthropic/Claude in-Ubume routing failed.");
           handlers.onError(message);
         });
       control.track(work);

@@ -1,6 +1,6 @@
-import { existsSync } from "fs";
-import { join } from "path";
-import { runCommand } from "../process/CommandRunner.js";
+import { accessSync, constants, existsSync } from "node:fs";
+import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { type CommandResult, runCommand, runShellCommand } from "../process/commandRunner.js";
 import {
   normalizeExecutableValue,
   validateWindowsBatchArgumentForCmd,
@@ -177,4 +177,252 @@ export function buildSpawnSpec(
     }
   }
   return { executable: validatedExecutable, args };
+}
+
+/**
+ * Returns the resolved Claude CLI executable (full path or bare name).
+ *
+ * Priority:
+ *   1. CLAUDE_EXECUTABLE env var (if set)
+ *   2. where.exe lookup on Windows — finds the real .exe/.cmd/.bat even when "claude"
+ *      is shadowed by a PowerShell function (Invoke-Claude @args)
+ *   3. Windows known-path fallbacks: %USERPROFILE%\.local\bin and %USERPROFILE%\bin
+ *   4. Bare "claude" fallback (works on Unix; Windows fallback if nothing else found)
+ */
+export const { resolve: resolveClaudeExecutable, reset: resetClaudeExecutableCacheForTests } =
+  createCachedExecutableResolver((options) => {
+    const knownPathDirectories: string[] = [];
+    const userProfile = process.env.USERPROFILE;
+    if (userProfile) {
+      knownPathDirectories.push(join(userProfile, ".local", "bin"));
+      knownPathDirectories.push(join(userProfile, "bin"));
+    }
+
+    return {
+      runCommandImpl: options?.runCommandImpl,
+      cwd: options?.cwd,
+      configuredPath: options?.configuredPath,
+      envOverrides: ["CLAUDE_EXECUTABLE"],
+      commandNames: ["claude.exe", "claude.cmd", "claude.bat", "claude"],
+      knownPathDirectories,
+      label: "claude",
+    };
+  });
+
+/**
+ * Builds the spawn spec for a resolved Claude executable.
+ */
+export function buildClaudeSpawnSpec(
+  executable: string,
+  args: string[],
+): { executable: string; args: string[] } {
+  return buildSpawnSpec(executable, args);
+}
+
+/**
+ * Returns the resolved Gemini CLI executable (full path or bare name).
+ *
+ * Priority:
+ *   1. Configured path override (geminiCommandPath)
+ *   2. GEMINI_EXECUTABLE or GEMINI_CLI_PATH env var
+ *   3. Windows PATH lookup for real files: gemini.exe, gemini.cmd, gemini.bat, gemini
+ *   4. Windows where.exe gemini fallback
+ *   5. Common npm/global locations on Windows
+ */
+export const { resolve: resolveGeminiExecutable, reset: resetGeminiExecutableCacheForTests } =
+  createCachedExecutableResolver((options) => {
+    const knownPathDirectories: string[] = [];
+    const userProfile = process.env.USERPROFILE;
+    const appData = process.env.APPDATA;
+    const localAppData = process.env.LOCALAPPDATA;
+
+    if (process.platform === "win32") {
+      if (appData) {
+        knownPathDirectories.push(join(appData, "npm"));
+      }
+      if (localAppData) {
+        knownPathDirectories.push(join(localAppData, "Programs", "nodejs"));
+      }
+    }
+
+    if (userProfile) {
+      knownPathDirectories.push(join(userProfile, ".local", "bin"));
+      knownPathDirectories.push(join(userProfile, "bin"));
+    }
+
+    return {
+      runCommandImpl: options?.runCommandImpl,
+      cwd: options?.cwd,
+      configuredPath: options?.configuredPath,
+      envOverrides: ["GEMINI_EXECUTABLE", "GEMINI_CLI_PATH"],
+      commandNames: ["gemini.exe", "gemini.cmd", "gemini.bat", "gemini"],
+      knownPathDirectories,
+      knownFilePaths: [],
+      label: "gemini",
+      allowBareFallback: process.platform !== "win32",
+      requireResolvedFile: true,
+    };
+  });
+
+/**
+ * Builds the spawn spec for a resolved Gemini executable.
+ */
+export function buildGeminiSpawnSpec(
+  executable: string,
+  args: string[],
+): { executable: string; args: string[]; shell?: boolean } {
+  return { executable, args };
+}
+
+/**
+ * Returns the resolved Antigravity CLI executable (full path or bare name).
+ *
+ * Priority:
+ *   1. Configured path override (antigravityCommandPath)
+ *   2. AGY_EXECUTABLE env var
+ *   3. Windows PATH lookup for real files: agy.exe, agy.cmd, agy.bat, agy
+ *   4. Bare name fallback "agy" (Unix PATH resolution)
+ */
+export const { resolve: resolveAgyExecutable, reset: resetAgyExecutableCacheForTests } =
+  createCachedExecutableResolver((options) => {
+    return {
+      runCommandImpl: options?.runCommandImpl,
+      cwd: options?.cwd,
+      configuredPath: options?.configuredPath,
+      envOverrides: ["AGY_EXECUTABLE"],
+      commandNames:
+        process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat", "agy"] : ["agy"],
+      knownPathDirectories: [],
+      knownFilePaths: [],
+      label: "antigravity",
+      allowBareFallback: true,
+    };
+  });
+
+export function findExecutable(command: string, cwd: string): string | null {
+  try {
+    command = normalizeExecutableValue(command, {
+      label: "Provider executable",
+      cwd,
+      requireExistingPath: false,
+      allowBareExecutable: true,
+    });
+  } catch {
+    return null;
+  }
+  const candidates = /[\\/]/.test(command)
+    ? [isAbsolute(command) ? command : resolve(cwd, command)]
+    : (process.env.PATH ?? "").split(delimiter).flatMap((dir) =>
+        process.platform === "win32"
+          ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT")
+              .split(";")
+              .map((ext) => join(dir, `${command}${ext.toLowerCase()}`))
+              .concat(join(dir, command))
+          : [join(dir, command)],
+      );
+  for (const path of candidates) {
+    try {
+      accessSync(path, process.platform === "win32" ? constants.F_OK : constants.X_OK);
+      return path;
+    } catch {
+      /* Next candidate. */
+    }
+  }
+  return null;
+}
+
+export const VIBE_LOOKUP_TIMEOUT_MS = 5_000;
+
+export type CommandResultSubset = Pick<CommandResult, "status" | "exitCode" | "stdout">;
+
+export type ShellCommandRunner = (
+  command: string,
+  options: { cwd: string; timeoutMs?: number },
+) => { result: Promise<CommandResultSubset> };
+
+export type DirectCommandRunner = (spec: {
+  executable: string;
+  args: string[];
+  cwd: string;
+  timeoutMs?: number;
+}) => { result: Promise<CommandResultSubset> };
+
+export function firstOutputLine(result: CommandResultSubset): string | null {
+  if (result.status !== "completed" || result.exitCode !== 0) return null;
+  return (
+    result.stdout
+      .split(/[\r\n]+/)
+      .map((line) => line.trim())
+      .find(Boolean) ?? null
+  );
+}
+
+export async function resolveVibeExecutable(
+  options: {
+    cwd?: string;
+    platform?: NodeJS.Platform;
+    runShellCommandImpl?: ShellCommandRunner;
+    runCommandImpl?: DirectCommandRunner;
+  } = {},
+): Promise<string | null> {
+  const cwd = options.cwd ?? process.cwd();
+  const platform = options.platform ?? process.platform;
+  let candidate: string | null;
+  const configured = process.env.VIBE_EXECUTABLE?.trim();
+  if (configured)
+    return normalizeExecutableValue(configured, {
+      label: "Mistral Vibe executable",
+      cwd,
+      allowBareExecutable: true,
+    });
+
+  if (platform === "win32") {
+    const runner = (options.runCommandImpl ?? (runCommand as DirectCommandRunner))({
+      executable: "where.exe",
+      args: ["vibe"],
+      cwd,
+      timeoutMs: VIBE_LOOKUP_TIMEOUT_MS,
+    });
+    candidate = firstOutputLine(await runner.result);
+  } else {
+    const runner = (options.runShellCommandImpl ?? (runShellCommand as ShellCommandRunner))(
+      "command -v vibe",
+      { cwd, timeoutMs: VIBE_LOOKUP_TIMEOUT_MS },
+    );
+    candidate = firstOutputLine(await runner.result);
+  }
+
+  if (!candidate) return null;
+  try {
+    return normalizeExecutableValue(candidate, {
+      label: "Mistral Vibe executable",
+      cwd,
+      allowBareExecutable: true,
+    });
+  } catch {
+    return null;
+  }
+}
+
+interface CachedExecutableOptions {
+  runCommandImpl?: CommandRunner;
+  cwd?: string;
+  configuredPath?: string | null;
+}
+function createCachedExecutableResolver(
+  spec: (options?: CachedExecutableOptions) => ExecutableResolverOptions,
+) {
+  let cached: string | null = null;
+  return {
+    reset: () => {
+      cached = null;
+    },
+    resolve: async (options?: CachedExecutableOptions): Promise<string> => {
+      const cacheable = !options?.configuredPath && !options?.runCommandImpl;
+      if (cacheable && cached !== null) return cached;
+      const result = await resolveExecutable(spec(options));
+      if (cacheable) cached = result;
+      return result;
+    },
+  };
 }

@@ -7,7 +7,7 @@ import {
   runCommand,
   runShellCommand,
   summarizeCommandResult,
-} from "./CommandRunner.js";
+} from "./commandRunner.js";
 
 function makeResult(overrides: Partial<CommandResult> = {}): CommandResult {
   return {
@@ -120,7 +120,7 @@ test("runShellCommand is the explicit shell execution path", async () => {
 
 test("command runner reports lifecycle boundaries for terminal title reassertion", () => {
   const source = readFileSync(
-    fileURLToPath(new URL("./CommandRunner.ts", import.meta.url)),
+    fileURLToPath(new URL("./commandRunner.ts", import.meta.url)),
     "utf8",
   );
   const beforeSpawnIndex = source.indexOf('handlers.onProcessLifecycle?.("before-spawn")');
@@ -145,7 +145,7 @@ test("command runner reports lifecycle boundaries for terminal title reassertion
 
 test("generic command runner does not expose shell mode", () => {
   const source = readFileSync(
-    fileURLToPath(new URL("./CommandRunner.ts", import.meta.url)),
+    fileURLToPath(new URL("./commandRunner.ts", import.meta.url)),
     "utf8",
   );
   assert.equal(source.includes("shell?: boolean"), false);

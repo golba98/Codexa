@@ -1,30 +1,8 @@
-import { createContext, type ReactNode, useContext } from "react";
+import type { ReactNode } from "react";
+import { createContext, useContext } from "react";
+import type { Theme } from "../config/settings.js";
 import * as renderDebug from "../core/perf/renderDebug.js";
-
-export interface Theme {
-  bg: string;
-  surface: string;
-  surfaceMuted: string;
-  border: string;
-  borderFocused: string;
-  text: string;
-  textMuted: string;
-  textDim: string;
-  accent: string;
-  accentMuted: string;
-  success: string;
-  warning: string;
-  error: string;
-  info: string;
-  command: string;
-  prompt: string;
-  model: string;
-  provider: string;
-  context: string;
-  logoPrimary: string;
-  logoSecondary: string;
-  logoShadow: string;
-}
+import type { Screen } from "../session/types.js";
 
 // ─── Theme definitions ────────────────────────────────────────────────────────
 
@@ -271,4 +249,44 @@ export function ThemeProvider({
 
 export function useTheme() {
   return useContext(ThemeContext);
+}
+
+export interface ThemeSelectionState {
+  committedTheme: string;
+  previewTheme: string | null;
+}
+
+export function getDisplayedThemeName(state: ThemeSelectionState): string {
+  return state.previewTheme ?? state.committedTheme;
+}
+
+export function previewThemeSelection(
+  state: ThemeSelectionState,
+  nextTheme: string,
+): ThemeSelectionState {
+  return {
+    ...state,
+    previewTheme: nextTheme,
+  };
+}
+
+export function commitThemeSelection(
+  _state: ThemeSelectionState,
+  nextTheme: string,
+): ThemeSelectionState {
+  return {
+    committedTheme: nextTheme,
+    previewTheme: null,
+  };
+}
+
+export function cancelThemeSelection(state: ThemeSelectionState): ThemeSelectionState {
+  return {
+    committedTheme: state.committedTheme,
+    previewTheme: null,
+  };
+}
+
+export function shouldBumpComposerInstance(previousScreen: Screen, nextScreen: Screen): boolean {
+  return previousScreen !== "main" && nextScreen === "main";
 }

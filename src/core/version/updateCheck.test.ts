@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isCacheValid, type UpdateCheckCache } from "../../config/updateCheckCache.js";
 import {
   checkForUpdates,
   compareSemver,
   formatUpdateInstructions,
   formatVersionLabel,
+  isCacheValid,
   isNewerVersion,
   isValidSemver,
   type NpmRegistryMetadata,
@@ -13,6 +13,7 @@ import {
   shouldRunStartupUpdateCheck,
   UBUME_NPM_REGISTRY_URL,
   UBUME_UPDATE_COMMAND,
+  type UpdateCheckCache,
 } from "./updateCheck.js";
 
 function metadata(version: string): NpmRegistryMetadata {

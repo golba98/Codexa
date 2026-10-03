@@ -1,6 +1,6 @@
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
-import type { CodexCliCapabilities } from "../models/codexCapabilities.js";
 import type { ProviderImageAttachment } from "../providerRuntime/types.js";
+import type { CodexCliCapabilities } from "./codexCapabilities.js";
 
 export interface BuildCodexExecArgsOptions {
   runtime: ResolvedRuntimeConfig;

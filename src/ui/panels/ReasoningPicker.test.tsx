@@ -7,11 +7,11 @@ import {
   type CodexModelCapability,
   normalizeCodexModelListResponses,
 } from "../../core/models/codexModelCapabilities.js";
-import { CLAUDE_CODE_EFFORT_LEVELS } from "../../core/providerRuntime/reasoning.js";
+import { CLAUDE_CODE_EFFORT_LEVELS } from "../../core/providerRuntime/models.js";
 import { createLayoutSnapshot } from "../layout.js";
 import { ThemeProvider } from "../theme.js";
 import { ModelPickerScreen } from "./ModelPickerScreen.js";
-import { ReasoningPicker } from "./ReasoningPicker.js";
+import { ReasoningPicker } from "./SimplePickers.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildExternalResumeLaunch } from "./resumeLaunch.js";
+import { buildExternalResumeLaunch } from "./index.js";
 import type { ExternalSessionSummary } from "./types.js";
 
 const summary = (

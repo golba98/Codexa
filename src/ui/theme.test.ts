@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { THEMES, type Theme } from "./theme.js";
+import type { Theme } from "../config/settings.js";
+import { THEMES } from "./theme.js";
 
 test("all themes expose the same required semantic tokens", () => {
   const requiredTokens: (keyof Theme)[] = [

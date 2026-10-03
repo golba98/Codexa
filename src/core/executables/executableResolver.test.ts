@@ -4,7 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { CommandResult, runCommand } from "../process/CommandRunner.js";
+import type { CommandResult, runCommand } from "../process/commandRunner.js";
 import { buildSpawnSpec, resolveExecutable } from "./executableResolver.js";
 
 function commandResult(overrides: Partial<CommandResult>): CommandResult {

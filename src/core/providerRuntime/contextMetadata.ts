@@ -1,4 +1,5 @@
 import type { ProviderId, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
+import { isRecord } from "../shared/values.js";
 
 /** Context-window facts for the active model, as shown in the composer token bar. */
 export interface VerifiedModelSpec {
@@ -198,10 +199,6 @@ const NESTED_METADATA_KEYS = [
 ] as const;
 
 const contextCache = new Map<string, ModelContextMetadata>();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function validContextLength(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {

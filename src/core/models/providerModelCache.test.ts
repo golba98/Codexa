@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { ProviderModel } from "../providerRuntime/types.js";
-import { loadCachedProviderModels, saveCachedProviderModels } from "./providerModelCache.js";
+import { loadCachedProviderModels, saveCachedProviderModels } from "./modelCache.js";
 
 function tempCacheFile(): { file: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), "ubume-model-cache-"));

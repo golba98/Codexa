@@ -1,24 +1,36 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type {
+  ExternalSessionSource,
+  ExternalSessionSummary,
+  ExternalTranscript,
+} from "../core/externalSessions/index.js";
 import {
   EXTERNAL_SESSION_SOURCES,
-  type ExternalSessionSource,
-  type ExternalSessionSummary,
   externalProviderId,
+  externalTranscriptToConversationMessages,
   listExternalSessions,
 } from "../core/externalSessions/index.js";
-import { sameFolder } from "../core/externalSessions/sessionIo.js";
+import { isKnownProviderId } from "../core/providerLauncher/registry.js";
 import type { LocalBackendId, ProviderId } from "../core/providerLauncher/types.js";
+import { getProviderRuntime, isProviderRoutableInUbume } from "../core/providerRuntime/registry.js";
+import type { ProviderModelDiscoveryResult, ProviderRoute } from "../core/providerRuntime/types.js";
+import { errorMessage } from "../core/shared/values.js";
 import {
   resolveLegacyCodexaDataDir,
   resolveUbumeDataDir,
   workspaceStorageKey,
 } from "../core/workspace/appData.js";
-import {
-  type ConversationListEntry,
-  ConversationStore,
+import type {
+  ConversationListEntry,
+  ConversationMetadata,
+  ConversationRecord,
 } from "../core/workspace/conversationStore.js";
-import { normalizeWorkspaceRoot } from "../core/workspace/workspaceRoot.js";
+import { ConversationStore } from "../core/workspace/conversationStore.js";
+import type { LaunchContext } from "../core/workspace/launchContext.js";
+import { createWorkspaceRelaunchPlan } from "../core/workspace/launchContext.js";
+import { normalizeWorkspaceRoot, sameFolder } from "../core/workspace/workspaceRoot.js";
+import { buildResumedProviderRoute } from "./conversation.js";
 
 type SessionScope = "workspace" | "all";
 export type SessionRef =
@@ -149,7 +161,7 @@ export async function listSessionCatalog(
       try {
         for (const key of directories(root)) keys.add(key);
       } catch (error) {
-        errors.push(`Ubume: ${error instanceof Error ? error.message : "Could not list chats"}`);
+        errors.push(`Ubume: ${errorMessage(error, "Could not list chats")}`);
       }
     }
   for (const key of keys) {
@@ -197,10 +209,7 @@ export async function listSessionCatalog(
   const native: ExternalSessionSummary[] = [];
   discovered.forEach((result, index) => {
     if (result.status === "fulfilled") native.push(...result.value);
-    else
-      errors.push(
-        `${sources[index]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
-      );
+    else errors.push(`${sources[index]}: ${errorMessage(result.reason)}`);
   });
   return { sessions: mergeSessionSummaries(owned, native), errors: [...new Set(errors)] };
 }
@@ -252,4 +261,113 @@ export function readOwnedConversation(ref: Extract<SessionRef, { kind: "ubume" }
   const record = store.load(ref.conversationId);
   if (!record) throw new Error("Saved conversation could not be loaded.");
   return record;
+}
+
+type SavedRouteAssessment =
+  | { status: "ready"; route: ProviderRoute }
+  | { status: "unavailable"; message: string; route?: ProviderRoute };
+
+export function assessSavedRoute(
+  metadata: ConversationMetadata,
+  discovery: ProviderModelDiscoveryResult | null,
+  enabled = true,
+): SavedRouteAssessment {
+  const id = metadata.providerId;
+  if (
+    typeof id !== "string" ||
+    !isKnownProviderId(id) ||
+    id === "google" ||
+    !isProviderRoutableInUbume(id)
+  )
+    return {
+      status: "unavailable",
+      message:
+        "The saved provider is unavailable. Select a provider and model explicitly before sending.",
+    };
+  const route = buildResumedProviderRoute(metadata, id, getProviderRuntime(id).backendKind);
+  if (!enabled)
+    return {
+      status: "unavailable",
+      route,
+      message:
+        "The saved provider is disabled in this workspace. Enable it or select a working provider explicitly before sending.",
+    };
+  if (id === "local" && !metadata.localBackend)
+    return {
+      status: "unavailable",
+      route,
+      message:
+        "This older Local chat has no recorded backend. Select LM Studio or Unsloth and a model before sending.",
+    };
+  if (discovery?.status === "not-configured")
+    return {
+      status: "unavailable",
+      route,
+      message:
+        discovery.message ??
+        "The saved route is not configured. Select a working provider and model before sending.",
+    };
+  if (
+    discovery?.status === "ready" &&
+    discovery.models.length > 0 &&
+    !discovery.models.some((model) => model.modelId === route.modelId || model.id === route.modelId)
+  ) {
+    return {
+      status: "unavailable",
+      route,
+      message: `The saved model ${route.modelId} is unavailable. Select a model explicitly before sending.`,
+    };
+  }
+  return { status: "ready", route };
+}
+
+/** Provenance is workspace-scoped; repeated imports reuse the owned conversation. */
+export function importNativeConversation(
+  store: ConversationStore,
+  transcript: ExternalTranscript,
+  modelId: string,
+): ConversationRecord {
+  const { summary } = transcript;
+  const previous = store
+    .list()
+    .find(
+      (entry) =>
+        entry.importedFrom?.source === summary.source &&
+        entry.importedFrom.sessionId === summary.id,
+    );
+  if (previous) {
+    const loaded = store.load(previous.id);
+    if (!loaded) throw new Error("The previously imported conversation could not be loaded.");
+    return loaded;
+  }
+  const messages = externalTranscriptToConversationMessages(transcript);
+  if (!messages.length) throw new Error("This session has no readable dialogue to import.");
+  const providerId = externalProviderId(summary.source);
+  const record = store.createConversation({
+    providerId,
+    modelId: summary.model ?? modelId,
+    backendKind: getProviderRuntime(providerId).backendKind,
+  });
+  record.metadata.title = summary.title;
+  record.metadata.importedFrom = { source: summary.source, sessionId: summary.id };
+  record.messages = messages;
+  store.save(record);
+  return record;
+}
+
+/** Reuse the installed/dev launcher, while avoiding replay of startup arguments. */
+export function createSessionWorkspaceRelaunch(
+  target: string,
+  context: LaunchContext,
+  resume: { conversationId: string } | { source: string; sessionId: string },
+) {
+  const result = createWorkspaceRelaunchPlan(target, context);
+  if (!result.ok) return result;
+  const args = [
+    ...result.plan.args,
+    ...("conversationId" in resume
+      ? ["--resume", resume.conversationId]
+      : ["--import-session", `${resume.source}:${resume.sessionId}`]),
+  ];
+  return { ok: true as const, plan: { ...result.plan, args } };
 }

@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import { memo, useMemo } from "react";
+import { formatDuration, wrapCommandText, wrapPlainText } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import { normalizePlanReviewMarkdown } from "../../core/workspace/planStorage.js";
 import type { RunFileActivity } from "../../core/workspace/workspaceActivity.js";
@@ -17,24 +18,21 @@ import {
   getResponseSegmentText,
   getRunPlanText,
 } from "../../session/types.js";
-import { DashCard } from "../chrome/DashCard.js";
-import { getFriendlyActionLabel, normalizeCommand } from "../input/commandNormalize.js";
 import { getUsableShellWidth, transcriptContentIndent } from "../layout.js";
-import { MemoizedRenderMessage } from "../render/Markdown.js";
-import {
-  classifyOutput,
-  normalizeOutput,
-  sanitizeOutput,
-  sanitizeStreamChunk,
-} from "../render/outputPipeline.js";
+import { MemoizedRenderMessage, parseMarkdown } from "../render/Markdown.js";
+import { normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
 import { formatTerminalAnswerInline } from "../render/terminalAnswerFormat.js";
-import { wrapCommandText, wrapPlainText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
 import { AgentBlock } from "./AgentBlock.js";
+import { DashCard } from "./DashCard.js";
 import { formatProgressBlockBodyLines } from "./progressEntries.js";
-import { selectVisibleRunActivity } from "./runActivityView.js";
-import { coalesceConsecutiveThinking } from "./streamCoalesce.js";
+import {
+  coalesceConsecutiveThinking,
+  getFriendlyActionLabel,
+  normalizeCommand,
+  selectVisibleRunActivity,
+} from "./runActivityView.js";
 
 export type TurnOpacity = "active" | "recent" | "dim";
 
@@ -51,11 +49,6 @@ interface TurnGroupProps {
   streamMode: "assistant-first";
   verboseMode?: boolean;
   workspaceRoot?: string | null;
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 // ─── User Input Card ─────────────────────────────────────────────────────────
@@ -295,7 +288,7 @@ function PlanPanel({
 
   const formatted = useMemo(() => {
     const normalized = normalizePlanReviewMarkdown(planText, workspaceRoot);
-    return classifyOutput(normalized);
+    return parseMarkdown(normalized);
   }, [planText, workspaceRoot]);
 
   return (
@@ -470,9 +463,9 @@ function CodexResponseBlock({
 
   const formatted = useMemo(() => {
     const raw = formatTerminalAnswerInline(getResponseSegmentText(segment));
-    const sanitized = segment.status === "active" ? sanitizeStreamChunk(raw) : sanitizeOutput(raw);
+    const sanitized = sanitizeOutput(raw);
     const normalized = normalizeOutput(sanitized);
-    return classifyOutput(normalized);
+    return parseMarkdown(normalized);
   }, [segment]);
 
   const segmentStreaming = segment.status === "active";

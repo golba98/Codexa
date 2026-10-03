@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
-import type { CommandResult, CommandSpec } from "../process/CommandRunner.js";
+import { resolveVibeExecutable } from "../executables/executableResolver.js";
+import type { CommandResult, CommandSpec } from "../process/commandRunner.js";
 import type { ProviderConfig } from "../providerLauncher/types.js";
 import {
   createVibeStreamParser,
@@ -16,7 +17,6 @@ import {
   listVibeConfiguredModels,
   MISTRAL_VIBE_AUTH_MESSAGE,
   MISTRAL_VIBE_MISSING_MESSAGE,
-  resolveVibeExecutable,
   runMistralVibe,
   validateMistralVibeRoute,
 } from "./mistralVibe.js";

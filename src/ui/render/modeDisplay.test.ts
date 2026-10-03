@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { THEMES, DARK_THEME as theme } from "../theme.js";
-import { getModeDisplaySpec } from "./modeDisplay.js";
+import { getModeDisplaySpec } from "./runtimeDisplay.js";
 
 test("maps internal modes to Codex-aligned display labels", () => {
   assert.equal(getModeDisplaySpec("suggest", theme).label, "Read-only");

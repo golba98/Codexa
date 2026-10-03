@@ -1,6 +1,8 @@
 import { Box, Text, useFocus, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
-import { clampVisualText, usePanelLayout } from "../layout.js";
+import { clampVisualText } from "../../core/shared/text.js";
+import { clampIndex } from "../../core/shared/values.js";
+import { usePanelLayout } from "../layout.js";
 import { useTheme } from "../theme.js";
 import { calculateResponsivePickerViewport } from "./responsivePickerViewport.js";
 
@@ -14,10 +16,6 @@ interface SelectionPanelProps {
   onSelect: (value: string) => void;
   onHighlight?: (value: string) => void;
   onCancel: () => void;
-}
-
-function clampIndex(index: number, count: number): number {
-  return count <= 0 ? 0 : Math.max(0, Math.min(count - 1, index));
 }
 
 export function SelectionPanel({

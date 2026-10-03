@@ -7,7 +7,7 @@ import type {
   UserPromptEvent,
 } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
-import type { RenderTimelineItem } from "./Timeline.js";
+import type { RenderTimelineItem } from "./measure/types.js";
 import {
   __clearTimelineMeasureCachesForTests,
   __getStaticRowCacheSizeForTests,
