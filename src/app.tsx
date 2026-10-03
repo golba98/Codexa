@@ -52,12 +52,10 @@ import {
 import {
   APP_VERSION,
   type AuthPreference,
-  type AvailableBackend,
   type AvailableMode,
   type AvailableModel,
   estimateTokens,
   formatAuthPreferenceLabel,
-  formatBackendLabel,
   formatBusyLoaderSettingValue,
   formatModeLabel,
   formatReasoningLabel,
@@ -356,7 +354,6 @@ import {
   type PendingImportFile,
 } from "./ui/panels/AttachmentImportPanel.js";
 import { AuthPanel } from "./ui/panels/AuthPanel.js";
-import { BackendPicker } from "./ui/panels/BackendPicker.js";
 import { ExternalSessionViewer } from "./ui/panels/ExternalSessionViewer.js";
 import { ModelPickerScreen } from "./ui/panels/ModelPickerScreen.js";
 import { ModePicker } from "./ui/panels/ModePicker.js";
@@ -3039,24 +3036,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     updateRuntimeConfig,
   ]);
 
-  const setBackendWithNotice = useCallback(
-    (nextBackend: AvailableBackend) => {
-      updateRuntimeConfig((current) => ({
-        ...current,
-        provider: nextBackend,
-      }));
-      setScreen("main");
-      appendSystemEvent(
-        "Backend updated",
-        `Active backend is now ${formatBackendLabel(nextBackend)}.`,
-      );
-      if (nextBackend === "codex-subprocess") {
-        void refreshAuthStatus(false);
-      }
-    },
-    [appendSystemEvent, busy, refreshAuthStatus, updateRuntimeConfig],
-  );
-
   const setModeWithNotice = useCallback(
     (nextMode: AvailableMode) => {
       updateRuntimeConfig((current) => ({
@@ -3596,10 +3575,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     },
     [appendSystemEvent, baseLayeredConfig.diagnostics.projectRoot, busy, reloadBaseLayeredConfig],
   );
-
-  const openBackendPicker = useCallback(() => {
-    setScreen("backend-picker");
-  }, [appendSystemEvent, busy]);
 
   const probeLocalBackend = useCallback(
     (localBackend: LocalBackendId) => {
@@ -6485,11 +6460,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         case "resume":
           openResumePicker();
           return;
-        case "backend":
-          if (commandResult.value) {
-            setBackendWithNotice(commandResult.value as AvailableBackend);
-          }
-          return;
         case "model":
           if (commandResult.value) {
             setModelWithNotice(commandResult.value as AvailableModel);
@@ -6732,9 +6702,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           return;
         case "auth_status":
           void refreshAuthStatus(true);
-          return;
-        case "open_backend_picker":
-          openBackendPicker();
           return;
         case "open_provider_picker":
           openProviderPicker();
@@ -6996,7 +6963,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     modelCapabilities,
     mode,
     openAuthPanel,
-    openBackendPicker,
     openProviderPicker,
     openModePicker,
     openModelPicker,
@@ -7020,7 +6986,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     removeWritableRootWithNotice,
     setApprovalPolicyWithNotice,
     setAuthPreferenceWithNotice,
-    setBackendWithNotice,
     setNetworkAccessWithNotice,
     setModeWithNotice,
     setModelWithNotice,
@@ -7259,14 +7224,6 @@ export function App({ launchArgs, providerOverride }: AppProps) {
           }
           panel={
             <>
-              {screen === "backend-picker" && (
-                <BackendPicker
-                  currentBackend={backend}
-                  onSelect={(value) => setBackendWithNotice(value as AvailableBackend)}
-                  onCancel={() => setScreen("main")}
-                />
-              )}
-
               {screen === "workbench-panel" && (
                 <WorkbenchPanel
                   key={workbenchView}

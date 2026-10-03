@@ -78,7 +78,11 @@ test("resolves user config, trusted project config, profiles, and CLI overrides 
       },
     });
 
-    assert.equal(result.runtime.provider, "openai-native");
+    // The retired openai-native backend is ignored and falls back to the default.
+    assert.equal(result.runtime.provider, "codex-subprocess");
+    assert.ok(
+      result.diagnostics.ignoredEntries.some((entry: string) => /ubume\.backend/.test(entry)),
+    );
     assert.equal(result.runtime.model, "gpt-5.4-mini");
     assert.equal(result.runtime.reasoningLevel, "high");
     assert.equal(result.runtime.mode, "full-auto");

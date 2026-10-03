@@ -92,7 +92,7 @@ test("TranscriptShell owns native static history while AppShell remains the over
 test("App routes main chat to TranscriptShell and gates AppShell to overlays", () => {
   assert.match(appSource, /<TranscriptShell[\s\S]*visible=\{screen === "main"\}/);
   assert.match(appSource, /\{screen !== "main" && \(\s*<AppShell/);
-  assert.match(appSource, /panel=\{\s*<>\s*\{screen === "backend-picker"/);
+  assert.match(appSource, /panel=\{\s*<>\s*\{screen === "workbench-panel"/);
   assert.match(appSource, /screen === "provider-picker"/);
   assert.match(appSource, /screen === "model-picker"/);
 });

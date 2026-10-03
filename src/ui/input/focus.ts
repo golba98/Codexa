@@ -7,7 +7,6 @@ export const FOCUS_IDS = {
   externalSessionViewer: "external-session-viewer",
   resumeWorkspace: "resume-workspace",
   planReviewPanel: "plan-review-panel",
-  backendPicker: "backend-picker",
   providerPicker: "provider-picker",
   providerSetup: "provider-setup",
   modelPicker: "model-picker",
@@ -40,8 +39,6 @@ export function getFocusTargetForScreen(screen: Screen): FocusTargetId {
       return FOCUS_IDS.externalSessionViewer;
     case "resume-workspace":
       return FOCUS_IDS.resumeWorkspace;
-    case "backend-picker":
-      return FOCUS_IDS.backendPicker;
     case "provider-picker":
       return FOCUS_IDS.providerPicker;
     case "provider-setup":

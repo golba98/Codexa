@@ -13,7 +13,6 @@ export type Screen =
   | "workbench-panel"
   | "model-picker"
   | "mode-picker"
-  | "backend-picker"
   | "provider-picker"
   | "provider-setup"
   | "auth-panel"

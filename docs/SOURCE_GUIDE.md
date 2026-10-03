@@ -251,7 +251,6 @@ Preserve the BackendProvider callback contract, structured stream ordering, canc
 | `src/core/providers/codexSubprocess.ts` | Implements the runnable Codex backend, spawning the CLI and adapting its streams to BackendRunHandlers. |
 | `src/core/providers/codexTranscript.test.ts` | Verifies codex Transcript behavior and regression contracts in the core/providers area. |
 | `src/core/providers/codexTranscript.ts` | Parses human/legacy Codex transcript output and filters noise while preserving response and activity ordering. |
-| `src/core/providers/openaiNative.ts` | Declares the placeholder native OpenAI backend record without exposing unsupported execution. |
 | `src/core/providers/registry.ts` | Registers low-level backends, resolves the configured/default backend, and formats backend summaries. |
 | `src/core/providers/types.ts` | Defines BackendProvider, run options, conversation history, progress updates, callbacks, and benchmark lifecycle hooks. |
 
@@ -434,7 +433,6 @@ Use shared selection/panel primitives, inject available-row budgets, preserve ke
 | `src/ui/panels/AttachmentImportPanel.test.tsx` | Verifies Attachment Import Panel behavior and regression contracts in the ui/panels area. |
 | `src/ui/panels/AttachmentImportPanel.tsx` | Confirms external attachment import and shows source/destination safety information. |
 | `src/ui/panels/AuthPanel.tsx` | Displays authentication state and login/logout guidance. |
-| `src/ui/panels/BackendPicker.tsx` | Selects the low-level backend implementation. |
 | `src/ui/panels/ModePicker.tsx` | Selects execution mode and explains its behavior. |
 | `src/ui/panels/ModelPickerProviderScope.test.tsx` | Verifies Model Picker Provider Scope behavior and regression contracts in the ui/panels area. |
 | `src/ui/panels/ModelPickerScreen.test.tsx` | Verifies Model Picker Screen behavior and regression contracts in the ui/panels area. |

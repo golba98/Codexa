@@ -13,12 +13,10 @@ import {
 } from "../config/runtimeConfig.js";
 import {
   AUTH_PREFERENCES,
-  AVAILABLE_BACKENDS,
   AVAILABLE_THEMES,
   BUSY_LOADER_SETTING_VALUES,
   type BusyLoaderSettingValue,
   formatAuthPreferenceLabel,
-  formatBackendLabel,
   formatModeCommandHelp,
   formatModeLabel,
   formatReasoningLabel,
@@ -355,7 +353,6 @@ function buildHelpMessage(context: CommandContext): string {
     "  /rewind            Preview conversation/file recovery",
     "  /send-now          Interrupt and send queued instructions",
     "  /diagnose github|providers   Run diagnostics",
-    "  /backend [name]    Switch backend (no arg opens picker)",
     "  /providers         Open provider picker (/provider alias)",
     "  /route             Show workspace default and active chat route",
     "  /model [name]      Switch model (no arg opens picker)",
@@ -391,7 +388,6 @@ function buildHelpMessage(context: CommandContext): string {
     "  /auth status       Probe Ubume auth status",
     "  /login             Show guided ChatGPT subscription login steps",
     "  /logout            Show guided logout steps",
-    "  /backends          List all available backends",
     "  /models            Open model picker",
     "  /workspace         Show the locked workspace for this session",
     "  /workspace relaunch <path> Restart the app in another workspace folder",
@@ -438,21 +434,6 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
 
       case "clear":
         return { action: "clear" };
-
-      case "backend": {
-        if (!arg) return { action: "open_backend_picker" };
-        if (AVAILABLE_BACKENDS.some((item) => item.id === arg)) {
-          return {
-            action: "backend",
-            value: arg,
-            message: `Backend switched to ${formatBackendLabel(arg)}`,
-          };
-        }
-        return {
-          action: "unknown",
-          message: `Unknown backend: ${arg}. Use /backends to list available backends.`,
-        };
-      }
 
       case "providers":
       case "provider":
@@ -704,16 +685,6 @@ export function handleCommand(text: string, context: CommandContext): CommandRes
         return {
           action: "unknown",
           message: `Unknown theme: ${arg}. Use /themes to list available themes.`,
-        };
-      }
-
-      case "backends": {
-        const list = AVAILABLE_BACKENDS.map(
-          (item, index) => `  ${index + 1}. ${item.label} (${item.id})`,
-        ).join("\n");
-        return {
-          action: "backends",
-          message: `Available backends:\n${list}\n\nCurrent: ${formatBackendLabel(context.runtime.provider)}`,
         };
       }
 

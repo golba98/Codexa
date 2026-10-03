@@ -52,12 +52,6 @@ export const AVAILABLE_BACKENDS = [
     label: "Ubume Core",
     description: "Direct connection to the Ubume neural network.",
   },
-  {
-    id: "openai-native",
-    label: "OpenAI Native",
-    description:
-      "Future native provider. ChatGPT subscriptions do not automatically grant API access.",
-  },
 ] as const;
 
 export type AvailableBackend = (typeof AVAILABLE_BACKENDS)[number]["id"];
