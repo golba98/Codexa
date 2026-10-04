@@ -14,7 +14,7 @@ ubume models --provider anthropic
 ubume models --provider local --refresh
 
 ubume exec "Explain this repository"
-ubume exec --provider anthropic --file src/app.tsx "Review this file"
+ubume exec --provider anthropic --file src/app/App.tsx "Review this file"
 printf 'Explain the failing test\n' | ubume exec --stdin
 ubume exec --no-save "Answer a one-off question"
 
@@ -22,7 +22,7 @@ ubume sessions list
 ubume sessions show chat_example
 ubume sessions transcript chat_example
 ubume sessions diff chat_example
-ubume sessions diff chat_example --turn 2 --file src/app.tsx
+ubume sessions diff chat_example --turn 2 --file src/app/App.tsx
 ubume exec --resume chat_example "Continue with the next fix"
 ubume --cwd /path/to/project status --json
 ```

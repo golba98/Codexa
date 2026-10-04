@@ -1,11 +1,11 @@
-export interface TerminalCapabilityInput {
+interface TerminalCapabilityInput {
   stdinIsTTY: boolean;
   stdoutIsTTY: boolean;
   platform: NodeJS.Platform | string;
   env: Record<string, string | undefined>;
 }
 
-export interface TerminalCapabilityResult {
+interface TerminalCapabilityResult {
   supported: boolean;
   reason: "supported" | "notty" | "unsupported-terminal";
   message: string;

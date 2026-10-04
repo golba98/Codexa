@@ -5,19 +5,27 @@ import { Box, render, Text } from "ink";
 import type React from "react";
 import { buildRuntimeSummary } from "../../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../../config/settings.js";
+import type { CodexAuthState } from "../../core/codex/codexAuth.js";
 import type { Screen, TimelineEvent, UIState } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
-import { createLayoutSnapshot, useTerminalViewport } from "../layout.js";
+import {
+  createLayoutSnapshot,
+  getShellWidth,
+  type Layout,
+  useTerminalViewport,
+} from "../layout.js";
 import { measurePlanActionPickerRows, PlanActionPicker } from "../panels/PlanActionPicker.js";
 import { ThemeProvider } from "../theme.js";
-import { buildStaticIntroRows, StaticIntroItem } from "../timeline/StaticIntroItem.js";
+import { buildIntroRenderItem } from "../timeline/timelineItems.js";
+import { buildTimelineSnapshot, type TimelineRow } from "../timeline/timelineMeasure.js";
 import {
   AppShell,
   calculateColdStartSpacerRows,
   calculateHeaderToContentGapRows,
   calculateNativeSpacerRows,
 } from "./AppShell.js";
-import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
+import { BottomComposer } from "./BottomComposer.js";
+import { measureBottomComposerRows } from "./composer/composerModel.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -171,17 +179,9 @@ function renderShell(
             onChangeInput={() => {}}
             onSubmit={() => {}}
             onCancel={() => {}}
-            onChangeValue={() => {}}
-            onChangeCursor={() => {}}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -247,18 +247,10 @@ test("header omits model/context while composer status row renders active model 
       onChangeInput={() => {}}
       onSubmit={() => {}}
       onCancel={() => {}}
-      onChangeValue={() => {}}
-      onChangeCursor={() => {}}
       onHistoryUp={() => {}}
       onHistoryDown={() => {}}
-      onOpenBackendPicker={() => {}}
       onOpenProviderPicker={() => {}}
       onOpenModelPicker={() => {}}
-      onOpenModePicker={() => {}}
-      onOpenThemePicker={() => {}}
-      onOpenAuthPanel={() => {}}
-      onTogglePlanMode={() => {}}
-      onClear={() => {}}
       onCycleMode={() => {}}
       onQuit={() => {}}
     />
@@ -372,18 +364,10 @@ test("100x22 bottom chrome renders runtime context once below composer", async (
       onChangeInput={() => {}}
       onSubmit={() => {}}
       onCancel={() => {}}
-      onChangeValue={() => {}}
-      onChangeCursor={() => {}}
       onHistoryUp={() => {}}
       onHistoryDown={() => {}}
-      onOpenBackendPicker={() => {}}
       onOpenProviderPicker={() => {}}
       onOpenModelPicker={() => {}}
-      onOpenModePicker={() => {}}
-      onOpenThemePicker={() => {}}
-      onOpenAuthPanel={() => {}}
-      onTogglePlanMode={() => {}}
-      onClear={() => {}}
       onCycleMode={() => {}}
       onQuit={() => {}}
     />
@@ -506,17 +490,9 @@ function renderStartupShell(
             onChangeInput={() => {}}
             onSubmit={() => {}}
             onCancel={() => {}}
-            onChangeValue={() => {}}
-            onChangeCursor={() => {}}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -702,59 +678,6 @@ test("non-main panel content updates while the active screen is unchanged", asyn
     const frame = stripAnsi(output);
     assert.match(frame, /Loading model list/);
     assert.match(frame, /Interactive model list/);
-  } finally {
-    instance.cleanup();
-    await sleep(20);
-  }
-});
-
-test("startup intro workspace label updates when the intro component rerenders", async () => {
-  const stdin = new TestInput();
-  const stdout = new TestOutput();
-  let output = "";
-
-  stdout.on("data", (chunk) => {
-    output += chunk.toString();
-  });
-
-  const layout = createLayoutSnapshot(120, 34);
-  const instance = render(
-    <ThemeProvider theme="purple">
-      <StaticIntroItem
-        authState="authenticated"
-        workspaceLabel={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
-        layout={layout}
-        verboseMode={false}
-        workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
-      />
-    </ThemeProvider>,
-    {
-      stdin: stdin as unknown as NodeJS.ReadStream,
-      stdout: stdout as unknown as NodeJS.WriteStream,
-      stderr: stdout as unknown as NodeJS.WriteStream,
-      debug: true,
-      exitOnCtrlC: false,
-      patchConsole: false,
-    },
-  );
-
-  try {
-    await sleep(80);
-    instance.rerender(
-      <ThemeProvider theme="purple">
-        <StaticIntroItem
-          authState="authenticated"
-          workspaceLabel="Ubume"
-          layout={layout}
-          verboseMode={false}
-          workspaceRoot={"C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal"}
-        />
-      </ThemeProvider>,
-    );
-    await sleep(80);
-
-    const frame = stripAnsi(output);
-    assert.match(frame, /Workspace:\s*Ubume/);
   } finally {
     instance.cleanup();
     await sleep(20);
@@ -970,17 +893,9 @@ test("memoized composer re-renders when only the terminal height changes", async
         onChangeInput={() => {}}
         onSubmit={() => {}}
         onCancel={() => {}}
-        onChangeValue={() => {}}
-        onChangeCursor={() => {}}
         onHistoryUp={() => {}}
         onHistoryDown={() => {}}
-        onOpenBackendPicker={() => {}}
         onOpenModelPicker={() => {}}
-        onOpenModePicker={() => {}}
-        onOpenThemePicker={() => {}}
-        onOpenAuthPanel={() => {}}
-        onTogglePlanMode={() => {}}
-        onClear={() => {}}
         onCycleMode={() => {}}
         onQuit={() => {}}
       />
@@ -1094,17 +1009,9 @@ function buildComposerNode(layout: ReturnType<typeof createLayoutSnapshot>, uiSt
       onChangeInput={() => {}}
       onSubmit={() => {}}
       onCancel={() => {}}
-      onChangeValue={() => {}}
-      onChangeCursor={() => {}}
       onHistoryUp={() => {}}
       onHistoryDown={() => {}}
-      onOpenBackendPicker={() => {}}
       onOpenModelPicker={() => {}}
-      onOpenModePicker={() => {}}
-      onOpenThemePicker={() => {}}
-      onOpenAuthPanel={() => {}}
-      onTogglePlanMode={() => {}}
-      onClear={() => {}}
       onCycleMode={() => {}}
       onQuit={() => {}}
     />
@@ -1193,7 +1100,23 @@ function assertHeaderBefore(output: string, marker: string) {
   );
 }
 
-function rowText(row: ReturnType<typeof buildStaticIntroRows>[number]): string {
+function buildStaticIntroRows(options: {
+  authState: CodexAuthState;
+  workspaceLabel: string;
+  layout: Layout;
+  verboseMode: boolean;
+  workspaceRoot: string | null;
+}): TimelineRow[] {
+  const { verboseMode, workspaceRoot, ...intro } = options;
+  return buildTimelineSnapshot([buildIntroRenderItem(intro)], {
+    totalWidth: getShellWidth(options.layout.cols),
+    verboseMode,
+    debugLabel: "static-intro",
+    workspaceRoot,
+  }).rows;
+}
+
+function rowText(row: TimelineRow): string {
   return row.spans.map((span) => span.text).join("");
 }
 
@@ -1788,7 +1711,6 @@ test("live header updates auth state during startup without transcript output", 
   await sleep(100);
 
   // Auth resolves — update to "authenticated".
-  const authUpdateOffset = raw.length;
   instance.rerender(
     buildShellNode(layout, [], { authState: "authenticated", headerConfig: headerConfigWithAuth }),
   );
@@ -2046,17 +1968,9 @@ function makeNativeShellInstance(uiState: UIState, activeEvents: TimelineEvent[]
             onChangeInput={() => {}}
             onSubmit={() => {}}
             onCancel={() => {}}
-            onChangeValue={() => {}}
-            onChangeCursor={() => {}}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -2084,22 +1998,18 @@ function makeNativeShellInstance(uiState: UIState, activeEvents: TimelineEvent[]
 }
 
 test("native mode: Page Up is not intercepted by an in-app pause indicator", async () => {
-  const { stdin, instance, getOutput, getRawLength } = makeNativeShellInstance({
+  const { stdin, instance, getOutput } = makeNativeShellInstance({
     kind: "RESPONDING",
     turnId: 1,
   });
 
   try {
     await sleep(100);
-    const beforePageUp = getRawLength();
 
     // Send Page Up escape code
     stdin.write("[5~");
     await sleep(100);
 
-    const frame = stripAnsi(
-      getOutput().slice(stripAnsi(getOutput().slice(0, beforePageUp)).length - 1),
-    );
     const output = getOutput();
     assert.doesNotMatch(
       output,

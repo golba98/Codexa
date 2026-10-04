@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { schedulePromptRunStartAfterVisibleCommit } from "./promptRunSchedule.js";
+import { schedulePromptRunStartAfterVisibleCommit } from "./liveRenderScheduler.js";
 
 function waitForTimerTurn(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));

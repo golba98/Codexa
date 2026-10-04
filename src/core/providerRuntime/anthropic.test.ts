@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
-import { buildClaudeSpawnSpec } from "../executables/claudeExecutable.js";
-import type { CommandResult, runCommand } from "../process/CommandRunner.js";
+import { buildClaudeSpawnSpec } from "../executables/executableResolver.js";
+import type { CommandResult, runCommand } from "../process/commandRunner.js";
 import {
   anthropicRuntime,
   buildClaudeCodeArgs,
@@ -256,7 +256,7 @@ test("resolver: CLAUDE_EXECUTABLE env var is used without calling where.exe", as
     });
 
     // Manually test the resolver (bypass the cache since we're injecting mockImpl)
-    const { resolveClaudeExecutable } = await import("../executables/claudeExecutable.js");
+    const { resolveClaudeExecutable } = await import("../executables/executableResolver.js");
     const resolved = await resolveClaudeExecutable({
       runCommandImpl: mockImpl,
       cwd: process.cwd(),
@@ -493,7 +493,7 @@ test("validateAnthropicRoute: ENOENT + no API key → command not found message"
   await withAnthropicEnv({}, async () => {
     const validation = await validateAnthropicRoute({
       cwd: process.cwd(),
-      runCommandImpl: mockRunCommand((executable, args) => {
+      runCommandImpl: mockRunCommand((executable, _args) => {
         if (executable === "where.exe")
           return commandResult({ status: "spawn_error", exitCode: null, errorCode: "ENOENT" });
         return commandResult({ status: "spawn_error", exitCode: null, errorCode: "ENOENT" });
@@ -781,7 +781,7 @@ test("runClaudeCodeWithRunner: known stream-json verbose error falls back once t
         onError: reject,
         onProgress: (update) => progress.push(update.text),
       },
-      mockRunCommand((executable, args) => {
+      mockRunCommand((_executable, args) => {
         calls.push(args);
         if (args.includes("stream-json")) {
           return commandResult({
@@ -829,7 +829,7 @@ test("runClaudeCodeWithRunner: invalid Claude effort falls back to model default
         onError: reject,
         onProgress: (update) => progress.push(update.text),
       },
-      mockRunCommand((executable, args) => {
+      mockRunCommand((_executable, args) => {
         calls.push(args);
         if (args.includes("--effort") && args[args.indexOf("--effort") + 1] === "max") {
           return commandResult({
@@ -875,7 +875,7 @@ test("runClaudeCodeWithRunner: invalid medium effort reports error without loopi
         onResponse: () => assert.fail("unexpected response"),
         onError: (message, rawOutput) => resolve({ message, rawOutput }),
       },
-      mockRunCommand((executable, args) => {
+      mockRunCommand((_executable, args) => {
         calls.push(args);
         return commandResult({
           status: "failed",
@@ -902,7 +902,7 @@ test("runClaudeCodeWithRunner: non-retryable CLI argument error reports safe com
         onResponse: () => assert.fail("unexpected response"),
         onError: (message, rawOutput) => resolve({ message, rawOutput }),
       },
-      mockRunCommand((executable, args) => {
+      mockRunCommand((_executable, args) => {
         calls.push(args);
         return commandResult({
           status: "failed",

@@ -12,7 +12,8 @@ import { createLayoutSnapshot } from "../layout.js";
 import { ThemeProvider } from "../theme.js";
 import { Timeline } from "../timeline/Timeline.js";
 import { AppShell } from "./AppShell.js";
-import { BottomComposer, measureBottomComposerRows } from "./BottomComposer.js";
+import { BottomComposer } from "./BottomComposer.js";
+import { measureBottomComposerRows } from "./composer/composerModel.js";
 
 class TestInput extends PassThrough {
   readonly isTTY = true;
@@ -196,17 +197,9 @@ function Harness({
             onChangeInput={() => {}}
             onSubmit={() => {}}
             onCancel={() => {}}
-            onChangeValue={() => {}}
-            onChangeCursor={() => {}}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -264,17 +257,9 @@ function AppShellHarness({
             onChangeInput={() => {}}
             onSubmit={() => {}}
             onCancel={() => {}}
-            onChangeValue={() => {}}
-            onChangeCursor={() => {}}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -656,7 +641,6 @@ test("THINKING -> RESPONDING -> FINALIZE_RUN preserves action rows and renders r
 
   try {
     await sleep(100);
-    const beforeUpdates = readRecords(logPath);
 
     // RESPONDING
     let streamingEvents = JSON.parse(JSON.stringify(runningEvents)) as TimelineEvent[];

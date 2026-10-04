@@ -1,17 +1,20 @@
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
+import type { Theme } from "../../config/settings.js";
 import { formatModeLabel, formatReasoningLabel } from "../../config/settings.js";
 import type { CodexModelCapability } from "../../core/models/codexModelCapabilities.js";
-import type { ModelSpec } from "../../core/models/modelSpecs.js";
 import { getAntigravityModelLabel } from "../../core/providerRuntime/antigravity.js";
 import { CODEXA_NATIVE_MODEL_ID } from "../../core/providerRuntime/codexaNative.js";
-import type { ModelContextMetadata } from "../../core/providerRuntime/contextMetadata.js";
+import type {
+  ModelContextMetadata,
+  ModelSpec,
+} from "../../core/providerRuntime/contextMetadata.js";
 import {
   contextMetadataToModelSpec,
   formatContextCompact,
 } from "../../core/providerRuntime/contextMetadata.js";
 import type { ActiveProviderRoute } from "../../core/providerRuntime/types.js";
 
-export interface ActiveRuntimeDisplayInput {
+interface ActiveRuntimeDisplayInput {
   route: ActiveProviderRoute;
   reasoningLevel: string;
   mode: string;
@@ -20,7 +23,7 @@ export interface ActiveRuntimeDisplayInput {
   contextMetadata?: ModelContextMetadata | null;
 }
 
-export interface ActiveRuntimeDisplay {
+interface ActiveRuntimeDisplay {
   providerLabel: string;
   modelDisplay: string;
   footerModelDisplay: string;
@@ -138,4 +141,54 @@ export function runtimeDisplayToSummary(
     modelLabel: display.modelDisplay,
     contextLabel: display.contextDisplay,
   };
+}
+
+interface ModeDisplaySpec {
+  label: string;
+  ringGlyph: string;
+  ringColor: string;
+  ringFill: string;
+  iconColor: string;
+  labelColor: string;
+  labelBold: boolean;
+  ringBold: boolean;
+}
+
+export function getModeDisplaySpec(mode: string, theme: Theme): ModeDisplaySpec {
+  switch (mode) {
+    case "full-auto":
+      return {
+        label: formatModeLabel(mode),
+        ringGlyph: "◉",
+        ringColor: theme.warning,
+        ringFill: theme.border,
+        iconColor: theme.warning,
+        labelColor: theme.text,
+        labelBold: true,
+        ringBold: true,
+      };
+    case "auto-edit":
+      return {
+        label: formatModeLabel(mode),
+        ringGlyph: "◎",
+        ringColor: theme.borderFocused,
+        ringFill: theme.surfaceMuted,
+        iconColor: theme.prompt,
+        labelColor: theme.text,
+        labelBold: true,
+        ringBold: false,
+      };
+    case "suggest":
+    default:
+      return {
+        label: formatModeLabel(mode),
+        ringGlyph: "○",
+        ringColor: theme.success,
+        ringFill: theme.surfaceMuted,
+        iconColor: theme.success,
+        labelColor: theme.textMuted,
+        labelBold: false,
+        ringBold: false,
+      };
+  }
 }

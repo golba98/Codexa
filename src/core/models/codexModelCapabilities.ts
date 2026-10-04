@@ -8,8 +8,8 @@ import {
 } from "../../config/settings.js";
 import { resolveCodexExecutable, spawnCodexProcess } from "../executables/codexExecutable.js";
 import type { ProviderModel } from "../providerRuntime/types.js";
-import { loadSeededCodexCapabilities } from "./codexModelsCacheSeed.js";
-import { saveCachedProviderModels } from "./providerModelCache.js";
+import { isRecord } from "../shared/values.js";
+import { loadSeededCodexCapabilities, saveCachedProviderModels } from "./modelCache.js";
 
 export type ModelCapabilitySource = "runtime" | "fallback";
 export type ModelCapabilityStatus = "ready" | "fallback";
@@ -44,14 +44,14 @@ export interface CodexModelCapabilities {
   error: string | null;
 }
 
-export interface DiscoverCodexModelCapabilitiesOptions {
+interface DiscoverCodexModelCapabilitiesOptions {
   executable?: string;
   includeHidden?: boolean;
   timeoutMs?: number;
   now?: () => number;
 }
 
-export interface GetCodexModelCapabilitiesOptions extends DiscoverCodexModelCapabilitiesOptions {
+interface GetCodexModelCapabilitiesOptions extends DiscoverCodexModelCapabilitiesOptions {
   forceRefresh?: boolean;
   ttlMs?: number;
   resolveExecutable?: typeof resolveCodexExecutable;
@@ -87,10 +87,6 @@ const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 const MODEL_LIST_LIMIT = 100;
 
 const capabilityCache = new Map<string, CapabilityCacheEntry>();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function normalizeString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -443,7 +439,7 @@ async function requestModelListFromAppServer(
   });
 }
 
-export async function discoverCodexModelCapabilities(
+async function discoverCodexModelCapabilities(
   options: DiscoverCodexModelCapabilitiesOptions = {},
 ): Promise<CodexModelCapabilities> {
   const executable = options.executable ?? (await resolveCodexExecutable());
@@ -460,7 +456,7 @@ export async function discoverCodexModelCapabilities(
 
 // Persist a successful live discovery so the next launch can seed the model
 // picker without spawning the codex app-server. Best-effort by design.
-export function persistCodexModelCapabilities(capabilities: CodexModelCapabilities): void {
+function persistCodexModelCapabilities(capabilities: CodexModelCapabilities): void {
   const models: ProviderModel[] = capabilities.models
     .filter((capability) => !capability.hidden)
     .map((capability) => ({
@@ -577,7 +573,7 @@ export function findModelCapability(
   );
 }
 
-export function isModelSelectable(
+function isModelSelectable(
   capabilities: CodexModelCapabilities | null | undefined,
   model: string,
 ): boolean {

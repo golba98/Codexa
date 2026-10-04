@@ -2,18 +2,18 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractProtobufStrings } from "./protobufText.js";
+import { clampText, titleFromText } from "../shared/text.js";
+import { isRecord } from "../shared/values.js";
+import { sameFolder } from "../workspace/workspaceRoot.js";
 import {
-  clampText,
-  isRecord,
+  extractProtobufStrings,
   type JsonRecord,
+  openReadonlyDatabase,
   parseJsonLines,
   resolveHome,
-  sameFolder,
   stringField,
-  titleFromText,
-} from "./sessionIo.js";
-import { openReadonlyDatabase, tableColumns } from "./sqlite.js";
+  tableColumns,
+} from "./storeIo.js";
 import type {
   ExternalSessionOptions,
   ExternalSessionScope,
@@ -40,7 +40,7 @@ const STEP_NOTICE =
   "Text is a best-effort extraction from Antigravity's binary format; o opens the exact view in agy.";
 const HISTORY_NOTICE = "Older Antigravity conversation: prompts only; o opens the replies in agy.";
 
-export function antigravityCliDir(options: ExternalSessionOptions = {}): string {
+function antigravityCliDir(options: ExternalSessionOptions = {}): string {
   return join(resolveHome(options), ".gemini", "antigravity-cli");
 }
 
@@ -63,7 +63,7 @@ function workspaceFolders(value: unknown): string[] {
 }
 
 /** `2026-09-30 02:59:07.896083311+00:00` → ISO (nanoseconds trimmed to milliseconds). */
-export function parseAntigravityTime(value: unknown): string {
+function parseAntigravityTime(value: unknown): string {
   if (typeof value !== "string") return new Date(0).toISOString();
   const normalized = value
     .trim()

@@ -1,4 +1,6 @@
 import type { RunToolActivity } from "../../session/types.js";
+import { normalizeLineBreaks } from "../shared/text.js";
+import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 
 const ANSI_ESCAPE_PATTERN =
   // Strip ANSI color/control sequences before attempting transcript parsing.
@@ -102,11 +104,6 @@ export function createStdoutSanitizer(): {
   process(chunk: string): string;
   flush(): string;
 } {
-  // Lazy-import to avoid circular deps at module parse time.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { sanitizeTerminalOutput } =
-    require("../terminal/terminalSanitize.js") as typeof import("../terminal/terminalSanitize.js");
-
   let carryover = "";
 
   const sanitize = (text: string): string => {
@@ -158,16 +155,14 @@ export function createStdoutSanitizer(): {
 
 type TranscriptSection = "preamble" | "task" | "user" | "assistant" | "tool_output" | "postlude";
 
-export interface CodexTranscriptStreamHandlers {
+interface CodexTranscriptStreamHandlers {
   onThinkingLine?: (line: string) => void;
   onAssistantDelta?: (chunk: string) => void;
   onToolActivity?: (activity: RunToolActivity) => void;
 }
 
-export function normalizeLines(raw: string): string[] {
-  return stripNonPrintableControls(stripAnsi(raw))
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
+function normalizeLines(raw: string): string[] {
+  return normalizeLineBreaks(stripNonPrintableControls(stripAnsi(raw)))
     .split("\n")
     .map((line) => line.replace(/\s+$/g, ""));
 }
@@ -515,7 +510,7 @@ export function createCodexTranscriptStreamParser(handlers: CodexTranscriptStrea
     }
 
     pending += chunk;
-    const normalized = pending.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const normalized = normalizeLineBreaks(pending);
     const lines = normalized.split("\n");
     pending = lines.pop() ?? "";
 

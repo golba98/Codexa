@@ -1,24 +1,29 @@
-import { loadSeededOpenAiModels } from "../models/codexModelsCacheSeed.js";
+import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
 import {
   loadCachedProviderModels,
+  loadSeededOpenAiModels,
   saveCachedProviderModels,
-} from "../models/providerModelCache.js";
+} from "../models/modelCache.js";
 import type {
   ProviderActiveRoute,
   ProviderId,
+  ProviderWorkspaceConfig,
   ProviderWorkspaceOverride,
 } from "../providerLauncher/types.js";
 import { codexSubprocessProvider } from "../providers/codexSubprocess.js";
-import type { BackendRunHandlers } from "../providers/types.js";
+import type { BackendProvider, BackendRunHandlers } from "../providers/types.js";
 import { isLocalDevChannel } from "../version/channel.js";
+import type {
+  LocalHarnessSessionMetadata,
+  NativeSessionReference,
+} from "../workspace/conversationStore.js";
 import { anthropicRuntime } from "./anthropic.js";
 import {
   ANTIGRAVITY_DEFAULT_MODEL_ID,
   antigravityRuntime,
   migrateAntigravityLegacyModelId,
 } from "./antigravity.js";
-import { codexaCupyRuntime } from "./codexaCupy.js";
-import { CODEXA_NATIVE_MODEL_ID, codexaNativeRuntime } from "./codexaNative.js";
+import { CODEXA_NATIVE_MODEL_ID, codexaCupyRuntime, codexaNativeRuntime } from "./codexaNative.js";
 import { geminiRuntime } from "./gemini.js";
 import { localRuntime } from "./local.js";
 import { mistralVibeRuntime } from "./mistralVibe.js";
@@ -71,24 +76,6 @@ const openAiRuntime: ProviderRuntime = {
     );
   },
 };
-
-function unavailableRuntime(providerId: ProviderId, label: string): ProviderRuntime {
-  return {
-    providerId,
-    label,
-    backendKind: "unavailable",
-    routeAvailable: false,
-    routeStatus: `${label} is available as a launcher, but in-Ubume routing is not configured yet.`,
-    launchAvailable: providerId !== "local",
-    discoverModels: (): ProviderModelDiscoveryResult => ({
-      status: "not-configured",
-      providerId,
-      backendKind: "unavailable",
-      models: [],
-      message: `${label} is available as a launcher, but in-Ubume routing is not configured yet.`,
-    }),
-  };
-}
 
 const PROVIDER_RUNTIMES: Record<ProviderId, ProviderRuntime> = {
   openai: openAiRuntime,
@@ -193,7 +180,7 @@ export async function validateProviderRouteActivation(options: {
   };
 }
 
-export function resolveGeminiModelId(selection: GeminiModelSelection): string {
+function resolveGeminiModelId(selection: GeminiModelSelection): string {
   if (selection.kind === "manual") {
     return normalizeGeminiModelId(selection.modelId);
   }
@@ -318,4 +305,128 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
   return currentOpenAiModel;
 }
 
-export const isProviderRoutableInCodexa = isProviderRoutableInUbume;
+/** Common adapter for interactive and non-interactive requests. */
+export function createRoutedProvider(
+  route: ProviderRoute,
+  backend: BackendProvider,
+  config: ProviderWorkspaceConfig,
+  localHarnessSession?: () => LocalHarnessSessionMetadata | undefined,
+  nativeSessions?: () => readonly NativeSessionReference[] | undefined,
+): BackendProvider {
+  const override = config.providers?.[route.providerId];
+  if (route.providerId === "openai")
+    return {
+      ...backend,
+      run: backend.run
+        ? (prompt, options, handlers) =>
+            backend.run!(
+              prompt,
+              {
+                ...options,
+                runtime: override?.codexCommandPath
+                  ? { ...options.runtime, codexCommandPath: override.codexCommandPath }
+                  : options.runtime,
+              },
+              handlers,
+            )
+        : undefined,
+    };
+  const provider = getProviderRuntime(route.providerId);
+  return {
+    id: backend.id,
+    label: provider.label,
+    description: provider.routeStatus,
+    authState: provider.routeAvailable ? "delegated" : "coming-soon",
+    authLabel: provider.routeAvailable ? "Configured" : "Not configured",
+    statusMessage: provider.routeStatus,
+    supportsModels: (model) => model === route.modelId,
+    run: provider.run
+      ? (prompt, options, handlers) =>
+          provider.run!(
+            {
+              prompt,
+              route,
+              runtime: effectiveProviderRuntime(options.runtime, config, route),
+              workspaceRoot: options.workspaceRoot,
+              projectInstructions: options.projectInstructions,
+              promptPolicy: options.promptPolicy,
+              claudeCommandPath: override?.claudeCommandPath,
+              antigravityCommandPath: override?.antigravityCommandPath,
+              nativeSessions: nativeSessions?.(),
+              localConfig: route.providerId === "local" ? override : undefined,
+              runIntent: options.runIntent,
+              conversationHistory: options.conversationHistory,
+              localContextCheckpoint: options.localContextCheckpoint,
+              imageAttachments: options.imageAttachments,
+              localHarnessSession:
+                route.providerId === "local" ? localHarnessSession?.() : undefined,
+            },
+            handlers,
+          )
+      : undefined,
+  };
+}
+export function effectiveProviderRuntime(
+  runtime: ResolvedRuntimeConfig,
+  config: ProviderWorkspaceConfig,
+  route: ProviderRoute,
+): ResolvedRuntimeConfig {
+  const override = config.providers?.[route.providerId];
+  return {
+    ...runtime,
+    model: route.modelId,
+    reasoningLevel: (route.reasoning ??
+      runtime.reasoningLevel) as ResolvedRuntimeConfig["reasoningLevel"],
+    ...(override?.geminiCommandPath ? { geminiCommandPath: override.geminiCommandPath } : {}),
+    ...(override?.codexCommandPath ? { codexCommandPath: override.codexCommandPath } : {}),
+  };
+}
+
+export function formatRuntimeProviderLabel(providerId: ProviderId): string {
+  if (providerId === "local") return "Local";
+  if (providerId === "codexa-native" || providerId === "codexa-cupy") return "Codexa Native";
+  if (providerId === "google") return "Google";
+  if (providerId === "anthropic") return "Anthropic";
+  if (providerId === "mistral") return "Mistral Vibe CLI";
+  if (providerId === "antigravity") return "Antigravity";
+  return "OpenAI";
+}
+
+export interface ProviderSetupPlan {
+  installCommand: string | null;
+  setupCommand: string;
+}
+
+export function getProviderSetupPlan(providerId: ProviderId, windows: boolean): ProviderSetupPlan {
+  switch (providerId) {
+    case "openai":
+      return { installCommand: "npm install -g @openai/codex", setupCommand: "codex login" };
+    case "anthropic":
+      return { installCommand: "npm install -g @anthropic-ai/claude-code", setupCommand: "claude" };
+    case "google":
+      return { installCommand: "npm install -g @google/gemini-cli", setupCommand: "gemini" };
+    case "mistral":
+      return windows
+        ? {
+            installCommand:
+              "if (Get-Command uv -ErrorAction SilentlyContinue) { uv tool install mistral-vibe } else { irm https://astral.sh/uv/install.ps1 | iex; uv tool install mistral-vibe }",
+            setupCommand: "vibe --setup",
+          }
+        : {
+            installCommand: "curl -LsSf https://mistral.ai/vibe/install.sh | bash",
+            setupCommand: "vibe --setup",
+          };
+    case "antigravity":
+      return windows
+        ? {
+            installCommand: "irm https://antigravity.google/cli/install.ps1 | iex",
+            setupCommand: "agy",
+          }
+        : {
+            installCommand: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+            setupCommand: "agy",
+          };
+    default:
+      return { installCommand: null, setupCommand: "" };
+  }
+}

@@ -1,4 +1,5 @@
 import type { ProviderId, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
+import { isRecord } from "../shared/values.js";
 
 export type CapabilitySource =
   | "api"
@@ -25,7 +26,7 @@ export interface ModelCapabilityProfile {
   error?: string;
 }
 
-export interface ResolveModelCapabilityProfileOptions {
+interface ResolveModelCapabilityProfileOptions {
   providerId: ProviderId;
   modelId: string;
   providerConfig?: ProviderWorkspaceOverride | null;
@@ -91,10 +92,6 @@ const MODEL_IDENTITY_FIELDS = [
 ] as const;
 
 const capabilityCache = new Map<string, ModelCapabilityProfile>();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function validBoolean(value: unknown): boolean | null {
   if (value === true || value === false) return value;

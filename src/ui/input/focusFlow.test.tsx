@@ -16,14 +16,14 @@ import {
   getSelectableModelCapabilities,
 } from "../../core/models/codexModelCapabilities.js";
 import { buildProviderRegistry } from "../../core/providerLauncher/registry.js";
-import { BottomComposer, isBacktabSequence } from "../chrome/BottomComposer.js";
+import { BottomComposer } from "../chrome/BottomComposer.js";
+import { isBacktabSequence } from "../chrome/composer/composerKeymap.js";
 import { createLayoutSnapshot } from "../layout.js";
 import { ModelPickerScreen } from "../panels/ModelPickerScreen.js";
 import { PlanActionPicker } from "../panels/PlanActionPicker.js";
 import { ProviderPicker } from "../panels/ProviderPicker.js";
 import { TextEntryPanel } from "../panels/TextEntryPanel.js";
-import { ThemeProvider } from "../theme.js";
-import { shouldBumpComposerInstance } from "../themeFlow.js";
+import { shouldBumpComposerInstance, ThemeProvider } from "../theme.js";
 import { getFocusTargetForScreen } from "./focus.js";
 
 class TestInput extends PassThrough {
@@ -268,17 +268,9 @@ function ModelPickerComposerHarness() {
           }}
           onSubmit={() => {}}
           onCancel={() => {}}
-          onChangeValue={setValue}
-          onChangeCursor={setCursor}
           onHistoryUp={() => {}}
           onHistoryDown={() => {}}
-          onOpenBackendPicker={() => {}}
           onOpenModelPicker={() => {}}
-          onOpenModePicker={() => {}}
-          onOpenThemePicker={() => {}}
-          onOpenAuthPanel={() => {}}
-          onTogglePlanMode={() => {}}
-          onClear={() => {}}
           onCycleMode={() => {}}
           onQuit={() => {}}
         />
@@ -318,17 +310,9 @@ function PasteComposerHarness({
             setSubmitCount((count) => count + 1);
           }}
           onCancel={() => {}}
-          onChangeValue={setValue}
-          onChangeCursor={setCursor}
           onHistoryUp={() => {}}
           onHistoryDown={() => {}}
-          onOpenBackendPicker={() => {}}
           onOpenModelPicker={() => {}}
-          onOpenModePicker={() => {}}
-          onOpenThemePicker={() => {}}
-          onOpenAuthPanel={() => {}}
-          onTogglePlanMode={() => {}}
-          onClear={() => {}}
           onCycleMode={() => {}}
           onInterrupt={onInterrupt}
           onRedraw={onRedraw}
@@ -368,17 +352,9 @@ function PlanToggleComposerHarness() {
             setSubmitCount((count) => count + 1);
           }}
           onCancel={() => {}}
-          onChangeValue={setValue}
-          onChangeCursor={setCursor}
           onHistoryUp={() => {}}
           onHistoryDown={() => {}}
-          onOpenBackendPicker={() => {}}
           onOpenModelPicker={() => {}}
-          onOpenModePicker={() => {}}
-          onOpenThemePicker={() => {}}
-          onOpenAuthPanel={() => {}}
-          onTogglePlanMode={() => setPlanMode((current) => !current)}
-          onClear={() => {}}
           onCycleMode={() => {
             const next = getNextRotatingMode(mode, planMode);
             setMode(next.mode);
@@ -454,17 +430,9 @@ function ShortcutModelPickerHarness() {
               setSubmitCount((count) => count + 1);
             }}
             onCancel={() => {}}
-            onChangeValue={setValue}
-            onChangeCursor={setCursor}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => setScreen("model-picker")}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -530,17 +498,9 @@ function ShortcutProviderPickerHarness() {
               setCursor(0);
             }}
             onCancel={() => {}}
-            onChangeValue={setValue}
-            onChangeCursor={setCursor}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -629,21 +589,13 @@ function ShortcutModelReasoningPickerHarness({
               setCursor(0);
             }}
             onCancel={() => {}}
-            onChangeValue={setValue}
-            onChangeCursor={setCursor}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() =>
               setScreen((currentScreen) =>
                 currentScreen === "model-picker" ? currentScreen : "model-picker",
               )
             }
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />

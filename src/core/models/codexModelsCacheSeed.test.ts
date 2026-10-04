@@ -7,8 +7,8 @@ import {
   loadCodexSeedModels,
   loadSeededCodexCapabilities,
   loadSeededOpenAiModels,
-} from "./codexModelsCacheSeed.js";
-import { saveCachedProviderModels } from "./providerModelCache.js";
+  saveCachedProviderModels,
+} from "./modelCache.js";
 
 // Mirrors the real ~/.codex/models_cache.json shape written by codex-cli.
 const SEED_FIXTURE = {
@@ -177,5 +177,19 @@ test("returns null capabilities when no cache exists anywhere", () => {
       }),
       null,
     );
+  });
+});
+
+test("reads the codex cache from CODEX_HOME when it is set", () => {
+  withTempDir((dir) => {
+    const previous = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = dir;
+    try {
+      writeFileSync(join(dir, "models_cache.json"), JSON.stringify(SEED_FIXTURE), "utf8");
+      assert.equal(loadCodexSeedModels()?.models[0]?.modelId, "gpt-5.6-sol");
+    } finally {
+      if (previous === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = previous;
+    }
   });
 });

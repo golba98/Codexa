@@ -1,4 +1,4 @@
-export interface SlashCommandSuggestion {
+interface SlashCommandSuggestion {
   cmd: string;
   desc: string;
   aliases?: readonly string[];
@@ -13,7 +13,6 @@ export const SLASH_COMMANDS = [
   { cmd: "/models", desc: "Open model picker" },
   { cmd: "/mode", desc: "Change execution mode" },
   { cmd: "/route", desc: "Show active chat route" },
-  { cmd: "/backend", desc: "Change active backend" },
   { cmd: "/reasoning", desc: "Change reasoning level" },
   { cmd: "/plan", desc: "Show or toggle session plan mode" },
   { cmd: "/settings", desc: "Open the settings picker", aliases: ["/setting"] },

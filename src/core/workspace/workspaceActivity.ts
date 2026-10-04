@@ -1,9 +1,10 @@
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join, relative, sep } from "path";
+import { normalizeLineBreaks } from "../shared/text.js";
 import { SCRATCH_RELATIVE_DIR } from "./scratchDir.js";
 
 export type RunFileOperation = "created" | "modified" | "deleted";
-export type RunDiffLineKind = "added" | "removed";
+type RunDiffLineKind = "added" | "removed";
 
 export interface RunDiffLine {
   kind: RunDiffLineKind;
@@ -27,18 +28,18 @@ export interface RunActivitySummary {
   recent: RunFileActivity[];
 }
 
-export interface WorkspaceActivityTracker {
+interface WorkspaceActivityTracker {
   stop: () => void;
 }
 
-export interface WorkspaceActivityTrackerOptions {
+interface WorkspaceActivityTrackerOptions {
   rootDir: string;
   onActivity: (activity: RunFileActivity[]) => void;
   pollIntervalMs?: number;
   initialSnapshot?: Map<string, WorkspaceFileSnapshot>;
 }
 
-export interface WorkspaceFileSnapshot {
+interface WorkspaceFileSnapshot {
   path: string;
   mtimeMs: number;
   size: number;
@@ -121,7 +122,7 @@ function readTrackedFileContent(path: string, size: number): string | undefined 
 
   const buffer = readFileSync(path);
   if (isBinaryBuffer(buffer)) return undefined;
-  return buffer.toString("utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return normalizeLineBreaks(buffer.toString("utf8"));
 }
 
 function splitTextLines(text: string): string[] {

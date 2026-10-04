@@ -12,6 +12,8 @@ import type {
   BackendRunHandlers,
   ProviderRunControl,
 } from "../core/providers/types.js";
+import { normalizeLineBreaks } from "../core/shared/text.js";
+import { errorMessage } from "../core/shared/values.js";
 import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
 import type { ConversationRecord } from "../core/workspace/conversationStore.js";
 import {
@@ -25,7 +27,6 @@ import { resolveExecutionContext } from "./context.js";
 
 // ─── Types & constants ────────────────────────────────────────────────────────
 
-export const HEADLESS_EXEC_PARSE_ERROR = 2;
 export const HEADLESS_EXEC_PROVIDER_UNAVAILABLE = 3;
 export const HEADLESS_EXEC_RUN_FAILED = 1;
 
@@ -53,7 +54,7 @@ export interface HeadlessExecResult {
   error?: string;
 }
 
-export interface HeadlessExecDependencies {
+interface HeadlessExecDependencies {
   resolveWorkspaceRoot: () => string;
   resolveLayeredConfig: (options: {
     workspaceRoot: string;
@@ -64,7 +65,7 @@ export interface HeadlessExecDependencies {
   loadProjectInstructions: (workspaceRoot: string) => ProjectInstructionsLoadResult;
 }
 
-export type HeadlessExecTimingValue = string | number | boolean | null | readonly string[];
+type HeadlessExecTimingValue = string | number | boolean | null | readonly string[];
 
 export interface HeadlessExecTiming {
   enabled: boolean;
@@ -104,8 +105,6 @@ export function createHeadlessExecTiming(options: {
   };
 }
 
-export const createHeadlessBenchmarkDiagnostics = createHeadlessExecTiming;
-
 const DEFAULT_DEPENDENCIES: HeadlessExecDependencies = {
   resolveWorkspaceRoot,
   resolveLayeredConfig,
@@ -121,7 +120,7 @@ function writeLine(stream: Pick<NodeJS.WriteStream, "write">, line: string): voi
 }
 
 function formatDiagnosticText(value: string): string {
-  return sanitizeTerminalOutput(value).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  return normalizeLineBreaks(sanitizeTerminalOutput(value)).trim();
 }
 
 function writeDiagnostic(
@@ -161,9 +160,7 @@ function isProcessTerminationNoise(line: string): boolean {
 }
 
 function shouldSuppressAssistantChunk(chunk: string): boolean {
-  const lines = chunk
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
+  const lines = normalizeLineBreaks(chunk)
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
@@ -412,8 +409,8 @@ export async function runHeadlessExec(
       };
       if (options.signal?.aborted) cleanup();
     } catch (error) {
-      writeDiagnostic(io.stderr, "error", error instanceof Error ? error.message : String(error));
-      settle(HEADLESS_EXEC_RUN_FAILED, error instanceof Error ? error.message : String(error));
+      writeDiagnostic(io.stderr, "error", errorMessage(error));
+      settle(HEADLESS_EXEC_RUN_FAILED, errorMessage(error));
     }
   });
   try {

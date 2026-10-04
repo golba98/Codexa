@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getTextWidth, splitTextAtColumn } from "../render/textLayout.js";
-import { createImageAttachmentToken } from "./imageAttachments.js";
+import { getTextWidth, splitTextAtColumn } from "../../core/shared/text.js";
 import {
   COMPOSER_ROW_CHROME,
   clampScrollToCursor,
@@ -20,6 +19,7 @@ import {
 } from "./inputBuffer.js";
 import {
   createAtomicContentToken,
+  createImageAttachmentToken,
   deleteAdjacentPastedContent,
   moveAcrossPastedContent,
 } from "./pastedContent.js";

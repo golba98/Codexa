@@ -4,7 +4,7 @@ import type { SettingDefinition } from "../../config/settings.js";
 import type { FocusTargetId } from "../input/focus.js";
 import { useTheme } from "../theme.js";
 
-export interface SettingsPanelProps<TKey extends string> {
+interface SettingsPanelProps<TKey extends string> {
   focusId: FocusTargetId;
   title?: string;
   settings: readonly SettingDefinition<TKey, string>[];

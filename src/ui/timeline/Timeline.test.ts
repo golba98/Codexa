@@ -1,34 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { CodexAuthState } from "../../core/codex/codexAuth.js";
+import { getTextWidth } from "../../core/shared/text.js";
 import type { RunProgressEntry, TimelineEvent } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
-import { getShellWidth, getVisualWidth } from "../layout.js";
-import { buildStaticIntroRows } from "./StaticIntroItem.js";
+import { getShellWidth, type Layout } from "../layout.js";
+import type { RenderTimelineItem } from "./measure/types.js";
+
 import {
   buildActiveRenderItems,
+  buildIntroRenderItem,
   buildStaticRenderItems,
   buildTimelineItems,
-  createFinalizeContinuityViewport,
-  createFollowTailViewport,
   createTurnOpacityResolver,
-  endTimelineViewport,
-  findAnchorItem,
-  homeTimelineViewport,
-  isNearBottom,
-  pageDownTimelineViewport,
-  pageUpTimelineViewport,
-  type RenderTimelineItem,
-  reflowTimelineViewport,
   resolveTurnOpacity,
-  scrollTimelineViewport,
-  selectTimelineRows,
-  stepDownTimelineViewport,
-  stepUpTimelineViewport,
-  syncTimelineViewport,
-  type TimelineViewportState,
-} from "./Timeline.js";
+} from "./timelineItems.js";
 import type { TimelineRow, TimelineSnapshot } from "./timelineMeasure.js";
 import { buildTimelineSnapshot } from "./timelineMeasure.js";
+import {
+  createFinalizeContinuityViewport,
+  createFollowTailViewport,
+  findAnchorItem,
+  isNearBottom,
+  reflowTimelineViewport,
+  scrollTimelineViewport,
+  selectTimelineRows,
+  syncTimelineViewport,
+  type TimelineViewportState,
+} from "./timelineViewport.js";
 
 function createRow(key: string): TimelineRow {
   return {
@@ -327,6 +326,22 @@ test("Ubume intro renders as a normal timeline item", () => {
   assert.match(lines[versionLineIndex]!, /[█╔║╝]/);
 });
 
+function buildStaticIntroRows(options: {
+  authState: CodexAuthState;
+  workspaceLabel: string;
+  layout: Layout;
+  verboseMode: boolean;
+  workspaceRoot: string | null;
+}): TimelineRow[] {
+  const { verboseMode, workspaceRoot, ...intro } = options;
+  return buildTimelineSnapshot([buildIntroRenderItem(intro)], {
+    totalWidth: getShellWidth(options.layout.cols),
+    verboseMode,
+    debugLabel: "static-intro",
+    workspaceRoot,
+  }).rows;
+}
+
 test("static intro uses the padded timeline snapshot path", () => {
   const layout = {
     cols: 120,
@@ -473,7 +488,12 @@ test("first active run fallback immediately shows Codex thinking status", () => 
 
 test("keeps a frozen browse snapshot while live rows continue to arrive", () => {
   const live = createSnapshot([2, 2]);
-  const browsing = pageUpTimelineViewport(createFollowTailViewport(live.totalRows), live, 3);
+  const browsing = scrollTimelineViewport(
+    createFollowTailViewport(live.totalRows),
+    live,
+    3,
+    -Math.max(1, 3),
+  );
   const updated = createSnapshot([2, 2, 1]);
   const withUpdate = syncTimelineViewport(browsing, updated);
   const selected = selectTimelineRows(updated, withUpdate, 3);
@@ -498,7 +518,7 @@ test("page down from the frozen tail resumes live follow mode", () => {
     unseenRows: 1,
     frozenSnapshot,
   };
-  const resumed = pageDownTimelineViewport(frozenTail, live, 3);
+  const resumed = scrollTimelineViewport(frozenTail, live, 3, Math.max(1, 3));
 
   assert.equal(resumed.followTail, true);
   assert.equal(resumed.anchorRow, live.totalRows - 1);
@@ -509,16 +529,17 @@ test("wheel stepping leaves follow mode and only resumes at the frozen tail", ()
   const snapshot = createSnapshot([1, 1, 1, 1]);
   const viewportRows = 3;
 
-  const stepUp = stepUpTimelineViewport(
+  const stepUp = scrollTimelineViewport(
     createFollowTailViewport(snapshot.totalRows),
     snapshot,
     viewportRows,
+    -1,
   );
   assert.equal(stepUp.followTail, false);
   assert.equal(stepUp.anchorRow, snapshot.totalRows - 2);
   assert.equal(stepUp.frozenSnapshot?.itemCount, 4);
 
-  const stepDown = stepDownTimelineViewport(stepUp, snapshot, viewportRows);
+  const stepDown = scrollTimelineViewport(stepUp, snapshot, viewportRows, 1);
   assert.equal(stepDown.followTail, true);
   assert.equal(stepDown.anchorRow, snapshot.totalRows - 1);
   assert.equal(stepDown.frozenSnapshot, null);
@@ -526,7 +547,12 @@ test("wheel stepping leaves follow mode and only resumes at the frozen tail", ()
 
 test("manual browse snapshot survives run start and first assistant delta", () => {
   const initial = createSnapshot([1, 1, 1, 1]);
-  const browsing = stepUpTimelineViewport(createFollowTailViewport(initial.totalRows), initial, 3);
+  const browsing = scrollTimelineViewport(
+    createFollowTailViewport(initial.totalRows),
+    initial,
+    3,
+    -1,
+  );
   const afterRunStart = syncTimelineViewport(browsing, createSnapshot([1, 1, 1, 1, 1]));
   const afterFirstDelta = syncTimelineViewport(afterRunStart, createSnapshot([1, 1, 1, 1, 1, 2]));
   const selected = selectTimelineRows(createSnapshot([1, 1, 1, 1, 1, 2]), afterFirstDelta, 3);
@@ -860,9 +886,14 @@ test("completed assistant turn renders local links as compact terminal paths", (
 
 test("home anchors the browse window to the first page and end restores tail follow", () => {
   const snapshot = createSnapshot([2, 2, 2]);
-  const home = homeTimelineViewport(createFollowTailViewport(snapshot.totalRows), snapshot, 4);
+  const home = scrollTimelineViewport(
+    createFollowTailViewport(snapshot.totalRows),
+    snapshot,
+    4,
+    -snapshot.totalRows,
+  );
   const window = selectTimelineRows(snapshot, home, 4);
-  const end = endTimelineViewport(snapshot.totalRows);
+  const end = createFollowTailViewport(snapshot.totalRows);
 
   assert.equal(home.followTail, false);
   assert.equal(window.window.startRow, 0);
@@ -1053,7 +1084,12 @@ test("height decrease while scrolled up preserves bottom anchor", () => {
 test("streaming deltas while detached do not move the viewport to bottom", () => {
   const initial = createSnapshot([1, 1, 1, 1]); // 4 items, 4 rows
   // User pages up — frozen at initial snapshot
-  const browsing = pageUpTimelineViewport(createFollowTailViewport(initial.totalRows), initial, 3);
+  const browsing = scrollTimelineViewport(
+    createFollowTailViewport(initial.totalRows),
+    initial,
+    3,
+    -Math.max(1, 3),
+  );
   assert.equal(browsing.followTail, false);
 
   // Multiple streaming deltas arrive (same width — syncTimelineViewport path)
@@ -1086,7 +1122,7 @@ test("scrolling down to the frozen tail with pending unseen content resumes live
   assert.equal(withNew.unseenItems, 1);
 
   // Scroll down past frozen tail → resume follow
-  const resumed = pageDownTimelineViewport(withNew, updated, 4);
+  const resumed = scrollTimelineViewport(withNew, updated, 4, Math.max(1, 4));
   assert.equal(resumed.followTail, true);
   assert.equal(resumed.frozenSnapshot, null);
 });
@@ -2034,7 +2070,7 @@ test("long command is clipped within the compact action row", () => {
       actionText,
       /would overflow if not wrapped properly within the card border/,
     );
-    assert.ok(getVisualWidth(actionText) <= totalWidth);
+    assert.ok(getTextWidth(actionText) <= totalWidth);
   }
   assert.doesNotMatch(
     snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n"),
@@ -2066,7 +2102,7 @@ function extractCompactActionRows(snapshot: TimelineSnapshot): TimelineRow[] {
 }
 
 function assertCompactActionIntegrity(rows: TimelineRow[], totalWidth: number): void {
-  const widths = rows.map((row) => getVisualWidth(rowText(row)));
+  const widths = rows.map((row) => getTextWidth(rowText(row)));
   widths.forEach((width, index) => {
     assert.ok(
       width <= totalWidth,

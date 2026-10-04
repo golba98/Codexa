@@ -1,8 +1,8 @@
 import { Box, Text } from "ink";
 import React from "react";
-import { Panel } from "../panels/Panel.js";
 import { useTheme } from "../theme.js";
-import { type DiffRenderLineType, maybeRenderDiff } from "./diffRenderer.js";
+import type { DiffRenderLineType } from "./diffRenderer.js";
+import { maybeRenderDiff } from "./diffRenderer.js";
 import { formatLocalPathForTerminal, formatTerminalAnswerInline } from "./terminalAnswerFormat.js";
 
 // ─── Markdown parser ─────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ function parseInline(text: string): InlinePart[] {
 
 export type CodeSegment = { type: "code"; lang: string; lines: string[] };
 export type HeaderSegment = { type: "header"; level: 1 | 2 | 3; parts: InlinePart[] };
-export type ListItem = { num: number; parts: InlinePart[] };
+type ListItem = { num: number; parts: InlinePart[] };
 export type ListSegment = { type: "list"; ordered: boolean; items: ListItem[] };
 export type ParaSegment = { type: "para"; lines: InlinePart[][] };
 export type Segment = CodeSegment | HeaderSegment | ListSegment | ParaSegment;
@@ -231,7 +231,7 @@ function getDiffColor(kind: DiffRenderLineType, theme: ReturnType<typeof useThem
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function RenderMessage({
+function RenderMessage({
   segments,
   width,
   brightHeadings = false,
@@ -379,3 +379,51 @@ export const MemoizedRenderMessage = React.memo(
     prev.width === next.width &&
     prev.brightHeadings === next.brightHeadings,
 );
+
+interface PanelProps {
+  cols: number;
+  title: string;
+  rightTitle?: string;
+  borderColor?: string;
+  titleColor?: string;
+  children: React.ReactNode;
+}
+
+export function Panel({ cols, title, rightTitle, borderColor, titleColor, children }: PanelProps) {
+  const theme = useTheme();
+  const cBorder = borderColor || theme.borderFocused;
+  const cTitle = titleColor || theme.text;
+
+  const leftLabel = ` ${title} `;
+  const rightLabel = rightTitle ? ` ${rightTitle} ` : "";
+
+  // ╭─ TITLE ─── RIGHTTITLE ╮
+  // Calculate remaining dashes
+  // total length = 2 (╭─) + leftLabel + dashes + rightLabel + 1 (╮) = cols
+  // dashes = cols - 3 - leftLabel.length - rightLabel.length
+  const maxDashes = cols - 3 - leftLabel.length - rightLabel.length;
+  const dashCount = Math.max(0, maxDashes);
+
+  return (
+    <Box flexDirection="column" width={cols} overflow="hidden">
+      <Text color={cBorder}>
+        {"╭─"}
+        <Text color={cTitle}>{leftLabel}</Text>
+        {"─".repeat(dashCount)}
+        {rightTitle && <Text color={theme.textDim}>{rightLabel}</Text>}
+        {"╮"}
+      </Text>
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderTop={false}
+        borderColor={cBorder}
+        width={cols}
+        paddingX={1}
+        paddingY={0}
+      >
+        {children}
+      </Box>
+    </Box>
+  );
+}

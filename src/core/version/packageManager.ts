@@ -1,11 +1,11 @@
-import type { ChildProcess } from "child_process";
+import type { ChildProcess } from "node:child_process";
 import {
   type CommandResult,
   type CommandSpec,
   type CommandStreamHandlers,
   runCommand,
   runShellCommand,
-} from "../process/CommandRunner.js";
+} from "../process/commandRunner.js";
 import { UBUME_NPM_PACKAGE } from "./updateCheck.js";
 
 export type GlobalPackageManager = "npm" | "pnpm" | "yarn" | "bun";
@@ -61,7 +61,7 @@ export function getUpdateCommand(pm: GlobalPackageManager): {
   return { displayCommand: argv.join(" "), argv };
 }
 
-export interface RunUpdateCommandDeps {
+interface RunUpdateCommandDeps {
   platform?: NodeJS.Platform;
   cwd?: string;
   runCommandFn?: (

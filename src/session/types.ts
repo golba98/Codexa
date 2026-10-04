@@ -13,7 +13,6 @@ export type Screen =
   | "workbench-panel"
   | "model-picker"
   | "mode-picker"
-  | "backend-picker"
   | "provider-picker"
   | "provider-setup"
   | "auth-panel"
@@ -63,7 +62,7 @@ export function isBusy(state: UIState): boolean {
 
 // ─── Timeline events ─────────────────────────────────────────────────────────
 
-export interface TimelineBaseEvent {
+interface TimelineBaseEvent {
   id: number;
   createdAt: number;
 }

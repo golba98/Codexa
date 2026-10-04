@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { render } from "ink";
-import type { CommandResult } from "../../core/process/CommandRunner.js";
+import type { CommandResult } from "../../core/process/commandRunner.js";
 import type { GlobalPackageManager } from "../../core/version/packageManager.js";
 import { ThemeProvider } from "../theme.js";
 import {

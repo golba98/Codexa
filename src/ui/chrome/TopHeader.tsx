@@ -3,21 +3,20 @@ import type React from "react";
 import { memo } from "react";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../../config/settings.js";
-import type { CodexAuthState } from "../../core/auth/codexAuth.js";
-import { getAuthStateLabel } from "../../core/auth/codexAuth.js";
+import type { CodexAuthState } from "../../core/codex/codexAuth.js";
+import { getAuthStateLabel } from "../../core/codex/codexAuth.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
+import { clampVisualText, getTextWidth } from "../../core/shared/text.js";
 import { formatUbumeBrandLabel } from "../../core/version/channel.js";
 import { formatVersionLabel, UBUME_UPDATE_COMMAND } from "../../core/version/updateCheck.js";
-import { clampVisualText, isDecorativeLayoutMode, type Layout } from "../layout.js";
+import { isDecorativeLayoutMode, type Layout } from "../layout.js";
 import {
   getLogoWidth,
   LOGO_COMPACT,
-  LOGO_COMPACT_MIN_COLS,
   LOGO_LARGE,
   LOGO_LARGE_MIN_COLS,
   LOGO_LARGE_MIN_ROWS,
 } from "../render/logoVariants.js";
-import { getTextWidth } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 import { UPDATE_CARD_ROWS, UpdateAvailableCard } from "./UpdateAvailableCard.js";
 
@@ -28,9 +27,6 @@ const HEADER_PADDING_COLUMNS = 2;
 const SHELL_GUTTER_COLUMNS = 1;
 // Require 130+ cols for wide side-by-side so the UpdateAvailableCard has room.
 const WIDE_HEADER_MIN_COLUMNS = 130;
-// Require 72+ cols for medium side-by-side canonical-logo layout.
-const MEDIUM_HEADER_MIN_COLUMNS = LOGO_LARGE_MIN_COLS;
-const MIN_SIDE_BY_SIDE_METADATA_WIDTH = 18;
 const STACKED_METADATA_GAP_ROWS = 1;
 // Gap row between the UpdateAvailableCard and the metadata lines.
 const UPDATE_CARD_GAP_ROWS = 1;
@@ -38,9 +34,9 @@ const UPDATE_CARD_GAP_ROWS = 1;
 // too small to render any logo art.
 const RECOMMENDED_FULL_HEADER_HINT = `Resize to ≥${LOGO_LARGE_MIN_COLS}×${LOGO_LARGE_MIN_ROWS} for the full Ubume header`;
 
-export type HeaderHeroMode = "wide" | "medium" | "narrow" | "compact";
+type HeaderHeroMode = "wide" | "medium" | "narrow" | "compact";
 
-export interface HeaderHeroLayout {
+interface HeaderHeroLayout {
   mode: HeaderHeroMode;
   topMarginRows: number;
   bottomMarginRows: number;
@@ -124,7 +120,6 @@ export function getHeaderHeroLayout(
 ): HeaderHeroLayout {
   const { topMarginRows, bottomMarginRows } = getHeaderVerticalMargins(layout);
   const metadataRows = getMetadataRowCount(headerConfig);
-  const contentWidth = getHeaderContentWidth(layout.cols);
 
   const showNormalLogo =
     process.env["UBUME_NO_ASCII_LOGO"] !== "1" &&
@@ -144,7 +139,6 @@ export function getHeaderHeroLayout(
   }
 
   const logo = selectHeaderLogo(layout);
-  const logoWidth = logo.length > 0 ? getLogoWidth(logo) : 0;
 
   if (mode === "compact") {
     // Compact / micro text-only header.
@@ -496,12 +490,4 @@ export const MemoizedTopHeader = memo(TopHeader, (prev, next) => {
   );
 });
 
-// Minimum terminal cols to render any logo art (the compact 1-row variant).
-export const MIN_LOGO_TERMINAL_WIDTH = LOGO_COMPACT_MIN_COLS;
-
 // Re-export for consumers that reference these constants directly.
-export {
-  LOGO_COMPACT_MIN_COLS,
-  LOGO_LARGE_MIN_COLS,
-  LOGO_MEDIUM_MIN_COLS,
-} from "../render/logoVariants.js";

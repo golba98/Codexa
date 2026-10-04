@@ -1,7 +1,16 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-  "files": { "includes": ["src/**", "!src/config/buildInfo.ts"] },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "src/**",
+      "!src/config/buildInfo.ts"
+    ]
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
@@ -18,17 +27,45 @@
       "arrowParentheses": "always"
     }
   },
-  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
   "linter": {
     "enabled": true,
     "rules": {
       "recommended": false,
       "correctness": {
         "noUnusedImports": "error",
-        "noSwitchDeclarations": "error"
+        "noSwitchDeclarations": "error",
+        "noUnusedVariables": "error"
       },
-      "style": { "useImportType": "error" },
-      "suspicious": { "noExplicitAny": "warn", "noDoubleEquals": "error" }
+      "style": {
+        "useImportType": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noDoubleEquals": "error"
+      }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/test/**"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off"
+          }
+        }
+      }
+    }
+  ]
 }

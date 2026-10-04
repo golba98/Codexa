@@ -6,8 +6,6 @@ import {
   writeGuardedTerminalOutput,
 } from "./terminalTitle.js";
 
-export const TERMINAL_TITLE = APP_NAME;
-
 export const TERMINAL_SEQUENCES = {
   // \x1b[2J clears the visible viewport; \x1b[3J clears scrollback.
   hardRepaint: "\x1b[2J\x1b[H",
@@ -17,13 +15,13 @@ export const TERMINAL_SEQUENCES = {
   bracketedPasteDisable: "\x1b[?2004l",
   mouseEnable: "\x1b[?1000h\x1b[?1006h",
   mouseDisable: "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l",
-  title: `\x1b]0;${TERMINAL_TITLE}\x07\x1b]2;${TERMINAL_TITLE}\x07`,
+  title: `\x1b]0;${APP_NAME}\x07\x1b]2;${APP_NAME}\x07`,
   alternateScreenEnable: "\x1b[?1049h",
   alternateScreenDisable: "\x1b[?1049l",
 } as const;
 
-export type TerminalWrite = (chunk: string) => boolean | void;
-export type TerminalChannel = "stdout" | "stderr";
+type TerminalWrite = (chunk: string) => boolean | void;
+type TerminalChannel = "stdout" | "stderr";
 
 // Tracks whether the terminal is currently in a live resize debounce.
 let terminalResizing = false;
@@ -127,7 +125,7 @@ export function traceTerminalClear(source: string, fields: Record<string, unknow
   renderDebug.traceTerminalClear(source, fields);
 }
 
-export interface TerminalModeController {
+interface TerminalModeController {
   write(sequence: string, source: string): boolean;
   clearTranscript(source: string): void;
   clearViewport(source: string): void;

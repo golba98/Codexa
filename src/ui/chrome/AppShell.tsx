@@ -2,7 +2,7 @@ import { Box, Text } from "ink";
 import React, { memo, useEffect, useMemo, useRef } from "react";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS, type HeaderConfig } from "../../config/settings.js";
-import type { CodexAuthState } from "../../core/auth/codexAuth.js";
+import type { CodexAuthState } from "../../core/codex/codexAuth.js";
 import * as renderDebug from "../../core/perf/renderDebug.js";
 import type { Screen, TimelineEvent, UIState } from "../../session/types.js";
 import {
@@ -33,7 +33,7 @@ const TALL_HEADER_TO_COMPOSER_GAP_ROWS = 1;
 // ─── Types & constants ────────────────────────────────────────────────────────
 
 type AppShellLayout = TerminalViewport;
-export interface AppShellProps {
+interface AppShellProps {
   layout: AppShellLayout;
   screen: Screen;
   authState: CodexAuthState;
@@ -56,10 +56,6 @@ export interface AppShellProps {
 }
 
 // ─── Helpers & subcomponents ─────────────────────────────────────────────────
-
-export function isCrampedViewport(rows: number | undefined): boolean {
-  return (rows ?? 24) <= 24;
-}
 
 export function calculateNativeSpacerRows({
   shellRows,
@@ -188,7 +184,6 @@ function AppShellInner({
   headerConfig = HEADER_CONFIG_DEFAULTS,
   updateAvailable = null,
 }: AppShellProps) {
-  const theme = useTheme();
   renderDebug.useRenderDebug("AppShell", {
     cols: layout.cols,
     rows: layout.rows,
@@ -251,7 +246,6 @@ function AppShellInner({
   });
 
   const headerToContentGapRows = appLayoutBudget.headerGapRows;
-  const effectiveComposerRows = appLayoutBudget.composerRows;
   const bottomChromeRows = appLayoutBudget.bottomChromeBudget.totalRows;
 
   const finalTimelineRows = appLayoutBudget.transcriptRows;

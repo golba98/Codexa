@@ -1,14 +1,15 @@
 import { formatConversationHistory } from "../../session/conversation.js";
 import {
+  buildSpawnSpec,
   resetAgyExecutableCacheForTests,
   resolveAgyExecutable,
-} from "../executables/antigravityExecutable.js";
-import { buildSpawnSpec } from "../executables/executableResolver.js";
+} from "../executables/executableResolver.js";
 import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
-import { loadCachedProviderModels } from "../models/providerModelCache.js";
-import { runCommand } from "../process/CommandRunner.js";
+import { loadCachedProviderModels } from "../models/modelCache.js";
+import { runCommand } from "../process/commandRunner.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
+import { errorMessage } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import type {
   ProviderChatRequest,
@@ -17,8 +18,6 @@ import type {
   ProviderRouteValidationResult,
   ProviderRuntime,
 } from "./types.js";
-
-export { resetAgyExecutableCacheForTests };
 
 const ANTIGRAVITY_TIMEOUT_MS = 120_000;
 const ANTIGRAVITY_VALIDATION_TIMEOUT_MS = 10_000;
@@ -323,7 +322,7 @@ export async function discoverAgyModels(options: {
   };
 }
 
-export function isAntigravityRouteConfigured(): boolean {
+function isAntigravityRouteConfigured(): boolean {
   return agyRouteValidated;
 }
 
@@ -482,7 +481,7 @@ export function runAntigravityWithRunner(
     })
     .catch((error) => {
       control.finish();
-      const message = error instanceof Error ? error.message : "Antigravity CLI execution failed.";
+      const message = errorMessage(error, "Antigravity CLI execution failed.");
       handlers.onError(message);
     });
 
@@ -599,7 +598,7 @@ export const antigravityRuntime: ProviderRuntime = {
       })
       .catch((error) => {
         control.finish();
-        if (!cancelled) handlers.onError(error instanceof Error ? error.message : String(error));
+        if (!cancelled) handlers.onError(errorMessage(error));
       });
     control.track(lookup);
     return () => {

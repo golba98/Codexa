@@ -12,7 +12,7 @@ export type LiveRenderUpdate =
 
 type TimerHandle = ReturnType<typeof setTimeout>;
 
-export interface LiveRenderSchedulerOptions {
+interface LiveRenderSchedulerOptions {
   flush: (updates: LiveRenderUpdate[]) => void;
   assistantFlushMs: number;
   progressOnlyFlushMs: number;
@@ -20,7 +20,7 @@ export interface LiveRenderSchedulerOptions {
   clearTimer?: (timer: TimerHandle) => void;
 }
 
-export interface LiveRenderScheduler {
+interface LiveRenderScheduler {
   enqueue: (update: LiveRenderUpdate) => void;
   flushNow: () => boolean;
   cancel: () => void;
@@ -28,7 +28,7 @@ export interface LiveRenderScheduler {
   getStats: () => LiveRenderSchedulerStats;
 }
 
-export interface LiveRenderSchedulerStats {
+interface LiveRenderSchedulerStats {
   providerEvents: number;
   flushes: number;
   averageFlushIntervalMs: number;
@@ -213,5 +213,32 @@ export function createLiveRenderScheduler({
         maxFlushIntervalMs,
       };
     },
+  };
+}
+
+type CancelScheduledPromptRunStart = () => void;
+
+export function schedulePromptRunStartAfterVisibleCommit(
+  start: () => void,
+): CancelScheduledPromptRunStart {
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  queueMicrotask(() => {
+    if (cancelled) return;
+    timer = setTimeout(() => {
+      timer = null;
+      if (!cancelled) {
+        start();
+      }
+    }, 0);
+  });
+
+  return () => {
+    cancelled = true;
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
   };
 }

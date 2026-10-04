@@ -1,10 +1,22 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "app.tsx"), "utf8");
+function readAppSources(): string {
+  const root = join(dirname(fileURLToPath(import.meta.url)), "app");
+  return readdirSync(root, { recursive: true, encoding: "utf8" })
+    .filter((file) => /\.tsx?$/.test(file))
+    .sort()
+    .map((file) => readFileSync(join(root, file), "utf8"))
+    .join("\n");
+}
+const appSource = readAppSources();
+const eventIdsSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "session", "eventIds.ts"),
+  "utf8",
+);
 const appShellSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "AppShell.tsx"),
   "utf8",
@@ -14,7 +26,7 @@ const transcriptShellSource = readFileSync(
   "utf8",
 );
 const composerSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "BottomComposer.tsx"),
+  join(dirname(fileURLToPath(import.meta.url)), "ui", "chrome", "composer", "useComposerInput.ts"),
   "utf8",
 );
 const launcherSource = readFileSync(
@@ -92,7 +104,7 @@ test("TranscriptShell owns native static history while AppShell remains the over
 test("App routes main chat to TranscriptShell and gates AppShell to overlays", () => {
   assert.match(appSource, /<TranscriptShell[\s\S]*visible=\{screen === "main"\}/);
   assert.match(appSource, /\{screen !== "main" && \(\s*<AppShell/);
-  assert.match(appSource, /panel=\{\s*<>\s*\{screen === "backend-picker"/);
+  assert.match(appSource, /panel=\{\s*<OverlayPanels/);
   assert.match(appSource, /screen === "provider-picker"/);
   assert.match(appSource, /screen === "model-picker"/);
 });
@@ -137,10 +149,10 @@ test("startup update checks run before the composer can accept input", () => {
 });
 
 test("Startup provider migration notice is seeded before the first composer frame", () => {
-  assert.match(appSource, /function createStartupStaticEvents/);
+  assert.match(eventIdsSource, /function createStartupStaticEvents/);
   assert.doesNotMatch(appSource, /createLaunchModeEvent|buildDevLaunchNotice/);
   assert.match(
-    appSource,
+    eventIdsSource,
     /createProviderMigrationNoticeEvent\(providerWorkspaceConfig\.migrationNotice\)/,
   );
   assert.match(appSource, /useAppSessionState\(\(\) => \{\s*return createStartupStaticEvents\(/);
@@ -148,7 +160,7 @@ test("Startup provider migration notice is seeded before the first composer fram
     appSource,
     /providerMigrationNoticeShownRef = useRef\(\s*Boolean\(initialProviderWorkspaceConfig\.current\.migrationNotice\),?\s*\)/,
   );
-  assert.doesNotMatch(appSource, /appendSystemEvent\(\s*"Provider migrated"/);
+  assert.doesNotMatch(appSource, /appendEvent\(\s*"system"\s*,\s*"Provider migrated"/);
 });
 
 test("TranscriptShell never keeps its composer mounted while hidden behind an overlay", () => {
@@ -186,7 +198,7 @@ test("/clear and conversation resume drop the timeline row caches", () => {
 test("Settings panel workspace display save path does not append Settings transcript events", () => {
   const body = callbackBody(appSource, "saveSettingsFromPanel");
   assert.ok(body, "saveSettingsFromPanel callback should exist");
-  assert.doesNotMatch(body, /appendSystemEvent\(\s*"Settings"/);
+  assert.doesNotMatch(body, /appendEvent\(\s*"system"\s*,\s*"Settings"/);
 });
 
 test("Settings panel terminal title save path updates only persisted title state", () => {
@@ -269,11 +281,11 @@ test("/clear resolves the live Ink instance behind stdout and memoizes it", () =
   );
   assert.match(
     appSource,
-    /import \{[^}]*\bresolveInkRenderInstance\b[^}]*\} from "\.\/core\/terminal\/inkRenderReset\.js"/,
+    /import \{[^}]*\bresolveInkRenderInstance\b[^}]*\} from "\.\.\/core\/terminal\/inkRenderReset\.js"/,
   );
   assert.match(
     appSource,
-    /import \{ createClearFrameBoundaryController \} from "\.\/core\/terminal\/clearFrameBoundary\.js"/,
+    /import \{ createClearFrameBoundaryController \} from "\.\.\/core\/terminal\/clearFrameBoundary\.js"/,
   );
 });
 
@@ -286,7 +298,9 @@ test("/clear arms a fresh render generation before transcript reset", () => {
   );
   const body = callbackBody(appSource, "handleClear");
   assert.ok(body, "handleClear callback should exist");
-  const armBoundaryIndex = body.indexOf('armTranscriptReplacement("src/app.tsx:handleClear")');
+  const armBoundaryIndex = body.indexOf(
+    'armTranscriptReplacement("src/app/useComposerEditing.ts:handleClear")',
+  );
   const seedEventsIndex = body.indexOf("createStartupStaticEvents({");
   const resetToHomeIndex = body.search(/resetToHomeScreen\(\s*createStartupStaticEvents\(\{/);
   const finishIndex = body.indexOf("replacement.finish()");
@@ -314,7 +328,9 @@ test("/clear arms a fresh render generation before transcript reset", () => {
 test("/resume arms the clear boundary before swapping the transcript so the logo is not printed twice", () => {
   const body = callbackBody(appSource, "resumeConversation");
   assert.ok(body, "resumeConversation callback should exist");
-  const armIndex = body.indexOf('armTranscriptReplacement("src/app.tsx:resumeConversation")');
+  const armIndex = body.search(
+    /armTranscriptReplacement\(\s*"src\/app\/useConversation\.ts:resumeConversation"\s*,?\s*\)/,
+  );
   const swapIndex = body.indexOf('type: "RESTORE_SESSION"');
   const finishIndex = body.indexOf("replacement.finish()");
   assert.ok(armIndex >= 0, "resume should arm the clear boundary");
@@ -438,10 +454,37 @@ test("App holds a process-lifetime stdin raw-mode lease so composer shell swaps 
   // stdin into flowing mode and Ink never receives input again.
   assert.match(
     appSource,
-    /import \{ useStdinRawModeLease \} from "\.\/ui\/input\/useStdinRawModeLease\.js"/,
+    /import \{ useStdinRawModeLease \} from "\.\.\/ui\/input\/useStdinRawModeLease\.js"/,
   );
   assert.match(
     appSource,
     /const \{ stdin \} = useStdin\(\);\s*(?:\/\/[^\n]*\n\s*)*useStdinRawModeLease\(\);/,
   );
+});
+
+test("provider setup failures are titled with the provider being set up", () => {
+  const body = callbackBody(appSource, "runProviderSetup");
+  assert.ok(body, "runProviderSetup callback should exist");
+  assert.doesNotMatch(body, /"Mistral Vibe setup failed"/);
+  assert.equal(body.match(/`\$\{label\} setup failed`/g)?.length, 2);
+});
+
+test("Composer clears every raw-key timeout when its stdin listener is removed", () => {
+  const cleanup = composerSource.match(/stdin\.off\("data", handleRawInput\);([\s\S]*?)\n {4}\};/);
+  assert.ok(cleanup, "raw-input effect cleanup should exist");
+  const timeoutRefs = [...composerSource.matchAll(/const (\w+EventTimeoutRef) = useRef/g)].map(
+    (match) => match[1],
+  );
+  assert.ok(timeoutRefs.length > 0);
+  for (const ref of timeoutRefs) {
+    assert.match(cleanup[1] ?? "", new RegExp(`clearTimeout\\(${ref}\\.current\\)`), ref);
+  }
+});
+
+test("startPromptRun re-creates when the workspace provider config or auth timestamp change", () => {
+  // callbackBody spans the whole useCallback call, so the dependency array is at its end.
+  const body = callbackBody(appSource, "startPromptRun") ?? "";
+  const deps = body.slice(body.lastIndexOf("["));
+  assert.match(deps, /\bproviderWorkspaceConfig,/);
+  assert.match(deps, /\bauthStatus\.checkedAt,/);
 });

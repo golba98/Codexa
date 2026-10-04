@@ -1,13 +1,14 @@
+import { normalizeLineBreaks } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 
 export type DiffRenderLineType = "file" | "hunk" | "add" | "remove" | "context" | "meta";
 
-export interface DiffRenderLine {
+interface DiffRenderLine {
   type: DiffRenderLineType;
   text: string;
 }
 
-export interface DiffRenderOptions {
+interface DiffRenderOptions {
   force?: boolean;
 }
 
@@ -20,9 +21,7 @@ const ADD_LINE_PATTERN = /^\+(?!\+\+)/;
 const REMOVE_LINE_PATTERN = /^-(?!--)/;
 
 function normalizeDiffText(text: string): string {
-  return sanitizeTerminalOutput(text, { preserveTabs: false, tabSize: 2 })
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n");
+  return normalizeLineBreaks(sanitizeTerminalOutput(text, { preserveTabs: false, tabSize: 2 }));
 }
 
 function getDiffLines(text: string): string[] {
@@ -74,7 +73,7 @@ function shouldRenderUnifiedDiff(
   return hasStrongDiffSignal(lines) && hasRealChangeLine(lines);
 }
 
-export function classifyDiffLine(line: string): DiffRenderLineType {
+function classifyDiffLine(line: string): DiffRenderLineType {
   if (
     DIFF_GIT_HEADER_PATTERN.test(line) ||
     OLD_FILE_HEADER_PATTERN.test(line) ||

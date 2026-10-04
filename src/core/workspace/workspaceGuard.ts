@@ -23,7 +23,7 @@ export function normalizeDiagnosticPath(filePath: string): string {
   return drivePrefix + pathPart;
 }
 
-export interface WorkspacePathViolation {
+interface WorkspacePathViolation {
   rawPath: string;
   normalizedPath: string;
 }
@@ -392,4 +392,23 @@ export function getShellWorkspaceGuardMessage(
     violations,
     allowedRoots,
   );
+}
+
+const DANGEROUS_SHELL_PATTERNS: RegExp[] = [
+  /\brm\s+-[^\n;|&]*r[f]?\b/i,
+  /\bsudo\b/i,
+  /\bdoas\b/i,
+  /\bdd\s+.*\bof=/i,
+  /\bmkfs(?:\.[a-z0-9]+)?\b/i,
+  /\bshutdown\b/i,
+  /\breboot\b/i,
+  /\bpoweroff\b/i,
+  /\bchmod\s+-R\s+777\b/i,
+  /:\(\)\s*\{\s*:\|:\s*&\s*\}\s*;/,
+  />\s*\/dev\/(?:sd|hd|nvme|disk)/i,
+];
+
+/** True when a shell command matches a destructive pattern that always needs approval. */
+export function isDangerousShellCommand(command: string): boolean {
+  return DANGEROUS_SHELL_PATTERNS.some((pattern) => pattern.test(command));
 }

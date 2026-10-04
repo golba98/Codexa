@@ -1,5 +1,7 @@
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
 import type { AvailableMode } from "../../config/settings.js";
+import type { RunToolActivity } from "../../session/types.js";
+import { normalizeLineBreaks } from "../shared/text.js";
 import type { ProjectInstructions } from "../workspace/projectInstructions.js";
 
 // ─── Write-intent detection ───────────────────────────────────────────────────
@@ -21,12 +23,12 @@ const FORCEFUL_DELETE_PATTERN = /\b(rm\s+-rf|rmdir\s+\/s|del\s+\/[fsq]|format|nu
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface ExecutionModeDecision {
+interface ExecutionModeDecision {
   mode: AvailableMode;
   autoUpgraded: boolean;
 }
 
-export interface PlanningPromptParams {
+interface PlanningPromptParams {
   task: string;
   constraints?: readonly string[];
   currentPlan?: string | null;
@@ -36,13 +38,13 @@ export interface PlanningPromptParams {
   } | null;
 }
 
-export interface PlanExecutionPromptParams {
+interface PlanExecutionPromptParams {
   task: string;
   approvedPlan: string;
   constraints?: readonly string[];
 }
 
-export interface CodexPromptOptions {
+interface CodexPromptOptions {
   projectInstructions?: ProjectInstructions | null;
 }
 
@@ -99,7 +101,7 @@ export function resolveExecutionMode(
   return { mode: requestedMode, autoUpgraded: false };
 }
 
-export function enrichFileCreationPrompt(prompt: string): string {
+function enrichFileCreationPrompt(prompt: string): string {
   const normalized = prompt.trim();
   if (!normalized) return prompt;
 
@@ -438,4 +440,119 @@ export function buildCodexPrompt(
     "Task:",
     enrichedPrompt,
   ].join("\n");
+}
+
+const MESSAGES: Record<string, [string, string]> = {
+  greeting: [
+    "Task not executed — backend returned a generic greeting.",
+    "Retry with a more specific instruction.",
+  ],
+  filler: [
+    "Task not executed — backend acknowledged without acting.",
+    "Retry with a more specific instruction.",
+  ],
+  clarification: [
+    "Task not executed — backend asked for clarification instead of acting.",
+    "Rephrase with more detail, or switch to suggest mode.",
+  ],
+  "short-no-action": [
+    "No action confirmed — response too brief for a write-intent prompt.",
+    "Verify workspace files manually, or retry.",
+  ],
+};
+
+export function formatHollowResponse(
+  result: HollowResponseResult,
+  rawResponse?: string,
+  verbose?: boolean,
+): string {
+  const lines = MESSAGES[result.kind] ?? [
+    "Task not executed — unexpected backend response.",
+    "Retry with a more specific instruction.",
+  ];
+
+  let output = lines.join("\n");
+
+  if (verbose && rawResponse) {
+    output += `\n\nBackend response: ${rawResponse}`;
+  }
+
+  return output;
+}
+
+const DELETE_COMMAND_PATTERN = /(?:^|[\s;&|])(?:remove-item|rm|rmdir|del|erase|unlink)\b/i;
+
+const BLOCKED_DELETE_CAUSE_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
+  {
+    pattern: /(?:^|[\\/])\.git[\\/][^\s"'`]*\.lock\b|(?:^|[\\/])?config\.lock\b|\.lock\b/i,
+    label: "lock artifact",
+  },
+  { pattern: /\bEACCES\b/i, label: "access denied" },
+  { pattern: /\bEPERM\b/i, label: "permission denied" },
+  { pattern: /\bEBUSY\b/i, label: "file is busy or locked" },
+  {
+    pattern: /access(?:\s+to\s+the\s+path)?\s+.*?\s+denied|access is denied/i,
+    label: "access denied",
+  },
+  { pattern: /permission denied|operation not permitted/i, label: "permission denied" },
+  {
+    pattern:
+      /being used by another process|file is in use|resource busy|text file busy|device or resource busy/i,
+    label: "file is locked or in use",
+  },
+];
+
+const PATH_PATTERNS = [
+  /Access to the path ['"]([^'"]+)['"] is denied/i,
+  /(?:EPERM|EACCES|EBUSY)[^,\n\r]*,\s*(?:unlink|rmdir|rm|open|scandir)\s+['"]?([^'"\n\r]+)['"]?/i,
+  /(?:cannot|can't|failed to|unable to)\s+(?:remove|delete|unlink|rmdir)[^'"\n\r]*['"]([^'"]+)['"]/i,
+  /(?:being used by another process|file is in use|permission denied|access is denied)[^'"\n\r]*['"]([^'"]+)['"]/i,
+  /((?:\.git[\\/])?[^\s"'`]+\.lock)\b/i,
+];
+
+function normalizeText(value: string | null | undefined): string {
+  return normalizeLineBreaks(value ?? "").trim();
+}
+
+function isDeleteCommand(command: string): boolean {
+  return DELETE_COMMAND_PATTERN.test(command);
+}
+
+function findCause(text: string): string | null {
+  for (const { pattern, label } of BLOCKED_DELETE_CAUSE_PATTERNS) {
+    if (pattern.test(text)) return label;
+  }
+  return null;
+}
+
+function findBlockedPath(text: string): string | null {
+  for (const pattern of PATH_PATTERNS) {
+    const match = pattern.exec(text);
+    const path = match?.[1]?.trim();
+    if (path) return path.replace(/[.,;:]+$/g, "");
+  }
+  return null;
+}
+
+export function getBlockedCleanupFailure(activity: RunToolActivity): string | null {
+  if (activity.status !== "failed") return null;
+
+  const command = normalizeText(activity.command);
+  const summary = normalizeText(activity.summary);
+  const combined = [command, summary].filter(Boolean).join("\n");
+  if (!command || !isDeleteCommand(command)) return null;
+
+  const cause = findCause(combined);
+  if (!cause) return null;
+
+  const blockedPath = findBlockedPath(combined);
+  const target = blockedPath ? `\nBlocked item: ${blockedPath}` : "";
+  return [
+    "Cleanup stopped because a safe generated artifact could not be deleted.",
+    `Cause: ${cause}.`,
+    target,
+    "Ubume stopped after the first clear blocked-delete signal to avoid retrying a doomed cleanup.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

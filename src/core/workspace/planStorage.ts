@@ -1,8 +1,8 @@
 import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { homedir } from "os";
 import { join } from "path";
 import { isNoiseLine } from "../providers/codexTranscript.js";
+import { normalizeLineBreaks } from "../shared/text.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import { resolveUbumeDataDir } from "./appData.js";
 
@@ -24,10 +24,7 @@ function replaceAllLiteral(value: string, search: string, replacement: string): 
  * Strips absolute filesystem paths from plan text, replacing them with
  * relative paths or truncated versions to protect user privacy.
  */
-export function hidePlanReviewFilesystemDetails(
-  planText: string,
-  workspaceRoot?: string | null,
-): string {
+function hidePlanReviewFilesystemDetails(planText: string, workspaceRoot?: string | null): string {
   let output = planText;
   const normalizedRoot = workspaceRoot?.trim()
     ? normalizePathSeparators(workspaceRoot.trim()).replace(/\/+$/, "")
@@ -58,15 +55,12 @@ export function normalizePlanReviewMarkdown(
   planText: string,
   workspaceRoot?: string | null,
 ): string {
-  const sanitized = sanitizeTerminalOutput(
-    hidePlanReviewFilesystemDetails(planText, workspaceRoot),
-    {
+  const sanitized = normalizeLineBreaks(
+    sanitizeTerminalOutput(hidePlanReviewFilesystemDetails(planText, workspaceRoot), {
       preserveTabs: false,
       tabSize: 2,
-    },
+    }),
   )
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
     .replace(/\n{4,}/g, "\n\n\n")
     .split("\n")
     .filter((line) => !isNoiseLine(line))
@@ -93,17 +87,7 @@ export function resolvePlanDir(platformOverride?: Platform): string {
   const envDir = process.env["UBUME_PLAN_DIR"] || process.env["CODEXA_PLAN_DIR"];
   if (envDir) return envDir;
 
-  const platform = platformOverride ?? process.platform;
-
-  if (platform === "win32") {
-    const localAppData = process.env["LOCALAPPDATA"];
-    if (localAppData) return join(localAppData, "Ubume", "plans");
-    const appData = process.env["APPDATA"];
-    if (appData) return join(appData, "Ubume", "plans");
-    return join(homedir(), "AppData", "Local", "Ubume", "plans");
-  }
-
-  return join(resolveUbumeDataDir(platform), "plans");
+  return join(resolveUbumeDataDir(platformOverride ?? process.platform), "plans");
 }
 
 // SHA-256 of the workspace path ensures filename uniqueness across projects with the same name.

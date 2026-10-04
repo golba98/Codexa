@@ -1,6 +1,6 @@
-import { spawn } from "child_process";
-import { join } from "path";
-import type { runCommand } from "../process/CommandRunner.js";
+import { spawn } from "node:child_process";
+import { join } from "node:path";
+import type { runCommand } from "../process/commandRunner.js";
 import { buildSpawnSpec, resolveExecutable } from "./executableResolver.js";
 
 type CommandRunner = typeof runCommand;
@@ -13,7 +13,7 @@ interface SpawnOptions {
   stdio: ["ignore" | "pipe", "pipe", "pipe"];
 }
 
-export interface CapturedProcessOutput {
+interface CapturedProcessOutput {
   exitCode: number | null;
   stdout: string;
   stderr: string;

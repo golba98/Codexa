@@ -4,7 +4,7 @@ import test from "node:test";
 import { render } from "ink";
 import { buildRuntimeSummary } from "../../config/runtimeConfig.js";
 import { HEADER_CONFIG_DEFAULTS } from "../../config/settings.js";
-import type { CommandResult } from "../../core/process/CommandRunner.js";
+import type { CommandResult } from "../../core/process/commandRunner.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
 import { createTerminalViewport } from "../layout.js";
 import { ProviderPicker } from "../panels/ProviderPicker.js";
@@ -137,17 +137,9 @@ test("AppShell renders ProviderPicker with all 5 providers at normal standard si
             onChangeInput={() => {}}
             onSubmit={() => {}}
             onCancel={() => {}}
-            onChangeValue={() => {}}
-            onChangeCursor={() => {}}
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
-            onOpenBackendPicker={() => {}}
             onOpenModelPicker={() => {}}
-            onOpenModePicker={() => {}}
-            onOpenThemePicker={() => {}}
-            onOpenAuthPanel={() => {}}
-            onTogglePlanMode={() => {}}
-            onClear={() => {}}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -239,17 +231,9 @@ test("canceling an install leaves the complete updater shell visible", async () 
       onChangeInput={() => {}}
       onSubmit={() => {}}
       onCancel={() => {}}
-      onChangeValue={() => {}}
-      onChangeCursor={() => {}}
       onHistoryUp={() => {}}
       onHistoryDown={() => {}}
-      onOpenBackendPicker={() => {}}
       onOpenModelPicker={() => {}}
-      onOpenModePicker={() => {}}
-      onOpenThemePicker={() => {}}
-      onOpenAuthPanel={() => {}}
-      onTogglePlanMode={() => {}}
-      onClear={() => {}}
       onCycleMode={() => {}}
       onQuit={() => {}}
     />

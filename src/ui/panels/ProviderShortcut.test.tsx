@@ -45,20 +45,12 @@ test("Ctrl+Alt+P raw escape sequence opens provider picker", async () => {
         onChangeInput={() => {}}
         onSubmit={() => {}}
         onCancel={() => {}}
-        onChangeValue={() => {}}
-        onChangeCursor={() => {}}
         onHistoryUp={() => {}}
         onHistoryDown={() => {}}
-        onOpenBackendPicker={() => {}}
         onOpenProviderPicker={() => {
           providerPickerOpened = true;
         }}
         onOpenModelPicker={() => {}}
-        onOpenModePicker={() => {}}
-        onOpenThemePicker={() => {}}
-        onOpenAuthPanel={() => {}}
-        onTogglePlanMode={() => {}}
-        onClear={() => {}}
         onCycleMode={() => {}}
         onQuit={() => {}}
       />
@@ -109,20 +101,12 @@ test("Ctrl+Alt+P CSI u sequence opens provider picker", async () => {
         onChangeInput={() => {}}
         onSubmit={() => {}}
         onCancel={() => {}}
-        onChangeValue={() => {}}
-        onChangeCursor={() => {}}
         onHistoryUp={() => {}}
         onHistoryDown={() => {}}
-        onOpenBackendPicker={() => {}}
         onOpenProviderPicker={() => {
           providerPickerOpened = true;
         }}
         onOpenModelPicker={() => {}}
-        onOpenModePicker={() => {}}
-        onOpenThemePicker={() => {}}
-        onOpenAuthPanel={() => {}}
-        onTogglePlanMode={() => {}}
-        onClear={() => {}}
         onCycleMode={() => {}}
         onQuit={() => {}}
       />

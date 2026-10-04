@@ -1,6 +1,6 @@
 import { Box, Text, useFocus, useInput, useStdin } from "ink";
 import { useEffect, useRef, useState } from "react";
-import type { CommandResult, CommandStreamHandlers } from "../../core/process/CommandRunner.js";
+import type { CommandResult, CommandStreamHandlers } from "../../core/process/commandRunner.js";
 import {
   formatPermissionGuidance,
   type GlobalPackageManager,
@@ -15,7 +15,7 @@ import {
 } from "../input/rawArrowKeys.js";
 import { useTheme } from "../theme.js";
 
-export type UpdateUIState = "available" | "installing" | "success" | "failed";
+type UpdateUIState = "available" | "installing" | "success" | "failed";
 
 export type RunUpdateFn = (
   pm: GlobalPackageManager,

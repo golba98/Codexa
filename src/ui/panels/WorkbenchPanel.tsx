@@ -1,17 +1,18 @@
 import { Box, Text, useFocus, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
+import { wrapPlainText } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import type {
   CheckpointStore,
+  FileBoundary,
   FileCheckpoint,
   RestoreOperation,
 } from "../../core/workspace/checkpoints.js";
 import type { TimelineEvent } from "../../session/types.js";
 import type { QueuedPrompt } from "../../session/workbench.js";
+import { inspectionEntries } from "../../session/workbench.js";
 import { usePanelLayout } from "../layout.js";
-import { wrapPlainText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
-import { inspectionEntries } from "../timeline/inspection.js";
 
 export type WorkbenchView = "queue" | "transcript" | "diff" | "rewind";
 export type QueueAction = "edit" | "remove" | "up" | "down" | "pause" | "continue";
@@ -22,7 +23,7 @@ interface Props {
   queue: readonly QueuedPrompt[];
   paused: boolean;
   checkpoints: readonly FileCheckpoint[];
-  restoredFileBoundary?: import("../../core/workspace/checkpoints.js").FileBoundary;
+  restoredFileBoundary?: FileBoundary;
   store: CheckpointStore | null;
   onQueueAction: (action: QueueAction, id?: string) => void;
   onRewind: (

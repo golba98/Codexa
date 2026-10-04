@@ -1,15 +1,19 @@
 import { Box, Text, useFocus, useInput } from "ink";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  type ExternalSessionSummary,
-  type ExternalTranscript,
-  type ExternalTranscriptEntry,
-  type ExternalTranscriptEntryKind,
-  externalSourceLabel,
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  ExternalSessionSummary,
+  ExternalTranscript,
+  ExternalTranscriptEntry,
+  ExternalTranscriptEntryKind,
 } from "../../core/externalSessions/types.js";
+import { externalSourceLabel } from "../../core/externalSessions/types.js";
+import { clampVisualText, wrapPlainText } from "../../core/shared/text.js";
+import { errorMessage } from "../../core/shared/values.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
-import { clampVisualText, usePanelLayout } from "../layout.js";
-import { wrapPlainText } from "../render/textLayout.js";
+import type { SessionSummary } from "../../session/sessionCatalog.js";
+import { readOwnedConversation } from "../../session/sessionCatalog.js";
+import { inspectionEntries } from "../../session/workbench.js";
+import { usePanelLayout } from "../layout.js";
 import { useTheme } from "../theme.js";
 
 interface ExternalSessionViewerProps {
@@ -94,7 +98,7 @@ export function SessionTranscriptViewer({
         if (active)
           setState({
             status: "error",
-            message: error instanceof Error ? error.message : "unknown error",
+            message: errorMessage(error, "unknown error"),
           });
       },
     );
@@ -322,6 +326,54 @@ export function ExternalSessionViewer({
       onBack={onBack}
       onOpenNative={() => onOpenNative(summary)}
       onContinue={() => onContinue(summary)}
+    />
+  );
+}
+
+export function SavedSessionViewer({
+  session,
+  onBack,
+  onLocateWorkspace,
+}: {
+  session: SessionSummary;
+  onBack: () => void;
+  onLocateWorkspace: () => void;
+}) {
+  const loadTranscript = useCallback(async () => {
+    if (session.ref.kind !== "ubume") throw new Error("Expected a Ubume conversation.");
+    const record = readOwnedConversation(session.ref);
+    const entries: ExternalTranscriptEntry[] = record.session
+      ? inspectionEntries(record.session.events).map((entry) => ({
+          id: entry.id,
+          kind: entry.id.startsWith("user-")
+            ? "user"
+            : entry.id.startsWith("assistant-")
+              ? "assistant"
+              : entry.id.startsWith("tool-")
+                ? "tool"
+                : "note",
+          title: entry.title,
+          text: entry.details,
+        }))
+      : record.messages.map((message, index) => ({
+          id: String(index),
+          kind: message.role,
+          title: message.role === "user" ? "You" : "Assistant",
+          text: [message.content, message.activitySummary].filter(Boolean).join("\n\n"),
+        }));
+    return {
+      entries,
+      notice: `Original workspace: ${session.workspaceRoot ?? "not recorded"}. Locate the original folder to resume.`,
+    };
+  }, [session]);
+  return (
+    <SessionTranscriptViewer
+      summary={{ title: session.title, cwd: session.workspaceRoot }}
+      label="Ubume"
+      loadTranscript={loadTranscript}
+      onBack={onBack}
+      onContinue={onLocateWorkspace}
+      continueLabel="locate original folder"
     />
   );
 }

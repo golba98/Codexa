@@ -1,7 +1,7 @@
-import os from "node:os";
 import path from "node:path";
 import { Box, Text, useFocus, useInput } from "ink";
 import { useState } from "react";
+import { getHomeDir } from "../../config/settings.js";
 import { useTheme } from "../theme.js";
 
 export interface PendingImportFile {
@@ -21,7 +21,7 @@ interface AttachmentImportPanelProps {
   onCancel: () => void;
 }
 
-export function compactHomePath(value: string, homeDir = os.homedir()): string {
+export function compactHomePath(value: string, homeDir = getHomeDir()): string {
   const normalizedValue = value.replace(/\\/g, "/");
   const normalizedHome = homeDir.replace(/\\/g, "/").replace(/\/$/, "");
   if (!normalizedHome || normalizedValue === normalizedHome) return normalizedValue;
@@ -44,7 +44,7 @@ export function AttachmentImportPanel({
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   useInput(
-    (input, key) => {
+    (_input, key) => {
       if (key.escape) {
         onCancel();
         return;

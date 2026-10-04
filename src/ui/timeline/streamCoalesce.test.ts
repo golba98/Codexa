@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { RunProgressBlock } from "../../session/types.js";
-import { coalesceConsecutiveThinking } from "./streamCoalesce.js";
+import { coalesceConsecutiveThinking } from "./runActivityView.js";
 
 function block(
   id: string,

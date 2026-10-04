@@ -1,7 +1,6 @@
-import { appendFileSync, mkdirSync } from "fs";
-import { dirname } from "path";
 import { useEffect, useRef } from "react";
 import { resolveUbumeDebugLogPath } from "../workspace/appData.js";
+import { createDebugLog } from "./debugLog.js";
 
 type DebugEnv = Record<string, string | undefined>;
 
@@ -60,21 +59,21 @@ export function isRenderDebugEnabled(): boolean {
   return enabled;
 }
 
-export function isRenderTraceEnabled(): boolean {
+function isRenderTraceEnabled(): boolean {
   if (!configured) {
     configureFromEnv();
   }
   return renderTraceEnabled;
 }
 
-export function isLifecycleDebugEnabled(): boolean {
+function isLifecycleDebugEnabled(): boolean {
   if (!configured) {
     configureFromEnv();
   }
   return lifecycleEnabled;
 }
 
-export function isFlickerDebugEnabled(): boolean {
+function isFlickerDebugEnabled(): boolean {
   if (!configured) {
     configureFromEnv();
   }
@@ -121,9 +120,7 @@ function sanitizeValue(value: unknown): unknown {
 
 function writeRecord(kind: string, fields: Record<string, unknown>): void {
   try {
-    mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(
-      logPath,
+    renderLog(
       JSON.stringify({
         ts: Date.now(),
         pid: process.pid,
@@ -131,7 +128,6 @@ function writeRecord(kind: string, fields: Record<string, unknown>): void {
         kind,
         ...(sanitizeValue(fields) as Record<string, unknown>),
       }) + "\n",
-      "utf8",
     );
   } catch {
     // Debug logging must never disturb the TUI.
@@ -392,3 +388,9 @@ export function dumpRenderCounts(): Record<string, number> {
   }
   return result;
 }
+
+const renderLog = createDebugLog(
+  () => true,
+  () => logPath,
+  { createParent: true },
+);

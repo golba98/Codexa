@@ -3,8 +3,13 @@ import path from "node:path";
 import { resolveUbumeDebugLogPath } from "../workspace/appData.js";
 import { isTerminalResizing } from "./terminalControl.js";
 
-export interface FrameLockOptions {
-  stdout: any;
+/** The writable surface the frame lock wraps; satisfied by `NodeJS.WriteStream`. */
+interface FrameWritable {
+  write(chunk: string | Uint8Array): boolean;
+}
+
+interface FrameLockOptions<T extends FrameWritable> {
+  stdout: T;
   env: Record<string, string | undefined>;
 }
 
@@ -18,7 +23,10 @@ export function resetFrameLockForResize(stdout: object): void {
  * Wraps the stdout stream to enforce frame-level deduplication, a flush lock,
  * and width-safe row padding via ANSI clear-to-EOL (\x1b[K) injection.
  */
-export function wrapStdoutWithFrameLock({ stdout, env }: FrameLockOptions) {
+export function wrapStdoutWithFrameLock<T extends FrameWritable>({
+  stdout,
+  env,
+}: FrameLockOptions<T>): T {
   let lastFrame = "";
   let isFlushing = false;
   let debugLogStream: fs.WriteStream | null = null;
@@ -54,7 +62,8 @@ export function wrapStdoutWithFrameLock({ stdout, env }: FrameLockOptions) {
     logDebug("Frame cache reset: terminal resize");
   });
 
-  stdout.write = (chunk: string | Uint8Array) => {
+  const target: FrameWritable = stdout;
+  target.write = (chunk: string | Uint8Array) => {
     if (typeof chunk !== "string") {
       return originalWrite(chunk);
     }

@@ -1,26 +1,15 @@
 import { Box, Text } from "ink";
 import { memo, useDeferredValue, useMemo } from "react";
+import { formatDuration, wrapPlainText } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import { RUN_OUTPUT_TRUNCATION_NOTICE } from "../../session/chatLifecycle.js";
 import type { AssistantEvent, RunEvent } from "../../session/types.js";
 import { getAssistantContent } from "../../session/types.js";
-import { DashCard } from "../chrome/DashCard.js";
 import { getUsableShellWidth } from "../layout.js";
-import { MemoizedRenderMessage } from "../render/Markdown.js";
-import {
-  classifyOutput,
-  formatForBox,
-  normalizeOutput,
-  sanitizeOutput,
-  sanitizeStreamChunk,
-} from "../render/outputPipeline.js";
-import { wrapPlainText } from "../render/textLayout.js";
+import { MemoizedRenderMessage, parseMarkdown } from "../render/Markdown.js";
+import { normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
 import { useTheme } from "../theme.js";
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
+import { DashCard } from "./DashCard.js";
 
 interface AgentBlockProps {
   cols: number;
@@ -39,7 +28,7 @@ const MemoizedMessageBody = memo(
     segments,
     width,
   }: {
-    segments: ReturnType<typeof formatForBox>;
+    segments: ReturnType<typeof parseMarkdown>;
     width: number;
   }) {
     return <MemoizedRenderMessage segments={segments} width={width} />;
@@ -73,14 +62,11 @@ export function AgentBlock({
   const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
 
   const pipelineState = useMemo(() => {
-    const sanitized = streaming
-      ? sanitizeStreamChunk(renderContent)
-      : sanitizeOutput(renderContent);
+    const sanitized = sanitizeOutput(renderContent);
     const normalized = normalizeOutput(sanitized);
-    const classified = classifyOutput(normalized);
-    const formatted = formatForBox(classified, contentWidth);
+    const formatted = parseMarkdown(normalized);
     return { length: normalized.length, formatted };
-  }, [contentWidth, renderContent, streaming]);
+  }, [renderContent, streaming]);
 
   const failureMessage =
     run?.status === "failed" ? sanitizeTerminalOutput(run.errorMessage ?? run.summary) : null;

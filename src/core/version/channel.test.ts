@@ -1,19 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { APP_VERSION } from "../../config/settings.js";
-import {
-  formatCodexaBrandLabel,
-  formatUbumeBrandLabel,
-  formatUbumeVersionLabel,
-  isLocalDevChannel,
-} from "./channel.js";
+import { formatUbumeBrandLabel, formatUbumeVersionLabel, isLocalDevChannel } from "./channel.js";
 
 test("local-dev channel formats an obvious dev version label", () => {
   for (const env of [{ UBUME_CHANNEL: "local-dev" }, { CODEXA_CHANNEL: "local-dev" }]) {
     assert.equal(isLocalDevChannel(env), true);
     assert.equal(formatUbumeVersionLabel(APP_VERSION, env), `${APP_VERSION}-dev local`);
     assert.equal(formatUbumeBrandLabel(env), `Ubume v${APP_VERSION}-dev local`);
-    assert.equal(formatCodexaBrandLabel(env), `Ubume v${APP_VERSION}-dev local`);
   }
 });
 

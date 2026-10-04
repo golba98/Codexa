@@ -1,6 +1,6 @@
 import { isNoiseLine } from "../../core/providers/codexTranscript.js";
+import { normalizeLineBreaks } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
-import { parseMarkdown, type Segment } from "./Markdown.js";
 
 /**
  * Sanitize: Strip ANSI escape sequences and non-printable control characters.
@@ -19,19 +19,12 @@ export function sanitizeOutput(raw: string): string {
 }
 
 /**
- * Sanitize streamed chunks directly (delegates to sanitizeOutput).
- */
-export function sanitizeStreamChunk(chunk: string): string {
-  return sanitizeOutput(chunk);
-}
-
-/**
  * Normalize: Normalizes text formatting for the box wrappers.
  * Replaces CRLF with LF and collapses excessive blank lines to prevent
  * vertical stretching and layout popping.
  */
 export function normalizeOutput(clean: string): string {
-  let normalized = clean.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  let normalized = normalizeLineBreaks(clean);
   // Collapse excessive vertical whitespace (4+ newlines into 3)
   normalized = normalized.replace(/\n{4,}/g, "\n\n\n");
 
@@ -40,25 +33,4 @@ export function normalizeOutput(clean: string): string {
   const filteredLines = lines.filter((line) => !isNoiseLine(line));
 
   return filteredLines.join("\n");
-}
-
-/**
- * Classify: Segments the normalized string into typed semantic blocks
- * such as prose, code blocks, diffs, lists, and headers.
- *
- * Diff colouring is applied at render time via getDiffTone() in
- * timelineMeasure.ts, which maps each diff line to a TimelineTone that
- * the theme system resolves to the correct terminal colour.
- */
-export function classifyOutput(normalized: string): Segment[] {
-  return parseMarkdown(normalized);
-}
-
-/**
- * Format For Box: Intentional pass-through — segments are returned as-is.
- * Width-fitting is handled downstream by the layout engine in timelineMeasure.ts.
- * This function exists as a named pipeline stage for clarity and future extension.
- */
-export function formatForBox(classified: Segment[], boxWidth: number): Segment[] {
-  return classified;
 }

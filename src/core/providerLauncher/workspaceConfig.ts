@@ -8,13 +8,16 @@ import {
   isProviderRoutableInUbume,
   isProviderRouteConfigured,
 } from "../providerRuntime/registry.js";
+import { isRecord } from "../shared/values.js";
 import { resolveUbumeWorkspaceDataDir } from "../workspace/appData.js";
 import { normalizeWorkspaceRoot } from "../workspace/workspaceRoot.js";
 import { isKnownProviderId } from "./registry.js";
 import type {
+  LocalBackendId,
   ProviderActiveRoute,
   ProviderId,
   ProviderLaunchCommand,
+  ProviderModelWorkspaceOverride,
   ProviderWorkspaceConfig,
   ProviderWorkspaceOverride,
 } from "./types.js";
@@ -33,10 +36,6 @@ export function getProviderWorkspaceConfigFile(
 
 export function getLegacyProviderWorkspaceConfigFile(workspaceRoot: string): string {
   return join(normalizeWorkspaceRoot(workspaceRoot), ".codexa", "providers.json");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isDeprecatedGoogleRoute(value: unknown): boolean {
@@ -150,10 +149,10 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
   }
 
   if (isRecord(value.models)) {
-    const models: Record<string, import("./types.js").ProviderModelWorkspaceOverride> = {};
+    const models: Record<string, ProviderModelWorkspaceOverride> = {};
     for (const [modelId, modelValue] of Object.entries(value.models)) {
       if (!modelId.trim() || !isRecord(modelValue)) continue;
-      const entry: import("./types.js").ProviderModelWorkspaceOverride = {};
+      const entry: ProviderModelWorkspaceOverride = {};
 
       const rawContextLength = modelValue.contextLength ?? modelValue.context_length;
       if (
@@ -223,7 +222,6 @@ function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
   const providerId =
     (value.backendKind ?? value.backend_kind) === "agy" ? "antigravity" : rawProviderId;
   const modelId = value.modelId ?? value.model_id;
-  const backendKind = value.backendKind ?? value.backend_kind;
   const reasoning = value.reasoning;
   const modelSelection = value.modelSelection ?? value.model_selection;
   const localBackend = value.localBackend ?? value.local_backend;
@@ -561,7 +559,7 @@ export function setProviderActiveRoute(
 
 export function setLocalBackendPreference(
   config: ProviderWorkspaceConfig,
-  localBackend: import("./types.js").LocalBackendId,
+  localBackend: LocalBackendId,
 ): ProviderWorkspaceConfig {
   return {
     ...config,

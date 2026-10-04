@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { clampVisualText, getTextWidth } from "../core/shared/text.js";
 import { getHeaderHeroLayout, measureTopHeaderRows } from "./chrome/TopHeader.js";
 import {
   advanceTerminalViewport,
-  clampVisualText,
   computeAppLayoutBudget,
   createLayoutSnapshot,
   createTerminalViewport,
@@ -11,7 +11,6 @@ import {
   getShellHeight,
   getShellWidth,
   getUsableShellWidth,
-  getVisualWidth,
   resolveStartupHeaderMode,
 } from "./layout.js";
 
@@ -109,7 +108,6 @@ test("compact size does not show logo tiers if too narrow", () => {
 
   assert.equal(budget.mode, "compact");
   assert.equal(budget.showNormalLogo, false);
-  assert.equal(budget.showLargeLogo, false);
   assert.equal(budget.showCompactHeader, true);
 });
 
@@ -121,7 +119,6 @@ test("expanded size shows the large logo tier", () => {
   });
 
   assert.equal(budget.mode, "expanded");
-  assert.equal(budget.showLargeLogo, true);
   assert.equal(budget.showNormalLogo, true);
   assert.equal(budget.showCompactHeader, false);
 });
@@ -235,7 +232,7 @@ test("bumps the layout epoch when the terminal recovers from an unstable restore
 
 test("measures visual width instead of raw string length", () => {
   assert.equal("⚡".length, 1);
-  assert.equal(getVisualWidth("⚡"), 2);
+  assert.equal(getTextWidth("⚡"), 2);
 });
 
 test("clamps text to a visual width budget", () => {

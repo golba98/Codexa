@@ -1,5 +1,26 @@
-import type { ModelSpec } from "../models/modelSpecs.js";
 import type { ProviderId, ProviderWorkspaceOverride } from "../providerLauncher/types.js";
+import { isRecord } from "../shared/values.js";
+
+/** Context-window facts for the active model, as shown in the composer token bar. */
+export interface VerifiedModelSpec {
+  status: "verified";
+  contextWindow: number;
+  maxOutputTokens: number;
+  sourceUrl: string;
+  verifiedAt: number;
+  isEstimated?: boolean;
+}
+
+export interface PendingModelSpec {
+  status: "loading" | "unknown";
+  contextWindow: null;
+  maxOutputTokens: null;
+  sourceUrl: string;
+  verifiedAt: null;
+  error: string | null;
+}
+
+export type ModelSpec = VerifiedModelSpec | PendingModelSpec;
 
 export type ContextLengthSource =
   | "api"
@@ -21,7 +42,7 @@ export interface ModelContextMetadata {
   error?: string;
 }
 
-export interface ResolveModelContextLengthOptions {
+interface ResolveModelContextLengthOptions {
   providerId: ProviderId;
   modelId: string;
   providerConfig?: ProviderWorkspaceOverride | null;
@@ -178,10 +199,6 @@ const NESTED_METADATA_KEYS = [
 ] as const;
 
 const contextCache = new Map<string, ModelContextMetadata>();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function validContextLength(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {

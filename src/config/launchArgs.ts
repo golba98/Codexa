@@ -29,7 +29,7 @@ export interface LaunchArgs {
   importSession?: { source: ExternalSessionSource; sessionId: string };
 }
 
-export type LaunchArgsParseResult = { ok: true; value: LaunchArgs } | { ok: false; error: string };
+type LaunchArgsParseResult = { ok: true; value: LaunchArgs } | { ok: false; error: string };
 
 function normalizeProfileValue(value: string | undefined): string | null {
   const trimmed = value?.trim();

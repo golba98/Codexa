@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { homedir } from "node:os";
 import test from "node:test";
 import {
   DEFAULT_MODE,
@@ -13,21 +14,13 @@ import {
   formatWorkspaceDisplayPath,
   getCodexConfigFile,
   getCodexHome,
+  getHomeDir,
   getLegacyCodexaTrustStoreFile,
   getNextMode,
   getNextRotatingMode,
   getUbumeTrustStoreFile,
-  normalizeReasoningForModel,
   USER_SETTING_DEFINITIONS,
 } from "./settings.js";
-
-test("keeps supported reasoning levels for gpt-5.4-mini", () => {
-  assert.equal(normalizeReasoningForModel("gpt-5.4-mini", "high"), "high");
-});
-
-test("keeps reasoning unchanged for non-mini models", () => {
-  assert.equal(normalizeReasoningForModel("gpt-5.4", "low"), "low");
-});
 
 test("formats codex-style mode labels", () => {
   assert.equal(formatModeLabel("suggest"), "Read-only");
@@ -148,4 +141,13 @@ test("resolves CODEX_HOME-derived paths from the live environment", () => {
       process.env.CODEX_HOME = previousCodexHome;
     }
   }
+});
+
+test("home resolution honors injected Windows and POSIX environments", () => {
+  assert.equal(
+    getHomeDir({ USERPROFILE: "C:\\Users\\tester", HOME: "/ignored" }),
+    "C:\\Users\\tester",
+  );
+  assert.equal(getHomeDir({ HOME: "/home/tester" }), "/home/tester");
+  assert.equal(getHomeDir({}), homedir());
 });

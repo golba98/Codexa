@@ -1,4 +1,5 @@
-import type { RunEvent } from "../../session/types.js";
+import type { RunEvent, RunProgressBlock } from "../../session/types.js";
+import { formatTerminalAnswerInline } from "../render/terminalAnswerFormat.js";
 
 const MAX_VISIBLE_ACTIVE_ACTIVITY = 6;
 const MAX_VISIBLE_SUMMARY_ACTIVITY = 4;
@@ -34,4 +35,123 @@ export function formatRunActivityStats(event: RunEvent): string | null {
     `~${summary.modified}`,
     `-${summary.deleted}`,
   ].join("  ");
+}
+
+interface ThinkingLikeEvent {
+  kind: string;
+  streamSeq: number;
+  block: RunProgressBlock;
+}
+
+/**
+ * Merge each run of consecutive `kind === "thinking"` events into a single
+ * event so contiguous chain-of-thought renders under one header. Local models
+ * emit every reasoning paragraph as its own progress item, which otherwise
+ * stacks one labeled block per sentence. Thoughts separated by a tool call or
+ * response segment stay separate — only uninterrupted runs merge.
+ */
+export function coalesceConsecutiveThinking<T extends { kind: string; streamSeq: number }>(
+  events: T[],
+): T[] {
+  const result: T[] = [];
+  let index = 0;
+  while (index < events.length) {
+    const event = events[index]!;
+    if (event.kind !== "thinking") {
+      result.push(event);
+      index += 1;
+      continue;
+    }
+
+    let end = index + 1;
+    while (end < events.length && events[end]!.kind === "thinking") {
+      end += 1;
+    }
+    if (end - index === 1) {
+      result.push(event);
+      index = end;
+      continue;
+    }
+
+    const members = events.slice(index, end) as unknown as ThinkingLikeEvent[];
+    const first = members[0]!;
+    const last = members[members.length - 1]!;
+    const mergedBlock: RunProgressBlock = {
+      ...first.block,
+      text: members
+        .map((member) => member.block.text)
+        .filter((text) => text.trim().length > 0)
+        .join("\n\n"),
+      updatedAt: Math.max(...members.map((member) => member.block.updatedAt)),
+      status: last.block.status,
+    };
+    result.push({ ...event, block: mergedBlock });
+    index = end;
+  }
+  return result;
+}
+
+function stripOuterQuotes(s: string): string {
+  if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"'))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+function decodeEscapedQuotes(s: string): string {
+  return s.replace(/\\"/g, '"');
+}
+
+function cleanCommand(command: string): string {
+  return formatTerminalAnswerInline(decodeEscapedQuotes(command.trim()));
+}
+
+/**
+ * Strips shell-wrapper invocations from a command string and returns the inner
+ * command that is actually being executed.
+ *
+ * Handles:
+ *   "C:\Program Files\PowerShell\7\pwsh.exe" -Command '...'
+ *   pwsh.exe -Command "..."
+ *   powershell.exe -Command '...'
+ *   cmd.exe /c "..."
+ *   bash -lc '...'
+ */
+export function normalizeCommand(command: string): string {
+  // Full quoted path ending with pwsh.exe / powershell.exe
+  let match = command.match(/^"[^"]*(?:pwsh|powershell)(?:\.exe)?"\s+-Command\s+(.+)$/is);
+  if (match) return cleanCommand(stripOuterQuotes(match[1].trim()));
+
+  // Bare pwsh.exe / powershell.exe on PATH
+  match = command.match(/^(?:pwsh|powershell)(?:\.exe)?\s+-Command\s+(.+)$/is);
+  if (match) return cleanCommand(stripOuterQuotes(match[1].trim()));
+
+  // cmd.exe /c "..."
+  match = command.match(/^cmd(?:\.exe)?\s+\/[cC]\s+(.+)$/s);
+  if (match) return cleanCommand(stripOuterQuotes(match[1].trim()));
+
+  // bash -lc "..." or bash -lc '...'
+  match = command.match(/^bash\s+-lc\s+(.+)$/s);
+  if (match) return cleanCommand(stripOuterQuotes(match[1].trim()));
+
+  return cleanCommand(command);
+}
+
+/**
+ * Maps a normalized command to a short human-readable label.
+ * Returns null when no label applies and the command itself should be shown.
+ */
+export function getFriendlyActionLabel(normalizedCommand: string): string | null {
+  const cmd = normalizedCommand.trim();
+
+  if (/^(?:Get-ChildItem|dir|ls)\b/i.test(cmd)) return "List files";
+  if (/^rg\s+--files\b/i.test(cmd)) return "List files";
+  if (/^(?:Get-Content|cat)\b/i.test(cmd)) return "Read file";
+  if (/^git\s+status\b/.test(cmd)) return "Check git status";
+  if (/^git\s+diff\b/.test(cmd)) return "Inspect changes";
+  if (/^(?:bun|npm)\s+install\b/.test(cmd)) return "Install dependencies";
+  if (/^(?:bun|npm)\s+test\b/.test(cmd)) return "Run tests";
+  if (/^(?:tsc\b|bun\s+run\s+typecheck\b)/.test(cmd)) return "Run typecheck";
+
+  return null;
 }

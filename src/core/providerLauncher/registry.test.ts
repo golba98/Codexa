@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { runCommand } from "../process/CommandRunner.js";
+import type { runCommand } from "../process/commandRunner.js";
 import {
   ANTIGRAVITY_DEFAULT_MODEL_ID,
   discoverAgyModels,

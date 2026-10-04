@@ -10,8 +10,8 @@ This overview standardizes project documentation. The detailed [architecture](AR
 flowchart LR
   Terminal --> Launcher[bin/ubume.js]
   Launcher -->|interactive| Entry[src/index.tsx]
-  Launcher -->|exec| Headless[src/exec.ts]
-  Entry --> App[src/app.tsx]
+  Launcher -->|exec| Headless[src/cli.ts]
+  Entry --> App[src/app/App.tsx]
   App --> UI[src/ui]
   App --> Session[src/session]
   App --> Config[src/config]
@@ -24,7 +24,7 @@ flowchart LR
 
 ## Runtime boundaries
 
-`bin/ubume.js` is the installed Node ESM launcher. It identifies interactive versus headless use, resolves the TypeScript runtime, preserves terminal semantics, and hands control to the relevant entry point. `src/index.tsx` validates the terminal, installs terminal modes and resize handling, and mounts exactly one Ink root. `src/app.tsx` is the interactive composition root: it owns effective configuration, prompt execution, session lifecycle, routed provider state, command effects, and screen transitions.
+`bin/ubume.js` is the installed Node ESM launcher. It identifies interactive versus headless use, resolves the TypeScript runtime, preserves terminal semantics, and hands control to the relevant entry point. `src/index.tsx` validates the terminal, installs terminal modes and resize handling, and mounts exactly one Ink root. `src/app/App.tsx` is the interactive composition root: it owns effective configuration, prompt execution, session lifecycle, routed provider state, command effects, and screen transitions.
 
 `src/ui/` owns terminal presentation. Its `chrome`, `timeline`, `panels`, `render`, and `input` groups separate stable layout, transcript rendering, overlays, pickers, and composer behavior. Reducers and measurement helpers keep rendering deterministic. `src/session/` owns conversation lifecycle and accumulated runtime events. `src/commands/handler.ts` parses slash commands into typed actions; effects are executed by the app rather than hidden inside the parser.
 
@@ -67,7 +67,7 @@ Generic selection screens use the same responsive viewport as provider/model lis
 
 The development startup screen no longer seeds a `Launch mode` transcript notice. `ubume-dev` opens directly to the logo/header, composer, and runtime status; `/clear` restores the same clean home screen. The `/workspace relaunch <path>` command remains available through normal command help.
 
-The implementation changes are in `src/ui/panels/ProviderPicker.tsx`, `src/ui/panels/ModelPickerScreen.tsx`, `src/ui/panels/responsivePickerViewport.ts`, `src/ui/chrome/AppShell.tsx`, and the panel-hint composition in `src/app.tsx`. Focused tests cover five-item fit, long-list continuous scrolling, selection visibility, capacity growth, invalid dimensions, resize clamping, narrow rendering, and the 100×22 shell integration.
+The implementation changes are in `src/ui/panels/ProviderPicker.tsx`, `src/ui/panels/ModelPickerScreen.tsx`, `src/ui/panels/responsivePickerViewport.ts`, `src/ui/chrome/AppShell.tsx`, and the panel-hint composition in `src/app.tsx` (now split across `src/app/`). Focused tests cover five-item fit, long-list continuous scrolling, selection visibility, capacity growth, invalid dimensions, resize clamping, narrow rendering, and the 100×22 shell integration.
 
 Verification performed for this change: `npm install`, `npm run build`, `npm test`, and the repository's `typecheck` script (there is no lint script in `package.json`). The actual CLI was also exercised in one live PTY at 80×20, 100×22, 120×30, and 160×40. Provider and 20-model panels stayed open through resize, retained selection, kept the composer/status usable, and expanded their visible rows with the terminal.
 

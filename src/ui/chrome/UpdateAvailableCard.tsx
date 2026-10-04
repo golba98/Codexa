@@ -1,12 +1,12 @@
 import { Box, Text } from "ink";
+import { clampVisualText } from "../../core/shared/text.js";
 import { formatVersionLabel, UBUME_UPDATE_COMMAND } from "../../core/version/updateCheck.js";
-import { clampVisualText } from "../layout.js";
 import { useTheme } from "../theme.js";
 
 export const UPDATE_CARD_CONTENT_ROWS = 4; // title + available + using + command
 export const UPDATE_CARD_ROWS = UPDATE_CARD_CONTENT_ROWS + 2; // +2 for top/bottom border rows
 
-export interface UpdateAvailableCardProps {
+interface UpdateAvailableCardProps {
   latestVersion: string;
   currentVersion: string;
   updateCommand?: string;

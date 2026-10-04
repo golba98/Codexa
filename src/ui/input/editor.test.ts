@@ -1,6 +1,12 @@
 /// <reference path="../../../node_modules/bun-types/test.d.ts" />
 import { expect, test } from "bun:test";
-import { InputUndo, lineBoundary, searchHistory, verticalCursor, wordBoundary } from "./editor.js";
+import {
+  InputUndo,
+  lineBoundary,
+  searchHistory,
+  verticalCursor,
+  wordBoundary,
+} from "./inputBuffer.js";
 import { createAtomicContentToken } from "./pastedContent.js";
 
 test("line boundaries include empty first and final lines", () => {

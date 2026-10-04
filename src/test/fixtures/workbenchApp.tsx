@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { render } from "ink";
-import { App } from "../../app.js";
+import { App } from "../../app/App.js";
 import { parseLaunchArgs } from "../../config/launchArgs.js";
 import type { BackendProvider, BackendRunHandlers } from "../../core/providers/types.js";
 import { resolveUbumeConversationDir } from "../../core/workspace/appData.js";

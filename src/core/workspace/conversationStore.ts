@@ -17,6 +17,8 @@ import { parseWorkbench, type WorkbenchSnapshot } from "../../session/workbench.
 import type { ExternalSessionSource } from "../externalSessions/types.js";
 import type { LocalBackendId, ProviderId } from "../providerLauncher/types.js";
 import type { ProviderBackendKind } from "../providerRuntime/types.js";
+import { titleFromText } from "../shared/text.js";
+import { errorMessage, isRecord } from "../shared/values.js";
 import {
   resolveLegacyCodexaDataDir,
   resolveLegacyConversationDir,
@@ -113,10 +115,6 @@ interface ConversationStoreOptions {
   now?: () => Date;
   idFactory?: () => string;
   onDiagnostic?: (message: string) => void;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function safeString(value: unknown): string | null {
@@ -272,11 +270,10 @@ function parseMetadata(value: unknown, fallbackId: string): ConversationMetadata
 function titleFromMessages(messages: ConversationMessage[]): string {
   const firstUser = messages.find((message) => message.role === "user" && message.content.trim());
   if (!firstUser) return "Untitled conversation";
-  const title = firstUser.content.replace(/\s+/g, " ").trim();
-  return title.length > 72 ? `${title.slice(0, 69).trimEnd()}...` : title;
+  return titleFromText(firstUser.content);
 }
 
-export function isNativeSessionReference(value: unknown): value is NativeSessionReference {
+function isNativeSessionReference(value: unknown): value is NativeSessionReference {
   return (
     isRecord(value) &&
     ["claude", "codex", "antigravity", "vibe"].includes(String(value.source)) &&
@@ -444,9 +441,7 @@ export class ConversationStore {
         metadata,
       });
     } catch (error) {
-      this.onDiagnostic(
-        `Summary cache unavailable: ${error instanceof Error ? error.message : "filesystem error"}`,
-      );
+      this.onDiagnostic(`Summary cache unavailable: ${errorMessage(error, "filesystem error")}`);
     }
   }
 
@@ -496,9 +491,7 @@ export class ConversationStore {
         );
       return { metadata, messages, ...(session ? { session } : {}) };
     } catch (error) {
-      this.onDiagnostic(
-        `Skipped conversation ${id}: ${error instanceof Error ? error.message : "invalid data"}`,
-      );
+      this.onDiagnostic(`Skipped conversation ${id}: ${errorMessage(error, "invalid data")}`);
       return null;
     }
   }
@@ -528,7 +521,7 @@ export class ConversationStore {
         }
       } catch (error) {
         this.onDiagnostic(
-          `Unable to list conversations: ${error instanceof Error ? error.message : "filesystem error"}`,
+          `Unable to list conversations: ${errorMessage(error, "filesystem error")}`,
         );
       }
     }
@@ -554,9 +547,7 @@ export class ConversationStore {
             ...(this.managedRoot ? { workspaceRoot: this.workspace } : {}),
           });
       } catch (error) {
-        this.onDiagnostic(
-          `Skipped conversation ${id}: ${error instanceof Error ? error.message : "invalid metadata"}`,
-        );
+        this.onDiagnostic(`Skipped conversation ${id}: ${errorMessage(error, "invalid metadata")}`);
       }
     }
     return entries.sort(

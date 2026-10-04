@@ -24,19 +24,20 @@ test("resolveLocalDevEntry forwards interactive prompt args to src/index.tsx", (
   assert.deepEqual(resolved.entryArgs, ["explain this repo", "--model", "x"]);
 });
 
-test("resolveLocalDevEntry resolves `exec` to the headless src/exec.ts", () => {
+test("resolveLocalDevEntry resolves `exec` to the headless src/cli.ts", () => {
   const resolved = resolveLocalDevEntry(repoRoot, ["exec", "print the dir"]);
   assert.equal(resolved.isHeadlessMode, true);
   assert.equal(resolved.isHeadlessExec, true);
-  assert.equal(resolved.entry, join(repoRoot, "src", "exec.ts"));
-  assert.deepEqual(resolved.entryArgs, ["print the dir"]);
+  assert.equal(resolved.entry, join(repoRoot, "src", "cli.ts"));
+  assert.deepEqual(resolved.entryArgs, ["exec", "print the dir"]);
 });
 
-test("resolveLocalDevEntry resolves --headless-benchmark to src/exec.ts", () => {
+test("resolveLocalDevEntry keeps --headless-benchmark for src/cli.ts", () => {
   const resolved = resolveLocalDevEntry(repoRoot, ["--headless-benchmark", "x"]);
   assert.equal(resolved.isHeadlessMode, true);
   assert.equal(resolved.isHeadlessBenchmark, true);
-  assert.equal(resolved.entry, join(repoRoot, "src", "exec.ts"));
+  assert.equal(resolved.entry, join(repoRoot, "src", "cli.ts"));
+  assert.deepEqual(resolved.entryArgs, ["--headless-benchmark", "x"]);
 });
 
 test("resolveNativeChatCommand targets the native SFT v2 checkpoint", () => {

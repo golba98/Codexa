@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import { memo, useMemo } from "react";
+import { formatDuration, wrapCommandText, wrapPlainText } from "../../core/shared/text.js";
 import { sanitizeTerminalOutput } from "../../core/terminal/terminalSanitize.js";
 import { normalizePlanReviewMarkdown } from "../../core/workspace/planStorage.js";
 import type { RunFileActivity } from "../../core/workspace/workspaceActivity.js";
@@ -17,25 +18,21 @@ import {
   getResponseSegmentText,
   getRunPlanText,
 } from "../../session/types.js";
-import { DashCard } from "../chrome/DashCard.js";
-import { getFriendlyActionLabel, normalizeCommand } from "../input/commandNormalize.js";
 import { getUsableShellWidth, transcriptContentIndent } from "../layout.js";
-import { MemoizedRenderMessage } from "../render/Markdown.js";
-import {
-  classifyOutput,
-  formatForBox,
-  normalizeOutput,
-  sanitizeOutput,
-  sanitizeStreamChunk,
-} from "../render/outputPipeline.js";
+import { MemoizedRenderMessage, parseMarkdown } from "../render/Markdown.js";
+import { normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
 import { formatTerminalAnswerInline } from "../render/terminalAnswerFormat.js";
-import { wrapCommandText, wrapPlainText } from "../render/textLayout.js";
 import { useTheme } from "../theme.js";
 import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
 import { AgentBlock } from "./AgentBlock.js";
+import { DashCard } from "./DashCard.js";
 import { formatProgressBlockBodyLines } from "./progressEntries.js";
-import { selectVisibleRunActivity } from "./runActivityView.js";
-import { coalesceConsecutiveThinking } from "./streamCoalesce.js";
+import {
+  coalesceConsecutiveThinking,
+  getFriendlyActionLabel,
+  normalizeCommand,
+  selectVisibleRunActivity,
+} from "./runActivityView.js";
 
 export type TurnOpacity = "active" | "recent" | "dim";
 
@@ -52,11 +49,6 @@ interface TurnGroupProps {
   streamMode: "assistant-first";
   verboseMode?: boolean;
   workspaceRoot?: string | null;
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 // ─── User Input Card ─────────────────────────────────────────────────────────
@@ -88,7 +80,7 @@ const MemoizedUserInputCard = memo(
 // ─── Impact Summary ──────────────────────────────────────────────────────────
 // Compact file-change summary replacing FileScanCard + ActivityCard
 
-function ImpactSummary({ run, cols }: { run: RunEvent; cols: number }) {
+function ImpactSummary({ run }: { run: RunEvent }) {
   const theme = useTheme();
   const summary = run.activitySummary;
   const hasFiles = run.touchedFileCount > 0;
@@ -96,7 +88,6 @@ function ImpactSummary({ run, cols }: { run: RunEvent; cols: number }) {
 
   if (!hasFiles && !hasTools) return null;
 
-  const contentWidth = Math.max(1, cols - 6);
   const recentFiles = summary?.recent ?? run.activity.slice(-6);
   const hasDeletes = (summary?.deleted ?? 0) > 0;
 
@@ -297,9 +288,8 @@ function PlanPanel({
 
   const formatted = useMemo(() => {
     const normalized = normalizePlanReviewMarkdown(planText, workspaceRoot);
-    const classified = classifyOutput(normalized);
-    return formatForBox(classified, contentWidth);
-  }, [planText, contentWidth, workspaceRoot]);
+    return parseMarkdown(normalized);
+  }, [planText, workspaceRoot]);
 
   return (
     <DashCard
@@ -473,11 +463,10 @@ function CodexResponseBlock({
 
   const formatted = useMemo(() => {
     const raw = formatTerminalAnswerInline(getResponseSegmentText(segment));
-    const sanitized = segment.status === "active" ? sanitizeStreamChunk(raw) : sanitizeOutput(raw);
+    const sanitized = sanitizeOutput(raw);
     const normalized = normalizeOutput(sanitized);
-    const classified = classifyOutput(normalized);
-    return formatForBox(classified, contentWidth);
-  }, [contentWidth, segment]);
+    return parseMarkdown(normalized);
+  }, [segment]);
 
   const segmentStreaming = segment.status === "active";
   const showTail =
@@ -585,7 +574,7 @@ const StreamEventList = memo(
 
         {run.status !== "running" && !verboseMode && (
           <Box marginTop={1}>
-            <ImpactSummary run={run} cols={cols} />
+            <ImpactSummary run={run} />
           </Box>
         )}
       </Box>
@@ -658,24 +647,6 @@ export function TurnGroup({
     </Box>
   );
 }
-
-// Memoized wrapper to prevent re-renders of finalized turns
-export const MemoizedTurnGroup = memo(TurnGroup, (prev, next) => {
-  return (
-    prev.cols === next.cols &&
-    prev.turnIndex === next.turnIndex &&
-    prev.opacity === next.opacity &&
-    prev.question === next.question &&
-    prev.runPhase === next.runPhase &&
-    prev.streamPreviewRows === next.streamPreviewRows &&
-    prev.streamMode === next.streamMode &&
-    prev.verboseMode === next.verboseMode &&
-    prev.user === next.user &&
-    prev.run === next.run &&
-    prev.assistant === next.assistant &&
-    prev.workspaceRoot === next.workspaceRoot
-  );
-});
 
 export type TurnRunPhase = "none" | "thinking" | "streaming" | "final";
 

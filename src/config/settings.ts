@@ -1,15 +1,11 @@
-import { homedir } from "os";
-import { basename, join, parse, win32 } from "path";
-
-function isWindowsStylePath(p: string): boolean {
-  return /^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p);
-}
+import { homedir } from "node:os";
+import { basename, join, parse, win32 } from "node:path";
+import { getAppVersion } from "../core/version/channel.js";
+import { isWindowsStylePath } from "../core/workspace/workspaceRoot.js";
 
 function smartJoin(base: string, ...parts: string[]): string {
   return isWindowsStylePath(base) ? win32.join(base, ...parts) : join(base, ...parts);
 }
-
-import { getAppVersion } from "./appVersion.js";
 
 // Authoritative runtime version: resolved from the installed package.json at
 // startup (buildInfo.ts is only the committed fallback and can drift).
@@ -25,13 +21,14 @@ export const DEFAULT_WORKSPACE_DISPLAY_MODE = "dir";
 export const DEFAULT_TERMINAL_TITLE_MODE = "dir";
 export const DEFAULT_SHOW_BUSY_LOADER = true;
 export const DEFAULT_AUTH_PREFERENCE = "chatgpt-login-goal";
-export const CODEX_EXECUTABLE = process.env.CODEX_EXECUTABLE || "codex";
-export const CLAUDE_EXECUTABLE = process.env.CLAUDE_EXECUTABLE || null;
 export const MAX_CHAT_LINES = 2000;
-export const MAX_VISIBLE_EVENTS = 8;
+
+export function getHomeDir(env: NodeJS.ProcessEnv = process.env): string {
+  return env.USERPROFILE ?? env.HOME ?? homedir();
+}
 
 export function getCodexHome(): string {
-  return process.env.CODEX_HOME?.trim() || join(homedir(), ".codex");
+  return process.env.CODEX_HOME?.trim() || join(getHomeDir(), ".codex");
 }
 
 export function getCodexConfigFile(): string {
@@ -46,16 +43,8 @@ export function getLegacyCodexaTrustStoreFile(): string {
   return smartJoin(getCodexHome(), "codexa-trust.json");
 }
 
-export const getCodexaTrustStoreFile = getUbumeTrustStoreFile;
-
-export const CODEX_HOME = getCodexHome();
-export const CODEX_CONFIG_FILE = getCodexConfigFile();
-export const UBUME_TRUST_STORE_FILE = getUbumeTrustStoreFile();
-export const CODEXA_TRUST_STORE_FILE = getLegacyCodexaTrustStoreFile();
 export const SETTINGS_FILE = join(homedir(), ".ubume-settings.json");
 export const LEGACY_SETTINGS_FILE = join(homedir(), ".codexa-settings.json");
-export const MODEL_SPECS_FILE = join(homedir(), ".ubume-model-specs.json");
-export const LEGACY_MODEL_SPECS_FILE = join(homedir(), ".codexa-model-specs.json");
 
 export const AVAILABLE_BACKENDS = [
   {
@@ -63,19 +52,12 @@ export const AVAILABLE_BACKENDS = [
     label: "Ubume Core",
     description: "Direct connection to the Ubume neural network.",
   },
-  {
-    id: "openai-native",
-    label: "OpenAI Native",
-    description:
-      "Future native provider. ChatGPT subscriptions do not automatically grant API access.",
-  },
 ] as const;
 
 export type AvailableBackend = (typeof AVAILABLE_BACKENDS)[number]["id"];
 
-// Static model list used when runtime model discovery is unavailable.
-// Named "legacy fallback" because dynamic discovery is the preferred source of truth,
-// but this list is the live exported AVAILABLE_MODELS for now.
+// Static model list used when runtime model discovery is unavailable; dynamic
+// discovery is the preferred source of truth.
 export const LEGACY_FALLBACK_MODELS = [
   "gpt-5.5",
   "gpt-5.4",
@@ -84,11 +66,9 @@ export const LEGACY_FALLBACK_MODELS = [
   "gpt-5.2",
 ] as const;
 
-export const AVAILABLE_MODELS = LEGACY_FALLBACK_MODELS;
-
 export type AvailableModel = string;
 
-export const AVAILABLE_REASONING_LEVELS = [
+const AVAILABLE_REASONING_LEVELS = [
   { id: "none", label: "None" },
   { id: "minimal", label: "Minimal" },
   { id: "low", label: "Low" },
@@ -104,7 +84,7 @@ export const WORKSPACE_DISPLAY_MODES = ["dir", "name", "simple"] as const;
 export const LEGACY_DIRECTORY_DISPLAY_MODES = ["normal", "simple"] as const;
 
 export type WorkspaceDisplayMode = (typeof WORKSPACE_DISPLAY_MODES)[number];
-export type LegacyDirectoryDisplayMode = (typeof LEGACY_DIRECTORY_DISPLAY_MODES)[number];
+type LegacyDirectoryDisplayMode = (typeof LEGACY_DIRECTORY_DISPLAY_MODES)[number];
 export type TerminalTitleMode = WorkspaceDisplayMode;
 
 export const BUSY_LOADER_SETTING_VALUES = ["true", "false"] as const;
@@ -129,9 +109,9 @@ export interface UserSettingValues {
   showBusyLoader: BusyLoaderSettingValue;
 }
 
-export type UserSettingKey = keyof UserSettingValues;
+type UserSettingKey = keyof UserSettingValues;
 
-export type UserSettingDefinition = {
+type UserSettingDefinition = {
   [K in UserSettingKey]: SettingDefinition<K, UserSettingValues[K]>;
 }[UserSettingKey];
 
@@ -181,14 +161,14 @@ export const AVAILABLE_MODES = [
 
 export type AvailableMode = (typeof AVAILABLE_MODES)[number]["key"];
 
-export const MODE_COMMAND_ALIASES = {
+const MODE_COMMAND_ALIASES = {
   default: DEFAULT_MODE,
   ask: "suggest",
   add: "auto-edit",
   auto: "auto-edit",
 } as const;
 
-export type ModeCommandAlias = keyof typeof MODE_COMMAND_ALIASES;
+type ModeCommandAlias = keyof typeof MODE_COMMAND_ALIASES;
 
 export const AUTH_PREFERENCES = [
   {
@@ -239,7 +219,7 @@ export function getNextMode(mode: AvailableMode): AvailableMode {
   return AVAILABLE_MODES[(currentIndex + 1) % AVAILABLE_MODES.length].key;
 }
 
-export interface RotatingModeState {
+interface RotatingModeState {
   mode: AvailableMode;
   planMode: boolean;
 }
@@ -291,8 +271,6 @@ export const AVAILABLE_THEMES = [
   { id: "custom", label: "Customize..." },
 ] as const;
 
-export type AvailableTheme = (typeof AVAILABLE_THEMES)[number]["id"];
-
 export function formatThemeLabel(themeId: string): string {
   const found = AVAILABLE_THEMES.find((item) => item.id === themeId);
   return found?.label ?? themeId;
@@ -313,13 +291,6 @@ export function normalizeLegacyDirectoryDisplayMode(
   mode: LegacyDirectoryDisplayMode,
 ): WorkspaceDisplayMode {
   return mode === "simple" ? "simple" : "dir";
-}
-
-export function formatDirectoryDisplayModeLabel(
-  mode: WorkspaceDisplayMode | LegacyDirectoryDisplayMode,
-): string {
-  if (mode === "normal") return "Dir";
-  return formatWorkspaceDisplayModeLabel(mode);
 }
 
 export function formatBusyLoaderSettingValue(enabled: boolean): BusyLoaderSettingValue {
@@ -397,18 +368,32 @@ export const HEADER_CONFIG_DEFAULTS: HeaderConfig = {
   showAuthStatus: false,
 };
 
-export function getRecommendedReasoningForModel(model: AvailableModel): ReasoningLevel {
-  return DEFAULT_REASONING_LEVEL;
-}
-
-export function normalizeReasoningForModel(
-  model: AvailableModel,
-  reasoningLevel: ReasoningLevel,
-): ReasoningLevel {
-  return reasoningLevel || getRecommendedReasoningForModel(model);
-}
-
 export function formatAuthPreferenceLabel(preference: string): string {
   const found = AUTH_PREFERENCES.find((item) => item.id === preference);
   return found?.label ?? preference;
+}
+
+export interface Theme {
+  bg: string;
+  surface: string;
+  surfaceMuted: string;
+  border: string;
+  borderFocused: string;
+  text: string;
+  textMuted: string;
+  textDim: string;
+  accent: string;
+  accentMuted: string;
+  success: string;
+  warning: string;
+  error: string;
+  info: string;
+  command: string;
+  prompt: string;
+  model: string;
+  provider: string;
+  context: string;
+  logoPrimary: string;
+  logoSecondary: string;
+  logoShadow: string;
 }

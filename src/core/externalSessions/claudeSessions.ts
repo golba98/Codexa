@@ -1,19 +1,18 @@
 import { readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { clampText, titleFromText } from "../shared/text.js";
+import { isRecord } from "../shared/values.js";
+import { sameFolder } from "../workspace/workspaceRoot.js";
 import {
-  clampText,
   envValue,
   forEachJsonLine,
-  isRecord,
   type JsonRecord,
   mapWithConcurrency,
   readHeadJsonLines,
   readTailJsonLines,
   resolveHome,
-  sameFolder,
   stringField,
-  titleFromText,
-} from "./sessionIo.js";
+} from "./storeIo.js";
 import type {
   ExternalSessionOptions,
   ExternalSessionScope,
@@ -26,7 +25,7 @@ const HEAD_BYTES = 64 * 1024;
 const TAIL_BYTES = 64 * 1024;
 const TOOL_TEXT_LIMIT = 16 * 1024;
 
-export function claudeProjectsDir(options: ExternalSessionOptions = {}): string {
+function claudeProjectsDir(options: ExternalSessionOptions = {}): string {
   return join(
     envValue(options, "CLAUDE_CONFIG_DIR") ?? join(resolveHome(options), ".claude"),
     "projects",

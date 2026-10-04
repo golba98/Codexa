@@ -3,9 +3,10 @@ import { accessSync, constants, existsSync } from "fs";
 import { delimiter, join } from "path";
 import { buildSpawnSpec } from "../executables/executableResolver.js";
 import { normalizeExecutableValue } from "../process/processValidation.js";
-import type { ProviderConfig, ProviderLaunchCommand } from "./types.js";
+import { errorMessage } from "../shared/values.js";
+import type { ProviderConfig } from "./types.js";
 
-export interface ProviderLaunchSpec {
+interface ProviderLaunchSpec {
   executable: string;
   args: string[];
   cwd: string;
@@ -29,10 +30,6 @@ export interface LaunchProviderCliOptions {
   afterLaunch?: () => void;
   spawnImpl?: typeof spawn;
   commandExists?: (executable: string) => Promise<boolean> | boolean;
-}
-
-function formatCommand(command: ProviderLaunchCommand): string {
-  return [command.executable, ...command.args].join(" ");
 }
 
 export function buildProviderLaunchSpec(
@@ -63,7 +60,7 @@ export function buildProviderLaunchSpec(
       cwd,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Invalid launch command.";
+    const message = errorMessage(error, "Invalid launch command.");
     return {
       status: "spawn-error",
       message: `${provider.displayName} has an unsafe launch command. ${message}`,
@@ -231,13 +228,4 @@ export async function launchCliCommand(
     }
     options.afterLaunch?.();
   }
-}
-
-export function describeProviderLaunch(provider: ProviderConfig): string {
-  if (!provider.enabled) {
-    return `${provider.displayName} is disabled.`;
-  }
-  return provider.launchCommand
-    ? `${provider.displayName}: ${formatCommand(provider.launchCommand)}`
-    : `${provider.displayName} has no launch command configured.`;
 }

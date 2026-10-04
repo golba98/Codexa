@@ -1,13 +1,14 @@
-import { appendFileSync } from "fs";
 import { formatConversationHistory } from "../../session/conversation.js";
-import { resolveGeminiExecutable } from "../executables/geminiExecutable.js";
+import { resolveGeminiExecutable } from "../executables/executableResolver.js";
+import { createDebugLog } from "../perf/debugLog.js";
 import {
   type CommandResult,
   type CommandStreamHandlers,
   runCommand,
-} from "../process/CommandRunner.js";
+} from "../process/commandRunner.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
+import { errorMessage } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
 import {
   GEMINI_DEFAULT_MODEL_ID,
@@ -32,7 +33,7 @@ function isGeminiDiagEnabled(): boolean {
 function diagLog(msg: string): void {
   if (!isGeminiDiagEnabled()) return;
   try {
-    appendFileSync(GEMINI_DIAG_LOG, `[${new Date().toISOString()}] ${msg}\n`);
+    geminiLog(`[${new Date().toISOString()}] ${msg}\n`);
   } catch {
     /* ignore */
   }
@@ -44,16 +45,16 @@ const GEMINI_ROUTE_VALIDATION_TIMEOUT_MS = 30_000;
 const GEMINI_READY_PROMPT = "Respond with READY only.";
 const GEMINI_REASONING_UNSUPPORTED_DIAGNOSTIC =
   "Gemini reasoning control is not supported by this CLI version.";
-export const GEMINI_ROUTE_SETUP_MESSAGE =
+const GEMINI_ROUTE_SETUP_MESSAGE =
   "Google/Gemini is not configured for in-Ubume routing yet. Sign in with Gemini CLI headless auth or set GEMINI_API_KEY / GOOGLE_API_KEY.";
 
 type CommandRunner = typeof runCommand;
-export type GeminiApprovalMode = "default" | "plan" | "auto_edit" | "yolo";
-export type GeminiOutputFormat = "text" | "json" | "stream-json";
-export type GeminiCommandMode = "readiness" | "prompt";
+type GeminiApprovalMode = "default" | "plan" | "auto_edit" | "yolo";
+type GeminiOutputFormat = "text" | "json" | "stream-json";
+type GeminiCommandMode = "readiness" | "prompt";
 type GeminiExtractionStatus = "assistant-text" | "completed-empty-assistant" | "not-completed";
 
-export interface GeminiCommandSpec {
+interface GeminiCommandSpec {
   file: string;
   args: string[];
   cwd: string;
@@ -83,7 +84,6 @@ interface GeminiPromptRunDiagnostics {
 }
 
 let geminiCliHeadlessValidated = false;
-let resolvedGeminiCommand: string | null = null;
 let lastPromptDiagnostics: GeminiPromptRunDiagnostics | null = null;
 
 function getGeminiApiKey(env: NodeJS.ProcessEnv = process.env): string | null {
@@ -100,7 +100,6 @@ export function isGeminiRouteConfigured(env: NodeJS.ProcessEnv = process.env): b
 
 export function resetGeminiRouteValidationCacheForTests(): void {
   geminiCliHeadlessValidated = false;
-  resolvedGeminiCommand = null;
   lastPromptDiagnostics = null;
 }
 
@@ -135,9 +134,7 @@ function getCombinedOutput(
   return sanitizeTerminalOutput(`${result.stderr}\n${result.stdout}\n${result.userMessage}`);
 }
 
-export function resolveGeminiApprovalMode(
-  runtime?: ResolvedRuntimeConfig | boolean,
-): GeminiApprovalMode {
+function resolveGeminiApprovalMode(runtime?: ResolvedRuntimeConfig | boolean): GeminiApprovalMode {
   if (typeof runtime === "boolean") {
     return runtime ? "plan" : "default";
   }
@@ -195,7 +192,6 @@ export async function buildGeminiCommand(options: {
     cwd: options.cwd,
     configuredPath: options.configuredPath,
   });
-  resolvedGeminiCommand = file;
 
   const approvalMode = resolveGeminiApprovalMode(options.runtime);
   const outputFormat = options.outputFormat ?? "text";
@@ -500,13 +496,6 @@ export async function runGeminiCliWithRunner(
   throw new Error(formatGeminiFailure(first.command, first.result));
 }
 
-async function runGeminiCli(
-  request: ProviderChatRequest,
-  handlers?: CommandStreamHandlers,
-): Promise<string> {
-  return runGeminiCliWithRunner(request, runCommand, handlers);
-}
-
 export function classifyGeminiProbeFailure(
   result: CommandResult,
 ):
@@ -613,7 +602,7 @@ export async function validateGeminiRoute(options: {
     });
   } catch (error) {
     geminiCliHeadlessValidated = false;
-    const message = error instanceof Error ? error.message : "Gemini CLI executable was not found.";
+    const message = errorMessage(error, "Gemini CLI executable was not found.");
     return {
       status: hasGeminiApiKey(options.env) ? "ready" : "not-configured",
       providerId: "google",
@@ -701,28 +690,28 @@ export async function validateGeminiRoute(options: {
     };
   }
 
-  let errorMessage = GEMINI_ROUTE_SETUP_MESSAGE;
+  let failureMessage = GEMINI_ROUTE_SETUP_MESSAGE;
   if (failureReason === "shell wrapper/function conflict") {
-    errorMessage = `PowerShell wrapper detected. Ubume is bypassing it and using:\n${command.file}`;
+    failureMessage = `PowerShell wrapper detected. Ubume is bypassing it and using:\n${command.file}`;
   } else if (result.status === "completed" && result.exitCode === 0) {
-    errorMessage =
+    failureMessage =
       "Gemini CLI responded, but Ubume could not validate the headless route. The probe returned unexpected output.";
   } else if (!looksFound) {
-    errorMessage =
+    failureMessage =
       "Gemini CLI was not found as a real executable file. Install Gemini CLI or set GEMINI_EXECUTABLE to a known working command/path.";
   } else if (result.status === "timeout") {
-    errorMessage = "Installed but headless probe timed out.";
+    failureMessage = "Installed but headless probe timed out.";
   } else if (result.status === "completed" && result.exitCode !== 0) {
-    errorMessage = `Gemini CLI installed, auth unknown or headless mode failed. Run: ${command.file} --model ${command.model ?? GEMINI_DEFAULT_MODEL_ID} -p "Respond with READY only."`;
+    failureMessage = `Gemini CLI installed, auth unknown or headless mode failed. Run: ${command.file} --model ${command.model ?? GEMINI_DEFAULT_MODEL_ID} -p "Respond with READY only."`;
   } else if (result.status === "failed") {
-    errorMessage = `Gemini CLI installed, auth unknown or headless mode failed. Run: ${command.file} --model ${command.model ?? GEMINI_DEFAULT_MODEL_ID} -p "Respond with READY only."`;
+    failureMessage = `Gemini CLI installed, auth unknown or headless mode failed. Run: ${command.file} --model ${command.model ?? GEMINI_DEFAULT_MODEL_ID} -p "Respond with READY only."`;
   }
 
   return {
     status: "not-configured",
     providerId: "google",
     backendKind: "unavailable",
-    message: errorMessage,
+    message: failureMessage,
     diagnostics,
   };
 }
@@ -926,8 +915,7 @@ export const geminiRuntime: ProviderRuntime = {
           `REJECTED: cancelled=${cancelled} errorType=${error instanceof Error ? error.name : typeof error}`,
         );
         if (cancelled) return;
-        const message =
-          error instanceof Error ? error.message : "Google/Gemini in-Ubume routing failed.";
+        const message = errorMessage(error, "Google/Gemini in-Ubume routing failed.");
         diagLog(`CALLING: onError`);
         handlers.onError(message);
       });
@@ -943,3 +931,5 @@ export const geminiRuntime: ProviderRuntime = {
     };
   },
 };
+
+const geminiLog = createDebugLog(isGeminiDiagEnabled, GEMINI_DIAG_LOG);

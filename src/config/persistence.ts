@@ -1,9 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
-import { dirname } from "path";
-import type { Theme } from "../ui/theme.js";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { mergeRuntimeIntoTomlConfig, parseTomlDocument } from "./layeredConfig.js";
 import { normalizeRuntimeConfig, type RuntimeConfig } from "./runtimeConfig.js";
-import type { AvailableMode } from "./settings.js";
+import type { AvailableMode, Theme } from "./settings.js";
 import {
   AUTH_PREFERENCES,
   type AuthPreference,
@@ -24,9 +23,9 @@ import {
   WORKSPACE_DISPLAY_MODES,
   type WorkspaceDisplayMode,
 } from "./settings.js";
-import { serializeTomlDocument } from "./toml-serialize.js";
+import { serializeTomlDocument } from "./tomlSerialize.js";
 
-export interface UiSettings {
+interface UiSettings {
   layoutStyle: string;
   theme: string;
   workspaceDisplayMode: WorkspaceDisplayMode;
@@ -35,11 +34,11 @@ export interface UiSettings {
   customTheme?: Partial<Theme>;
 }
 
-export interface AuthSettings {
+interface AuthSettings {
   preference: AuthPreference;
 }
 
-export interface UpdateCheckSettings {
+interface UpdateCheckSettings {
   enabled: boolean;
   intervalHours: number;
   skippedUpdateVersion?: string | null;
@@ -50,7 +49,7 @@ export const DEFAULT_UPDATE_CHECK_SETTINGS: UpdateCheckSettings = {
   intervalHours: 6,
 };
 
-export interface AppSettings {
+interface AppSettings {
   ui: UiSettings;
   auth: AuthSettings;
   header: HeaderConfig;

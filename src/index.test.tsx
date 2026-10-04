@@ -329,6 +329,14 @@ test("enforces a single render root while active", async () => {
   await flushMicrotasks();
 });
 
+test("leaves Ctrl-C cancellation and quit decisions to App", async () => {
+  const harness = createSupportedHarness();
+  assert.deepEqual(startApp(harness.deps), { started: true, exitCode: 0 });
+  assert.equal(harness.getRenderOptions()?.exitOnCtrlC, false);
+  harness.resolveExit();
+  await flushMicrotasks();
+});
+
 test("enables Kitty keyboard support without using the leaking auto-detection query", async () => {
   const harness = createSupportedHarness();
 

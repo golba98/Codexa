@@ -1,7 +1,7 @@
-import "./legacyEnvBootstrap.js";
+import "./config/legacyEnv.js";
 import { type Instance, type RenderOptions, render } from "ink";
 import type React from "react";
-import { App } from "./app.js";
+import { App } from "./app/App.js";
 import { type LaunchArgs, parseLaunchArgs } from "./config/launchArgs.js";
 import { loadSettings } from "./config/persistence.js";
 import { APP_NAME, formatTerminalTitlePath } from "./config/settings.js";
@@ -248,8 +248,11 @@ export function startApp({
 
   const kittyKeyboard = resolveKittyKeyboardOptions(env);
   renderHandle = renderApp(<App launchArgs={launchArgs} />, {
+    // App owns cancel, draft clearing, and the deliberate second Ctrl-C quit.
+    exitOnCtrlC: false,
     ...(kittyKeyboard ? { kittyKeyboard } : {}),
-    stdout: wrappedStdout as any,
+    // AppStdout is the narrow surface the app uses; Ink wants the full stream type.
+    stdout: wrappedStdout as unknown as NodeJS.WriteStream,
   });
 
   // Resolve the real Ink class instance to get access to lastOutput,

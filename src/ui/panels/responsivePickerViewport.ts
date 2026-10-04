@@ -1,4 +1,4 @@
-export interface ResponsivePickerViewportOptions {
+interface ResponsivePickerViewportOptions {
   itemCount: number;
   selectedIndex: number;
   availableRows: number;
@@ -6,7 +6,7 @@ export interface ResponsivePickerViewportOptions {
   scrollOffset?: number;
 }
 
-export interface ResponsivePickerViewport {
+interface ResponsivePickerViewport {
   start: number;
   end: number;
   capacity: number;

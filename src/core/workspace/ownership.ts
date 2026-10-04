@@ -14,7 +14,7 @@ export interface OwnershipLease {
   owner: OwnershipInfo;
   release: () => void;
 }
-export class OwnershipError extends Error {
+class OwnershipError extends Error {
   readonly exitCode = 3;
   constructor(
     readonly resource: string,
