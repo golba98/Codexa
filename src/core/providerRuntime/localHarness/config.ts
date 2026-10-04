@@ -1,9 +1,8 @@
-import { randomBytes, scryptSync } from "node:crypto";
+import { createHash, randomBytes, scryptSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import type { ProviderChatRequest } from "../types.js";
-import { hashJson, sanitizedEndpoint } from "./messages.js";
 
 export const HARNESS_VERSION = "0.1.1-rc.2";
 
@@ -22,7 +21,7 @@ export const LOCAL_STREAM_IDLE_TIMEOUT_MS = 300_000;
 
 export const INTERNAL_PROVIDER = "ubume-local";
 
-export const require = createRequire(import.meta.url);
+const packageRequire = createRequire(import.meta.url);
 
 export const PROCESS_FINGERPRINT_SALT = randomBytes(16);
 
@@ -58,6 +57,25 @@ export function resolveHarnessSandboxMode(request: ProviderChatRequest): Harness
   return "workspace-write";
 }
 
+/** Stable SHA-256 of a JSON-serializable value, used for route and grant fingerprints. */
+export function hashJson(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+/** Endpoint URL with credentials, query and fragment removed, safe to show or hash. */
+export function sanitizedEndpoint(value: string): string {
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return "configured Local endpoint";
+  }
+}
+
 export function transcriptHash(request: ProviderChatRequest): string {
   return hashJson(request.conversationHistory ?? []);
 }
@@ -84,7 +102,7 @@ export function secretFingerprint(value: string): string {
 }
 
 export function resolveDshBin(): string {
-  const packagePath = require.resolve("@deepseek-ai/dsh/package.json");
+  const packagePath = packageRequire.resolve("@deepseek-ai/dsh/package.json");
   const manifest = JSON.parse(readFileSync(packagePath, "utf8")) as { bin?: { dsh?: string } };
   if (!manifest.bin?.dsh)
     throw new Error("The installed @deepseek-ai/dsh package has no dsh executable.");

@@ -1,6 +1,6 @@
 # Ubume Source Guide
 
-This is the maintenance catalog for production TypeScript files under `src/`. It describes ownership and purpose; [Ubume Architecture](ARCHITECTURE.md) explains how the subsystems work together, and [Developer Scripts](../scripts/README.md) documents repository automation outside `src/`.
+This is the maintenance catalog for production TypeScript files under `src/`. It describes ownership and purpose; [Ubume Architecture](ARCHITECTURE.md) explains how the subsystems work together, and [Developer Scripts](../scripts/README.md) documents repository automation outside `src/`, and [`src/core/README.md`](../src/core/README.md) maps the core folders.
 
 ## How to use this guide
 

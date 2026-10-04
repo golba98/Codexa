@@ -1,7 +1,6 @@
-import { createHash } from "node:crypto";
 import { isRecord } from "../../shared/values.js";
 import type { ProviderChatRequest } from "../types.js";
-import { LOCAL_STREAM_IDLE_TIMEOUT_MS } from "./config.js";
+import { LOCAL_STREAM_IDLE_TIMEOUT_MS, sanitizedEndpoint } from "./config.js";
 
 export const MAX_DISPLAY_REASONING_CHARS = 32_768;
 
@@ -28,29 +27,12 @@ export function formatTokens(value: number): string {
   return Math.max(0, Math.round(value)).toLocaleString("en-US");
 }
 
-export function sanitizedEndpoint(value: string): string {
-  try {
-    const url = new URL(value);
-    url.username = "";
-    url.password = "";
-    url.search = "";
-    url.hash = "";
-    return url.toString().replace(/\/$/, "");
-  } catch {
-    return "configured Local endpoint";
-  }
-}
-
 export function abortError(): DOMException {
   return new DOMException("Local request cancelled.", "AbortError");
 }
 
 export function redactStderr(stderr: string, secrets: readonly string[]): string {
   return secrets.reduce((text, secret) => text.split(secret).join("[redacted]"), stderr).trim();
-}
-
-export function hashJson(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 export function describeLocalRoute(request: ProviderChatRequest): string[] {

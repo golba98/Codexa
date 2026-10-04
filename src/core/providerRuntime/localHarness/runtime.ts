@@ -39,12 +39,14 @@ import {
   HARNESS_MAX_RSS_BYTES,
   HARNESS_VERSION,
   type HarnessConfig,
+  hashJson,
   INTERNAL_PROVIDER,
   PROFILE_NAME,
   resolveDshBin,
   resolveHarnessConfig,
   resolveHarnessSandboxMode,
   routeFingerprint,
+  sanitizedEndpoint,
   secretFingerprint,
   transcriptHash,
 } from "./config.js";
@@ -53,9 +55,7 @@ import {
   describeLocalRoute,
   formatTokens,
   harnessMemoryLimitMessage,
-  hashJson,
   redactStderr,
-  sanitizedEndpoint,
 } from "./messages.js";
 import type { HarnessNotification, HarnessRunState } from "./notifications.js";
 import { routeNotification } from "./notifications.js";
