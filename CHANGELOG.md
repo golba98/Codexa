@@ -6,6 +6,67 @@ No changes yet.
 
 ---
 
+## [0.1.12] — 2026-10-08 — Local Browser Use and Ctrl+C Exit (prepared)
+
+### Added
+
+- Local models can drive a browser through 14 structured Local Harness tools: open, inspect, click, type, press keys, select, navigate, and take screenshots, reusing one browser across turns. Run `ubume browser install` to install Chromium (requires Node 18+). Under `on-request`, click, type, press, and select need a one-use approval. Sensitive fields are masked, and browser traffic stays on loopback when network access is disabled. See `docs/LOCAL_BROWSER.md`. (#274)
+
+### Removed
+
+- The `openai-native` backend, which was a stub that could never run, along with the backend picker and the `/backend` and `/backends` commands. Config that still names it falls back to the default backend and is reported as an ignored entry. (#278)
+- The `UBUME_STABLE_RENDER=0` legacy timeline render path. (#278)
+
+### Fixed
+
+- Ctrl+C behaves like Claude Code and Codex.
+  - In 0.1.11 the first press exited immediately.
+  - Ctrl+C now stops an active run or clears the draft first.
+  - On an empty prompt it shows `Press Ctrl+C again to exit` under the input for 2 seconds, and a second press while the hint is visible exits.
+  - The hint no longer lands in the transcript, and pressing again after it expires shows it again instead of appearing to do nothing. (#283, #285)
+- Provider setup errors name the provider being set up instead of always reporting "Mistral Vibe setup failed". (#278)
+- Plan storage honors `UBUME_DATA_DIR` on Windows, the Codex model cache seed honors `CODEX_HOME`, and the pre-rename update-check cache is read again. (#278)
+- `ubume-dev --headless-benchmark` keeps the benchmark flag. (#278)
+- External-session discovery honors injected Windows home directories (`USERPROFILE`). (#279)
+- The composer's Ctrl+Alt+P detection timer is cleared on unmount. (#278)
+
+### Security
+
+- hono 4.13.12 (#275) now ships in the package. The dependabot bump had not reached `bun.lock`, from which the published shrinkwrap is generated.
+- Patched transitive dependencies for advisories published since 0.1.11:
+  - `@modelcontextprotocol/sdk` 1.32.1 (GHSA-6qxp-vccf-f47h)
+  - `proxy-addr` 2.0.8 (GHSA-jqcg-44mw-7w3h)
+  - `sharp` 0.35.5 (GHSA-wq5f-xc86-pv6w)
+
+### Internal
+
+- Source cleanup across #276–#282 and #284:
+  - Dead code removed, with `noUnusedLocals`, `noUnusedParameters`, and `noExplicitAny` enforced.
+  - Shared helpers consolidated.
+  - Timeline, composer, and Local Harness modules split.
+  - `app.tsx` split into typed hooks under `src/app/`, taking App from 7,669 to 1,467 lines.
+
+### Verification
+
+- `npm run prepublishOnly` passed: 1,843 tests, TypeScript, and Biome. Capability audit: 17/17. npm audit: zero vulnerabilities.
+- Added a real-App regression test. The exit hint appears, clears when the window expires, re-arms on the next press, and a second press exits. This test failed on 0.1.11's main before the fix.
+- Real-PTY checks through `bin/ubume.js` covered:
+  - presses 0.3 s and 1.5 s apart, which exit;
+  - a 2.5 s gap, which re-arms with a visible hint;
+  - clearing a draft;
+  - the Kitty keyboard protocol.
+- Terminal recording: `docs/recordings/ctrl-c-double-press.cast`.
+- The packed tarball (218 files, 581 kB) was installed in an isolated prefix, and these checks passed:
+  - `--version` reported 0.1.12;
+  - `doctor --json`;
+  - fixture-provider headless execution;
+  - packaged Harness inference against a local mock endpoint;
+  - the Ctrl+C PTY sequence (hint, then exit at 1.5 s; re-arm after 2.5 s).
+- The consumer install resolves a single copy each of hono 4.13.12, `@modelcontextprotocol/sdk` 1.32.1, proxy-addr 2.0.8, and sharp 0.35.5.
+- npm publication is pending; the version is prepared for review.
+
+---
+
 ## [0.1.11] — 2026-10-01 — Provider Resume and Durable Local Chats (prepared)
 
 ### Added

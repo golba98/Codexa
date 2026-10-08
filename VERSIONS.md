@@ -3,6 +3,25 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.12 — 2026-10-08 (prepared)
+
+Ctrl+C now works like it does in Claude Code and Codex:
+
+- During a run, it stops the run.
+- With a draft, it clears the draft.
+- On an empty prompt, it shows "Press Ctrl+C again to exit" under the input, and a second press within two seconds exits.
+
+In 0.1.11 the first press quit immediately.
+
+Local models can now use a browser to test web apps: they open pages, read them, click, type, and take screenshots. Run `ubume browser install` once to set it up.
+
+Other changes:
+
+- The `openai-native` backend, which never worked, and the `/backend` commands are gone.
+- hono, the MCP SDK, proxy-addr, and sharp are updated to versions with security fixes.
+
+This version is prepared but has not been published to npm.
+
 ## v0.1.11 — 2026-10-01 (prepared)
 
 `/resume` brings every provider into one history picker. Local chats have their own section with LM Studio, Unsloth and model filters. Ubume owns the saved chats in its user data folder, restores the original workspace and route, and durably saves the local agent session before completing a turn. Older histories migrate without deleting their originals. Antigravity uses the `agy` CLI; Mistral Vibe continuation belongs to each chat.

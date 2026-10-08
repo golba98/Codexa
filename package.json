@@ -1,6 +1,6 @@
 {
   "name": "ubume",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Terminal UI for Ubume — TypeScript + Bun + Ink",
   "type": "module",
   "bin": {
@@ -147,7 +147,10 @@
   "overrides": {
     "ws": "^8.21.0",
     "fast-uri": "^3.1.8",
-    "ip-address": "^10.7.2"
+    "ip-address": "^10.7.2",
+    "proxy-addr": "^2.0.8",
+    "sharp": "^0.35.5",
+    "@modelcontextprotocol/sdk": "^1.31.0"
   },
   "trustedDependencies": [
     "@deepseek-ai/dsh-subprocess-local"
