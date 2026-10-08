@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { stripVTControlCharacters } from "node:util";
 import { render, renderToString } from "ink";
 import type React from "react";
 import { getTextWidth } from "../../core/shared/text.js";
@@ -69,7 +70,8 @@ test("ResumePicker keeps its side borders aligned for pasted titles at different
       </ThemeProvider>,
       { columns },
     );
-    const lines = frame.split("\n");
+    // Ink emits ANSI styles in color-enabled terminals; compare visible borders.
+    const lines = stripVTControlCharacters(frame).split("\n");
     assert.equal(lines.length, 6);
     assert.match(frame, /\[Pasted Content 22,703 chars\]/);
     assert.doesNotMatch(frame, /\u2063[\uFE00-\uFE09]+\u2063/);
