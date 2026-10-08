@@ -275,7 +275,7 @@ if (scenario === "plan-actions") {
   terminal.stdin.write("retained after interrupt");
   await delay();
   runs[2]!.handlers.onAssistantDelta?.("last buffered partial reply");
-  terminal.stdin.write("\u000f");
+  terminal.stdin.write("\u0014"); // Ctrl+T opens the transcript
   await delay();
   assert(terminal.output().includes("TRANSCRIPT"));
   terminal.stdin.write("\u0003");

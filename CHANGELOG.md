@@ -6,6 +6,23 @@ No changes yet.
 
 ---
 
+## [0.1.13] — 2026-10-08 — Ctrl+O Model Picker
+
+### Changed
+
+- Ctrl+O opens the model picker again. 0.1.3 had moved it to Alt+P and used Ctrl+O for the transcript inspector. Alt+P still opens the model picker too.
+- The transcript inspector moves to Ctrl+T. `/transcript` is unchanged.
+- `/help` and `docs/TERMINAL_WORKBENCH.md` list the new shortcuts.
+
+### Verification
+
+- `npm run prepublishOnly` passed: 1,851 tests, TypeScript, and Biome. The full suite also passed under a real PTY. npm audit: zero vulnerabilities.
+- New regression tests: keymap unit tests, plus Ink end-to-end tests for raw (`\x0f`) and Kitty CSI-u (`ESC[111;5u`) Ctrl+O, and for Ctrl+T. They fail against the 0.1.12 keymap.
+- The real-App workbench test now opens the transcript with Ctrl+T.
+- The packed tarball (218 files, 581 kB) was installed in an isolated prefix. `--version` reported 0.1.13. In a real PTY, Ctrl+O opened the model picker, Ctrl+T opened the transcript, and Ctrl+Q exited cleanly.
+
+---
+
 ## [0.1.12] — 2026-10-08 — Local Browser Use and Ctrl+C Exit (prepared)
 
 ### Added

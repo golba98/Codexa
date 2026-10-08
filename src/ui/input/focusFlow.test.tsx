@@ -379,6 +379,7 @@ function ShortcutModelPickerHarness() {
   const [value, setValue] = React.useState("");
   const [cursor, setCursor] = React.useState(0);
   const [submitCount, setSubmitCount] = React.useState(0);
+  const [transcriptCount, setTranscriptCount] = React.useState(0);
   const [composerInstanceKey, setComposerInstanceKey] = React.useState(0);
   const previousScreenRef = React.useRef<"main" | "model-picker">("main");
 
@@ -400,6 +401,7 @@ function ShortcutModelPickerHarness() {
         <Text>{`screen:${screen}`}</Text>
         <Text>{`model:${model}`}</Text>
         <Text>{`submit:${submitCount}`}</Text>
+        <Text>{`transcript:${transcriptCount}`}</Text>
         <Text>{`value:${JSON.stringify(value)}`}</Text>
         {screen === "model-picker" ? (
           <ModelPickerScreen
@@ -433,6 +435,7 @@ function ShortcutModelPickerHarness() {
             onHistoryUp={() => {}}
             onHistoryDown={() => {}}
             onOpenModelPicker={() => setScreen("model-picker")}
+            onTranscript={() => setTranscriptCount((count) => count + 1)}
             onCycleMode={() => {}}
             onQuit={() => {}}
           />
@@ -806,6 +809,61 @@ test("shift+tab rotates plan and safety modes without submitting or mutating the
     assert.match(output, /plan:on/);
     assert.match(output, /plan:off/);
     assert.match(output, /mode:suggest/);
+    assert.match(output, /submit:0/);
+    assert.equal(getLastComposerValue(output), "a");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+for (const [label, sequence] of [
+  ["raw", "\x0f"],
+  ["kitty CSI-u", "\u001b[111;5u"],
+] as const) {
+  test(`ctrl+o (${label}) opens the model picker without submitting`, async () => {
+    const harness = createInkHarness(<ShortcutModelPickerHarness />);
+
+    try {
+      await sleep();
+      harness.stdin.write("a");
+      await sleep(20);
+      harness.stdin.write(sequence); // Ctrl+O
+      await sleep(120);
+      harness.stdin.write("\u001b[B");
+      await sleep(40);
+      harness.stdin.write("\r");
+      await sleep(80);
+      harness.stdin.write("z");
+      await sleep(80);
+
+      const output = harness.getOutput();
+      assert.match(output, /screen:model-picker/);
+      assert.match(output, /Select model/);
+      assert.match(output, /screen:main/);
+      assert.match(output, /model:gpt-5\.4-mini/);
+      assert.match(output, /submit:0/);
+      assert.match(output, /transcript:0/);
+      assert.doesNotMatch(output, /transcript:1/);
+      assert.equal(getLastComposerValue(output), "az");
+    } finally {
+      await harness.cleanup();
+    }
+  });
+}
+
+test("ctrl+t opens the transcript, not the model picker", async () => {
+  const harness = createInkHarness(<ShortcutModelPickerHarness />);
+
+  try {
+    await sleep();
+    harness.stdin.write("a");
+    await sleep(20);
+    harness.stdin.write("\x14"); // Ctrl+T
+    await sleep(120);
+
+    const output = harness.getOutput();
+    assert.match(output, /transcript:1/);
+    assert.doesNotMatch(output, /screen:model-picker/);
     assert.match(output, /submit:0/);
     assert.equal(getLastComposerValue(output), "a");
   } finally {
