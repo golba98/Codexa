@@ -30,7 +30,7 @@ delete, reorder, pause, or continue pending instructions.
 | Preview recovery | `/rewind` |
 | Resume | `/resume` picker (Ubume, Claude Code, Codex, Antigravity), or `/resume <id>` |
 | Clear conversation | `/clear` |
-| Exit | Ctrl+Q or `/exit`; idle Ctrl+C twice also exits |
+| Exit | Ctrl+Q or `/exit`; on an empty prompt, Ctrl+C shows "Press Ctrl+C again to exit" for 2 seconds and a second press exits |
 
 Up/Down move through visual lines before entering prompt history. Leaving history
 restores the original draft and cursor. Attachments behave as a single unit during

@@ -154,7 +154,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     isMountedRef,
     activeRunIdRef,
     clearEpochRef,
-    interruptStopping,
+    interruptHint,
     conversationRouteOverride,
     preserveSavedRouteRef,
     savedViewerSession,
@@ -708,7 +708,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     }
     return measureBottomComposerRows({
       queueCount: promptQueue.items.length,
-      stopping: interruptStopping,
+      interruptHint,
       layout: terminalLayout,
       width: composerWidth,
       uiState,
@@ -726,7 +726,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     currentModelSpec,
     cursor,
     inputValue,
-    interruptStopping,
+    interruptHint,
     mode,
     model,
     planFlow.kind,

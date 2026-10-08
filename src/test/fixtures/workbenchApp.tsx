@@ -86,8 +86,10 @@ function mount() {
   const stdin = new Input();
   const stdout = new Output();
   let output = "";
+  let lastFrame = "";
   stdout.on("data", (chunk) => {
-    output += chunk.toString();
+    lastFrame = chunk.toString();
+    output += lastFrame;
   });
   const instance = render(
     <App launchArgs={parsed.ok ? parsed.value : never()} providerOverride={provider} />,
@@ -100,7 +102,8 @@ function mount() {
       debug: true,
     },
   );
-  return { stdin, instance, output: () => output };
+  // Debug-mode Ink writes each frame whole, so the last chunk is the current screen.
+  return { stdin, instance, output: () => output, lastFrame: () => lastFrame };
 }
 function never(): never {
   throw new Error("arguments");
@@ -191,6 +194,23 @@ if (scenario === "plan-actions") {
   const conversationDir = resolveUbumeConversationDir(process.cwd());
   assert.deepEqual(existsSync(conversationDir) ? readdirSync(conversationDir) : [], []);
   assert.equal(store.list().length, 0);
+  process.exit(0);
+} else if (scenario === "quit") {
+  // The exit hint is visible exactly while a second Ctrl+C would quit.
+  const hint = "Press Ctrl+C again to exit";
+  let exited = false;
+  void terminal.instance.waitUntilExit().then(() => {
+    exited = true;
+  });
+  terminal.stdin.write("\x03");
+  await until(() => terminal.lastFrame().includes(hint), "exit armed");
+  await until(() => !terminal.lastFrame().includes(hint), "armed exit expires");
+  assert.equal(exited, false);
+  terminal.stdin.write("\x03");
+  await until(() => terminal.lastFrame().includes(hint), "exit re-armed after expiry");
+  assert.equal(exited, false, "a press after the window must re-arm, not quit");
+  terminal.stdin.write("\x03");
+  await until(() => exited, "second press quits");
   process.exit(0);
 } else if (scenario === "cancel-start") {
   terminal.stdin.write("cancel during preparation");

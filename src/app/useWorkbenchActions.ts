@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import type { useApp } from "ink";
 import { useInput } from "ink";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { ProviderRunControl } from "../core/providers/types.js";
 import { errorMessage } from "../core/shared/values.js";
 import { editExternalPrompt } from "../core/terminal/externalEditor.js";
@@ -35,6 +35,7 @@ import {
   restoredEvents,
   type WorkbenchSnapshot,
 } from "../session/workbench.js";
+import type { InterruptHint } from "../ui/chrome/composer/composerModel.js";
 import {
   assertAttachedContent,
   createImageAttachmentToken,
@@ -65,7 +66,7 @@ interface UseWorkbenchActionsContext {
   bumpStaticRepaintGeneration: React.Dispatch<React.SetStateAction<number>>;
   handleQuit: () => void;
   activeRunIdRef: React.RefObject<number | null>;
-  setInterruptStopping: React.Dispatch<React.SetStateAction<boolean>>;
+  setInterruptHint: React.Dispatch<React.SetStateAction<InterruptHint | null>>;
   handleCancel: () => void;
   stoppingRef: React.RefObject<Promise<void>>;
   isMountedRef: React.RefObject<boolean>;
@@ -115,6 +116,9 @@ interface UseWorkbenchActionsContext {
   >;
 }
 
+/** How long the composer offers "Press Ctrl+C again to exit" before disarming. */
+export const EXIT_CONFIRM_WINDOW_MS = 2000;
+
 export function useWorkbenchActions(context: UseWorkbenchActionsContext) {
   const {
     setWorkbenchView,
@@ -132,7 +136,7 @@ export function useWorkbenchActions(context: UseWorkbenchActionsContext) {
     bumpStaticRepaintGeneration,
     handleQuit,
     activeRunIdRef,
-    setInterruptStopping,
+    setInterruptHint,
     handleCancel,
     stoppingRef,
     isMountedRef,
@@ -211,7 +215,27 @@ export function useWorkbenchActions(context: UseWorkbenchActionsContext) {
     resetInkOutputForFreshFrame({ instance: inkInstance, columns: stdout.columns });
     bumpStaticRepaintGeneration((value) => value + 1);
   }, [terminalControl, inkInstance, stdout]);
-  const quitHintTime = useRef(0);
+  // The composer shows the exit hint exactly while the next Ctrl+C would quit.
+  const exitArmedRef = useRef(false);
+  const exitArmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (exitArmTimerRef.current) clearTimeout(exitArmTimerRef.current);
+    },
+    [],
+  );
+  const disarmExit = useCallback(() => {
+    if (exitArmTimerRef.current) clearTimeout(exitArmTimerRef.current);
+    exitArmTimerRef.current = null;
+    if (!exitArmedRef.current) return;
+    exitArmedRef.current = false;
+    if (isMountedRef.current) setInterruptHint((hint) => (hint === "confirm-exit" ? null : hint));
+  }, [isMountedRef, setInterruptHint]);
+  const armExit = useCallback(() => {
+    exitArmedRef.current = true;
+    setInterruptHint("confirm-exit");
+    exitArmTimerRef.current = setTimeout(disarmExit, EXIT_CONFIRM_WINDOW_MS);
+  }, [disarmExit, setInterruptHint]);
   const interruptCleanupRef = useRef(false);
   const handleInterrupt = useCallback(() => {
     promptQueue.paused = true;
@@ -219,13 +243,15 @@ export function useWorkbenchActions(context: UseWorkbenchActionsContext) {
       handleQuit();
       return;
     }
+    const exitArmed = exitArmedRef.current;
+    disarmExit();
     if (activeRunIdRef.current !== null) {
       interruptCleanupRef.current = true;
-      setInterruptStopping(true);
+      setInterruptHint("stopping");
       handleCancel();
       void stoppingRef.current.finally(() => {
         interruptCleanupRef.current = false;
-        if (isMountedRef.current) setInterruptStopping(false);
+        if (isMountedRef.current) setInterruptHint(null);
       });
       return;
     }
@@ -237,13 +263,9 @@ export function useWorkbenchActions(context: UseWorkbenchActionsContext) {
       resetComposer();
       return;
     }
-    const now = Date.now();
-    if (now - quitHintTime.current < 1000) handleQuit();
-    else {
-      quitHintTime.current = now;
-      appendEvent("system", "Exit", "Press Ctrl+C again to exit, or keep working.");
-    }
-  }, [appendEvent, getSessionState, handleCancel, handleQuit, promptQueue, resetComposer]);
+    if (exitArmed) handleQuit();
+    else armExit();
+  }, [armExit, disarmExit, getSessionState, handleCancel, handleQuit, promptQueue, resetComposer]);
   useInput((input, key) => {
     if (!key.ctrl) return;
     if (input === "c") handleInterrupt();

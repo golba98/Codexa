@@ -7,6 +7,7 @@ import { cancelPlanFeedback, type PlanFlowState } from "../session/planFlow.js";
 import type { UIState } from "../session/types.js";
 import type { FileAttachment, PromptQueue } from "../session/workbench.js";
 import { MemoizedBottomComposer } from "../ui/chrome/BottomComposer.js";
+import type { InterruptHint } from "../ui/chrome/composer/composerModel.js";
 import { FOCUS_IDS } from "../ui/input/focus.js";
 import type { TerminalViewport } from "../ui/layout.js";
 import type { PlanActionValue } from "../ui/panels/PlanActionPicker.js";
@@ -34,7 +35,7 @@ interface UseAppComposerContext {
   composerReasoningLevel: "";
   planMode: boolean;
   showBusyLoader: boolean;
-  interruptStopping: boolean;
+  interruptHint: InterruptHint | null;
   conversationChars: number;
   currentModelSpec: ModelSpec;
   inputValue: string;
@@ -81,7 +82,7 @@ export function useAppComposer(context: UseAppComposerContext) {
     composerReasoningLevel,
     planMode,
     showBusyLoader,
-    interruptStopping,
+    interruptHint,
     conversationChars,
     currentModelSpec,
     inputValue,
@@ -158,7 +159,7 @@ export function useAppComposer(context: UseAppComposerContext) {
         contextDisplay={activeRuntimeDisplay.contextDisplay}
         planMode={planMode}
         showBusyLoader={showBusyLoader}
-        stopping={interruptStopping}
+        interruptHint={interruptHint}
         tokensUsed={estimateTokens(conversationChars)}
         modelSpec={currentModelSpec}
         value={inputValue}
@@ -218,7 +219,7 @@ export function useAppComposer(context: UseAppComposerContext) {
     conversationChars,
     currentModelSpec,
     inputValue,
-    interruptStopping,
+    interruptHint,
     cursor,
     handleChangeInput,
     handleRegisterPaste,

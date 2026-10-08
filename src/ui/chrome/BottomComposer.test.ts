@@ -797,9 +797,42 @@ test("stopping status stays truthful while a command draft is present", () => {
       uiState: { kind: "IDLE" },
       value: "/model",
       allowCommands: true,
-      stopping: true,
+      interruptHint: "stopping",
     }),
     "✧ Stopping · Ctrl+C again to exit",
+  );
+});
+
+test("an armed exit shows the confirm hint on the idle composer", () => {
+  assert.equal(
+    getVisibleComposerStatusLine({
+      uiState: { kind: "IDLE" },
+      value: "",
+      allowCommands: true,
+      interruptHint: "confirm-exit",
+    }),
+    "Press Ctrl+C again to exit",
+  );
+});
+
+test("an armed exit reserves the status row", () => {
+  const params = {
+    layout: createLayoutSnapshot(100, 30),
+    uiState: { kind: "IDLE" } as const,
+    value: "",
+    cursor: 0,
+  };
+  assert.equal(
+    measureBottomComposerRows({ ...params, interruptHint: "confirm-exit" }),
+    measureBottomComposerRows(params) + 1,
+  );
+});
+
+test("memoized composer re-renders when the interrupt hint changes", () => {
+  const prev = composerProps({ uiState: { kind: "IDLE" } });
+  assert.equal(
+    areBottomComposerPropsEqual(prev, { ...prev, interruptHint: "confirm-exit" }),
+    false,
   );
 });
 

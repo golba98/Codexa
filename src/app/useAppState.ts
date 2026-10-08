@@ -59,6 +59,7 @@ import type { Screen } from "../session/types.js";
 
 import { type FileAttachment, PromptQueue } from "../session/workbench.js";
 
+import type { InterruptHint } from "../ui/chrome/composer/composerModel.js";
 import type { ImageAttachmentRegistry, PastedContentRegistry } from "../ui/input/pastedContent.js";
 
 import { useTerminalViewport } from "../ui/layout.js";
@@ -285,7 +286,7 @@ export function useAppState(context: UseAppStateContext) {
     clearEpochRef,
   } = runRefs;
 
-  const [interruptStopping, setInterruptStopping] = useState(false);
+  const [interruptHint, setInterruptHint] = useState<InterruptHint | null>(null);
   const [conversationRouteOverride, setConversationRouteOverride] = useState<ProviderRoute | null>(
     null,
   );
@@ -419,8 +420,8 @@ export function useAppState(context: UseAppStateContext) {
     activeRunIdRef,
     activeTurnIdRef,
     clearEpochRef,
-    interruptStopping,
-    setInterruptStopping,
+    interruptHint,
+    setInterruptHint,
     conversationRouteOverride,
     setConversationRouteOverride,
     preserveSavedRouteRef,
