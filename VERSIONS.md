@@ -3,6 +3,12 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.13 — 2026-10-08
+
+Ctrl+O opens the model picker again, as it did before 0.1.3. Alt+P still works too.
+
+The transcript inspector, which used Ctrl+O since 0.1.3, is now Ctrl+T. `/transcript` still works.
+
 ## v0.1.12 — 2026-10-08 (prepared)
 
 Ctrl+C now works like it does in Claude Code and Codex:
