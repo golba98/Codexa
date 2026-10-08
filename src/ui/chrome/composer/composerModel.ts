@@ -57,11 +57,14 @@ export function getTokenBarDisplay(tokensUsed: number, modelSpec: ModelSpec) {
   };
 }
 
+/** Composer status after Ctrl+C: a run is stopping, or the next press quits. */
+export type InterruptHint = "stopping" | "confirm-exit";
+
 export interface BottomComposerProps {
   layout: Layout;
   width?: number;
   uiState: UIState;
-  stopping?: boolean;
+  interruptHint?: InterruptHint | null;
   themeName?: string;
   mode?: string;
   model?: string;
@@ -103,7 +106,7 @@ export interface BottomComposerMeasureParams {
   layout: Layout;
   width?: number;
   uiState: UIState;
-  stopping?: boolean;
+  interruptHint?: InterruptHint | null;
   mode?: string;
   model?: string;
   reasoningLevel?: string;
@@ -174,7 +177,7 @@ export function measureBottomComposerRows({
   value,
   cursor,
   queueCount = 0,
-  stopping = false,
+  interruptHint = null,
 }: BottomComposerMeasureParams): number {
   const persona = getComposerPersona(uiState);
   const allowCommands = persona !== "answer";
@@ -196,7 +199,7 @@ export function measureBottomComposerRows({
   const bottomPadding = layout.mode === "compact" ? 0 : 1;
   const visibleStatusLine = getVisibleComposerStatusLine({
     uiState,
-    stopping,
+    interruptHint,
     value: normalizedValue,
     allowCommands,
   });
@@ -265,17 +268,18 @@ export function getVisibleComposerStatusLine({
   activeProviderId,
   runElapsedSeconds,
   externalCliStatus,
-  stopping = false,
+  interruptHint = null,
 }: {
   uiState: UIState;
-  stopping?: boolean;
+  interruptHint?: InterruptHint | null;
   value: string;
   allowCommands: boolean;
   activeProviderId?: string;
   runElapsedSeconds?: number;
   externalCliStatus?: ExternalCliStatus;
 }): string {
-  if (stopping) return "✧ Stopping · Ctrl+C again to exit";
+  if (interruptHint === "stopping") return "✧ Stopping · Ctrl+C again to exit";
+  if (interruptHint === "confirm-exit") return "Press Ctrl+C again to exit";
   const persona = getComposerPersona(uiState);
   const rawStatusLine =
     getStatusLine(uiState, activeProviderId, runElapsedSeconds, externalCliStatus) ?? "";

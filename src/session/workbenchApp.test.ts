@@ -86,6 +86,12 @@ test(
 );
 
 test(
+  "actual App quits on a second Ctrl+C only while the exit hint is visible",
+  { timeout: 30000 },
+  () => scenarios(["quit"]),
+);
+
+test(
   "interrupt during checkpoint preparation does not start provider or leak execution lease",
   { timeout: 30000 },
   () => scenarios(["cancel-start"]),

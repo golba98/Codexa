@@ -411,7 +411,7 @@ function buildHelpMessage(context: CommandContext): string {
     "  Ctrl+L    Redraw screen without clearing history",
     "  Esc       Cancel active run or shell command",
     "  Ctrl+Y    Restore deleted text · Shift+Tab cycle mode",
-    "  Ctrl+C    Stop active run or clear draft · Ctrl+Q quit",
+    "  Ctrl+C    Stop run or clear draft · twice to exit · Ctrl+Q quit",
     "  ↑ / ↓    Move within prompt, then navigate history",
     "  Ctrl+R    Search history · Ctrl+_ undo input",
     "  Ctrl+G    Edit prompt in VISUAL/EDITOR",

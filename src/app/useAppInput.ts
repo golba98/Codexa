@@ -44,6 +44,7 @@ import { createPromptRunTiming } from "../session/eventIds.js";
 import { type PlanFlowState, startPlanGeneration } from "../session/planFlow.js";
 import type { Screen, UIState, UserPromptEvent } from "../session/types.js";
 import { type FileAttachment, type PromptQueue, queuedPrompt } from "../session/workbench.js";
+import type { InterruptHint } from "../ui/chrome/composer/composerModel.js";
 import {
   assertAttachedContent,
   expandPastedContent,
@@ -169,7 +170,7 @@ interface UseAppInputContext {
   focusManager: ReturnType<typeof useFocusManager>;
   handlePlanFeedbackSubmit: (value: string) => void;
   inputValue: string;
-  interruptStopping: boolean;
+  interruptHint: InterruptHint | null;
   togglePlanModeWithNotice: () => void;
   themeSelection: ThemeSelectionState;
 }
@@ -263,7 +264,7 @@ export function useAppInput(context: UseAppInputContext) {
     focusManager,
     handlePlanFeedbackSubmit,
     inputValue,
-    interruptStopping,
+    interruptHint,
     togglePlanModeWithNotice,
     themeSelection,
   } = context;
@@ -535,7 +536,7 @@ export function useAppInput(context: UseAppInputContext) {
     handlePlanFeedbackSubmit,
     handleWorkspaceRelaunch,
     inputValue,
-    interruptStopping,
+    interruptHint,
     layeredRuntimeConfig,
     modelCapabilities,
     mode,

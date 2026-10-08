@@ -4,6 +4,7 @@ import { setTerminalControlUIState } from "../core/terminal/terminalControl.js";
 import { setTerminalTitleLifecycleState } from "../core/terminal/terminalTitle.js";
 import type { PlanFlowState } from "../session/planFlow.js";
 import type { Screen, TimelineEvent, UIState } from "../session/types.js";
+import type { InterruptHint } from "../ui/chrome/composer/composerModel.js";
 import type { StartupHeaderMode, TerminalViewport } from "../ui/layout.js";
 
 interface UseAppDebugTracingContext {
@@ -15,7 +16,7 @@ interface UseAppDebugTracingContext {
   activeEvents: TimelineEvent[];
   uiState: UIState;
   inputValue: string;
-  interruptStopping: boolean;
+  interruptHint: InterruptHint | null;
   cursor: number;
   busy: boolean;
   composerRows: number;
@@ -35,7 +36,7 @@ export function useAppDebugTracing(context: UseAppDebugTracingContext) {
     activeEvents,
     uiState,
     inputValue,
-    interruptStopping,
+    interruptHint,
     cursor,
     busy,
     composerRows,
@@ -93,7 +94,7 @@ export function useAppDebugTracing(context: UseAppDebugTracingContext) {
     activeEvents,
     activeEventsLength: activeEvents.length,
     inputValue,
-    interruptStopping,
+    interruptHint,
     cursor,
     busy,
     composerRows,

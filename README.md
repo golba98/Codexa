@@ -63,7 +63,8 @@ Useful commands inside Ubume:
 Press Shift+Tab to rotate Plan, Read-only, Auto, and Full Access without
 opening a panel. Large pastes are displayed as `[Pasted Content … chars]`
 while their complete content is sent to the model. You can keep typing during
-runs; Enter queues the next instruction. Ctrl+C interrupts, and Ctrl+L redraws.
+runs; Enter queues the next instruction. Ctrl+C interrupts or clears the draft;
+on an empty prompt, press it twice to exit. Ctrl+L redraws.
 See the [terminal workbench guide](docs/TERMINAL_WORKBENCH.md) for editing keys,
 file attachments, change review, recovery, and resume behavior.
 

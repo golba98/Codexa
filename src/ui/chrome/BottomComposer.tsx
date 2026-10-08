@@ -68,7 +68,7 @@ export function BottomComposer({
   contextDisplay,
   planMode = false,
   showBusyLoader = true,
-  stopping = false,
+  interruptHint = null,
   tokensUsed = 0,
   modelSpec = FALLBACK_MODEL_SPEC,
   value,
@@ -130,7 +130,7 @@ export function BottomComposer({
     contextDisplay,
     planMode,
     showBusyLoader,
-    stopping,
+    interruptHint,
     tokensUsed,
     modelSpec,
     value,
@@ -283,7 +283,7 @@ export function BottomComposer({
               )}
               <AnimatedStatusText
                 baseText={rawStatusLine}
-                isActive={!stopping && persona === "busy" && showBusyLoader}
+                isActive={!interruptHint && persona === "busy" && showBusyLoader}
                 animationStyle="flow"
                 isError={persona === "error"}
               />
@@ -410,7 +410,8 @@ export function areBottomComposerPropsEqual(
   if (prev.reasoningLevel !== next.reasoningLevel) return false;
   if (prev.contextDisplay !== next.contextDisplay) return false;
   if (prev.planMode !== next.planMode) return false;
-  if (prev.showBusyLoader !== next.showBusyLoader || prev.stopping !== next.stopping) return false;
+  if (prev.showBusyLoader !== next.showBusyLoader || prev.interruptHint !== next.interruptHint)
+    return false;
   if (prev.tokensUsed !== next.tokensUsed) return false;
 
   // Re-render if layout changes

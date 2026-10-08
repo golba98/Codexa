@@ -63,7 +63,7 @@ export function useComposerInput({
   footerModelDisplay,
   reasoningLevel = "",
   planMode = false,
-  stopping = false,
+  interruptHint = null,
   tokensUsed = 0,
   modelSpec = FALLBACK_MODEL_SPEC,
   value,
@@ -284,7 +284,7 @@ export function useComposerInput({
     activeProviderId,
     runElapsedSeconds,
     externalCliStatus,
-    stopping,
+    interruptHint,
   });
   const showStatusLine = rawStatusLine.length > 0;
   const showTransientStatusRow = showStatusLine;
