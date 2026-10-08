@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { stripVTControlCharacters } from "node:util";
 import { render, renderToString } from "ink";
 import type React from "react";
 import { getTextWidth } from "../../core/shared/text.js";
@@ -54,20 +55,23 @@ test("ResumePicker keeps its side borders aligned for pasted titles at different
     },
   ];
   for (const columns of [60, 80, 100, 120]) {
-    const frame = renderToString(
-      <ThemeProvider theme="purple">
-        <PanelLayoutContext.Provider
-          value={{ mode: "compact", availableRows: 12, availableCols: columns - 4 }}
-        >
-          <ResumePicker
-            conversations={conversations}
-            onSelect={() => {}}
-            onCancel={() => {}}
-            loadSessions={async () => ({ sessions: [], errors: [] })}
-          />
-        </PanelLayoutContext.Provider>
-      </ThemeProvider>,
-      { columns },
+    // Ink colors the border when the test runner's stdout is a TTY (e.g. `npm publish`).
+    const frame = stripVTControlCharacters(
+      renderToString(
+        <ThemeProvider theme="purple">
+          <PanelLayoutContext.Provider
+            value={{ mode: "compact", availableRows: 12, availableCols: columns - 4 }}
+          >
+            <ResumePicker
+              conversations={conversations}
+              onSelect={() => {}}
+              onCancel={() => {}}
+              loadSessions={async () => ({ sessions: [], errors: [] })}
+            />
+          </PanelLayoutContext.Provider>
+        </ThemeProvider>,
+        { columns },
+      ),
     );
     const lines = frame.split("\n");
     assert.equal(lines.length, 6);
