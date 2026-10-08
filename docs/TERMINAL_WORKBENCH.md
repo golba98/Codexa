@@ -21,11 +21,11 @@ delete, reorder, pause, or continue pending instructions.
 | External editor | Ctrl+G; uses VISUAL, then EDITOR |
 | Stop active run | Ctrl+C or Esc; draft and session remain intact |
 | Redraw viewport | Ctrl+L; conversation and scrollback remain intact |
-| Model picker | Alt+P |
+| Model picker | Ctrl+O (or Alt+P) |
 | Provider picker | Ctrl+Alt+P |
 | Execution mode | Shift+Tab |
 | Send queued instructions immediately | Ctrl+X then Ctrl+S, or `/send-now` |
-| Inspect tool activity | Ctrl+O or `/transcript` |
+| Inspect tool activity | Ctrl+T or `/transcript` |
 | Review file changes | `/diff` |
 | Preview recovery | `/rewind` |
 | Resume | `/resume` picker (Ubume, Claude Code, Codex, Antigravity), or `/resume <id>` |

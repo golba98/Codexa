@@ -99,10 +99,10 @@ export function composerKeymap(input: string, key: Key, ctx: ComposerKeyContext)
   if (key.escape) return "cancel";
   if (ctx.chord && key.ctrl && input === "s") return "send-now-chord";
   if (key.ctrl && input === "x") return "start-chord";
-  if (key.ctrl && input === "o") return "transcript";
+  if (key.ctrl && input === "t") return "transcript";
   if (key.ctrl && input === "g") return "external-editor";
   if (key.ctrl && input === "r") return "start-history-search";
-  if (key.meta && input === "p") return "model-picker";
+  if ((key.ctrl && input === "o") || (key.meta && input === "p")) return "model-picker";
   if (key.home || key.end) return "line-boundary";
   if (key.ctrl && (input === "a" || input === "e")) return "line-shortcut";
   if (key.ctrl && (input === "b" || input === "f")) return "character-shortcut";
