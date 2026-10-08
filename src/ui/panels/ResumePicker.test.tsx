@@ -55,20 +55,23 @@ test("ResumePicker keeps its side borders aligned for pasted titles at different
     },
   ];
   for (const columns of [60, 80, 100, 120]) {
-    const frame = renderToString(
-      <ThemeProvider theme="purple">
-        <PanelLayoutContext.Provider
-          value={{ mode: "compact", availableRows: 12, availableCols: columns - 4 }}
-        >
-          <ResumePicker
-            conversations={conversations}
-            onSelect={() => {}}
-            onCancel={() => {}}
-            loadSessions={async () => ({ sessions: [], errors: [] })}
-          />
-        </PanelLayoutContext.Provider>
-      </ThemeProvider>,
-      { columns },
+    // Ink colors the border when the test runner's stdout is a TTY (e.g. `npm publish`).
+    const frame = stripVTControlCharacters(
+      renderToString(
+        <ThemeProvider theme="purple">
+          <PanelLayoutContext.Provider
+            value={{ mode: "compact", availableRows: 12, availableCols: columns - 4 }}
+          >
+            <ResumePicker
+              conversations={conversations}
+              onSelect={() => {}}
+              onCancel={() => {}}
+              loadSessions={async () => ({ sessions: [], errors: [] })}
+            />
+          </PanelLayoutContext.Provider>
+        </ThemeProvider>,
+        { columns },
+      ),
     );
     // Ink emits ANSI styles in color-enabled terminals; compare visible borders.
     const lines = stripVTControlCharacters(frame).split("\n");
