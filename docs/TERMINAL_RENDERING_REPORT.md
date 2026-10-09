@@ -42,6 +42,7 @@ All paths below are relative to the isolated worktree.
 | `src/ui/timeline/TurnGroup.test.tsx` | React/measured parity across eight themes and six widths |
 | `src/ui/timeline/TranscriptShell.test.tsx` | Actual Ink resize, composer/status and completion checks; repair frame helper |
 | `src/ui/timeline/timelineMeasureCache.test.ts` | Provider presentation parity, full responses and frozen browsing |
+| `scripts/audit-ubume-capabilities.mjs` | Recognize shared Markdown-to-diff integration in the capability audit |
 | `scripts/benchmark-terminal-markdown.ts` | Reproducible provider-free latency, CPU and memory benchmark |
 | `docs/recordings/markdown-overhaul.txt` | Actual before/after Ink frames at all requested widths |
 | `docs/recordings/markdown-overhaul.cast` | Truecolor terminal recording |
@@ -64,7 +65,7 @@ Representative source/before:
 | Installation | How to install Ubume |
 - Prepare
   - [x] Inspect repository
-``` 
+```
 
 After (heading/header emphasis uses the active theme):
 
@@ -144,3 +145,9 @@ There is no general syntax-highlighting engine in the existing stack. Diff block
 The shared checkout was inspected before implementation and monitored during work. The other agent advanced its branch while these changes stayed in a detached worktree. No overlapping rendering edits were detected. Final shared status contained only the other agent's untracked `docs/PROVIDER_RELIABILITY_REPORT.md`. No shared files were edited, no existing modifications were overwritten, no staging/commit/push/PR/reset/revert/stash/clean operations were performed, and provider/model/authentication/transport/execution files remain unchanged. The code-quality-review skill was used for the final surgical review.
 
 The accompanying patch was delivered without applying it to the shared checkout. The user subsequently requested a pull request, authorizing a dedicated branch, commit and push from this isolated worktree. The PR branch incorporates the latest main without overlapping rendering changes; the shared checkout remains untouched.
+
+## PR validation against current main
+
+After the user requested publication, `origin/main` at `25054c0` was merged into the isolated branch without conflicts. Frozen dependencies were refreshed to match that base; the PR diff introduces no dependency or provider changes.
+
+`bun test --max-concurrency=1` completed with 1,954 passing tests and two failures across 174 files in 125.04 seconds. One failure was the capability audit expecting the old direct diff import in Markdown.tsx; its check was updated to recognize the canonical row renderer, and the audit test then passed. The other is an unrelated existing path scanner traversing node_modules and failing with ENOENT on its broken `.bin/openai` symlink. That scanner was left unchanged. Type checking and Biome pass against current main. The focused rendering suite was rerun after the audit correction; it passed 401 tests across 34 files, with zero failures, in 17.70 seconds. The full suite was not repeated solely for the known unrelated scanner failure.
