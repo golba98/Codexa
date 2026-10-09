@@ -3,6 +3,27 @@
 This guide documents how to publish the npm package `ubume` to the
 public npm registry.
 
+## Choose the package directory
+
+`npm publish` must target the repository root, where `package.json` lives.
+If your terminal is in `src/config`, run:
+
+```bash
+cd ../..
+npm publish --dry-run --access public
+npm publish --access public
+```
+
+You can also stay in `src/config` and target the root explicitly:
+
+```bash
+npm publish ../.. --access public
+```
+
+An `ENOENT` error mentioning `src/config/package.json` means npm was run
+from the source directory without a package path. Use the commands above;
+the source directory does not need its own `package.json`.
+
 ## Prepare an unpublished version
 
 Run these commands from the repository root. NPM versions are immutable, so
