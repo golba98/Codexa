@@ -73,6 +73,13 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
       continue;
     }
 
+    if (arg === "--provider" || arg.startsWith("--provider="))
+      return {
+        ok: false,
+        error:
+          "--provider is supported by ubume exec. For interactive startup, select the provider in /model or resume a saved conversation.",
+      };
+
     if (
       arg === "--resume" ||
       arg.startsWith("--resume=") ||
@@ -91,8 +98,11 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
         resumeId = value;
       } else {
         const separator = value.indexOf(":");
-        const source = value.slice(0, separator) as ExternalSessionSource;
+        let source = value.slice(0, separator) as ExternalSessionSource;
         const sessionId = value.slice(separator + 1);
+        if (source === "antigravity") {
+          source = "google";
+        }
         if (
           separator < 0 ||
           !EXTERNAL_SESSION_SOURCES.includes(source) ||
@@ -100,7 +110,7 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
         )
           return {
             ok: false,
-            error: "Use --import-session source:session-id (claude, codex, vibe).",
+            error: "Use --import-session source:session-id (claude, codex, google, vibe).",
           };
         importSession = { source, sessionId };
       }

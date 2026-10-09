@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
-import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 import {
   getProviderRuntime,
   isProviderRoutableInUbume,
@@ -9,6 +8,7 @@ import {
 import { isRecord } from "../shared/values.js";
 import { resolveUbumeWorkspaceDataDir } from "../workspace/appData.js";
 import { normalizeWorkspaceRoot } from "../workspace/workspaceRoot.js";
+import { resolveProviderIdentity } from "./providerIdentity.js";
 import { isKnownProviderId } from "./registry.js";
 import type {
   LocalBackendId,
@@ -50,6 +50,8 @@ function parseLaunchCommand(value: unknown): ProviderWorkspaceOverride["command"
 function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | undefined {
   if (!isRecord(value)) return undefined;
   const override: ProviderWorkspaceOverride = {};
+  if ((value.backendKind ?? value.backend_kind) === "antigravity-cli-auth")
+    override.backendKind = "antigravity-cli-auth";
 
   // Accept both camelCase and snake_case field names for compatibility with
   // config files written by different tool versions.
@@ -156,9 +158,9 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
     override.claudeCommandPath = claudeCommandPath.trim();
   }
 
-  const geminiCommandPath = value.geminiCommandPath ?? value.gemini_command_path;
-  if (typeof geminiCommandPath === "string" && geminiCommandPath.trim()) {
-    override.geminiCommandPath = geminiCommandPath.trim();
+  const antigravityCommandPath = value.antigravityCommandPath ?? value.antigravity_command_path;
+  if (typeof antigravityCommandPath === "string" && antigravityCommandPath.trim()) {
+    override.antigravityCommandPath = antigravityCommandPath.trim();
   }
 
   const codexCommandPath = value.codexCommandPath ?? value.codex_command_path;
@@ -171,14 +173,13 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
 
 function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
   if (!isRecord(value)) return undefined;
-  // Antigravity was removed; its saved routes (including the legacy "agy" alias
-  // stored under another provider ID) fall back to the default route.
-  const backendKind = value.backendKind ?? value.backend_kind;
-  if (backendKind === "agy" || backendKind === "antigravity-cli-auth") return undefined;
-  const providerId = value.providerId ?? value.provider_id;
+
+  const providerId = resolveProviderIdentity(
+    value.providerId ?? value.provider_id,
+    value.backendKind ?? value.backend_kind,
+  );
   const modelId = value.modelId ?? value.model_id;
-  const reasoning = value.reasoning;
-  const modelSelection = value.modelSelection ?? value.model_selection;
+  const reasoning = typeof value.reasoning === "string" ? value.reasoning.trim() : undefined;
   const localBackend = value.localBackend ?? value.local_backend;
 
   if (
@@ -189,32 +190,11 @@ function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
     return undefined;
   if (typeof modelId !== "string" || !modelId.trim()) return undefined;
 
-  const normalizedModelId =
-    providerId === "google" ? normalizeGeminiModelId(modelId.trim()) : modelId.trim();
-  const normalizedModelSelection =
-    providerId === "google" && isRecord(modelSelection)
-      ? modelSelection.kind === "manual"
-        ? {
-            kind: "manual" as const,
-            modelId: normalizeGeminiModelId(
-              typeof modelSelection.modelId === "string" ? modelSelection.modelId : null,
-            ),
-          }
-        : {
-            kind: "auto" as const,
-            family:
-              modelSelection.family === "gemini-2.5"
-                ? ("gemini-2.5" as const)
-                : ("gemini-3" as const),
-          }
-      : undefined;
-
   return {
     providerId,
-    modelId: normalizedModelId,
+    modelId: modelId.trim(),
     backendKind: getProviderRuntime(providerId).backendKind,
-    ...(typeof reasoning === "string" && reasoning.trim() ? { reasoning: reasoning.trim() } : {}),
-    ...(normalizedModelSelection ? { modelSelection: normalizedModelSelection } : {}),
+    ...(reasoning ? { reasoning } : {}),
     ...(providerId === "local"
       ? { localBackend: localBackend === "unsloth" ? ("unsloth" as const) : ("lm-studio" as const) }
       : {}),
@@ -223,27 +203,79 @@ function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
 
 export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceConfig {
   if (!isRecord(data)) return {};
-
   const config: ProviderWorkspaceConfig = {};
+  const preserved = isRecord(data.legacyProviderData) ? { ...data.legacyProviderData } : {};
   const providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>> = {};
-
-  if (isRecord(data.providers)) {
-    for (const [id, value] of Object.entries(data.providers)) {
-      if (!isKnownProviderId(id)) continue;
-      const override = parseProviderOverride(value);
-      if (override) providers[id] = override;
-    }
-    config.providers = providers;
+  const rawProviders = isRecord(data.providers) ? data.providers : {};
+  const rawGoogle = rawProviders.google;
+  const rawAntigravity = rawProviders.antigravity;
+  const googleIsAgy =
+    isRecord(rawGoogle) &&
+    ((rawGoogle.backendKind ?? rawGoogle.backend_kind) === "antigravity-cli-auth" ||
+      (typeof (rawGoogle.antigravityCommandPath ?? rawGoogle.antigravity_command_path) ===
+        "string" &&
+        Boolean(
+          String(rawGoogle.antigravityCommandPath ?? rawGoogle.antigravity_command_path).trim(),
+        )));
+  for (const [id, value] of Object.entries(rawProviders)) {
+    if (id === "google" || id === "antigravity" || !isKnownProviderId(id)) continue;
+    const override = parseProviderOverride(value);
+    if (override) providers[id] = override;
   }
+  if (rawAntigravity !== undefined && preserved.antigravity === undefined)
+    preserved.antigravity = rawAntigravity;
+  if (
+    rawGoogle !== undefined &&
+    (!googleIsAgy || (isRecord(rawGoogle) && rawGoogle.command !== undefined)) &&
+    preserved.google === undefined
+  )
+    preserved.google = rawGoogle;
+  const historicalOverride = parseProviderOverride(rawAntigravity);
+  const canonicalOverride = googleIsAgy ? parseProviderOverride(rawGoogle) : undefined;
+  const googleOverride = canonicalOverride
+    ? {
+        ...historicalOverride,
+        ...canonicalOverride,
+        ...(historicalOverride?.models || canonicalOverride.models
+          ? {
+              models: { ...historicalOverride?.models, ...canonicalOverride.models },
+            }
+          : {}),
+      }
+    : historicalOverride;
+  if (googleOverride) {
+    const { command, ...agyOverride } = googleOverride;
+    if (!googleIsAgy && command && !agyOverride.antigravityCommandPath)
+      agyOverride.antigravityCommandPath =
+        typeof command === "string" ? command : command.executable;
+    providers.google = { ...agyOverride, backendKind: "antigravity-cli-auth" };
+  }
+  if (Object.keys(providers).length) config.providers = providers;
 
   const defaultProvider =
     data.workspaceDefaultProviderId ??
     data.workspace_default_provider_id ??
     data.defaultProviderId ??
     data.default_provider_id;
-  if (typeof defaultProvider === "string" && isKnownProviderId(defaultProvider))
-    config.workspaceDefaultProviderId = defaultProvider;
-  const activeRoute = parseActiveRoute(data.activeRoute ?? data.active_route);
+  const defaultId = resolveProviderIdentity(defaultProvider, undefined, true);
+  if (defaultId && isKnownProviderId(defaultId)) config.workspaceDefaultProviderId = defaultId;
+
+  const rawRoute = data.activeRoute ?? data.active_route;
+  const activeRoute = parseActiveRoute(rawRoute);
+  const legacyRoute =
+    isRecord(rawRoute) &&
+    (rawRoute.providerId ?? rawRoute.provider_id) === "google" &&
+    !activeRoute;
+  config.googleMigrationRequired =
+    data.googleMigrationRequired === true ||
+    legacyRoute ||
+    (defaultProvider === "google" &&
+      rawGoogle !== undefined &&
+      !googleIsAgy &&
+      !googleOverride &&
+      !activeRoute);
+  if (!config.googleMigrationRequired) delete config.googleMigrationRequired;
+  if (legacyRoute && preserved.activeRoute === undefined) preserved.activeRoute = rawRoute;
   if (activeRoute) {
     config.activeRoute = activeRoute;
     if (activeRoute.providerId === "local") {
@@ -253,8 +285,11 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
       };
       config.providers = providers;
     }
+  } else if (legacyRoute) {
+    // Keep the selected identity blocked rather than falling back to Codex.
+    config.workspaceDefaultProviderId = "google";
   }
-
+  if (Object.keys(preserved).length) config.legacyProviderData = preserved;
   return config;
 }
 
@@ -277,6 +312,7 @@ export function serializeProviderWorkspaceConfig(
     Object.entries(config.providers ?? {}).map(([id, override]) => [
       id,
       {
+        ...(id === "google" ? { backend_kind: "antigravity-cli-auth" } : {}),
         ...(override.currentModel !== undefined ? { current_model: override.currentModel } : {}),
         ...(override.currentReasoning !== undefined
           ? { current_reasoning: override.currentReasoning }
@@ -330,8 +366,8 @@ export function serializeProviderWorkspaceConfig(
         ...(override.claudeCommandPath !== undefined
           ? { claude_command_path: override.claudeCommandPath }
           : {}),
-        ...(override.geminiCommandPath !== undefined
-          ? { gemini_command_path: override.geminiCommandPath }
+        ...(override.antigravityCommandPath !== undefined
+          ? { antigravity_command_path: override.antigravityCommandPath }
           : {}),
         ...(override.codexCommandPath !== undefined
           ? { codex_command_path: override.codexCommandPath }
@@ -341,6 +377,8 @@ export function serializeProviderWorkspaceConfig(
   );
 
   return {
+    ...(config.legacyProviderData ? { legacyProviderData: config.legacyProviderData } : {}),
+    ...(config.googleMigrationRequired ? { googleMigrationRequired: true } : {}),
     ...(config.workspaceDefaultProviderId
       ? { workspaceDefaultProviderId: config.workspaceDefaultProviderId }
       : {}),
@@ -353,9 +391,6 @@ export function serializeProviderWorkspaceConfig(
               config.activeRoute.backendKind ??
               getProviderRuntime(config.activeRoute.providerId).backendKind,
             ...(config.activeRoute.reasoning ? { reasoning: config.activeRoute.reasoning } : {}),
-            ...(config.activeRoute.modelSelection
-              ? { modelSelection: config.activeRoute.modelSelection }
-              : {}),
             ...(config.activeRoute.providerId === "local"
               ? {
                   localBackend:
@@ -400,11 +435,10 @@ export function saveProviderWorkspaceConfig(
   const filePath = getProviderWorkspaceConfigFile(workspaceRoot);
   mkdirSync(dirname(filePath), { recursive: true });
   const tmpFile = `${filePath}.tmp`;
-  writeFileSync(
-    tmpFile,
-    JSON.stringify(serializeProviderWorkspaceConfig(config), null, 2),
-    "utf-8",
-  );
+  writeFileSync(tmpFile, JSON.stringify(serializeProviderWorkspaceConfig(config), null, 2), {
+    encoding: "utf-8",
+    mode: 0o600,
+  });
   renameSync(tmpFile, filePath);
 }
 
@@ -481,7 +515,11 @@ export function setProviderActiveRoute(
   }
 
   if (activeRoute.providerId !== "local") {
-    return { ...config, activeRoute };
+    return {
+      ...config,
+      googleMigrationRequired: undefined,
+      activeRoute,
+    };
   }
 
   const localBackend =

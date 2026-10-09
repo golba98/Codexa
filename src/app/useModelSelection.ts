@@ -24,6 +24,7 @@ import type {
   ProviderId,
   ProviderWorkspaceConfig,
 } from "../core/providerLauncher/types.js";
+import { getAgyModelSelector } from "../core/providerRuntime/antigravity.js";
 
 import { providerModelsToCodexCapabilities } from "../core/providerRuntime/models.js";
 import {
@@ -33,11 +34,7 @@ import {
   validateProviderRouteActivation,
 } from "../core/providerRuntime/registry.js";
 
-import type {
-  GeminiModelSelection,
-  ProviderRoute,
-  RuntimeAvailability,
-} from "../core/providerRuntime/types.js";
+import type { ProviderRoute, RuntimeAvailability } from "../core/providerRuntime/types.js";
 
 import { errorMessage } from "../core/shared/values.js";
 
@@ -69,7 +66,6 @@ interface UseModelSelectionContext {
     nextModel: string,
     nextReasoning: string,
     backendKindOverride?: ReturnType<typeof getProviderRuntime>["backendKind"],
-    modelSelection?: GeminiModelSelection,
     localBackend?: LocalBackendId,
   ) => void;
   modelSelectionInFlightRef: React.RefObject<boolean>;
@@ -129,7 +125,6 @@ export function useModelSelection(context: UseModelSelectionContext) {
     reasoningLevel,
     activeRouteModelCapabilities,
     workspaceRoot,
-    runtimeConfig,
     activeRouteProvider,
     returnToChatMode,
     modelCapabilities,
@@ -202,9 +197,22 @@ export function useModelSelection(context: UseModelSelectionContext) {
       // not what is stored in providers.json. Persist the stored model so the CLI-only
       // override is never written permanently; fall back to activeProviderRoute.modelId when
       // no CLI model is active (normal interactive case).
-      const modelToPersist = launchArgs.modelOverride
+      let modelToPersist = launchArgs.modelOverride
         ? (providerWorkspaceConfig.activeRoute?.modelId ?? activeProviderRoute.modelId)
         : activeProviderRoute.modelId;
+      if (activeProviderRoute.providerId === "google") {
+        const models = discoverProviderModels("google").models;
+        const selector = getAgyModelSelector(modelToPersist, nextReasoningLevel, models);
+        const native = models.find((item) => item.modelId === selector);
+        if (native) modelToPersist = native.modelId;
+        const activeSelector = getAgyModelSelector(
+          activeProviderRoute.modelId,
+          nextReasoningLevel,
+          models,
+        );
+        if (models.some((item) => item.modelId === activeSelector))
+          updateRuntimeConfig((current) => ({ ...current, model: activeSelector! }));
+      }
       if (activeProviderRoute.providerId === "openai") {
         persistProviderDefaultModelAndReasoning("openai", modelToPersist, nextReasoningLevel);
       } else {
@@ -213,7 +221,6 @@ export function useModelSelection(context: UseModelSelectionContext) {
           modelToPersist,
           nextReasoningLevel,
           activeProviderRoute.backendKind,
-          activeProviderRoute.modelSelection,
         );
       }
       setScreen("main");
@@ -226,7 +233,6 @@ export function useModelSelection(context: UseModelSelectionContext) {
     [
       activeProviderRoute.backendKind,
       activeProviderRoute.modelId,
-      activeProviderRoute.modelSelection,
       activeProviderRoute.providerId,
       appendEvent,
       appendEvent,
@@ -287,9 +293,7 @@ export function useModelSelection(context: UseModelSelectionContext) {
             reasoning: normalizedReasoning,
           },
           workspaceRoot,
-          geminiCommandPath:
-            providerWorkspaceConfig.providers?.google?.geminiCommandPath ??
-            runtimeConfig.geminiCommandPath,
+          antigravityCommandPath: providerWorkspaceConfig.providers?.google?.antigravityCommandPath,
           claudeCommandPath: providerWorkspaceConfig.providers?.anthropic?.claudeCommandPath,
           localConfig: providerWorkspaceConfig.providers?.local,
         });
@@ -352,7 +356,6 @@ export function useModelSelection(context: UseModelSelectionContext) {
       providerWorkspaceConfig.providers,
       reasoningLevel,
       returnToChatMode,
-      runtimeConfig.geminiCommandPath,
       updateRuntimeConfig,
       workspaceRoot,
     ],
@@ -363,7 +366,6 @@ export function useModelSelection(context: UseModelSelectionContext) {
       nextModel: AvailableModel,
       nextReasoning: ReasoningLevel,
       providerId: ProviderId = activeProviderRoute.providerId,
-      geminiSelection?: GeminiModelSelection,
       localBackend?: LocalBackendId,
     ) => {
       const routeCapabilities =
@@ -420,7 +422,6 @@ export function useModelSelection(context: UseModelSelectionContext) {
               modelId: nextModel,
               backendKind: getProviderRuntime(providerId).backendKind,
               reasoning: normalizedReasoning,
-              modelSelection: geminiSelection,
               ...(providerId === "local"
                 ? {
                     localBackend:
@@ -431,9 +432,8 @@ export function useModelSelection(context: UseModelSelectionContext) {
                 : {}),
             },
             workspaceRoot,
-            geminiCommandPath:
-              providerWorkspaceConfig.providers?.google?.geminiCommandPath ??
-              runtimeConfig.geminiCommandPath,
+            antigravityCommandPath:
+              providerWorkspaceConfig.providers?.google?.antigravityCommandPath,
             claudeCommandPath: providerWorkspaceConfig.providers?.anthropic?.claudeCommandPath,
             localConfig:
               providerId === "local"
@@ -485,7 +485,7 @@ export function useModelSelection(context: UseModelSelectionContext) {
             "Provider route available",
             validation.message ??
               (providerId === "google"
-                ? "Google/Gemini is available via Gemini CLI."
+                ? "Google is available via Google Antigravity CLI (agy)."
                 : providerId === "anthropic"
                   ? "Anthropic/Claude is available via Claude Code."
                   : `${getProviderRuntime(providerId).label} is available via ${validation.backendKind}.`),
@@ -503,7 +503,6 @@ export function useModelSelection(context: UseModelSelectionContext) {
           nextModel,
           normalizedReasoning,
           validation.backendKind,
-          geminiSelection,
           localBackend,
         );
         if (!modelPickerOpenRef.current) setPendingRouteProviderId(null);
@@ -549,7 +548,6 @@ export function useModelSelection(context: UseModelSelectionContext) {
       persistActiveRoute,
       providerWorkspaceConfig.providers,
       returnToChatMode,
-      runtimeConfig.geminiCommandPath,
       updateRuntimeConfig,
       workspaceRoot,
     ],

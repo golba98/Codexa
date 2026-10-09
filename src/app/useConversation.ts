@@ -14,6 +14,7 @@ import {
 import { traceInputDebug } from "../core/perf/debugLog.js";
 
 import { launchCliCommand } from "../core/providerLauncher/launcher.js";
+import { resolveProviderIdentity } from "../core/providerLauncher/providerIdentity.js";
 import { findProvider, isKnownProviderId } from "../core/providerLauncher/registry.js";
 import type { ProviderConfig, ProviderWorkspaceConfig } from "../core/providerLauncher/types.js";
 import { discoverLocalModels } from "../core/providerRuntime/local.js";
@@ -661,11 +662,12 @@ export function useConversation(context: UseConversationContext) {
         }
         bumpWorkbench((value) => value + 1);
         replacement.finish();
+        const savedProvider = resolveProviderIdentity(
+          loaded.metadata.providerId,
+          loaded.metadata.backendKind,
+        );
         const routeProvider =
-          typeof loaded.metadata.providerId === "string" &&
-          isKnownProviderId(loaded.metadata.providerId)
-            ? loaded.metadata.providerId
-            : null;
+          savedProvider && isKnownProviderId(savedProvider) ? savedProvider : null;
         const discovery =
           routeProvider === "local"
             ? discoverLocalModels(undefined, loaded.metadata.localBackend)

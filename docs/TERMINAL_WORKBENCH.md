@@ -103,7 +103,7 @@ read-only and never modifies them.
 | Key | In the list | In the transcript viewer |
 |---|---|---|
 | Enter | Open the transcript viewer | Expand or collapse the selected entry |
-| `o` | Resume natively (`claude --resume`, `codex resume`, `vibe --resume`) in the session's folder; Ubume suspends until that CLI exits | Same |
+| `o` | Resume natively (`claude --resume`, `codex resume`, `agy --conversation`, `vibe --resume`) in the session's folder; Ubume suspends until that CLI exits | Same |
 | `c` | Continue inside Ubume: the history is imported once into an Ubume conversation on the matching provider | Same |
 | `/` | Search | Search entries |
 | `e` | — | Expand or collapse all tool calls |
@@ -118,7 +118,7 @@ Ubume saves chats under its user data folder: `chats/<workspace-key>/conversatio
 
 Resuming another project reopens Ubume in that project's folder. Chats with missing folders can still be viewed; `c` locates their original folder. An unavailable saved model or backend requires an explicit choice through `/provider` or `/model` before sending. Restarting does not silently switch providers. Local agent sessions flush before completed-turn persistence and recover into a fresh session when older state is missing or incompatible.
 
-From a terminal, `ubume --resume chat_ID` opens a saved chat without sending a prompt. `ubume --import-session vibe:SESSION_ID` imports a native history in the current workspace. Supported native sources are `claude`, `codex` and `vibe`.
+From a terminal, `ubume --resume chat_ID` opens a saved chat without sending a prompt. `ubume --import-session vibe:SESSION_ID` imports a native history in the current workspace. Supported native sources are `claude`, `codex`, `google` and `vibe`.
 
 A deterministic [resume picker recording](recordings/provider-resume.cast) shows provider sections and Local backend/model filters; regenerate it with `bun scripts/record-resume-picker.tsx`.
 

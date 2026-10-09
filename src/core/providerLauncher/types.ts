@@ -1,5 +1,5 @@
 import type { ModelCapabilityProfile } from "../providerRuntime/capabilityProfile.js";
-import type { GeminiModelSelection, ProviderBackendKind } from "../providerRuntime/types.js";
+import type { ProviderBackendKind } from "../providerRuntime/types.js";
 
 export type ProviderId =
   | "openai"
@@ -14,11 +14,10 @@ export type LocalBackendId = "lm-studio" | "unsloth";
 
 export type ProviderBackendType =
   | "codex-cli-auth"
-  | "gemini-cli-auth"
   | "claude-code-auth"
   | "mistral-vibe-cli-auth"
+  | "antigravity-cli-auth"
   | "openai-api-key"
-  | "gemini-api-key"
   | "anthropic-api-key"
   | "local-openai-compatible"
   | "codexa-native-pytorch"
@@ -62,6 +61,9 @@ export interface ProviderWorkspaceConfig {
   activeRoute?: ProviderActiveRoute;
   providers?: Partial<Record<ProviderId, ProviderWorkspaceOverride>>;
   migrationNotice?: ProviderWorkspaceMigrationNotice;
+  /** Inactive original records, retained on saves and never used for execution. */
+  legacyProviderData?: Record<string, unknown>;
+  googleMigrationRequired?: boolean;
 }
 
 export interface ProviderWorkspaceMigrationNotice {
@@ -74,11 +76,11 @@ export interface ProviderActiveRoute {
   modelId: string;
   backendKind?: ProviderBackendKind;
   reasoning?: string;
-  modelSelection?: GeminiModelSelection;
   localBackend?: LocalBackendId;
 }
 
 export interface ProviderWorkspaceOverride {
+  backendKind?: "antigravity-cli-auth";
   currentModel?: string;
   currentReasoning?: string;
   enabled?: boolean;
@@ -92,8 +94,8 @@ export interface ProviderWorkspaceOverride {
   models?: Record<string, ProviderModelWorkspaceOverride>;
   command?: string | ProviderLaunchCommand | null;
   claudeCommandPath?: string;
-  geminiCommandPath?: string;
   codexCommandPath?: string;
+  antigravityCommandPath?: string;
 }
 
 export interface ProviderModelWorkspaceOverride {

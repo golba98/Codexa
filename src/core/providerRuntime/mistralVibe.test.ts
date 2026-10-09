@@ -8,6 +8,7 @@ import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runti
 import { resolveVibeExecutable } from "../executables/executableResolver.js";
 import type { CommandResult, CommandSpec } from "../process/commandRunner.js";
 import type { ProviderConfig } from "../providerLauncher/types.js";
+import { parseMistralModels } from "./mistralDiscovery.js";
 import {
   createVibeStreamParser,
   detectVibeActiveModel,
@@ -17,6 +18,7 @@ import {
   listVibeConfiguredModels,
   MISTRAL_VIBE_AUTH_MESSAGE,
   MISTRAL_VIBE_MISSING_MESSAGE,
+  mergeMistralVibeModels,
   runMistralVibe,
   validateMistralVibeRoute,
 } from "./mistralVibe.js";
@@ -38,6 +40,7 @@ function commandResult(overrides: Partial<CommandResult> = {}): CommandResult {
 }
 
 function buildRequest(overrides: Partial<ProviderChatRequest> = {}): ProviderChatRequest {
+  const modelId = "mistral-medium-3.5";
   return {
     prompt: "Reply with hello.",
     route: {
@@ -47,6 +50,18 @@ function buildRequest(overrides: Partial<ProviderChatRequest> = {}): ProviderCha
     },
     runtime: resolveRuntimeConfig(normalizeRuntimeConfig({})),
     workspaceRoot: "/workspace/project",
+    modelDescriptor: {
+      id: modelId,
+      modelId,
+      label: "Mistral Medium 3.5",
+      description: "Vibe test fixture",
+      defaultReasoningLevel: null,
+      supportedReasoningLevels: null,
+      source: "config",
+      mistralExecutionClass: "native-vibe",
+      executionVerified: false,
+      raw: { name: "mistral-vibe-cli-latest", alias: modelId, provider: "mistral" },
+    },
     ...overrides,
   };
 }
@@ -205,9 +220,11 @@ test("configured Vibe models prefer the project config, deduplicate aliases, and
       const discovery = discoverMistralVibeModels(workspace);
       assert.deepEqual(
         discovery.models.map((model) => model.modelId),
-        ["project-model", "shared", "user-model"],
+        ["project-model", "Vibe default", "shared", "user-model"],
       );
       assert.equal(discovery.diagnostics?.selectedModel, "project-model");
+      assert.equal(discovery.models[1]?.label, "Vibe current/default");
+      assert.equal(discovery.models[0]?.mistralExecutionClass, "native-vibe");
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
@@ -217,6 +234,117 @@ test("configured Vibe models prefer the project config, deduplicate aliases, and
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("Vibe environment model config is parsed as a list and local providers stay classified", () => {
+  const listed = listVibeConfiguredModels({
+    cwd: "/tmp/no-vibe-project",
+    homeDirectory: "/tmp/no-vibe-home",
+    env: {
+      VIBE_HOME: "/tmp/no-vibe-home/.vibe",
+      VIBE_MODELS: JSON.stringify([
+        { name: "custom-endpoint-model", alias: "custom", provider: "mistral" },
+        { name: "devstral", alias: "local", provider: "llamacpp" },
+      ]),
+    },
+  });
+  assert.deepEqual(
+    listed.models.map((model) => model.modelId),
+    ["custom", "local"],
+  );
+  assert.equal(listed.models[0]?.mistralExecutionClass, "native-vibe");
+  assert.equal(listed.models[1]?.mistralExecutionClass, "local-vibe");
+});
+
+test("Mistral aliases collapse to one route while preserving configured aliases", () => {
+  const apiModels = parseMistralModels({
+    data: [
+      {
+        id: "mistral-large-4",
+        aliases: ["mistral-large-4-0"],
+        capabilities: { completion_chat: true, reasoning: true },
+      },
+      {
+        id: "mistral-large-4-0",
+        aliases: ["mistral-large-4"],
+        capabilities: { completion_chat: true, reasoning: true },
+      },
+    ],
+  });
+  const custom = mergeMistralVibeModels([], apiModels);
+  assert.equal(custom.length, 1);
+  assert.equal(custom[0]?.modelId, "mistral-large-4");
+  assert.equal(custom[0]?.mistralExecutionClass, "custom-vibe");
+  assert.ok((custom[0]?.raw as { aliases?: string[] }).aliases?.includes("mistral-large-4-0"));
+
+  const configured = mergeMistralVibeModels(
+    [
+      {
+        id: "mistral-large-4-0",
+        modelId: "mistral-large-4-0",
+        label: "Mistral Large 4 hosted alias",
+        description: null,
+        defaultReasoningLevel: null,
+        supportedReasoningLevels: null,
+        source: "config",
+        mistralExecutionClass: "native-vibe",
+        executionVerified: false,
+        raw: {
+          name: "mistral-large-4",
+          alias: "mistral-large-4-0",
+          provider: "mistral",
+          displayName: "Mistral Large 4 hosted alias",
+        },
+      },
+    ],
+    apiModels,
+  );
+  assert.equal(configured.length, 1);
+  assert.equal(configured[0]?.modelId, "mistral-large-4-0");
+  assert.equal(configured[0]?.mistralExecutionClass, "native-vibe");
+  assert.ok(
+    (configured[0]?.raw as { variantIds?: string[] }).variantIds?.includes("mistral-large-4"),
+  );
+});
+
+test("native Vibe models survive absent API metadata and match request names rather than colliding selectors", () => {
+  const configured = listVibeConfiguredModels({
+    cwd: "/tmp/no-vibe-project",
+    homeDirectory: "/tmp/no-vibe-home",
+    env: {
+      VIBE_HOME: "/tmp/no-vibe-home/.vibe",
+      VIBE_MODELS: JSON.stringify([
+        {
+          name: "native-request",
+          alias: "friendly-selector",
+          provider: "mistral",
+          temperature: 0.7,
+        },
+      ]),
+    },
+  }).models;
+  assert.equal(mergeMistralVibeModels(configured, [])[0]?.mistralExecutionClass, "native-vibe");
+  const merged = mergeMistralVibeModels(
+    configured,
+    parseMistralModels({
+      data: [
+        {
+          id: "native-request",
+          aliases: ["native-version"],
+          capabilities: { completion_chat: true, reasoning: true },
+        },
+        { id: "friendly-selector", capabilities: { completion_chat: true, reasoning: false } },
+      ],
+    }),
+  );
+  assert.equal(merged[0]?.modelId, "friendly-selector");
+  assert.equal(merged[0]?.canonicalId, "native-request");
+  assert.equal(merged[0]?.capabilities?.reasoning, true);
+  assert.equal(merged[0]?.source, "config");
+  assert.deepEqual(
+    (merged[0]?.raw as { vibeConfig: { configuration: unknown } }).vibeConfig.configuration,
+    { name: "native-request", alias: "friendly-selector", provider: "mistral", temperature: 0.7 },
+  );
 });
 
 test("stream parser emits reasoning, assistant text, and tool lifecycle without duplicating trailing text", () => {

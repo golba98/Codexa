@@ -3,7 +3,19 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
-## v0.1.15 — 2026-10-09 (prepared)
+## v0.1.16 — 2026-10-09 (prepared)
+
+Google uses the original Antigravity (`agy`) backend again, including native model discovery and session access. Saved Antigravity preferences and sessions retain compatibility aliases. Ambiguous legacy Google routes require an explicit provider/model selection, and conflicting legacy credentials remain archived and inactive.
+
+Mistral Vibe's configured models stay separate from API-discovered custom models. Configured routes work without API catalogue access, while custom API routes require a verified refresh. Selected API IDs survive picker refresh and are sent exactly; configured selectors retain their original model name, settings and provider.
+
+"Vibe current/default" follows Vibe's saved selection and inherited environment overrides. Custom API entries say "request unverified." No live Mistral Large 4 completion was sent, so successful inference remains unverified.
+
+Local verification passed 1,986 tests, TypeScript, Biome, build, the capability audit and package/version checks. See [the verification report](docs/RELEASE_0.1.16_VERIFICATION.md).
+
+This version is prepared for review and has not been published to npm or tagged as a release.
+
+## v0.1.15 — 2026-10-09
 
 Assistant responses now render as terminal-native Markdown. Tables align and wrap at normal widths, and switch to readable header/value groups on narrow terminals. Headings, nested lists, checkboxes, quotes and code blocks share a restrained visual style across providers.
 
@@ -11,7 +23,7 @@ Code keeps its original indentation and blank lines. Long code lines have marked
 
 This release also includes the DeepSeek Harness 0.1.2-rc.1 security update merged after 0.1.14 was prepared.
 
-This version is prepared but has not been published to npm.
+The public npm registry confirms that this version is published (verified 2026-10-09).
 
 ## v0.1.14 — 2026-10-09 (prepared)
 

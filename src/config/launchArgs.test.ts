@@ -197,3 +197,9 @@ test("startup resume and import targets are exclusive and never replay as a prom
   assert.equal(parseLaunchArgs(["--import-session=gemini:native"]).ok, false);
   assert.equal(parseLaunchArgs(["--resume", "chat_abc", "execute this"]).ok, false);
 });
+
+test("interactive provider flag cannot become a prompt for the default backend", () => {
+  const parsed = parseLaunchArgs(["--provider", "google", "--model", "gemini-3.8-flash-low"]);
+  assert.equal(parsed.ok, false);
+  if (!parsed.ok) assert.match(parsed.error, /ubume exec/);
+});

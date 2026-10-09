@@ -14,7 +14,7 @@ import type {
 } from "../workspace/conversationStore.js";
 import type { ProjectInstructions } from "../workspace/projectInstructions.js";
 
-export type { ResolvedRuntimeConfig };
+export type { ProviderId, ResolvedRuntimeConfig };
 
 /** Reachability of the active provider, shown while Local endpoints are probed. */
 export type RuntimeAvailability =
@@ -26,11 +26,10 @@ export type RuntimeAvailability =
 
 export type ProviderBackendKind =
   | "codex-cli-auth"
-  | "gemini-cli-auth"
   | "claude-code-auth"
   | "mistral-vibe-cli-auth"
+  | "antigravity-cli-auth"
   | "openai-api-key"
-  | "gemini-api-key"
   | "anthropic-api-key"
   | "local-openai-compatible"
   | "codexa-native-pytorch"
@@ -38,6 +37,15 @@ export type ProviderBackendKind =
   | "unavailable";
 
 export interface ProviderModel {
+  /** Mistral Vibe execution/catalogue classification; absent for other providers. */
+  mistralExecutionClass?:
+    | "native-vibe"
+    | "custom-vibe"
+    | "local-vibe"
+    | "direct-mistral-api"
+    | "unsupported";
+  /** Catalogue availability does not prove that a model has processed a request. */
+  executionVerified?: boolean;
   providerId?: ProviderId;
   deployment?: "local" | "remote" | "unknown";
   verifiedAt?: number;
@@ -91,7 +99,7 @@ export type ReasoningControl =
       kind: "levels";
       levels: readonly ReasoningEffortCapability[];
       default: string;
-      transport: "parameter";
+      transport: "parameter" | "variant";
     }
   | {
       kind: "budget";
@@ -122,18 +130,11 @@ export interface ProviderModelDiscoveryResult {
   verifiedAt?: number;
 }
 
-export type GeminiModelFamily = "gemini-3" | "gemini-2.5";
-
-export type GeminiModelSelection =
-  | { kind: "auto"; family: GeminiModelFamily }
-  | { kind: "manual"; modelId: string };
-
 export interface ProviderRoute {
   providerId: ProviderId;
   modelId: string;
   backendKind: ProviderBackendKind;
   reasoning?: string;
-  modelSelection?: GeminiModelSelection;
   localBackend?: LocalBackendId;
 }
 
@@ -154,11 +155,13 @@ export interface ResolvedLocalAgentConfig {
 }
 
 export interface ProviderRouteValidationRequest {
+  signal?: AbortSignal;
+  forceRefresh?: boolean;
   providerConfig?: ProviderWorkspaceOverride;
   route: ProviderRoute;
   workspaceRoot: string;
-  geminiCommandPath?: string | null;
   claudeCommandPath?: string | null;
+  antigravityCommandPath?: string | null;
   localConfig?: ProviderWorkspaceOverride | null;
   localBackend?: LocalBackendId;
 }
@@ -176,6 +179,7 @@ export interface ProviderChatRequest {
   prompt: string;
   promptPolicy?: "raw" | "wrapped";
   claudeCommandPath?: string;
+  antigravityCommandPath?: string;
   imageAttachments?: readonly ProviderImageAttachment[];
   route: ProviderRoute;
   runtime: ResolvedRuntimeConfig;

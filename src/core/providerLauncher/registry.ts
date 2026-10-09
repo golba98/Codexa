@@ -11,7 +11,6 @@ import {
   resolveModelContextLengthCached,
 } from "../providerRuntime/contextMetadata.js";
 import { setLocalProviderConfig } from "../providerRuntime/local.js";
-import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 import {
   discoverProviderModels,
   getDefaultRouteModel,
@@ -93,11 +92,11 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
   google: {
     id: "google",
     displayName: "Google",
-    currentModel: () => "gemini-3-flash-preview",
-    backendType: "gemini-cli-auth",
+    currentModel: () => "Google default",
+    backendType: "antigravity-cli-auth",
     routeMode: "in-ubume",
     enabled: true,
-    launchCommand: { executable: "gemini", args: [] },
+    launchCommand: { executable: process.env.AGY_EXECUTABLE ?? "agy", args: [] },
     isActiveRoute: false,
     routeUnavailableReason: null,
   },
@@ -180,7 +179,15 @@ function applyOverride(
 
   const launchCommand = normalizeLaunchCommand(override.command);
   const hasConfiguredCommand = launchCommand !== undefined;
-  const nextCommand = hasConfiguredCommand ? launchCommand : provider.launchCommand;
+  const nextCommand =
+    provider.id === "google"
+      ? {
+          executable: override.antigravityCommandPath ?? process.env.AGY_EXECUTABLE ?? "agy",
+          args: [],
+        }
+      : hasConfiguredCommand
+        ? launchCommand
+        : provider.launchCommand;
   const nextEnabled =
     typeof override.enabled === "boolean"
       ? provider.id === "local"
@@ -195,12 +202,7 @@ function applyOverride(
 
   return {
     ...provider,
-    currentModel:
-      overrideModel && provider.id !== "local"
-        ? provider.id === "google"
-          ? normalizeGeminiModelId(overrideModel)
-          : overrideModel
-        : provider.currentModel,
+    currentModel: overrideModel && provider.id !== "local" ? overrideModel : provider.currentModel,
     enabled: nextEnabled,
     launchCommand: nextCommand,
     statusLabel: !nextEnabled
@@ -270,22 +272,6 @@ export function buildProviderRegistry(options: {
             id === "openai" ? DEFAULT_MODEL : defaults.currentModel(options.activeModel),
           );
 
-    if (id === "google") {
-      const hasGoogleOverride =
-        options.workspaceConfig?.providers?.google?.currentModel !== undefined;
-      const geminiRoute = isThisActive || !hasGoogleOverride ? activeRoute : null;
-      const selection = geminiRoute?.modelSelection;
-      if (selection) {
-        if (selection.kind === "auto") {
-          currentModelLabel = `Auto (${selection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"})`;
-        } else {
-          currentModelLabel = normalizeGeminiModelId(selection.modelId);
-        }
-      } else {
-        currentModelLabel = normalizeGeminiModelId(currentModelLabel);
-      }
-    }
-
     if (id === "local") {
       const selectedModel =
         typeof discovery.diagnostics?.selectedModel === "string" &&
@@ -354,12 +340,15 @@ export function buildProviderRegistry(options: {
       currentModel: currentModelLabel,
       contextLengthLabel: formatContextLength(contextMetadata.contextLength),
       contextLengthSource: contextSource,
-      capabilityProfile,
+      capabilityProfile:
+        id === "google"
+          ? { ...capabilityProfile, supportsStreaming: false, supportsVision: false }
+          : capabilityProfile,
       // Keep the provider's stable backend identity even when discovery reports
       // missing local model files. Availability is represented separately by
       // statusLabel and routeUnavailableReason.
       backendType:
-        id === "codexa-native" || id === "codexa-cupy"
+        id === "google" || id === "codexa-native" || id === "codexa-cupy"
           ? defaults.backendType
           : (discovery.backendKind as ProviderBackendType),
       routeMode: runtime.routeAvailable ? "in-ubume" : "launch-only",

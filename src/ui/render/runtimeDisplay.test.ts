@@ -64,11 +64,11 @@ test("Claude route display uses Claude model and context, not stale Gemini", () 
   assert.doesNotMatch(display.modelDisplay, /Gemini|OpenAI/i);
 });
 
-test("Gemini route display uses Gemini model and estimated context", () => {
+test("Google route display uses Google model and estimated context", () => {
   const route: ActiveProviderRoute = {
     providerId: "google",
-    modelId: "gemini-3-flash-preview",
-    backendKind: "gemini-cli-auth",
+    modelId: "gemini-3.5-flash",
+    backendKind: "antigravity-cli-auth",
     reasoning: "medium",
   };
   const display = buildActiveRuntimeDisplay({
@@ -79,8 +79,8 @@ test("Gemini route display uses Gemini model and estimated context", () => {
     contextMetadata: context(route, 1_048_576, "estimated"),
   });
 
-  assert.equal(display.modelDisplay, "Gemini CLI / Gemini 3 Flash (Preview)");
-  assert.equal(display.footerModelDisplay, "Gemini CLI / Gemini 3 Flash (Preview)");
+  assert.equal(display.modelDisplay, "Google / Gemini 3.5 Flash");
+  assert.equal(display.footerModelDisplay, "Google / Gemini 3.5 Flash");
   assert.equal(display.contextDisplay, "");
   assert.doesNotMatch(display.modelDisplay, /Claude|OpenAI/i);
 });
@@ -118,8 +118,8 @@ test("OpenAI route display uses OpenAI model and unknown context without stale C
 test("Header and footer display values share the same context string", () => {
   const route: ActiveProviderRoute = {
     providerId: "google",
-    modelId: "gemini-2.5-flash",
-    backendKind: "gemini-cli-auth",
+    modelId: "gemini-3.5-flash",
+    backendKind: "antigravity-cli-auth",
     reasoning: "medium",
   };
   const display = buildActiveRuntimeDisplay({
@@ -131,8 +131,8 @@ test("Header and footer display values share the same context string", () => {
   });
 
   assert.equal(display.contextDisplay, "");
-  assert.ok(display.modelDisplay.includes("Gemini CLI / Gemini 2.5 Flash"));
-  assert.ok(display.footerModelDisplay.includes("Gemini CLI / Gemini 2.5 Flash"));
+  assert.ok(display.modelDisplay.includes("Google / Gemini 3.5 Flash"));
+  assert.ok(display.footerModelDisplay.includes("Google / Gemini 3.5 Flash"));
 });
 
 test("provider label system recognizes Mistral Vibe CLI", () => {
@@ -205,4 +205,17 @@ test("Codexa CuPy is presented as a Codexa Native model route", () => {
 
   assert.equal(display.providerLabel, "Codexa Native");
   assert.equal(display.footerModelDisplay, "Codexa Native / codexa-250m-cupy");
+});
+
+test("Google native variant display ignores unrelated global reasoning", () => {
+  const model = capability("gemini-3.8-flash-medium", "Gemini 3.8 Flash (Medium)");
+  model.defaultReasoningLevel = "medium";
+  const display = buildActiveRuntimeDisplay({
+    route: { providerId: "google", modelId: model.model, backendKind: "antigravity-cli-auth" },
+    reasoningLevel: "low",
+    mode: "full-auto",
+    tokensUsed: 0,
+    modelCapability: model,
+  });
+  assert.equal(display.footerModelDisplay, "Google / Gemini 3.8 Flash (Medium)");
 });

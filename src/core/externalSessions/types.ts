@@ -1,9 +1,10 @@
 /** Native CLI whose saved sessions /resume can browse. */
-export type ExternalSessionSource = "claude" | "codex" | "vibe";
+export type ExternalSessionSource = "claude" | "codex" | "google" | "vibe" | "antigravity";
 
 export const EXTERNAL_SESSION_SOURCES: readonly ExternalSessionSource[] = [
   "claude",
   "codex",
+  "google",
   "vibe",
 ];
 
@@ -52,6 +53,9 @@ export function externalSourceLabel(source: ExternalSessionSource): string {
       return "Claude Code";
     case "codex":
       return "Codex";
+    case "google":
+    case "antigravity":
+      return "Google";
     case "vibe":
       return "Mistral Vibe";
   }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -28,6 +28,26 @@ const SAMPLE_MODELS: readonly ProviderModel[] = [
     source: "discovered",
   },
 ];
+
+test("Google caches require Antigravity provenance and preserve the old Gemini inventory on save", () => {
+  const { file, cleanup } = tempCacheFile();
+  try {
+    const legacy = { discoveredAt: 1, models: SAMPLE_MODELS };
+    writeFileSync(
+      file,
+      JSON.stringify({ version: 1, providers: { google: legacy, antigravity: legacy } }),
+    );
+    assert.equal(loadCachedProviderModels("google", file), null);
+    assert.deepEqual(loadCachedProviderModels("antigravity", file), legacy);
+    saveCachedProviderModels("google", { discoveredAt: 2, models: [] }, file);
+    assert.equal(loadCachedProviderModels("google", file)?.backendKind, "antigravity-cli-auth");
+    const saved = JSON.parse(readFileSync(file, "utf8"));
+    assert.deepEqual(saved.legacyGoogleCli, legacy);
+    assert.deepEqual(saved.providers.antigravity, legacy);
+  } finally {
+    cleanup();
+  }
+});
 
 test("round-trips a provider entry", () => {
   const { file, cleanup } = tempCacheFile();

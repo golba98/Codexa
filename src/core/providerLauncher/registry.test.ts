@@ -5,7 +5,7 @@ import { resolveActiveProviderRoute } from "../providerRuntime/registry.js";
 import { buildProviderRegistry, getDefaultProviderId, isKnownProviderId } from "./registry.js";
 import { parseProviderWorkspaceConfig, setProviderActiveRoute } from "./workspaceConfig.js";
 
-test("provider registry includes Gemini and preserves native development-channel gating", () => {
+test("provider registry includes Google and preserves native development-channel gating", () => {
   const dev = buildProviderRegistry({
     activeModel: "gpt-5.4",
     env: { UBUME_CHANNEL: "local-dev" },
@@ -25,8 +25,17 @@ test("provider registry includes Gemini and preserves native development-channel
     undefined,
   );
   for (const providers of [dev, prod]) {
+    assert.equal(providers.filter((provider) => provider.displayName === "Google").length, 1);
+    assert.equal(
+      providers.find((provider) => provider.id === "google")?.backendType,
+      "antigravity-cli-auth",
+    );
+    assert.equal(
+      providers.some((provider) => provider.launchCommand?.executable === "gemini"),
+      false,
+    );
     assert.deepEqual(providers.find((provider) => provider.id === "google")?.launchCommand, {
-      executable: "gemini",
+      executable: "agy",
       args: [],
     });
     assert.deepEqual(providers.find((provider) => provider.id === "mistral")?.launchCommand, {
@@ -130,7 +139,7 @@ test("registry retains Google active route independently of OpenAI", () => {
       activeRoute: {
         providerId: "google",
         modelId: "gemini-99.8-flash",
-        backendKind: "gemini-cli-auth",
+        backendKind: "antigravity-cli-auth",
       },
     },
   });
@@ -267,21 +276,21 @@ test("LM Studio loaded Local model replaces stale active route in provider regis
   }
 });
 
-test("runtime resolver preserves Gemini selection even while access is unavailable", () => {
+test("runtime resolver preserves Google selection even while access is unavailable", () => {
   const original: import("./types.js").ProviderWorkspaceConfig = {
     activeRoute: { providerId: "openai", modelId: "gpt-5.4", backendKind: "codex-cli-auth" },
   };
   const result = setProviderActiveRoute(original, {
     providerId: "google",
     modelId: "gemini-99.8-pro",
-    backendKind: "gemini-cli-auth",
+    backendKind: "antigravity-cli-auth",
   });
   assert.equal(result.activeRoute?.providerId, "openai", "Unconfigured activation is rejected");
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "google",
       modelId: "gemini-99.8-pro",
-      backendKind: "gemini-cli-auth",
+      backendKind: "antigravity-cli-auth",
     },
     currentModel: "gpt-5.4",
     currentReasoning: "medium",

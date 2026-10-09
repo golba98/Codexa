@@ -12,7 +12,7 @@ Ubume is a terminal user interface around coding-agent command-line tools. It gi
 - model, reasoning, permission, theme, and runtime controls;
 - streamed reasoning, tool activity, file activity, and assistant output;
 - workspace trust, project-instruction loading, file-activity tracking, and path guards;
-- provider discovery and routing for Codex, Claude Code, Gemini, Mistral Vibe, and local OpenAI-compatible servers.
+- provider discovery and routing for Codex, Claude Code, Google (Antigravity CLI), Mistral Vibe, and local OpenAI-compatible servers.
 
 Ubume does not replace provider authentication. External provider CLIs remain responsible for their own installation and sign-in state.
 
@@ -278,11 +278,11 @@ Conversation history lives in the user-level Ubume data directory, below `chats/
 
 The version 2 snapshot is authoritative and atomically replaced with file and directory flushes. A derived `summary.json` cache is used only when its inode/size/timestamp revision matches the snapshot. Missing or stale summaries fall back to the snapshot; cache failures cannot invalidate a successful save. Corrupt canonical snapshots are reported and preserved rather than replaced with an older generation. Conversations are created by the first sent prompt, and histories without messages remain hidden from the picker.
 
-`src/session/sessionCatalog.ts` combines owned conversations and native Claude Code, Codex and Mistral Vibe CLI histories. Native adapters in `src/core/externalSessions/` only read provider stores. Discovery failures are isolated by source. Explicit saved native references and import provenance deduplicate matching source/session/workspace identities; standalone programmatic CLI sessions remain visible. Provider IDs and Local backend/model filters are independent of the native transcript format.
+`src/session/sessionCatalog.ts` combines owned conversations and native Claude Code, Codex, Google (Antigravity) and Mistral Vibe CLI histories. Native adapters in `src/core/externalSessions/` only read provider stores. Discovery failures are isolated by source. Explicit saved native references and import provenance deduplicate matching source/session/workspace identities; standalone programmatic CLI sessions remain visible. Provider IDs and Local backend/model filters are independent of the native transcript format.
 
 `src/session/resumeCoordinator.ts` handles saved-route assessment, workspace handoff and idempotent imports. The picker has All, OpenAI, Anthropic, Mistral and Local sections, with development provider sections when relevant. Other projects are reopened through the installed/dev Ubume launcher with `--resume ID` or `--import-session source:ID`. Missing or unknown folders remain viewable; owned chats require the original path identity before writing. Saved routes stay pinned while viewing, and an unavailable provider/backend/model requires an explicit validated choice before another prompt can run.
 
-Native terminal handoff uses `claude --resume`, `codex resume`, or `vibe --resume`, always in the recorded original folder. Continuing inside Ubume imports a transcript once and reuses the owned conversation on later imports. Vibe continuation references belong to individual conversations and include model, message watermark and transcript hash; there is no workspace-global active Vibe session.
+Native terminal handoff uses `claude --resume`, `codex resume`, `agy --conversation`, or `vibe --resume`, always in the recorded original folder. Continuing inside Ubume imports a transcript once and reuses the owned conversation on later imports. Vibe continuation references belong to individual conversations and include model, message watermark and transcript hash; there is no workspace-global active Vibe session.
 
 Local completion explicitly flushes the Harness session journal before publishing its completed continuation watermark. Restart checks harness version, route fingerprint and dialogue hash. Missing or unsupported saved state recovers the saved dialogue into a fresh session without deleting original artifacts; permission, corruption and persistence failures are reported as errors. Backend changes cannot silently redirect an Unsloth chat to LM Studio.
 

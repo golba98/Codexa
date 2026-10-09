@@ -11,6 +11,7 @@ import {
 import { type CatalogContext, providerCatalog } from "../models/modelCatalog.js";
 import { resolveCatalogModel } from "../models/modelSelection.js";
 import { reconcileReasoning } from "../models/reasoningControl.js";
+import { LEGACY_GOOGLE_MESSAGE } from "../providerLauncher/providerIdentity.js";
 import type {
   ProviderActiveRoute,
   ProviderId,
@@ -25,16 +26,11 @@ import type {
   NativeSessionReference,
 } from "../workspace/conversationStore.js";
 import { anthropicRuntime } from "./anthropic.js";
+import { antigravityRuntime, getAgyModelSelector } from "./antigravity.js";
 import { CODEXA_NATIVE_MODEL_ID, codexaCupyRuntime, codexaNativeRuntime } from "./codexaNative.js";
-import { geminiRuntime } from "./gemini.js";
 import { localRuntime } from "./local.js";
 import { mistralVibeRuntime } from "./mistralVibe.js";
-import {
-  ANTHROPIC_FALLBACK_MODELS,
-  GEMINI_DEFAULT_MODEL_ID,
-  GEMINI_FALLBACK_MODELS,
-  normalizeGeminiModelId,
-} from "./models.js";
+import { ANTHROPIC_FALLBACK_MODELS } from "./models.js";
 import type {
   ActiveProviderRoute,
   ProviderChatRequest,
@@ -111,7 +107,7 @@ const openAiRuntime: ProviderRuntime = {
 const PROVIDER_RUNTIMES: Record<ProviderId, ProviderRuntime> = {
   openai: openAiRuntime,
   anthropic: anthropicRuntime,
-  google: geminiRuntime,
+  google: antigravityRuntime,
   mistral: mistralVibeRuntime,
   local: localRuntime,
   "codexa-native": codexaNativeRuntime,
@@ -201,7 +197,7 @@ export async function validateProviderRouteActivation(options: {
   providerConfig?: ProviderWorkspaceOverride;
   route: ProviderRoute;
   workspaceRoot: string;
-  geminiCommandPath?: string | null;
+  antigravityCommandPath?: string | null;
   claudeCommandPath?: string | null;
   localConfig?: ProviderWorkspaceOverride | null;
 }): Promise<ProviderRouteValidationResult> {
@@ -237,9 +233,16 @@ export async function validateProviderRouteActivation(options: {
 
 export function resolveActiveProviderRoute(options: {
   workspaceConfigActiveRoute?: ProviderActiveRoute;
+  googleMigrationRequired?: boolean;
   currentModel: string;
   currentReasoning: string;
 }): ActiveProviderRoute {
+  if (options.googleMigrationRequired)
+    return {
+      providerId: "google",
+      modelId: "Model selection required",
+      backendKind: "antigravity-cli-auth",
+    };
   const configuredRoute = options.workspaceConfigActiveRoute;
   if (configuredRoute && isProviderRoutableInUbume(configuredRoute.providerId)) {
     const route: ActiveProviderRoute = {
@@ -248,16 +251,17 @@ export function resolveActiveProviderRoute(options: {
       backendKind:
         configuredRoute.backendKind ?? getProviderRuntime(configuredRoute.providerId).backendKind,
       ...(configuredRoute.reasoning ? { reasoning: configuredRoute.reasoning } : {}),
-      ...(configuredRoute.modelSelection ? { modelSelection: configuredRoute.modelSelection } : {}),
       ...(configuredRoute.providerId === "local"
         ? { localBackend: configuredRoute.localBackend ?? "lm-studio" }
         : {}),
     };
 
     if (route.providerId === "google") {
-      route.modelId = normalizeGeminiModelId(route.modelId);
+      const models = discoverProviderModels("google").models;
+      const selector = getAgyModelSelector(route.modelId, route.reasoning, models);
+      const native = models.find((item) => item.modelId === selector);
+      if (native) route.modelId = native.modelId;
     }
-
     return route;
   }
 
@@ -278,7 +282,11 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
     return ANTHROPIC_FALLBACK_MODELS[0]?.modelId ?? "sonnet";
   }
   if (providerId === "google") {
-    return GEMINI_FALLBACK_MODELS[0]?.modelId ?? GEMINI_DEFAULT_MODEL_ID;
+    const discovered = discoverProviderModels("google");
+    if (discovered.status === "ready" && discovered.models.length > 0) {
+      return discovered.models[0].modelId;
+    }
+    return "Google default";
   }
   if (providerId === "local") {
     const discovery = discoverProviderModels("local");
@@ -303,6 +311,15 @@ export function createRoutedProvider(
   nativeSessions?: () => readonly NativeSessionReference[] | undefined,
 ): BackendProvider {
   const override = config.providers?.[route.providerId];
+  if (config.googleMigrationRequired)
+    return {
+      ...backend,
+      label: "Google",
+      run: (_prompt, _options, handlers) => {
+        handlers.onError(LEGACY_GOOGLE_MESSAGE);
+        return () => undefined;
+      },
+    };
   if (route.providerId === "openai")
     return {
       ...backend,
@@ -368,6 +385,17 @@ export function createRoutedProvider(
             return () => undefined;
           }
           const descriptor = resolveCatalogModel(catalog.models, route.modelId);
+          if (
+            route.providerId === "mistral" &&
+            descriptor &&
+            (descriptor.source !== "config" || descriptor.modelId !== route.modelId) &&
+            catalog.freshness !== "verified"
+          ) {
+            handlers.onError(
+              `The Mistral API catalogue for ${route.modelId} is unverified. Refresh models before running this custom Vibe model.`,
+            );
+            return () => undefined;
+          }
           // Old Vibe aliases can collide with newer API IDs. Require an explicit
           // native selection before changing their historical execution target.
           if (
@@ -391,11 +419,14 @@ export function createRoutedProvider(
           }
           const requested =
             route.reasoning ?? override?.models?.[route.modelId]?.reasoningPreference ?? "";
-          const effectiveReasoning = descriptor?.reasoningControl
-            ? reconcileReasoning(descriptor.reasoningControl, requested)
-            : descriptor?.supportedReasoningLevels?.some((level) => level.id === requested)
+          const effectiveReasoning =
+            route.providerId === "google"
               ? requested
-              : (descriptor?.defaultReasoningLevel ?? "");
+              : descriptor?.reasoningControl
+                ? reconcileReasoning(descriptor.reasoningControl, requested)
+                : descriptor?.supportedReasoningLevels?.some((level) => level.id === requested)
+                  ? requested
+                  : (descriptor?.defaultReasoningLevel ?? "");
           return provider.run!(
             {
               prompt,
@@ -407,6 +438,7 @@ export function createRoutedProvider(
               projectInstructions: options.projectInstructions,
               promptPolicy: options.promptPolicy,
               claudeCommandPath: override?.claudeCommandPath,
+              antigravityCommandPath: override?.antigravityCommandPath,
               nativeSessions: nativeSessions?.(),
               localConfig: route.providerId === "local" ? override : undefined,
               runIntent: options.runIntent,
@@ -450,7 +482,9 @@ export function effectiveProviderRuntime(
     model: route.modelId,
     reasoningLevel: (route.reasoning ??
       runtime.reasoningLevel) as ResolvedRuntimeConfig["reasoningLevel"],
-    ...(override?.geminiCommandPath ? { geminiCommandPath: override.geminiCommandPath } : {}),
+    ...(override?.antigravityCommandPath
+      ? { antigravityCommandPath: override.antigravityCommandPath }
+      : {}),
     ...(override?.codexCommandPath ? { codexCommandPath: override.codexCommandPath } : {}),
   };
 }
@@ -476,7 +510,15 @@ export function getProviderSetupPlan(providerId: ProviderId, windows: boolean): 
     case "anthropic":
       return { installCommand: "npm install -g @anthropic-ai/claude-code", setupCommand: "claude" };
     case "google":
-      return { installCommand: "npm install -g @google/gemini-cli", setupCommand: "gemini" };
+      return windows
+        ? {
+            installCommand: "irm https://antigravity.google/cli/install.ps1 | iex",
+            setupCommand: "agy",
+          }
+        : {
+            installCommand: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+            setupCommand: "agy",
+          };
     case "mistral":
       return windows
         ? {

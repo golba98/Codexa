@@ -19,6 +19,7 @@ export type PermissionsPanelAction =
 interface PermissionsPanelProps {
   runtime: RuntimeConfig;
   resolvedRuntime: ResolvedRuntimeConfig;
+  providerManaged?: boolean;
   onSelect: (action: PermissionsPanelAction) => void;
   onCancel: () => void;
 }
@@ -30,6 +31,7 @@ function formatRootsSummary(count: number): string {
 export function PermissionsPanel({
   runtime,
   resolvedRuntime,
+  providerManaged = false,
   onSelect,
   onCancel,
 }: PermissionsPanelProps) {
@@ -68,10 +70,16 @@ export function PermissionsPanel({
     <SelectionPanel
       focusId={FOCUS_IDS.permissionsPanel}
       title="Permissions"
-      subtitle="Ubume policy guards. Recommended for local coding: On request + Workspace write."
-      items={items}
-      limit={items.length}
-      onSelect={(value) => onSelect(value as PermissionsPanelAction)}
+      subtitle={
+        providerManaged
+          ? "Google permissions are managed by Antigravity CLI. Ubume's Codex policy settings are not forwarded."
+          : "Ubume policy guards. Recommended for local coding: On request + Workspace write."
+      }
+      items={providerManaged ? [{ label: "Back to chat", value: "cancel" }] : items}
+      limit={providerManaged ? 1 : items.length}
+      onSelect={(value) =>
+        providerManaged ? onCancel() : onSelect(value as PermissionsPanelAction)
+      }
       onCancel={onCancel}
     />
   );

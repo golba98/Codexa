@@ -360,6 +360,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
       cliModel && configuredRoute ? { ...configuredRoute, modelId: cliModel } : configuredRoute;
     return resolveActiveProviderRoute({
       workspaceConfigActiveRoute: effectiveRoute,
+      googleMigrationRequired: providerWorkspaceConfig.googleMigrationRequired,
       currentModel: model,
       currentReasoning: reasoningLevel,
     });
@@ -368,6 +369,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     launchArgs.modelOverride,
     model,
     providerWorkspaceConfig.activeRoute,
+    providerWorkspaceConfig.googleMigrationRequired,
     reasoningLevel,
     registryNonce,
   ]);

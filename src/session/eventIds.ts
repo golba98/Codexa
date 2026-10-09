@@ -1,3 +1,4 @@
+import { LEGACY_GOOGLE_MESSAGE } from "../core/providerLauncher/providerIdentity.js";
 import type { ProviderId, ProviderWorkspaceConfig } from "../core/providerLauncher/types.js";
 import { formatRuntimeProviderLabel } from "../core/providerRuntime/registry.js";
 
@@ -44,6 +45,16 @@ export function createStartupStaticEvents({
 }: {
   providerWorkspaceConfig: ProviderWorkspaceConfig;
 }): TimelineEvent[] {
+  if (providerWorkspaceConfig.googleMigrationRequired)
+    return [
+      {
+        id: createEventId(),
+        type: "system",
+        createdAt: Date.now(),
+        title: "Google migration required",
+        content: LEGACY_GOOGLE_MESSAGE,
+      },
+    ];
   return [createProviderMigrationNoticeEvent(providerWorkspaceConfig.migrationNotice)].filter(
     (event): event is TimelineEvent => event !== null,
   );

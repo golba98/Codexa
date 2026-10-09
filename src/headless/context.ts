@@ -2,6 +2,10 @@ import type { LaunchArgs } from "../config/launchArgs.js";
 import { resolveLayeredConfig } from "../config/layeredConfig.js";
 import { mergeRuntimeConfig, resolveRuntimeConfig } from "../config/runtimeConfig.js";
 import { findExecutable } from "../core/executables/executableResolver.js";
+import {
+  LEGACY_GOOGLE_MESSAGE,
+  resolveProviderIdentity,
+} from "../core/providerLauncher/providerIdentity.js";
 import { isKnownProviderId } from "../core/providerLauncher/registry.js";
 import { loadProviderWorkspaceConfig } from "../core/providerLauncher/workspaceConfig.js";
 import {
@@ -34,9 +38,24 @@ export function resolveExecutionContext(
   const layered = resolveLayeredConfig({ workspaceRoot, launchArgs });
   const config = loadProviderWorkspaceConfig(workspaceRoot, { readOnly: true });
   const base = resolveRuntimeConfig(mergeRuntimeConfig(layered.runtime, { planMode: false }));
+  if (
+    !options.inspect &&
+    !options.providerId &&
+    (config.googleMigrationRequired ||
+      (options.saved?.metadata.providerId === "google" &&
+        !resolveProviderIdentity("google", options.saved.metadata.backendKind)))
+  )
+    throw new CommandError(LEGACY_GOOGLE_MESSAGE, 3, "MIGRATION_REQUIRED");
   const selectedId =
-    options.providerId ??
-    options.saved?.metadata.providerId ??
+    (options.providerId
+      ? resolveProviderIdentity(options.providerId, undefined, true)
+      : undefined) ??
+    (options.saved
+      ? resolveProviderIdentity(
+          options.saved.metadata.providerId,
+          options.saved.metadata.backendKind,
+        )
+      : undefined) ??
     config.activeRoute?.providerId ??
     config.workspaceDefaultProviderId ??
     "openai";
@@ -44,11 +63,18 @@ export function resolveExecutionContext(
     throw new CommandError(
       `Unknown saved or selected provider: ${selectedId}. Select a supported provider explicitly.`,
     );
+  if (
+    options.saved &&
+    !options.providerId &&
+    !resolveProviderIdentity(options.saved.metadata.providerId, options.saved.metadata.backendKind)
+  )
+    throw new CommandError(
+      "The saved provider is unavailable. Select a supported provider explicitly.",
+    );
   const provider = getProviderRuntime(selectedId);
   if (
     !options.inspect &&
-    (selectedId === "google" ||
-      !isProviderRoutableInUbume(selectedId) ||
+    (!isProviderRoutableInUbume(selectedId) ||
       !provider.run ||
       config.providers?.[selectedId]?.enabled === false)
   ) {
@@ -90,10 +116,12 @@ export function resolveExecutionContext(
     backendKind: savedRoute?.backendKind ?? provider.backendKind,
     reasoning: reasoningExplicit
       ? base.reasoningLevel
-      : (savedRoute?.reasoning ??
-        workspaceRoute?.reasoning ??
-        override?.currentReasoning ??
-        base.reasoningLevel),
+      : modelExplicit && selectedId === "google"
+        ? undefined
+        : (savedRoute?.reasoning ??
+          workspaceRoute?.reasoning ??
+          override?.currentReasoning ??
+          (selectedId === "google" ? undefined : base.reasoningLevel)),
     ...(selectedId === "local"
       ? {
           localBackend:
@@ -127,7 +155,7 @@ export function resolveExecutionContext(
     provider: createRoutedProvider(
       route,
       getBackendProvider(runtime.provider),
-      config,
+      options.providerId ? { ...config, googleMigrationRequired: undefined } : config,
       () => options.saved?.metadata.localHarnessSession,
       () => options.saved?.metadata.nativeSessions,
     ),

@@ -7,7 +7,11 @@ import {
   type CodexModelCapability,
   normalizeCodexModelListResponses,
 } from "../../core/models/codexModelCapabilities.js";
-import { CLAUDE_CODE_EFFORT_LEVELS } from "../../core/providerRuntime/models.js";
+import { parseAgyModelsOutput } from "../../core/providerRuntime/antigravity.js";
+import {
+  CLAUDE_CODE_EFFORT_LEVELS,
+  providerModelsToCodexCapabilities,
+} from "../../core/providerRuntime/models.js";
 import { createLayoutSnapshot } from "../layout.js";
 import { ThemeProvider } from "../theme.js";
 import { ModelPickerScreen } from "./ModelPickerScreen.js";
@@ -232,6 +236,100 @@ test("model picker supports model movement and reasoning adjustment", async () =
     assert.match(frame, />\s+Model Two/);
     assert.match(frame, /Intelligence\s+Medium.*High\s+High/);
     assert.doesNotMatch(frame, /Model Four.*\[/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("Antigravity collapses Gemini effort variants into one model with an intelligence slider", async () => {
+  const models = providerModelsToCodexCapabilities(
+    parseAgyModelsOutput(
+      "gemini-3.7-flash-high\tGemini 3.7 Flash (High)\ngemini-3.7-flash-medium\tGemini 3.7 Flash (Medium)\ngemini-3.7-flash-low\tGemini 3.7 Flash (Low)",
+    ),
+    "gemini-3.7-flash-high",
+  ).models;
+  let selected = "";
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ModelPickerScreen
+        layout={createLayoutSnapshot(120, 30)}
+        models={models}
+        currentModel="gemini-3.7-flash-high"
+        currentReasoning="high"
+        activeProviderLabel="Antigravity"
+        onSelect={(model, reasoning) => {
+          selected = `${model}:${reasoning}`;
+        }}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+  );
+
+  try {
+    await sleep(80);
+    const output = harness.getOutput();
+    assert.match(output, /Gemini 3\.7 Flash/);
+    assert.match(output, /Intelligence\s+Low.*High/);
+    assert.doesNotMatch(output, /Gemini 3\.7 Flash \(Medium\)/);
+    assert.doesNotMatch(output, /gemini-3\.7-flash-medium/);
+    harness.stdin.write("h");
+    await sleep(40);
+    harness.stdin.write("h");
+    await sleep(40);
+    harness.stdin.write("\r");
+    await sleep(80);
+    assert.equal(selected, "gemini-3.7-flash-low:low");
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test("Antigravity native Claude and GPT-OSS models do not show an intelligence control", async () => {
+  const models = normalizeCodexModelListResponses([
+    {
+      data: [
+        {
+          id: "claude-sonnet-4-6",
+          model: "claude-sonnet-4-6",
+          displayName: "Claude Sonnet 4.6 (Thinking)",
+          hidden: false,
+        },
+        {
+          id: "claude-opus-4-6-thinking",
+          model: "claude-opus-4-6-thinking",
+          displayName: "Claude Opus 4.6 (Thinking)",
+          hidden: false,
+        },
+        {
+          id: "gpt-oss-120b-medium",
+          model: "gpt-oss-120b-medium",
+          displayName: "GPT-OSS 120B (Medium)",
+          hidden: false,
+        },
+      ],
+    },
+  ]).models;
+  const harness = createInkHarness(
+    <ThemeProvider theme="purple">
+      <ModelPickerScreen
+        layout={createLayoutSnapshot(120, 30)}
+        models={models}
+        currentModel="claude-sonnet-4-6"
+        currentReasoning="medium"
+        activeProviderLabel="Antigravity"
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />
+    </ThemeProvider>,
+  );
+
+  try {
+    await sleep(80);
+    const frame = getLastModelPickerFrame(harness.getOutput());
+    assert.match(frame, /Claude Sonnet 4\.6/);
+    assert.match(frame, /Claude Opus 4\.6/);
+    assert.match(frame, /GPT-OSS 120B/);
+    assert.doesNotMatch(frame, /Intelligence/);
   } finally {
     await harness.cleanup();
   }

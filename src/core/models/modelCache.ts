@@ -29,10 +29,12 @@ const CACHE_VERSION = 1;
 
 export interface CachedProviderModels {
   discoveredAt: number;
+  backendKind?: "antigravity-cli-auth";
   models: readonly ProviderModel[];
 }
 
 interface ProviderModelCacheFile {
+  legacyGoogleCli?: CachedProviderModels;
   version: number;
   providers: Partial<Record<ProviderId, CachedProviderModels>>;
 }
@@ -78,13 +80,28 @@ function isValidEntry(entry: unknown): entry is CachedProviderModels {
   );
 }
 
+function isAgyCacheEntry(entry: CachedProviderModels): boolean {
+  return (
+    entry.backendKind === "antigravity-cli-auth" ||
+    (entry.models.length > 0 &&
+      entry.models.every(
+        (model) =>
+          isRecord(model.raw) &&
+          (model.raw.provider === "antigravity" || model.raw.provider === "google") &&
+          isRecord(model.raw.selectors),
+      ))
+  );
+}
+
 export function loadCachedProviderModels(
-  providerId: ProviderId,
+  providerId: ProviderId | "antigravity",
   cacheFile = getProviderModelCacheFile(),
 ): CachedProviderModels | null {
   const cache = readCacheFile(cacheFile);
-  const entry = cache?.providers?.[providerId];
-  if (!entry || !isValidEntry(entry)) {
+  const entry = (cache?.providers as Record<string, CachedProviderModels> | undefined)?.[
+    providerId
+  ];
+  if (!entry || !isValidEntry(entry) || (providerId === "google" && !isAgyCacheEntry(entry))) {
     return null;
   }
   return entry;
@@ -97,6 +114,12 @@ export function saveCachedProviderModels(
 ): void {
   try {
     const cache = readCacheFile(cacheFile) ?? { version: CACHE_VERSION, providers: {} };
+    if (providerId === "google") {
+      const previous = cache.providers.google;
+      if (previous && isValidEntry(previous) && !isAgyCacheEntry(previous))
+        cache.legacyGoogleCli ??= previous;
+      entry = { ...entry, backendKind: "antigravity-cli-auth" };
+    }
     cache.providers[providerId] = JSON.parse(
       JSON.stringify(entry, (key, value) =>
         /^(?:authorization|api_?key|access_?token|refresh_?token|credentials|cookie|password|secret)$/i.test(

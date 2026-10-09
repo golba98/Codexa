@@ -3,7 +3,7 @@ import test, { afterEach, beforeEach } from "node:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { resetGeminiRouteValidationCacheForTests } from "../providerRuntime/gemini.js";
+import { resetAntigravityRouteValidationCacheForTests } from "../providerRuntime/antigravity.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "../providerRuntime/local.js";
 import { buildProviderRegistry } from "./registry.js";
 import {
@@ -33,38 +33,6 @@ afterEach(() => {
   else process.env.UBUME_DATA_DIR = originalDataRoot;
   rmSync(testDataRoot, { recursive: true, force: true });
 });
-
-function withGeminiEnv<T>(env: Partial<NodeJS.ProcessEnv>, callback: () => T): T {
-  const originalGemini = process.env.GEMINI_API_KEY;
-  const originalGoogle = process.env.GOOGLE_API_KEY;
-
-  try {
-    if ("GEMINI_API_KEY" in env) {
-      process.env.GEMINI_API_KEY = env.GEMINI_API_KEY;
-    } else {
-      delete process.env.GEMINI_API_KEY;
-    }
-    if ("GOOGLE_API_KEY" in env) {
-      process.env.GOOGLE_API_KEY = env.GOOGLE_API_KEY;
-    } else {
-      delete process.env.GOOGLE_API_KEY;
-    }
-    resetGeminiRouteValidationCacheForTests();
-    return callback();
-  } finally {
-    if (originalGemini === undefined) {
-      delete process.env.GEMINI_API_KEY;
-    } else {
-      process.env.GEMINI_API_KEY = originalGemini;
-    }
-    if (originalGoogle === undefined) {
-      delete process.env.GOOGLE_API_KEY;
-    } else {
-      process.env.GOOGLE_API_KEY = originalGoogle;
-    }
-    resetGeminiRouteValidationCacheForTests();
-  }
-}
 
 test("parses provider workspace config from Ubume-owned JSON", () => {
   const config = parseProviderWorkspaceConfig({
@@ -110,7 +78,7 @@ test("parses provider workspace config from Ubume-owned JSON", () => {
   assert.equal(config.migrationNotice, undefined);
 });
 
-test("saved Antigravity routes, defaults and overrides fall back after its removal", () => {
+test("saved Antigravity routes, defaults and overrides migrate seamlessly and idempotently to Google", () => {
   const config = parseProviderWorkspaceConfig({
     workspaceDefaultProviderId: "antigravity",
     activeRoute: {
@@ -127,13 +95,24 @@ test("saved Antigravity routes, defaults and overrides fall back after its remov
       openai: { current_model: "gpt-5.4" },
     },
   });
-  assert.equal(config.workspaceDefaultProviderId, undefined);
-  assert.equal(config.activeRoute, undefined);
+  assert.equal(config.workspaceDefaultProviderId, "google");
+  assert.equal(config.activeRoute?.providerId, "google");
+  assert.equal(config.activeRoute?.backendKind, "antigravity-cli-auth");
+  assert.equal(config.activeRoute?.modelId, "claude-sonnet-4.6-thinking");
+  assert.equal(config.activeRoute?.reasoning, "medium");
+  assert.equal(config.providers?.google?.currentModel, "claude-sonnet-4.6-thinking");
+  assert.equal(config.providers?.google?.antigravityCommandPath, "/custom/agy");
   assert.equal("antigravity" in (config.providers ?? {}), false);
   assert.equal(config.providers?.openai?.currentModel, "gpt-5.4");
+
+  // Idempotent migration
+  const serialized = serializeProviderWorkspaceConfig(config);
+  assert.equal(serialized.workspaceDefaultProviderId, "google");
+  const roundTripped = parseProviderWorkspaceConfig(serialized);
+  assert.deepEqual(roundTripped, config);
 });
 
-test("legacy agy backend alias no longer routes an Antigravity model through another provider", () => {
+test("legacy agy backend alias normalizes to Google with Antigravity backend", () => {
   const config = parseProviderWorkspaceConfig({
     active_route: {
       provider_id: "openai",
@@ -141,7 +120,119 @@ test("legacy agy backend alias no longer routes an Antigravity model through ano
       backend_kind: "agy",
     },
   });
+  assert.equal(config.activeRoute?.providerId, "google");
+  assert.equal(config.activeRoute?.backendKind, "antigravity-cli-auth");
+  assert.equal(config.activeRoute?.modelId, "claude-sonnet-4.6-thinking");
+});
+
+test("conflict resolution: Antigravity settings take precedence over legacy Google settings without corrupting credentials", () => {
+  const config = parseProviderWorkspaceConfig({
+    workspaceDefaultProviderId: "antigravity",
+    providers: {
+      google: {
+        current_model: "legacy-gemini-model",
+        gemini_command_path: "/legacy/gemini",
+        api_key: "legacy-gemini-key",
+      },
+      antigravity: {
+        current_model: "gemini-3.5-flash",
+        antigravity_command_path: "/custom/agy",
+      },
+    },
+  });
+  assert.equal(config.workspaceDefaultProviderId, "google");
+  assert.equal(config.providers?.google?.currentModel, "gemini-3.5-flash");
+  assert.equal(config.providers?.google?.antigravityCommandPath, "/custom/agy");
+  // Legacy geminiCommandPath is NOT used as antigravityCommandPath
+  assert.notEqual(config.providers?.google?.antigravityCommandPath, "/legacy/gemini");
+  assert.equal(config.providers?.google?.apiKey, undefined);
+  assert.equal(config.providers?.google?.command, undefined);
+  assert.deepEqual(config.legacyProviderData?.google, {
+    current_model: "legacy-gemini-model",
+    gemini_command_path: "/legacy/gemini",
+    api_key: "legacy-gemini-key",
+  });
+});
+
+test("canonical Google settings beat historical Antigravity settings without mixing legacy credentials", () => {
+  const data = {
+    providers: {
+      google: {
+        backend_kind: "antigravity-cli-auth",
+        current_model: "native-new",
+        command: "gemini",
+        models: { "native-new": { reasoningPreference: "low" } },
+      },
+      antigravity: {
+        current_model: "native-old",
+        antigravity_command_path: "custom-agy",
+        account_settings: { credential_reference: "original-reference" },
+      },
+    },
+  };
+  const config = parseProviderWorkspaceConfig(data);
+  assert.equal(config.providers?.google?.currentModel, "native-new");
+  assert.equal(config.providers?.google?.antigravityCommandPath, "custom-agy");
+  assert.equal(config.providers?.google?.command, undefined);
+  assert.deepEqual(config.legacyProviderData?.antigravity, data.providers.antigravity);
+  assert.deepEqual(config.legacyProviderData?.google, data.providers.google);
+  const once = serializeProviderWorkspaceConfig(config);
+  const twice = serializeProviderWorkspaceConfig(parseProviderWorkspaceConfig(once));
+  assert.deepEqual(twice, once);
+  const registry = buildProviderRegistry({ activeModel: "unused", workspaceConfig: config });
+  assert.equal(registry.filter((provider) => provider.displayName === "Google").length, 1);
+  assert.equal(
+    registry.some((provider) => provider.displayName === "Antigravity"),
+    false,
+  );
+  assert.equal(
+    registry.find((provider) => provider.id === "google")?.launchCommand?.executable,
+    "custom-agy",
+  );
+});
+
+test("legacy Google routes retain credentials and original data but never become Antigravity routes", () => {
+  const data = {
+    workspaceDefaultProviderId: "google",
+    activeRoute: {
+      providerId: "google",
+      modelId: "same-name-as-agy",
+      backendKind: "gemini-cli-auth",
+    },
+    providers: {
+      google: {
+        command: "gemini",
+        gemini_command_path: "/old/gemini",
+        api_key: "keep-me",
+        credential: { token: "unknown-field" },
+      },
+    },
+  };
+  const config = parseProviderWorkspaceConfig(data);
+  assert.equal(config.googleMigrationRequired, true);
   assert.equal(config.activeRoute, undefined);
+  assert.equal(
+    config.workspaceDefaultProviderId,
+    "google",
+    "the blocked selection cannot fall back to Codex",
+  );
+  assert.equal(config.providers?.google, undefined);
+  assert.deepEqual(config.legacyProviderData?.google, data.providers.google);
+  assert.deepEqual(config.legacyProviderData?.activeRoute, data.activeRoute);
+  assert.deepEqual(parseProviderWorkspaceConfig(serializeProviderWorkspaceConfig(config)), config);
+});
+
+test("native model IDs are not rewritten during configuration migration", () => {
+  const config = parseProviderWorkspaceConfig({
+    activeRoute: {
+      providerId: "antigravity",
+      backendKind: "antigravity-cli-auth",
+      modelId: "gemini-3.1-pro-low",
+    },
+  });
+  assert.equal(config.activeRoute?.providerId, "google");
+  assert.equal(config.activeRoute?.modelId, "gemini-3.1-pro-low");
+  assert.equal(config.activeRoute?.reasoning, undefined);
 });
 
 test("serializes and persists provider workspace defaults", () => {
@@ -300,51 +391,30 @@ test("active Anthropic route persists without secrets", () => {
   }
 });
 
-test("setProviderActiveRoute rejects unconfigured Gemini routes", () => {
-  withGeminiEnv({}, () => {
-    const config = setProviderActiveRoute(
-      {
-        activeRoute: {
-          providerId: "openai",
-          modelId: "gpt-5.5",
-          backendKind: "codex-cli-auth",
-          reasoning: "high",
-        },
-      },
-      {
-        providerId: "google",
-        modelId: "gemini-2.5-flash",
-        backendKind: "gemini-cli-auth",
+test("setProviderActiveRoute rejects unconfigured Google routes", () => {
+  resetAntigravityRouteValidationCacheForTests();
+  const config = setProviderActiveRoute(
+    {
+      activeRoute: {
+        providerId: "openai",
+        modelId: "gpt-5.5",
+        backendKind: "codex-cli-auth",
         reasoning: "high",
       },
-    );
-
-    assert.deepEqual(config.activeRoute, {
-      providerId: "openai",
-      modelId: "gpt-5.5",
-      backendKind: "codex-cli-auth",
+    },
+    {
+      providerId: "google",
+      modelId: "gemini-3.5-flash",
+      backendKind: "antigravity-cli-auth",
       reasoning: "high",
-    });
-  });
-});
+    },
+  );
 
-test("setProviderActiveRoute persists configured Google identities without credentials", () => {
-  withGeminiEnv({ GEMINI_API_KEY: "test-gemini-key" }, () => {
-    const config = setProviderActiveRoute(
-      {},
-      {
-        providerId: "google",
-        modelId: "gemini-2.5-flash",
-        backendKind: "gemini-api-key",
-        reasoning: "high",
-      },
-    );
-
-    assert.equal(config.activeRoute?.modelId, "gemini-2.5-flash");
-    assert.doesNotMatch(
-      JSON.stringify(serializeProviderWorkspaceConfig(config)),
-      /test-gemini-key/,
-    );
+  assert.deepEqual(config.activeRoute, {
+    providerId: "openai",
+    modelId: "gpt-5.5",
+    backendKind: "codex-cli-auth",
+    reasoning: "high",
   });
 });
 
@@ -444,12 +514,12 @@ test("Anthropic claudeCommandPath round-trips through serialize/parse", () => {
 test("saved Google command overrides remain intact", () => {
   const input = {
     providers: {
-      google: { current_model: "models/gemini-99.8-flash", gemini_command_path: "/opt/gemini" },
+      google: { current_model: "gemini-3.5-flash", antigravity_command_path: "/opt/agy" },
     },
   };
   const config = parseProviderWorkspaceConfig(input);
-  assert.equal(config.providers?.google?.currentModel, "models/gemini-99.8-flash");
-  assert.equal(config.providers?.google?.geminiCommandPath, "/opt/gemini");
+  assert.equal(config.providers?.google?.currentModel, "gemini-3.5-flash");
+  assert.equal(config.providers?.google?.antigravityCommandPath, "/opt/agy");
   assert.deepEqual(parseProviderWorkspaceConfig(serializeProviderWorkspaceConfig(config)), config);
 });
 
@@ -636,20 +706,23 @@ test("Google workspace route and model overrides round-trip byte-for-byte", () =
     default_provider_id: "google",
     activeRoute: {
       providerId: "google",
-      modelId: "models/gemini-99.8-pro",
-      backendKind: "gemini-api-key",
-      reasoning: "auto",
+      modelId: "gemini-3.5-flash",
+      backendKind: "antigravity-cli-auth",
+      reasoning: "high",
     },
     providers: {
-      google: { models: { "models/gemini-99.8-pro": { reasoningPreference: "auto" } } },
+      google: {
+        backend_kind: "antigravity-cli-auth",
+        models: { "gemini-3.5-flash": { reasoningPreference: "high" } },
+      },
     },
   });
   const restored = parseProviderWorkspaceConfig(serializeProviderWorkspaceConfig(config));
   assert.equal(restored.activeRoute?.providerId, "google");
-  assert.equal(restored.activeRoute?.modelId, "models/gemini-99.8-pro");
+  assert.equal(restored.activeRoute?.modelId, "gemini-3.5-flash");
   assert.equal(
-    restored.providers?.google?.models?.["models/gemini-99.8-pro"]?.reasoningPreference,
-    "auto",
+    restored.providers?.google?.models?.["gemini-3.5-flash"]?.reasoningPreference,
+    "high",
   );
 });
 
@@ -731,15 +804,4 @@ test("Local model maxOutputTokens: 4096 round-trips; invalid values are rejected
   assert.equal(config.providers?.local?.models?.zero, undefined);
   assert.equal(config.providers?.local?.models?.negative, undefined);
   assert.equal(config.providers?.local?.models?.decimal, undefined);
-});
-
-test("setProviderActiveRoute accepts Google routes when GOOGLE_API_KEY is configured", () => {
-  withGeminiEnv({ GOOGLE_API_KEY: "test-google-key" }, () => {
-    const config = setProviderActiveRoute(
-      {},
-      { providerId: "google", modelId: "models/gemini-99.8-flash", backendKind: "gemini-api-key" },
-    );
-    assert.equal(config.activeRoute?.modelId, "models/gemini-99.8-flash");
-    assert.doesNotMatch(JSON.stringify(config), /test-google-key/);
-  });
 });

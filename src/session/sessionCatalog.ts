@@ -12,6 +12,10 @@ import {
   listExternalSessions,
 } from "../core/externalSessions/index.js";
 import { resolveCatalogModel } from "../core/models/modelSelection.js";
+import {
+  LEGACY_GOOGLE_MESSAGE,
+  resolveProviderIdentity,
+} from "../core/providerLauncher/providerIdentity.js";
 import { isKnownProviderId } from "../core/providerLauncher/registry.js";
 import type { LocalBackendId, ProviderId } from "../core/providerLauncher/types.js";
 import { getProviderRuntime, isProviderRoutableInUbume } from "../core/providerRuntime/registry.js";
@@ -79,7 +83,7 @@ export function conversationSummary(
     key: `ubume:${key}:${entry.id}`,
     ref: { kind: "ubume", conversationId: entry.id, workspaceRoot: workspace, workspaceKey: key },
     source: "ubume",
-    providerId: entry.providerId,
+    providerId: entry.providerId === "antigravity" ? "google" : entry.providerId,
     workspaceRoot: workspace,
     modelId: entry.modelId,
     localBackend: entry.localBackend,
@@ -97,7 +101,7 @@ export function mergeSessionSummaries(
 ): SessionSummary[] {
   const linked = new Set<string>();
   const nativeKey = (source: string, id: string, folder: string | null) =>
-    `${source}:${id}:${folder ? normalizeWorkspaceRoot(folder) : ""}`;
+    `${source === "antigravity" ? "google" : source}:${id}:${folder ? normalizeWorkspaceRoot(folder) : ""}`;
   for (const summary of conversations) {
     const entry = summary.conversation;
     for (const link of [
@@ -273,12 +277,14 @@ export function assessSavedRoute(
   discovery: ProviderModelDiscoveryResult | null,
   enabled = true,
 ): SavedRouteAssessment {
-  const id = metadata.providerId;
+  const id = resolveProviderIdentity(metadata.providerId, metadata.backendKind);
   if (typeof id !== "string" || !isKnownProviderId(id) || !isProviderRoutableInUbume(id))
     return {
       status: "unavailable",
       message:
-        "The saved provider is unavailable. Select a provider and model explicitly before sending.",
+        metadata.providerId === "google"
+          ? LEGACY_GOOGLE_MESSAGE
+          : "The saved provider is unavailable. Select a provider and model explicitly before sending.",
     };
   const route = buildResumedProviderRoute(metadata, id, getProviderRuntime(id).backendKind);
   if (!enabled)
@@ -328,7 +334,9 @@ export function importNativeConversation(
     .list()
     .find(
       (entry) =>
-        entry.importedFrom?.source === summary.source &&
+        entry.importedFrom != null &&
+        (entry.importedFrom.source === "antigravity" ? "google" : entry.importedFrom.source) ===
+          (summary.source === "antigravity" ? "google" : summary.source) &&
         entry.importedFrom.sessionId === summary.id,
     );
   if (previous) {

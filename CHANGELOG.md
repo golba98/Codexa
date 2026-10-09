@@ -6,7 +6,30 @@ No changes yet.
 
 ---
 
-## [0.1.15] — 2026-10-09 — Terminal Markdown Rendering (prepared)
+## [0.1.16] — 2026-10-09 — Provider Routing (prepared)
+
+### Fixed
+
+- Restore Google through the original Antigravity (`agy`) backend, removing the legacy Gemini CLI integration. Restore native session access, live model discovery, exact model dispatch, cancellation and historical conversation handling.
+- Preserve saved Antigravity preferences and sessions through compatibility aliases. Archive conflicting legacy Google settings without interpreting them as Antigravity credentials; require explicit provider/model selection for ambiguous legacy routes.
+- Keep configured Mistral Vibe routes usable when API discovery fails or credentials are unavailable. Match API metadata against configured request names, preserving selector aliases and avoiding metadata from unrelated colliding IDs.
+- Preserve exact API model IDs across picker refresh and confirmation, and forward that ID to Vibe instead of substituting a configured model's request name. Preserve configured model settings and local or third-party provider configuration.
+
+### Changed
+
+- Separate native/configured Vibe models from API-discovered custom routes. Collapse only API-declared aliases; API custom routes require a verified catalogue and are labelled "Custom via Vibe (request unverified)." Reasoning controls appear only when the API reports reasoning capability, with Vibe's none/high mapping.
+- Always offer "Vibe current/default." This follows Vibe's saved active/default selection and inherited environment overrides; it does not unpin the native selection.
+
+### Verification
+
+- Final release verification passed: 1,986 tests across 177 files (0 failures), TypeScript, Biome, build, capability audit (17/17), whitespace checks, version consistency and CLI `--version` (0.1.16). The package dry run includes 228 files (601,516 packed bytes); required runtime files are present and tests, fixtures, credentials and legacy Gemini runtime files are excluded.
+- Focused routing/picker checks passed 93 tests. Sanitized synthetic 60/120-column terminal captures and the full verification details are in `docs/recordings/mistral-vibe-picker.txt` and `docs/RELEASE_0.1.16_VERIFICATION.md`.
+- Local parsing confirms the injected model list is accepted by Vibe 2.26.0. No live Mistral completion was sent; successful Large 4 inference and the model reported by a completed request remain unverified.
+- This version is prepared for review and has not been published to npm or tagged as a release.
+
+---
+
+## [0.1.15] — 2026-10-09 — Terminal Markdown Rendering
 
 ### Changed
 
@@ -22,7 +45,7 @@ No changes yet.
 
 - Rendering PR verification: 401 focused tests passed, TypeScript and Biome passed. Its broader suite passed 1,954 tests; the capability-audit failure was corrected, while the unrelated dependency-symlink path-scan failure remains documented in `docs/TERMINAL_RENDERING_REPORT.md`.
 - Release preparation: 78 version/CLI/package-metadata tests passed; TypeScript, Biome, version consistency, CLI `--version` (0.1.15), and `npm pack --dry-run` passed. The dry run includes 227 files (596,893 bytes).
-- This version is prepared and has not been published to npm.
+- Public npm registry verification on 2026-10-09 confirms that 0.1.15 is published.
 
 ---
 

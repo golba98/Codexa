@@ -3,6 +3,7 @@ import type { Theme } from "../../config/settings.js";
 import { formatModeLabel, formatReasoningLabel } from "../../config/settings.js";
 import type { CodexModelCapability } from "../../core/models/codexModelCapabilities.js";
 import { reconcileReasoning } from "../../core/models/reasoningControl.js";
+import { getAntigravityModelLabel } from "../../core/providerRuntime/antigravity.js";
 import { CODEXA_NATIVE_MODEL_ID } from "../../core/providerRuntime/codexaNative.js";
 import type {
   ModelContextMetadata,
@@ -12,7 +13,6 @@ import {
   contextMetadataToModelSpec,
   formatContextCompact,
 } from "../../core/providerRuntime/contextMetadata.js";
-import { formatGeminiModelLabel } from "../../core/providerRuntime/models.js";
 import type { ActiveProviderRoute } from "../../core/providerRuntime/types.js";
 
 interface ActiveRuntimeDisplayInput {
@@ -38,7 +38,7 @@ interface ActiveRuntimeDisplay {
 const PROVIDER_DISPLAY: Record<string, string> = {
   openai: "OpenAI Codex CLI",
   anthropic: "Claude Code CLI",
-  google: "Gemini CLI",
+  google: "Google",
   mistral: "Mistral Vibe CLI",
   local: "Local",
   "codexa-native": "Codexa Native",
@@ -71,7 +71,7 @@ function getModelLabel(
   capability?: CodexModelCapability | null,
 ): string {
   if (capability?.label) return capability.label;
-  if (route.providerId === "google") return formatGeminiModelLabel(route.modelId);
+  if (route.providerId === "google") return getAntigravityModelLabel(route.modelId);
   if (route.providerId === "anthropic") {
     return capability?.label ?? route.modelId;
   }
@@ -96,7 +96,7 @@ export function buildActiveRuntimeDisplay({
   isLocalRuntime = false,
 }: ActiveRuntimeDisplayInput): ActiveRuntimeDisplay {
   const providerLabel = PROVIDER_DISPLAY[route.providerId] ?? route.providerId;
-  const rawReasoning = route.reasoning ?? reasoningLevel;
+  const rawReasoning = route.reasoning ?? (route.providerId === "google" ? "" : reasoningLevel);
   // Local runtimes own their reasoning behavior; Ubume cannot adjust it.
   // Do not present the global fallback as if it were an active Local setting.
   const supported =
@@ -113,6 +113,7 @@ export function buildActiveRuntimeDisplay({
       ? formatReasoningLabel(rawReasoning)
       : null;
   const modelLabel = getModelLabel(route, modelCapability);
+  const reasoningAlreadyInLabel = reasoning && modelLabel.endsWith(`(${reasoning})`);
   const validContextMetadata = isContextForRoute(contextMetadata, route) ? contextMetadata : null;
   const contextDisplay =
     validContextMetadata?.contextLength != null
@@ -131,12 +132,14 @@ export function buildActiveRuntimeDisplay({
 
   return {
     providerLabel,
-    modelDisplay: reasoning
-      ? `${providerLabel} / ${modelLabel} / reasoning: ${reasoning}`
-      : `${providerLabel} / ${modelLabel}`,
-    footerModelDisplay: reasoning
-      ? `${providerLabel} / ${modelLabel} (${reasoning})`
-      : `${providerLabel} / ${modelLabel}`,
+    modelDisplay:
+      reasoning && !reasoningAlreadyInLabel
+        ? `${providerLabel} / ${modelLabel} / reasoning: ${reasoning}`
+        : `${providerLabel} / ${modelLabel}`,
+    footerModelDisplay:
+      reasoning && !reasoningAlreadyInLabel
+        ? `${providerLabel} / ${modelLabel} (${reasoning})`
+        : `${providerLabel} / ${modelLabel}`,
     contextDisplay: isLocalRuntime ? contextDisplay : "",
     showContext: isLocalRuntime,
     modeLabel: formatModeLabel(mode),
