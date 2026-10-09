@@ -33,14 +33,17 @@ function makeResult(overrides: Partial<CommandResult> = {}): CommandResult {
 
 const DETECTION_CASES: Array<[string, GlobalPackageManager]> = [
   ["/usr/local/lib/node_modules/ubume/bin/ubume.js", "npm"],
-  ["C:\\Users\\jorda\\AppData\\Roaming\\npm\\node_modules\\ubume\\bin\\ubume.js", "npm"],
+  ["C:\\Users\\Example\\AppData\\Roaming\\npm\\node_modules\\ubume\\bin\\ubume.js", "npm"],
   ["/home/user/.local/share/pnpm/global/5/node_modules/ubume/bin/ubume.js", "pnpm"],
-  ["C:\\Users\\jorda\\AppData\\Local\\pnpm\\global\\5\\node_modules\\ubume\\bin\\ubume.js", "pnpm"],
+  [
+    "C:\\Users\\Example\\AppData\\Local\\pnpm\\global\\5\\node_modules\\ubume\\bin\\ubume.js",
+    "pnpm",
+  ],
   ["/home/user/.bun/install/global/node_modules/ubume/bin/ubume.js", "bun"],
-  ["C:\\Users\\jorda\\.bun\\install\\global\\node_modules\\ubume\\bin\\ubume.js", "bun"],
+  ["C:\\Users\\Example\\.bun\\install\\global\\node_modules\\ubume\\bin\\ubume.js", "bun"],
   ["/home/user/.config/yarn/global/node_modules/ubume/bin/ubume.js", "yarn"],
   [
-    "C:\\Users\\jorda\\AppData\\Local\\Yarn\\config\\global\\node_modules\\ubume\\bin\\ubume.js",
+    "C:\\Users\\Example\\AppData\\Local\\Yarn\\config\\global\\node_modules\\ubume\\bin\\ubume.js",
     "yarn",
   ],
 ];
