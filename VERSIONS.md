@@ -3,7 +3,19 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
-## v0.1.16 — 2026-10-09 (prepared)
+## v0.1.17 — 2026-10-09 (prepared)
+
+Type `/usage` to see how much of your plan you have left on the provider you're using, without leaving Ubume. It shows Codex's 5-hour and weekly limits, Claude Code's session and weekly limits (including per-model ones), and Antigravity's quotas for each model group, with when each one resets. Checking usage never sends a prompt or uses tokens.
+
+Mistral Vibe doesn't share usage with other programs, so Ubume says so rather than guessing. Local models show context and token use instead of a quota. Press R to refresh and Esc to close; results are reused for 30 seconds, and older data is marked cached or stale.
+
+Choosing Mistral in `/providers` now switches to it straight away when its saved model is Vibe's "Default" entry, instead of opening the model picker every time.
+
+Ubume also keeps checking for updates while it runs, so a new release published during a long session is noticed without restarting.
+
+This version is prepared for review and has not been published to npm or tagged as a release.
+
+## v0.1.16 — 2026-10-09
 
 Google uses the original Antigravity (`agy`) backend again, including native model discovery and session access. Saved Antigravity preferences and sessions retain compatibility aliases. Ambiguous legacy Google routes require an explicit provider/model selection, and conflicting legacy credentials remain archived and inactive.
 
@@ -13,7 +25,7 @@ Mistral Vibe's configured models stay separate from API-discovered custom models
 
 Local verification passed 1,986 tests, TypeScript, Biome, build, the capability audit and package/version checks. See [the verification report](docs/RELEASE_0.1.16_VERIFICATION.md).
 
-This version is prepared for review and has not been published to npm or tagged as a release.
+The public npm registry confirms that this version is published (verified 2026-10-09). The published package also includes the Mistral picker fixes that match Vibe's effective model list.
 
 ## v0.1.15 — 2026-10-09
 

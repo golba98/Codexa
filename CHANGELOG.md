@@ -2,23 +2,38 @@
 
 ## Unreleased
 
-### Added
-
-- `/usage` shows account usage for the active provider in an overlay panel: Codex 5-hour/weekly windows and credits (via `codex app-server`), Claude Code session/weekly/model limits (via Claude Code's experimental `get_usage` control request), and Google Antigravity per-model-group quotas and G1 credits (via `agy -p /usage` and `/credits`). It never sends a prompt or uses model tokens. Mistral Vibe is reported as unsupported because Vibe exposes no usage interface. Local routes show context and token usage, with account quota marked N/A on loopback. The Anthropic API-key route shows rate limits observed on earlier responses. Press R to refresh (30 s cooldown, `UBUME_USAGE_COOLDOWN_SECONDS`) and Esc to close. Cached and stale data are labelled as such.
-
-### Fixed
-
-- Selecting Mistral in the provider picker switches to it directly when its saved model is Vibe's "Default" entry, instead of reopening the model picker every time.
-- Match the Mistral picker to the installed Vibe effective model list, including GLM-5.3 (Mistral Hosted), local models and the current Default entry. Preserve native labels, selector aliases and thinking levels.
-- Stop adding API-only model candidates to the Vibe picker and filter stale API-only cache rows without deleting stored data. Read Vibe configuration and cached routing assignments without running configuration migrations.
-- Discover effective Vibe models before headless execution so routed models such as `glm-5-3` work on a fresh process.
-- Keep checking for Ubume updates while the interactive app runs: every 15 minutes after a successful check, and with bounded, jittered backoff (30 s up to 15 min) after failures, so a release published mid-session or a failed startup check no longer goes unnoticed until restart. Background results update the existing update state without opening the prompt or moving focus.
-- Never let a failed update check hide an already-detected update or count as "up to date." `/update check` shares the background checker's single in-flight request, and a late startup result no longer closes an overlay opened afterwards.
-- Read the npm `latest` dist-tag from the small, uncached dist-tags endpoint instead of the CDN-cached full package document, and order prerelease versions by SemVer precedence (`rc.10` after `rc.9`).
+No changes yet.
 
 ---
 
-## [0.1.16] — 2026-10-09 — Provider Routing (prepared)
+## [0.1.17] — 2026-10-09 — Provider Usage (prepared)
+
+### Added
+
+- `/usage` shows account usage for the active provider in an overlay panel: Codex 5-hour/weekly windows and credits (via `codex app-server`), Claude Code session/weekly/model limits (via Claude Code's experimental `get_usage` control request), and Google Antigravity per-model-group quotas and G1 credits (via `agy -p /usage` and `/credits`). It never sends a prompt or uses model tokens. Mistral Vibe is reported as unsupported because Vibe exposes no usage interface. Local routes show context and token usage, with account quota marked N/A on loopback. The Anthropic API-key route shows rate limits observed on earlier responses. Press R to refresh (30 s cooldown, `UBUME_USAGE_COOLDOWN_SECONDS`) and Esc to close. Cached and stale data are labelled as such. (#301)
+
+### Fixed
+
+- Selecting Mistral in the provider picker switches to it directly when its saved model is Vibe's "Default" entry, instead of reopening the model picker every time. (#301)
+- Keep checking for Ubume updates while the interactive app runs: every 15 minutes after a successful check, and with bounded, jittered backoff (30 s up to 15 min) after failures, so a release published mid-session or a failed startup check no longer goes unnoticed until restart. Background results update the existing update state without opening the prompt or moving focus. (#300)
+- Never let a failed update check hide an already-detected update or count as "up to date." `/update check` shares the background checker's single in-flight request, and a late startup result no longer closes an overlay opened afterwards. (#300)
+- Read the npm `latest` dist-tag from the small, uncached dist-tags endpoint instead of the CDN-cached full package document, and order prerelease versions by SemVer precedence (`rc.10` after `rc.9`). (#300)
+
+### Changed
+
+- The npm package no longer includes test-only helpers from `src/test/`; no runtime code imports them.
+
+### Verification
+
+- `npm run prepublishOnly` passed: lockfile sync, build metadata, TypeScript, Biome and 2,137 tests across 193 files (0 failures). The same suite also passed under a pseudo-terminal.
+- Capability audit 17/17, whitespace check, and version consistency across `package.json`, both npm lockfiles and build metadata (0.1.17); `node bin/ubume.js --version` reports 0.1.17.
+- `npm pack` produced 245 files (631,614 packed bytes) with no tests, fixtures or test helpers. Installed into an isolated prefix with `--legacy-peer-deps`: `--version`, `doctor --json` and a headless fixture `exec` passed, and `scripts/smoke-packaged-harness.ts` reported packaged Harness inference passed.
+- `/usage` in the installed package showed live Codex usage at 99×22. #301 verified Codex, Claude Code and Google (Antigravity) against their real CLIs; the Anthropic API-key path, Codex API-key mode and Local are covered by tests only.
+- This version is prepared for review and has not been published to npm or tagged as a release.
+
+---
+
+## [0.1.16] — 2026-10-09 — Provider Routing
 
 ### Fixed
 
@@ -26,6 +41,9 @@
 - Preserve saved Antigravity preferences and sessions through compatibility aliases. Archive conflicting legacy Google settings without interpreting them as Antigravity credentials; require explicit provider/model selection for ambiguous legacy routes.
 - Keep configured Mistral Vibe routes usable when API discovery fails or credentials are unavailable. Match API metadata against configured request names, preserving selector aliases and avoiding metadata from unrelated colliding IDs.
 - Preserve exact API model IDs across picker refresh and confirmation, and forward that ID to Vibe instead of substituting a configured model's request name. Preserve configured model settings and local or third-party provider configuration.
+- Match the Mistral picker to the installed Vibe effective model list, including GLM-5.3 (Mistral Hosted), local models and the current Default entry. Preserve native labels, selector aliases and thinking levels. (#299, merged after preparation and included in the published package)
+- Stop adding API-only model candidates to the Vibe picker and filter stale API-only cache rows without deleting stored data. Read Vibe configuration and cached routing assignments without running configuration migrations. (#299, merged after preparation and included in the published package)
+- Discover effective Vibe models before headless execution so routed models such as `glm-5-3` work on a fresh process. (#299, merged after preparation and included in the published package)
 
 ### Changed
 
@@ -37,7 +55,7 @@
 - Final release verification passed: 1,986 tests across 177 files (0 failures), TypeScript, Biome, build, capability audit (17/17), whitespace checks, version consistency and CLI `--version` (0.1.16). The package dry run includes 228 files (601,516 packed bytes); required runtime files are present and tests, fixtures, credentials and legacy Gemini runtime files are excluded.
 - Focused routing/picker checks passed 93 tests. Sanitized synthetic 60/120-column terminal captures and the full verification details are in `docs/recordings/mistral-vibe-picker.txt` and `docs/RELEASE_0.1.16_VERIFICATION.md`.
 - Local parsing confirms the injected model list is accepted by Vibe 2.26.0. No live Mistral completion was sent; successful Large 4 inference and the model reported by a completed request remain unverified.
-- This version is prepared for review and has not been published to npm or tagged as a release.
+- Public npm registry verification on 2026-10-09 confirms that 0.1.16 is published from commit `72e88fe`, with matching integrity in full and abbreviated metadata.
 
 ---
 
