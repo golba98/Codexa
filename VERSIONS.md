@@ -3,6 +3,16 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.15 — 2026-10-09 (prepared)
+
+Assistant responses now render as terminal-native Markdown. Tables align and wrap at normal widths, and switch to readable header/value groups on narrow terminals. Headings, nested lists, checkboxes, quotes and code blocks share a restrained visual style across providers.
+
+Code keeps its original indentation and blank lines. Long code lines have marked visual continuations, while copy/export retains the original response. Streaming reuses stable blocks and bounded caches to reduce repeated work.
+
+This release also includes the DeepSeek Harness 0.1.2-rc.1 security update merged after 0.1.14 was prepared.
+
+This version is prepared but has not been published to npm.
+
 ## v0.1.14 — 2026-10-09 (prepared)
 
 Model lists are more reliable for every provider. Ubume fetches them from each provider, caches them, and keeps showing the last good list if a refresh fails. If a model you saved disappears, Ubume asks you to pick one instead of quietly switching to a different model.
