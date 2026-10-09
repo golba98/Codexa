@@ -124,6 +124,7 @@ function localConfigKey(config: LocalProviderConfig): string {
     enabled: config.enabled,
     type: config.type,
     baseUrl: config.baseUrl,
+    apiKeyHash: createHash("sha256").update(config.apiKey).digest("hex"),
     pinnedModel: config.pinnedModel,
     currentModel: config.currentModel,
     defaultModel: config.defaultModel,
@@ -572,7 +573,7 @@ export async function checkLocalProvider(
 
     if (discoveredIds.length === 0) {
       const message =
-        "Local endpoint is reachable, but no models were returned. Load a model in LM Studio.";
+        "Local endpoint is reachable, but no models were returned. Load a model in the configured local server.";
       const result = notConfiguredResult(config, message, "no-models");
       discoveryCaches.set(localBackend, {
         configKey: key,
@@ -1046,20 +1047,47 @@ export const localRuntime: ProviderRuntime = {
       localBackend: localBackend ?? route.localBackend,
     }),
   discoverModels: discoverLocalModels,
-  refreshModels: async ({ localConfig, localBackend }) => {
+  refreshModels: async ({ localConfig, localBackend, signal }) => {
     warmValidations.clear();
     const backend =
       localBackend ?? localConfig?.localBackend ?? configuredOverride?.localBackend ?? "lm-studio";
     const validation = await checkLocalProvider({
       override: localConfig ?? configuredOverride,
       localBackend: backend,
+      signal,
     });
     return {
-      status: validation.status,
+      status:
+        validation.diagnostics?.endpointCheckResult === "no-models" ? "ready" : validation.status,
+      ...(validation.diagnostics?.endpointCheckResult === "no-models"
+        ? { freshness: "verified" as const }
+        : {}),
       providerId: "local",
       localBackend: backend,
       backendKind: validation.backendKind,
-      models: validation.status === "ready" ? discoverLocalModels(localConfig, backend).models : [],
+      models:
+        validation.status === "ready"
+          ? discoverLocalModels(localConfig, backend).models.map((model) => {
+              const override = (localConfig ?? configuredOverride)?.models?.[model.modelId];
+              if (override?.supportsReasoningEffort !== true) return model;
+              const levels = ["low", "medium", "high"].map((id) => ({
+                id,
+                label: id,
+                description: null,
+              }));
+              return {
+                ...model,
+                supportedReasoningLevels: levels,
+                defaultReasoningLevel: "medium",
+                reasoningControl: {
+                  kind: "levels" as const,
+                  levels,
+                  default: "medium",
+                  transport: "parameter" as const,
+                },
+              };
+            })
+          : [],
       message: validation.message,
       diagnostics: validation.diagnostics,
     };

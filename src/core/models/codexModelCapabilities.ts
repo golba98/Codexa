@@ -7,9 +7,11 @@ import {
   LEGACY_FALLBACK_MODELS,
 } from "../../config/settings.js";
 import { resolveCodexExecutable, spawnCodexProcess } from "../executables/codexExecutable.js";
-import type { ProviderModel } from "../providerRuntime/types.js";
+import type { ProviderModel, ReasoningControl } from "../providerRuntime/types.js";
 import { isRecord } from "../shared/values.js";
 import { loadSeededCodexCapabilities, saveCachedProviderModels } from "./modelCache.js";
+import { catalogContextKey } from "./modelCatalog.js";
+import { reconcileReasoning } from "./reasoningControl.js";
 
 export type ModelCapabilitySource = "runtime" | "fallback";
 export type ModelCapabilityStatus = "ready" | "fallback";
@@ -31,6 +33,8 @@ export interface CodexModelCapability {
   defaultReasoningLevel: string | null;
   supportedReasoningLevels: readonly ReasoningEffortCapability[] | null;
   reasoningLevelCount: number | null;
+  reasoningControl?: ReasoningControl;
+  reasoningPreference?: string;
   source: ModelCapabilitySource;
   raw: unknown;
 }
@@ -46,6 +50,7 @@ export interface CodexModelCapabilities {
 
 interface DiscoverCodexModelCapabilitiesOptions {
   executable?: string;
+  signal?: AbortSignal;
   includeHidden?: boolean;
   timeoutMs?: number;
   now?: () => number;
@@ -77,8 +82,14 @@ interface AppServerRequest {
   params: Record<string, unknown>;
 }
 
+const verifiedCapabilityResults = new WeakSet<CodexModelCapabilities>();
+export function isVerifiedCodexModelCapabilities(value: CodexModelCapabilities): boolean {
+  return verifiedCapabilityResults.has(value);
+}
+
 interface CapabilityCacheEntry {
   expiresAt: number;
+  pending?: boolean;
   promise: Promise<CodexModelCapabilities>;
 }
 
@@ -264,7 +275,8 @@ function asModelListResponse(value: unknown): ModelListResponse {
 
 async function requestModelListFromAppServer(
   executable: string,
-  options: Required<Pick<DiscoverCodexModelCapabilitiesOptions, "includeHidden" | "timeoutMs">>,
+  options: Required<Pick<DiscoverCodexModelCapabilitiesOptions, "includeHidden" | "timeoutMs">> &
+    Pick<DiscoverCodexModelCapabilitiesOptions, "signal">,
 ): Promise<ModelListResponse[]> {
   return new Promise<ModelListResponse[]>((resolve, reject) => {
     let proc: ReturnType<typeof spawnCodexProcess>;
@@ -286,6 +298,7 @@ async function requestModelListFromAppServer(
 
     const cleanup = () => {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", abort);
       proc.stdout?.removeAllListeners();
       proc.stderr?.removeAllListeners();
       proc.removeAllListeners();
@@ -390,6 +403,13 @@ async function requestModelListFromAppServer(
       fail(new Error(`Timed out waiting for Codex model discovery after ${options.timeoutMs}ms.`));
     }, options.timeoutMs);
 
+    const abort = () => fail(new Error("Codex model discovery canceled."));
+    options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted) {
+      abort();
+      return;
+    }
+
     proc.stdout?.on("data", (chunk: Buffer) => {
       if (settled) {
         return;
@@ -446,7 +466,11 @@ async function discoverCodexModelCapabilities(
   const includeHidden = options.includeHidden ?? false;
   const timeoutMs = options.timeoutMs ?? DEFAULT_DISCOVERY_TIMEOUT_MS;
   const discoveredAt = options.now?.() ?? Date.now();
-  const responses = await requestModelListFromAppServer(executable, { includeHidden, timeoutMs });
+  const responses = await requestModelListFromAppServer(executable, {
+    includeHidden,
+    timeoutMs,
+    signal: options.signal,
+  });
 
   return normalizeCodexModelListResponses(responses, {
     discoveredAt,
@@ -488,9 +512,9 @@ export async function getCodexModelCapabilities(
   try {
     executable =
       options.executable ?? (await (options.resolveExecutable ?? resolveCodexExecutable)());
-    const cacheKey = `${executable}|hidden:${options.includeHidden ?? false}`;
+    const cacheKey = `${executable}|hidden:${options.includeHidden ?? false}|${catalogContextKey("openai", { cwd: process.cwd() })}`;
     const cached = capabilityCache.get(cacheKey);
-    if (!options.forceRefresh && cached && cached.expiresAt > now) {
+    if (cached && (cached.pending || (!options.forceRefresh && cached.expiresAt > now))) {
       return cached.promise;
     }
 
@@ -499,10 +523,12 @@ export async function getCodexModelCapabilities(
       executable,
       includeHidden: options.includeHidden,
       timeoutMs: options.timeoutMs,
+      signal: options.signal,
       now: () => now,
     })
       .then((discovered) => {
         liveDiscoverySucceeded = true;
+        verifiedCapabilityResults.add(discovered);
         try {
           persist(discovered);
         } catch {
@@ -514,6 +540,7 @@ export async function getCodexModelCapabilities(
         try {
           const seeded = seed();
           if (seeded) {
+            verifiedCapabilityResults.delete(seeded);
             return seeded;
           }
         } catch {
@@ -525,9 +552,12 @@ export async function getCodexModelCapabilities(
     capabilityCache.set(cacheKey, {
       expiresAt: now + ttlMs,
       promise,
+      pending: true,
     });
 
     const result = await promise;
+    const entry = capabilityCache.get(cacheKey);
+    if (entry?.promise === promise) entry.pending = false;
     if (!liveDiscoverySucceeded) {
       capabilityCache.delete(cacheKey);
     }
@@ -604,6 +634,8 @@ export function normalizeReasoningForModelCapabilities(
   capabilities: CodexModelCapabilities | null | undefined,
 ): string {
   const capability = findModelCapability(capabilities, model);
+  if (capability?.reasoningControl)
+    return reconcileReasoning(capability.reasoningControl, currentReasoning);
   const supported = capability?.supportedReasoningLevels;
   if (!supported || supported.length === 0) {
     return currentReasoning;

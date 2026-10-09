@@ -11,6 +11,7 @@ import {
   externalTranscriptToConversationMessages,
   listExternalSessions,
 } from "../core/externalSessions/index.js";
+import { resolveCatalogModel } from "../core/models/modelSelection.js";
 import { isKnownProviderId } from "../core/providerLauncher/registry.js";
 import type { LocalBackendId, ProviderId } from "../core/providerLauncher/types.js";
 import { getProviderRuntime, isProviderRoutableInUbume } from "../core/providerRuntime/registry.js";
@@ -273,12 +274,7 @@ export function assessSavedRoute(
   enabled = true,
 ): SavedRouteAssessment {
   const id = metadata.providerId;
-  if (
-    typeof id !== "string" ||
-    !isKnownProviderId(id) ||
-    id === "google" ||
-    !isProviderRoutableInUbume(id)
-  )
+  if (typeof id !== "string" || !isKnownProviderId(id) || !isProviderRoutableInUbume(id))
     return {
       status: "unavailable",
       message:
@@ -309,8 +305,8 @@ export function assessSavedRoute(
     };
   if (
     discovery?.status === "ready" &&
-    discovery.models.length > 0 &&
-    !discovery.models.some((model) => model.modelId === route.modelId || model.id === route.modelId)
+    discovery.freshness !== "unverified" &&
+    !resolveCatalogModel(discovery.models, route.modelId)
   ) {
     return {
       status: "unavailable",

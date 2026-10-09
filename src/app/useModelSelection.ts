@@ -16,6 +16,7 @@ import {
   findModelCapability,
   normalizeReasoningForModelCapabilities,
 } from "../core/models/codexModelCapabilities.js";
+import { isSupportedReasoning } from "../core/models/reasoningControl.js";
 import { traceInputDebug } from "../core/perf/debugLog.js";
 import type {
   LocalBackendId,
@@ -24,6 +25,7 @@ import type {
   ProviderWorkspaceConfig,
 } from "../core/providerLauncher/types.js";
 
+import { getAgyModelSelector } from "../core/providerRuntime/antigravity.js";
 import { providerModelsToCodexCapabilities } from "../core/providerRuntime/models.js";
 import {
   discoverProviderModels,
@@ -179,7 +181,12 @@ export function useModelSelection(context: UseModelSelectionContext) {
         return;
       }
       const supported = currentModelCapability?.supportedReasoningLevels;
-      if (supported && !supported.some((item) => item.id === nextReasoningLevel)) {
+      if (
+        (currentModelCapability?.reasoningControl &&
+          !isSupportedReasoning(currentModelCapability.reasoningControl, nextReasoningLevel)) ||
+        (!currentModelCapability?.reasoningControl &&
+          (!supported || !supported.some((item) => item.id === nextReasoningLevel)))
+      ) {
         appendEvent(
           "error",
           "Reasoning unavailable",
@@ -204,7 +211,13 @@ export function useModelSelection(context: UseModelSelectionContext) {
       } else {
         persistActiveRoute(
           activeProviderRoute.providerId,
-          modelToPersist,
+          activeProviderRoute.providerId === "antigravity"
+            ? (getAgyModelSelector(
+                modelToPersist,
+                nextReasoningLevel,
+                discoverProviderModels("antigravity").models,
+              ) ?? modelToPersist)
+            : modelToPersist,
           nextReasoningLevel,
           activeProviderRoute.backendKind,
           activeProviderRoute.modelSelection,
@@ -273,6 +286,7 @@ export function useModelSelection(context: UseModelSelectionContext) {
           activeRouteModelCapabilities,
         );
         const validation = await validateProviderRouteActivation({
+          providerConfig: providerWorkspaceConfig.providers?.[routeProviderId],
           route: {
             providerId: routeProviderId,
             modelId: nextModel,
@@ -407,6 +421,7 @@ export function useModelSelection(context: UseModelSelectionContext) {
             markProviderAvailability("local", "checking", "provider-validation");
           }
           validation = await validateProviderRouteActivation({
+            providerConfig: providerWorkspaceConfig.providers?.[providerId],
             route: {
               providerId,
               modelId: nextModel,

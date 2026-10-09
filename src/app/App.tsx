@@ -17,7 +17,6 @@ import {
   type CodexModelCapabilities,
   createFallbackModelCapabilities,
   findModelCapability,
-  getPreferredModelFromCapabilities,
   getSelectableModelCapabilities,
   normalizeReasoningForModelCapabilities,
 } from "../core/models/codexModelCapabilities.js";
@@ -26,6 +25,7 @@ import * as renderDebug from "../core/perf/renderDebug.js";
 import { buildProviderRegistry, findProvider } from "../core/providerLauncher/registry.js";
 import type { LocalBackendId, ProviderId } from "../core/providerLauncher/types.js";
 import { resolveModelContextLength } from "../core/providerRuntime/contextMetadata.js";
+import { isLocalRuntime } from "../core/providerRuntime/deployment.js";
 import { type checkLocalProvider, setLocalProviderConfig } from "../core/providerRuntime/local.js";
 import { closeLocalHarnessSession } from "../core/providerRuntime/localHarness/runtime.js";
 import { providerModelsToCodexCapabilities } from "../core/providerRuntime/models.js";
@@ -480,16 +480,25 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     registryNonce,
   ]);
   const modelPickerModels = useMemo(() => {
-    if (providerModelCapabilities) {
-      return getSelectableModelCapabilities(providerModelCapabilities);
-    }
-    if (modelPickerProviderId === "openai") {
-      return getSelectableModelCapabilities(
-        modelCapabilities ?? createFallbackModelCapabilities(null),
-      );
-    }
-    return [];
-  }, [modelCapabilities, modelPickerProviderId, providerModelCapabilities]);
+    const capabilities =
+      providerModelCapabilities ??
+      (modelPickerProviderId === "openai"
+        ? (modelCapabilities ?? createFallbackModelCapabilities(null))
+        : null);
+    return capabilities
+      ? getSelectableModelCapabilities(capabilities).map((entry) => ({
+          ...entry,
+          reasoningPreference:
+            providerWorkspaceConfig.providers?.[modelPickerProviderId]?.models?.[entry.model]
+              ?.reasoningPreference,
+        }))
+      : [];
+  }, [
+    modelCapabilities,
+    modelPickerProviderId,
+    providerModelCapabilities,
+    providerWorkspaceConfig.providers,
+  ]);
   const modelPickerCurrentModel = useMemo(() => {
     if (!pendingRouteProviderId) return activeProviderRoute.modelId;
     if (pendingRouteProviderId === activeProviderRoute.providerId)
@@ -662,12 +671,17 @@ export function App({ launchArgs, providerOverride }: AppProps) {
         tokensUsed: estimateTokens(conversationChars),
         modelCapability: currentModelCapability,
         contextMetadata: activeContextMetadata,
+        isLocalRuntime: isLocalRuntime(
+          activeProviderRoute,
+          providerWorkspaceConfig.providers?.[activeProviderRoute.providerId],
+        ),
       }),
     [
       activeContextMetadata,
       activeProviderRoute,
       conversationChars,
       currentModelCapability,
+      providerWorkspaceConfig.providers,
       mode,
       reasoningLevel,
     ],
@@ -894,8 +908,8 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     baseRuntimeConfigRef,
     appendEvent,
   });
-  const { updateRuntimeConfig, persistActiveRoute, persistProviderDefaultModelAndReasoning } =
-    runtimeSettings;
+  const { updateRuntimeConfig, persistProviderDefaultModelAndReasoning } = runtimeSettings;
+  const { routeChoiceRequiredRef } = appState;
   const { refreshModelCapabilities, ensureProviderModels, refreshAuthStatus } = useModelCatalog({
     ...appState,
     ...runtimeSettings,
@@ -960,61 +974,47 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     externalCliStatusRef.current = sessionState.externalCliStatus;
   }, [sessionState.externalCliStatus]);
 
-  // Auto-correct the runtime model when capabilities load and the configured model is
-  // unavailable. Placed after persistActiveRoute / persistProviderDefaultModelAndReasoning
-  // declarations because the effect calls persistActiveRoute (TDZ-safe from here).
+  // Reconcile effort only. A withdrawn model always requires explicit reselection.
   useEffect(() => {
-    if (preserveSavedRouteRef.current || activeProviderRoute.providerId !== "openai") {
+    if (
+      providerOverride ||
+      preserveSavedRouteRef.current ||
+      activeProviderRoute.providerId !== "openai" ||
+      modelCapabilities?.status !== "ready" ||
+      discoverProviderModels("openai").freshness !== "verified"
+    )
+      return;
+    const selected = findModelCapability(modelCapabilities, model);
+    if (!selected || !selected.available || selected.hidden) {
+      const message = `Configured model ${model} is unavailable. Select a model explicitly before sending.`;
+      if (routeChoiceRequiredRef.current !== message)
+        appendEvent("error", "Selected model unavailable", message);
+      routeChoiceRequiredRef.current = message;
       return;
     }
-    if (modelCapabilities?.status !== "ready") {
-      return;
-    }
-
-    const nextModel = getPreferredModelFromCapabilities(modelCapabilities, model);
+    if (
+      routeChoiceRequiredRef.current ===
+      `Configured model ${model} is unavailable. Select a model explicitly before sending.`
+    )
+      routeChoiceRequiredRef.current = null;
     const nextReasoning = normalizeReasoningForModelCapabilities(
-      nextModel,
+      model,
       reasoningLevel,
       modelCapabilities,
     );
-
-    if (nextModel === model && nextReasoning === reasoningLevel) {
-      return;
-    }
-
-    updateRuntimeConfig((current) => ({
-      ...current,
-      model: nextModel,
-      reasoningLevel: nextReasoning,
-    }));
-
-    // Persist the corrected model so providers.json stays in sync and the same
-    // correction does not silently re-fire on every restart. Skip persistence
-    // when --model was given on the CLI: that session is intentionally temporary.
-    if (nextModel !== model && !launchArgs.modelOverride) {
-      persistActiveRoute(activeProviderRoute.providerId, nextModel, nextReasoning);
-    }
-
-    if (nextModel !== model) {
-      appendEvent(
-        "system",
-        "Model updated",
-        `Configured model ${model} is unavailable in the detected Codex runtime. Active model is now ${nextModel}.`,
-      );
-    } else if (nextReasoning !== reasoningLevel) {
-      appendEvent(
-        "system",
-        "Reasoning updated",
-        `Reasoning level is now ${formatReasoningLabel(nextReasoning)} for ${nextModel}.`,
-      );
-    }
+    if (nextReasoning === reasoningLevel) return;
+    updateRuntimeConfig((current) => ({ ...current, reasoningLevel: nextReasoning }));
+    appendEvent(
+      "system",
+      "Reasoning updated",
+      `Reasoning level is now ${formatReasoningLabel(nextReasoning)} for ${model}.`,
+    );
   }, [
     activeProviderRoute.providerId,
     appendEvent,
-    launchArgs.modelOverride,
     model,
     modelCapabilities,
-    persistActiveRoute,
+    providerOverride,
     reasoningLevel,
     updateRuntimeConfig,
   ]);

@@ -12,6 +12,8 @@ export interface CommandSpec {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
   stdinData?: string;
+  keepStdinOpen?: boolean;
+  signal?: AbortSignal;
 }
 
 export interface CommandResult {
@@ -217,7 +219,7 @@ function runProcess(
         /* EPIPE when the process exits before reading stdin */
       });
       child.stdin?.write(spec.stdinData);
-      child.stdin?.end();
+      if (!spec.keepStdinOpen) child.stdin?.end();
     } catch {
       // stdin already closed; the close/error handlers report the outcome
     }
@@ -348,6 +350,15 @@ function runProcess(
       }, spec.timeoutMs);
     }
   });
+
+  const cancel = () => {
+    canceled = true;
+    handlers.onProcessLifecycle?.("cancel");
+    if (!child.killed) stop();
+  };
+  spec.signal?.addEventListener("abort", cancel, { once: true });
+  if (spec.signal?.aborted) cancel();
+  void result.finally(() => spec.signal?.removeEventListener("abort", cancel));
 
   return {
     child,

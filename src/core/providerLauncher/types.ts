@@ -86,6 +86,7 @@ export interface ProviderWorkspaceOverride {
   enabled?: boolean;
   type?: "openai-compatible";
   baseUrl?: string;
+  deployment?: "local" | "remote";
   apiKey?: string;
   pinnedModel?: string;
   defaultModel?: string;
@@ -99,6 +100,7 @@ export interface ProviderWorkspaceOverride {
 }
 
 export interface ProviderModelWorkspaceOverride {
+  reasoningPreference?: string;
   contextLength?: number;
   maxOutputTokens?: number;
   supportsStreaming?: boolean;

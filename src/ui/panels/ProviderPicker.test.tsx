@@ -265,7 +265,7 @@ test("provider picker stays readable in a cramped terminal layout", async () => 
     assert.doesNotMatch(output, /Gemini CLIEnabled/);
     assert.match(output, /OpenAI/);
     assert.match(output, /Anthrop/);
-    assert.doesNotMatch(output, /Google/);
+    assert.match(output, /Google/);
     assert.match(output, /Local/);
     assert.match(output, /Antigra/);
     assert.doesNotMatch(output, /Ready|Active|Off|Config/);
@@ -354,10 +354,13 @@ test("provider picker reports Mistral Vibe in-Ubume route actions without launch
 
   try {
     await sleep(80);
-    harness.stdin.write("[B");
-    await sleep(40);
-    harness.stdin.write("[B");
-    await sleep(40);
+    const mistralIndex = buildProviderRegistry({ activeModel: "gpt-5.4" }).findIndex(
+      (provider) => provider.id === "mistral",
+    );
+    for (let index = 0; index < mistralIndex; index += 1) {
+      harness.stdin.write("\u001b[B");
+      await sleep(40);
+    }
     harness.stdin.write("\r");
     await sleep(40);
     assert.match(harness.getOutput(), /action:mistral:use-in-ubume/);
@@ -871,7 +874,7 @@ test("ProviderPicker at 100x21 uses compact mode and shows all selectable provid
     const hasAntigravity = frame.includes("Antigravity");
     const hasLocal = frame.includes("Local");
     assert.equal(hasOpenAI && hasAnthropic && hasAntigravity && hasLocal, true);
-    assert.doesNotMatch(frame, /Google/);
+    assert.match(frame, /Google/);
   } finally {
     await harness.cleanup();
   }
@@ -1074,7 +1077,7 @@ test("ProviderPicker at wide standard size keeps selectable providers compact an
     assertProviderOrder(frame, providerNames);
     assertProviderRowsAreAdjacent(frame, providerNames);
     assert.doesNotMatch(frame, /Showing \d+-\d+ of 5/);
-    assert.doesNotMatch(frame, /Google/);
+    assert.match(frame, /Google/);
     assert.doesNotMatch(frame, /↓ \d+ more|↑ \d+ more/);
     assert.doesNotMatch(frame, /Context/);
     assert.doesNotMatch(frame, /Tool/);

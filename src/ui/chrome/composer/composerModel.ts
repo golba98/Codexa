@@ -71,6 +71,7 @@ export interface BottomComposerProps {
   footerModelDisplay?: string;
   reasoningLevel?: string;
   contextDisplay?: string;
+  showContext?: boolean;
   planMode?: boolean;
   showBusyLoader?: boolean;
   tokensUsed?: number;

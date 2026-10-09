@@ -15,28 +15,27 @@ export const CLAUDE_CODE_EFFORT_LEVELS: readonly ReasoningEffortCapability[] = [
 ] as const;
 
 export const GEMINI_DEFAULT_MODEL_ID = "gemini-3-flash-preview";
-const GEMINI_VERIFIED_MODEL_IDS = [
-  "gemini-3.1-pro-preview",
-  "gemini-3-flash-preview",
-  "gemini-3.1-flash-lite-preview",
-  "gemini-2.5-pro",
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-] as const;
-
-function isVerifiedGeminiModelId(
-  modelId: string | null | undefined,
-): modelId is (typeof GEMINI_VERIFIED_MODEL_IDS)[number] {
-  return (
-    typeof modelId === "string" &&
-    GEMINI_VERIFIED_MODEL_IDS.includes(modelId as (typeof GEMINI_VERIFIED_MODEL_IDS)[number])
-  );
+/** Identity is authoritative: future versions and resource prefixes pass through. */
+export function normalizeGeminiModelId(modelId: string | null | undefined): string {
+  return modelId?.trim() || GEMINI_DEFAULT_MODEL_ID;
 }
 
-export function normalizeGeminiModelId(modelId: string | null | undefined): string {
-  // "gemini-3-flash" is an older shorthand; remap it to the canonical preview ID.
-  if (modelId === "gemini-3-flash") return "gemini-3-flash-preview";
-  return isVerifiedGeminiModelId(modelId) ? modelId : GEMINI_DEFAULT_MODEL_ID;
+export function formatGeminiModelLabel(id: string, displayName?: string): string {
+  const native = id.replace(/^models\//, "");
+  const basis = /^gemini[-_]/i.test(native) ? native : displayName?.trim() || native;
+  return basis
+    .replace(/[_-]+/g, " ")
+    .replace(
+      /\b(?:preview|experimental)\b/gi,
+      (word) => `(${word[0]!.toUpperCase()}${word.slice(1).toLowerCase()})`,
+    )
+    .replace(
+      /\b(gemini|flash|lite|pro|image|audio|thinking|fast|high|medium|low)\b/gi,
+      (word) => word[0]!.toUpperCase() + word.slice(1).toLowerCase(),
+    )
+    .replace(/^(?:Gemini\s+)+/i, "Gemini ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export const GEMINI_FALLBACK_MODELS: readonly ProviderModel[] = [
@@ -44,48 +43,60 @@ export const GEMINI_FALLBACK_MODELS: readonly ProviderModel[] = [
     id: "gemini-3-flash-preview",
     modelId: "gemini-3-flash-preview",
     label: "Gemini 3 Flash Preview",
-    description: "Verified Gemini CLI Flash Preview route.",
-    defaultReasoningLevel: "medium",
+    source: "fallback",
+    reasoningControl: { kind: "unknown" },
+    description: "Unverified Gemini CLI Flash Preview route.",
+    defaultReasoningLevel: null,
     supportedReasoningLevels: null,
   },
   {
     id: "gemini-3.1-pro-preview",
     modelId: "gemini-3.1-pro-preview",
     label: "Gemini 3.1 Pro Preview",
-    description: "Verified Gemini CLI Pro Preview route.",
-    defaultReasoningLevel: "high",
+    source: "fallback",
+    reasoningControl: { kind: "unknown" },
+    description: "Unverified Gemini CLI Pro Preview route.",
+    defaultReasoningLevel: null,
     supportedReasoningLevels: null,
   },
   {
     id: "gemini-3.1-flash-lite-preview",
     modelId: "gemini-3.1-flash-lite-preview",
     label: "Gemini 3.1 Flash Lite Preview",
-    description: "Verified Gemini CLI Flash Lite Preview route.",
-    defaultReasoningLevel: "medium",
+    source: "fallback",
+    reasoningControl: { kind: "unknown" },
+    description: "Unverified Gemini CLI Flash Lite Preview route.",
+    defaultReasoningLevel: null,
     supportedReasoningLevels: null,
   },
   {
     id: "gemini-2.5-pro",
     modelId: "gemini-2.5-pro",
     label: "Gemini 2.5 Pro",
-    description: "Verified Gemini CLI Pro route.",
-    defaultReasoningLevel: "high",
+    source: "fallback",
+    reasoningControl: { kind: "unknown" },
+    description: "Unverified Gemini CLI Pro route.",
+    defaultReasoningLevel: null,
     supportedReasoningLevels: null,
   },
   {
     id: "gemini-2.5-flash",
     modelId: "gemini-2.5-flash",
     label: "Gemini 2.5 Flash",
-    description: "Verified Gemini CLI Flash route.",
-    defaultReasoningLevel: "medium",
+    source: "fallback",
+    reasoningControl: { kind: "unknown" },
+    description: "Unverified Gemini CLI Flash route.",
+    defaultReasoningLevel: null,
     supportedReasoningLevels: null,
   },
   {
     id: "gemini-2.5-flash-lite",
     modelId: "gemini-2.5-flash-lite",
     label: "Gemini 2.5 Flash Lite",
-    description: "Verified Gemini CLI Flash Lite route.",
-    defaultReasoningLevel: "medium",
+    source: "fallback",
+    reasoningControl: { kind: "unknown" },
+    description: "Unverified Gemini CLI Flash Lite route.",
+    defaultReasoningLevel: null,
     supportedReasoningLevels: null,
   },
 ] as const;
@@ -100,8 +111,9 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
     modelId: "fable",
     label: "Claude Fable (version unknown)",
     description: fallbackModelDescription("Fable"),
-    defaultReasoningLevel: "xhigh",
-    supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high", "xhigh", "max"]),
+    defaultReasoningLevel: null,
+    supportedReasoningLevels: null,
+    reasoningControl: { kind: "unknown" },
     source: "fallback",
     canonicalId: "fable",
     family: "fable",
@@ -113,8 +125,9 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
     modelId: "opus",
     label: "Claude Opus (version unknown)",
     description: fallbackModelDescription("Opus"),
-    defaultReasoningLevel: "xhigh",
-    supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high", "xhigh", "max"]),
+    defaultReasoningLevel: null,
+    supportedReasoningLevels: null,
+    reasoningControl: { kind: "unknown" },
     source: "fallback",
     canonicalId: "opus",
     family: "opus",
@@ -127,8 +140,9 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
     modelId: "sonnet",
     label: "Claude Sonnet (version unknown)",
     description: fallbackModelDescription("Sonnet"),
-    defaultReasoningLevel: "high",
-    supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high", "xhigh", "max"]),
+    defaultReasoningLevel: null,
+    supportedReasoningLevels: null,
+    reasoningControl: { kind: "unknown" },
     source: "fallback",
     canonicalId: "sonnet",
     family: "sonnet",
@@ -140,8 +154,9 @@ export const ANTHROPIC_FALLBACK_MODELS: readonly ProviderModel[] = [
     modelId: "haiku",
     label: "Claude Haiku (version unknown)",
     description: fallbackModelDescription("Haiku"),
-    defaultReasoningLevel: "medium",
-    supportedReasoningLevels: getClaudeCodeEffortLevels(["low", "medium", "high", "xhigh", "max"]),
+    defaultReasoningLevel: null,
+    supportedReasoningLevels: null,
+    reasoningControl: { kind: "unknown" },
     source: "fallback",
     canonicalId: "haiku",
     family: "haiku",
@@ -172,7 +187,7 @@ export function providerModelsToCodexCapabilities(
     model: model.modelId,
     label: model.label,
     description: model.description,
-    available: true,
+    available: model.available !== false,
     hidden: false,
     isDefault: model.modelId === currentModel || (!currentModel && index === 0),
     defaultReasoningLevel: model.defaultReasoningLevel,
@@ -182,6 +197,7 @@ export function providerModelsToCodexCapabilities(
       : null,
     source: isRuntimeSource(model.source) ? "runtime" : "fallback",
     raw: model,
+    reasoningControl: model.reasoningControl,
   }));
 
   const anyDiscovered = models.some((m) => isRuntimeSource(m.source));

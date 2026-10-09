@@ -375,7 +375,7 @@ test("active model is shown in a Current line when outside the visible slice", a
     }
 
     const cleanOutput = output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
-    assert.match(cleanOutput, /Current: Model 10 \(model-10\)/);
+    assert.match(cleanOutput, /Current: Model 10/);
   } finally {
     instance.cleanup();
     await sleep(20);

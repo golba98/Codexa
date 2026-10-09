@@ -175,23 +175,17 @@ test("providerModelsToCodexCapabilities converts Anthropic models to selectable 
     );
   }
   const sonnet = selectable.find((model) => model.model === "sonnet");
-  assert.deepEqual(
-    sonnet?.supportedReasoningLevels?.map((level) => level.id),
-    ["low", "medium", "high", "xhigh", "max"],
-  );
+  assert.deepEqual(sonnet?.supportedReasoningLevels, null);
 });
 
-test("Claude fallback reasoning options use the last-known CLI ladder", () => {
+test("Claude fallback does not advertise unverified reasoning options", () => {
   const caps = providerModelsToCodexCapabilities(ANTHROPIC_FALLBACK_MODELS, "sonnet");
   const sonnet = getSelectableModelCapabilities(caps).find((model) => model.model === "sonnet");
   const opus = getSelectableModelCapabilities(caps).find((model) => model.model === "opus");
   const ids = sonnet?.supportedReasoningLevels?.map((level) => level.id) ?? [];
 
-  assert.deepEqual(ids, ["low", "medium", "high", "xhigh", "max"]);
-  assert.deepEqual(
-    opus?.supportedReasoningLevels?.map((level) => level.id),
-    ["low", "medium", "high", "xhigh", "max"],
-  );
+  assert.equal(ids.length, 0);
+  assert.deepEqual(opus?.supportedReasoningLevels, null);
   assert.ok(!ids.includes("none"), "Claude picker must not show OpenAI none reasoning");
   assert.ok(!ids.includes("minimal"), "Claude picker must not show OpenAI minimal reasoning");
 });
@@ -448,7 +442,7 @@ test("model picker shows alias-resolved Claude package source and versioned labe
   try {
     await sleep(100);
     const stripped = stripAnsi(output);
-    assert.ok(stripped.includes("Claude Opus 4.8 (opus)"));
+    assert.ok(stripped.includes("Claude Opus 4.8"));
     assert.ok(stripped.includes("Claude Code aliases resolved from installed package metadata"));
     assert.ok(!stripped.includes("version unknown"));
     assert.ok(!stripped.includes("Claude Code model discovery unavailable"));

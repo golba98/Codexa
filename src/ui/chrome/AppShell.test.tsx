@@ -311,8 +311,8 @@ test("header omits model/context while composer status row renders active model 
   const finalBottomChrome = lines.slice(Math.max(0, promptLineIndex - 2)).join("\n");
   assert.equal(
     countOccurrences(finalBottomChrome, /Context:/g),
-    1,
-    "context metadata should render exactly once in the final frame",
+    0,
+    "cloud context metadata must be absent from the final frame",
   );
   assert.equal(
     countOccurrences(finalBottomChrome, /Claude Code CLI \/ Sonnet 4\.6 \(Low\)/g),
@@ -327,15 +327,7 @@ test("header omits model/context while composer status row renders active model 
 
   const statusLine = lines[statusLineIndex] ?? "";
   assert.match(statusLine, /Claude Code CLI \/ Sonnet 4\.6 \(Low\)/);
-  assert.match(statusLine, /Context:\s*0 \/ 200K/);
-  assert.ok(
-    statusLine.indexOf("Context:") > statusLine.indexOf("Claude Code CLI"),
-    "context should be on the same row to the right of model text",
-  );
-  assert.ok(
-    statusLine.indexOf("Context:") >= 90,
-    "context should stay right-aligned at normal widths",
-  );
+  assert.doesNotMatch(statusLine, /Context:/);
 });
 
 test("100x22 bottom chrome renders runtime context once below composer", async () => {
@@ -429,7 +421,7 @@ test("100x22 bottom chrome renders runtime context once below composer", async (
   );
 
   const finalBottomChrome = lines.slice(Math.max(0, promptLineIndex - 2)).join("\n");
-  assert.equal(countOccurrences(finalBottomChrome, /Context:/g), 1);
+  assert.equal(countOccurrences(finalBottomChrome, /Context:/g), 0);
   assert.equal(countOccurrences(finalBottomChrome, /OpenAI Codex CLI \/ gpt-5\.4-mini/g), 1);
 });
 
@@ -533,7 +525,7 @@ test("startup uses compact side-by-side ASCII header at normal shorter terminal 
   assert.match(output, /Ubume v/);
   assert.match(output, /Workspace:\s*…\\13-Custom CLI/);
   assert.match(output, /Provider: Ubume Core/);
-  assert.match(output, /gpt-5\.4 \(medium\)\s+· Auto\s+Context: Unknown/);
+  assert.match(output, /gpt-5\.4 \(medium\)\s+· Auto/);
   assert.doesNotMatch(output, /Model: gpt-5\.4/);
   assert.doesNotMatch(output, /Reasoning:/);
   assert.match(output, /\n\s*╭[─]+╮\n\s*│ ❯/);
@@ -558,7 +550,7 @@ test("80x24 keeps the last timeline content visible above the composer", async (
 test("larger terminals keep the composer metadata row", async () => {
   const output = await renderShell(100, 30, { kind: "IDLE" });
 
-  assert.match(output, /gpt-5\.4 \(medium\)\s+· Auto\s+Context: Unknown/);
+  assert.match(output, /gpt-5\.4 \(medium\)\s+· Auto/);
   assert.match(output, /Dev shell attached/);
   assert.match(output, /gpt-5\.4/i);
 });
@@ -913,13 +905,13 @@ test("memoized composer re-renders when only the terminal height changes", async
 
   await sleep(80);
   let frame = stripAnsi(output);
-  assert.match(frame, /gpt-5\.4 \(medium\)\s+· Auto\s+Context: Unknown/);
+  assert.match(frame, /gpt-5\.4 \(medium\)\s+· Auto/);
 
   output = "";
   instance.rerender(renderComposer(24));
   await sleep(80);
   frame = stripAnsi(output);
-  assert.match(frame, /gpt-5\.4 \(medium\)\s+· Auto\s+Context: Unknown/);
+  assert.match(frame, /gpt-5\.4 \(medium\)\s+· Auto/);
 
   instance.cleanup();
   await sleep(20);

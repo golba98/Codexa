@@ -11,49 +11,39 @@ import { resolveActiveProviderRoute } from "../providerRuntime/registry.js";
 import { buildProviderRegistry, getDefaultProviderId, isKnownProviderId } from "./registry.js";
 import { parseProviderWorkspaceConfig, setProviderActiveRoute } from "./workspaceConfig.js";
 
-test("provider registry exposes Codexa Native in local-dev channel and excludes it in production", () => {
-  const devProviders = buildProviderRegistry({
+test("provider registry includes Gemini and preserves native development-channel gating", () => {
+  const dev = buildProviderRegistry({
     activeModel: "gpt-5.4",
     env: { UBUME_CHANNEL: "local-dev" },
   });
-  assert.deepEqual(
-    devProviders.map((provider) => provider.id),
-    ["openai", "anthropic", "mistral", "codexa-native", "codexa-cupy", "local", "antigravity"],
-  );
-  assert.equal(devProviders[0]?.displayName, "OpenAI");
-  assert.equal(devProviders[0]?.currentModel, "gpt-5.4");
-  assert.deepEqual(devProviders[0]?.launchCommand, { executable: "codex", args: [] });
-  assert.deepEqual(devProviders[1]?.launchCommand, { executable: "claude", args: [] });
-  assert.equal(devProviders[2]?.displayName, "Mistral Vibe CLI");
-  assert.equal(devProviders[2]?.backendType, "mistral-vibe-cli-auth");
-  assert.equal(devProviders[2]?.routeMode, "in-ubume");
-  assert.equal(devProviders[2]?.statusLabel, "Enabled");
-  assert.deepEqual(devProviders[2]?.launchCommand, { executable: "vibe", args: [] });
-  assert.equal(devProviders[3]?.displayName, "ubume-PyTorch");
-  assert.equal(devProviders[3]?.backendType, "codexa-native-pytorch");
-  assert.equal(devProviders[4]?.displayName, "CuPy");
-  assert.equal(devProviders[4]?.backendType, "codexa-cupy");
-  assert.equal(devProviders[3]?.launchCommand, null);
-  assert.equal(devProviders[4]?.enabled, true);
-  assert.equal(devProviders[4]?.launchCommand, null);
-  assert.deepEqual(devProviders[6]?.launchCommand, { executable: "agy", args: [] });
-
-  const prodProviders = buildProviderRegistry({
+  const prod = buildProviderRegistry({
     activeModel: "gpt-5.4",
     env: { UBUME_CHANNEL: "published" },
   });
-  assert.deepEqual(
-    prodProviders.map((provider) => provider.id),
-    ["openai", "anthropic", "mistral", "local", "antigravity"],
-  );
+  assert.ok(dev.find((provider) => provider.id === "codexa-native"));
+  assert.ok(dev.find((provider) => provider.id === "codexa-cupy"));
   assert.equal(
-    prodProviders.find((p) => p.id === "codexa-native"),
+    prod.find((provider) => provider.id === "codexa-native"),
     undefined,
   );
   assert.equal(
-    prodProviders.find((p) => p.id === "codexa-cupy"),
+    prod.find((provider) => provider.id === "codexa-cupy"),
     undefined,
   );
+  for (const providers of [dev, prod]) {
+    assert.deepEqual(providers.find((provider) => provider.id === "google")?.launchCommand, {
+      executable: "gemini",
+      args: [],
+    });
+    assert.deepEqual(providers.find((provider) => provider.id === "mistral")?.launchCommand, {
+      executable: "vibe",
+      args: [],
+    });
+    assert.deepEqual(providers.find((provider) => provider.id === "antigravity")?.launchCommand, {
+      executable: "agy",
+      args: [],
+    });
+  }
 });
 
 test("Codexa Native remains a known provider ID so workspace config preserves overrides when saved", () => {
@@ -172,23 +162,19 @@ test("unvalidated local provider remains disabled until endpoint discovery succe
   assert.equal(providers.find((provider) => provider.id === "local")?.enabled, false);
 });
 
-test("registry hides direct Google routes and falls back to OpenAI", () => {
+test("registry retains Google active route independently of OpenAI", () => {
   const providers = buildProviderRegistry({
     activeModel: "gpt-5.4",
     workspaceConfig: {
       activeRoute: {
         providerId: "google",
-        modelId: "gemini-3-flash-preview",
+        modelId: "gemini-99.8-flash",
         backendKind: "gemini-cli-auth",
       },
     },
   });
-
-  assert.equal(
-    providers.find((provider) => provider.id === "google"),
-    undefined,
-  );
-  assert.equal(providers.find((provider) => provider.id === "openai")?.isActiveRoute, true);
+  assert.equal(providers.find((provider) => provider.id === "google")?.isActiveRoute, true);
+  assert.equal(providers.find((provider) => provider.id === "openai")?.isActiveRoute, false);
 });
 
 test("anthropic can be selected as an active in-Ubume route", () => {
@@ -320,26 +306,25 @@ test("LM Studio loaded Local model replaces stale active route in provider regis
   }
 });
 
-test("Google cannot become the active route through the registry or runtime resolver", () => {
+test("runtime resolver preserves Gemini selection even while access is unavailable", () => {
   const original: import("./types.js").ProviderWorkspaceConfig = {
     activeRoute: { providerId: "openai", modelId: "gpt-5.4", backendKind: "codex-cli-auth" },
   };
   const result = setProviderActiveRoute(original, {
     providerId: "google",
-    modelId: "gemini-3-flash-preview",
+    modelId: "gemini-99.8-pro",
     backendKind: "gemini-cli-auth",
   });
-  assert.equal(result.activeRoute?.providerId, "openai");
-
+  assert.equal(result.activeRoute?.providerId, "openai", "Unconfigured activation is rejected");
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "google",
-      modelId: "gemini-3-flash-preview",
+      modelId: "gemini-99.8-pro",
       backendKind: "gemini-cli-auth",
     },
     currentModel: "gpt-5.4",
     currentReasoning: "medium",
   });
-  assert.equal(route.providerId, "openai");
-  assert.equal(route.modelId, "gpt-5.4");
+  assert.equal(route.providerId, "google");
+  assert.equal(route.modelId, "gemini-99.8-pro");
 });

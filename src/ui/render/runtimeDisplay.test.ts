@@ -15,7 +15,11 @@ function capability(model: string, label = model): CodexModelCapability {
     hidden: false,
     isDefault: true,
     defaultReasoningLevel: null,
-    supportedReasoningLevels: null,
+    supportedReasoningLevels: ["low", "medium", "high"].map((id) => ({
+      id,
+      label: id,
+      description: null,
+    })),
     reasoningLevelCount: null,
     source: "runtime",
     raw: null,
@@ -55,7 +59,8 @@ test("Claude route display uses Claude model and context, not stale Gemini", () 
   assert.equal(display.providerLabel, "Claude Code CLI");
   assert.equal(display.modelDisplay, "Claude Code CLI / Sonnet 4.6 / reasoning: Low");
   assert.equal(display.footerModelDisplay, "Claude Code CLI / Sonnet 4.6 (Low)");
-  assert.equal(display.contextDisplay, "0 / 200K");
+  assert.equal(display.contextDisplay, "");
+  assert.equal(display.showContext, false);
   assert.doesNotMatch(display.modelDisplay, /Gemini|OpenAI/i);
 });
 
@@ -74,9 +79,9 @@ test("Gemini route display uses Gemini model and estimated context", () => {
     contextMetadata: context(route, 1_048_576, "estimated"),
   });
 
-  assert.equal(display.modelDisplay, "Gemini CLI / gemini-3-flash-preview / reasoning: Medium");
-  assert.equal(display.footerModelDisplay, "Gemini CLI / gemini-3-flash-preview (Medium)");
-  assert.equal(display.contextDisplay, "12.4K / ~1M");
+  assert.equal(display.modelDisplay, "Gemini CLI / Gemini 3 Flash (Preview)");
+  assert.equal(display.footerModelDisplay, "Gemini CLI / Gemini 3 Flash (Preview)");
+  assert.equal(display.contextDisplay, "");
   assert.doesNotMatch(display.modelDisplay, /Claude|OpenAI/i);
 });
 
@@ -105,7 +110,7 @@ test("OpenAI route display uses OpenAI model and unknown context without stale C
 
   assert.equal(display.modelDisplay, "OpenAI Codex CLI / gpt-5.4-mini / reasoning: Medium");
   assert.equal(display.footerModelDisplay, "OpenAI Codex CLI / gpt-5.4-mini (Medium)");
-  assert.equal(display.contextDisplay, "Unknown");
+  assert.equal(display.contextDisplay, "");
   assert.equal(display.modelSpec.status, "unknown");
   assert.doesNotMatch(display.modelDisplay, /Claude|Gemini/i);
 });
@@ -125,9 +130,9 @@ test("Header and footer display values share the same context string", () => {
     contextMetadata: context(route, 1_048_576, "known"),
   });
 
-  assert.equal(display.contextDisplay, "0 / 1M");
-  assert.ok(display.modelDisplay.includes("Gemini CLI / gemini-2.5-flash"));
-  assert.ok(display.footerModelDisplay.includes("Gemini CLI / gemini-2.5-flash"));
+  assert.equal(display.contextDisplay, "");
+  assert.ok(display.modelDisplay.includes("Gemini CLI / Gemini 2.5 Flash"));
+  assert.ok(display.footerModelDisplay.includes("Gemini CLI / Gemini 2.5 Flash"));
 });
 
 test("Antigravity route display uses Antigravity CLI label and human-readable model label", () => {
@@ -146,8 +151,8 @@ test("Antigravity route display uses Antigravity CLI label and human-readable mo
   });
 
   assert.equal(display.providerLabel, "Antigravity CLI");
-  assert.equal(display.modelDisplay, "Antigravity CLI / Gemini 3.5 Flash / reasoning: High");
-  assert.equal(display.footerModelDisplay, "Antigravity CLI / Gemini 3.5 Flash (High)");
+  assert.equal(display.modelDisplay, "Antigravity CLI / Gemini 3.5 Flash");
+  assert.equal(display.footerModelDisplay, "Antigravity CLI / Gemini 3.5 Flash");
 });
 
 test("provider label system recognizes Mistral Vibe CLI", () => {
@@ -202,8 +207,8 @@ test("Antigravity route footer reflects reasoning separately from model label", 
     contextMetadata: context(route, null),
   });
 
-  assert.equal(display.modelDisplay, "Antigravity CLI / Gemini 3.1 Pro / reasoning: Low");
-  assert.equal(display.footerModelDisplay, "Antigravity CLI / Gemini 3.1 Pro (Low)");
+  assert.equal(display.modelDisplay, "Antigravity CLI / Gemini 3.1 Pro");
+  assert.equal(display.footerModelDisplay, "Antigravity CLI / Gemini 3.1 Pro");
 });
 
 test("Antigravity route displays correct label for Thinking profiles", () => {
@@ -256,7 +261,7 @@ test("Codexa Native displays the canonical 1B model name for legacy 900M routes"
     contextMetadata: context(route, null),
   });
 
-  assert.equal(display.footerModelDisplay, "Codexa Native / codexa-1b-sft-v2-native (Low)");
+  assert.equal(display.footerModelDisplay, "Codexa Native / codexa-1b-sft-v2-native");
 });
 
 test("Codexa CuPy is presented as a Codexa Native model route", () => {
@@ -274,5 +279,5 @@ test("Codexa CuPy is presented as a Codexa Native model route", () => {
   });
 
   assert.equal(display.providerLabel, "Codexa Native");
-  assert.equal(display.footerModelDisplay, "Codexa Native / codexa-250m-cupy (Low)");
+  assert.equal(display.footerModelDisplay, "Codexa Native / codexa-250m-cupy");
 });

@@ -457,6 +457,18 @@ export function OverlayPanels(props: OverlayPanelsProps) {
               routeSwitchBusy)
           }
           emptyMessage={modelPickerEmptyMessage}
+          refreshMessage={
+            providerModelLoading[modelPickerProviderId]
+              ? "Refreshing model inventory…"
+              : /fail|unverified|cached|credentials|unable|timed|removed/i.test(
+                    modelPickerEmptyMessage ?? "",
+                  )
+                ? modelPickerEmptyMessage
+                : undefined
+          }
+          onRefresh={() => {
+            void handleProviderAction(modelPickerProviderId, "refresh-models");
+          }}
           onSelect={(m, r, geminiSelection) => {
             modelPickerOpenRef.current = false;
             if (
@@ -510,6 +522,7 @@ export function OverlayPanels(props: OverlayPanelsProps) {
           reasoningLevels={currentReasoningCapabilities}
           defaultReasoning={currentModelCapability?.defaultReasoningLevel ?? null}
           sourceLabel={currentReasoningSourceLabel}
+          control={currentModelCapability?.reasoningControl}
           onSelect={(value) => setReasoningWithNotice(value as ReasoningLevel)}
           onCancel={() => setScreen("main")}
         />

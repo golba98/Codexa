@@ -39,6 +39,18 @@ export type ProviderBackendKind =
   | "unavailable";
 
 export interface ProviderModel {
+  providerId?: ProviderId;
+  deployment?: "local" | "remote" | "unknown";
+  verifiedAt?: number;
+  available?: boolean | null;
+  capabilities?: {
+    chat: boolean | null;
+    tools: boolean | null;
+    vision: boolean | null;
+    reasoning: boolean | null;
+  };
+  contextWindow?: number | null;
+  reasoningControl?: ReasoningControl;
   id: string;
   modelId: string;
   label: string;
@@ -73,6 +85,24 @@ export interface ProviderModel {
   raw?: unknown;
 }
 
+export type ReasoningControl =
+  | { kind: "unknown" | "unsupported" }
+  | { kind: "fixed"; label: string }
+  | {
+      kind: "levels";
+      levels: readonly ReasoningEffortCapability[];
+      default: string;
+      transport: "parameter" | "variant";
+    }
+  | {
+      kind: "budget";
+      min: number;
+      max: number;
+      default: number;
+      auto: boolean;
+      canDisable: boolean;
+    };
+
 export interface ProviderModelDiscoveryResult {
   status: "ready" | "not-configured";
   providerId: ProviderId;
@@ -81,6 +111,16 @@ export interface ProviderModelDiscoveryResult {
   message?: string;
   diagnostics?: Record<string, string | number | boolean | null>;
   localBackend?: LocalBackendId;
+  freshness?: "verified" | "unverified";
+  refreshState?:
+    | "loading"
+    | "refreshed"
+    | "empty"
+    | "auth-required"
+    | "unavailable"
+    | "failed"
+    | "cached";
+  verifiedAt?: number;
 }
 
 export type GeminiModelFamily = "gemini-3" | "gemini-2.5";
@@ -115,6 +155,7 @@ export interface ResolvedLocalAgentConfig {
 }
 
 export interface ProviderRouteValidationRequest {
+  providerConfig?: ProviderWorkspaceOverride;
   route: ProviderRoute;
   workspaceRoot: string;
   geminiCommandPath?: string | null;
@@ -133,6 +174,7 @@ export interface ProviderRouteValidationResult {
 }
 
 export interface ProviderChatRequest {
+  modelDescriptor?: ProviderModel;
   prompt: string;
   promptPolicy?: "raw" | "wrapped";
   claudeCommandPath?: string;
@@ -149,6 +191,7 @@ export interface ProviderChatRequest {
   localHarnessSession?: LocalHarnessSessionMetadata;
   nativeSessions?: readonly NativeSessionReference[];
   antigravityCommandPath?: string;
+  providerConfig?: ProviderWorkspaceOverride;
 }
 
 export interface ProviderImageAttachment {
@@ -176,6 +219,9 @@ export interface ProviderRuntime {
     cwd: string;
     localConfig?: ProviderWorkspaceOverride | null;
     localBackend?: LocalBackendId;
+    providerConfig?: ProviderWorkspaceOverride;
+    signal?: AbortSignal;
+    forceRefresh?: boolean;
   }) => Promise<ProviderModelDiscoveryResult>;
   run?: (request: ProviderChatRequest, handlers: BackendRunHandlers) => () => void;
 }

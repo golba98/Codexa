@@ -1,21 +1,18 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { RuntimeConfig } from "../config/runtimeConfig.js";
-
 import {
   type CodexAuthProbeResult,
   getAuthStatusMessage,
   probeCodexAuthStatus,
 } from "../core/codex/codexAuth.js";
-
 import {
   type CodexModelCapabilities,
   createFallbackModelCapabilities,
-  getCodexModelCapabilities,
   getSelectableModelCapabilities,
 } from "../core/models/codexModelCapabilities.js";
-
+import { providerCatalog } from "../core/models/modelCatalog.js";
+import { resolveCatalogModel } from "../core/models/modelSelection.js";
 import { traceInputDebug } from "../core/perf/debugLog.js";
-
 import type { ProviderId, ProviderWorkspaceConfig } from "../core/providerLauncher/types.js";
 import {
   saveProviderWorkspaceConfig,
@@ -26,16 +23,15 @@ import {
   ANTHROPIC_ROUTE_SETUP_MESSAGE,
   validateAnthropicRoute,
 } from "../core/providerRuntime/anthropic.js";
-
 import { validateLocalProvider } from "../core/providerRuntime/local.js";
-
+import { providerModelsToCodexCapabilities } from "../core/providerRuntime/models.js";
 import {
   discoverProviderModels,
   getProviderRuntime,
   persistProviderDiscovery,
+  refreshProviderModels,
 } from "../core/providerRuntime/registry.js";
 import type { ProviderRoute, RuntimeAvailability } from "../core/providerRuntime/types.js";
-
 import type { BackendProvider } from "../core/providers/types.js";
 
 import { errorMessage } from "../core/shared/values.js";
@@ -112,6 +108,30 @@ export function useModelCatalog(context: UseModelCatalogContext) {
     updateRuntimeConfig,
   } = context;
 
+  const discoveryLifetime = useRef(new AbortController());
+  useEffect(() => {
+    if (discoveryLifetime.current.signal.aborted) discoveryLifetime.current = new AbortController();
+    const unsubscribe = providerCatalog.subscribe((providerId, snapshot) => {
+      setProviderModelLoading((current) => ({
+        ...current,
+        [providerId]: snapshot.refreshState === "loading",
+      }));
+      setProviderModelErrors((current) => {
+        const next = { ...current };
+        if (snapshot.freshness === "unverified" && snapshot.refreshState !== "loading")
+          next[providerId] = snapshot.message ?? "Cached model inventory is unverified.";
+        else delete next[providerId];
+        return next;
+      });
+      setRegistryNonce((current) => current + 1);
+    });
+    return () => {
+      unsubscribe();
+      discoveryLifetime.current.abort();
+      providerCatalog.dispose();
+    };
+  }, []);
+
   const refreshModelCapabilities = useCallback(
     (forceRefresh = false, announce = false): Promise<CodexModelCapabilities> => {
       if (providerOverride) {
@@ -122,7 +142,7 @@ export function useModelCatalog(context: UseModelCatalogContext) {
       // Single-flight: concurrent requests share the same in-flight discovery
       // promise so we never spawn a duplicate discovery job or emit duplicate
       // transcript messages.
-      if (modelDiscoveryInFlightRef.current && !forceRefresh) {
+      if (modelDiscoveryInFlightRef.current) {
         traceInputDebug(
           "model_loading_inflight",
           getInputDebugSnapshot({ forceRefresh, announce }),
@@ -141,7 +161,24 @@ export function useModelCatalog(context: UseModelCatalogContext) {
       traceInputDebug("model_loading_start", getInputDebugSnapshot({ forceRefresh, announce }));
       const promise = (async () => {
         try {
-          const capabilities = await getCodexModelCapabilities({ forceRefresh });
+          const discovery = await refreshProviderModels("openai", {
+            cwd: workspaceRoot,
+            providerConfig: providerWorkspaceConfig.providers?.openai,
+            forceRefresh,
+            signal: discoveryLifetime.current.signal,
+          });
+          const converted = providerModelsToCodexCapabilities(
+            discovery.models,
+            activeProviderRoute.modelId,
+          );
+          const capabilities: CodexModelCapabilities = {
+            ...converted,
+            status: discovery.freshness === "verified" ? "ready" : "fallback",
+            error:
+              discovery.freshness === "verified"
+                ? null
+                : (discovery.message ?? "Cached Codex inventory is unverified."),
+          };
           setModelCapabilities(capabilities);
           traceInputDebug(
             "model_loading_success",
@@ -198,7 +235,13 @@ export function useModelCatalog(context: UseModelCatalogContext) {
       modelDiscoveryInFlightRef.current = promise;
       return promise;
     },
-    [appendEvent, appendEvent, getInputDebugSnapshot],
+    [
+      appendEvent,
+      getInputDebugSnapshot,
+      workspaceRoot,
+      providerWorkspaceConfig.providers?.openai,
+      activeProviderRoute.modelId,
+    ],
   );
 
   const ensureProviderModels = useCallback(
@@ -212,21 +255,6 @@ export function useModelCatalog(context: UseModelCatalogContext) {
         return Promise.resolve(null);
       }
 
-      const cached = discoverProviderModels(providerId);
-      const hasDiscoveredModels = cached.models.some(
-        (item) => item.source && item.source !== "fallback",
-      );
-      if (
-        !forceRefresh &&
-        cached.models.length > 0 &&
-        (hasDiscoveredModels || providerModelsLoadedRef.current.has(providerId))
-      ) {
-        return Promise.resolve(cached);
-      }
-
-      const existing = providerModelRefreshesRef.current.get(providerId);
-      if (existing && !forceRefresh) return existing;
-
       setProviderModelLoading((current) => ({ ...current, [providerId]: true }));
       setProviderModelErrors((current) => {
         const next = { ...current };
@@ -234,20 +262,39 @@ export function useModelCatalog(context: UseModelCatalogContext) {
         return next;
       });
 
-      const promise = runtime
-        .refreshModels({
-          cwd: workspaceRoot,
-          localConfig:
-            providerId === "local" ? providerWorkspaceConfig.providers?.local : undefined,
-        })
+      const promise = refreshProviderModels(providerId, {
+        cwd: workspaceRoot,
+        forceRefresh,
+        signal: discoveryLifetime.current.signal,
+        providerConfig: providerWorkspaceConfig.providers?.[providerId],
+        localConfig: providerId === "local" ? providerWorkspaceConfig.providers?.local : undefined,
+      })
         .then((discovery) => {
           providerModelsLoadedRef.current.add(providerId);
-          persistProviderDiscovery(discovery);
-          if (discovery.status !== "ready" || discovery.models.length === 0) {
+          if (
+            discoveryLifetime.current.signal.aborted ||
+            providerCatalog.get(providerId) !== discovery
+          )
+            return discovery;
+          if (
+            discovery.status !== "ready" ||
+            discovery.freshness === "unverified" ||
+            discovery.models.length === 0
+          ) {
             setProviderModelErrors((current) => ({
               ...current,
               [providerId]: discovery.message ?? `Unable to load ${runtime.label} models.`,
             }));
+          }
+          if (
+            providerId === activeProviderRoute.providerId &&
+            discovery.freshness === "verified" &&
+            !resolveCatalogModel(discovery.models, activeProviderRoute.modelId)
+          ) {
+            const message = `The selected model ${activeProviderRoute.modelId} is unavailable. Select a model explicitly before sending.`;
+            if (providerRouteErrorsRef.current[providerId] !== message)
+              appendEvent("error", "Selected model unavailable", message);
+            providerRouteErrorsRef.current[providerId] = message;
           }
           setRegistryNonce((current) => current + 1);
           return discovery;
@@ -259,6 +306,11 @@ export function useModelCatalog(context: UseModelCatalogContext) {
           return null;
         })
         .finally(() => {
+          if (
+            discoveryLifetime.current.signal.aborted ||
+            providerModelRefreshesRef.current.get(providerId) !== promise
+          )
+            return;
           providerModelRefreshesRef.current.delete(providerId);
           setProviderModelLoading((current) => ({ ...current, [providerId]: false }));
         });
@@ -267,12 +319,19 @@ export function useModelCatalog(context: UseModelCatalogContext) {
       return promise;
     },
     [
-      persistProviderDiscovery,
+      refreshProviderModels,
       providerWorkspaceConfig.providers,
+      activeProviderRoute.providerId,
+      activeProviderRoute.modelId,
+      appendEvent,
       refreshModelCapabilities,
       workspaceRoot,
     ],
   );
+
+  useEffect(() => {
+    void ensureProviderModels(activeProviderRoute.providerId);
+  }, [activeProviderRoute.providerId, ensureProviderModels]);
 
   const refreshAuthStatus = useCallback(
     async (announce: boolean) => {
@@ -293,6 +352,7 @@ export function useModelCatalog(context: UseModelCatalogContext) {
         setAuthStatus(result);
         if (announce) {
           appendEvent("system", "Auth status", getAuthStatusMessage(result));
+          void ensureProviderModels(activeProviderRoute.providerId, true);
         }
       } catch (error) {
         const message = errorMessage(error, "Unknown auth probe failure");
@@ -310,7 +370,7 @@ export function useModelCatalog(context: UseModelCatalogContext) {
         setAuthStatusBusy(false);
       }
     },
-    [appendEvent, appendEvent],
+    [appendEvent, ensureProviderModels, activeProviderRoute.providerId],
   );
 
   useEffect(() => {
@@ -374,7 +434,7 @@ export function useModelCatalog(context: UseModelCatalogContext) {
             typeof result.diagnostics?.selectedModel === "string"
               ? result.diagnostics.selectedModel.trim()
               : "";
-          if (detectedModel && detectedModel !== activeProviderRoute.modelId) {
+          if (detectedModel && ["Local default", "default"].includes(activeProviderRoute.modelId)) {
             const localBackend =
               activeProviderRoute.localBackend ??
               providerWorkspaceConfig.providers?.local?.localBackend ??

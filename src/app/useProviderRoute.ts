@@ -26,11 +26,9 @@ import {
 } from "../core/providerRuntime/mistralVibe.js";
 import {
   discoverProviderModels,
-  getProviderRuntime,
   getProviderSetupPlan,
   isProviderRoutableInUbume,
   isProviderRouteConfigured,
-  persistProviderDiscovery,
 } from "../core/providerRuntime/registry.js";
 import type {
   GeminiModelSelection,
@@ -401,7 +399,7 @@ export function useProviderRoute(context: UseProviderRouteContext) {
             } else if (workspaceProviderConfig?.currentModel) {
               geminiSelection = { kind: "manual", modelId: workspaceProviderConfig.currentModel };
             } else {
-              geminiSelection = { kind: "auto", family: "gemini-3" };
+              geminiSelection = { kind: "manual", modelId: provider.currentModel };
             }
           }
 
@@ -452,68 +450,23 @@ export function useProviderRoute(context: UseProviderRouteContext) {
           return;
         }
 
-        if (providerId === "openai") {
-          void refreshModelCapabilities(true, true);
-          appendEvent(
-            "system",
-            "Model discovery",
-            `Refreshing models for ${provider.displayName}.`,
-          );
-        } else {
-          const runtime = getProviderRuntime(providerId);
-          if (runtime.refreshModels) {
-            appendEvent(
-              "system",
-              "Model discovery",
-              providerId === "anthropic"
-                ? "Refreshing Claude capabilities..."
-                : `Refreshing models for ${provider.displayName}...`,
-            );
-            if (providerId === "local") {
-              markProviderAvailability("local", "checking", "refresh-models");
-            }
-            void runtime
-              .refreshModels({
-                cwd: workspaceRoot,
-                localConfig:
-                  providerId === "local" ? providerWorkspaceConfig.providers?.local : undefined,
-              })
-              .then((discovery) => {
-                persistProviderDiscovery(discovery);
-                if (discovery.diagnostics) {
-                  providerDiagnosticsRef.current[providerId] = discovery.diagnostics as Record<
-                    string,
-                    string | number | boolean | null
-                  >;
-                }
-                if (discovery.status === "ready") {
-                  delete providerRouteErrorsRef.current[providerId];
-                } else if (discovery.message) {
-                  providerRouteErrorsRef.current[providerId] = discovery.message;
-                }
-                appendEvent(
-                  "system",
-                  "Model discovery",
-                  discovery.status === "ready"
-                    ? (discovery.message ??
-                        `Loaded ${discovery.models.length} models for ${provider.displayName} (${discovery.models[0]?.source ?? "fallback"}).`)
-                    : (discovery.message ??
-                        `${provider.displayName} model routing is not configured yet.`),
-                );
-                setRegistryNonce((n) => n + 1);
-              });
-          } else {
+        appendEvent(
+          "system",
+          "Model discovery",
+          `Refreshing models for ${provider.displayName}...`,
+        );
+        void ensureProviderModels(providerId, true)
+          .then(() => {
             const discovery = discoverProviderModels(providerId);
             appendEvent(
-              "system",
+              discovery.freshness === "unverified" ? "error" : "system",
               "Model discovery",
-              discovery.status === "ready"
-                ? `Loaded ${discovery.models.length} configured models for ${provider.displayName}.`
-                : (discovery.message ??
-                    `${provider.displayName} model routing is not configured yet.`),
+              discovery.message ??
+                `Loaded ${discovery.models.length} models for ${provider.displayName}.`,
             );
-          }
-        }
+            setRegistryNonce((n) => n + 1);
+          })
+          .catch(() => appendEvent("error", "Model discovery", "Model refresh failed."));
         return;
       }
 
@@ -638,6 +591,7 @@ export function useProviderRoute(context: UseProviderRouteContext) {
       void launchPromise
         .then((result) => {
           if (!isMountedRef.current) return;
+          void ensureProviderModels(providerId, true);
           if (
             providerId === "mistral" &&
             (result.status === "missing-command" || result.status === "spawn-error")
@@ -722,6 +676,7 @@ export function useProviderRoute(context: UseProviderRouteContext) {
       });
       child.once("close", (code) => {
         if (code === 0) {
+          void ensureProviderModels(providerId, true);
           appendEvent(
             "system",
             `${label} setup`,
@@ -736,7 +691,7 @@ export function useProviderRoute(context: UseProviderRouteContext) {
         }
       });
     },
-    [appendEvent, appendEvent, providerRegistry, workspaceRoot],
+    [appendEvent, ensureProviderModels, providerRegistry, workspaceRoot],
   );
   return { probeLocalBackends, openProviderPicker, handleProviderAction, runProviderSetup };
 }

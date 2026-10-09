@@ -180,13 +180,13 @@ test("model picker renders a compact command panel", async () => {
     await sleep(80);
     const output = harness.getOutput();
     assert.match(output, /Select model/);
-    assert.match(output, /↑↓ model · ←→ reasoning · Enter select · Esc cancel/);
+    assert.match(output, /↑↓ model · ←→ reasoning · R refresh · Enter select · Esc cancel/);
     assert.match(output, /Choose an OpenAI model to use inside Ubume/);
     assert.match(output, /Reasoning: Medium/);
-    assert.match(output, /Model Four \(model-four\)/);
+    assert.match(output, /Model Four/);
     assert.match(output, /Model Two/);
     const frame = getLastModelPickerFrame(output);
-    assert.match(frame, />\s+Model Four \(model-four\)/);
+    assert.match(frame, />\s+Model Four/);
     assert.match(frame, /Intelligence\s+Low.*Medium/);
     assert.match(frame, /\s+Model Two/);
     assert.doesNotMatch(frame, /Model Two \(model-two\).*\[/);
@@ -231,7 +231,7 @@ test("model picker supports model movement and reasoning adjustment", async () =
     assert.match(frame, /Reasoning: High/);
     assert.match(frame, />\s+Model Two/);
     assert.match(frame, /Intelligence\s+Medium.*High\s+High/);
-    assert.doesNotMatch(frame, /Model Four \(model-four\).*\[/);
+    assert.doesNotMatch(frame, /Model Four.*\[/);
   } finally {
     await harness.cleanup();
   }
@@ -390,7 +390,7 @@ test("model picker keeps escape active after loading swaps to interactive models
 
     const output = harness.getOutput();
     assert.match(output, /Discovering models from the Codex runtime/);
-    assert.match(output, /Model Four \(model-four\)/);
+    assert.match(output, /Model Four/);
     assert.match(output, /closed:yes/);
     assert.match(output, /cancel:1/);
   } finally {
@@ -408,7 +408,7 @@ test("model picker keeps enter selection active after loading swaps to interacti
 
     const output = harness.getOutput();
     assert.match(output, /Discovering models from the Codex runtime/);
-    assert.match(output, /Model Four \(model-four\)/);
+    assert.match(output, /Model Four/);
     assert.match(output, /closed:yes/);
     assert.match(output, /selected:model-four:medium/);
   } finally {
@@ -499,7 +499,7 @@ test("model picker disables reasoning for models without advertised levels", asy
     await sleep(80);
 
     const output = harness.getOutput();
-    assert.match(output, /Reasoning: unavailable/);
+    assert.match(output, /Reasoning: provider-managed/);
     assert.equal(selected, "plain-model:medium");
   } finally {
     await harness.cleanup();

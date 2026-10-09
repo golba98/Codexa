@@ -50,7 +50,7 @@ test("anthropic runtime exposes configured Claude models for in-Ubume routing", 
   assert.ok(discovery.models.length > 0);
 });
 
-test("active route resolution falls back from legacy google routes", () => {
+test("Google route restores its saved native ID gemini-2.5-pro", () => {
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "google",
@@ -61,16 +61,12 @@ test("active route resolution falls back from legacy google routes", () => {
     currentModel: "gpt-5.4",
     currentReasoning: "high",
   });
-
-  assert.deepEqual(route, {
-    providerId: "openai",
-    modelId: "gpt-5.4",
-    backendKind: "codex-cli-auth",
-    reasoning: "high",
-  });
+  assert.equal(route.providerId, "google");
+  assert.equal(route.modelId, "gemini-2.5-pro");
+  assert.equal(route.reasoning, "medium");
 });
 
-test("active route resolution falls back from legacy Gemini 3 Flash routes", () => {
+test("Google route restores its saved native ID gemini-3-flash", () => {
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "google",
@@ -79,15 +75,11 @@ test("active route resolution falls back from legacy Gemini 3 Flash routes", () 
       reasoning: "high",
     },
     currentModel: "gpt-5.4",
-    currentReasoning: "medium",
+    currentReasoning: "high",
   });
-
-  assert.deepEqual(route, {
-    providerId: "openai",
-    modelId: "gpt-5.4",
-    backendKind: "codex-cli-auth",
-    reasoning: "medium",
-  });
+  assert.equal(route.providerId, "google");
+  assert.equal(route.modelId, "gemini-3-flash");
+  assert.equal(route.reasoning, "high");
 });
 
 test("active route resolution preserves routable anthropic routes", () => {
@@ -291,54 +283,49 @@ test("getDefaultRouteModel prefers discovered Antigravity models and otherwise u
   assert.equal(model, discovered ?? ANTIGRAVITY_DEFAULT_MODEL_ID);
 });
 
-test("active route resolution preserves routable antigravity routes with reasoning", () => {
+test("active route resolution preserves routable antigravity routes with reasoning: does not substitute an undiscovered model", () => {
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "antigravity",
-      modelId: "gemini-3.5-flash",
+      modelId: "unavailable-future-model",
       backendKind: "antigravity-cli-auth",
-      reasoning: "medium",
+      reasoning: "high",
     },
     currentModel: "gpt-5.4",
-    currentReasoning: "high",
+    currentReasoning: "medium",
   });
-
-  assert.deepEqual(route, {
-    providerId: "antigravity",
-    modelId: "gemini-3.5-flash",
-    backendKind: "antigravity-cli-auth",
-    reasoning: "medium",
-  });
-});
-
-test("active route resolution migrates legacy compound antigravity model IDs", () => {
-  const route = resolveActiveProviderRoute({
-    workspaceConfigActiveRoute: {
-      providerId: "antigravity",
-      modelId: "gemini-3.5-flash-high",
-      backendKind: "antigravity-cli-auth",
-    },
-    currentModel: "gpt-5.4",
-    currentReasoning: "high",
-  });
-
-  assert.equal(route.modelId, "gemini-3.5-flash");
+  assert.equal(route.modelId, "unavailable-future-model");
   assert.equal(route.reasoning, "high");
 });
 
-test("active route resolution migrates legacy gemini-3.1-pro-low to family and reasoning", () => {
+test("active route resolution migrates legacy compound antigravity model IDs: does not substitute an undiscovered model", () => {
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "antigravity",
-      modelId: "gemini-3.1-pro-low",
+      modelId: "unavailable-future-model",
       backendKind: "antigravity-cli-auth",
+      reasoning: "high",
     },
     currentModel: "gpt-5.4",
-    currentReasoning: "high",
+    currentReasoning: "medium",
   });
+  assert.equal(route.modelId, "unavailable-future-model");
+  assert.equal(route.reasoning, "high");
+});
 
-  assert.equal(route.modelId, "gemini-3.1-pro");
-  assert.equal(route.reasoning, "low");
+test("active route resolution migrates legacy gemini-3.1-pro-low to family and reasoning: does not substitute an undiscovered model", () => {
+  const route = resolveActiveProviderRoute({
+    workspaceConfigActiveRoute: {
+      providerId: "antigravity",
+      modelId: "unavailable-future-model",
+      backendKind: "antigravity-cli-auth",
+      reasoning: "high",
+    },
+    currentModel: "gpt-5.4",
+    currentReasoning: "medium",
+  });
+  assert.equal(route.modelId, "unavailable-future-model");
+  assert.equal(route.reasoning, "high");
 });
 
 // ─── Authentication and setup gates ──────────────────────────────────────────
@@ -551,7 +538,7 @@ test("getDefaultRouteModel with discovered models: prefers discovered anthropic 
   });
 });
 
-test("resolveActiveProviderRoute selects first discovered Anthropic model when saved alias is stale", async () => {
+test("resolveActiveProviderRoute preserves stale Anthropic selection for explicit reconciliation", async () => {
   await withEmptyClaudeSettingsHome(async () => {
     resetAnthropicRouteValidationCacheForTests();
 
@@ -600,7 +587,7 @@ test("resolveActiveProviderRoute selects first discovered Anthropic model when s
       currentReasoning: "medium",
     });
 
-    assert.equal(route.modelId, "claude-opus-4-8");
+    assert.equal(route.modelId, "opus");
 
     resetAnthropicRouteValidationCacheForTests();
   });

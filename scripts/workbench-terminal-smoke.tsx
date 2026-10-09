@@ -2,7 +2,7 @@
 import React from "react";
 import { render } from "ink";
 import { writeFileSync } from "node:fs";
-import { App } from "../src/app.js";
+import { App } from "../src/app/App.js";
 import { parseLaunchArgs } from "../src/config/launchArgs.js";
 import type { BackendProvider } from "../src/core/providers/types.js";
 if (process.env.UBUME_SMOKE_WORKSPACE !== process.cwd()) throw new Error("Run through smoke-workbench.py in its temporary workspace.");

@@ -3,11 +3,13 @@ import {
   buildClaudeSpawnSpec,
   resetClaudeExecutableCacheForTests,
 } from "../executables/executableResolver.js";
+import { providerCatalog } from "../models/modelCatalog.js";
 import { type CommandResult, runCommand } from "../process/commandRunner.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { errorMessage } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
+import { anthropicApiBase, fetchAnthropicModels } from "./anthropicDiscovery.js";
 import {
   type ClaudeCodeCapabilityDiscovery,
   claudeCodeModelsToProviderModels,
@@ -25,7 +27,6 @@ import type {
   ProviderRuntime,
 } from "./types.js";
 
-const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const ANTHROPIC_MAX_TOKENS = 1024;
 const ANTHROPIC_TIMEOUT_MS = 120_000;
@@ -39,6 +40,7 @@ export { parseClaudeAuthStatus } from "./claudeCodeDiscovery.js";
 type CommandRunner = typeof runCommand;
 
 let claudeCodeValidated = false;
+let anthropicApiValidated = false;
 let resolvedClaudeExecutable: string = "claude";
 let discoveredAnthropicModels: readonly ProviderModel[] | null = null;
 let claudeCapabilityDiscovery: ClaudeCodeCapabilityDiscovery | null = null;
@@ -48,13 +50,16 @@ function getAnthropicApiKey(): string | null {
 }
 
 function isAnthropicRouteConfigured(): boolean {
-  return getAnthropicApiKey() !== null || claudeCodeValidated;
+  return getAnthropicApiKey() !== null || claudeCodeValidated || anthropicApiValidated;
 }
 
-export function resetAnthropicRouteValidationCacheForTests(): void {
+export function resetAnthropicRouteValidationCacheForTests(
+  models: readonly ProviderModel[] | null = null,
+): void {
   claudeCodeValidated = false;
+  anthropicApiValidated = false;
   resolvedClaudeExecutable = "claude";
-  discoveredAnthropicModels = null;
+  discoveredAnthropicModels = models;
   claudeCapabilityDiscovery = null;
   resetClaudeExecutableCacheForTests();
 }
@@ -75,7 +80,7 @@ export function mapReasoningToEffort(reasoning: string | null | undefined): stri
 
 function buildClaudeCodeBaseArgs(request: ProviderChatRequest): string[] {
   const effort = mapReasoningToEffort(request.route.reasoning ?? null);
-  const models = getActiveAnthropicModels();
+  const models = request.modelDescriptor ? [request.modelDescriptor] : getActiveAnthropicModels();
   const supportedEffort =
     effort && modelSupportsClaudeEffort(request.route.modelId, effort, models) ? effort : null;
   return [
@@ -220,12 +225,12 @@ async function runAnthropicApi(
   request: ProviderChatRequest,
   signal?: AbortSignal,
 ): Promise<string> {
-  const apiKey = getAnthropicApiKey();
+  const apiKey = request.providerConfig?.apiKey || getAnthropicApiKey();
   if (!apiKey) {
     throw new Error(ANTHROPIC_ROUTE_SETUP_MESSAGE);
   }
 
-  const response = await fetch(ANTHROPIC_MESSAGES_URL, {
+  const response = await fetch(`${anthropicApiBase(request.providerConfig)}/messages`, {
     method: "POST",
     signal,
     headers: {
@@ -236,6 +241,13 @@ async function runAnthropicApi(
     body: JSON.stringify({
       model: request.route.modelId,
       max_tokens: ANTHROPIC_MAX_TOKENS,
+      ...(request.route.reasoning &&
+      request.modelDescriptor?.reasoningControl?.kind === "levels" &&
+      request.modelDescriptor.reasoningControl.levels.some(
+        (level) => level.id === request.route.reasoning,
+      )
+        ? { output_config: { effort: request.route.reasoning } }
+        : {}),
       ...(request.projectInstructions?.content
         ? { system: request.projectInstructions.content }
         : {}),
@@ -253,9 +265,7 @@ async function runAnthropicApi(
 
   const body = await response.text();
   if (!response.ok) {
-    throw new Error(
-      `Anthropic API request failed (${response.status}): ${sanitizeTerminalOutput(body).slice(0, 500)}`,
-    );
+    throw new Error(`Anthropic API request failed (HTTP ${response.status}).`);
   }
 
   const parsed = JSON.parse(body) as {
@@ -301,23 +311,35 @@ function withClaudeEffort(request: ProviderChatRequest, effort: string): Provide
   };
 }
 
-function disableClaudeEffortForSession(modelId: string, effort: string): void {
+function disableClaudeEffortForSession(
+  modelId: string,
+  effort: string,
+  expected?: ProviderModel,
+): void {
   const models = getActiveAnthropicModels();
-  discoveredAnthropicModels = models.map((model) => {
+  const disable = (model: ProviderModel): ProviderModel => {
     const isTarget =
       model.modelId === modelId ||
       model.id === modelId ||
       model.family === modelId ||
       model.canonicalId === modelId;
     if (!isTarget || !model.supportedReasoningLevels) return model;
+    const levels = model.supportedReasoningLevels.filter((level) => level.id !== effort);
+    const preferred = levels.some((level) => level.id === model.defaultReasoningLevel)
+      ? model.defaultReasoningLevel
+      : (levels[0]?.id ?? null);
     return {
       ...model,
-      supportedReasoningLevels: model.supportedReasoningLevels.filter(
-        (level) => level.id !== effort,
-      ),
+      supportedReasoningLevels: levels,
+      defaultReasoningLevel: preferred,
+      ...(model.reasoningControl?.kind === "levels"
+        ? { reasoningControl: { ...model.reasoningControl, levels, default: preferred ?? "" } }
+        : {}),
       description: `${model.description ?? model.label} - ${effort} disabled after Claude Code rejection this session`,
     };
-  });
+  };
+  discoveredAnthropicModels = models.map(disable);
+  providerCatalog.amendModel("anthropic", expected?.modelId ?? modelId, disable, expected);
 }
 
 function formatClaudeCommandDiagnostic(executable: string, args: string[], prompt: string): string {
@@ -425,7 +447,11 @@ export function runClaudeCodeWithRunner(
             getActiveAnthropicModels(),
           );
           if (requestedEffort && isClaudeInvalidEffortError(result)) {
-            disableClaudeEffortForSession(attemptRequest.route.modelId, requestedEffort);
+            disableClaudeEffortForSession(
+              attemptRequest.route.modelId,
+              requestedEffort,
+              attemptRequest.modelDescriptor,
+            );
           }
           if (
             !effortFallbackUsed &&
@@ -623,11 +649,27 @@ export const anthropicRuntime: ProviderRuntime = {
   routeSetupMessage: ANTHROPIC_ROUTE_SETUP_MESSAGE,
   launchAvailable: true,
   isRouteConfigured: isAnthropicRouteConfigured,
-  validateRoute: async ({ workspaceRoot, claudeCommandPath }) =>
-    validateAnthropicRoute({
-      cwd: workspaceRoot,
-      configuredPath: claudeCommandPath,
-    }),
+  validateRoute: async ({ workspaceRoot, claudeCommandPath, providerConfig, route }) => {
+    if (providerConfig?.apiKey || route.backendKind === "anthropic-api-key") {
+      const discovery = await fetchAnthropicModels({ providerConfig });
+      anthropicApiValidated = discovery.freshness === "verified";
+      if (anthropicApiValidated) discoveredAnthropicModels = discovery.models;
+      return {
+        status:
+          anthropicApiValidated && discovery.models.some((model) => model.modelId === route.modelId)
+            ? "ready"
+            : "not-configured",
+        providerId: "anthropic",
+        backendKind: "anthropic-api-key",
+        message:
+          discovery.message ??
+          (anthropicApiValidated
+            ? "Claude API model inventory verified."
+            : ANTHROPIC_ROUTE_SETUP_MESSAGE),
+      };
+    }
+    return validateAnthropicRoute({ cwd: workspaceRoot, configuredPath: claudeCommandPath });
+  },
   discoverModels: (): ProviderModelDiscoveryResult => ({
     status: "ready",
     providerId: "anthropic",
@@ -647,10 +689,25 @@ export const anthropicRuntime: ProviderRuntime = {
         }
       : { modelSource: "fallback" },
   }),
-  refreshModels: async ({ cwd }): Promise<ProviderModelDiscoveryResult> => {
+  refreshModels: async ({ cwd, providerConfig, signal }): Promise<ProviderModelDiscoveryResult> => {
+    if (
+      providerConfig?.apiKey ||
+      (getAnthropicApiKey() && !providerConfig?.claudeCommandPath && !claudeCodeValidated)
+    ) {
+      const result = await fetchAnthropicModels({ providerConfig, signal });
+      if (!signal?.aborted) {
+        anthropicApiValidated = result.freshness === "verified";
+        if (anthropicApiValidated) discoveredAnthropicModels = result.models;
+      }
+      return result;
+    }
     let discovery: ClaudeCodeCapabilityDiscovery;
     try {
-      discovery = await discoverClaudeCodeCapabilities({ cwd, runCommandImpl: runCommand });
+      discovery = await discoverClaudeCodeCapabilities({
+        cwd,
+        configuredPath: providerConfig?.claudeCommandPath,
+        runCommandImpl: (spec, handlers) => runCommand({ ...spec, signal }, handlers),
+      });
     } catch (error) {
       const message = errorMessage(error, "Claude capability refresh failed.");
       return {
@@ -666,6 +723,15 @@ export const anthropicRuntime: ProviderRuntime = {
         },
       };
     }
+    if (signal?.aborted)
+      return {
+        status: "not-configured",
+        providerId: "anthropic",
+        backendKind: getAnthropicRuntimeBackendKind(),
+        models: [],
+        freshness: "unverified",
+        message: "Claude model discovery canceled.",
+      };
     resolvedClaudeExecutable = discovery.resolvedCommand;
     claudeCapabilityDiscovery = discovery;
     claudeCodeValidated = discovery.auth.loggedIn;
@@ -675,6 +741,8 @@ export const anthropicRuntime: ProviderRuntime = {
       providerId: "anthropic",
       backendKind: getAnthropicRuntimeBackendKind(),
       models: discoveredAnthropicModels,
+      freshness: discovery.modelSource === "fallback" ? "unverified" : "verified",
+      refreshState: discovery.modelSource === "fallback" ? "failed" : "refreshed",
       message:
         discovery.modelSource === "fallback"
           ? DISCOVERY_FAILURE_MESSAGE
@@ -694,11 +762,15 @@ export const anthropicRuntime: ProviderRuntime = {
       text: "Starting Claude Code",
     });
 
-    if (claudeCodeValidated) {
+    if (
+      claudeCodeValidated &&
+      request.route.backendKind !== "anthropic-api-key" &&
+      !request.providerConfig?.apiKey
+    ) {
       return runClaudeCode(request, handlers);
     }
 
-    if (getAnthropicApiKey()) {
+    if (request.providerConfig?.apiKey || getAnthropicApiKey()) {
       let cancelled = false;
       const controller = new AbortController();
       const control = createRunControl(handlers);
