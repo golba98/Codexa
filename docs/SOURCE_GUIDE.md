@@ -106,16 +106,15 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 | File | Purpose |
 | --- | --- |
 | `src/core/executables/codexExecutable.ts` | Resolves the Codex executable and verifies usable command candidates. |
-| `src/core/executables/executableResolver.ts` | Resolves the Antigravity agy executable from explicit configuration, environment, and PATH. Resolves the Claude Code executable with platform and override handling. Provides shared cross-platform executable-name, PATH, override, and resolution utilities. Resolves the legacy Gemini executable for diagnostics and compatibility paths. |
+| `src/core/executables/executableResolver.ts` | Resolves the Claude Code executable with platform and override handling. Provides shared cross-platform executable-name, PATH, override, and resolution utilities. Resolves the legacy Gemini executable for diagnostics and compatibility paths. |
 
 ### `src/core/externalSessions/`
 
 | File | Purpose |
 | --- | --- |
-| `src/core/externalSessions/antigravitySessions.ts` | Lists Antigravity CLI conversations from `conversation_summaries.db` and extracts prompts, replies, and tool calls from step payloads, falling back to `history.jsonl`. |
 | `src/core/externalSessions/claudeSessions.ts` | Lists Claude Code sessions from `~/.claude/projects` (head/tail reads) and streams a session JSONL into transcript entries. |
 | `src/core/externalSessions/codexSessions.ts` | Lists Codex threads from `state_*.sqlite` (rollout scan fallback) and parses rollout JSONL into transcript entries. |
-| `src/core/externalSessions/index.ts` | Converts a native transcript into Ubume conversation messages for "continue in Ubume". Routes listing and transcript reads to the store for each source. Builds the `claude --resume` / `codex resume` / `agy --conversation` launch in the session's folder. |
+| `src/core/externalSessions/index.ts` | Converts a native transcript into Ubume conversation messages for "continue in Ubume". Routes listing and transcript reads to the store for each source. Builds the `claude --resume` / `codex resume` / `vibe --resume` launch in the session's folder. |
 | `src/core/externalSessions/storeIo.ts` | Walks protobuf wire format without a schema and returns its text fields. Shared JSONL head/tail/stream readers, bounded-concurrency mapping, and title helpers. Opens another tool's SQLite store read-only (with an immutable fallback for WAL databases). |
 | `src/core/externalSessions/types.ts` | Session source, scope, summary, and transcript types plus display labels. |
 | `src/core/externalSessions/vibeSessions.ts` | Lists and reads native Mistral Vibe session transcripts. |
@@ -157,7 +156,6 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 | File | Purpose |
 | --- | --- |
 | `src/core/providerRuntime/anthropic.ts` | Implements Claude Code route validation, model discovery, process execution, and streamed event adaptation. |
-| `src/core/providerRuntime/antigravity.ts` | Implements Antigravity model discovery, legacy-ID migration, reasoning selection, validation, and routed execution. |
 | `src/core/providerRuntime/capabilityProfile.ts` | Resolves cached provider model feature profiles such as tools, vision, and reasoning support. |
 | `src/core/providerRuntime/claudeCodeDiscovery.ts` | Discovers Claude Code models and reasoning metadata from commands, packages, caches, settings, and fallbacks. |
 | `src/core/providerRuntime/codexaNative.ts` | Implements the Codexa Native route and its CuPy accelerated execution support. |
@@ -308,13 +306,13 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 | --- | --- |
 | `src/ui/panels/AttachmentImportPanel.tsx` | Confirms external attachment import and shows source/destination safety information. |
 | `src/ui/panels/AuthPanel.tsx` | Displays authentication state and login/logout guidance. |
-| `src/ui/panels/ExternalSessionViewer.tsx` | Read-only, scrollable transcript of a native Claude Code / Codex / Antigravity session with open-natively and continue-in-Ubume actions. |
+| `src/ui/panels/ExternalSessionViewer.tsx` | Read-only, scrollable transcript of a native Claude Code / Codex / Mistral Vibe session with open-natively and continue-in-Ubume actions. |
 | `src/ui/panels/ModelPickerScreen.tsx` | Coordinates provider-scoped model discovery, loading/error states, selection, and reasoning hand-off. |
 | `src/ui/panels/PermissionsPanel.tsx` | Displays and edits approval, sandbox, network, writable-root, service-tier, and personality settings. |
 | `src/ui/panels/PlanActionPicker.tsx` | Offers execute, revise, or cancel actions after a plan is produced. |
 | `src/ui/panels/ProviderPicker.tsx` | Displays provider availability, current/default route state, models, and provider actions. |
 | `src/ui/panels/ProviderSetupPrompt.tsx` | Explains provider setup and routes install/login choices. |
-| `src/ui/panels/ResumePicker.tsx` | Tabbed `/resume` picker: Ubume conversations plus Claude Code, Codex, and Antigravity sessions for this folder or all projects. |
+| `src/ui/panels/ResumePicker.tsx` | Tabbed `/resume` picker: Ubume conversations plus Claude Code, Codex, and Mistral Vibe sessions for this folder or all projects. |
 | `src/ui/panels/SelectionPanel.tsx` | Provides the reusable keyboard-driven selection list with visible-window management. |
 | `src/ui/panels/SettingsPanel.tsx` | Displays and edits persistent user interface settings. |
 | `src/ui/panels/SimplePickers.tsx` | Selects execution mode and explains its behavior. Selects Codex reasoning effort for the active model. Previews and selects a persisted color theme. |

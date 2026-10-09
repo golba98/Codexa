@@ -6,13 +6,12 @@ export function formatProviderDiagnostics(
   diags: Record<string, Record<string, string | number | boolean | null>>,
 ): string {
   const lines: string[] = ["Provider CLI diagnostics:"];
-  const providerIds = ["openai", "anthropic", "codexa-native", "local", "antigravity"] as const;
+  const providerIds = ["openai", "anthropic", "codexa-native", "local"] as const;
   const labels: Record<string, string> = {
     openai: "OpenAI/Codex",
     anthropic: "Anthropic/Claude",
     local: "Local OpenAI-compatible",
     "codexa-native": "Codexa Native",
-    antigravity: "Antigravity CLI",
   };
   for (const id of providerIds) {
     const diag = diags[id];

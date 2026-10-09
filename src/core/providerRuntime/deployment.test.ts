@@ -30,7 +30,7 @@ test("remote OpenAI-compatible endpoint stays remote; LAN can explicitly opt in"
     false,
   );
 });
-for (const providerId of ["anthropic", "openai", "antigravity", "mistral", "google"] as const)
+for (const providerId of ["anthropic", "openai", "mistral", "google"] as const)
   test(`${providerId} cloud never becomes local from a context value`, () =>
     expect(
       isLocalRuntime(

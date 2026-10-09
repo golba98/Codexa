@@ -3,7 +3,6 @@ import { existsSync } from "node:fs";
 import type { useFocusManager } from "ink";
 import { useCallback, useEffect } from "react";
 import type { LaunchArgs } from "../config/launchArgs.js";
-import { resolveAgyExecutable } from "../core/executables/executableResolver.js";
 import {
   buildExternalResumeLaunch,
   type ExternalSessionSummary,
@@ -516,15 +515,6 @@ export function useConversation(context: UseConversationContext) {
           throw new Error(`Current chat could not be saved: ${lastSaveErrorRef.current}`);
         const prepared = await buildExternalResumeLaunch(summary, {
           fallbackCwd: workspaceRoot,
-          resolveExecutable:
-            summary.source === "antigravity"
-              ? () =>
-                  resolveAgyExecutable({
-                    configuredPath:
-                      providerWorkspaceConfig.providers?.antigravity?.antigravityCommandPath,
-                    cwd: summary.cwd ?? workspaceRoot,
-                  })
-              : undefined,
         });
         if (!isMountedRef.current) return;
         if (!prepared.ok) {

@@ -62,10 +62,7 @@ function getInitialCursor(
     if (index >= 0) return index;
   }
   const index = models.findIndex(
-    (model) =>
-      model.model === currentModel ||
-      model.id === currentModel ||
-      getVariantModelIds(model).includes(currentModel),
+    (model) => model.model === currentModel || model.id === currentModel,
   );
   return Math.max(0, index);
 }
@@ -78,115 +75,6 @@ function getReasoningLevels(
   model: CodexModelCapability | undefined,
 ): readonly ReasoningEffortCapability[] {
   return model?.supportedReasoningLevels ?? [];
-}
-
-const GEMINI_EFFORT_IDS = new Set(["low", "medium", "high", "xhigh", "max"]);
-
-function collapseGeminiEffortVariants(
-  models: readonly CodexModelCapability[],
-): readonly CodexModelCapability[] {
-  const groups = new Map<string, CodexModelCapability>();
-  const variantIds = new Map<string, string[]>();
-  const variantLevels = new Map<string, Set<string>>();
-
-  for (const model of models) {
-    const match = model.model.match(/^(.*?)-(low|medium|high|xhigh|max)$/i);
-    if (!match || !GEMINI_EFFORT_IDS.has(match[2]!.toLowerCase())) {
-      groups.set(model.id, model);
-      continue;
-    }
-
-    const familyId = match[1]!;
-    const existing = groups.get(familyId);
-    const level = match[2]!.toLowerCase();
-    const ids = variantIds.get(familyId) ?? [];
-    ids.push(model.model);
-    variantIds.set(familyId, ids);
-    const levels = variantLevels.get(familyId) ?? new Set<string>();
-    levels.add(level);
-    variantLevels.set(familyId, levels);
-
-    const label = model.label.replace(/\s*\((?:low|medium|high|xhigh|max)\)\s*$/i, "");
-    if (!existing) {
-      groups.set(familyId, {
-        ...model,
-        id: familyId,
-        model: familyId,
-        label,
-        description: `Select the intelligence level for ${label}.`,
-        defaultReasoningLevel: level,
-        supportedReasoningLevels: [
-          { id: level, label: formatReasoningLabel(level), description: null },
-        ],
-        reasoningLevelCount: 1,
-        reasoningControl: {
-          kind: "levels",
-          transport: "variant",
-          default: level,
-          levels: [{ id: level, label: formatReasoningLabel(level), description: null }],
-        },
-        raw: { ...(model.raw && typeof model.raw === "object" ? model.raw : {}), variantIds: ids },
-      });
-    } else {
-      const orderedLevels = ["low", "medium", "high", "xhigh", "max"].filter((id) =>
-        levels.has(id),
-      );
-      groups.set(familyId, {
-        ...existing,
-        supportedReasoningLevels: orderedLevels.map((id) => ({
-          id,
-          label: formatReasoningLabel(id),
-          description: null,
-        })),
-        reasoningLevelCount: orderedLevels.length,
-        reasoningControl: {
-          kind: "levels",
-          transport: "variant",
-          default: existing.defaultReasoningLevel ?? orderedLevels[0]!,
-          levels: orderedLevels.map((id) => ({
-            id,
-            label: formatReasoningLabel(id),
-            description: null,
-          })),
-        },
-        raw: {
-          ...(existing.raw && typeof existing.raw === "object" ? existing.raw : {}),
-          variantIds: ids,
-        },
-      });
-    }
-  }
-
-  return [...groups.values()].map((model) => {
-    const ids = variantIds.get(model.model);
-    if (!ids) return model;
-    return {
-      ...model,
-      raw: { ...(model.raw && typeof model.raw === "object" ? model.raw : {}), variantIds: ids },
-    };
-  });
-}
-
-function getVariantModelIds(model: CodexModelCapability): readonly string[] {
-  const raw = model.raw;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
-  const ids = (raw as { variantIds?: unknown }).variantIds;
-  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
-}
-
-function getVariantReasoning(
-  model: CodexModelCapability | undefined,
-  modelId: string,
-): string | null {
-  if (!model) return null;
-  const variant = getVariantModelIds(model).find((id) => id === modelId);
-  const match = variant?.match(/-(low|medium|high|xhigh|max)$/i);
-  return match?.[1]?.toLowerCase() ?? null;
-}
-
-function resolveVariantModelId(model: CodexModelCapability, reasoning: string): string {
-  const variantIds = getVariantModelIds(model);
-  return variantIds.find((id) => id.endsWith(`-${reasoning.toLowerCase()}`)) ?? model.model;
 }
 
 function getModelSourceMarker(
@@ -283,7 +171,7 @@ export function ModelPickerScreen({
   availableRows: propAvailableRows,
   activePanelLayout,
   panelLayout,
-  models: baseModels,
+  models,
   currentModel,
   currentReasoning,
   currentGeminiSelection,
@@ -298,11 +186,6 @@ export function ModelPickerScreen({
 }: ModelPickerScreenProps) {
   const theme = useTheme();
   const isGoogle = activeProviderLabel === "Google";
-  const isAntigravity = activeProviderLabel.toLowerCase().includes("antigravity");
-
-  const models = useMemo(() => {
-    return isAntigravity ? collapseGeminiEffortVariants(baseModels) : baseModels;
-  }, [baseModels, isAntigravity]);
 
   const { isFocused } = useFocus({ id: FOCUS_IDS.modelPicker, autoFocus: true });
   const initialModelIndex = getInitialCursor(models, currentModel, currentGeminiSelection);
@@ -310,10 +193,7 @@ export function ModelPickerScreen({
   const selectedIdentityRef = useRef(models[initialModelIndex]?.model);
   const previousActiveSelection = useRef({ currentModel, currentReasoning });
   const [draftReasoning, setDraftReasoning] = useState(() =>
-    normalizeDraftReasoning(
-      models[initialModelIndex],
-      getVariantReasoning(models[initialModelIndex], currentModel) ?? currentReasoning,
-    ),
+    normalizeDraftReasoning(models[initialModelIndex], currentReasoning),
   );
   const [scrollOffset, setScrollOffset] = useState(0);
 
@@ -346,22 +226,13 @@ export function ModelPickerScreen({
     }
 
     setDraftSelectedModel((current) => {
-      const identityIndex = models.findIndex(
-        (item) =>
-          item.model === selectedIdentityRef.current ||
-          getVariantModelIds(item).includes(selectedIdentityRef.current ?? ""),
-      );
+      const identityIndex = models.findIndex((item) => item.model === selectedIdentityRef.current);
       const nextCursor =
         identityIndex >= 0 ? identityIndex : Math.min(Math.max(0, current), models.length - 1);
       selectedIdentityRef.current = models[nextCursor]?.model;
       const nextModel = models[nextCursor];
       setDraftReasoning((reasoning) =>
-        normalizeDraftReasoning(
-          nextModel,
-          activeChanged
-            ? (getVariantReasoning(nextModel, currentModel) ?? currentReasoning)
-            : reasoning,
-        ),
+        normalizeDraftReasoning(nextModel, activeChanged ? currentReasoning : reasoning),
       );
       return nextCursor;
     });
@@ -451,11 +322,7 @@ export function ModelPickerScreen({
           ? { kind: "manual" as const, modelId: model.model }
           : undefined;
         const normalizedReasoning = normalizeDraftReasoning(model, draftReasoning);
-        onSelect(
-          resolveVariantModelId(model, normalizedReasoning),
-          normalizedReasoning,
-          geminiSelection,
-        );
+        onSelect(model.model, normalizedReasoning, geminiSelection);
         return;
       }
 
@@ -550,10 +417,7 @@ export function ModelPickerScreen({
   const appLayoutBudget = useAppLayoutBudget();
 
   const activeModelIndex = models.findIndex(
-    (model) =>
-      model.model === currentModel ||
-      model.id === currentModel ||
-      getVariantModelIds(model).includes(currentModel),
+    (model) => model.model === currentModel || model.id === currentModel,
   );
   const hasSourceMarker = !!sourceMarker;
 
@@ -719,9 +583,7 @@ export function ModelPickerScreen({
                 models.length === 0
                   ? "Reasoning: current/default"
                   : reasoningUnavailable
-                    ? isAntigravity
-                      ? "Uses this model's native AGY configuration"
-                      : "Reasoning: fixed or provider-managed"
+                    ? "Reasoning: fixed or provider-managed"
                     : `Reasoning: ${formatReasoningLabel(draftReasoning)} · Intelligence: ${formatReasoningLabel(draftReasoning)}`,
                 innerWidth,
               )}
@@ -836,10 +698,7 @@ function ModelPickerRow({
     isCurrent =
       selection?.kind === "manual" && selection.modelId === currentGeminiSelection.modelId;
   } else {
-    isCurrent =
-      model.model === currentModel ||
-      model.id === currentModel ||
-      getVariantModelIds(model).includes(currentModel);
+    isCurrent = model.model === currentModel || model.id === currentModel;
   }
 
   const markerWidth = 2;

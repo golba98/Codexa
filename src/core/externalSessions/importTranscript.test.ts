@@ -23,7 +23,7 @@ const transcript = (entries: ExternalTranscriptEntry[]): ExternalTranscript => (
 test("externalProviderId maps each CLI to the Ubume provider that talks to it", () => {
   assert.equal(externalProviderId("claude"), "anthropic");
   assert.equal(externalProviderId("codex"), "openai");
-  assert.equal(externalProviderId("antigravity"), "antigravity");
+  assert.equal(externalProviderId("vibe"), "mistral");
 });
 
 test("externalTranscriptToConversationMessages merges replies and folds tool calls into activity", () => {

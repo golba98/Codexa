@@ -2,10 +2,6 @@ import { expect, test } from "bun:test";
 import { PassThrough } from "node:stream";
 import { render } from "ink";
 import type { ReactElement } from "react";
-import {
-  getAgyModelSelector,
-  parseAgyModelsOutput,
-} from "../../core/providerRuntime/antigravity.js";
 import { providerModelsToCodexCapabilities } from "../../core/providerRuntime/models.js";
 import { createLayoutSnapshot } from "../layout.js";
 import { ModelPickerScreen } from "./ModelPickerScreen.js";
@@ -54,20 +50,41 @@ function harness(node: ReactElement, width: number) {
   });
   return { instance, input, text: () => text, cleanup: () => instance.cleanup() };
 }
-const models = parseAgyModelsOutput(
-  "gemini-99.8-flash-high\tGemini 99.8 Flash (High)\ngemini-99.8-flash-medium\tGemini 99.8 Flash (Medium)\ngemini-99.8-flash-low\tGemini 99.8 Flash (Low)\nclaude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)",
-);
+const levels = ["low", "medium", "high"].map((id) => ({
+  id,
+  label: id[0]!.toUpperCase() + id.slice(1),
+  description: null,
+}));
+const models = [
+  {
+    id: "flash",
+    modelId: "flash",
+    label: "Flash",
+    description: null,
+    defaultReasoningLevel: "medium",
+    supportedReasoningLevels: levels,
+    source: "discovered" as const,
+  },
+  {
+    id: "opus",
+    modelId: "opus",
+    label: "Opus",
+    description: null,
+    defaultReasoningLevel: "high",
+    supportedReasoningLevels: levels,
+    source: "discovered" as const,
+  },
+];
 for (const width of [60, 80, 100, 120, 160])
-  test(`AGY intelligence arrows, refresh and re-render preserve exact selection at ${width}`, async () => {
+  test(`intelligence arrows, refresh and re-render preserve exact selection at ${width}`, async () => {
     let selected = "";
     let effort = "";
     let refreshes = 0;
     const props = {
       layout: createLayoutSnapshot(width, 35),
-      models: providerModelsToCodexCapabilities(models, "gemini-99.8-flash-medium").models,
-      currentModel: "gemini-99.8-flash-medium",
+      models: providerModelsToCodexCapabilities(models, "flash").models,
+      currentModel: "flash",
       currentReasoning: "medium",
-      activeProviderLabel: "Antigravity",
       onSelect: (id: string, value: string) => {
         selected = id;
         effort = value;
@@ -90,8 +107,7 @@ for (const width of [60, 80, 100, 120, 160])
       await pause();
       expect(refreshes).toBe(1);
       expect(effort).toBe("high");
-      expect(selected).toBe("gemini-99.8-flash-high");
-      expect(getAgyModelSelector(selected, effort, models)).toBe(selected);
+      expect(selected).toBe("flash");
       expect(h.text()).not.toContain("TypeError");
     } finally {
       h.cleanup();

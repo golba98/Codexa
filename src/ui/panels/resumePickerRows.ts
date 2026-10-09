@@ -13,7 +13,6 @@ export type ResumePickerTab =
   | "anthropic"
   | "mistral"
   | "local"
-  | "antigravity"
   | "codexa-native"
   | "codexa-cupy";
 export type ExternalListScope = "workspace" | "all";
@@ -33,7 +32,6 @@ export const RESUME_PICKER_TABS: readonly ResumePickerTab[] = [
   "anthropic",
   "mistral",
   "local",
-  "antigravity",
 ];
 
 export function resumeTabLabel(tab: ResumePickerTab): string {
@@ -74,8 +72,6 @@ function providerLabel(providerId: string | null): string {
       return "ubume-PyTorch";
     case "codexa-cupy":
       return "CuPy";
-    case "antigravity":
-      return "Antigravity";
     case "openai":
       return "OpenAI";
     default:
@@ -84,7 +80,7 @@ function providerLabel(providerId: string | null): string {
 }
 
 function importedLabel(source: string): string {
-  return source === "claude" || source === "codex" || source === "antigravity" || source === "vibe"
+  return source === "claude" || source === "codex" || source === "vibe"
     ? externalSourceLabel(source)
     : source;
 }

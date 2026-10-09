@@ -3,7 +3,6 @@ import type { Theme } from "../../config/settings.js";
 import { formatModeLabel, formatReasoningLabel } from "../../config/settings.js";
 import type { CodexModelCapability } from "../../core/models/codexModelCapabilities.js";
 import { reconcileReasoning } from "../../core/models/reasoningControl.js";
-import { getAntigravityModelLabel } from "../../core/providerRuntime/antigravity.js";
 import { CODEXA_NATIVE_MODEL_ID } from "../../core/providerRuntime/codexaNative.js";
 import type {
   ModelContextMetadata,
@@ -44,7 +43,6 @@ const PROVIDER_DISPLAY: Record<string, string> = {
   local: "Local",
   "codexa-native": "Codexa Native",
   "codexa-cupy": "Codexa Native",
-  antigravity: "Antigravity CLI",
 };
 
 function formatContextLimit(value: number): string {
@@ -77,9 +75,6 @@ function getModelLabel(
   if (route.providerId === "anthropic") {
     return capability?.label ?? route.modelId;
   }
-  if (route.providerId === "antigravity") {
-    return getAntigravityModelLabel(route.modelId);
-  }
   if (route.providerId === "codexa-native") {
     // Older persisted routes may still contain the 900M checkpoint directory
     // name; the user-facing Codexa Native model is the canonical 1B SFT v2 ID.
@@ -101,8 +96,7 @@ export function buildActiveRuntimeDisplay({
   isLocalRuntime = false,
 }: ActiveRuntimeDisplayInput): ActiveRuntimeDisplay {
   const providerLabel = PROVIDER_DISPLAY[route.providerId] ?? route.providerId;
-  const rawReasoning =
-    route.providerId === "antigravity" ? route.reasoning : (route.reasoning ?? reasoningLevel);
+  const rawReasoning = route.reasoning ?? reasoningLevel;
   // Local runtimes own their reasoning behavior; Ubume cannot adjust it.
   // Do not present the global fallback as if it were an active Local setting.
   const supported =

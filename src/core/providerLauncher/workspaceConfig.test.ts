@@ -110,7 +110,7 @@ test("parses provider workspace config from Ubume-owned JSON", () => {
   assert.equal(config.migrationNotice, undefined);
 });
 
-test("Antigravity routes, defaults and explicit command paths survive configuration round trips", () => {
+test("saved Antigravity routes, defaults and overrides fall back after its removal", () => {
   const config = parseProviderWorkspaceConfig({
     workspaceDefaultProviderId: "antigravity",
     activeRoute: {
@@ -124,16 +124,16 @@ test("Antigravity routes, defaults and explicit command paths survive configurat
         current_model: "claude-sonnet-4.6-thinking",
         antigravity_command_path: "/custom/agy",
       },
+      openai: { current_model: "gpt-5.4" },
     },
   });
-  assert.equal(config.workspaceDefaultProviderId, "antigravity");
-  assert.equal(config.activeRoute?.providerId, "antigravity");
-  assert.equal(config.providers?.antigravity?.antigravityCommandPath, "/custom/agy");
-  assert.equal(config.migrationNotice, undefined);
-  assert.deepEqual(parseProviderWorkspaceConfig(serializeProviderWorkspaceConfig(config)), config);
+  assert.equal(config.workspaceDefaultProviderId, undefined);
+  assert.equal(config.activeRoute, undefined);
+  assert.equal("antigravity" in (config.providers ?? {}), false);
+  assert.equal(config.providers?.openai?.currentModel, "gpt-5.4");
 });
 
-test("legacy agy backend alias normalizes to Antigravity CLI", () => {
+test("legacy agy backend alias no longer routes an Antigravity model through another provider", () => {
   const config = parseProviderWorkspaceConfig({
     active_route: {
       provider_id: "openai",
@@ -141,9 +141,7 @@ test("legacy agy backend alias normalizes to Antigravity CLI", () => {
       backend_kind: "agy",
     },
   });
-  assert.equal(config.activeRoute?.providerId, "antigravity");
-  assert.equal(config.activeRoute?.backendKind, "antigravity-cli-auth");
-  assert.equal(config.migrationNotice, undefined);
+  assert.equal(config.activeRoute, undefined);
 });
 
 test("serializes and persists provider workspace defaults", () => {

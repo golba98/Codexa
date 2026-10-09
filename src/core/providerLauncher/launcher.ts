@@ -169,7 +169,7 @@ export async function launchProviderCli(
 
 /**
  * Suspends raw mode and gives the terminal to `spec` until it exits. Used for
- * provider launches and for resuming native Claude Code / Codex / agy sessions.
+ * provider launches and for resuming native Claude Code / Codex / Vibe sessions.
  */
 export async function launchCliCommand(
   displayName: string,
