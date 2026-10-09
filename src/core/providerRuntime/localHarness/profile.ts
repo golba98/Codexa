@@ -66,8 +66,9 @@ export function profilePatch(supportsVision: boolean, reasoningEffortEnabled = f
             compat:
               thinkingFormat: openai`
     : "";
-  // Hosted DeepSeek search requires a hosted API key; fetch is disabled by the
-  // upstream base profile. Interactive browser tools use a separate local adapter.
+  // Hosted DeepSeek search requires a hosted API key. The upstream base profile
+  // enables HTTP fetch, which needs the disabled web service, so it is disabled
+  // too. Interactive browser tools use a separate local adapter.
   return `- id: hmr
   disabled: true
 - id: session-telemetry-otel
@@ -79,6 +80,8 @@ export function profilePatch(supportsVision: boolean, reasoningEffortEnabled = f
 - id: web
   disabled: true
 - id: web-search-deepseek
+  disabled: true
+- id: web-fetch-http
   disabled: true
 - id: tool-web
   disabled: true

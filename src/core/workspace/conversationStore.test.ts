@@ -62,7 +62,7 @@ test("ConversationStore persists the opaque Local Harness session used by /resum
   created.metadata.localHarnessSession = {
     version: 1,
     sessionId: "session-123",
-    harnessVersion: "0.1.1-rc.2",
+    harnessVersion: "0.1.2-rc.1",
     routeFingerprint: "route-hash",
     throughMessageCount: 2,
     transcriptHash: "transcript-hash",
