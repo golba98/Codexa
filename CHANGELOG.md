@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+---
+
+## [0.1.17] — 2026-10-09 (prepared)
+
 ### Added
 
 - `/usage` shows account usage for the active provider in an overlay panel: Codex 5-hour/weekly windows and credits (via `codex app-server`), Claude Code session/weekly/model limits (via Claude Code's experimental `get_usage` control request), and Google Antigravity per-model-group quotas and G1 credits (via `agy -p /usage` and `/credits`). It never sends a prompt or uses model tokens. Mistral Vibe is reported as unsupported because Vibe exposes no usage interface. Local routes show context and token usage, with account quota marked N/A on loopback. The Anthropic API-key route shows rate limits observed on earlier responses. Press R to refresh (30 s cooldown, `UBUME_USAGE_COOLDOWN_SECONDS`) and Esc to close. Cached and stale data are labelled as such.
@@ -16,9 +20,13 @@
 - Never let a failed update check hide an already-detected update or count as "up to date." `/update check` shares the background checker's single in-flight request, and a late startup result no longer closes an overlay opened afterwards.
 - Read the npm `latest` dist-tag from the small, uncached dist-tags endpoint instead of the CDN-cached full package document, and order prerelease versions by SemVer precedence (`rc.10` after `rc.9`).
 
+### Verification
+
+- Release preparation passed 2,137 tests across 193 files (0 failures), build, TypeScript, Biome, capability audit (17/17), version consistency, CLI `--version` and package dry run. See `docs/RELEASE_0.1.17_VERIFICATION.md`.
+
 ---
 
-## [0.1.16] — 2026-10-09 — Provider Routing (prepared)
+## [0.1.16] — 2026-10-09 — Provider Routing
 
 ### Fixed
 

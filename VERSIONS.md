@@ -3,7 +3,17 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
-## v0.1.16 — 2026-10-09 (prepared)
+## v0.1.17 — 2026-10-09 (prepared)
+
+`/usage` shows account usage for Codex, Claude Code and Google Antigravity in a refreshable panel. Local routes show context and token usage, and unsupported providers are identified in the panel.
+
+Mistral selection now respects Vibe's effective model list and Default entry. Configured routing aliases and thinking levels are preserved, and headless execution discovers effective models before dispatch.
+
+Update checks continue during long sessions and retry after failures. Failed checks preserve already-detected updates, and npm version discovery uses the uncached latest dist-tag endpoint.
+
+This version is prepared locally and has not been published by this release preparation.
+
+## v0.1.16 — 2026-10-09
 
 Google uses the original Antigravity (`agy`) backend again, including native model discovery and session access. Saved Antigravity preferences and sessions retain compatibility aliases. Ambiguous legacy Google routes require an explicit provider/model selection, and conflicting legacy credentials remain archived and inactive.
 
@@ -13,7 +23,7 @@ Mistral Vibe's configured models stay separate from API-discovered custom models
 
 Local verification passed 1,986 tests, TypeScript, Biome, build, the capability audit and package/version checks. See [the verification report](docs/RELEASE_0.1.16_VERIFICATION.md).
 
-This version is prepared for review and has not been published to npm or tagged as a release.
+The public npm registry confirms that this version is published (verified 2026-10-09).
 
 ## v0.1.15 — 2026-10-09
 
