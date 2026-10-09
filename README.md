@@ -54,6 +54,7 @@ Useful commands inside Ubume:
 /providers   Choose a provider
 /permissions Configure safety
 /settings    Open settings
+/usage       Show plan usage and limits for the active provider
 /update      Check for updates
 /queue       Manage instructions queued during runs
 /transcript  Inspect commands and tool output

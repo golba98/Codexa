@@ -1,6 +1,6 @@
 {
   "name": "ubume",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Terminal UI for Ubume — TypeScript + Bun + Ink",
   "type": "module",
   "bin": {
@@ -173,7 +173,7 @@
     "src/",
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",
-    "!src/test/fixtures/**",
+    "!src/test/**",
     "npm-shrinkwrap.json"
   ]
 }
