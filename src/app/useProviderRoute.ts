@@ -32,6 +32,7 @@ import {
   isProviderRouteConfigured,
 } from "../core/providerRuntime/registry.js";
 import type {
+  ProviderModel,
   ProviderRoute,
   ProviderRouteValidationResult,
   RuntimeAvailability,
@@ -109,6 +110,21 @@ interface UseProviderRouteContext {
     beforeLaunch: () => void;
     afterLaunch: () => void;
   };
+}
+
+/**
+ * Whether a provider's saved model can be used directly when the provider is
+ * selected. Registry placeholders ("Google default", "Claude Code default") are
+ * not choices, but a "… default" entry the provider's own catalog lists is —
+ * Mistral's "Vibe default" runs whatever model Vibe itself has active.
+ */
+export function isUsableSavedModel(
+  model: string | undefined,
+  catalog: readonly ProviderModel[],
+): boolean {
+  if (!model) return false;
+  if (!model.endsWith("default")) return true;
+  return resolveCatalogModel(catalog, model) !== undefined;
 }
 
 export function useProviderRoute(context: UseProviderRouteContext) {
@@ -377,11 +393,10 @@ export function useProviderRoute(context: UseProviderRouteContext) {
         const activeRoute = providerWorkspaceConfig.activeRoute;
         const isCurrentActive = activeRoute?.providerId === providerId;
 
-        // A "real" model is one that isn't a generic placeholder label from registry.ts
-        const isRealModel =
-          provider.currentModel &&
-          !provider.currentModel.endsWith("default") &&
-          provider.currentModel !== "Google default";
+        const isRealModel = isUsableSavedModel(
+          provider.currentModel,
+          discoverProviderModels(providerId).models,
+        );
 
         const providerReasoning =
           workspaceProviderConfig?.currentReasoning ??
