@@ -1,11 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { runCommand } from "../process/commandRunner.js";
-import {
-  ANTIGRAVITY_DEFAULT_MODEL_ID,
-  discoverAgyModels,
-  resetAntigravityRouteValidationCacheForTests,
-} from "../providerRuntime/antigravity.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "../providerRuntime/local.js";
 import { resolveActiveProviderRoute } from "../providerRuntime/registry.js";
 import { buildProviderRegistry, getDefaultProviderId, isKnownProviderId } from "./registry.js";
@@ -39,10 +33,6 @@ test("provider registry includes Gemini and preserves native development-channel
       executable: "vibe",
       args: [],
     });
-    assert.deepEqual(providers.find((provider) => provider.id === "antigravity")?.launchCommand, {
-      executable: "agy",
-      args: [],
-    });
   }
 });
 
@@ -73,45 +63,16 @@ test("Mistral Vibe can be the workspace default without becoming the active chat
   assert.equal(providers.find((provider) => provider.id === "openai")?.isActiveRoute, true);
 });
 
-test("antigravity appears in the provider registry with correct defaults", async () => {
-  resetAntigravityRouteValidationCacheForTests();
-  try {
-    await discoverAgyModels({
-      executable: "agy",
-      cwd: process.cwd(),
-      platform: process.platform,
-      runCommandImpl: (() => ({
-        child: null as never,
-        result: Promise.resolve({
-          status: "completed" as const,
-          exitCode: 0,
-          signal: null,
-          stdout: "Gemini 3.5 Flash\n",
-          stderr: "",
-          startedAt: 0,
-          endedAt: 0,
-          durationMs: 0,
-          userMessage: "Command completed.",
-        }),
-        cancel: () => {},
-      })) as typeof runCommand,
-    });
-
-    const providers = buildProviderRegistry({
-      activeModel: "gpt-5.4",
-      env: { UBUME_CHANNEL: "local-dev" },
-    });
-    const antigravity = providers.find((p) => p.id === "antigravity");
-
-    assert.ok(antigravity, "antigravity provider not found");
-    assert.equal(antigravity!.displayName, "Antigravity");
-    assert.equal(antigravity!.currentModel, ANTIGRAVITY_DEFAULT_MODEL_ID);
-    assert.deepEqual(antigravity!.launchCommand, { executable: "agy", args: [] });
-    assert.equal(antigravity!.backendType, "antigravity-cli-auth");
-    assert.equal(antigravity!.enabled, true);
-  } finally {
-    resetAntigravityRouteValidationCacheForTests();
-  }
+test("Antigravity is no longer a known or listed provider", () => {
+  assert.equal(isKnownProviderId("antigravity"), false);
+  const providers = buildProviderRegistry({
+    activeModel: "gpt-5.4",
+    env: { UBUME_CHANNEL: "local-dev" },
+  });
+  assert.equal(
+    providers.some((provider) => (provider.id as string) === "antigravity"),
+    false,
+  );
 });
 
 test("workspace config can set the default provider", () => {

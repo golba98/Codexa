@@ -8,8 +8,7 @@ export type ProviderId =
   | "mistral"
   | "local"
   | "codexa-native"
-  | "codexa-cupy"
-  | "antigravity";
+  | "codexa-cupy";
 
 export type LocalBackendId = "lm-studio" | "unsloth";
 
@@ -18,7 +17,6 @@ export type ProviderBackendType =
   | "gemini-cli-auth"
   | "claude-code-auth"
   | "mistral-vibe-cli-auth"
-  | "antigravity-cli-auth"
   | "openai-api-key"
   | "gemini-api-key"
   | "anthropic-api-key"
@@ -96,7 +94,6 @@ export interface ProviderWorkspaceOverride {
   claudeCommandPath?: string;
   geminiCommandPath?: string;
   codexCommandPath?: string;
-  antigravityCommandPath?: string;
 }
 
 export interface ProviderModelWorkspaceOverride {

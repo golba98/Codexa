@@ -267,7 +267,7 @@ test("provider picker stays readable in a cramped terminal layout", async () => 
     assert.match(output, /Anthrop/);
     assert.match(output, /Google/);
     assert.match(output, /Local/);
-    assert.match(output, /Antigra/);
+    assert.match(output, /Mistral/);
     assert.doesNotMatch(output, /Ready|Active|Off|Config/);
     assert.doesNotMatch(output, /undefined/);
   } finally {
@@ -772,7 +772,7 @@ test("ProviderPicker with 5 providers shows all providers when rows are sufficie
     buildMockProvider({ id: "anthropic", displayName: "ProviderTwo" }),
     buildMockProvider({ id: "google", displayName: "ProviderThree" }),
     buildMockProvider({ id: "local", displayName: "ProviderFour" }),
-    buildMockProvider({ id: "antigravity", displayName: "ProviderFive" }),
+    buildMockProvider({ id: "mistral", displayName: "ProviderFive" }),
   ];
   const harness = createInkHarness(
     <ThemeProvider theme="purple">
@@ -804,7 +804,7 @@ test("ProviderPicker does not reserve excessive empty vertical rows", async () =
     buildMockProvider({ id: "anthropic", displayName: "ProviderTwo" }),
     buildMockProvider({ id: "google", displayName: "ProviderThree" }),
     buildMockProvider({ id: "local", displayName: "ProviderFour" }),
-    buildMockProvider({ id: "antigravity", displayName: "ProviderFive" }),
+    buildMockProvider({ id: "mistral", displayName: "ProviderFive" }),
   ];
   const harness = createInkHarness(
     <ThemeProvider theme="purple">
@@ -871,9 +871,9 @@ test("ProviderPicker at 100x21 uses compact mode and shows all selectable provid
 
     const hasOpenAI = frame.includes("OpenAI");
     const hasAnthropic = frame.includes("Anthropic");
-    const hasAntigravity = frame.includes("Antigravity");
     const hasLocal = frame.includes("Local");
-    assert.equal(hasOpenAI && hasAnthropic && hasAntigravity && hasLocal, true);
+    assert.equal(hasOpenAI && hasAnthropic && hasLocal, true);
+    assert.doesNotMatch(frame, /Antigravity/);
     assert.match(frame, /Google/);
   } finally {
     await harness.cleanup();
@@ -900,7 +900,7 @@ test("ProviderPicker keeps each selected provider visible at normal size", async
   }
 });
 
-test("ProviderPicker cursor remains visible on Codexa Native, Local, and Antigravity", async () => {
+test("ProviderPicker cursor remains visible on Codexa Native and Local", async () => {
   const providers = buildProviderRegistry({
     activeModel: "gpt-5.4-mini",
     workspaceConfig: { workspaceDefaultProviderId: "openai" },
@@ -920,14 +920,6 @@ test("ProviderPicker cursor remains visible on Codexa Native, Local, and Antigra
     ),
   });
   assertSelectedProviderLine(localFrame, "Local");
-
-  const antigravityFrame = await renderProviderPickerAtIndex({
-    providers,
-    selectedIndex: groupCodexaNativeProviders(providers).findIndex(
-      (provider) => provider.id === "antigravity",
-    ),
-  });
-  assertSelectedProviderLine(antigravityFrame, "Antigravity");
 });
 
 test("Codexa Native grouping keeps route identities while improving model labels", () => {
@@ -990,7 +982,7 @@ test("Codexa Native opens a responsive child page and selects exactly one backen
     assert.match(childFrame, /Codexa Native Models/);
     assert.match(childFrame, /Codexa PyTorch/);
     assert.match(childFrame, /Codexa CuPy/);
-    assert.doesNotMatch(childFrame, /OpenAI|Anthropic|Mistral Vibe|Local|Antigravity/);
+    assert.doesNotMatch(childFrame, /OpenAI|Anthropic|Mistral Vibe|Local/);
     assert.deepEqual(actions, []);
 
     harness.stdin.write("j");
@@ -1123,7 +1115,7 @@ test("tiny ProviderPicker keeps selection visible and reports its position", asy
     buildMockProvider({ id: "anthropic", displayName: "Anthropic" }),
     buildMockProvider({ id: "google", displayName: "Google" }),
     buildMockProvider({ id: "local", displayName: "Local" }),
-    buildMockProvider({ id: "antigravity", displayName: "Antigravity" }),
+    buildMockProvider({ id: "mistral", displayName: "Mistral" }),
   ];
 
   const frame = await renderProviderPickerAtIndex({
@@ -1144,7 +1136,7 @@ test("sliced provider order is contiguous and does not skip Anthropic", async ()
     buildMockProvider({ id: "anthropic", displayName: "Anthropic" }),
     buildMockProvider({ id: "google", displayName: "Google" }),
     buildMockProvider({ id: "local", displayName: "ProviderFour" }),
-    buildMockProvider({ id: "antigravity", displayName: "ProviderFive" }),
+    buildMockProvider({ id: "mistral", displayName: "ProviderFive" }),
     buildMockProvider({ id: "p6" as any, displayName: "ProviderSix" }),
     buildMockProvider({ id: "p7" as any, displayName: "ProviderSeven" }),
     buildMockProvider({ id: "p8" as any, displayName: "ProviderEight" }),
@@ -1182,7 +1174,7 @@ test("provider picker omits extra current-provider metadata outside the visible 
     buildMockProvider({ id: "anthropic", displayName: "ProviderTwo" }),
     buildMockProvider({ id: "google", displayName: "ProviderThree" }),
     buildMockProvider({ id: "local", displayName: "ProviderFour" }),
-    buildMockProvider({ id: "antigravity", displayName: "ProviderFive" }),
+    buildMockProvider({ id: "mistral", displayName: "ProviderFive" }),
     buildMockProvider({ id: "p6" as any, displayName: "ProviderSix" }),
     buildMockProvider({ id: "p7" as any, displayName: "ProviderSeven" }),
     buildMockProvider({ id: "p8" as any, displayName: "ProviderEight" }),

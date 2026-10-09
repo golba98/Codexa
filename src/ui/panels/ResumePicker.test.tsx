@@ -217,7 +217,8 @@ test("ResumePicker merges native histories under providers and changes workspace
   });
   try {
     await sleep();
-    assert.match(picker.lastFrame(), /All.*OpenAI.*Anthropic.*Mistral.*Local.*Antigravity/);
+    assert.match(picker.lastFrame(), /All.*OpenAI.*Anthropic.*Mistral.*Local/);
+    assert.doesNotMatch(picker.lastFrame(), /Antigravity/);
     picker.stdin.write("3");
     await sleep();
     assert.deepEqual(calls, ["workspace"]);
@@ -253,7 +254,7 @@ test("ResumePicker shows loading and isolated discovery errors", async () => {
   try {
     await sleep();
     assert.match(picker.lastFrame(), /Loading saved sessions/);
-    finish({ sessions: [], errors: ["antigravity: store locked"] });
+    finish({ sessions: [], errors: ["vibe: store locked"] });
     await sleep();
     assert.match(picker.lastFrame(), /store locked/);
   } finally {
@@ -337,7 +338,7 @@ test("Local filters separate backends with identical model names and cycle saved
 });
 
 test("narrow provider bars always contain the active section", () => {
-  const tabs = ["all", "openai", "anthropic", "mistral", "local", "antigravity"] as const;
+  const tabs = ["all", "openai", "anthropic", "mistral", "local"] as const;
   for (const tab of tabs)
     for (const width of [14, 25, 45, 80])
       assert.ok(visibleResumeTabs(tabs, tab, width).includes(tab));

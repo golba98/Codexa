@@ -25,11 +25,6 @@ import type {
   NativeSessionReference,
 } from "../workspace/conversationStore.js";
 import { anthropicRuntime } from "./anthropic.js";
-import {
-  ANTIGRAVITY_DEFAULT_MODEL_ID,
-  antigravityRuntime,
-  migrateAntigravityLegacyModelId,
-} from "./antigravity.js";
 import { CODEXA_NATIVE_MODEL_ID, codexaCupyRuntime, codexaNativeRuntime } from "./codexaNative.js";
 import { geminiRuntime } from "./gemini.js";
 import { localRuntime } from "./local.js";
@@ -121,7 +116,6 @@ const PROVIDER_RUNTIMES: Record<ProviderId, ProviderRuntime> = {
   local: localRuntime,
   "codexa-native": codexaNativeRuntime,
   "codexa-cupy": codexaCupyRuntime,
-  antigravity: antigravityRuntime,
 };
 
 export function getProviderRuntime(providerId: ProviderId): ProviderRuntime {
@@ -209,7 +203,6 @@ export async function validateProviderRouteActivation(options: {
   workspaceRoot: string;
   geminiCommandPath?: string | null;
   claudeCommandPath?: string | null;
-  antigravityCommandPath?: string | null;
   localConfig?: ProviderWorkspaceOverride | null;
 }): Promise<ProviderRouteValidationResult> {
   const runtime = getProviderRuntime(options.route.providerId);
@@ -263,22 +256,6 @@ export function resolveActiveProviderRoute(options: {
 
     if (route.providerId === "google") {
       route.modelId = normalizeGeminiModelId(route.modelId);
-    } else if (route.providerId === "antigravity") {
-      const discovery = discoverProviderModels("antigravity");
-      const exact = discovery.models.find((item) => item.modelId === route.modelId);
-      if (!exact) {
-        const migrated = migrateAntigravityLegacyModelId(route.modelId);
-        const match = discovery.models.find(
-          (item) =>
-            item.modelId === migrated.modelId ||
-            (migrated.reasoning && item.modelId === `${migrated.modelId}-${migrated.reasoning}`) ||
-            item.modelId === `${route.modelId}-${route.reasoning}`,
-        );
-        if (match) {
-          route.modelId = match.modelId;
-          route.reasoning = match.defaultReasoningLevel ?? undefined;
-        }
-      }
     }
 
     return route;
@@ -313,9 +290,6 @@ export function getDefaultRouteModel(providerId: ProviderId, currentOpenAiModel:
   if (providerId === "mistral") {
     const discovery = discoverProviderModels("mistral");
     return discovery.models[0]?.modelId ?? "Vibe default";
-  }
-  if (providerId === "antigravity") {
-    return discoverProviderModels("antigravity").models[0]?.modelId ?? ANTIGRAVITY_DEFAULT_MODEL_ID;
   }
   return currentOpenAiModel;
 }
@@ -433,7 +407,6 @@ export function createRoutedProvider(
               projectInstructions: options.projectInstructions,
               promptPolicy: options.promptPolicy,
               claudeCommandPath: override?.claudeCommandPath,
-              antigravityCommandPath: override?.antigravityCommandPath,
               nativeSessions: nativeSessions?.(),
               localConfig: route.providerId === "local" ? override : undefined,
               runIntent: options.runIntent,
@@ -488,7 +461,6 @@ export function formatRuntimeProviderLabel(providerId: ProviderId): string {
   if (providerId === "google") return "Google";
   if (providerId === "anthropic") return "Anthropic";
   if (providerId === "mistral") return "Mistral Vibe CLI";
-  if (providerId === "antigravity") return "Antigravity";
   return "OpenAI";
 }
 
@@ -515,16 +487,6 @@ export function getProviderSetupPlan(providerId: ProviderId, windows: boolean): 
         : {
             installCommand: "curl -LsSf https://mistral.ai/vibe/install.sh | bash",
             setupCommand: "vibe --setup",
-          };
-    case "antigravity":
-      return windows
-        ? {
-            installCommand: "irm https://antigravity.google/cli/install.ps1 | iex",
-            setupCommand: "agy",
-          }
-        : {
-            installCommand: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
-            setupCommand: "agy",
           };
     default:
       return { installCommand: null, setupCommand: "" };

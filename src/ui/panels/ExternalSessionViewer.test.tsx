@@ -162,7 +162,7 @@ test("ExternalSessionViewer searches entries and routes o, c and Esc", async () 
 
 test("ExternalSessionViewer shows extraction notices and load failures", async () => {
   const withNotice = mountViewer({
-    summary: { ...summary, source: "antigravity" },
+    summary: { ...summary, source: "codex" },
     loadTranscript: async () => ({ ...transcript, notice: "Best-effort extraction." }),
   });
   try {

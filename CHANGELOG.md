@@ -2,7 +2,16 @@
 
 ## Unreleased
 
-No changes yet.
+### Removed
+
+- The Antigravity (`agy`) provider:
+  - its runtime and model discovery;
+  - its `/resume` section, native session browsing, and `agy --conversation` handoff;
+  - the `antigravity` source for `--import-session`;
+  - its diagnostics entry and `antigravity_command_path` config.
+- What happens to existing data:
+  - Saved Antigravity routes and workspace defaults, including the legacy `agy` backend alias, fall back to the default provider.
+  - Saved Antigravity chats open as "provider unavailable" and ask for an explicit provider and model before sending.
 
 ---
 

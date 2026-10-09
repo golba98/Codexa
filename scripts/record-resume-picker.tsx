@@ -23,7 +23,6 @@ const owned = [
 ].map(([providerId, modelId, localBackend, title], index) => ({ version: 1 as const, id: `chat_fixture-${index}`, providerId: providerId!, modelId: modelId!, localBackend: localBackend as "lm-studio" | "unsloth" | undefined, title: title!, backendKind: null, workspaceRoot: "/projects/demo", createdAt: "2026-10-01T08:00:00Z", updatedAt: "2026-10-01T09:00:00Z", messageCount: 8 }));
 const sessions = mergeSessionSummaries(owned.map((entry) => conversationSummary(entry, entry.workspaceRoot, "fixture")), [
   { source: "vibe", id: "native-vibe", title: "Refactor the renderer", model: "mistral-fixture", cwd: "/projects/demo", updatedAt: "2026-10-01T09:00:00Z" },
-  { source: "antigravity", id: "native-agy", title: "Explore inventory interactions", cwd: "/projects/demo", updatedAt: "2026-10-01T09:00:00Z" },
 ]);
 const app = render(<ThemeProvider theme="purple"><PanelLayoutContext.Provider value={{ mode: "compact", availableRows: 16, availableCols: 96 }}><ResumePicker conversations={owned} loadSessions={async () => ({ sessions, errors: [] })} onSelect={() => undefined} onCancel={() => undefined} /></PanelLayoutContext.Provider></ThemeProvider>, { stdin: input as never, stdout: output as never, stderr: output as never, patchConsole: false });
 const pause = () => new Promise((resolve) => setTimeout(resolve, 120));
