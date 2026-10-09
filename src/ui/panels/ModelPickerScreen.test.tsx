@@ -108,8 +108,11 @@ async function renderModelPicker(
 }
 
 test("model picker loading state names the active provider", async () => {
-  const output = await renderModelPicker({ activeProviderLabel: "Antigravity", isLoading: true });
-  assert.match(output, /Discovering models from Antigravity\.\.\./);
+  const output = await renderModelPicker({
+    activeProviderLabel: "Mistral Vibe CLI",
+    isLoading: true,
+  });
+  assert.match(output, /Discovering models from Mistral Vibe CLI\.\.\./);
 });
 
 test("model picker loading state keeps Codex runtime copy for OpenAI", async () => {
@@ -118,8 +121,8 @@ test("model picker loading state keeps Codex runtime copy for OpenAI", async () 
 });
 
 test("model picker shows emptyMessage when not loading", async () => {
-  const output = await renderModelPicker({ emptyMessage: "No Antigravity models available." });
-  assert.match(output, /No Antigravity models available\./);
+  const output = await renderModelPicker({ emptyMessage: "No Mistral models available." });
+  assert.match(output, /No Mistral models available\./);
   assert.doesNotMatch(output, /Discovering models/);
 });
 

@@ -76,7 +76,6 @@ export function catalogContextKey(provider: ProviderId, context: CatalogContext)
           process.env.GEMINI_API_KEY,
           process.env.GOOGLE_API_KEY,
           process.env.ANTHROPIC_API_KEY,
-          process.env.AGY_EXECUTABLE,
           process.env.CODEX_HOME,
           process.env.UBUME_LOCAL_BASE_URL,
           process.env.OPENAI_BASE_URL,

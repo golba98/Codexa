@@ -60,7 +60,7 @@ function wrapEntryText(text: string, width: number): string[] {
     .flatMap((line) => (line ? wrapPlainText(line, width) : [""]));
 }
 
-/** Read-only transcript of a native Claude Code / Codex / Antigravity session. */
+/** Read-only transcript of a native Claude Code / Codex / Mistral Vibe session. */
 export function SessionTranscriptViewer({
   summary,
   label,

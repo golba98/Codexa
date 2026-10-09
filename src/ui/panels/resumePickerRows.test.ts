@@ -100,6 +100,6 @@ test("matchesQuery is case-insensitive across every field", () => {
 
 test("nextResumeTab wraps in both directions", () => {
   assert.equal(nextResumeTab("all", 1), "openai");
-  assert.equal(nextResumeTab("antigravity", 1), "all");
-  assert.equal(nextResumeTab("all", -1), "antigravity");
+  assert.equal(nextResumeTab("local", 1), "all");
+  assert.equal(nextResumeTab("all", -1), "local");
 });

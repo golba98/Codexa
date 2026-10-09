@@ -166,17 +166,16 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
     override.codexCommandPath = codexCommandPath.trim();
   }
 
-  const antigravityCommandPath = value.antigravityCommandPath ?? value.antigravity_command_path;
-  if (typeof antigravityCommandPath === "string" && antigravityCommandPath.trim())
-    override.antigravityCommandPath = antigravityCommandPath.trim();
   return override;
 }
 
 function parseActiveRoute(value: unknown): ProviderActiveRoute | undefined {
   if (!isRecord(value)) return undefined;
-  const rawProviderId = value.providerId ?? value.provider_id;
-  const providerId =
-    (value.backendKind ?? value.backend_kind) === "agy" ? "antigravity" : rawProviderId;
+  // Antigravity was removed; its saved routes (including the legacy "agy" alias
+  // stored under another provider ID) fall back to the default route.
+  const backendKind = value.backendKind ?? value.backend_kind;
+  if (backendKind === "agy" || backendKind === "antigravity-cli-auth") return undefined;
+  const providerId = value.providerId ?? value.provider_id;
   const modelId = value.modelId ?? value.model_id;
   const reasoning = value.reasoning;
   const modelSelection = value.modelSelection ?? value.model_selection;
@@ -336,9 +335,6 @@ export function serializeProviderWorkspaceConfig(
           : {}),
         ...(override.codexCommandPath !== undefined
           ? { codex_command_path: override.codexCommandPath }
-          : {}),
-        ...(override.antigravityCommandPath !== undefined
-          ? { antigravity_command_path: override.antigravityCommandPath }
           : {}),
       },
     ]),

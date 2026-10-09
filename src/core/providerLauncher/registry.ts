@@ -1,5 +1,4 @@
 import { DEFAULT_MODEL } from "../../config/settings.js";
-import { ANTIGRAVITY_DEFAULT_MODEL_ID } from "../providerRuntime/antigravity.js";
 import { resolveModelCapabilityProfileCached } from "../providerRuntime/capabilityProfile.js";
 import {
   CODEXA_CUPY_MODEL_ID,
@@ -39,7 +38,6 @@ const ALL_PROVIDER_ORDER: readonly ProviderId[] = [
   "codexa-native",
   "codexa-cupy",
   "local",
-  "antigravity",
 ];
 const KNOWN_PROVIDER_IDS: readonly ProviderId[] = [
   "openai",
@@ -49,7 +47,6 @@ const KNOWN_PROVIDER_IDS: readonly ProviderId[] = [
   "local",
   "codexa-native",
   "codexa-cupy",
-  "antigravity",
 ];
 
 export function getProviderOrder(env: NodeJS.ProcessEnv = process.env): readonly ProviderId[] {
@@ -146,17 +143,6 @@ const DEFAULT_PROVIDERS: Record<ProviderId, ProviderDefault> = {
     routeMode: "in-ubume",
     enabled: true,
     launchCommand: { executable: "vibe", args: [] },
-    isActiveRoute: false,
-    routeUnavailableReason: null,
-  },
-  antigravity: {
-    id: "antigravity",
-    displayName: "Antigravity",
-    currentModel: () => ANTIGRAVITY_DEFAULT_MODEL_ID,
-    backendType: "antigravity-cli-auth",
-    routeMode: "in-ubume",
-    enabled: true,
-    launchCommand: { executable: "agy", args: [] },
     isActiveRoute: false,
     routeUnavailableReason: null,
   },

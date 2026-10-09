@@ -6,6 +6,61 @@ No changes yet.
 
 ---
 
+## [0.1.14] — 2026-10-09 — Model Catalog and Antigravity Removal (prepared)
+
+### Added
+
+- Reasoning controls follow what each model supports: advertised levels, a bounded thinking budget with its own picker, and auto or off modes. A model whose reasoning is fixed or unknown says so instead of offering a setting that does nothing. The choice is saved per model, and unsupported values are rejected before a run starts. (#290)
+- Native Gemini is back in provider config and saved sessions. Models are discovered through the Gemini API or the CLI's OAuth login, and thinking controls are supported. (#290)
+
+### Changed
+
+- Every provider's model list comes from one shared catalog. The catalog:
+  - caches and refreshes the list, with separate entries per account and endpoint;
+  - keeps showing the last good list (marked unverified) when a refresh fails;
+  - keeps exact model IDs separate from display names. (#290)
+- Mistral models come from the authenticated Mistral API instead of Vibe config aliases. (#290)
+- If a saved model disappears, Ubume asks you to pick a model instead of silently switching to another one. Legacy Vibe aliases that collide with a native model ID also have to be picked again. (#290)
+- Cloud runtimes no longer show context usage in the footer. (#290)
+
+### Removed
+
+- The Antigravity (`agy`) provider:
+  - its runtime and model discovery;
+  - its `/resume` section, native session browsing, and `agy --conversation` handoff;
+  - the `antigravity` source for `--import-session`;
+  - its diagnostics entry and `antigravity_command_path` config.
+- What happens to existing data:
+  - Saved Antigravity routes and workspace defaults, including the legacy `agy` backend alias, fall back to the default provider.
+  - Saved Antigravity chats open as "provider unavailable" and ask for an explicit provider and model before sending.
+
+(#291, re-landed in this release)
+
+### Security
+
+- Ubume still pins DeepSeek Harness `0.1.1-rc.2`. GHSA-8m2g-8cgm-3vcp (CVE-2026-82533, critical) covers an authentication bypass in that version's local HTTP control-plane API.
+  - Ubume runs the harness over stdio and never starts that HTTP server. In a real harness run, the harness process opened no listening socket, so Ubume isn't exposed.
+  - `npm audit` doesn't flag the advisory because the affected range is a prerelease range; Dependabot does.
+  - Upgrading the harness is tracked separately.
+
+### Internal
+
+- #291 was merged into #290's branch after #290 had already landed, so it never reached `main`. This release carries it as its first commit.
+- `docs/RELEASING.md` explains the `ENOENT … src/config/package.json` error from running `npm publish` in `src/config`. (#290)
+
+### Verification
+
+- `npm run prepublishOnly` passed: 1,920 tests, TypeScript, and Biome. The full suite also passed under a real PTY. npm audit: zero vulnerabilities.
+- The release branch's tree is identical to the reviewed #290 + #291 result.
+- The packed tarball (225 files, 587 kB) was installed in an isolated prefix, and these checks passed:
+  - `--version` reported 0.1.14;
+  - `doctor --json` returned `ok: true`;
+  - packaged Harness inference ran against a local mock endpoint;
+  - in a real PTY, Ctrl+O opened the model picker, Ctrl+T opened the transcript, and `/provider` listed OpenAI, Anthropic, Google, Mistral, and Local with no Antigravity. Ctrl+Q exited cleanly.
+- npm publication is pending; the version is prepared for review.
+
+---
+
 ## [0.1.13] — 2026-10-08 — Ctrl+O Model Picker
 
 ### Changed

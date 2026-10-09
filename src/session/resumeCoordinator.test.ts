@@ -56,9 +56,10 @@ test("saved routes keep model, reasoning and backend and require explicit choice
   );
   assert.equal(assessSavedRoute({ ...saved, modelId: "removed" }, discovery).status, "unavailable");
   assert.equal(assessSavedRoute({ ...saved, providerId: "unknown" }, null).status, "unavailable");
+  // Antigravity was removed: its saved chats ask for an explicit provider instead of running.
   assert.equal(
     assessSavedRoute({ ...saved, providerId: "antigravity", localBackend: undefined }, null).status,
-    "ready",
+    "unavailable",
   );
 });
 

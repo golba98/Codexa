@@ -139,12 +139,12 @@ test("provider identities isolate out-of-order inventories", async () => {
     context,
   );
   await catalog.refresh(
-    runtime(async () => ({ ...ready(["agy"]), providerId: "antigravity" }), "antigravity"),
+    runtime(async () => ({ ...ready(["claude"]), providerId: "anthropic" }), "anthropic"),
     context,
   );
   finish(ready(["mistral"]));
   await first;
-  expect(catalog.get("antigravity")?.models[0]?.modelId).toBe("agy");
+  expect(catalog.get("anthropic")?.models[0]?.modelId).toBe("claude");
   expect(catalog.get("mistral")?.models[0]?.modelId).toBe("mistral");
 });
 

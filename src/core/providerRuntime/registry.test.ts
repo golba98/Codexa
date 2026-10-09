@@ -6,11 +6,6 @@ import { join } from "node:path";
 import test from "node:test";
 import type { CommandResult, runCommand } from "../process/commandRunner.js";
 import { resetAnthropicRouteValidationCacheForTests, validateAnthropicRoute } from "./anthropic.js";
-import {
-  ANTIGRAVITY_DEFAULT_MODEL_ID,
-  discoverAgyModels,
-  resetAntigravityRouteValidationCacheForTests,
-} from "./antigravity.js";
 import { resetGeminiRouteValidationCacheForTests } from "./gemini.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "./local.js";
 import {
@@ -23,7 +18,7 @@ import {
 } from "./registry.js";
 
 test("every supported external provider exposes the shared planning run path", () => {
-  for (const providerId of ["openai", "anthropic", "mistral", "antigravity", "local"] as const) {
+  for (const providerId of ["openai", "anthropic", "mistral", "local"] as const) {
     const runtime = getProviderRuntime(providerId);
     assert.equal(runtime.routeAvailable, true, `${providerId} must remain routable for plan mode`);
     assert.equal(typeof runtime.run, "function", `${providerId} must accept shared plan requests`);
@@ -226,40 +221,6 @@ test("CLI model override preserves provider from providers.json activeRoute", ()
   assert.equal(route.reasoning, "low", "Reasoning from providers.json must be preserved");
 });
 
-test("antigravity runtime has routeAvailable and correct backendKind", async () => {
-  resetAntigravityRouteValidationCacheForTests();
-  await discoverAgyModels({
-    executable: "agy",
-    cwd: process.cwd(),
-    platform: process.platform,
-    runCommandImpl: (() => ({
-      child: null as never,
-      result: Promise.resolve({
-        status: "completed" as const,
-        exitCode: 0,
-        signal: null,
-        stdout:
-          "Gemini 3.5 Flash\nGemini 3.1 Pro\nClaude 3.7 Sonnet\nClaude 3.5 Sonnet\nGPT-OSS 120B\n",
-        stderr: "",
-        startedAt: 0,
-        endedAt: 0,
-        durationMs: 0,
-        userMessage: "Command completed.",
-      }),
-      cancel: () => {},
-    })) as typeof runCommand,
-  });
-  const runtime = getProviderRuntime("antigravity");
-  const discovery = discoverProviderModels("antigravity");
-
-  assert.equal(runtime.routeAvailable, true);
-  assert.equal(runtime.backendKind, "antigravity-cli-auth");
-  assert.equal(discovery.status, "ready");
-  assert.equal(discovery.models.length, 5);
-  assert.equal(discovery.providerId, "antigravity");
-  resetAntigravityRouteValidationCacheForTests();
-});
-
 test("Mistral Vibe runtime is routable in Ubume and exposes the configured model", () => {
   const runtime = getProviderRuntime("mistral");
   const discovery = discoverProviderModels("mistral");
@@ -274,58 +235,6 @@ test("Mistral Vibe runtime is routable in Ubume and exposes the configured model
   assert.equal(discovery.providerId, "mistral");
   assert.equal(discovery.backendKind, "mistral-vibe-cli-auth");
   assert.ok(discovery.models[0]?.modelId);
-});
-
-test("getDefaultRouteModel prefers discovered Antigravity models and otherwise uses the default", () => {
-  const model = getDefaultRouteModel("antigravity", "gpt-5.4");
-  const discovered = discoverProviderModels("antigravity").models[0]?.modelId;
-
-  assert.equal(model, discovered ?? ANTIGRAVITY_DEFAULT_MODEL_ID);
-});
-
-test("active route resolution preserves routable antigravity routes with reasoning: does not substitute an undiscovered model", () => {
-  const route = resolveActiveProviderRoute({
-    workspaceConfigActiveRoute: {
-      providerId: "antigravity",
-      modelId: "unavailable-future-model",
-      backendKind: "antigravity-cli-auth",
-      reasoning: "high",
-    },
-    currentModel: "gpt-5.4",
-    currentReasoning: "medium",
-  });
-  assert.equal(route.modelId, "unavailable-future-model");
-  assert.equal(route.reasoning, "high");
-});
-
-test("active route resolution migrates legacy compound antigravity model IDs: does not substitute an undiscovered model", () => {
-  const route = resolveActiveProviderRoute({
-    workspaceConfigActiveRoute: {
-      providerId: "antigravity",
-      modelId: "unavailable-future-model",
-      backendKind: "antigravity-cli-auth",
-      reasoning: "high",
-    },
-    currentModel: "gpt-5.4",
-    currentReasoning: "medium",
-  });
-  assert.equal(route.modelId, "unavailable-future-model");
-  assert.equal(route.reasoning, "high");
-});
-
-test("active route resolution migrates legacy gemini-3.1-pro-low to family and reasoning: does not substitute an undiscovered model", () => {
-  const route = resolveActiveProviderRoute({
-    workspaceConfigActiveRoute: {
-      providerId: "antigravity",
-      modelId: "unavailable-future-model",
-      backendKind: "antigravity-cli-auth",
-      reasoning: "high",
-    },
-    currentModel: "gpt-5.4",
-    currentReasoning: "medium",
-  });
-  assert.equal(route.modelId, "unavailable-future-model");
-  assert.equal(route.reasoning, "high");
 });
 
 // ─── Authentication and setup gates ──────────────────────────────────────────

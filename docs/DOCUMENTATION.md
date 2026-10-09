@@ -17,7 +17,7 @@ flowchart LR
   App --> Config[src/config]
   App --> Core[src/core]
   Headless --> Core
-  Core --> CLIs[Codex / Claude / Vibe / Antigravity]
+  Core --> CLIs[Codex / Claude / Vibe]
   Core --> Local[OpenAI-compatible local server]
   Core --> Workspace[Workspace files and instructions]
 ```

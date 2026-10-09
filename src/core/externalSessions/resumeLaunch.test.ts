@@ -38,12 +38,12 @@ test("buildExternalResumeLaunch resumes each CLI by session id in the session's 
       cwd: "/work",
     },
   });
-  assert.deepEqual(await buildExternalResumeLaunch(summary("antigravity", "/work"), options), {
+  assert.deepEqual(await buildExternalResumeLaunch(summary("vibe", "/work"), options), {
     ok: true,
     launch: {
-      displayName: "Antigravity",
-      executable: "/bin/antigravity-cli",
-      args: ["--conversation", "abc-123"],
+      displayName: "Mistral Vibe",
+      executable: "/bin/vibe-cli",
+      args: ["--resume", "abc-123"],
       cwd: "/work",
     },
   });
@@ -53,7 +53,7 @@ test("buildExternalResumeLaunch refuses when the session folder is gone or unkno
   const gone = await buildExternalResumeLaunch(summary("codex", "/gone"), options);
   assert.equal(gone.ok, false);
   assert.match(gone.ok ? "" : gone.message, /no longer exists: \/gone/);
-  for (const source of ["claude", "codex", "antigravity", "vibe"] as const) {
+  for (const source of ["claude", "codex", "vibe"] as const) {
     const unknown = await buildExternalResumeLaunch(summary(source, null), options);
     assert.equal(unknown.ok, false);
     assert.match(unknown.ok ? "" : unknown.message, /original folder/);

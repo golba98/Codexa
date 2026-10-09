@@ -100,7 +100,7 @@ export function parseLaunchArgs(argv: readonly string[]): LaunchArgsParseResult 
         )
           return {
             ok: false,
-            error: "Use --import-session source:session-id (claude, codex, vibe, antigravity).",
+            error: "Use --import-session source:session-id (claude, codex, vibe).",
           };
         importSession = { source, sessionId };
       }
