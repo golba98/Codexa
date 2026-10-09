@@ -12,9 +12,9 @@ import {
   resolveModelContextLengthCached,
 } from "../providerRuntime/contextMetadata.js";
 import { setLocalProviderConfig } from "../providerRuntime/local.js";
-import { discoverMistralVibeModels } from "../providerRuntime/mistralVibe.js";
 import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 import {
+  discoverProviderModels,
   getDefaultRouteModel,
   getProviderRouteSetupMessage,
   getProviderRuntime,
@@ -31,11 +31,10 @@ import type {
   ProviderWorkspaceOverride,
 } from "./types.js";
 
-// Google/Gemini remains a recognized legacy config value so existing workspace
-// files can be migrated, but it is no longer a selectable Ubume provider.
 const ALL_PROVIDER_ORDER: readonly ProviderId[] = [
   "openai",
   "anthropic",
+  "google",
   "mistral",
   "codexa-native",
   "codexa-cupy",
@@ -234,9 +233,7 @@ export function getDefaultProviderId(
 ): ProviderId {
   const providerId = config?.workspaceDefaultProviderId;
   const isAvailable =
-    isProviderId(providerId) &&
-    providerId !== "google" &&
-    (providerId !== "codexa-native" || isLocalDevChannel(env));
+    isProviderId(providerId) && (providerId !== "codexa-native" || isLocalDevChannel(env));
   return isAvailable ? providerId : DEFAULT_PROVIDER_ID;
 }
 
@@ -245,9 +242,7 @@ function getActiveRouteProviderId(
   env: NodeJS.ProcessEnv = process.env,
 ): ProviderId {
   const providerId = config?.activeRoute?.providerId;
-  return isProviderId(providerId) &&
-    providerId !== "google" &&
-    isProviderRoutableInUbume(providerId, env)
+  return isProviderId(providerId) && isProviderRoutableInUbume(providerId, env)
     ? providerId
     : DEFAULT_PROVIDER_ID;
 }
@@ -272,13 +267,11 @@ export function buildProviderRegistry(options: {
     const defaults = DEFAULT_PROVIDERS[id];
     const runtime = getProviderRuntime(id);
     const discovery =
-      id === "mistral"
-        ? discoverMistralVibeModels(options.workspaceRoot ?? process.cwd())
-        : id === "codexa-native"
-          ? discoverCodexaNativeModels(undefined, env)
-          : id === "codexa-cupy"
-            ? discoverCodexaCupyModels(undefined, env)
-            : runtime.discoverModels();
+      id === "codexa-native"
+        ? discoverCodexaNativeModels(undefined, env)
+        : id === "codexa-cupy"
+          ? discoverCodexaCupyModels(undefined, env)
+          : discoverProviderModels(id);
 
     const activeRoute = options.workspaceConfig?.activeRoute;
     const isThisActive = activeRoute?.providerId === id;
@@ -316,10 +309,6 @@ export function buildProviderRegistry(options: {
       if (selectedModel) {
         currentModelLabel = selectedModel;
       }
-    }
-
-    if (id === "mistral") {
-      currentModelLabel = discovery.models[0]?.modelId ?? "Vibe default";
     }
 
     const rawMetadataForModel = discovery.models.find(

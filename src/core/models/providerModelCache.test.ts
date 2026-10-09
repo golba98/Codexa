@@ -119,12 +119,13 @@ test("entries with malformed models load as null", () => {
   }
 });
 
-test("empty model lists are not persisted", () => {
+test("verified empty model inventories replace withdrawn cached models", () => {
   const { file, cleanup } = tempCacheFile();
   try {
     saveCachedProviderModels("openai", { discoveredAt: 9, models: SAMPLE_MODELS }, file);
     saveCachedProviderModels("openai", { discoveredAt: 10, models: [] }, file);
-    assert.equal(loadCachedProviderModels("openai", file)?.discoveredAt, 9);
+    assert.equal(loadCachedProviderModels("openai", file)?.discoveredAt, 10);
+    assert.deepEqual(loadCachedProviderModels("openai", file)?.models, []);
   } finally {
     cleanup();
   }

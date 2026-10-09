@@ -22,7 +22,23 @@ import {
   validateAnthropicRoute,
 } from "./anthropic.js";
 import { discoverClaudeCodeCapabilities } from "./claudeCodeDiscovery.js";
-import type { ProviderChatRequest } from "./types.js";
+import type { ProviderChatRequest, ProviderModel } from "./types.js";
+
+const VERIFIED_EFFORT_FIXTURE: ProviderModel[] = ["sonnet", "opus", "claude-sonnet-4-20250514"].map(
+  (id) => ({
+    id,
+    modelId: id,
+    label: id,
+    description: null,
+    source: "discovered",
+    defaultReasoningLevel: id === "opus" ? "xhigh" : "high",
+    supportedReasoningLevels: ["low", "medium", "high", "xhigh", "max"].map((id) => ({
+      id,
+      label: id,
+      description: null,
+    })),
+  }),
+);
 
 function commandResult(overrides: Partial<CommandResult>): CommandResult {
   return {
@@ -600,6 +616,7 @@ test("mapReasoningToEffort: passes through discovered levels and rejects missing
 });
 
 test("buildClaudeCodeArgs: includes -p, model, effort, permission-mode, and prompt", () => {
+  resetAnthropicRouteValidationCacheForTests(VERIFIED_EFFORT_FIXTURE);
   const request = buildRequest({
     route: {
       providerId: "anthropic",
@@ -631,6 +648,7 @@ test("buildClaudeCodeArgs: includes -p, model, effort, permission-mode, and prom
 
 for (const effort of ["low", "medium", "high", "xhigh", "max"] as const) {
   test(`buildClaudeCodeArgs: includes --effort ${effort}`, () => {
+    resetAnthropicRouteValidationCacheForTests(VERIFIED_EFFORT_FIXTURE);
     const request = buildRequest({
       route: {
         providerId: "anthropic",
@@ -649,6 +667,7 @@ for (const effort of ["low", "medium", "high", "xhigh", "max"] as const) {
 }
 
 test("buildClaudeCodeArgs: stream-json command includes both --verbose and --effort", () => {
+  resetAnthropicRouteValidationCacheForTests(VERIFIED_EFFORT_FIXTURE);
   const args = buildClaudeCodeArgs(
     buildRequest({
       route: {
@@ -811,6 +830,7 @@ test("runClaudeCodeWithRunner: known stream-json verbose error falls back once t
 });
 
 test("runClaudeCodeWithRunner: invalid Claude effort falls back to model default once", async () => {
+  resetAnthropicRouteValidationCacheForTests(VERIFIED_EFFORT_FIXTURE);
   const calls: string[][] = [];
   const progress: string[] = [];
   const response = await new Promise<string>((resolve, reject) => {
@@ -1006,7 +1026,11 @@ test("integration: validation stores resolved exe used by subsequent execution",
     const args = buildClaudeCodeArgs(request);
     assert.ok(args.includes("-p"));
     assert.ok(args.includes("claude-sonnet-4-20250514"));
-    assert.ok(args.includes("medium"));
+    assert.equal(
+      args.includes("--effort"),
+      false,
+      "Auth alone does not verify model effort support",
+    );
   });
 });
 
@@ -1028,24 +1052,14 @@ test("discoverModels returns ANTHROPIC_FALLBACK_MODELS before any validation", (
   for (const m of result.models) {
     assert.ok(!m.modelId.startsWith("gpt-"), "Must not include OpenAI models");
   }
-  assert.deepEqual(
-    result.models
-      .find((m) => m.modelId === "opus")
-      ?.supportedReasoningLevels?.map((level) => level.id),
-    ["low", "medium", "high", "xhigh", "max"],
-  );
-  assert.deepEqual(
-    result.models
-      .find((m) => m.modelId === "sonnet")
-      ?.supportedReasoningLevels?.map((level) => level.id),
-    ["low", "medium", "high", "xhigh", "max"],
-  );
-  assert.deepEqual(
-    result.models
-      .find((m) => m.modelId === "haiku")
-      ?.supportedReasoningLevels?.map((level) => level.id),
-    ["low", "medium", "high", "xhigh", "max"],
-  );
+  for (const model of result.models) {
+    assert.equal(
+      model.supportedReasoningLevels,
+      null,
+      "Fallback aliases must not fabricate effort capabilities",
+    );
+    assert.equal(model.effortVerified, false);
+  }
 });
 
 test("discoverModels uses Claude Code model-list result when available", async () => {

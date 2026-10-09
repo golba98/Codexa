@@ -182,7 +182,7 @@ test("AppShell renders ProviderPicker with all 5 providers at normal standard si
   const finalBottomChrome = stripped.slice(Math.max(0, finalRuntimeIndex - 80));
   assert.equal(
     finalBottomChrome.match(/Context:/g)?.length ?? 0,
-    1,
+    0,
     "ProviderPicker shell should render one context row",
   );
   assert.equal(
@@ -294,7 +294,7 @@ test("canceling an install leaves the complete updater shell visible", async () 
   assert.match(postCancel, /Current version: 1\.0\.19/);
   assert.match(postCancel, /│ ❯/);
   assert.match(postCancel, /gpt-5\.4 \(medium\)/);
-  assert.match(postCancel, /Context:/);
+  assert.doesNotMatch(postCancel, /Context:/);
   assert.doesNotMatch(
     postCancel.slice(postCancel.lastIndexOf("Update available")),
     /Installing Ubume/,

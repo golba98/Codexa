@@ -157,6 +157,7 @@ export function useAppComposer(context: UseAppComposerContext) {
         themeName={activeThemeName}
         reasoningLevel={composerReasoningLevel}
         contextDisplay={activeRuntimeDisplay.contextDisplay}
+        showContext={activeRuntimeDisplay.showContext}
         planMode={planMode}
         showBusyLoader={showBusyLoader}
         interruptHint={interruptHint}
@@ -212,6 +213,7 @@ export function useAppComposer(context: UseAppComposerContext) {
     modelDisplayName,
     activeRuntimeDisplay.footerModelDisplay,
     activeRuntimeDisplay.contextDisplay,
+    activeRuntimeDisplay.showContext,
     activeThemeName,
     composerReasoningLevel,
     planMode,

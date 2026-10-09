@@ -2,6 +2,7 @@ import type { RuntimeSummary } from "../../config/runtimeConfig.js";
 import type { Theme } from "../../config/settings.js";
 import { formatModeLabel, formatReasoningLabel } from "../../config/settings.js";
 import type { CodexModelCapability } from "../../core/models/codexModelCapabilities.js";
+import { reconcileReasoning } from "../../core/models/reasoningControl.js";
 import { getAntigravityModelLabel } from "../../core/providerRuntime/antigravity.js";
 import { CODEXA_NATIVE_MODEL_ID } from "../../core/providerRuntime/codexaNative.js";
 import type {
@@ -12,6 +13,7 @@ import {
   contextMetadataToModelSpec,
   formatContextCompact,
 } from "../../core/providerRuntime/contextMetadata.js";
+import { formatGeminiModelLabel } from "../../core/providerRuntime/models.js";
 import type { ActiveProviderRoute } from "../../core/providerRuntime/types.js";
 
 interface ActiveRuntimeDisplayInput {
@@ -21,6 +23,7 @@ interface ActiveRuntimeDisplayInput {
   tokensUsed: number;
   modelCapability?: CodexModelCapability | null;
   contextMetadata?: ModelContextMetadata | null;
+  isLocalRuntime?: boolean;
 }
 
 interface ActiveRuntimeDisplay {
@@ -28,6 +31,7 @@ interface ActiveRuntimeDisplay {
   modelDisplay: string;
   footerModelDisplay: string;
   contextDisplay: string;
+  showContext: boolean;
   modeLabel: string;
   modelSpec: ModelSpec;
 }
@@ -68,6 +72,8 @@ function getModelLabel(
   route: ActiveProviderRoute,
   capability?: CodexModelCapability | null,
 ): string {
+  if (capability?.label) return capability.label;
+  if (route.providerId === "google") return formatGeminiModelLabel(route.modelId);
   if (route.providerId === "anthropic") {
     return capability?.label ?? route.modelId;
   }
@@ -92,14 +98,26 @@ export function buildActiveRuntimeDisplay({
   tokensUsed,
   modelCapability = null,
   contextMetadata = null,
+  isLocalRuntime = false,
 }: ActiveRuntimeDisplayInput): ActiveRuntimeDisplay {
   const providerLabel = PROVIDER_DISPLAY[route.providerId] ?? route.providerId;
   const rawReasoning =
     route.providerId === "antigravity" ? route.reasoning : (route.reasoning ?? reasoningLevel);
   // Local runtimes own their reasoning behavior; Ubume cannot adjust it.
   // Do not present the global fallback as if it were an active Local setting.
-  const reasoning =
-    route.providerId !== "local" && rawReasoning ? formatReasoningLabel(rawReasoning) : null;
+  const supported =
+    modelCapability?.supportedReasoningLevels?.some((level) => level.id === rawReasoning) ||
+    modelCapability?.reasoningControl?.kind === "budget";
+  const effectiveReasoning = modelCapability?.reasoningControl
+    ? reconcileReasoning(modelCapability.reasoningControl, rawReasoning ?? "")
+    : supported
+      ? rawReasoning
+      : modelCapability?.defaultReasoningLevel;
+  const reasoning = effectiveReasoning
+    ? formatReasoningLabel(effectiveReasoning)
+    : !modelCapability && route.providerId === "openai" && rawReasoning
+      ? formatReasoningLabel(rawReasoning)
+      : null;
   const modelLabel = getModelLabel(route, modelCapability);
   const validContextMetadata = isContextForRoute(contextMetadata, route) ? contextMetadata : null;
   const contextDisplay =
@@ -125,7 +143,8 @@ export function buildActiveRuntimeDisplay({
     footerModelDisplay: reasoning
       ? `${providerLabel} / ${modelLabel} (${reasoning})`
       : `${providerLabel} / ${modelLabel}`,
-    contextDisplay,
+    contextDisplay: isLocalRuntime ? contextDisplay : "",
+    showContext: isLocalRuntime,
     modeLabel: formatModeLabel(mode),
     modelSpec,
   };

@@ -191,7 +191,7 @@ test("Gemini command builders use verified model IDs and no reasoning argv", () 
   }
   assert.deepEqual(buildGeminiCliPromptArgs("hello", "gemini-3-flash", true), [
     "--model",
-    "gemini-3-flash-preview",
+    "gemini-3-flash",
     "-p",
     "hello",
   ]);
@@ -239,9 +239,9 @@ test("Gemini command builder returns exact readiness and prompt specs", async ()
       runCommandImpl: mockRunCommand(commandResult({ stdout: "READY\n" })),
     });
     assert.equal(prompt.file, FAKE_GEMINI_EXE);
-    assert.deepEqual(prompt.args, ["--model", "gemini-3-flash-preview", "-p", "hello"]);
+    assert.deepEqual(prompt.args, ["--model", "gemini-3-flash", "-p", "hello"]);
     assert.equal(prompt.mode, "prompt");
-    assert.equal(prompt.model, "gemini-3-flash-preview");
+    assert.equal(prompt.model, "gemini-3-flash");
     assert.equal(prompt.reasoning, "high");
     assert.equal(prompt.args.includes("--reasoning"), false);
     assert.equal(prompt.args.includes("--approval-mode"), false);
@@ -444,7 +444,7 @@ test("Gemini diagnostics include command details without prompt text", async () 
       diagnostics,
       /Readiness command args: \["--model","gemini-3-flash-preview","-p","Respond with READY only\."\]/,
     );
-    assert.match(diagnostics, /Selected model: gemini-3-flash-preview/);
+    assert.match(diagnostics, /Selected model: gemini-3-flash/);
     assert.match(diagnostics, /Policy args included: false/);
     assert.match(diagnostics, /Gemini reasoning control is not supported by this CLI version/);
     assert.match(

@@ -1,11 +1,12 @@
 import { Box, Text, useFocus, useInput } from "ink";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatReasoningLabel } from "../../config/settings.js";
 import {
   type CodexModelCapability,
   normalizeReasoningForModelCapabilities,
   type ReasoningEffortCapability,
 } from "../../core/models/codexModelCapabilities.js";
+import { reconcileReasoning, stepReasoningBudget } from "../../core/models/reasoningControl.js";
 import { traceInputDebug } from "../../core/perf/debugLog.js";
 import type { GeminiModelSelection } from "../../core/providerRuntime/types.js";
 import { clampVisualText } from "../../core/shared/text.js";
@@ -44,6 +45,8 @@ interface ModelPickerScreenProps {
   emptyMessage?: string;
   routeTextOverride?: string;
   onSelect: (model: string, reasoning: string, geminiSelection?: GeminiModelSelection) => void;
+  onRefresh?: () => void;
+  refreshMessage?: string;
   onCancel: (reason?: ModelPickerCloseReason) => void;
 }
 
@@ -68,7 +71,7 @@ function getInitialCursor(
 }
 
 function getModelName(model: CodexModelCapability): string {
-  return model.label === model.model ? model.model : `${model.label} (${model.model})`;
+  return model.label;
 }
 
 function getReasoningLevels(
@@ -116,6 +119,12 @@ function collapseGeminiEffortVariants(
           { id: level, label: formatReasoningLabel(level), description: null },
         ],
         reasoningLevelCount: 1,
+        reasoningControl: {
+          kind: "levels",
+          transport: "variant",
+          default: level,
+          levels: [{ id: level, label: formatReasoningLabel(level), description: null }],
+        },
         raw: { ...(model.raw && typeof model.raw === "object" ? model.raw : {}), variantIds: ids },
       });
     } else {
@@ -130,6 +139,16 @@ function collapseGeminiEffortVariants(
           description: null,
         })),
         reasoningLevelCount: orderedLevels.length,
+        reasoningControl: {
+          kind: "levels",
+          transport: "variant",
+          default: existing.defaultReasoningLevel ?? orderedLevels[0]!,
+          levels: orderedLevels.map((id) => ({
+            id,
+            label: formatReasoningLabel(id),
+            description: null,
+          })),
+        },
         raw: {
           ...(existing.raw && typeof existing.raw === "object" ? existing.raw : {}),
           variantIds: ids,
@@ -210,6 +229,7 @@ function normalizeDraftReasoning(
   reasoning: string,
 ): string {
   if (!model) return reasoning;
+  if (model.reasoningControl) return reconcileReasoning(model.reasoningControl, reasoning);
   return normalizeReasoningForModelCapabilities(model.model, reasoning, {
     status: "ready",
     source: model.source,
@@ -273,58 +293,22 @@ export function ModelPickerScreen({
   routeTextOverride,
   onSelect,
   onCancel,
+  onRefresh,
+  refreshMessage,
 }: ModelPickerScreenProps) {
   const theme = useTheme();
   const isGoogle = activeProviderLabel === "Google";
   const isAntigravity = activeProviderLabel.toLowerCase().includes("antigravity");
 
   const models = useMemo(() => {
-    const collapsedModels = isAntigravity ? collapseGeminiEffortVariants(baseModels) : baseModels;
-    if (!isGoogle) return collapsedModels;
-
-    const autoModels: CodexModelCapability[] = [
-      {
-        id: "auto-gemini-3",
-        model: "gemini-3-flash-preview",
-        label: "Auto (Gemini 3)",
-        description: "Best available verified Gemini 3 model.",
-        available: true,
-        hidden: false,
-        isDefault: false,
-        defaultReasoningLevel: "medium",
-        supportedReasoningLevels: null,
-        reasoningLevelCount: null,
-        source: "fallback",
-        raw: { kind: "auto", family: "gemini-3" },
-      },
-      {
-        id: "auto-gemini-2.5",
-        model: "gemini-2.5-pro",
-        label: "Auto (Gemini 2.5)",
-        description: "Best available Gemini 2.5 model.",
-        available: true,
-        hidden: false,
-        isDefault: false,
-        defaultReasoningLevel: "high",
-        supportedReasoningLevels: null,
-        reasoningLevelCount: null,
-        source: "fallback",
-        raw: { kind: "auto", family: "gemini-2.5" },
-      },
-    ];
-
-    const manualModels = collapsedModels.map((m) => ({
-      ...m,
-      label: `Manual: ${m.label}`,
-      raw: { kind: "manual", modelId: m.model },
-    }));
-
-    return [...autoModels, ...manualModels];
-  }, [baseModels, isAntigravity, isGoogle]);
+    return isAntigravity ? collapseGeminiEffortVariants(baseModels) : baseModels;
+  }, [baseModels, isAntigravity]);
 
   const { isFocused } = useFocus({ id: FOCUS_IDS.modelPicker, autoFocus: true });
   const initialModelIndex = getInitialCursor(models, currentModel, currentGeminiSelection);
   const [draftSelectedModel, setDraftSelectedModel] = useState(initialModelIndex);
+  const selectedIdentityRef = useRef(models[initialModelIndex]?.model);
+  const previousActiveSelection = useRef({ currentModel, currentReasoning });
   const [draftReasoning, setDraftReasoning] = useState(() =>
     normalizeDraftReasoning(
       models[initialModelIndex],
@@ -351,6 +335,10 @@ export function ModelPickerScreen({
   }, []);
 
   useEffect(() => {
+    const activeChanged =
+      previousActiveSelection.current.currentModel !== currentModel ||
+      previousActiveSelection.current.currentReasoning !== currentReasoning;
+    previousActiveSelection.current = { currentModel, currentReasoning };
     if (models.length === 0) {
       setDraftSelectedModel(0);
       setDraftReasoning(currentReasoning);
@@ -358,12 +346,21 @@ export function ModelPickerScreen({
     }
 
     setDraftSelectedModel((current) => {
-      const nextCursor = Math.min(Math.max(0, current), models.length - 1);
+      const identityIndex = models.findIndex(
+        (item) =>
+          item.model === selectedIdentityRef.current ||
+          getVariantModelIds(item).includes(selectedIdentityRef.current ?? ""),
+      );
+      const nextCursor =
+        identityIndex >= 0 ? identityIndex : Math.min(Math.max(0, current), models.length - 1);
+      selectedIdentityRef.current = models[nextCursor]?.model;
       const nextModel = models[nextCursor];
       setDraftReasoning((reasoning) =>
         normalizeDraftReasoning(
           nextModel,
-          getVariantReasoning(nextModel, currentModel) ?? reasoning,
+          activeChanged
+            ? (getVariantReasoning(nextModel, currentModel) ?? currentReasoning)
+            : reasoning,
         ),
       );
       return nextCursor;
@@ -374,7 +371,10 @@ export function ModelPickerScreen({
     setDraftSelectedModel((current) => {
       const next = Math.max(0, Math.min(models.length - 1, current + direction));
       const nextModel = models[next];
-      setDraftReasoning((reasoning) => normalizeDraftReasoning(nextModel, reasoning));
+      selectedIdentityRef.current = nextModel?.model;
+      setDraftReasoning((reasoning) =>
+        normalizeDraftReasoning(nextModel, nextModel?.reasoningPreference ?? reasoning),
+      );
       return next;
     });
   };
@@ -382,12 +382,20 @@ export function ModelPickerScreen({
   const selectModelIndex = (index: number) => {
     setDraftSelectedModel(() => {
       const next = Math.max(0, Math.min(models.length - 1, index));
-      setDraftReasoning((reasoning) => normalizeDraftReasoning(models[next], reasoning));
+      selectedIdentityRef.current = models[next]?.model;
+      setDraftReasoning((reasoning) =>
+        normalizeDraftReasoning(models[next], models[next]?.reasoningPreference ?? reasoning),
+      );
       return next;
     });
   };
 
   const moveReasoning = (direction: -1 | 1) => {
+    const control = models[draftSelectedModel]?.reasoningControl;
+    if (control?.kind === "budget") {
+      setDraftReasoning((current) => stepReasoningBudget(control, current, direction));
+      return;
+    }
     const levels = getReasoningLevels(models[draftSelectedModel]);
     if (levels.length <= 1) return;
 
@@ -400,6 +408,19 @@ export function ModelPickerScreen({
 
   useInput(
     (input, key) => {
+      if (input.toLowerCase() === "r" && onRefresh) {
+        onRefresh();
+        return;
+      }
+      const control = selectedModel?.reasoningControl;
+      if (control?.kind === "budget" && input === "a" && control.auto) {
+        setDraftReasoning("auto");
+        return;
+      }
+      if (control?.kind === "budget" && input === "d" && control.canDisable) {
+        setDraftReasoning("budget:0");
+        return;
+      }
       traceInputDebug("model_picker_panel_input", {
         handler: "ModelPickerScreen.useInput",
         key: describeInputKey(input, key),
@@ -426,7 +447,9 @@ export function ModelPickerScreen({
           onCancel("empty-selection");
           return;
         }
-        const geminiSelection = isGoogle ? (model.raw as GeminiModelSelection) : undefined;
+        const geminiSelection = isGoogle
+          ? { kind: "manual" as const, modelId: model.model }
+          : undefined;
         const normalizedReasoning = normalizeDraftReasoning(model, draftReasoning);
         onSelect(
           resolveVariantModelId(model, normalizedReasoning),
@@ -517,8 +540,8 @@ export function ModelPickerScreen({
   const innerWidth = Math.max(1, Math.min(resolvedPanelLayout.availableCols, panelWidth - 4));
   const help =
     resolvedPanelLayout.mode === "compact"
-      ? "↑↓ model · ←→ intelligence · Enter · Esc"
-      : "↑↓ model · ←→ reasoning · Enter select · Esc cancel";
+      ? "↑↓ model · ←→ effort · R refresh · Enter · Esc"
+      : "↑↓ model · ←→ reasoning · R refresh · Enter select · Esc cancel";
   const aOrAn = /^[aeiou]/i.test(activeProviderLabel) ? "an" : "a";
   const routeText =
     routeTextOverride ?? `Choose ${aOrAn} ${activeProviderLabel} model to use inside Ubume.`;
@@ -698,7 +721,7 @@ export function ModelPickerScreen({
                   : reasoningUnavailable
                     ? isAntigravity
                       ? "Uses this model's native AGY configuration"
-                      : "Reasoning: unavailable · Intelligence: unavailable"
+                      : "Reasoning: fixed or provider-managed"
                     : `Reasoning: ${formatReasoningLabel(draftReasoning)} · Intelligence: ${formatReasoningLabel(draftReasoning)}`,
                 innerWidth,
               )}
@@ -722,6 +745,11 @@ export function ModelPickerScreen({
           </Box>
         )}
 
+        {refreshMessage && (
+          <Text color={theme.textMuted} wrap="truncate">
+            {refreshMessage}
+          </Text>
+        )}
         <Box
           flexDirection="column"
           marginTop={0}
@@ -754,13 +782,29 @@ export function ModelPickerScreen({
 
         {models.length > 0 &&
           windowResult.mode !== "windowed" &&
-          (!isAntigravity || !reasoningUnavailable) && (
+          selectedReasoningLevels.length > 1 && (
             <IntelligenceSlider
               levels={selectedReasoningLevels}
               selected={draftReasoning}
               width={innerWidth}
               unavailable={reasoningUnavailable}
             />
+          )}
+        {selectedModel?.reasoningControl?.kind === "budget" && (
+          <Text color={theme.accent}>
+            Thinking budget: {draftReasoning.replace("budget:", "")} · ←/→ adjust · A automatic
+            {selectedModel.reasoningControl.canDisable ? " · D off" : ""}
+          </Text>
+        )}
+        {selectedReasoningLevels.length <= 1 &&
+          selectedModel?.reasoningControl?.kind !== "budget" && (
+            <Text color={theme.textMuted}>
+              {selectedModel?.reasoningControl?.kind === "fixed"
+                ? selectedModel.reasoningControl.label
+                : selectedReasoningLevels.length === 1
+                  ? `Fixed variant: ${selectedReasoningLevels[0]!.label}`
+                  : "Reasoning: provider-managed; no verified control"}
+            </Text>
           )}
       </Box>
     </Box>

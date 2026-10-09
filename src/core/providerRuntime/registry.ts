@@ -1,9 +1,16 @@
 import type { ResolvedRuntimeConfig } from "../../config/runtimeConfig.js";
 import {
+  getCodexModelCapabilities,
+  isVerifiedCodexModelCapabilities,
+} from "../models/codexModelCapabilities.js";
+import {
   loadCachedProviderModels,
   loadSeededOpenAiModels,
   saveCachedProviderModels,
 } from "../models/modelCache.js";
+import { type CatalogContext, providerCatalog } from "../models/modelCatalog.js";
+import { resolveCatalogModel } from "../models/modelSelection.js";
+import { reconcileReasoning } from "../models/reasoningControl.js";
 import type {
   ProviderActiveRoute,
   ProviderId,
@@ -35,7 +42,6 @@ import {
 } from "./models.js";
 import type {
   ActiveProviderRoute,
-  GeminiModelSelection,
   ProviderChatRequest,
   ProviderModelDiscoveryResult,
   ProviderRoute,
@@ -56,6 +62,36 @@ const openAiRuntime: ProviderRuntime = {
     backendKind: "codex-cli-auth",
     models: loadSeededOpenAiModels()?.models ?? [],
   }),
+  refreshModels: async ({ providerConfig, signal }) => {
+    const capabilities = await getCodexModelCapabilities({
+      forceRefresh: true,
+      executable: providerConfig?.codexCommandPath,
+      signal,
+    });
+    const verified = isVerifiedCodexModelCapabilities(capabilities);
+    return {
+      status: "ready",
+      providerId: "openai",
+      backendKind: "codex-cli-auth",
+      freshness: verified ? "verified" : "unverified",
+      models: capabilities.models
+        .filter((model) => !model.hidden)
+        .map((model) => ({
+          id: model.id,
+          modelId: model.model,
+          label: model.label,
+          description: model.description,
+          defaultReasoningLevel: model.defaultReasoningLevel,
+          supportedReasoningLevels: model.supportedReasoningLevels,
+          source: verified ? "discovered" : "fallback",
+        })),
+      message:
+        capabilities.error ??
+        (verified
+          ? undefined
+          : "Cached Codex inventory is unverified after live discovery failed."),
+    };
+  },
   run: (request: ProviderChatRequest, handlers: BackendRunHandlers) => {
     handlers.onProgress?.({
       id: "openai-route",
@@ -116,6 +152,8 @@ export function getProviderRouteSetupMessage(providerId: ProviderId): string {
 }
 
 export function discoverProviderModels(providerId: ProviderId): ProviderModelDiscoveryResult {
+  const snapshot = providerCatalog.get(providerId);
+  if (snapshot) return snapshot;
   const result = getProviderRuntime(providerId).discoverModels();
   const hasRuntimeModels = result.models.some(
     (model) => model.source && model.source !== "fallback",
@@ -123,26 +161,50 @@ export function discoverProviderModels(providerId: ProviderId): ProviderModelDis
   if (result.status === "ready" && !hasRuntimeModels) {
     const cached = loadCachedProviderModels(providerId);
     if (cached) {
-      return { ...result, models: cached.models };
+      return {
+        ...result,
+        models: cached.models,
+        freshness: "unverified",
+        refreshState: "cached",
+        verifiedAt: cached.discoveredAt,
+      };
     }
   }
   return result;
 }
 
+const persistedDiscovery = new WeakSet<ProviderModelDiscoveryResult>();
 export function persistProviderDiscovery(discovery: ProviderModelDiscoveryResult): void {
+  if (persistedDiscovery.has(discovery)) return;
   const runtimeModels = discovery.models.filter(
     (model) => model.source && model.source !== "fallback",
   );
-  if (discovery.status !== "ready" || runtimeModels.length === 0) {
+  if (
+    discovery.status !== "ready" ||
+    discovery.freshness === "unverified" ||
+    discovery.diagnostics?.refreshFailed === true
+  ) {
     return;
   }
+  if (!runtimeModels.length && discovery.freshness !== "verified") return;
   saveCachedProviderModels(discovery.providerId, {
-    discoveredAt: Date.now(),
+    discoveredAt: discovery.verifiedAt ?? Date.now(),
     models: runtimeModels,
   });
+  persistedDiscovery.add(discovery);
+}
+
+export async function refreshProviderModels(
+  providerId: ProviderId,
+  context: CatalogContext,
+): Promise<ProviderModelDiscoveryResult> {
+  const result = await providerCatalog.refresh(getProviderRuntime(providerId), context);
+  if (providerCatalog.get(providerId) === result) persistProviderDiscovery(result);
+  return result;
 }
 
 export async function validateProviderRouteActivation(options: {
+  providerConfig?: ProviderWorkspaceOverride;
   route: ProviderRoute;
   workspaceRoot: string;
   geminiCommandPath?: string | null;
@@ -180,30 +242,13 @@ export async function validateProviderRouteActivation(options: {
   };
 }
 
-function resolveGeminiModelId(selection: GeminiModelSelection): string {
-  if (selection.kind === "manual") {
-    return normalizeGeminiModelId(selection.modelId);
-  }
-  if (selection.family === "gemini-3") {
-    return "gemini-3-flash-preview";
-  }
-  if (selection.family === "gemini-2.5") {
-    return "gemini-2.5-pro";
-  }
-  return GEMINI_DEFAULT_MODEL_ID;
-}
-
 export function resolveActiveProviderRoute(options: {
   workspaceConfigActiveRoute?: ProviderActiveRoute;
   currentModel: string;
   currentReasoning: string;
 }): ActiveProviderRoute {
   const configuredRoute = options.workspaceConfigActiveRoute;
-  if (
-    configuredRoute &&
-    configuredRoute.providerId !== "google" &&
-    isProviderRoutableInUbume(configuredRoute.providerId)
-  ) {
+  if (configuredRoute && isProviderRoutableInUbume(configuredRoute.providerId)) {
     const route: ActiveProviderRoute = {
       providerId: configuredRoute.providerId,
       modelId: configuredRoute.modelId,
@@ -216,52 +261,22 @@ export function resolveActiveProviderRoute(options: {
         : {}),
     };
 
-    if (route.providerId === "google" && route.modelSelection) {
-      route.modelId = resolveGeminiModelId(route.modelSelection);
-    } else if (route.providerId === "google") {
+    if (route.providerId === "google") {
       route.modelId = normalizeGeminiModelId(route.modelId);
-    } else if (route.providerId === "anthropic") {
-      const discovery = discoverProviderModels("anthropic");
-      const stillAvailable = discovery.models.some(
-        (model) =>
-          model.modelId === route.modelId ||
-          model.id === route.modelId ||
-          model.canonicalId === route.modelId,
-      );
-      const hasNonFallbackModels = discovery.models.some((model) => model.source !== "fallback");
-      const isKnownShortAlias = ANTHROPIC_FALLBACK_MODELS.some(
-        (model) => model.modelId === route.modelId,
-      );
-      if (
-        discovery.status === "ready" &&
-        hasNonFallbackModels &&
-        discovery.models.length > 0 &&
-        !stillAvailable &&
-        isKnownShortAlias
-      ) {
-        route.modelId = discovery.models[0]!.modelId;
-      }
     } else if (route.providerId === "antigravity") {
-      const migrated = migrateAntigravityLegacyModelId(route.modelId);
-      route.modelId = migrated.modelId;
-      if (!route.reasoning && migrated.reasoning) {
-        route.reasoning = migrated.reasoning;
-      }
       const discovery = discoverProviderModels("antigravity");
-      if (discovery.status === "ready" && discovery.models.length > 0) {
-        let model = discovery.models.find(
-          (item) => item.modelId === route.modelId || item.id === route.modelId,
+      const exact = discovery.models.find((item) => item.modelId === route.modelId);
+      if (!exact) {
+        const migrated = migrateAntigravityLegacyModelId(route.modelId);
+        const match = discovery.models.find(
+          (item) =>
+            item.modelId === migrated.modelId ||
+            (migrated.reasoning && item.modelId === `${migrated.modelId}-${migrated.reasoning}`) ||
+            item.modelId === `${route.modelId}-${route.reasoning}`,
         );
-        if (!model) {
-          model = discovery.models[0];
-          route.modelId = model.modelId;
-        }
-        const levels = model.supportedReasoningLevels;
-        if (
-          levels?.length &&
-          (!route.reasoning || !levels.some((level) => level.id === route.reasoning))
-        ) {
-          route.reasoning = model.defaultReasoningLevel ?? levels[0]?.id;
+        if (match) {
+          route.modelId = match.modelId;
+          route.reasoning = match.defaultReasoningLevel ?? undefined;
         }
       }
     }
@@ -318,8 +333,18 @@ export function createRoutedProvider(
     return {
       ...backend,
       run: backend.run
-        ? (prompt, options, handlers) =>
-            backend.run!(
+        ? (prompt, options, handlers) => {
+            const catalog = discoverProviderModels("openai");
+            if (
+              catalog.freshness === "verified" &&
+              !resolveCatalogModel(catalog.models, route.modelId)
+            ) {
+              handlers.onError(
+                `The selected model ${route.modelId} is unavailable. Select a model explicitly before sending.`,
+              );
+              return () => undefined;
+            }
+            return backend.run!(
               prompt,
               {
                 ...options,
@@ -327,8 +352,24 @@ export function createRoutedProvider(
                   ? { ...options.runtime, codexCommandPath: override.codexCommandPath }
                   : options.runtime,
               },
-              handlers,
-            )
+              {
+                ...handlers,
+                onError: (message) => {
+                  handlers.onError(message);
+                  if (
+                    /model.{0,80}(?:not found|unavailable|removed|does not exist|invalid)/i.test(
+                      message,
+                    )
+                  )
+                    void refreshProviderModels("openai", {
+                      cwd: options.workspaceRoot,
+                      providerConfig: override,
+                      forceRefresh: true,
+                    });
+                },
+              },
+            );
+          }
         : undefined,
     };
   const provider = getProviderRuntime(route.providerId);
@@ -341,11 +382,52 @@ export function createRoutedProvider(
     statusMessage: provider.routeStatus,
     supportsModels: (model) => model === route.modelId,
     run: provider.run
-      ? (prompt, options, handlers) =>
-          provider.run!(
+      ? (prompt, options, handlers) => {
+          const catalog = discoverProviderModels(route.providerId);
+          if (
+            catalog.freshness === "verified" &&
+            !resolveCatalogModel(catalog.models, route.modelId)
+          ) {
+            handlers.onError(
+              `The selected model ${route.modelId} is unavailable. Select a model explicitly before sending.`,
+            );
+            return () => undefined;
+          }
+          const descriptor = resolveCatalogModel(catalog.models, route.modelId);
+          // Old Vibe aliases can collide with newer API IDs. Require an explicit
+          // native selection before changing their historical execution target.
+          if (
+            route.providerId === "mistral" &&
+            override?.currentModel === route.modelId &&
+            override?.models?.[route.modelId]?.reasoningPreference === undefined &&
+            catalog.models.some((model) => {
+              const raw = model.raw as { vibeAliases?: unknown } | null;
+              return (
+                model.modelId !== route.modelId &&
+                Array.isArray(raw?.vibeAliases) &&
+                raw.vibeAliases.includes(route.modelId)
+              );
+            }) &&
+            catalog.models.some((model) => model.modelId === route.modelId)
+          ) {
+            handlers.onError(
+              `The saved Vibe alias ${route.modelId} is ambiguous with an API model ID. Select a model explicitly before sending.`,
+            );
+            return () => undefined;
+          }
+          const requested =
+            route.reasoning ?? override?.models?.[route.modelId]?.reasoningPreference ?? "";
+          const effectiveReasoning = descriptor?.reasoningControl
+            ? reconcileReasoning(descriptor.reasoningControl, requested)
+            : descriptor?.supportedReasoningLevels?.some((level) => level.id === requested)
+              ? requested
+              : (descriptor?.defaultReasoningLevel ?? "");
+          return provider.run!(
             {
               prompt,
-              route,
+              route: { ...route, reasoning: effectiveReasoning || undefined },
+              providerConfig: override,
+              modelDescriptor: descriptor,
               runtime: effectiveProviderRuntime(options.runtime, config, route),
               workspaceRoot: options.workspaceRoot,
               projectInstructions: options.projectInstructions,
@@ -361,8 +443,26 @@ export function createRoutedProvider(
               localHarnessSession:
                 route.providerId === "local" ? localHarnessSession?.() : undefined,
             },
-            handlers,
-          )
+            {
+              ...handlers,
+              onError: (message) => {
+                handlers.onError(message);
+                if (
+                  /model.{0,80}(?:not found|not available|unavailable|removed|does not exist|invalid)|(?:not found|unavailable).{0,80}model/i.test(
+                    message,
+                  )
+                ) {
+                  void refreshProviderModels(route.providerId, {
+                    cwd: options.workspaceRoot,
+                    providerConfig: override,
+                    localConfig: route.providerId === "local" ? override : undefined,
+                    forceRefresh: true,
+                  });
+                }
+              },
+            },
+          );
+        }
       : undefined,
   };
 }

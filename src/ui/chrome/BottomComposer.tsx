@@ -66,6 +66,7 @@ export function BottomComposer({
   footerModelDisplay,
   reasoningLevel = "",
   contextDisplay,
+  showContext = false,
   planMode = false,
   showBusyLoader = true,
   interruptHint = null,
@@ -321,31 +322,33 @@ export function BottomComposer({
             </Text>
           ) : null}
         </Box>
-        <Box flexShrink={0}>
-          {contextDisplay ? (
-            <Box flexDirection="row">
-              <Text color={theme.textMuted}>Context: </Text>
-              <Text color={theme.context}>{contextDisplay}</Text>
-            </Box>
-          ) : tokenDisplay.hasKnownLimit ? (
-            <Box flexDirection="row">
-              <Text color={theme.textMuted}>Context: </Text>
-              <Text color={theme.context}>{tokenDisplay.usedText}</Text>
-              <Text color={theme.textDim}>
-                {" / "}
-                {tokenDisplay.limitText}
-                {tokenDisplay.percentage !== null
-                  ? ` · ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%`
-                  : ""}
-              </Text>
-            </Box>
-          ) : (
-            <Box flexDirection="row">
-              <Text color={theme.textMuted}>Context: </Text>
-              <Text color={theme.textDim}>Unknown</Text>
-            </Box>
-          )}
-        </Box>
+        {showContext && (
+          <Box flexShrink={0}>
+            {contextDisplay ? (
+              <Box flexDirection="row">
+                <Text color={theme.textMuted}>Context: </Text>
+                <Text color={theme.context}>{contextDisplay}</Text>
+              </Box>
+            ) : tokenDisplay.hasKnownLimit ? (
+              <Box flexDirection="row">
+                <Text color={theme.textMuted}>Context: </Text>
+                <Text color={theme.context}>{tokenDisplay.usedText}</Text>
+                <Text color={theme.textDim}>
+                  {" / "}
+                  {tokenDisplay.limitText}
+                  {tokenDisplay.percentage !== null
+                    ? ` · ${tokenDisplay.isEstimatedLimit ? "~" : ""}${tokenDisplay.percentage}%`
+                    : ""}
+                </Text>
+              </Box>
+            ) : (
+              <Box flexDirection="row">
+                <Text color={theme.textMuted}>Context: </Text>
+                <Text color={theme.textDim}>Unknown</Text>
+              </Box>
+            )}
+          </Box>
+        )}
       </Box>
     </Box>
   );
@@ -408,6 +411,7 @@ export function areBottomComposerPropsEqual(
   if (prev.model !== next.model) return false;
   if (prev.footerModelDisplay !== next.footerModelDisplay) return false;
   if (prev.reasoningLevel !== next.reasoningLevel) return false;
+  if (prev.showContext !== next.showContext) return false;
   if (prev.contextDisplay !== next.contextDisplay) return false;
   if (prev.planMode !== next.planMode) return false;
   if (prev.showBusyLoader !== next.showBusyLoader || prev.interruptHint !== next.interruptHint)

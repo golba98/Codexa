@@ -5,7 +5,9 @@ import {
   formatThemeLabel,
 } from "../../config/settings.js";
 import type { ReasoningEffortCapability } from "../../core/models/codexModelCapabilities.js";
+import type { ReasoningControl } from "../../core/providerRuntime/types.js";
 import { FOCUS_IDS } from "../input/focus.js";
+import { ReasoningBudgetPicker } from "./ReasoningBudgetPicker.js";
 import { SelectionPanel } from "./SelectionPanel.js";
 
 interface ModePickerProps {
@@ -66,6 +68,7 @@ export function ThemePicker({ currentTheme, onSelect, onHighlight, onCancel }: T
 }
 
 interface ReasoningPickerProps {
+  control?: ReasoningControl;
   currentReasoning: string;
   currentModel: string;
   reasoningLevels: readonly ReasoningEffortCapability[];
@@ -76,6 +79,7 @@ interface ReasoningPickerProps {
 }
 
 export function ReasoningPicker({
+  control,
   currentReasoning,
   currentModel,
   reasoningLevels,
@@ -84,6 +88,15 @@ export function ReasoningPicker({
   onSelect,
   onCancel,
 }: ReasoningPickerProps) {
+  if (control?.kind === "budget")
+    return (
+      <ReasoningBudgetPicker
+        control={control}
+        value={currentReasoning}
+        onSelect={onSelect}
+        onCancel={onCancel}
+      />
+    );
   const items = reasoningLevels.map((reasoning) => ({
     label: reasoning.id === currentReasoning ? `${reasoning.label}  ✓` : reasoning.label,
     value: reasoning.id,
@@ -100,6 +113,11 @@ export function ReasoningPicker({
       title="Select reasoning level"
       subtitle={subtitle}
       items={items}
+      initialValue={
+        items.some((item) => item.value === currentReasoning)
+          ? currentReasoning
+          : (defaultReasoning ?? undefined)
+      }
       onSelect={onSelect}
       onCancel={onCancel}
     />

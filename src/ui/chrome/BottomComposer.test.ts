@@ -994,3 +994,36 @@ test("focused input retains pasted tokens, typed text and submission through ter
     instance.cleanup();
   }
 });
+
+for (const width of [40, 60, 80, 100, 120, 160]) {
+  test(`context footer is absent for cloud and returns for local at ${width} columns`, () => {
+    const layout = createLayoutSnapshot(width, 30);
+    const props = composerProps({
+      layout,
+      width,
+      uiState: { kind: "IDLE" },
+      contextDisplay: "1K / 32K",
+      footerModelDisplay: "Local / fixture",
+      showContext: true,
+    });
+    const frame = (showContext: boolean) =>
+      renderToString(
+        React.createElement(
+          Box,
+          { width },
+          React.createElement(BottomComposer, { ...props, showContext }),
+        ),
+        { columns: width },
+      ).replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
+    assert.match(frame(true), /Context:/);
+    const remote = frame(false);
+    assert.doesNotMatch(remote, /Context:|1K \/ 32K|Unknown|N\/A/);
+    assert.match(frame(true), /Context:/);
+    for (const line of remote.split("\n")) assert.ok(getTextWidth(line) <= width);
+  });
+}
+
+test("memoized footer notices local/remote classification changes", () => {
+  const local = composerProps({ showContext: true });
+  assert.equal(areBottomComposerPropsEqual(local, { ...local, showContext: false }), false);
+});

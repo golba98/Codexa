@@ -7,13 +7,13 @@ import { getHomeDir } from "../../config/settings.js";
 import { formatConversationHistory } from "../../session/conversation.js";
 import { resolveVibeExecutable } from "../executables/executableResolver.js";
 import { vibeSessionDir } from "../externalSessions/vibeSessions.js";
+import { resolveCatalogModel } from "../models/modelSelection.js";
 import {
   type CommandResult,
   type CommandSpec,
   type CommandStreamHandlers,
   runCommand,
 } from "../process/commandRunner.js";
-
 import {
   type LaunchProviderCliOptions,
   launchProviderCli,
@@ -22,8 +22,9 @@ import {
 import type { ProviderConfig } from "../providerLauncher/types.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
-import { errorMessage } from "../shared/values.js";
+import { errorMessage, isRecord } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
+import { fetchMistralModels, resolveMistralConnection } from "./mistralDiscovery.js";
 import type {
   ProviderChatRequest,
   ProviderModel,
@@ -177,7 +178,10 @@ export function listVibeConfiguredModels(
   return { models, configPath };
 }
 
+let liveMistralCatalog: ProviderModelDiscoveryResult | null = null;
+
 export function discoverMistralVibeModels(cwd = process.cwd()): ProviderModelDiscoveryResult {
+  if (liveMistralCatalog) return liveMistralCatalog;
   const detected = detectVibeActiveModel({ cwd });
   const listed = listVibeConfiguredModels({ cwd });
 
@@ -492,6 +496,58 @@ export function runMistralVibe(
     const modelId = request.route.modelId?.trim();
     const spawnEnv: NodeJS.ProcessEnv = { ...env };
     if (modelId && modelId !== VIBE_DEFAULT_MODEL_LABEL) {
+      const discovered =
+        request.modelDescriptor ?? resolveCatalogModel(liveMistralCatalog?.models ?? [], modelId);
+      if (discovered) {
+        const selected = request.route.reasoning;
+        if (
+          selected &&
+          discovered.supportedReasoningLevels?.length &&
+          !discovered.supportedReasoningLevels.some((level) => level.id === selected)
+        ) {
+          control.finish();
+          handlers.onError(`Unsupported Mistral reasoning setting: ${selected}.`);
+          return;
+        }
+        const connection = resolveMistralConnection(workspaceRoot, request.providerConfig, env);
+        const configuredModel = connection.configuredModels.find(
+          (item) =>
+            isRecord(item) && item.name === discovered.modelId && item.provider === "mistral",
+        );
+        const inheritedThinking =
+          isRecord(configuredModel) && typeof configuredModel.thinking === "string"
+            ? configuredModel.thinking
+            : "off";
+        const thinking = discovered.supportedReasoningLevels?.length
+          ? selected === "none"
+            ? "low"
+            : "high"
+          : inheritedThinking;
+        spawnEnv.VIBE_MODELS = JSON.stringify({
+          [modelId]: {
+            name: discovered.modelId,
+            alias: modelId,
+            provider: connection.providerName,
+            thinking,
+            thinking_levels: discovered.supportedReasoningLevels?.length
+              ? ["low", "high"]
+              : undefined,
+            supports_images: discovered.capabilities?.vision === true,
+            max_context_length: discovered.contextWindow ?? undefined,
+          },
+        });
+        if (connection.apiKey) spawnEnv[connection.apiKeyEnv] = connection.apiKey;
+        if (discovered.capabilities?.tools === false) spawnEnv.VIBE_ENABLED_TOOLS = "[]";
+        if (request.providerConfig?.baseUrl)
+          spawnEnv.VIBE_PROVIDERS = JSON.stringify([
+            {
+              name: "mistral",
+              api_base: connection.baseUrl,
+              api_key_env_var: connection.apiKeyEnv,
+              backend: "mistral",
+            },
+          ]);
+      }
       spawnEnv.VIBE_ACTIVE_MODEL = modelId;
     }
 
@@ -692,7 +748,7 @@ export const mistralVibeRuntime: ProviderRuntime = {
   launchAvailable: true,
   validateRoute: async ({ workspaceRoot }) => validateMistralVibeRoute({ cwd: workspaceRoot }),
   discoverModels: () => discoverMistralVibeModels(),
-  refreshModels: async ({ cwd }) => {
+  refreshModels: async ({ cwd, providerConfig, signal }) => {
     const executable = await resolveVibeExecutable({ cwd });
     if (!executable) {
       return {
@@ -703,7 +759,9 @@ export const mistralVibeRuntime: ProviderRuntime = {
         message: MISTRAL_VIBE_MISSING_MESSAGE,
       };
     }
-    return discoverMistralVibeModels(cwd);
+    const discovery = await fetchMistralModels({ cwd, providerConfig, signal });
+    if (discovery.freshness === "verified" && !signal?.aborted) liveMistralCatalog = discovery;
+    return discovery;
   },
   run: (request, handlers) => runMistralVibe(request, handlers),
 };

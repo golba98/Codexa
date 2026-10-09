@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { formatReasoningLabel, getCodexHome, getHomeDir } from "../../config/settings.js";
 import type { ProviderId } from "../providerLauncher/types.js";
@@ -83,7 +84,7 @@ export function loadCachedProviderModels(
 ): CachedProviderModels | null {
   const cache = readCacheFile(cacheFile);
   const entry = cache?.providers?.[providerId];
-  if (!entry || !isValidEntry(entry) || entry.models.length === 0) {
+  if (!entry || !isValidEntry(entry)) {
     return null;
   }
   return entry;
@@ -94,13 +95,23 @@ export function saveCachedProviderModels(
   entry: CachedProviderModels,
   cacheFile = getProviderModelCacheFile(),
 ): void {
-  if (entry.models.length === 0) {
-    return;
-  }
   try {
     const cache = readCacheFile(cacheFile) ?? { version: CACHE_VERSION, providers: {} };
-    cache.providers[providerId] = entry;
-    writeFileSync(cacheFile, `${JSON.stringify(cache, null, 2)}\n`, "utf8");
+    cache.providers[providerId] = JSON.parse(
+      JSON.stringify(entry, (key, value) =>
+        /^(?:authorization|api_?key|access_?token|refresh_?token|credentials|cookie|password|secret)$/i.test(
+          key,
+        )
+          ? undefined
+          : value,
+      ),
+    );
+    const temporary = `${cacheFile}.${process.pid}.${randomUUID()}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify(cache, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    renameSync(temporary, cacheFile);
   } catch {
     // Persistence is best-effort; discovery still works without it.
   }

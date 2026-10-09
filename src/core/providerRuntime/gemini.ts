@@ -10,6 +10,8 @@ import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { errorMessage } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
+import { discoverGeminiModels } from "./geminiDiscovery.js";
+import { createGeminiThinkingSettings } from "./geminiSettings.js";
 import {
   GEMINI_DEFAULT_MODEL_ID,
   GEMINI_FALLBACK_MODELS,
@@ -18,6 +20,7 @@ import {
 import type {
   ProviderBackendKind,
   ProviderChatRequest,
+  ProviderModel,
   ProviderRouteValidationResult,
   ProviderRuntime,
   ResolvedRuntimeConfig,
@@ -64,6 +67,7 @@ interface GeminiCommandSpec {
   approvalMode: GeminiApprovalMode;
   outputFormat: GeminiOutputFormat;
   includesPolicy: boolean;
+  env?: NodeJS.ProcessEnv;
 }
 
 interface GeminiPromptRunDiagnostics {
@@ -84,6 +88,7 @@ interface GeminiPromptRunDiagnostics {
 }
 
 let geminiCliHeadlessValidated = false;
+let discoveredGeminiCatalog: import("./types.js").ProviderModelDiscoveryResult | null = null;
 let lastPromptDiagnostics: GeminiPromptRunDiagnostics | null = null;
 
 function getGeminiApiKey(env: NodeJS.ProcessEnv = process.env): string | null {
@@ -95,11 +100,16 @@ export function hasGeminiApiKey(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 export function isGeminiRouteConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  return hasGeminiApiKey(env) || geminiCliHeadlessValidated;
+  return (
+    hasGeminiApiKey(env) ||
+    geminiCliHeadlessValidated ||
+    discoveredGeminiCatalog?.freshness === "verified"
+  );
 }
 
 export function resetGeminiRouteValidationCacheForTests(): void {
   geminiCliHeadlessValidated = false;
+  discoveredGeminiCatalog = null;
   lastPromptDiagnostics = null;
 }
 
@@ -330,6 +340,7 @@ async function executeGeminiCommand(
       args: command.args,
       cwd: command.cwd,
       timeoutMs,
+      env: command.env,
     },
     streamHandlers,
   );
@@ -346,20 +357,59 @@ async function executeGeminiCommand(
   return result;
 }
 
+export function buildGeminiThinkingConfig(
+  modelId: string,
+  reasoning: string,
+  descriptor?: ProviderModel,
+): Record<string, unknown> {
+  const model =
+    descriptor ?? discoveredGeminiCatalog?.models.find((item) => item.modelId === modelId);
+  const control = model?.reasoningControl;
+  if (control?.kind === "levels" && control.levels.some((level) => level.id === reasoning))
+    return { thinkingLevel: reasoning.toUpperCase() };
+  if (control?.kind === "budget") {
+    const budget =
+      reasoning === "auto" && control.auto ? -1 : Number(reasoning.replace(/^budget:/, ""));
+    if (
+      (budget === -1 && control.auto) ||
+      (budget === 0 && control.canDisable) ||
+      (Number.isInteger(budget) && budget >= control.min && budget <= control.max)
+    )
+      return { thinkingBudget: budget };
+  }
+  throw new Error("The selected Gemini route does not advertise this thinking setting.");
+}
+
 async function runGeminiApi(request: ProviderChatRequest, signal?: AbortSignal): Promise<string> {
-  const apiKey = getGeminiApiKey();
+  const apiKey = request.providerConfig?.apiKey || getGeminiApiKey();
   if (!apiKey) {
     throw new Error(GEMINI_ROUTE_SETUP_MESSAGE);
   }
 
   const modelId = normalizeGeminiModelId(request.route.modelId);
+  const reasoningControl = (
+    request.modelDescriptor ??
+    discoveredGeminiCatalog?.models.find((item) => item.modelId === modelId)
+  )?.reasoningControl;
   const response = await fetch(
-    `${GEMINI_API_BASE_URL}/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    `${(request.providerConfig?.baseUrl || GEMINI_API_BASE_URL).replace(/\/+$/, "").replace(/\/models$/, "")}/${modelId.startsWith("models/") ? modelId : `models/${modelId}`}:generateContent`,
     {
       method: "POST",
       signal,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
+        ...(request.route.reasoning &&
+        (reasoningControl?.kind === "levels" || reasoningControl?.kind === "budget")
+          ? {
+              generationConfig: {
+                thinkingConfig: buildGeminiThinkingConfig(
+                  modelId,
+                  request.route.reasoning,
+                  request.modelDescriptor,
+                ),
+              },
+            }
+          : {}),
         contents: [
           {
             role: "user",
@@ -458,9 +508,26 @@ async function runGeminiCliAttempt(
     runCommandImpl,
     outputFormat: "text",
   });
-  const result = await executeGeminiCommand(command, runCommandImpl, GEMINI_TIMEOUT_MS, handlers);
-  recordPromptDiagnostics(command, result);
-  return { command, result };
+  const control = (
+    request.modelDescriptor ??
+    discoveredGeminiCatalog?.models.find((item) => item.modelId === modelId)
+  )?.reasoningControl;
+  const settings =
+    modelId && request.route.reasoning && (control?.kind === "levels" || control?.kind === "budget")
+      ? createGeminiThinkingSettings(
+          request.workspaceRoot,
+          modelId,
+          buildGeminiThinkingConfig(modelId, request.route.reasoning, request.modelDescriptor),
+        )
+      : null;
+  try {
+    command.env = settings?.env;
+    const result = await executeGeminiCommand(command, runCommandImpl, GEMINI_TIMEOUT_MS, handlers);
+    recordPromptDiagnostics(command, result);
+    return { command, result };
+  } finally {
+    settings?.cleanup();
+  }
 }
 
 export async function runGeminiCliWithRunner(
@@ -815,18 +882,41 @@ export const geminiRuntime: ProviderRuntime = {
   routeSetupMessage: GEMINI_ROUTE_SETUP_MESSAGE,
   launchAvailable: true,
   isRouteConfigured: isGeminiRouteConfigured,
-  validateRoute: async ({ route, workspaceRoot, geminiCommandPath }) =>
-    validateGeminiRoute({
+  validateRoute: async ({ route, workspaceRoot, geminiCommandPath, providerConfig }) => {
+    const result = await discoverGeminiModels({
       cwd: workspaceRoot,
-      modelId: route.modelId,
-      configuredPath: geminiCommandPath,
-    }),
-  discoverModels: () => ({
-    status: "ready",
-    providerId: "google",
-    backendKind: getGeminiRuntimeBackendKind(),
-    models: GEMINI_FALLBACK_MODELS,
-  }),
+      providerConfig: {
+        ...providerConfig,
+        geminiCommandPath: geminiCommandPath ?? providerConfig?.geminiCommandPath,
+      },
+    });
+    if (result.freshness === "verified") {
+      discoveredGeminiCatalog = result;
+      geminiCliHeadlessValidated = result.backendKind === "gemini-cli-auth";
+      if (!result.models.some((model) => model.modelId === route.modelId))
+        return {
+          ...result,
+          status: "not-configured",
+          message: `Gemini model ${route.modelId} is unavailable; select a model explicitly.`,
+        };
+    }
+    return result;
+  },
+  discoverModels: () =>
+    discoveredGeminiCatalog ?? {
+      status: "ready",
+      providerId: "google",
+      backendKind: getGeminiRuntimeBackendKind(),
+      models: GEMINI_FALLBACK_MODELS,
+    },
+  refreshModels: async (options) => {
+    const result = await discoverGeminiModels(options);
+    if (result.freshness === "verified" && !options.signal?.aborted) {
+      discoveredGeminiCatalog = result;
+      if (result.backendKind === "gemini-cli-auth") geminiCliHeadlessValidated = true;
+    }
+    return result;
+  },
   run: (request, handlers: BackendRunHandlers) => {
     const control = createRunControl(handlers);
     const controller = new AbortController();
@@ -858,7 +948,11 @@ export const geminiRuntime: ProviderRuntime = {
       });
     }
 
-    if (request.route.reasoning) {
+    if (
+      request.route.reasoning &&
+      !discoveredGeminiCatalog?.models.find((item) => item.modelId === request.route.modelId)
+        ?.reasoningControl
+    ) {
       handlers.onProgress?.({
         id: "gemini-reasoning",
         source: "stdout",
@@ -879,18 +973,19 @@ export const geminiRuntime: ProviderRuntime = {
       },
     };
 
-    const execPath = geminiCliHeadlessValidated
+    const useApi =
+      request.route.backendKind === "gemini-api-key" ||
+      (!geminiCliHeadlessValidated && Boolean(request.providerConfig?.apiKey || getGeminiApiKey()));
+    const execPath = !useApi
       ? "runGeminiCli"
       : hasGeminiApiKey()
         ? "runGeminiApi"
         : "runGeminiCli (fallback-no-key)";
     diagLog(`EXEC PATH: geminiCliHeadlessValidated=${geminiCliHeadlessValidated} → ${execPath}`);
 
-    const runGemini = geminiCliHeadlessValidated
-      ? runGeminiCliWithRunner(request, commandRunner, childHandlers)
-      : hasGeminiApiKey()
-        ? runGeminiApi(request, controller.signal)
-        : runGeminiCliWithRunner(request, commandRunner, childHandlers);
+    const runGemini = useApi
+      ? runGeminiApi(request, controller.signal)
+      : runGeminiCliWithRunner(request, commandRunner, childHandlers);
 
     const work = runGemini
       .then((text) => {

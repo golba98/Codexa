@@ -830,15 +830,12 @@ test("ANTHROPIC_FALLBACK_MODELS labels contain no version-specific numbers", () 
   }
 });
 
-test("ANTHROPIC_FALLBACK_MODELS offers the Fable flagship first with the full effort range", () => {
+test("ANTHROPIC_FALLBACK_MODELS preserves aliases without inventing effort", () => {
   const fable = ANTHROPIC_FALLBACK_MODELS[0];
   assert.equal(fable?.modelId, "fable");
   assert.equal(fable?.family, "fable");
-  assert.equal(fable?.defaultReasoningLevel, "xhigh");
-  assert.deepEqual(
-    fable?.supportedReasoningLevels?.map((level) => level.id),
-    ["low", "medium", "high", "xhigh", "max"],
-  );
+  assert.equal(fable?.defaultReasoningLevel, null);
+  assert.deepEqual(fable?.supportedReasoningLevels, null);
 });
 
 test("ANTHROPIC_FALLBACK_MODELS uses short aliases as modelId, not versioned canonical IDs", () => {
@@ -855,12 +852,9 @@ test("ANTHROPIC_FALLBACK_MODELS uses short aliases as modelId, not versioned can
   }
 });
 
-test("ANTHROPIC_FALLBACK_MODELS uses the full last-known Claude CLI effort ladder", () => {
+test("ANTHROPIC_FALLBACK_MODELS leaves unsupported effort metadata unknown", () => {
   for (const model of ANTHROPIC_FALLBACK_MODELS) {
-    assert.deepEqual(
-      model.supportedReasoningLevels?.map((level) => level.id),
-      ["low", "medium", "high", "xhigh", "max"],
-    );
+    assert.deepEqual(model.supportedReasoningLevels, null);
     assert.equal(model.effortVerified, false);
   }
 });

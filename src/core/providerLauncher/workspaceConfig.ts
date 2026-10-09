@@ -1,9 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
-import { DEFAULT_MODEL } from "../../config/settings.js";
 import { normalizeGeminiModelId } from "../providerRuntime/models.js";
 import {
-  getDefaultRouteModel,
   getProviderRuntime,
   isProviderRoutableInUbume,
   isProviderRouteConfigured,
@@ -22,8 +20,6 @@ import type {
   ProviderWorkspaceOverride,
 } from "./types.js";
 
-const DEPRECATED_GOOGLE_PROVIDER_ID = "google";
-
 export function getProviderWorkspaceConfigFile(
   workspaceRoot: string,
   options: { readOnly?: boolean } = {},
@@ -36,51 +32,6 @@ export function getProviderWorkspaceConfigFile(
 
 export function getLegacyProviderWorkspaceConfigFile(workspaceRoot: string): string {
   return join(normalizeWorkspaceRoot(workspaceRoot), ".codexa", "providers.json");
-}
-
-function isDeprecatedGoogleRoute(value: unknown): boolean {
-  return (
-    isRecord(value) && (value.providerId ?? value.provider_id) === DEPRECATED_GOOGLE_PROVIDER_ID
-  );
-}
-
-function resolveDeprecatedProviderFallback(
-  providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>>,
-): ProviderId {
-  const candidates: readonly ProviderId[] = ["openai", "anthropic", "local"];
-  return (
-    candidates.find(
-      (providerId) =>
-        isProviderRoutableInUbume(providerId) &&
-        (providerId === "openai" ||
-          providers[providerId] !== undefined ||
-          isProviderRouteConfigured(providerId)),
-    ) ?? "openai"
-  );
-}
-
-function createFallbackActiveRoute(
-  providerId: ProviderId,
-  providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>>,
-): ProviderActiveRoute {
-  const override = providers[providerId];
-  const modelId =
-    providerId === "openai"
-      ? (override?.currentModel ?? DEFAULT_MODEL)
-      : providerId === "google"
-        ? normalizeGeminiModelId(
-            override?.currentModel ?? getDefaultRouteModel(providerId, DEFAULT_MODEL),
-          )
-        : (override?.currentModel ?? getDefaultRouteModel(providerId, DEFAULT_MODEL));
-
-  return {
-    providerId,
-    modelId,
-    backendKind: getProviderRuntime(providerId).backendKind,
-    ...(override?.currentReasoning ? { reasoning: override.currentReasoning } : {}),
-    ...(providerId === "google" ? { modelSelection: { kind: "manual" as const, modelId } } : {}),
-    ...(providerId === "local" ? { localBackend: override?.localBackend ?? "lm-studio" } : {}),
-  };
 }
 
 function parseLaunchCommand(value: unknown): ProviderWorkspaceOverride["command"] | undefined {
@@ -128,6 +79,9 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
     override.baseUrl = baseUrl.trim();
   }
 
+  if (value.deployment === "local" || value.deployment === "remote")
+    override.deployment = value.deployment;
+
   const apiKey = value.apiKey ?? value.api_key;
   if (typeof apiKey === "string" && apiKey.trim()) {
     override.apiKey = apiKey.trim();
@@ -153,6 +107,8 @@ function parseProviderOverride(value: unknown): ProviderWorkspaceOverride | unde
     for (const [modelId, modelValue] of Object.entries(value.models)) {
       if (!modelId.trim() || !isRecord(modelValue)) continue;
       const entry: ProviderModelWorkspaceOverride = {};
+      if (typeof modelValue.reasoningPreference === "string")
+        entry.reasoningPreference = modelValue.reasoningPreference;
 
       const rawContextLength = modelValue.contextLength ?? modelValue.context_length;
       if (
@@ -271,14 +227,9 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
 
   const config: ProviderWorkspaceConfig = {};
   const providers: Partial<Record<ProviderId, ProviderWorkspaceOverride>> = {};
-  let foundDeprecatedGoogle = false;
 
   if (isRecord(data.providers)) {
     for (const [id, value] of Object.entries(data.providers)) {
-      if (id === DEPRECATED_GOOGLE_PROVIDER_ID) {
-        foundDeprecatedGoogle = true;
-        continue;
-      }
       if (!isKnownProviderId(id)) continue;
       const override = parseProviderOverride(value);
       if (override) providers[id] = override;
@@ -291,42 +242,18 @@ export function parseProviderWorkspaceConfig(data: unknown): ProviderWorkspaceCo
     data.workspace_default_provider_id ??
     data.defaultProviderId ??
     data.default_provider_id;
-  if (defaultProvider === DEPRECATED_GOOGLE_PROVIDER_ID) {
-    foundDeprecatedGoogle = true;
-    config.workspaceDefaultProviderId = resolveDeprecatedProviderFallback(providers);
-  } else if (typeof defaultProvider === "string" && isKnownProviderId(defaultProvider)) {
+  if (typeof defaultProvider === "string" && isKnownProviderId(defaultProvider))
     config.workspaceDefaultProviderId = defaultProvider;
-  }
-
-  const rawActiveRoute = data.activeRoute ?? data.active_route;
-  if (isDeprecatedGoogleRoute(rawActiveRoute)) {
-    foundDeprecatedGoogle = true;
-    const fallbackProviderId = resolveDeprecatedProviderFallback(providers);
-    config.activeRoute = createFallbackActiveRoute(fallbackProviderId, providers);
-    config.workspaceDefaultProviderId ??= fallbackProviderId;
-  } else {
-    const activeRoute = parseActiveRoute(rawActiveRoute);
-    if (activeRoute) {
-      config.activeRoute = activeRoute;
-      if (activeRoute.providerId === "local") {
-        providers.local = {
-          ...providers.local,
-          localBackend: activeRoute.localBackend ?? "lm-studio",
-        };
-        config.providers = providers;
-      }
+  const activeRoute = parseActiveRoute(data.activeRoute ?? data.active_route);
+  if (activeRoute) {
+    config.activeRoute = activeRoute;
+    if (activeRoute.providerId === "local") {
+      providers.local = {
+        ...providers.local,
+        localBackend: activeRoute.localBackend ?? "lm-studio",
+      };
+      config.providers = providers;
     }
-  }
-
-  if (foundDeprecatedGoogle) {
-    const revertedProviderId =
-      config.activeRoute?.providerId ??
-      config.workspaceDefaultProviderId ??
-      resolveDeprecatedProviderFallback(providers);
-    config.migrationNotice = {
-      deprecatedProviderId: DEPRECATED_GOOGLE_PROVIDER_ID,
-      revertedProviderId,
-    };
   }
 
   return config;
@@ -358,6 +285,7 @@ export function serializeProviderWorkspaceConfig(
         ...(override.enabled !== undefined ? { enabled: override.enabled } : {}),
         ...(override.type !== undefined ? { type: override.type } : {}),
         ...(override.baseUrl !== undefined ? { base_url: override.baseUrl } : {}),
+        ...(override.deployment ? { deployment: override.deployment } : {}),
         ...(override.apiKey !== undefined ? { api_key: override.apiKey } : {}),
         ...(override.pinnedModel !== undefined ? { pinned_model: override.pinnedModel } : {}),
         ...(override.defaultModel !== undefined ? { default_model: override.defaultModel } : {}),
@@ -385,6 +313,9 @@ export function serializeProviderWorkspaceConfig(
                       : {}),
                     ...(model.supportsVision !== undefined
                       ? { supportsVision: model.supportsVision }
+                      : {}),
+                    ...(model.reasoningPreference !== undefined
+                      ? { reasoningPreference: model.reasoningPreference }
                       : {}),
                     ...(model.supportsReasoningEffort !== undefined
                       ? { supportsReasoningEffort: model.supportsReasoningEffort }
@@ -487,8 +418,7 @@ export function setProviderWorkspaceDefault(
 ): ProviderWorkspaceConfig {
   return {
     ...config,
-    workspaceDefaultProviderId:
-      providerId === DEPRECATED_GOOGLE_PROVIDER_ID ? "openai" : providerId,
+    workspaceDefaultProviderId: providerId,
   };
 }
 
@@ -521,6 +451,23 @@ export function setProviderDefaultReasoning(
       [providerId]: {
         ...config.providers?.[providerId],
         currentReasoning: reasoning,
+        ...(config.providers?.[providerId]?.currentModel
+          ? {
+              models: {
+                ...config.providers?.[providerId]?.models,
+                ...(config.providers?.[providerId]?.currentModel
+                  ? {
+                      [config.providers[providerId]!.currentModel!]: {
+                        ...config.providers[providerId]?.models?.[
+                          config.providers[providerId]!.currentModel!
+                        ],
+                        reasoningPreference: reasoning,
+                      },
+                    }
+                  : {}),
+              },
+            }
+          : {}),
       },
     },
   };
@@ -531,7 +478,6 @@ export function setProviderActiveRoute(
   activeRoute: ProviderActiveRoute,
 ): ProviderWorkspaceConfig {
   if (
-    activeRoute.providerId === DEPRECATED_GOOGLE_PROVIDER_ID ||
     !isProviderRoutableInUbume(activeRoute.providerId) ||
     !isProviderRouteConfigured(activeRoute.providerId)
   ) {

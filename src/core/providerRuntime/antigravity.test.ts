@@ -118,23 +118,15 @@ test("parseAgyModelsOutput preserves the full discovered catalog", () => {
   assert.ok(labels.includes("GPT-OSS 120B (Medium)"), "missing GPT-OSS 120B (Medium)");
 });
 
-test("parseAgyModelsOutput groups Gemini rows from the current two-column agy format", () => {
+test("native two-column AGY discovery preserves all variant slugs", () => {
   const models = parseAgyModelsOutput(CURRENT_AGY_MODELS_OUTPUT);
-  assert.deepEqual(
-    models.map((model) => model.id),
-    [
-      "gemini-3.7-flash",
-      "gemini-3.6-flash",
-      "claude-sonnet-4-6",
-      "claude-opus-4-6-thinking",
-      "gpt-oss-120b-medium",
-    ],
-  );
+  assert.equal(models.length, 9);
+  assert.equal(models[0]?.modelId, "gemini-3.7-flash-high");
+  assert.equal(getAgyModelSelector("gemini-3.7-flash-high", "low", models), "gemini-3.7-flash-low");
   assert.deepEqual(
     models[0]?.supportedReasoningLevels?.map((level) => level.id),
     ["low", "medium", "high"],
   );
-  assert.equal(getAgyModelSelector("gemini-3.7-flash", "high", models), "gemini-3.7-flash-high");
 });
 
 test("current agy format leaves Claude and GPT-OSS as native models without intelligence levels", () => {

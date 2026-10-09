@@ -6,6 +6,7 @@ import {
 } from "../executables/executableResolver.js";
 import type { ReasoningEffortCapability } from "../models/codexModelCapabilities.js";
 import { loadCachedProviderModels } from "../models/modelCache.js";
+import { providerCatalog } from "../models/modelCatalog.js";
 import { runCommand } from "../process/commandRunner.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
@@ -36,14 +37,6 @@ interface AgySelectorMetadata {
   selectors: Record<string, string>;
 }
 
-function normalizeAgyId(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9.]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 function formatAgyVariantLabel(value: string): string {
   return (
     value
@@ -60,6 +53,13 @@ function readAgySelectorMetadata(model: ProviderModel): AgySelectorMetadata | nu
   if (raw.provider !== "antigravity" || !raw.selectors || typeof raw.selectors !== "object")
     return null;
   return { provider: "antigravity", selectors: raw.selectors };
+}
+
+function normalizeAgyId(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9.]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function preferredAgyDefault(modelId: string, efforts: readonly string[]): string {
@@ -88,7 +88,7 @@ function sortAgyReasoningLevels(
     .map(({ level }) => level);
 }
 
-export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
+function parseLegacyAgyModelsOutput(stdout: string): ProviderModel[] {
   const lines = stdout
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -187,12 +187,82 @@ export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
   return models;
 }
 
+/** Parse provider-advertised selectors without rewriting their identities. */
+export function parseAgyModelsOutput(stdout: string): ProviderModel[] {
+  if (!stdout.split(/\r?\n/).some((line) => /^(\S+)(?:\t+| {2,})(.+)$/.test(line.trim()))) {
+    const legacyLines = sanitizeTerminalOutput(stdout)
+      .split(/\r?\n/)
+      .filter((line) => /^(Gemini|Claude|GPT)[a-z0-9 .()_-]+$/i.test(line.trim()));
+    return parseLegacyAgyModelsOutput(legacyLines.join("\n"));
+  }
+  const models = new Map<string, ProviderModel>();
+  for (const line of sanitizeTerminalOutput(stdout).split(/\r?\n/)) {
+    const row = line.trim();
+    if (!row || /^(?:fetching|available models|model\s+|[-─═]+$)/i.test(row)) continue;
+    const columns = row.match(/^(\S+)(?:\t+| {2,})(.+)$/);
+    const selector = columns?.[1] ?? row;
+    const label = columns?.[2]?.trim() ?? row;
+    if (!columns && !/^(?:gemini|claude|gpt|[a-z]+-)[a-z0-9 .()_-]+$/i.test(row)) continue;
+    const variant = selector.match(/-(low|medium|high|xhigh|max)$/i)?.[1]?.toLowerCase();
+    const levels = variant
+      ? [{ id: variant, label: formatAgyVariantLabel(variant), description: null }]
+      : null;
+    models.set(selector, {
+      id: selector,
+      modelId: selector,
+      label,
+      description: null,
+      providerId: "antigravity",
+      deployment: "remote",
+      source: "discovered",
+      available: true,
+      defaultReasoningLevel: variant ?? null,
+      supportedReasoningLevels: levels,
+      reasoningControl: variant
+        ? { kind: "levels", levels: levels!, default: variant, transport: "variant" }
+        : { kind: "unknown" },
+      raw: {
+        provider: "antigravity",
+        selectors: { "": selector, ...(variant ? { [variant]: selector } : {}) },
+      } satisfies AgySelectorMetadata,
+    });
+  }
+  return [...models.values()].map((model) => {
+    const family = model.modelId.replace(/-(low|medium|high|xhigh|max)$/i, "");
+    const siblings = [...models.values()].filter(
+      (item) => item.modelId.replace(/-(low|medium|high|xhigh|max)$/i, "") === family,
+    );
+    if (model.reasoningControl?.kind === "levels" && siblings.length === 1)
+      return {
+        ...model,
+        supportedReasoningLevels: null,
+        defaultReasoningLevel: null,
+        reasoningControl: { kind: "fixed" as const, label: model.label },
+      };
+    if (model.reasoningControl?.kind === "levels" && siblings.length > 1) {
+      const levels = sortAgyReasoningLevels(
+        siblings.flatMap((item) => item.supportedReasoningLevels ?? []),
+      );
+      const selectors = Object.fromEntries(
+        siblings.map((item) => [item.defaultReasoningLevel!, item.modelId]),
+      );
+      return {
+        ...model,
+        supportedReasoningLevels: levels,
+        reasoningControl: { ...model.reasoningControl, levels },
+        raw: { provider: "antigravity" as const, selectors: { "": model.modelId, ...selectors } },
+      };
+    }
+    return model;
+  });
+}
+
 function normalizeCachedAgyModels(models: readonly ProviderModel[]): readonly ProviderModel[] {
   const legacyRows = models.map((model) => {
     const metadata = readAgySelectorMetadata(model);
     return metadata?.selectors[""] ?? null;
   });
-  if (!legacyRows.some((row) => row && /^(\S+)\s{2,}(.+)$/.test(row))) return models;
+  if (!legacyRows.some((row) => row && /^(\S+)(?:\t+| {2,})(.+)$/.test(row))) return models;
 
   const normalized = parseAgyModelsOutput(
     legacyRows.filter((row): row is string => Boolean(row)).join("\n"),
@@ -268,7 +338,7 @@ let resolvedAgyExecutable: string = "agy";
 let discoveredAgyModels: readonly ProviderModel[] | null = null;
 
 function getActiveAgyModels(): readonly ProviderModel[] {
-  if (discoveredAgyModels?.length) return discoveredAgyModels;
+  if (discoveredAgyModels !== null) return discoveredAgyModels;
   return normalizeCachedAgyModels(loadCachedProviderModels("antigravity")?.models ?? []);
 }
 
@@ -277,20 +347,31 @@ export async function discoverAgyModels(options: {
   cwd: string;
   runCommandImpl: typeof runCommand;
   platform: NodeJS.Platform;
+  signal?: AbortSignal;
 }): Promise<ProviderModelDiscoveryResult> {
   const spawnSpec = buildSpawnSpec(options.executable, ["models"], options.platform);
-  const result = await options.runCommandImpl({
+  const runner = options.runCommandImpl({
     executable: spawnSpec.executable,
     args: spawnSpec.args,
     cwd: options.cwd,
     timeoutMs: ANTIGRAVITY_VALIDATION_TIMEOUT_MS,
-  }).result;
+  });
+  const cancel = () => runner.cancel();
+  options.signal?.addEventListener("abort", cancel, { once: true });
+  if (options.signal?.aborted) cancel();
+  const result = await runner.result.finally(() =>
+    options.signal?.removeEventListener("abort", cancel),
+  );
   const models =
     result.status === "completed" && result.exitCode === 0
       ? parseAgyModelsOutput(result.stdout)
       : [];
-  if (models.length > 0) {
-    discoveredAgyModels = models;
+  if (
+    result.status === "completed" &&
+    result.exitCode === 0 &&
+    (models.length > 0 || !result.stdout.trim())
+  ) {
+    if (!options.signal?.aborted) discoveredAgyModels = models;
     return {
       status: "ready",
       providerId: "antigravity",
@@ -310,6 +391,8 @@ export async function discoverAgyModels(options: {
     providerId: "antigravity",
     backendKind: cached.length > 0 ? "antigravity-cli-auth" : "unavailable",
     models: cached,
+    freshness: "unverified",
+    refreshState: /auth|login|unauthorized|401/i.test(result.stderr) ? "auth-required" : "failed",
     message:
       cached.length > 0
         ? "Live agy model metadata is unavailable; using the last successful discovery."
@@ -436,6 +519,7 @@ export function runAntigravityWithRunner(
   platform: NodeJS.Platform = process.platform,
   models: readonly ProviderModel[] = getActiveAgyModels(),
 ): () => void {
+  if (request.modelDescriptor) models = [request.modelDescriptor];
   const selector = getAgyModelSelector(request.route.modelId, request.route.reasoning, models);
   if (!selector) {
     handlers.onError(
@@ -446,7 +530,21 @@ export function runAntigravityWithRunner(
   const prompt = request.conversationHistory?.length
     ? `Previous conversation:\n${formatConversationHistory(request.conversationHistory)}\n\nCurrent request:\n${request.prompt}`
     : request.prompt;
-  const spawnSpec = buildSpawnSpec(executable, ["--model", selector, "-p", prompt], platform);
+  const selected = models.find(
+    (item) => item.modelId === request.route.modelId || item.id === request.route.modelId,
+  );
+  const effort =
+    selected?.reasoningControl?.kind === "levels" &&
+    selected.reasoningControl.transport === "parameter" &&
+    request.route.reasoning &&
+    selected.reasoningControl.levels.some((level) => level.id === request.route.reasoning)
+      ? ["--effort", request.route.reasoning]
+      : [];
+  const spawnSpec = buildSpawnSpec(
+    executable,
+    ["--model", selector, ...effort, "-p", prompt],
+    platform,
+  );
 
   const runner = runCommandImpl({
     executable: spawnSpec.executable,
@@ -495,6 +593,78 @@ export function runAntigravityWithRunner(
 // Runtime
 // ---------------------------------------------------------------------------
 
+export function applyAgyEffortMetadata(model: ProviderModel, output: string): ProviderModel {
+  try {
+    const body = JSON.parse(output);
+    const data = body.command?.name === "effort" ? body.command.data : null;
+    if (data?.adjustable === false)
+      return {
+        ...model,
+        supportedReasoningLevels: null,
+        defaultReasoningLevel: null,
+        reasoningControl: { kind: "fixed", label: "Thinking (provider-managed)" },
+      };
+    if (
+      data?.adjustable !== true ||
+      !Array.isArray(data.available) ||
+      !data.available.every((id: unknown) => typeof id === "string" && /^[a-z]+$/.test(id))
+    )
+      return model;
+    const levels = data.available.map((id: string) => ({
+      id,
+      label: formatAgyVariantLabel(id),
+      description: null,
+    }));
+    if (!levels.length) return model;
+    const selected = levels.some((level: ReasoningEffortCapability) => level.id === data.current)
+      ? data.current
+      : levels[0].id;
+    return {
+      ...model,
+      supportedReasoningLevels: levels,
+      defaultReasoningLevel: selected,
+      reasoningControl: { kind: "levels", levels, default: selected, transport: "parameter" },
+      raw: {
+        provider: "antigravity",
+        selectors: {
+          "": model.modelId,
+          ...Object.fromEntries(
+            levels.map((level: ReasoningEffortCapability) => [level.id, model.modelId]),
+          ),
+        },
+      },
+    };
+  } catch {
+    return model;
+  }
+}
+
+export async function resolveAgyReasoningCapability(
+  model: ProviderModel,
+  options: {
+    executable: string;
+    cwd: string;
+    signal?: AbortSignal;
+    runCommandImpl?: typeof runCommand;
+  },
+): Promise<ProviderModel> {
+  if (model.reasoningControl && model.reasoningControl.kind !== "unknown") return model;
+  const probe = (options.runCommandImpl ?? runCommand)({
+    ...buildSpawnSpec(
+      options.executable,
+      ["--model", model.modelId, "-p", "/effort", "--output-format", "json"],
+      process.platform,
+    ),
+    cwd: options.cwd,
+    timeoutMs: 10_000,
+    signal: options.signal,
+  });
+  const response = await probe.result;
+  return !options.signal?.aborted && response.status === "completed" && response.exitCode === 0
+    ? applyAgyEffortMetadata(model, response.stdout)
+    : model;
+}
+
 export const antigravityRuntime: ProviderRuntime = {
   providerId: "antigravity",
   label: "Antigravity CLI",
@@ -505,11 +675,30 @@ export const antigravityRuntime: ProviderRuntime = {
   routeSetupMessage: ANTIGRAVITY_ROUTE_SETUP_MESSAGE,
   launchAvailable: true,
   isRouteConfigured: isAntigravityRouteConfigured,
-  validateRoute: async ({ workspaceRoot, antigravityCommandPath }) =>
-    validateAntigravityRoute({
+  validateRoute: async ({ workspaceRoot, antigravityCommandPath, route }) => {
+    const result = await validateAntigravityRoute({
       cwd: workspaceRoot,
       configuredPath: antigravityCommandPath ?? null,
-    }),
+    });
+    if (result.status !== "ready") return result;
+    const model = (providerCatalog.get("antigravity")?.models ?? getActiveAgyModels()).find(
+      (item) => item.modelId === route.modelId,
+    );
+    if (model && (!model.reasoningControl || model.reasoningControl.kind === "unknown")) {
+      const hydrated = await resolveAgyReasoningCapability(model, {
+        executable: antigravityCommandPath ?? resolvedAgyExecutable,
+        cwd: workspaceRoot,
+      });
+      if (
+        hydrated !== model &&
+        providerCatalog.amendModel("antigravity", model.modelId, () => hydrated, model)
+      )
+        discoveredAgyModels = getActiveAgyModels().map((item) =>
+          item.modelId === model.modelId ? hydrated : item,
+        );
+    }
+    return result;
+  },
   discoverModels: (): ProviderModelDiscoveryResult => {
     const models = getActiveAgyModels();
     return {
@@ -522,10 +711,13 @@ export const antigravityRuntime: ProviderRuntime = {
         : {}),
     };
   },
-  refreshModels: async ({ cwd }): Promise<ProviderModelDiscoveryResult> => {
+  refreshModels: async ({ cwd, providerConfig, signal }): Promise<ProviderModelDiscoveryResult> => {
     let executable = resolvedAgyExecutable;
     try {
-      executable = await resolveAgyExecutable({ cwd });
+      executable = await resolveAgyExecutable({
+        cwd,
+        configuredPath: providerConfig?.antigravityCommandPath,
+      });
       resolvedAgyExecutable = executable;
     } catch {
       const cached = normalizeCachedAgyModels(
@@ -536,6 +728,8 @@ export const antigravityRuntime: ProviderRuntime = {
         providerId: "antigravity",
         backendKind: cached.length > 0 ? "antigravity-cli-auth" : "unavailable",
         models: cached,
+        freshness: "unverified",
+        refreshState: "unavailable",
         message:
           cached.length > 0
             ? "Antigravity CLI is unavailable; using the last successful model discovery."
@@ -546,12 +740,27 @@ export const antigravityRuntime: ProviderRuntime = {
         },
       };
     }
-    return discoverAgyModels({
+    const result = await discoverAgyModels({
       executable,
       cwd,
       runCommandImpl: runCommand,
       platform: process.platform,
+      signal,
     });
+    if (result.status !== "ready" || result.freshness === "unverified" || signal?.aborted)
+      return result;
+    const models = await Promise.all(
+      result.models.map(async (model) => {
+        if (
+          signal?.aborted ||
+          (!/\(Thinking\)/i.test(model.label) && model.modelId !== providerConfig?.currentModel)
+        )
+          return model;
+        return resolveAgyReasoningCapability(model, { executable, cwd, signal });
+      }),
+    );
+    if (!signal?.aborted) discoveredAgyModels = models;
+    return { ...result, models };
   },
   run: (request: ProviderChatRequest, handlers: BackendRunHandlers) => {
     handlers.onProgress?.({
