@@ -129,7 +129,7 @@ interface UseAppInputContext {
     announce?: boolean,
   ) => Promise<CodexModelCapabilities>;
   updateCheckResult: UpdateCheckResult | null;
-  setUpdateCheckResult: React.Dispatch<React.SetStateAction<UpdateCheckResult | null>>;
+  requestUpdateCheck: () => Promise<UpdateCheckResult>;
   setScreen: React.Dispatch<React.SetStateAction<Screen>>;
   globalPackageManager: GlobalPackageManager;
   pastedContentRegistryRef: React.RefObject<PastedContentRegistry>;
@@ -242,7 +242,7 @@ export function useAppInput(context: UseAppInputContext) {
     modelCapabilities,
     refreshModelCapabilities,
     updateCheckResult,
-    setUpdateCheckResult,
+    requestUpdateCheck,
     setScreen,
     globalPackageManager,
     pastedContentRegistryRef,
@@ -388,7 +388,7 @@ export function useAppInput(context: UseAppInputContext) {
         modelCapabilities,
         refreshModelCapabilities,
         updateCheckResult,
-        setUpdateCheckResult,
+        requestUpdateCheck,
         setScreen,
         globalPackageManager,
       });

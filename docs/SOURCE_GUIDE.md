@@ -59,7 +59,7 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 | `src/app/useRunRefs.ts` | Owns the stable shared run refs without moving render-time assignments into effects. |
 | `src/app/useRuntimeSettings.ts` | Applies layered runtime overrides and persists provider routes/defaults. |
 | `src/app/useSettings.ts` | Handles preferences and policy setters, and builds one settings save payload. |
-| `src/app/useUpdateCheck.ts` | Checks startup updates while preserving the initial overlay gate. |
+| `src/app/useUpdateCheck.ts` | Owns the update-check scheduler for the interactive session: runs the startup check behind the initial overlay gate, keeps checking in the background, and applies results to the existing update state without opening overlays or moving focus. Exposes the shared check used by `/update`. |
 | `src/app/useWorkbenchActions.ts` | Coordinates queue edits, interrupts, external editing, rewind, and confirmed imports. |
 
 ### `src/commands/`
@@ -131,7 +131,7 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 
 | File | Purpose |
 | --- | --- |
-| `src/core/perf/debugLog.ts` | Emits environment-gated stdin, focus, paste, and terminal-input diagnostics. Emits privacy-aware Local streaming diagnostics when explicitly enabled. Emits environment-gated model/provider state snapshots for picker and routing diagnosis. |
+| `src/core/perf/debugLog.ts` | Emits environment-gated stdin, focus, paste, and terminal-input diagnostics. Emits privacy-aware Local streaming diagnostics when explicitly enabled. Emits environment-gated model/provider state snapshots for picker and routing diagnosis. Emits environment-gated update-check scheduling and result diagnostics. |
 | `src/core/perf/profiler.ts` | Collects opt-in prompt/run phase timings, counters, and session performance summaries. |
 | `src/core/perf/renderDebug.ts` | Provides opt-in render counts, lifecycle traces, frame diagnostics, and React render instrumentation. |
 
@@ -218,7 +218,8 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 | --- | --- |
 | `src/core/version/channel.ts` | Reads and normalizes the package version through a leaf module that avoids configuration/version import cycles. Formats version and build-channel labels from package and generated build metadata. |
 | `src/core/version/packageManager.ts` | Detects how Ubume was installed and derives the appropriate update command. |
-| `src/core/version/updateCheck.ts` | Caches update-check results in app data with expiry and corruption-tolerant reads. Checks the package registry for newer versions with timeout, cache, and version comparison handling. |
+| `src/core/version/updateCheck.ts` | Caches update-check results in app data with expiry and corruption-tolerant reads. Checks npm `dist-tags` for newer versions with an abortable timeout and SemVer-precedence comparison. |
+| `src/core/version/updateScheduler.ts` | Schedules update checks with injected timers: single-flight requests, a periodic interval after successes, jittered exponential backoff after failures, and disposal that aborts in-flight requests. Classifies only completed comparisons as verified results. |
 
 ### `src/core/workspace/`
 

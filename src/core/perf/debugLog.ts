@@ -108,6 +108,26 @@ export function traceLocalStream(
   }
 }
 
+function isUpdateCheckDebugEnabled(): boolean {
+  return process.env.UBUME_DEBUG_UPDATE_CHECK === "1";
+}
+
+function getUpdateCheckDebugLogPath(): string {
+  return (
+    process.env.UBUME_DEBUG_UPDATE_CHECK_FILE?.trim() ||
+    join(resolveUbumeDataDir(), "debug", "update-check.jsonl")
+  );
+}
+
+const updateCheckLog = createDebugLog(isUpdateCheckDebugEnabled, getUpdateCheckDebugLogPath, {
+  createParent: true,
+});
+
+/** Update-check diagnostics stay in the debug log; failures are never surfaced in the TUI. */
+export function traceUpdateCheck(event: string, details: DebugDetails = {}): void {
+  updateCheckLog({ ts: new Date().toISOString(), event, ...details });
+}
+
 type ModelStateDebugDetails = Record<string, unknown>;
 
 let modelStateDebugSequence = 0;
