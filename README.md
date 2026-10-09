@@ -113,3 +113,7 @@ Google runs the Antigravity CLI (`agy`), never Gemini CLI. Models come from `agy
 Saved `antigravity` selections and native sessions remain available as Google. Proven Antigravity settings take precedence; removed Google CLI settings are retained as inactive migration data. Ambiguous old Google routes require explicit Google/model selection. Credentials and native session stores are not rewritten.
 
 The recovered adapter buffers responses until AGY completes and supplies saved Ubume history in the prompt. It does not expose structured tool events, token streaming, or image input. Native conversations can be resumed through AGY’s `--conversation` handoff. Discovery failures retain a clearly unverified AGY cache for display, but execution requires live validation and never substitutes another model.
+
+### Mistral model discovery
+
+Ubume reads the installed Vibe effective configuration, including its built-in models, configured aliases and cached model-routing assignments. The picker retains Vibe’s labels and current Default entry. API-only model inventories are not added to the native picker. The reader skips Vibe configuration migrations and emits only model settings, never credentials. If the installed Vibe configuration API cannot be read, Ubume shows configured models with an unverified discovery notice. Remote routing changes appear when Vibe updates its own assignment cache.

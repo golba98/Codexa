@@ -150,3 +150,27 @@ test("verified empty model inventories replace withdrawn cached models", () => {
     cleanup();
   }
 });
+
+test("Mistral legacy API-only cache rows cannot re-enter the native Vibe picker", () => {
+  const { file, cleanup } = tempCacheFile();
+  try {
+    const native = {
+      ...SAMPLE_MODELS[0],
+      modelId: "glm-5-3",
+      mistralExecutionClass: "native-vibe" as const,
+    };
+    const custom = {
+      ...SAMPLE_MODELS[0],
+      modelId: "codestral-2508",
+      mistralExecutionClass: "custom-vibe" as const,
+    };
+    saveCachedProviderModels("mistral", { discoveredAt: 1, models: [native, custom] }, file);
+    assert.deepEqual(
+      loadCachedProviderModels("mistral", file)?.models.map((m) => m.modelId),
+      ["glm-5-3"],
+    );
+    assert.match(readFileSync(file, "utf8"), /codestral-2508/);
+  } finally {
+    cleanup();
+  }
+});

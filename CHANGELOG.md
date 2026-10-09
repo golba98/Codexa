@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-No changes yet.
+### Fixed
+
+- Match the Mistral picker to the installed Vibe effective model list, including GLM-5.3 (Mistral Hosted), local models and the current Default entry. Preserve native labels, selector aliases and thinking levels.
+- Stop adding API-only model candidates to the Vibe picker and filter stale API-only cache rows without deleting stored data. Read Vibe configuration and cached routing assignments without running configuration migrations.
+- Discover effective Vibe models before headless execution so routed models such as `glm-5-3` work on a fresh process.
 
 ---
 
