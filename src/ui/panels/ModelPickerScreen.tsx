@@ -8,7 +8,6 @@ import {
 } from "../../core/models/codexModelCapabilities.js";
 import { reconcileReasoning, stepReasoningBudget } from "../../core/models/reasoningControl.js";
 import { traceInputDebug } from "../../core/perf/debugLog.js";
-import type { GeminiModelSelection } from "../../core/providerRuntime/types.js";
 import { clampVisualText } from "../../core/shared/text.js";
 import { FOCUS_IDS } from "../input/focus.js";
 import {
@@ -39,42 +38,168 @@ interface ModelPickerScreenProps {
   models: readonly CodexModelCapability[];
   currentModel: string;
   currentReasoning: string;
-  currentGeminiSelection?: GeminiModelSelection;
   activeProviderLabel?: string;
   isLoading?: boolean;
   emptyMessage?: string;
   routeTextOverride?: string;
-  onSelect: (model: string, reasoning: string, geminiSelection?: GeminiModelSelection) => void;
+  onSelect: (model: string, reasoning: string) => void;
   onRefresh?: () => void;
   refreshMessage?: string;
   onCancel: (reason?: ModelPickerCloseReason) => void;
 }
 
-function getInitialCursor(
-  models: readonly CodexModelCapability[],
-  currentModel: string,
-  currentGeminiSelection?: GeminiModelSelection,
-): number {
-  if (currentGeminiSelection?.kind === "auto") {
-    const familyId =
-      currentGeminiSelection.family === "gemini-3" ? "auto-gemini-3" : "auto-gemini-2.5";
-    const index = models.findIndex((m) => m.id === familyId);
-    if (index >= 0) return index;
-  }
+function getInitialCursor(models: readonly CodexModelCapability[], currentModel: string): number {
   const index = models.findIndex(
-    (model) => model.model === currentModel || model.id === currentModel,
+    (model) =>
+      model.model === currentModel ||
+      model.id === currentModel ||
+      getVariantModelIds(model).includes(currentModel),
   );
   return Math.max(0, index);
 }
 
 function getModelName(model: CodexModelCapability): string {
-  return model.label;
+  const raw = model.raw as { mistralExecutionClass?: unknown } | null;
+  const suffix =
+    raw?.mistralExecutionClass === "native-vibe"
+      ? " · Native Vibe"
+      : raw?.mistralExecutionClass === "custom-vibe"
+        ? " · Custom via Vibe (request unverified)"
+        : raw?.mistralExecutionClass === "local-vibe"
+          ? " · Local via Vibe"
+          : raw?.mistralExecutionClass === "unsupported"
+            ? " · Unsupported"
+            : "";
+  return `${model.label}${suffix}`;
 }
 
 function getReasoningLevels(
   model: CodexModelCapability | undefined,
 ): readonly ReasoningEffortCapability[] {
   return model?.supportedReasoningLevels ?? [];
+}
+
+const GEMINI_EFFORT_IDS = new Set(["low", "medium", "high", "xhigh", "max"]);
+
+function collapseGeminiEffortVariants(
+  models: readonly CodexModelCapability[],
+): readonly CodexModelCapability[] {
+  const groups = new Map<string, CodexModelCapability>();
+  const variantIds = new Map<string, string[]>();
+  const variantLevels = new Map<string, Set<string>>();
+
+  for (const model of models) {
+    const match = model.model.match(/^(.*?)-(low|medium|high|xhigh|max)$/i);
+    if (
+      !match ||
+      !GEMINI_EFFORT_IDS.has(match[2]!.toLowerCase()) ||
+      model.reasoningControl?.kind !== "levels" ||
+      model.reasoningControl.transport !== "variant"
+    ) {
+      groups.set(model.id, model);
+      continue;
+    }
+
+    const familyId = match[1]!;
+    const existing = groups.get(familyId);
+    const level = match[2]!.toLowerCase();
+    const ids = variantIds.get(familyId) ?? [];
+    ids.push(model.model);
+    variantIds.set(familyId, ids);
+    const levels = variantLevels.get(familyId) ?? new Set<string>();
+    levels.add(level);
+    variantLevels.set(familyId, levels);
+
+    const label = model.label.replace(/\s*\((?:low|medium|high|xhigh|max)\)\s*$/i, "");
+    if (!existing) {
+      groups.set(familyId, {
+        ...model,
+        id: familyId,
+        model: familyId,
+        label,
+        description: `Select the intelligence level for ${label}.`,
+        defaultReasoningLevel: level,
+        supportedReasoningLevels: [
+          { id: level, label: formatReasoningLabel(level), description: null },
+        ],
+        reasoningLevelCount: 1,
+        reasoningControl: {
+          kind: "levels",
+          transport: "variant",
+          default: level,
+          levels: [{ id: level, label: formatReasoningLabel(level), description: null }],
+        },
+        raw: { ...(model.raw && typeof model.raw === "object" ? model.raw : {}), variantIds: ids },
+      });
+    } else {
+      const orderedLevels = ["low", "medium", "high", "xhigh", "max"].filter((id) =>
+        levels.has(id),
+      );
+      groups.set(familyId, {
+        ...existing,
+        supportedReasoningLevels: orderedLevels.map((id) => ({
+          id,
+          label: formatReasoningLabel(id),
+          description: null,
+        })),
+        reasoningLevelCount: orderedLevels.length,
+        reasoningControl: {
+          kind: "levels",
+          transport: "variant",
+          default: existing.defaultReasoningLevel ?? orderedLevels[0]!,
+          levels: orderedLevels.map((id) => ({
+            id,
+            label: formatReasoningLabel(id),
+            description: null,
+          })),
+        },
+        raw: {
+          ...(existing.raw && typeof existing.raw === "object" ? existing.raw : {}),
+          variantIds: ids,
+        },
+      });
+    }
+  }
+
+  return [...groups.values()].map((model) => {
+    const ids = variantIds.get(model.model);
+    if (!ids) return model;
+    return {
+      ...model,
+      raw: { ...(model.raw && typeof model.raw === "object" ? model.raw : {}), variantIds: ids },
+    };
+  });
+}
+
+function getVariantModelIds(model: CodexModelCapability): readonly string[] {
+  const raw = model.raw;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  const metadata = raw as { variantIds?: unknown; raw?: { variantIds?: unknown } | null };
+  const ids = metadata.variantIds ?? metadata.raw?.variantIds;
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
+}
+
+function getVariantReasoning(
+  model: CodexModelCapability | undefined,
+  modelId: string,
+): string | null {
+  if (model?.reasoningControl?.kind !== "levels" || model.reasoningControl.transport !== "variant")
+    return null;
+  const variant = getVariantModelIds(model).find((id) => id === modelId);
+  const match = variant?.match(/-(low|medium|high|xhigh|max)$/i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function resolveVariantModelId(
+  model: CodexModelCapability,
+  reasoning: string,
+  currentModel: string,
+): string {
+  const variantIds = getVariantModelIds(model);
+  if (model.reasoningControl?.kind !== "levels" || model.reasoningControl.transport !== "variant") {
+    return variantIds.includes(currentModel) ? currentModel : model.model;
+  }
+  return variantIds.find((id) => id.endsWith(`-${reasoning.toLowerCase()}`)) ?? model.model;
 }
 
 function getModelSourceMarker(
@@ -171,10 +296,9 @@ export function ModelPickerScreen({
   availableRows: propAvailableRows,
   activePanelLayout,
   panelLayout,
-  models,
+  models: baseModels,
   currentModel,
   currentReasoning,
-  currentGeminiSelection,
   activeProviderLabel = "OpenAI",
   isLoading = false,
   emptyMessage,
@@ -186,14 +310,22 @@ export function ModelPickerScreen({
 }: ModelPickerScreenProps) {
   const theme = useTheme();
   const isGoogle = activeProviderLabel === "Google";
+  const isAntigravity = isGoogle || activeProviderLabel.toLowerCase().includes("antigravity");
+
+  const models = useMemo(() => {
+    return isAntigravity ? collapseGeminiEffortVariants(baseModels) : baseModels;
+  }, [baseModels, isAntigravity]);
 
   const { isFocused } = useFocus({ id: FOCUS_IDS.modelPicker, autoFocus: true });
-  const initialModelIndex = getInitialCursor(models, currentModel, currentGeminiSelection);
+  const initialModelIndex = getInitialCursor(models, currentModel);
   const [draftSelectedModel, setDraftSelectedModel] = useState(initialModelIndex);
   const selectedIdentityRef = useRef(models[initialModelIndex]?.model);
   const previousActiveSelection = useRef({ currentModel, currentReasoning });
   const [draftReasoning, setDraftReasoning] = useState(() =>
-    normalizeDraftReasoning(models[initialModelIndex], currentReasoning),
+    normalizeDraftReasoning(
+      models[initialModelIndex],
+      getVariantReasoning(models[initialModelIndex], currentModel) ?? currentReasoning,
+    ),
   );
   const [scrollOffset, setScrollOffset] = useState(0);
 
@@ -226,13 +358,22 @@ export function ModelPickerScreen({
     }
 
     setDraftSelectedModel((current) => {
-      const identityIndex = models.findIndex((item) => item.model === selectedIdentityRef.current);
+      const identityIndex = models.findIndex(
+        (item) =>
+          item.model === selectedIdentityRef.current ||
+          getVariantModelIds(item).includes(selectedIdentityRef.current ?? ""),
+      );
       const nextCursor =
         identityIndex >= 0 ? identityIndex : Math.min(Math.max(0, current), models.length - 1);
       selectedIdentityRef.current = models[nextCursor]?.model;
       const nextModel = models[nextCursor];
       setDraftReasoning((reasoning) =>
-        normalizeDraftReasoning(nextModel, activeChanged ? currentReasoning : reasoning),
+        normalizeDraftReasoning(
+          nextModel,
+          activeChanged
+            ? (getVariantReasoning(nextModel, currentModel) ?? currentReasoning)
+            : reasoning,
+        ),
       );
       return nextCursor;
     });
@@ -318,11 +459,11 @@ export function ModelPickerScreen({
           onCancel("empty-selection");
           return;
         }
-        const geminiSelection = isGoogle
-          ? { kind: "manual" as const, modelId: model.model }
-          : undefined;
         const normalizedReasoning = normalizeDraftReasoning(model, draftReasoning);
-        onSelect(model.model, normalizedReasoning, geminiSelection);
+        onSelect(
+          resolveVariantModelId(model, normalizedReasoning, currentModel),
+          normalizedReasoning,
+        );
         return;
       }
 
@@ -417,7 +558,10 @@ export function ModelPickerScreen({
   const appLayoutBudget = useAppLayoutBudget();
 
   const activeModelIndex = models.findIndex(
-    (model) => model.model === currentModel || model.id === currentModel,
+    (model) =>
+      model.model === currentModel ||
+      model.id === currentModel ||
+      getVariantModelIds(model).includes(currentModel),
   );
   const hasSourceMarker = !!sourceMarker;
 
@@ -583,7 +727,9 @@ export function ModelPickerScreen({
                 models.length === 0
                   ? "Reasoning: current/default"
                   : reasoningUnavailable
-                    ? "Reasoning: fixed or provider-managed"
+                    ? isAntigravity
+                      ? "Uses this model's native AGY configuration"
+                      : "Reasoning: fixed or provider-managed"
                     : `Reasoning: ${formatReasoningLabel(draftReasoning)} · Intelligence: ${formatReasoningLabel(draftReasoning)}`,
                 innerWidth,
               )}
@@ -634,7 +780,6 @@ export function ModelPickerScreen({
                   model={model}
                   width={innerWidth}
                   currentModel={currentModel}
-                  currentGeminiSelection={currentGeminiSelection}
                   isHighlighted={actualIndex === draftSelectedModel}
                 />
               );
@@ -679,27 +824,19 @@ function ModelPickerRow({
   model,
   width,
   currentModel,
-  currentGeminiSelection,
   isHighlighted,
 }: {
   model: CodexModelCapability;
   width: number;
   currentModel: string;
-  currentGeminiSelection?: GeminiModelSelection;
   isHighlighted: boolean;
 }) {
   const theme = useTheme();
 
-  let isCurrent = false;
-  const selection = model.raw as GeminiModelSelection | null | undefined;
-  if (currentGeminiSelection?.kind === "auto") {
-    isCurrent = selection?.kind === "auto" && selection.family === currentGeminiSelection.family;
-  } else if (currentGeminiSelection?.kind === "manual") {
-    isCurrent =
-      selection?.kind === "manual" && selection.modelId === currentGeminiSelection.modelId;
-  } else {
-    isCurrent = model.model === currentModel || model.id === currentModel;
-  }
+  const isCurrent =
+    model.model === currentModel ||
+    model.id === currentModel ||
+    getVariantModelIds(model).includes(currentModel);
 
   const markerWidth = 2;
   const checkWidth = 2;
@@ -733,7 +870,18 @@ function ModelPickerRow({
 }
 
 function getCompactModelName(model: CodexModelCapability): string {
-  return model.label || model.model;
+  const raw = model.raw as { mistralExecutionClass?: unknown } | null;
+  const suffix =
+    raw?.mistralExecutionClass === "native-vibe"
+      ? " · Vibe"
+      : raw?.mistralExecutionClass === "custom-vibe"
+        ? " · Custom"
+        : raw?.mistralExecutionClass === "local-vibe"
+          ? " · Local"
+          : raw?.mistralExecutionClass === "unsupported"
+            ? " · Unsupported"
+            : "";
+  return `${model.label || model.model}${suffix}`;
 }
 
 function IntelligenceSlider({

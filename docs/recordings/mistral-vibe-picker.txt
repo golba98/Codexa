@@ -1,0 +1,27 @@
+Synthetic Ink terminal capture for Ubume 0.1.16. No provider request was sent.
+
+--- 60 columns x 24 rows ---
+╭───────────────────────────────────────────────────────╮
+│ Select model   ↑↓ model · ←→ effort · R refresh · En… │
+│ Choose a Mistral Vibe model to use inside Ubume.      │
+│ Reasoning: High · Intelligence: High                  │
+│   Configured Mistral · Vibe                           │
+│   Vibe current/default · Vibe                         │
+│   Devstral local · Local                              │
+│ > Mistral Large 4 · Custom via Vibe (request unver…✓  │
+│                                                       │
+│ Intelligence  None ───────────────────────● High  Hi… │
+╰───────────────────────────────────────────────────────╯
+
+--- 120 columns x 24 rows ---
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Select model   ↑↓ model · ←→ effort · R refresh · Enter · Esc                                                   │
+│ Choose a Mistral Vibe model to use inside Ubume.                                                                │
+│ Reasoning: High · Intelligence: High                                                                            │
+│   Configured Mistral · Vibe                                                                                     │
+│   Vibe current/default · Vibe                                                                                   │
+│   Devstral local · Local                                                                                        │
+│ > Mistral Large 4 · Custom via Vibe (request unverified)                                                     ✓  │
+│                                                                                                                 │
+│ Intelligence  None ───────────────────────● High  High                                                          │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

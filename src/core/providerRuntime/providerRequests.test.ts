@@ -1,17 +1,9 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
 import type { CommandSpec, runCommand } from "../process/commandRunner.js";
-import {
-  geminiRuntime,
-  resetGeminiRouteValidationCacheForTests,
-  runGeminiCliWithRunner,
-} from "./gemini.js";
-import { parseGeminiModels } from "./geminiDiscovery.js";
+import { parseAgyModelsOutput, runAntigravityWithRunner } from "./antigravity.js";
 import { parseMistralModels } from "./mistralDiscovery.js";
-import { runMistralVibe } from "./mistralVibe.js";
+import { listVibeConfiguredModels, mergeMistralVibeModels, runMistralVibe } from "./mistralVibe.js";
 import type { ProviderChatRequest } from "./types.js";
 
 const result = {
@@ -27,12 +19,121 @@ const result = {
 };
 const runtime = resolveRuntimeConfig(normalizeRuntimeConfig({}));
 
+async function captureVibeRequest(
+  request: Pick<ProviderChatRequest, "route" | "modelDescriptor" | "providerConfig">,
+  env: NodeJS.ProcessEnv = {},
+): Promise<CommandSpec> {
+  let captured: CommandSpec | undefined;
+  await new Promise<void>((resolve, reject) =>
+    runMistralVibe(
+      { prompt: "fixture", workspaceRoot: "/tmp", runtime, ...request },
+      { onResponse: () => resolve(), onError: reject },
+      {
+        env,
+        resolveExecutable: async () => "/fixture/vibe",
+        findSessionImpl: async () => null,
+        runCommandImpl: (spec, handlers) => {
+          captured = spec;
+          handlers.onStdout?.("OK\n");
+          return { result: Promise.resolve(result), cancel: () => {} };
+        },
+      },
+    ),
+  );
+  return captured!;
+}
+
+test("merged Vibe selectors execute configured names while API aliases execute the exact selected ID", async () => {
+  const configured = listVibeConfiguredModels({
+    cwd: "/tmp/no-vibe-project",
+    homeDirectory: "/tmp/no-vibe-home",
+    env: {
+      VIBE_HOME: "/tmp/no-vibe-home/.vibe",
+      VIBE_MODELS: JSON.stringify([
+        { name: "native-request", alias: "friendly-selector", provider: "mistral" },
+      ]),
+    },
+  }).models;
+  const model = mergeMistralVibeModels(
+    configured,
+    parseMistralModels({
+      data: [
+        { id: "native-request", aliases: ["api-version"], capabilities: { completion_chat: true } },
+      ],
+    }),
+  )[0]!;
+  for (const modelId of ["friendly-selector", "native-request", "api-version"]) {
+    const spec = await captureVibeRequest({
+      route: { providerId: "mistral", modelId, backendKind: "mistral-vibe-cli-auth" },
+      modelDescriptor: model,
+    });
+    const payload = JSON.parse(spec.env!.VIBE_MODELS!)[0];
+    expect(payload.name).toBe(modelId === "friendly-selector" ? "native-request" : modelId);
+    expect(payload.alias).toBe(modelId);
+    expect(spec.env!.VIBE_ACTIVE_MODEL).toBe(modelId);
+  }
+});
+
+for (const provider of ["mistral", "llamacpp", "custom-backend"]) {
+  test(`configured ${provider} Vibe routes preserve complete model and provider settings`, async () => {
+    const configuration = {
+      name: "configured-name",
+      alias: "selector",
+      provider,
+      temperature: 0.73,
+      thinking: "off",
+      thinking_levels: ["off"],
+      supports_images: true,
+      max_context_length: 16000,
+      auto_compact_threshold: 12000,
+      input_price: 0.5,
+      output_price: 1.2,
+      cached_input_price: 0.1,
+      display_name: "Configured model",
+    };
+    const env = {
+      VIBE_HOME: "/tmp/no-vibe-home/.vibe",
+      VIBE_MODELS: JSON.stringify([configuration]),
+      VIBE_PROVIDERS: JSON.stringify([{ name: provider, api_base: "http://localhost:8080/v1" }]),
+    };
+    const configured = listVibeConfiguredModels({
+      cwd: "/tmp/no-vibe-project",
+      homeDirectory: "/tmp/no-vibe-home",
+      env,
+    }).models;
+    const spec = await captureVibeRequest(
+      {
+        route: { providerId: "mistral", modelId: "selector", backendKind: "mistral-vibe-cli-auth" },
+        modelDescriptor: mergeMistralVibeModels(configured, [])[0],
+      },
+      env,
+    );
+    expect(JSON.parse(spec.env!.VIBE_MODELS!)[0]).toEqual(configuration);
+    expect(spec.env!.VIBE_PROVIDERS).toBe(env.VIBE_PROVIDERS);
+  });
+}
+
+test("Vibe current/default preserves inherited model and provider overrides", async () => {
+  const env = { VIBE_ACTIVE_MODEL: "saved-selector", VIBE_MODELS: "[]", VIBE_PROVIDERS: "[]" };
+  const spec = await captureVibeRequest(
+    {
+      route: {
+        providerId: "mistral",
+        modelId: "Vibe default",
+        backendKind: "mistral-vibe-cli-auth",
+      },
+    },
+    env,
+  );
+  expect(spec.env).toEqual(env);
+});
+
 for (const effort of ["none", "high"])
   test(`Mistral Vibe sends selectable API-native ID and exact ${effort} effort mapping`, async () => {
     const model = parseMistralModels({
       data: [
         {
-          id: "mistral-medium-3-5",
+          id: "mistral-large-4",
           capabilities: {
             completion_chat: true,
             reasoning: true,
@@ -72,7 +173,11 @@ for (const effort of ["none", "high"])
         },
       ),
     );
-    const configured = JSON.parse(captured!.env!.VIBE_MODELS!)[model.modelId];
+    const configuredModels = JSON.parse(captured!.env!.VIBE_MODELS!);
+    expect(Array.isArray(configuredModels)).toBe(true);
+    expect(configuredModels).toHaveLength(1);
+    const configured = configuredModels[0];
+    expect(configured.alias).toBe(model.modelId);
     expect(captured?.env?.VIBE_ACTIVE_MODEL).toBe(model.modelId);
     expect(configured.name).toBe(model.modelId);
     expect(configured.thinking).toBe(effort === "none" ? "low" : "high");
@@ -113,90 +218,163 @@ test("unsupported Mistral settings stop before spawning", async () => {
   expect(spawned).toBe(false);
 });
 
-for (const [id, effort, thinking] of [
-  ["models/gemini-2.5-pro", "budget:4096", { thinkingBudget: 4096 }],
-  ["models/gemini-3.1-pro-preview", "low", { thinkingLevel: "LOW" }],
-] as const)
-  test(`Gemini API request preserves ${id} and transmits selected thinking configuration`, async () => {
-    resetGeminiRouteValidationCacheForTests();
-    const model = parseGeminiModels({
-      models: [{ name: id, supportedGenerationMethods: ["generateContent"] }],
-    })[0]!;
-    const original = globalThis.fetch;
-    let url = "";
-    let body: Record<string, unknown> = {};
-    try {
-      globalThis.fetch = (async (input, init) => {
-        url = String(input);
-        body = JSON.parse(String(init?.body));
-        return Response.json({ candidates: [{ content: { parts: [{ text: "OK" }] } }] });
-      }) as typeof fetch;
-      await new Promise<void>((resolve, reject) =>
-        geminiRuntime.run!(
-          {
-            prompt: "hi",
-            route: {
-              providerId: "google",
-              modelId: id,
-              reasoning: effort,
-              backendKind: "gemini-api-key",
-            },
-            modelDescriptor: model,
-            providerConfig: { apiKey: "fixture", baseUrl: "https://fixture.test/v1beta" },
-            workspaceRoot: "/tmp",
-            runtime,
-          },
-          { onResponse: () => resolve(), onError: reject },
-        ),
-      );
-      expect(url).toBe(`https://fixture.test/v1beta/${id}:generateContent`);
-      expect(body.generationConfig).toEqual({ thinkingConfig: thinking });
-      expect(url).not.toContain("fixture-key");
-    } finally {
-      globalThis.fetch = original;
-      resetGeminiRouteValidationCacheForTests();
-    }
+test("Mistral Vibe refuses a model without a current descriptor before spawning", async () => {
+  let spawned = false;
+  const error = await new Promise<string>((resolve) =>
+    runMistralVibe(
+      {
+        prompt: "hi",
+        route: {
+          providerId: "mistral",
+          modelId: "mistral-large-4",
+          backendKind: "mistral-vibe-cli-auth",
+        },
+        workspaceRoot: "/tmp",
+        runtime,
+      },
+      { onResponse: () => {}, onError: resolve },
+      {
+        env: {},
+        resolveExecutable: async () => "/fixture/vibe",
+        runCommandImpl: () => {
+          spawned = true;
+          return { result: Promise.resolve(result), cancel: () => {} };
+        },
+      },
+    ),
+  );
+  expect(error).toContain("not present");
+  expect(spawned).toBe(false);
+});
+
+test("Mistral Vibe detects a descriptor and selected-ID mismatch before spawning", async () => {
+  const descriptor = parseMistralModels({
+    data: [{ id: "mistral-small-latest", capabilities: { completion_chat: true } }],
+  })[0]!;
+  let spawned = false;
+  const error = await new Promise<string>((resolve) =>
+    runMistralVibe(
+      {
+        prompt: "hi",
+        route: {
+          providerId: "mistral",
+          modelId: "mistral-large-4",
+          backendKind: "mistral-vibe-cli-auth",
+        },
+        modelDescriptor: descriptor,
+        workspaceRoot: "/tmp",
+        runtime,
+      },
+      { onResponse: () => {}, onError: resolve },
+      {
+        env: {},
+        resolveExecutable: async () => "/fixture/vibe",
+        runCommandImpl: () => {
+          spawned = true;
+          return { result: Promise.resolve(result), cancel: () => {} };
+        },
+      },
+    ),
+  );
+  expect(error).toContain("not present");
+  expect(spawned).toBe(false);
+});
+
+test("configured local Vibe models keep their provider and do not inherit Mistral credentials", async () => {
+  const model = {
+    id: "local-devstral",
+    modelId: "local-devstral",
+    label: "Devstral local",
+    description: "devstral via llamacpp",
+    defaultReasoningLevel: null,
+    supportedReasoningLevels: null,
+    source: "config" as const,
+    mistralExecutionClass: "local-vibe" as const,
+    executionVerified: false,
+    raw: { name: "devstral", alias: "local-devstral", provider: "llamacpp" },
+  };
+  let captured: CommandSpec | undefined;
+  await new Promise<void>((resolve, reject) =>
+    runMistralVibe(
+      {
+        prompt: "hello",
+        route: {
+          providerId: "mistral",
+          modelId: model.modelId,
+          backendKind: "mistral-vibe-cli-auth",
+        },
+        modelDescriptor: model,
+        workspaceRoot: "/tmp",
+        runtime,
+        providerConfig: { apiKey: "must-not-leak", baseUrl: "https://fixture.test/v1" },
+      },
+      { onResponse: () => resolve(), onError: reject },
+      {
+        env: {},
+        resolveExecutable: async () => "/fixture/vibe",
+        findSessionImpl: async () => null,
+        runCommandImpl: (spec, handlers) => {
+          captured = spec;
+          handlers.onStdout?.("OK\n");
+          return { result: Promise.resolve(result), cancel: () => {} };
+        },
+      },
+    ),
+  );
+  const configured = JSON.parse(captured!.env!.VIBE_MODELS!)[0];
+  expect(configured.name).toBe("devstral");
+  expect(configured.provider).toBe("llamacpp");
+  expect(captured?.env?.MISTRAL_API_KEY).toBeUndefined();
+  expect(captured?.env?.VIBE_PROVIDERS).toBeUndefined();
+});
+
+test("Google request executes agy with exact model and prompt arguments", async () => {
+  const model = parseAgyModelsOutput("gemini-3.5-flash-high\tGemini 3.5 Flash (High)")[0]!;
+  let captured: CommandSpec | undefined;
+  const runner = ((spec: CommandSpec) => {
+    captured = spec;
+    return {
+      child: null,
+      result: Promise.resolve({
+        status: "completed",
+        exitCode: 0,
+        signal: null,
+        stdout: "Antigravity response",
+        stderr: "",
+        startedAt: 0,
+        endedAt: 0,
+        durationMs: 0,
+        userMessage: "done",
+      }),
+      cancel: () => {},
+    };
+  }) as unknown as typeof runCommand;
+
+  const resultText = await new Promise<string>((resolve, reject) => {
+    runAntigravityWithRunner(
+      {
+        prompt: "hello from test",
+        route: {
+          providerId: "google",
+          modelId: model.modelId,
+          backendKind: "antigravity-cli-auth",
+        },
+        modelDescriptor: model,
+        workspaceRoot: "/tmp",
+        runtime,
+      },
+      {
+        onResponse: resolve,
+        onError: reject,
+      },
+      runner,
+      "agy",
+    );
   });
 
-test("Gemini CLI settings reach child process and are removed after completion", async () => {
-  const root = mkdtempSync(join(tmpdir(), "ubume-google-payload-"));
-  let settingsPath = "";
-  let settings: Record<string, unknown> = {};
-  const id = "gemini-2.5-pro";
-  const model = parseGeminiModels(
-    { availableModels: [{ modelId: id, name: "Gemini 2.5 Pro" }] },
-    true,
-  )[0]!;
-  const request: ProviderChatRequest = {
-    prompt: "hello",
-    route: {
-      providerId: "google",
-      modelId: id,
-      reasoning: "budget:2048",
-      backendKind: "gemini-cli-auth",
-    },
-    modelDescriptor: model,
-    workspaceRoot: root,
-    runtime: { ...runtime, geminiCommandPath: "gemini" },
-  };
-  const runner = ((spec: CommandSpec) => {
-    if (spec.args.includes("-p")) {
-      settingsPath = spec.env?.GEMINI_CLI_SYSTEM_SETTINGS_PATH ?? "";
-      settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-      expect(spec.args[1]).toBe(id);
-    }
-    return { child: null, result: Promise.resolve(result), cancel: () => {} };
-  }) as unknown as typeof runCommand;
-  try {
-    expect(await runGeminiCliWithRunner(request, runner)).toBe("OK");
-    expect((settings.modelConfigs as { overrides: unknown[] }).overrides.at(-1)).toEqual({
-      match: { model: id },
-      modelConfig: { generateContentConfig: { thinkingConfig: { thinkingBudget: 2048 } } },
-    });
-    expect(existsSync(settingsPath)).toBe(false);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  expect(resultText).toBe("Antigravity response");
+  expect(captured?.executable).toBe("agy");
+  expect(captured?.args).toEqual(["--model", "gemini-3.5-flash-high", "-p", "hello from test"]);
 });
 
 test("Claude Messages API sends configured endpoint, native ID and only advertised effort", async () => {

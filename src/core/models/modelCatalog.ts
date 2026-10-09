@@ -38,11 +38,7 @@ export function catalogContextKey(provider: ProviderId, context: CatalogContext)
           join(context.cwd, ".vibe", ".env"),
         ]
       : provider === "google"
-        ? [
-            join(home, ".gemini", "oauth_creds.json"),
-            join(home, ".gemini", "settings.json"),
-            join(context.cwd, ".gemini", "settings.json"),
-          ]
+        ? [join(home, ".gemini", "antigravity-cli", "settings.json")]
         : provider === "anthropic"
           ? [join(home, ".claude", ".credentials.json"), join(home, ".claude", "settings.json")]
           : provider === "openai"
@@ -71,10 +67,10 @@ export function catalogContextKey(provider: ProviderId, context: CatalogContext)
           process.env.VIBE_HOME,
           process.env.CLAUDE_EXECUTABLE,
           process.env.CODEX_EXECUTABLE,
-          process.env.GEMINI_EXECUTABLE,
+          process.env.AGY_EXECUTABLE,
+          provider === "google" ? home : undefined,
+          provider === "google" ? process.env.PATH : undefined,
           process.env.ANTHROPIC_BASE_URL,
-          process.env.GEMINI_API_KEY,
-          process.env.GOOGLE_API_KEY,
           process.env.ANTHROPIC_API_KEY,
           process.env.CODEX_HOME,
           process.env.UBUME_LOCAL_BASE_URL,

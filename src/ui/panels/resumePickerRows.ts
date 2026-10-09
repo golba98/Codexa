@@ -11,6 +11,7 @@ export type ResumePickerTab =
   | "all"
   | "openai"
   | "anthropic"
+  | "google"
   | "mistral"
   | "local"
   | "codexa-native"
@@ -30,6 +31,7 @@ export const RESUME_PICKER_TABS: readonly ResumePickerTab[] = [
   "all",
   "openai",
   "anthropic",
+  "google",
   "mistral",
   "local",
 ];
@@ -65,6 +67,7 @@ function providerLabel(providerId: string | null): string {
     case "anthropic":
       return "Anthropic";
     case "google":
+    case "antigravity":
       return "Google";
     case "mistral":
       return "Mistral";
@@ -80,7 +83,11 @@ function providerLabel(providerId: string | null): string {
 }
 
 function importedLabel(source: string): string {
-  return source === "claude" || source === "codex" || source === "vibe"
+  return source === "claude" ||
+    source === "codex" ||
+    source === "google" ||
+    source === "antigravity" ||
+    source === "vibe"
     ? externalSourceLabel(source)
     : source;
 }

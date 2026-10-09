@@ -345,7 +345,7 @@ function buildHelpMessage(context: CommandContext): string {
     "Commands:",
     "  /exit, /quit       Quit the application and cancel active run",
     "  /clear             Clear the chat window and cancel the active run",
-    "  /resume [id]       Resume a conversation; ←/→ browse Claude Code, Codex and Mistral Vibe sessions",
+    "  /resume [id]       Resume a conversation; ←/→ browse Claude Code, Codex, Google and Mistral Vibe sessions",
     "  /queue             Inspect, edit, reorder, or continue queued prompts",
     "  /transcript        Inspect detailed tool activity",
     "  /diff              Review session or turn changes",

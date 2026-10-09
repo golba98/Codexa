@@ -12,10 +12,9 @@ import { render } from "ink";
 import { getSelectableModelCapabilities } from "../../core/models/codexModelCapabilities.js";
 import type { ProviderConfig } from "../../core/providerLauncher/types.js";
 import { anthropicRuntime } from "../../core/providerRuntime/anthropic.js";
-import { geminiRuntime } from "../../core/providerRuntime/gemini.js";
+import { googleRuntime, parseAgyModelsOutput } from "../../core/providerRuntime/antigravity.js";
 import {
   ANTHROPIC_FALLBACK_MODELS,
-  GEMINI_FALLBACK_MODELS,
   providerModelsToCodexCapabilities,
 } from "../../core/providerRuntime/models.js";
 import type { ProviderModel } from "../../core/providerRuntime/types.js";
@@ -98,58 +97,26 @@ test("ANTHROPIC_FALLBACK_MODELS does not contain OpenAI model IDs", () => {
   }
 });
 
-test("GEMINI_FALLBACK_MODELS contains only gemini- model IDs", () => {
-  for (const m of GEMINI_FALLBACK_MODELS) {
-    assert.ok(
-      m.modelId.startsWith("gemini-"),
-      `Expected modelId to start with "gemini-", got: "${m.modelId}"`,
-    );
-  }
+const sampleAgyStdout = `gemini-3.8-flash-high  Gemini 3.8 Flash (High)
+gemini-3.8-flash-medium  Gemini 3.8 Flash (Medium)
+gemini-3.8-flash-low  Gemini 3.8 Flash (Low)
+gemini-3.5-pro  Gemini 3.5 Pro
+claude-sonnet-4-6  Claude Sonnet 4.6 (Thinking)`;
+
+const GOOGLE_DISCOVERED_MODELS = parseAgyModelsOutput(sampleAgyStdout);
+
+test("GOOGLE_DISCOVERED_MODELS contains the expected discovered models from agy", () => {
+  const ids = GOOGLE_DISCOVERED_MODELS.map((m) => m.modelId);
+  assert.ok(ids.includes("gemini-3.8-flash-high"), "Missing gemini-3.8-flash-high");
+  assert.ok(ids.includes("gemini-3.5-pro"), "Missing gemini-3.5-pro");
+  assert.ok(ids.includes("claude-sonnet-4-6"), "Missing claude-sonnet-4-6");
 });
 
-test("GEMINI_FALLBACK_MODELS contains the expected models", () => {
-  const ids = GEMINI_FALLBACK_MODELS.map((m) => m.modelId);
-  assert.equal(ids[0], "gemini-3-flash-preview", "Default fast Gemini route should stay first");
-  assert.ok(ids.includes("gemini-3.1-pro-preview"), "Missing gemini-3.1-pro-preview");
-  assert.ok(ids.includes("gemini-3-flash-preview"), "Missing gemini-3-flash-preview");
-  assert.ok(ids.includes("gemini-3.1-flash-lite-preview"), "Missing gemini-3.1-flash-lite-preview");
-  assert.ok(ids.includes("gemini-2.5-pro"), "Missing gemini-2.5-pro");
-  assert.ok(ids.includes("gemini-2.5-flash"), "Missing gemini-2.5-flash");
-  assert.ok(ids.includes("gemini-2.5-flash-lite"), "Missing gemini-2.5-flash-lite");
-  assert.ok(!ids.includes("gemini-3-flash"), "Gemini 3 Flash must not be offered; use preview ID");
-  assert.ok(
-    !ids.includes("gemini-3.1-pro"),
-    "Gemini 3.1 Pro must not be offered without preview suffix",
-  );
-});
-
-test("GEMINI_FALLBACK_MODELS maps display names to exact CLI IDs with no reasoning support", () => {
-  const expected = new Map([
-    ["Gemini 3.1 Pro Preview", "gemini-3.1-pro-preview"],
-    ["Gemini 3 Flash Preview", "gemini-3-flash-preview"],
-    ["Gemini 3.1 Flash Lite Preview", "gemini-3.1-flash-lite-preview"],
-    ["Gemini 2.5 Pro", "gemini-2.5-pro"],
-    ["Gemini 2.5 Flash", "gemini-2.5-flash"],
-    ["Gemini 2.5 Flash Lite", "gemini-2.5-flash-lite"],
-  ]);
-
-  assert.equal(GEMINI_FALLBACK_MODELS.length, expected.size);
-  for (const model of GEMINI_FALLBACK_MODELS) {
-    assert.equal(model.modelId, expected.get(model.label), `Unexpected CLI ID for ${model.label}`);
-    assert.equal(model.id, model.modelId);
-    assert.equal(model.supportedReasoningLevels, null);
-  }
-});
-
-test("GEMINI_FALLBACK_MODELS does not contain OpenAI or Claude model IDs", () => {
-  for (const m of GEMINI_FALLBACK_MODELS) {
+test("GOOGLE_DISCOVERED_MODELS does not contain OpenAI model IDs", () => {
+  for (const m of GOOGLE_DISCOVERED_MODELS) {
     assert.ok(
       !m.modelId.startsWith("gpt-"),
-      `Gemini list must not contain OpenAI model: "${m.modelId}"`,
-    );
-    assert.ok(
-      !m.modelId.startsWith("claude-"),
-      `Gemini list must not contain Claude model: "${m.modelId}"`,
+      `Google list must not contain OpenAI model: "${m.modelId}"`,
     );
   }
 });
@@ -190,37 +157,19 @@ test("Claude fallback does not advertise unverified reasoning options", () => {
   assert.ok(!ids.includes("minimal"), "Claude picker must not show OpenAI minimal reasoning");
 });
 
-test("providerModelsToCodexCapabilities converts Gemini models to selectable capabilities", () => {
-  const caps = providerModelsToCodexCapabilities(GEMINI_FALLBACK_MODELS, "gemini-2.5-pro");
+test("providerModelsToCodexCapabilities converts Google models to selectable capabilities", () => {
+  const caps = providerModelsToCodexCapabilities(GOOGLE_DISCOVERED_MODELS, "gemini-3.8-flash-high");
   const selectable = getSelectableModelCapabilities(caps);
 
   assert.ok(selectable.length > 0, "Should produce selectable models");
   const modelIds = selectable.map((m) => m.model);
-  assert.ok(modelIds.includes("gemini-3.1-pro-preview"), "Should include gemini-3.1-pro-preview");
-  assert.ok(modelIds.includes("gemini-3-flash-preview"), "Should include gemini-3-flash-preview");
-  assert.ok(
-    modelIds.includes("gemini-3.1-flash-lite-preview"),
-    "Should include gemini-3.1-flash-lite-preview",
-  );
-  assert.ok(modelIds.includes("gemini-2.5-pro"), "Should include gemini-2.5-pro");
-  assert.ok(modelIds.includes("gemini-2.5-flash"), "Should include gemini-2.5-flash");
-  assert.ok(modelIds.includes("gemini-2.5-flash-lite"), "Should include gemini-2.5-flash-lite");
-  assert.ok(
-    !modelIds.includes("gemini-3-flash"),
-    "Should not include legacy non-preview Gemini 3 Flash",
-  );
+  assert.ok(modelIds.includes("gemini-3.8-flash-high"), "Should include gemini-3.8-flash-high");
+  assert.ok(modelIds.includes("gemini-3.5-pro"), "Should include gemini-3.5-pro");
   for (const id of modelIds) {
     assert.ok(
       !id.startsWith("gpt-"),
-      `Converted Gemini capabilities must not contain OpenAI model: "${id}"`,
+      `Converted Google capabilities must not contain OpenAI model: "${id}"`,
     );
-    assert.ok(
-      !id.startsWith("claude-"),
-      `Converted Gemini capabilities must not contain Claude model: "${id}"`,
-    );
-  }
-  for (const model of selectable) {
-    assert.equal(model.supportedReasoningLevels, null);
   }
 });
 
@@ -232,8 +181,9 @@ test("anthropicRuntime.modelPickerLabel is 'Claude'", () => {
   assert.equal(anthropicRuntime.modelPickerLabel, "Claude");
 });
 
-test("geminiRuntime.modelPickerLabel is 'Gemini'", () => {
-  assert.equal(geminiRuntime.modelPickerLabel, "Gemini");
+test("googleRuntime.modelPickerLabel is 'Google'", () => {
+  assert.equal(googleRuntime.modelPickerLabel, "Google");
+  assert.equal(googleRuntime.label, "Google");
 });
 
 // ---------------------------------------------------------------------------
@@ -278,7 +228,7 @@ test("model picker renders 'Choose a Claude model' when activeProviderLabel is C
   }
 });
 
-test("model picker renders 'Choose a Gemini model' when activeProviderLabel is Gemini", async () => {
+test("model picker renders 'Choose a Google model' when activeProviderLabel is Google", async () => {
   const stdin = new TestInput();
   const stdout = new TestOutput();
   let output = "";
@@ -286,18 +236,18 @@ test("model picker renders 'Choose a Gemini model' when activeProviderLabel is G
     output += chunk.toString();
   });
 
-  const geminiModels = getSelectableModelCapabilities(
-    providerModelsToCodexCapabilities(GEMINI_FALLBACK_MODELS, "gemini-2.5-pro"),
+  const googleModels = getSelectableModelCapabilities(
+    providerModelsToCodexCapabilities(GOOGLE_DISCOVERED_MODELS, "gemini-3.8-flash"),
   );
 
   const { cleanup } = render(
     <ThemeProvider theme="mono">
       <ModelPickerScreen
         layout={createLayoutSnapshot(120, 40)}
-        models={geminiModels}
-        currentModel="gemini-2.5-pro"
+        models={googleModels}
+        currentModel="gemini-3.8-flash"
         currentReasoning="high"
-        activeProviderLabel="Gemini"
+        activeProviderLabel="Google"
         onSelect={() => {}}
         onCancel={() => {}}
       />
@@ -308,8 +258,8 @@ test("model picker renders 'Choose a Gemini model' when activeProviderLabel is G
   try {
     await sleep(100);
     const stripped = stripAnsi(output);
-    assert.match(stripped, /Choose a Gemini model to use inside Ubume/);
-    assert.ok(!stripped.includes("OpenAI"), "Should not mention OpenAI when picking Gemini models");
+    assert.match(stripped, /Choose a Google model to use inside Ubume/);
+    assert.ok(!stripped.includes("OpenAI"), "Should not mention OpenAI when picking Google models");
   } finally {
     cleanup();
   }

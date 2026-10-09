@@ -35,7 +35,7 @@ const baseConfig: LayeredConfigResult = {
       reasoningLevel: "Built-in defaults",
       mode: "Built-in defaults",
       planMode: "Built-in defaults",
-      geminiCommandPath: "Built-in defaults",
+      antigravityCommandPath: "Built-in defaults",
       "policy.approvalPolicy": "Built-in defaults",
       "policy.sandboxMode": "Built-in defaults",
       "policy.networkAccess": "Built-in defaults",
@@ -378,15 +378,14 @@ test("/status includes active provider route status when supplied", () => {
   const result = runCommand("/status", {
     routeStatusMessage: [
       "Route status:",
-      "  Active chat route: Google / gemini-3-flash-preview",
-      "  Backend kind: gemini-cli-auth",
+      "  Active chat route: Google / gemini-3.5-flash",
+      "  Backend kind: antigravity-cli-auth",
     ].join("\n"),
   });
 
   assert.equal(result?.action, "status");
-  assert.match(result?.message ?? "", /Active chat route: Google \/ gemini-3-flash-preview/);
-  assert.match(result?.message ?? "", /Backend kind: gemini-cli-auth/);
-  assert.doesNotMatch(result?.message ?? "", /Antigravity/);
+  assert.match(result?.message ?? "", /Active chat route: Google \/ gemini-3.5-flash/);
+  assert.match(result?.message ?? "", /Backend kind: antigravity-cli-auth/);
 });
 
 test("/status includes project instructions status when supplied", () => {

@@ -202,7 +202,7 @@ test("suppresses completed response status while a slash command draft is active
   );
 });
 
-test("shows Gemini-specific status when THINKING with google provider at 0 seconds", () => {
+test("shows Antigravity-specific status when THINKING with google provider at 0 seconds", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "THINKING", turnId: 1 },
@@ -211,11 +211,11 @@ test("shows Gemini-specific status when THINKING with google provider at 0 secon
       activeProviderId: "google",
       runElapsedSeconds: 0,
     }),
-    "Starting Gemini CLI",
+    "Starting Antigravity CLI",
   );
 });
 
-test("includes elapsed timer in Gemini status after first second", () => {
+test("includes elapsed timer in Antigravity status after first second", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "THINKING", turnId: 1 },
@@ -224,11 +224,11 @@ test("includes elapsed timer in Gemini status after first second", () => {
       activeProviderId: "google",
       runElapsedSeconds: 3,
     }),
-    "Starting Gemini CLI  00:03",
+    "Starting Antigravity CLI  00:03",
   );
 });
 
-test("shows reassurance message in Gemini status at 5 seconds", () => {
+test("shows reassurance message in Antigravity status at 5 seconds", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "THINKING", turnId: 1 },
@@ -237,11 +237,11 @@ test("shows reassurance message in Gemini status at 5 seconds", () => {
       activeProviderId: "google",
       runElapsedSeconds: 5,
     }),
-    "Gemini CLI is still starting. The upstream CLI can take a moment  00:05",
+    "Antigravity CLI is still starting. The upstream CLI can take a moment  00:05",
   );
 });
 
-test("shows still waiting message in Gemini status at 15 seconds", () => {
+test("shows still waiting message in Antigravity status at 15 seconds", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "THINKING", turnId: 1 },
@@ -250,7 +250,7 @@ test("shows still waiting message in Gemini status at 15 seconds", () => {
       activeProviderId: "google",
       runElapsedSeconds: 15,
     }),
-    "Still waiting for Gemini CLI  00:15",
+    "Still waiting for Antigravity CLI  00:15",
   );
 });
 
@@ -345,7 +345,7 @@ test("includes elapsed timer in Codex CLI status after first second", () => {
   );
 });
 
-test("shows Gemini is working status when RESPONDING with google provider", () => {
+test("shows Google is working status when RESPONDING with google provider", () => {
   assert.equal(
     getVisibleComposerStatusLine({
       uiState: { kind: "RESPONDING", turnId: 1 },
@@ -353,7 +353,7 @@ test("shows Gemini is working status when RESPONDING with google provider", () =
       allowCommands: true,
       activeProviderId: "google",
     }),
-    "✧ Gemini is working",
+    "✧ Google is working",
   );
 });
 
@@ -496,7 +496,7 @@ test("shows 'Ubume is working' (not startup message) when provider is ready and 
       runElapsedSeconds: 0,
       externalCliStatus: "ready",
     }),
-    "✧ Gemini is working",
+    "✧ Google is working",
   );
 });
 
@@ -510,7 +510,7 @@ test("shows 'Ubume is working' even at 20 seconds elapsed when provider is ready
       runElapsedSeconds: 20,
       externalCliStatus: "ready",
     }),
-    "✧ Gemini is working",
+    "✧ Google is working",
   );
 });
 
@@ -552,7 +552,7 @@ test("still shows startup messages when externalCliStatus is 'starting' — goog
       runElapsedSeconds: 0,
       externalCliStatus: "starting",
     }),
-    "Starting Gemini CLI",
+    "Starting Antigravity CLI",
   );
 });
 
@@ -566,7 +566,7 @@ test("still shows 'Still waiting' when externalCliStatus is 'starting' at 15 sec
       runElapsedSeconds: 15,
       externalCliStatus: "starting",
     }),
-    "Still waiting for Gemini CLI  00:15",
+    "Still waiting for Antigravity CLI  00:15",
   );
 });
 
@@ -580,11 +580,11 @@ test("still shows startup messages when externalCliStatus is 'idle' (first promp
       runElapsedSeconds: 0,
       externalCliStatus: "idle",
     }),
-    "Starting Gemini CLI",
+    "Starting Antigravity CLI",
   );
 });
 
-test("regression: second prompt with ready provider never shows 'Still waiting for Gemini CLI'", () => {
+test("regression: second prompt with ready provider never shows 'Still waiting for Antigravity CLI'", () => {
   const statusLine = getVisibleComposerStatusLine({
     uiState: { kind: "THINKING", turnId: 2 },
     value: "",
@@ -594,7 +594,9 @@ test("regression: second prompt with ready provider never shows 'Still waiting f
     externalCliStatus: "ready",
   });
   assert.ok(
-    !/Still waiting for Gemini CLI|Starting Gemini CLI|Checking Gemini/i.test(statusLine),
+    !/Still waiting for Antigravity CLI|Starting Antigravity CLI|Checking Antigravity/i.test(
+      statusLine,
+    ),
     `Expected no startup text but got: "${statusLine}"`,
   );
 });
@@ -769,7 +771,7 @@ test("memoized composer skips re-render for unchanged busy props", () => {
 for (const [providerId, label] of [
   ["openai", "Codex CLI"],
   ["anthropic", "Claude Code"],
-  ["google", "Gemini CLI"],
+  ["google", "Antigravity CLI"],
 ] as const) {
   test(`reports ${label} as waiting only until it produces output`, () => {
     const uiState = { kind: "THINKING", turnId: 1 } as const;
@@ -786,7 +788,7 @@ for (const [providerId, label] of [
     );
     assert.equal(
       getVisibleComposerStatusLine({ ...base, externalCliStatus: "ready" }),
-      `✧ ${providerId === "openai" ? "Codex" : providerId === "anthropic" ? "Claude" : "Gemini"} is working`,
+      `✧ ${providerId === "openai" ? "Codex" : providerId === "anthropic" ? "Claude" : "Google"} is working`,
     );
   });
 }

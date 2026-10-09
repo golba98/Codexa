@@ -68,8 +68,12 @@ test("ubumeRowText shows route, size and where an imported conversation came fro
     "Fix picker — Unknown time · sonnet · Anthropic · 4 messages",
   );
   assert.equal(
-    ubumeRowText({ ...base, importedFrom: { source: "codex", sessionId: "x" } }, now),
-    "Fix picker — Unknown time · sonnet · Anthropic · 4 messages · from Codex",
+    ubumeRowText({ ...base, importedFrom: { source: "google", sessionId: "x" } }, now),
+    "Fix picker — Unknown time · sonnet · Anthropic · 4 messages · from Google",
+  );
+  assert.equal(
+    ubumeRowText({ ...base, importedFrom: { source: "antigravity", sessionId: "x" } }, now),
+    "Fix picker — Unknown time · sonnet · Anthropic · 4 messages · from Google",
   );
 });
 
@@ -100,6 +104,8 @@ test("matchesQuery is case-insensitive across every field", () => {
 
 test("nextResumeTab wraps in both directions", () => {
   assert.equal(nextResumeTab("all", 1), "openai");
+  assert.equal(nextResumeTab("anthropic", 1), "google");
+  assert.equal(nextResumeTab("google", 1), "mistral");
   assert.equal(nextResumeTab("local", 1), "all");
   assert.equal(nextResumeTab("all", -1), "local");
 });

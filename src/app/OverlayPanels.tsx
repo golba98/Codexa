@@ -34,7 +34,7 @@ import type {
   ProviderWorkspaceConfig,
 } from "../core/providerLauncher/types.js";
 import { getProviderSetupPlan } from "../core/providerRuntime/registry.js";
-import type { GeminiModelSelection, ProviderRoute } from "../core/providerRuntime/types.js";
+import type { ProviderRoute } from "../core/providerRuntime/types.js";
 import type {
   BackendProvider,
   ToolApprovalDecision,
@@ -176,7 +176,6 @@ interface OverlayPanelsProps {
     nextModel: AvailableModel,
     nextReasoning: ReasoningLevel,
     providerId?: ProviderId,
-    geminiSelection?: GeminiModelSelection,
     localBackend?: LocalBackendId,
   ) => Promise<void>;
   returnToChatMode: (reason?: string) => void;
@@ -469,7 +468,7 @@ export function OverlayPanels(props: OverlayPanelsProps) {
           onRefresh={() => {
             void handleProviderAction(modelPickerProviderId, "refresh-models");
           }}
-          onSelect={(m, r, geminiSelection) => {
+          onSelect={(m, r) => {
             modelPickerOpenRef.current = false;
             if (
               pendingRouteProviderId &&
@@ -489,7 +488,6 @@ export function OverlayPanels(props: OverlayPanelsProps) {
                 m as AvailableModel,
                 r as ReasoningLevel,
                 modelPickerProviderId,
-                geminiSelection,
               );
             }
           }}
@@ -545,6 +543,7 @@ export function OverlayPanels(props: OverlayPanelsProps) {
 
       {screen === "permissions-panel" && (
         <PermissionsPanel
+          providerManaged={activeProviderRoute.providerId === "google"}
           runtime={runtimeConfig}
           resolvedRuntime={resolvedRuntimeConfig}
           onSelect={handlePermissionsPanelAction}

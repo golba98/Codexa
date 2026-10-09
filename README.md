@@ -29,11 +29,14 @@ Ubume can use these routes:
 | --- | --- |
 | OpenAI / Codex | Install and authenticate the `codex` CLI. |
 | Anthropic / Claude | Install and authenticate the `claude` CLI. |
+| Google | Install and authenticate the Antigravity CLI (`agy`). |
 | Mistral Vibe | Install and authenticate the `vibe` CLI. |
 | Local model | Open Local, choose LM Studio or Unsloth, and use a model loaded in that server. |
 | Codexa Native | Available only from the local `ubume-dev` channel. |
 
 Credentials remain with the provider CLI or local server.
+
+Mistral's picker separates configured Vibe models from API-discovered custom models. Configured routes retain their model settings and provider; API custom routes require a verified catalogue refresh and say "Custom via Vibe (request unverified)." "Vibe current/default" follows Vibe's saved active/default selection and inherited environment overrides. Catalogue availability does not prove successful inference; Mistral Large 4 execution remains unverified.
 
 ## Usage
 
@@ -102,3 +105,11 @@ Use `ubume doctor`, `ubume status --json`, `ubume providers`, and `ubume session
 Saved chats, including LM Studio and Unsloth conversations, live in Ubume's user data folder under `chats/`. `/resume` includes provider sections and Local backend/model filters. See [resume and storage details](docs/TERMINAL_WORKBENCH.md).
 
 Local models can use integrated structured browser tools through the DeepSeek Harness. See [browser setup and usage](docs/LOCAL_BROWSER.md). Install Chromium with `ubume browser install`.
+
+### Google backend compatibility
+
+Google runs the Antigravity CLI (`agy`), never Gemini CLI. Models come from `agy models`; native model identifiers are passed unchanged to `agy -p ... --model ...`. Set `AGY_EXECUTABLE` or `providers.google.antigravity_command_path` for a custom executable. Authentication and native tool permissions remain managed by AGY.
+
+Saved `antigravity` selections and native sessions remain available as Google. Proven Antigravity settings take precedence; removed Google CLI settings are retained as inactive migration data. Ambiguous old Google routes require explicit Google/model selection. Credentials and native session stores are not rewritten.
+
+The recovered adapter buffers responses until AGY completes and supplies saved Ubume history in the prompt. It does not expose structured tool events, token streaming, or image input. Native conversations can be resumed through AGY’s `--conversation` handoff. Discovery failures retain a clearly unverified AGY cache for display, but execution requires live validation and never substitutes another model.

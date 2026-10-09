@@ -220,59 +220,37 @@ export function buildClaudeSpawnSpec(
 }
 
 /**
- * Returns the resolved Gemini CLI executable (full path or bare name).
+ * Returns the resolved Antigravity CLI executable (full path or bare name).
  *
  * Priority:
- *   1. Configured path override (geminiCommandPath)
- *   2. GEMINI_EXECUTABLE or GEMINI_CLI_PATH env var
- *   3. Windows PATH lookup for real files: gemini.exe, gemini.cmd, gemini.bat, gemini
- *   4. Windows where.exe gemini fallback
- *   5. Common npm/global locations on Windows
+ *   1. Configured path override (antigravityCommandPath)
+ *   2. AGY_EXECUTABLE env var
+ *   3. Windows PATH lookup for real files: agy.exe, agy.cmd, agy.bat, agy
+ *   4. Bare name fallback "agy" (Unix PATH resolution)
  */
-export const { resolve: resolveGeminiExecutable, reset: resetGeminiExecutableCacheForTests } =
-  createCachedExecutableResolver((options) => {
-    const knownPathDirectories: string[] = [];
-    const userProfile = process.env.USERPROFILE;
-    const appData = process.env.APPDATA;
-    const localAppData = process.env.LOCALAPPDATA;
-
-    if (process.platform === "win32") {
-      if (appData) {
-        knownPathDirectories.push(join(appData, "npm"));
-      }
-      if (localAppData) {
-        knownPathDirectories.push(join(localAppData, "Programs", "nodejs"));
-      }
-    }
-
-    if (userProfile) {
-      knownPathDirectories.push(join(userProfile, ".local", "bin"));
-      knownPathDirectories.push(join(userProfile, "bin"));
-    }
-
-    return {
-      runCommandImpl: options?.runCommandImpl,
-      cwd: options?.cwd,
-      configuredPath: options?.configuredPath,
-      envOverrides: ["GEMINI_EXECUTABLE", "GEMINI_CLI_PATH"],
-      commandNames: ["gemini.exe", "gemini.cmd", "gemini.bat", "gemini"],
-      knownPathDirectories,
-      knownFilePaths: [],
-      label: "gemini",
-      allowBareFallback: process.platform !== "win32",
-      requireResolvedFile: true,
-    };
+export async function resolveAgyExecutable(options?: {
+  cwd?: string;
+  configuredPath?: string | null;
+  runCommandImpl?: CommandRunner;
+}): Promise<string> {
+  const executable = await resolveExecutable({
+    ...options,
+    envOverrides: ["AGY_EXECUTABLE"],
+    commandNames: process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat", "agy"] : ["agy"],
+    knownPathDirectories: [],
+    knownFilePaths: [],
+    label: "antigravity",
+    allowBareFallback: true,
   });
-
-/**
- * Builds the spawn spec for a resolved Gemini executable.
- */
-export function buildGeminiSpawnSpec(
-  executable: string,
-  args: string[],
-): { executable: string; args: string[]; shell?: boolean } {
-  return { executable, args };
+  if (/^gemini(?:\.(?:exe|cmd|bat))?$/i.test(executable.split(/[\\/]/).at(-1) ?? ""))
+    throw new Error(
+      "Google uses Antigravity (agy); the removed Gemini CLI cannot be configured as its executable.",
+    );
+  return executable;
 }
+
+/** AGY resolution is context-sensitive and has no process-global executable cache. */
+export function resetAgyExecutableCacheForTests(): void {}
 
 export function findExecutable(command: string, cwd: string): string | null {
   try {

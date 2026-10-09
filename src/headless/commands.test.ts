@@ -36,6 +36,7 @@ function fixture() {
     CODEX_HOME: join(root, "codex"),
     UBUME_DEV_MODE: "0",
     CODEX_EXECUTABLE: provider,
+    AGY_EXECUTABLE: join(root, "absent-agy"),
     UBUME_TEST_PROMPT_LOG: join(root, "prompts.jsonl"),
     UBUME_TEST_PID_FILE: join(root, "pid"),
     UBUME_EXEC_TIMING: "0",

@@ -8,6 +8,9 @@ import {
   type CodexModelCapability,
   normalizeCodexModelListResponses,
 } from "../../core/models/codexModelCapabilities.js";
+import { parseMistralModels } from "../../core/providerRuntime/mistralDiscovery.js";
+import { mergeMistralVibeModels } from "../../core/providerRuntime/mistralVibe.js";
+import { providerModelsToCodexCapabilities } from "../../core/providerRuntime/models.js";
 import { createLayoutSnapshot } from "../layout.js";
 import { ThemeProvider } from "../theme.js";
 import { ModelPickerScreen } from "./ModelPickerScreen.js";
@@ -43,6 +46,65 @@ function stripAnsi(value: string): string {
 
 function sleep(ms = 50): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+for (const columns of [60, 120]) {
+  test(`Mistral picker preserves an exact API alias across refresh at ${columns} columns`, async () => {
+    const stdin = new TestInput();
+    const stdout = new TestOutput();
+    stdout.columns = columns;
+    stdout.rows = 24;
+    let output = "";
+    stdout.on("data", (chunk) => {
+      output += chunk.toString();
+    });
+    const selected: string[] = [];
+    const inventory = () =>
+      mergeMistralVibeModels(
+        [],
+        parseMistralModels({
+          data: [
+            {
+              id: "mistral-large-4",
+              aliases: ["mistral-large-4-0"],
+              capabilities: { completion_chat: true, reasoning: true },
+            },
+          ],
+        }),
+      );
+    const screen = () => (
+      <ThemeProvider theme="purple">
+        <ModelPickerScreen
+          layout={createLayoutSnapshot(columns, 24)}
+          models={providerModelsToCodexCapabilities(inventory(), "mistral-large-4-0").models}
+          currentModel="mistral-large-4-0"
+          currentReasoning="high"
+          activeProviderLabel="Mistral Vibe"
+          onSelect={(model) => {
+            selected.push(model);
+          }}
+          onCancel={() => {}}
+        />
+      </ThemeProvider>
+    );
+    const { cleanup, rerender } = render(screen(), {
+      stdin: stdin as any,
+      stdout: stdout as any,
+      debug: true,
+    });
+    try {
+      await sleep(80);
+      rerender(screen());
+      await sleep(80);
+      stdin.write("\r");
+      await sleep(50);
+      assert.deepEqual(selected, ["mistral-large-4-0"]);
+      assert.match(stripAnsi(output), /Custom/);
+      if (columns === 120) assert.match(stripAnsi(output), /request unverified/);
+    } finally {
+      cleanup();
+    }
+  });
 }
 
 function UncachedProviderPickerFlow(): React.ReactElement {

@@ -219,14 +219,14 @@ export function measureBottomComposerRows({
 }
 
 export function getExternalCliLabel(providerId: string): string | null {
-  if (providerId === "google") return "Gemini CLI";
+  if (providerId === "google") return "Antigravity CLI";
   if (providerId === "anthropic") return "Claude Code";
   if (providerId === "openai") return "Codex CLI";
   return null;
 }
 
 export function getProviderReadyLabel(providerId: string): string | null {
-  if (providerId === "google") return "Gemini";
+  if (providerId === "google") return "Google";
   if (providerId === "anthropic") return "Claude";
   if (providerId === "openai") return "Codex";
   return null;

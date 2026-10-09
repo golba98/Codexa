@@ -72,7 +72,7 @@ export interface RuntimeConfig {
   reasoningLevel: ReasoningLevel;
   mode: AvailableMode;
   planMode: boolean;
-  geminiCommandPath?: string;
+  antigravityCommandPath?: string;
   codexCommandPath?: string;
   policy: RuntimePolicyConfig;
 }
@@ -98,7 +98,7 @@ export interface ResolvedRuntimeConfig {
   reasoningLevel: ReasoningLevel;
   mode: AvailableMode;
   planMode: boolean;
-  geminiCommandPath?: string;
+  antigravityCommandPath?: string;
   codexCommandPath?: string;
   policy: ResolvedRuntimePolicy;
 }
@@ -255,8 +255,8 @@ export function normalizeRuntimeConfig(
     mode,
     planMode:
       typeof input?.planMode === "boolean" ? input.planMode : DEFAULT_RUNTIME_CONFIG.planMode,
-    ...(typeof input?.geminiCommandPath === "string" && input.geminiCommandPath.trim()
-      ? { geminiCommandPath: input.geminiCommandPath.trim() }
+    ...(typeof input?.antigravityCommandPath === "string" && input.antigravityCommandPath.trim()
+      ? { antigravityCommandPath: input.antigravityCommandPath.trim() }
       : {}),
     reasoningLevel: reasoningInput || DEFAULT_REASONING_LEVEL,
     policy: normalizeRuntimePolicy(input?.policy),
@@ -333,8 +333,8 @@ export function diffRuntimeConfig(
     ...(normalizedBase.planMode !== normalizedTarget.planMode
       ? { planMode: normalizedTarget.planMode }
       : {}),
-    ...(normalizedBase.geminiCommandPath !== normalizedTarget.geminiCommandPath
-      ? { geminiCommandPath: normalizedTarget.geminiCommandPath }
+    ...(normalizedBase.antigravityCommandPath !== normalizedTarget.antigravityCommandPath
+      ? { antigravityCommandPath: normalizedTarget.antigravityCommandPath }
       : {}),
     ...(Object.keys(policyPatch).length > 0 ? { policy: policyPatch } : {}),
   };
@@ -377,7 +377,9 @@ export function resolveRuntimeConfig(config: RuntimeConfig): ResolvedRuntimeConf
     model: normalized.model,
     mode: normalized.mode,
     planMode: normalized.planMode,
-    ...(normalized.geminiCommandPath ? { geminiCommandPath: normalized.geminiCommandPath } : {}),
+    ...(normalized.antigravityCommandPath
+      ? { antigravityCommandPath: normalized.antigravityCommandPath }
+      : {}),
     reasoningLevel: normalized.reasoningLevel || DEFAULT_REASONING_LEVEL,
     policy: {
       approvalPolicy,

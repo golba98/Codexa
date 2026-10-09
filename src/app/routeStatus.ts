@@ -57,12 +57,7 @@ export function useRouteStatus(context: UseRouteStatusContext) {
       return line;
     });
 
-    const activeModelInfo =
-      activeProviderRoute.providerId === "google" && activeProviderRoute.modelSelection
-        ? activeProviderRoute.modelSelection.kind === "auto"
-          ? `Auto (${activeProviderRoute.modelSelection.family === "gemini-3" ? "Gemini 3" : "Gemini 2.5"}) -> ${activeProviderRoute.modelId}`
-          : activeProviderRoute.modelId
-        : activeProviderRoute.modelId;
+    const activeModelInfo = activeProviderRoute.modelId;
 
     const ctxValue =
       activeContextMetadata?.contextLength != null
@@ -87,7 +82,6 @@ export function useRouteStatus(context: UseRouteStatusContext) {
     activeContextMetadata,
     activeProviderRoute.backendKind,
     activeProviderRoute.modelId,
-    activeProviderRoute.modelSelection,
     activeProviderRoute.providerId,
     activeProviderRoute.reasoning,
     activeProviderRuntime.routeAvailable,

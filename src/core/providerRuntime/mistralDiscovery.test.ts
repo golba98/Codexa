@@ -33,7 +33,9 @@ test("live inventory preserves future IDs, extracts real metadata and filters in
     vision: false,
     reasoning: true,
   });
-  expect(models[0]?.supportedReasoningLevels).toBeNull();
+  expect(models[0]?.supportedReasoningLevels?.map((level) => level.id)).toEqual(["none", "high"]);
+  expect(models[0]?.mistralExecutionClass).toBe("custom-vibe");
+  expect(models[0]?.executionVerified).toBe(false);
   expect(models.find((model) => model.modelId === "embedding")).toBeUndefined();
 });
 
@@ -66,6 +68,18 @@ test("documented effective effort values are none/high, not another provider's o
       data: [item("mistral-medium-3-5", { completion_chat: true, reasoning: true })],
     })[0]?.supportedReasoningLevels?.map((level) => level.id),
   ).toEqual(["none", "high"]));
+test("Mistral Large 4 exposes Vibe's verified none/high reasoning transport", () => {
+  const model = parseMistralModels({
+    data: [item("mistral-large-4", { completion_chat: true, reasoning: true })],
+  })[0]!;
+  expect(model.supportedReasoningLevels?.map((level) => level.id)).toEqual(["none", "high"]);
+  expect(model.reasoningControl).toEqual({
+    kind: "levels",
+    levels: model.supportedReasoningLevels!,
+    default: "high",
+    transport: "parameter",
+  });
+});
 test("connection respects explicit endpoint and key without duplicate v1", () => {
   const connection = resolveMistralConnection(
     "/tmp",

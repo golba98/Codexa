@@ -4,6 +4,7 @@ import type { ResolvedRuntimeConfig, RuntimeConfig } from "../config/runtimeConf
 import type { AvailableModel, ReasoningLevel } from "../config/settings.js";
 import { resolveVibeExecutable } from "../core/executables/executableResolver.js";
 import type { CodexModelCapabilities } from "../core/models/codexModelCapabilities.js";
+import { resolveCatalogModel } from "../core/models/modelSelection.js";
 import { commandExistsOnPath, launchProviderCli } from "../core/providerLauncher/launcher.js";
 import { findProvider } from "../core/providerLauncher/registry.js";
 import type {
@@ -18,7 +19,7 @@ import {
   setLocalBackendPreference,
   setProviderWorkspaceDefault,
 } from "../core/providerLauncher/workspaceConfig.js";
-import { runGeminiDiagnostics } from "../core/providerRuntime/gemini.js";
+import { validateAntigravityRoute } from "../core/providerRuntime/antigravity.js";
 import { runLocalDiagnostics, validateLocalProvider } from "../core/providerRuntime/local.js";
 import {
   detectVibeActiveModel,
@@ -31,7 +32,6 @@ import {
   isProviderRouteConfigured,
 } from "../core/providerRuntime/registry.js";
 import type {
-  GeminiModelSelection,
   ProviderRoute,
   ProviderRouteValidationResult,
   RuntimeAvailability,
@@ -76,7 +76,6 @@ interface UseProviderRouteContext {
     nextModel: AvailableModel,
     nextReasoning: ReasoningLevel,
     providerId?: ProviderId,
-    geminiSelection?: GeminiModelSelection,
     localBackend?: LocalBackendId,
   ) => Promise<void>;
   activeProviderRoute: ProviderRoute;
@@ -141,7 +140,6 @@ export function useProviderRoute(context: UseProviderRouteContext) {
     modelCapabilities,
     refreshModelCapabilities,
     markProviderAvailability,
-    runtimeConfig,
     resolvedRuntimeConfig,
     providerLaunchBypassRef,
     setProviderSetup,
@@ -368,7 +366,6 @@ export function useProviderRoute(context: UseProviderRouteContext) {
                   activeProviderRoute.reasoning ??
                   reasoningLevel) as ReasoningLevel,
                 "local",
-                undefined,
                 localBackend,
               );
             })
@@ -389,20 +386,14 @@ export function useProviderRoute(context: UseProviderRouteContext) {
         const providerReasoning =
           workspaceProviderConfig?.currentReasoning ??
           (isCurrentActive ? activeRoute?.reasoning : undefined) ??
-          reasoningLevel;
+          (providerId === "google"
+            ? (resolveCatalogModel(
+                discoverProviderModels("google").models,
+                workspaceProviderConfig?.currentModel ?? provider.currentModel,
+              )?.defaultReasoningLevel ?? "")
+            : reasoningLevel);
 
         if (isRealModel || isCurrentActive) {
-          let geminiSelection: GeminiModelSelection | undefined;
-          if (providerId === "google") {
-            if (isCurrentActive && activeRoute?.modelSelection) {
-              geminiSelection = activeRoute.modelSelection;
-            } else if (workspaceProviderConfig?.currentModel) {
-              geminiSelection = { kind: "manual", modelId: workspaceProviderConfig.currentModel };
-            } else {
-              geminiSelection = { kind: "manual", modelId: provider.currentModel };
-            }
-          }
-
           intendedInputModeRef.current = "chat/input";
           intendedFocusTargetRef.current = FOCUS_IDS.composer;
           setScreen("main");
@@ -410,7 +401,6 @@ export function useProviderRoute(context: UseProviderRouteContext) {
             (workspaceProviderConfig?.currentModel ?? provider.currentModel) as AvailableModel,
             providerReasoning as ReasoningLevel,
             providerId,
-            geminiSelection,
           );
           return;
         }
@@ -510,34 +500,41 @@ export function useProviderRoute(context: UseProviderRouteContext) {
           return;
         }
 
-        appendEvent("system", "Gemini diagnostics", "Running Gemini diagnostics...");
-        const geminiCommandPath =
-          providerWorkspaceConfig.providers?.google?.geminiCommandPath ??
-          runtimeConfig.geminiCommandPath;
-        void runGeminiDiagnostics({
+        appendEvent("system", "Google diagnostics", "Running Google provider diagnostics...");
+        const antigravityCommandPath =
+          providerWorkspaceConfig.providers?.google?.antigravityCommandPath;
+        void validateAntigravityRoute({
           cwd: workspaceRoot,
-          runtime: geminiCommandPath
-            ? { ...resolvedRuntimeConfig, geminiCommandPath }
-            : resolvedRuntimeConfig,
-          configuredPath: geminiCommandPath,
-          selectedModel:
-            activeProviderRoute.providerId === "google"
-              ? activeProviderRoute.modelId
-              : (providerWorkspaceConfig.providers?.google?.currentModel ??
-                "gemini-3-flash-preview"),
-          selectedReasoning:
-            activeProviderRoute.providerId === "google"
-              ? (activeProviderRoute.reasoning ?? reasoningLevel)
-              : (providerWorkspaceConfig.providers?.google?.currentReasoning ?? reasoningLevel),
+          configuredPath: antigravityCommandPath,
         })
-          .then((message) => {
+          .then((validation) => {
             if (!isMountedRef.current) return;
-            appendEvent("system", "Gemini diagnostics", message);
+            if (validation.diagnostics) {
+              providerDiagnosticsRef.current["google"] = validation.diagnostics as Record<
+                string,
+                string | number | boolean | null
+              >;
+            }
+            if (validation.status === "ready") {
+              delete providerRouteErrorsRef.current["google"];
+              const discovery = discoverProviderModels("google");
+              appendEvent(
+                "system",
+                "Google diagnostics",
+                validation.message ??
+                  `Google Antigravity CLI is ready (${discovery.models.length} models available).`,
+              );
+            } else {
+              const message = validation.message ?? "Google Antigravity CLI is unavailable.";
+              providerRouteErrorsRef.current["google"] = message;
+              appendEvent("error", "Google diagnostics failed", message);
+            }
+            setRegistryNonce((n) => n + 1);
           })
           .catch((error) => {
             if (!isMountedRef.current) return;
-            const message = errorMessage(error, "Gemini diagnostics failed.");
-            appendEvent("error", "Gemini diagnostics failed", message);
+            const message = errorMessage(error, "Google diagnostics failed.");
+            appendEvent("error", "Google diagnostics failed", message);
           });
         return;
       }
@@ -620,7 +617,6 @@ export function useProviderRoute(context: UseProviderRouteContext) {
       reasoningLevel,
       refreshModelCapabilities,
       resolvedRuntimeConfig,
-      runtimeConfig.geminiCommandPath,
       setWorkspaceDefaultProviderWithNotice,
       externalCliLaunchHooks,
       workspaceRoot,

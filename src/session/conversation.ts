@@ -20,7 +20,7 @@ export function buildResumedProviderRoute(
     providerId,
     modelId: metadata.modelId,
     backendKind:
-      metadata.backendKind && metadata.backendKind !== "unavailable"
+      providerId !== "google" && metadata.backendKind && metadata.backendKind !== "unavailable"
         ? (metadata.backendKind as ProviderBackendKind)
         : fallbackBackendKind,
     ...(metadata.reasoning ? { reasoning: metadata.reasoning } : {}),

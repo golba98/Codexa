@@ -56,11 +56,83 @@ test("saved routes keep model, reasoning and backend and require explicit choice
   );
   assert.equal(assessSavedRoute({ ...saved, modelId: "removed" }, discovery).status, "unavailable");
   assert.equal(assessSavedRoute({ ...saved, providerId: "unknown" }, null).status, "unavailable");
-  // Antigravity was removed: its saved chats ask for an explicit provider instead of running.
+  // Historical Antigravity identities remain usable without rewriting saved data.
   assert.equal(
-    assessSavedRoute({ ...saved, providerId: "antigravity", localBackend: undefined }, null).status,
-    "unavailable",
+    assessSavedRoute(
+      {
+        ...saved,
+        providerId: "antigravity",
+        backendKind: "antigravity-cli-auth",
+        localBackend: undefined,
+      },
+      null,
+    ).status,
+    "ready",
   );
+});
+
+test("saved Antigravity routes resume as Google and legacy Gemini sessions require an explicit selection", () => {
+  const metadata = {
+    version: 1 as const,
+    id: "chat_old",
+    title: "old",
+    createdAt: "",
+    updatedAt: "",
+    messageCount: 2,
+    providerId: "antigravity",
+    backendKind: "antigravity-cli-auth",
+    modelId: "exact-native-high",
+    reasoning: "high",
+  };
+  const assessment = assessSavedRoute(metadata, null);
+  assert.equal(assessment.status, "ready");
+  assert.deepEqual(assessment.route, {
+    providerId: "google",
+    backendKind: "antigravity-cli-auth",
+    modelId: "exact-native-high",
+    reasoning: "high",
+  });
+  assert.equal(
+    metadata.providerId,
+    "antigravity",
+    "assessment does not overwrite the source record",
+  );
+  const oldGoogle = assessSavedRoute(
+    { ...metadata, providerId: "google", backendKind: "gemini-cli-auth" },
+    null,
+  );
+  assert.equal(oldGoogle.status, "unavailable");
+  if (oldGoogle.status === "unavailable") assert.match(oldGoogle.message, /removed Gemini CLI/);
+});
+
+test("native imports deduplicate Google and Antigravity provenance without discarding continued turns", () => {
+  const root = mkdtempSync(join(tmpdir(), "ubume-google-import-"));
+  try {
+    const store = new ConversationStore(root, { rootDir: join(root, "chats") });
+    const transcript = {
+      summary: {
+        source: "antigravity" as const,
+        id: "native-agy",
+        title: "old",
+        cwd: root,
+        updatedAt: "",
+      },
+      entries: [{ id: "one", kind: "user" as const, title: "You", text: "original" }],
+    };
+    const original = importNativeConversation(store, transcript, "native-model");
+    original.messages.push({ role: "assistant", content: "continued" });
+    store.save(original);
+    const imported = importNativeConversation(
+      store,
+      { ...transcript, summary: { ...transcript.summary, source: "google" } },
+      "native-model",
+    );
+    assert.equal(imported.metadata.id, original.metadata.id);
+    assert.deepEqual(imported.messages, original.messages);
+    assert.equal(imported.metadata.importedFrom?.source, "antigravity");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("native imports reuse provenance, retain new owned turns, and workspace relaunch carries a single resume target", () => {

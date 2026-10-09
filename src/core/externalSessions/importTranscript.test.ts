@@ -24,6 +24,8 @@ test("externalProviderId maps each CLI to the Ubume provider that talks to it", 
   assert.equal(externalProviderId("claude"), "anthropic");
   assert.equal(externalProviderId("codex"), "openai");
   assert.equal(externalProviderId("vibe"), "mistral");
+  assert.equal(externalProviderId("google"), "google");
+  assert.equal(externalProviderId("antigravity"), "google");
 });
 
 test("externalTranscriptToConversationMessages merges replies and folds tool calls into activity", () => {

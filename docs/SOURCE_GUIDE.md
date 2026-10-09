@@ -106,15 +106,16 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 | File | Purpose |
 | --- | --- |
 | `src/core/executables/codexExecutable.ts` | Resolves the Codex executable and verifies usable command candidates. |
-| `src/core/executables/executableResolver.ts` | Resolves the Claude Code executable with platform and override handling. Provides shared cross-platform executable-name, PATH, override, and resolution utilities. Resolves the legacy Gemini executable for diagnostics and compatibility paths. |
+| `src/core/executables/executableResolver.ts` | Resolves Claude Code and Antigravity (`agy`) executables with platform and override handling. Provides shared cross-platform executable-name, PATH, override, and resolution utilities. |
 
 ### `src/core/externalSessions/`
 
 | File | Purpose |
 | --- | --- |
+| `src/core/externalSessions/antigravitySessions.ts` | Lists Antigravity sessions from SQLite and reads session protobuf state. |
 | `src/core/externalSessions/claudeSessions.ts` | Lists Claude Code sessions from `~/.claude/projects` (head/tail reads) and streams a session JSONL into transcript entries. |
 | `src/core/externalSessions/codexSessions.ts` | Lists Codex threads from `state_*.sqlite` (rollout scan fallback) and parses rollout JSONL into transcript entries. |
-| `src/core/externalSessions/index.ts` | Converts a native transcript into Ubume conversation messages for "continue in Ubume". Routes listing and transcript reads to the store for each source. Builds the `claude --resume` / `codex resume` / `vibe --resume` launch in the session's folder. |
+| `src/core/externalSessions/index.ts` | Converts a native transcript into Ubume conversation messages for "continue in Ubume". Routes listing and transcript reads to the store for each source. Builds the `claude --resume` / `codex resume` / `agy --conversation` / `vibe --resume` launch in the session's folder. |
 | `src/core/externalSessions/storeIo.ts` | Walks protobuf wire format without a schema and returns its text fields. Shared JSONL head/tail/stream readers, bounded-concurrency mapping, and title helpers. Opens another tool's SQLite store read-only (with an immutable fallback for WAL databases). |
 | `src/core/externalSessions/types.ts` | Session source, scope, summary, and transcript types plus display labels. |
 | `src/core/externalSessions/vibeSessions.ts` | Lists and reads native Mistral Vibe session transcripts. |
@@ -160,7 +161,7 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 | `src/core/providerRuntime/claudeCodeDiscovery.ts` | Discovers Claude Code models and reasoning metadata from commands, packages, caches, settings, and fallbacks. |
 | `src/core/providerRuntime/codexaNative.ts` | Implements the Codexa Native route and its CuPy accelerated execution support. |
 | `src/core/providerRuntime/contextMetadata.ts` | Resolves, caches, and formats model context-window metadata from provider config, discovery, and known registries. |
-| `src/core/providerRuntime/gemini.ts` | Implements legacy Gemini configuration checks, diagnostics, model handling, and compatibility runtime behavior. |
+| `src/core/providerRuntime/antigravity.ts` | Implements Google provider runtime backed by Antigravity CLI (`agy`), route validation, model discovery, process execution, buffered response adaptation, and cancellation. |
 | `src/core/providerRuntime/local.ts` | Checks local-server readiness, discovers models, resolves configuration, delegates active Local requests to the Harness adapter, and reports diagnostics. |
 | `src/core/providerRuntime/localBackends.ts` | Defines LM Studio/OpenAI-compatible request and response helpers used by the local runtime. Verifies a local Unsloth Studio instance, resolves secure API authentication, and parses loaded models. |
 | `src/core/providerRuntime/mistralVibe.ts` | Discovers Vibe configuration/models, resolves and launches the CLI, manages sessions, and adapts routed output. |

@@ -1,11 +1,14 @@
 import { statSync } from "node:fs";
+import { verifyAgyExecutable } from "../executables/antigravityExecutable.js";
 import { resolveCodexExecutable } from "../executables/codexExecutable.js";
 import {
+  resolveAgyExecutable,
   resolveClaudeExecutable,
   resolveVibeExecutable,
 } from "../executables/executableResolver.js";
 import type { ProviderId } from "../providerLauncher/types.js";
 import type { ConversationMessage } from "../workspace/conversationStore.js";
+import { listAntigravitySessions, readAntigravityTranscript } from "./antigravitySessions.js";
 import { listClaudeSessions, readClaudeTranscript } from "./claudeSessions.js";
 import { listCodexSessions, readCodexTranscript } from "./codexSessions.js";
 import type {
@@ -31,6 +34,9 @@ export function listExternalSessions(
       return listClaudeSessions(scope, options);
     case "codex":
       return listCodexSessions(scope, options);
+    case "google":
+    case "antigravity":
+      return listAntigravitySessions(scope, options);
     case "vibe":
       return listVibeSessions(scope, options);
   }
@@ -38,12 +44,16 @@ export function listExternalSessions(
 
 export function readExternalTranscript(
   summary: ExternalSessionSummary,
+  options: ExternalSessionOptions = {},
 ): Promise<ExternalTranscript> {
   switch (summary.source) {
     case "claude":
       return readClaudeTranscript(summary);
     case "codex":
       return readCodexTranscript(summary);
+    case "google":
+    case "antigravity":
+      return readAntigravityTranscript(summary, options);
     case "vibe":
       return readVibeTranscript(summary);
   }
@@ -73,18 +83,27 @@ function resumeArgs(summary: ExternalSessionSummary): string[] {
       return ["--resume", summary.id];
     case "codex":
       return ["resume", summary.id];
+    case "google":
+    case "antigravity":
+      return ["--conversation", summary.id];
     case "vibe":
       return ["--resume", summary.id];
   }
 }
 
-/** Honors CLAUDE_EXECUTABLE / CODEX_EXECUTABLE / VIBE_EXECUTABLE like the provider runtimes do. */
-function resolveSourceExecutable(source: ExternalSessionSource): Promise<string> {
+/** Honors CLAUDE_EXECUTABLE / CODEX_EXECUTABLE / AGY_EXECUTABLE / VIBE_EXECUTABLE like the provider runtimes do. */
+function resolveSourceExecutable(source: ExternalSessionSource, cwd: string): Promise<string> {
   switch (source) {
     case "claude":
       return resolveClaudeExecutable();
     case "codex":
       return resolveCodexExecutable();
+    case "google":
+    case "antigravity":
+      return resolveAgyExecutable({ cwd }).then(async (executable) => {
+        await verifyAgyExecutable(executable, { cwd });
+        return executable;
+      });
     case "vibe":
       return resolveVibeExecutable().then((path) => {
         if (!path) throw new Error("Mistral Vibe executable is unavailable.");
@@ -117,7 +136,9 @@ export async function buildExternalResumeLaunch(
   if (!(options.folderExists ?? isDirectory)(cwd)) {
     return { ok: false, message: `The session's folder no longer exists: ${cwd}` };
   }
-  const executable = await (options.resolveExecutable ?? resolveSourceExecutable)(summary.source);
+  const executable = await (
+    options.resolveExecutable ?? ((source) => resolveSourceExecutable(source, cwd))
+  )(summary.source);
   return { ok: true, launch: { displayName, executable, args: resumeArgs(summary), cwd } };
 }
 
@@ -130,6 +151,9 @@ export function externalProviderId(source: ExternalSessionSource): ProviderId {
       return "anthropic";
     case "codex":
       return "openai";
+    case "google":
+    case "antigravity":
+      return "google";
     case "vibe":
       return "mistral";
   }

@@ -175,7 +175,15 @@ function formatRuntimeStartup(
   runtime: ResolvedRuntimeConfig,
   workspaceRoot: string,
   provider: BackendProvider,
+  backendKind?: string,
 ): string {
+  if (backendKind === "antigravity-cli-auth")
+    return [
+      `workspace ${workspaceRoot}`,
+      `provider Google (${backendKind})`,
+      `requested model ${runtime.model}`,
+      "responses buffered; permissions managed by Antigravity CLI",
+    ].join("; ");
   return [
     `workspace ${workspaceRoot}`,
     `provider ${provider.label} (${provider.id})`,
@@ -244,7 +252,11 @@ export async function runHeadlessExec(
     provider_label: provider.label,
   });
 
-  writeDiagnostic(io.stderr, "startup", formatRuntimeStartup(runtime, workspaceRoot, provider));
+  writeDiagnostic(
+    io.stderr,
+    "startup",
+    formatRuntimeStartup(runtime, workspaceRoot, provider, context?.route.backendKind),
+  );
 
   if (layeredConfig.diagnostics.ignoredEntries.length > 0) {
     writeDiagnostic(

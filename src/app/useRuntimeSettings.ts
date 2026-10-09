@@ -24,7 +24,7 @@ import {
 
 import { getProviderRuntime } from "../core/providerRuntime/registry.js";
 
-import type { GeminiModelSelection, ProviderRoute } from "../core/providerRuntime/types.js";
+import type { ProviderRoute } from "../core/providerRuntime/types.js";
 
 import { errorMessage } from "../core/shared/values.js";
 
@@ -91,7 +91,6 @@ export function useRuntimeSettings(context: UseRuntimeSettingsContext) {
       nextModel: string,
       nextReasoning: string,
       backendKindOverride?: ReturnType<typeof getProviderRuntime>["backendKind"],
-      modelSelection?: GeminiModelSelection,
       localBackend?: LocalBackendId,
     ) => {
       try {
@@ -101,7 +100,6 @@ export function useRuntimeSettings(context: UseRuntimeSettingsContext) {
           modelId: nextModel,
           backendKind: backendKindOverride ?? runtime.backendKind,
           reasoning: nextReasoning,
-          modelSelection,
           ...(providerId === "local"
             ? {
                 localBackend:

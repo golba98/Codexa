@@ -208,7 +208,7 @@ Options:
       --file <path>       Attach a project text file to exec (repeatable).
       --resume <id>       Open a saved chat without sending a prompt.
       --import-session <source>:<id>
-                           Import native history (claude, codex, vibe).
+                           Import native history (claude, codex, google, vibe).
       --profile <name>    Load a profile from config.
   -m, --model <name>      Select the model for this launch.
       --reasoning <effort>

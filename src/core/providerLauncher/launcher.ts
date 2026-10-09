@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "child_process";
 import { accessSync, constants, existsSync } from "fs";
 import { delimiter, join } from "path";
+import { verifyAgyExecutable } from "../executables/antigravityExecutable.js";
 import { buildSpawnSpec } from "../executables/executableResolver.js";
 import { normalizeExecutableValue } from "../process/processValidation.js";
 import { errorMessage } from "../shared/values.js";
@@ -164,6 +165,16 @@ export async function launchProviderCli(
 ): Promise<ProviderLaunchResult> {
   const spec = buildProviderLaunchSpec(provider, options.cwd);
   if ("status" in spec) return spec;
+  if (provider.id === "google") {
+    try {
+      await verifyAgyExecutable(spec.executable, { cwd: options.cwd });
+    } catch (error) {
+      return {
+        status: "missing-command",
+        message: error instanceof Error ? error.message : "Antigravity CLI is unavailable.",
+      };
+    }
+  }
   return launchCliCommand(provider.displayName, spec, options);
 }
 

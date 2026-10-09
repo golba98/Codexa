@@ -4,11 +4,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runtimeConfig.js";
+import { ModelCatalog, providerCatalog } from "../models/modelCatalog.js";
 import type { CommandResult, runCommand } from "../process/commandRunner.js";
+import type { BackendProvider } from "../providers/types.js";
 import { resetAnthropicRouteValidationCacheForTests, validateAnthropicRoute } from "./anthropic.js";
-import { resetGeminiRouteValidationCacheForTests } from "./gemini.js";
 import { checkLocalProvider, resetLocalProviderStateForTests } from "./local.js";
 import {
+  createRoutedProvider,
   discoverProviderModels,
   getDefaultRouteModel,
   getProviderRouteSetupMessage,
@@ -16,21 +19,159 @@ import {
   isProviderRouteConfigured,
   resolveActiveProviderRoute,
 } from "./registry.js";
+import type { ProviderChatRequest, ProviderModel, ProviderRuntime } from "./types.js";
+
+test("Mistral failed refresh permits configured routes but blocks API routes and API aliases", async () => {
+  const models: ProviderModel[] = [
+    {
+      id: "native",
+      modelId: "native",
+      label: "Native",
+      source: "config",
+      mistralExecutionClass: "native-vibe",
+      description: null,
+      defaultReasoningLevel: null,
+      supportedReasoningLevels: null,
+      raw: { aliases: ["native-api-version"] },
+    },
+    {
+      id: "local",
+      modelId: "local",
+      label: "Local",
+      source: "config",
+      mistralExecutionClass: "local-vibe",
+      description: null,
+      defaultReasoningLevel: null,
+      supportedReasoningLevels: null,
+    },
+    {
+      id: "third-party",
+      modelId: "third-party",
+      label: "Third party",
+      source: "config",
+      mistralExecutionClass: "custom-vibe",
+      description: null,
+      defaultReasoningLevel: null,
+      supportedReasoningLevels: null,
+    },
+    {
+      id: "api",
+      modelId: "api",
+      label: "API",
+      source: "discovered",
+      mistralExecutionClass: "custom-vibe",
+      description: null,
+      defaultReasoningLevel: null,
+      supportedReasoningLevels: null,
+    },
+  ];
+  const runtime = getProviderRuntime("mistral");
+  const originalDiscover = runtime.discoverModels;
+  const originalRun = runtime.run;
+  const catalog = new ModelCatalog();
+  const fixtureRuntime: ProviderRuntime = {
+    ...runtime,
+    discoverModels: () => ({
+      status: "ready",
+      providerId: "mistral",
+      backendKind: "mistral-vibe-cli-auth",
+      models,
+    }),
+    refreshModels: async () => ({
+      status: "ready",
+      providerId: "mistral",
+      backendKind: "mistral-vibe-cli-auth",
+      models,
+      freshness: "unverified",
+      refreshState: "failed",
+    }),
+  };
+  const snapshot = await catalog.refresh(fixtureRuntime, { cwd: "/tmp/no-vibe-project" });
+  assert.equal(snapshot.freshness, "unverified");
+  const backend: BackendProvider = {
+    id: "codex-subprocess",
+    label: "Fixture",
+    description: "Fixture",
+    authState: "delegated",
+    authLabel: "Fixture",
+    statusMessage: "Fixture",
+    supportsModels: () => true,
+  };
+  const dispatched: ProviderChatRequest[] = [];
+  try {
+    providerCatalog.invalidate("mistral");
+    runtime.discoverModels = () => snapshot;
+    runtime.run = (request) => {
+      dispatched.push(request);
+      return () => {};
+    };
+    for (const modelId of ["native", "local", "third-party", "api", "native-api-version"]) {
+      dispatched.length = 0;
+      let error = "";
+      const provider = createRoutedProvider(
+        { providerId: "mistral", modelId, backendKind: "mistral-vibe-cli-auth" },
+        backend,
+        {},
+      );
+      provider.run!(
+        "fixture",
+        { runtime: resolveRuntimeConfig(normalizeRuntimeConfig({})), workspaceRoot: "/tmp" },
+        {
+          onResponse: () => {},
+          onError: (message) => {
+            error = message;
+          },
+        },
+      );
+      if (modelId === "api" || modelId === "native-api-version") {
+        assert.match(error, /unverified.*Refresh models/i);
+        assert.equal(dispatched.length, 0);
+      } else {
+        assert.equal(error, "");
+        assert.equal(dispatched.at(-1)?.route.modelId, modelId);
+      }
+    }
+    runtime.discoverModels = () => ({ ...snapshot, freshness: "verified" });
+    for (const modelId of ["api", "native-api-version"]) {
+      const provider = createRoutedProvider(
+        { providerId: "mistral", modelId, backendKind: "mistral-vibe-cli-auth" },
+        backend,
+        {},
+      );
+      provider.run!(
+        "fixture",
+        { runtime: resolveRuntimeConfig(normalizeRuntimeConfig({})), workspaceRoot: "/tmp" },
+        {
+          onResponse: () => {},
+          onError: (message) => {
+            throw new Error(message);
+          },
+        },
+      );
+      assert.equal(dispatched.at(-1)?.route.modelId, modelId);
+    }
+  } finally {
+    runtime.discoverModels = originalDiscover;
+    runtime.run = originalRun;
+    providerCatalog.invalidate("mistral");
+    catalog.dispose();
+  }
+});
 
 test("every supported external provider exposes the shared planning run path", () => {
-  for (const providerId of ["openai", "anthropic", "mistral", "local"] as const) {
+  for (const providerId of ["openai", "anthropic", "mistral", "local", "google"] as const) {
     const runtime = getProviderRuntime(providerId);
     assert.equal(runtime.routeAvailable, true, `${providerId} must remain routable for plan mode`);
     assert.equal(typeof runtime.run, "function", `${providerId} must accept shared plan requests`);
   }
 });
 
-test("google runtime exposes configured Gemini models for in-Ubume routing", () => {
+test("google runtime exposes configured Antigravity models for in-Ubume routing", () => {
   const runtime = getProviderRuntime("google");
   const discovery = discoverProviderModels("google");
 
   assert.equal(runtime.routeAvailable, true);
-  assert.equal(runtime.backendKind, "gemini-cli-auth");
+  assert.equal(runtime.backendKind, "antigravity-cli-auth");
   assert.equal(discovery.status, "ready");
   assert.ok(discovery.models.length > 0);
 });
@@ -45,36 +186,35 @@ test("anthropic runtime exposes configured Claude models for in-Ubume routing", 
   assert.ok(discovery.models.length > 0);
 });
 
-test("Google route restores its saved native ID gemini-2.5-pro", () => {
+test("Google route restores its saved model ID gemini-3.5-flash", () => {
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "google",
-      modelId: "gemini-2.5-pro",
-      backendKind: "gemini-cli-auth",
+      modelId: "gemini-3.5-flash",
+      backendKind: "antigravity-cli-auth",
       reasoning: "medium",
     },
     currentModel: "gpt-5.4",
     currentReasoning: "high",
   });
   assert.equal(route.providerId, "google");
-  assert.equal(route.modelId, "gemini-2.5-pro");
+  assert.equal(route.modelId, "gemini-3.5-flash");
   assert.equal(route.reasoning, "medium");
 });
 
-test("Google route restores its saved native ID gemini-3-flash", () => {
+test("Google route preserves an exact native ID until discovery resolves it", () => {
   const route = resolveActiveProviderRoute({
     workspaceConfigActiveRoute: {
       providerId: "google",
-      modelId: "gemini-3-flash",
-      backendKind: "gemini-cli-auth",
-      reasoning: "high",
+      modelId: "gemini-3.5-flash-high",
+      backendKind: "antigravity-cli-auth",
     },
     currentModel: "gpt-5.4",
     currentReasoning: "high",
   });
   assert.equal(route.providerId, "google");
-  assert.equal(route.modelId, "gemini-3-flash");
-  assert.equal(route.reasoning, "high");
+  assert.equal(route.modelId, "gemini-3.5-flash-high");
+  assert.equal(route.reasoning, undefined);
 });
 
 test("active route resolution preserves routable anthropic routes", () => {
@@ -252,20 +392,8 @@ test("anthropic route configuration is gated by ANTHROPIC_API_KEY or Claude Code
   }
 });
 
-test("google route configuration is gated by Gemini API key or validated headless CLI", () => {
-  const originalGemini = process.env.GEMINI_API_KEY;
-  const originalGoogle = process.env.GOOGLE_API_KEY;
-
-  try {
-    delete process.env.GEMINI_API_KEY;
-    delete process.env.GOOGLE_API_KEY;
-    resetGeminiRouteValidationCacheForTests();
-    assert.equal(isProviderRouteConfigured("google"), false);
-    assert.match(getProviderRouteSetupMessage("google"), /GEMINI_API_KEY \/ GOOGLE_API_KEY/);
-  } finally {
-    if (originalGemini) process.env.GEMINI_API_KEY = originalGemini;
-    if (originalGoogle) process.env.GOOGLE_API_KEY = originalGoogle;
-  }
+test("google route setup message instructs installing Antigravity CLI", () => {
+  assert.match(getProviderRouteSetupMessage("google"), /agy/);
 });
 
 test("local route configuration is gated by endpoint model discovery", async () => {

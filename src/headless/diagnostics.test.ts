@@ -17,11 +17,21 @@ test("provider diagnostics honor a configured executable and the disabled state"
   assert.equal(disabled?.routable, false);
 });
 
-test("provider diagnostics no longer list Antigravity", () => {
+test("provider diagnostics no longer list Antigravity as a standalone provider", () => {
   assert.equal(
     listProviderStatus({}, process.cwd()).some(
       (provider) => (provider.id as string) === "antigravity",
     ),
     false,
   );
+});
+
+test("provider diagnostics list Google backed by Antigravity executable", () => {
+  const config = { providers: { google: { antigravityCommandPath: process.execPath } } };
+  const status = listProviderStatus(config, process.cwd()).find(
+    (provider) => provider.id === "google",
+  );
+  assert.ok(status, "Google provider should be listed in diagnostics");
+  assert.equal(status?.label, "Google");
+  assert.equal(status?.executable, process.execPath);
 });

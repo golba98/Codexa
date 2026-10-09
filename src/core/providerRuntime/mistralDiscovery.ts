@@ -68,8 +68,11 @@ export function resolveMistralConnection(
   };
 }
 
-/** Documented values for these exact API routes; no family/name inference. */
-const ADJUSTABLE_IDS = new Set(["mistral-small-latest", "mistral-medium-3-5", "mistral-large-4-0"]);
+const MISTRAL_REASONING_LEVELS = [
+  { id: "none", label: "None", description: "Vibe Low maps to Mistral reasoning_effort=none." },
+  { id: "high", label: "High", description: "Vibe High maps to Mistral reasoning_effort=high." },
+] as const;
+
 export function parseMistralModels(body: unknown): ProviderModel[] {
   const items = Array.isArray(body)
     ? body
@@ -83,13 +86,7 @@ export function parseMistralModels(body: unknown): ProviderModel[] {
     const capabilities = isRecord(item.capabilities) ? item.capabilities : {};
     if (capabilities.completion_chat !== true || item.archived === true) continue;
     const bool = (value: unknown) => (typeof value === "boolean" ? value : null);
-    const levels =
-      capabilities.reasoning === true && ADJUSTABLE_IDS.has(item.id)
-        ? [
-            { id: "none", label: "None", description: "Vibe Low transmits Mistral none." },
-            { id: "high", label: "High", description: "Vibe High transmits Mistral high." },
-          ]
-        : null;
+    const levels = capabilities.reasoning === true ? MISTRAL_REASONING_LEVELS : null;
     const aliases = Array.isArray(item.aliases)
       ? item.aliases.filter((value) => typeof value === "string")
       : [];
@@ -100,6 +97,8 @@ export function parseMistralModels(body: unknown): ProviderModel[] {
       providerId: "mistral",
       deployment: "remote",
       available: true,
+      mistralExecutionClass: "custom-vibe",
+      executionVerified: false,
       label: (typeof item.name === "string" ? item.name : native)
         .replace(/[-_]/g, " ")
         .replace(/\b\w/g, (char) => char.toUpperCase()),
@@ -120,7 +119,7 @@ export function parseMistralModels(body: unknown): ProviderModel[] {
       reasoningControl: levels
         ? { kind: "levels", levels, default: "high", transport: "parameter" }
         : { kind: capabilities.reasoning === false ? "unsupported" : "unknown" },
-      raw: { ...item, aliases },
+      raw: { ...item, aliases, variantIds: [native, ...aliases] },
     });
   }
   if (

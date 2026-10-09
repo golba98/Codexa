@@ -1,15 +1,15 @@
 import { formatContextLength } from "../core/providerRuntime/contextMetadata.js";
-import { hasGeminiApiKey } from "../core/providerRuntime/gemini.js";
 import type { DiagnosticResult, parseRepoIdentity } from "../core/shared/githubDiagnostics.js";
 
 export function formatProviderDiagnostics(
   diags: Record<string, Record<string, string | number | boolean | null>>,
 ): string {
   const lines: string[] = ["Provider CLI diagnostics:"];
-  const providerIds = ["openai", "anthropic", "codexa-native", "local"] as const;
+  const providerIds = ["openai", "anthropic", "google", "codexa-native", "local"] as const;
   const labels: Record<string, string> = {
     openai: "OpenAI/Codex",
     anthropic: "Anthropic/Claude",
+    google: "Google",
     local: "Local OpenAI-compatible",
     "codexa-native": "Codexa Native",
   };
@@ -72,25 +72,9 @@ export function formatProviderRouteDiagnostics(
       lines.push(
         `    Resolved command: ${diagnostics.resolvedCommand ?? diagnostics.executablePath}`,
       );
-    if (diagnostics.version) lines.push(`    Version: ${diagnostics.version}`);
-    if (diagnostics.headlessPromptMode)
-      lines.push(`    Headless prompt mode: ${diagnostics.headlessPromptMode}`);
-    lines.push(
-      `    Status: ${diagnostics.probeStatus ?? (diagnostics.status === "completed" && diagnostics.exitCode === 0 && diagnostics.probeMatch ? "Ready" : "failed")}`,
-    );
-    if (diagnostics.lastProbeCommandArgs)
-      lines.push(`    Last probe command args: ${diagnostics.lastProbeCommandArgs}`);
-    if (
-      diagnostics.status !== "completed" ||
-      diagnostics.exitCode !== 0 ||
-      !diagnostics.probeMatch
-    ) {
-      const reason = diagnostics.failureReason ?? (diagnostics.timeout ? "timeout" : "unknown");
-      lines.push(`    Reason: ${reason}`);
-      if (diagnostics.firstUsefulOutputLine)
-        lines.push(`    First output: ${diagnostics.firstUsefulOutputLine}`);
-    }
-    lines.push(`    API fallback: ${hasGeminiApiKey() ? "available" : "unavailable"}`);
+    if (diagnostics.modelSource) lines.push(`    Model source: ${diagnostics.modelSource}`);
+    if (diagnostics.discoveredModelCount !== undefined)
+      lines.push(`    Discovered models: ${diagnostics.discoveredModelCount}`);
     line = lines.join("\n");
   }
 

@@ -103,51 +103,83 @@ export function detectVibeActiveModel(
 }
 
 interface VibeConfigModelEntry {
+  configuration: Record<string, unknown>;
   name: string;
   alias: string;
   provider: string | null;
+  displayName: string | null;
+  thinking: string | null;
+  thinkingLevels: string[] | null;
+  supportsImages: boolean | null;
+  maxContextLength: number | null;
 }
 
 // Vibe resolves `active_model` (and the VIBE_ACTIVE_MODEL override) against the
 // model *alias*, which defaults to the model name when omitted — so the alias is
 // the id Ubume must select and pass back.
+function parseVibeModelEntries(rawModels: unknown): VibeConfigModelEntry[] {
+  if (!Array.isArray(rawModels)) return [];
+  const entries: VibeConfigModelEntry[] = [];
+  for (const raw of rawModels) {
+    if (!raw || typeof raw !== "object") continue;
+    const record = raw as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    if (!name) continue;
+    const alias =
+      typeof record.alias === "string" && record.alias.trim() ? record.alias.trim() : name;
+    entries.push({
+      configuration: { ...record },
+      name,
+      alias,
+      provider:
+        typeof record.provider === "string" && record.provider.trim()
+          ? record.provider.trim()
+          : null,
+      displayName:
+        typeof record.display_name === "string" && record.display_name.trim()
+          ? record.display_name.trim()
+          : null,
+      thinking: typeof record.thinking === "string" ? record.thinking : null,
+      thinkingLevels: Array.isArray(record.thinking_levels)
+        ? record.thinking_levels.filter((value): value is string => typeof value === "string")
+        : null,
+      supportsImages: typeof record.supports_images === "boolean" ? record.supports_images : null,
+      maxContextLength:
+        typeof record.max_context_length === "number" && record.max_context_length > 0
+          ? record.max_context_length
+          : null,
+    });
+  }
+  return entries;
+}
+
 function readVibeModelEntries(filePath: string): VibeConfigModelEntry[] {
   if (!existsSync(filePath)) return [];
   try {
     const parsed = parseTomlDocument(readFileSync(filePath, "utf-8"));
-    const rawModels = (parsed as Record<string, unknown>).models;
-    if (!Array.isArray(rawModels)) return [];
-    const entries: VibeConfigModelEntry[] = [];
-    for (const raw of rawModels) {
-      if (!raw || typeof raw !== "object") continue;
-      const record = raw as Record<string, unknown>;
-      const name = typeof record.name === "string" ? record.name.trim() : "";
-      if (!name) continue;
-      const alias =
-        typeof record.alias === "string" && record.alias.trim() ? record.alias.trim() : name;
-      entries.push({
-        name,
-        alias,
-        provider:
-          typeof record.provider === "string" && record.provider.trim()
-            ? record.provider.trim()
-            : null,
-      });
-    }
-    return entries;
+    return parseVibeModelEntries((parsed as Record<string, unknown>).models);
   } catch {
     return [];
   }
 }
 
 function vibeEntryToProviderModel(entry: VibeConfigModelEntry): ProviderModel {
+  const executionClass =
+    entry.provider === "llamacpp"
+      ? "local-vibe"
+      : entry.provider === "mistral"
+        ? "native-vibe"
+        : "custom-vibe";
   return {
     id: entry.alias,
     modelId: entry.alias,
-    label: entry.alias,
+    label: entry.displayName ?? entry.alias,
     description: entry.provider ? `${entry.name} via ${entry.provider}` : entry.name,
     defaultReasoningLevel: null,
     supportedReasoningLevels: null,
+    available: true,
+    mistralExecutionClass: executionClass,
+    executionVerified: false,
     source: "config",
     raw: entry,
   };
@@ -165,6 +197,19 @@ export function listVibeConfiguredModels(
   const seen = new Set<string>();
   const models: ProviderModel[] = [];
   let configPath: string | null = null;
+  let environmentEntries: VibeConfigModelEntry[] = [];
+  if (env.VIBE_MODELS) {
+    try {
+      environmentEntries = parseVibeModelEntries(JSON.parse(env.VIBE_MODELS));
+    } catch {
+      environmentEntries = [];
+    }
+  }
+  for (const entry of environmentEntries) {
+    if (seen.has(entry.alias)) continue;
+    seen.add(entry.alias);
+    models.push(vibeEntryToProviderModel(entry));
+  }
   for (const candidate of [projectConfig, userConfig]) {
     if (!candidate) continue;
     const entries = readVibeModelEntries(candidate);
@@ -178,36 +223,147 @@ export function listVibeConfiguredModels(
   return { models, configPath };
 }
 
-let liveMistralCatalog: ProviderModelDiscoveryResult | null = null;
+function apiAliasMembers(model: ProviderModel): string[] {
+  const raw = isRecord(model.raw) ? model.raw : {};
+  return [model.modelId, ...(Array.isArray(raw.aliases) ? raw.aliases : [])].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+}
+
+function collapseApiAliases(models: readonly ProviderModel[]): ProviderModel[][] {
+  const parent = new Map<string, string>();
+  const ids = new Set(models.map((model) => model.modelId));
+  const find = (id: string): string => {
+    const current = parent.get(id);
+    if (!current) {
+      parent.set(id, id);
+      return id;
+    }
+    if (current === id) return id;
+    const root = find(current);
+    parent.set(id, root);
+    return root;
+  };
+  for (const model of models) {
+    find(model.modelId);
+    for (const alias of apiAliasMembers(model).slice(1)) {
+      if (!ids.has(alias)) continue;
+      const left = find(model.modelId);
+      const right = find(alias);
+      if (left !== right) parent.set(right, left);
+    }
+  }
+  const groups = new Map<string, ProviderModel[]>();
+  for (const model of models) {
+    const root = find(model.modelId);
+    const group = groups.get(root) ?? [];
+    group.push(model);
+    groups.set(root, group);
+  }
+  return [...groups.values()];
+}
+
+function selectApiRepresentative(group: readonly ProviderModel[]): ProviderModel {
+  return [...group].sort((left, right) => {
+    const score = (id: string) =>
+      (id.includes("-latest") ? 100 : 0) + (id.includes("vibe-cli") ? 50 : 0);
+    return (
+      score(left.modelId) - score(right.modelId) ||
+      left.modelId.length - right.modelId.length ||
+      left.modelId.localeCompare(right.modelId)
+    );
+  })[0]!;
+}
+
+/** Merge configured Vibe models with API models, collapsing only API-declared aliases. */
+export function mergeMistralVibeModels(
+  configuredModels: readonly ProviderModel[],
+  apiModels: readonly ProviderModel[],
+): ProviderModel[] {
+  const apiGroups = collapseApiAliases(apiModels).map((group) => {
+    const representative = selectApiRepresentative(group);
+    const aliases = [...new Set(group.flatMap(apiAliasMembers))];
+    return {
+      ...representative,
+      canonicalId: representative.modelId,
+      raw: {
+        ...(isRecord(representative.raw) ? representative.raw : {}),
+        aliases: aliases.filter((id) => id !== representative.modelId),
+        variantIds: aliases,
+        mistralExecutionClass: "custom-vibe",
+      },
+    };
+  });
+
+  const claimed = new Set<ProviderModel>();
+  const configured = configuredModels.map((model) => {
+    const raw = isRecord(model.raw) ? model.raw : {};
+    if (raw.provider !== "mistral" || typeof raw.alias !== "string") return model;
+    const matched = apiGroups.find((candidate) =>
+      apiAliasMembers(candidate).includes(raw.name as string),
+    );
+    if (!matched) return model;
+    claimed.add(matched);
+    const variants = [
+      ...new Set([
+        ...(Array.isArray(raw.variantIds) ? raw.variantIds : []),
+        ...apiAliasMembers(matched),
+      ]),
+    ];
+    return {
+      ...matched,
+      id: raw.alias,
+      modelId: raw.alias,
+      label: typeof raw.displayName === "string" ? raw.displayName : matched.label,
+      description: `${matched.modelId} · configured in Mistral Vibe`,
+      canonicalId: matched.modelId,
+      mistralExecutionClass: "native-vibe" as const,
+      executionVerified: false,
+      source: "config" as const,
+      raw: {
+        ...(isRecord(matched.raw) ? matched.raw : {}),
+        aliases: variants.filter((id) => id !== raw.alias),
+        variantIds: variants,
+        vibeConfig: raw,
+        mistralExecutionClass: "native-vibe",
+      },
+    };
+  });
+
+  const result = [...configured, ...apiGroups.filter((model) => !claimed.has(model))];
+  const seen = new Set<string>();
+  return result.filter((model) => {
+    if (seen.has(model.modelId)) return false;
+    seen.add(model.modelId);
+    return true;
+  });
+}
 
 export function discoverMistralVibeModels(cwd = process.cwd()): ProviderModelDiscoveryResult {
-  if (liveMistralCatalog) return liveMistralCatalog;
   const detected = detectVibeActiveModel({ cwd });
   const listed = listVibeConfiguredModels({ cwd });
 
   // The active model must be first: registry consumers read models[0] as the default route model.
-  const models: ProviderModel[] = [];
-  const activeFromList = listed.models.find((model) => model.modelId === detected.modelId);
-  if (activeFromList) {
-    models.push(activeFromList, ...listed.models.filter((model) => model !== activeFromList));
-  } else {
-    models.push(
-      {
-        id: detected.modelId,
-        modelId: detected.modelId,
-        label: detected.modelId,
-        description: "Active model reported by Mistral Vibe configuration.",
-        defaultReasoningLevel: null,
-        supportedReasoningLevels: null,
-        source: detected.source === "default" ? "fallback" : "config",
-        raw: {
-          source: detected.source,
-          configPath: detected.configPath,
-        },
-      },
-      ...listed.models,
-    );
-  }
+  const models = [vibeCurrentDefaultModel(), ...mergeMistralVibeModels(listed.models, [])];
+  if (!models.some((model) => model.modelId === detected.modelId))
+    models.unshift({
+      id: detected.modelId,
+      modelId: detected.modelId,
+      label: `${detected.modelId} (unsupported Vibe selection)`,
+      description: "Active model is absent from the installed Vibe model configuration.",
+      defaultReasoningLevel: null,
+      supportedReasoningLevels: null,
+      available: false,
+      mistralExecutionClass: "unsupported",
+      executionVerified: false,
+      source: "fallback",
+      raw: { source: detected.source, configPath: detected.configPath },
+    });
+  const activeIndex = models.findIndex(
+    (model) =>
+      model.modelId === detected.modelId || apiAliasMembers(model).includes(detected.modelId),
+  );
+  if (activeIndex > 0) models.unshift(...models.splice(activeIndex, 1));
 
   return {
     status: "ready",
@@ -220,6 +376,23 @@ export function discoverMistralVibeModels(cwd = process.cwd()): ProviderModelDis
       configPath: detected.configPath ?? listed.configPath,
       modelCount: models.length,
     },
+  };
+}
+
+function vibeCurrentDefaultModel(): ProviderModel {
+  return {
+    id: VIBE_DEFAULT_MODEL_LABEL,
+    modelId: VIBE_DEFAULT_MODEL_LABEL,
+    label: "Vibe current/default",
+    description:
+      "Follows Vibe's saved active/default selection and inherited environment overrides.",
+    defaultReasoningLevel: null,
+    supportedReasoningLevels: null,
+    available: true,
+    mistralExecutionClass: "native-vibe",
+    executionVerified: false,
+    source: "config",
+    raw: { source: "default" },
   };
 }
 
@@ -497,8 +670,21 @@ export function runMistralVibe(
     const spawnEnv: NodeJS.ProcessEnv = { ...env };
     if (modelId && modelId !== VIBE_DEFAULT_MODEL_LABEL) {
       const discovered =
-        request.modelDescriptor ?? resolveCatalogModel(liveMistralCatalog?.models ?? [], modelId);
-      if (discovered) {
+        request.modelDescriptor ??
+        resolveCatalogModel(discoverMistralVibeModels(workspaceRoot).models, modelId);
+      if (
+        !discovered ||
+        !resolveCatalogModel([discovered], modelId) ||
+        discovered.available === false ||
+        discovered.mistralExecutionClass === "unsupported"
+      ) {
+        control.finish();
+        handlers.onError(
+          `The selected Mistral Vibe model ${modelId} is not present in the current Vibe configuration or authenticated Mistral chat catalogue. Refresh models and select a supported model.`,
+        );
+        return;
+      }
+      {
         const selected = request.route.reasoning;
         if (
           selected &&
@@ -510,35 +696,62 @@ export function runMistralVibe(
           return;
         }
         const connection = resolveMistralConnection(workspaceRoot, request.providerConfig, env);
+        const raw = isRecord(discovered.raw) ? discovered.raw : {};
+        const configured = isRecord(raw.vibeConfig)
+          ? raw.vibeConfig
+          : typeof raw.alias === "string" && typeof raw.name === "string"
+            ? raw
+            : null;
+        // Configured aliases intentionally resolve to their configured request name.
+        // API IDs sharing that row must still be sent as the exact selected ID.
+        const vibeConfig = configured?.alias === modelId ? configured : null;
+        const modelName = typeof vibeConfig?.name === "string" ? vibeConfig.name : modelId;
+        const modelProvider =
+          typeof vibeConfig?.provider === "string" && vibeConfig.provider
+            ? vibeConfig.provider
+            : "mistral";
         const configuredModel = connection.configuredModels.find(
-          (item) =>
-            isRecord(item) && item.name === discovered.modelId && item.provider === "mistral",
+          (item) => isRecord(item) && item.alias === modelId,
         );
         const inheritedThinking =
-          isRecord(configuredModel) && typeof configuredModel.thinking === "string"
-            ? configuredModel.thinking
-            : "off";
+          typeof vibeConfig?.thinking === "string"
+            ? vibeConfig.thinking
+            : isRecord(configuredModel) && typeof configuredModel.thinking === "string"
+              ? configuredModel.thinking
+              : "off";
         const thinking = discovered.supportedReasoningLevels?.length
           ? selected === "none"
             ? "low"
             : "high"
           : inheritedThinking;
-        spawnEnv.VIBE_MODELS = JSON.stringify({
-          [modelId]: {
-            name: discovered.modelId,
+        spawnEnv.VIBE_MODELS = JSON.stringify([
+          {
+            ...(isRecord(vibeConfig?.configuration) ? vibeConfig.configuration : {}),
+            name: modelName,
             alias: modelId,
-            provider: connection.providerName,
+            provider: modelProvider,
             thinking,
             thinking_levels: discovered.supportedReasoningLevels?.length
               ? ["low", "high"]
-              : undefined,
-            supports_images: discovered.capabilities?.vision === true,
-            max_context_length: discovered.contextWindow ?? undefined,
+              : Array.isArray(vibeConfig?.thinkingLevels)
+                ? vibeConfig.thinkingLevels
+                : vibeConfig
+                  ? undefined
+                  : ["off"],
+            supports_images:
+              typeof vibeConfig?.supportsImages === "boolean"
+                ? vibeConfig.supportsImages
+                : discovered.capabilities?.vision === true,
+            max_context_length:
+              typeof vibeConfig?.maxContextLength === "number"
+                ? vibeConfig.maxContextLength
+                : (discovered.contextWindow ?? undefined),
           },
-        });
-        if (connection.apiKey) spawnEnv[connection.apiKeyEnv] = connection.apiKey;
+        ]);
+        if (modelProvider === "mistral" && connection.apiKey)
+          spawnEnv[connection.apiKeyEnv] = connection.apiKey;
         if (discovered.capabilities?.tools === false) spawnEnv.VIBE_ENABLED_TOOLS = "[]";
-        if (request.providerConfig?.baseUrl)
+        if (modelProvider === "mistral" && request.providerConfig?.baseUrl)
           spawnEnv.VIBE_PROVIDERS = JSON.stringify([
             {
               name: "mistral",
@@ -760,8 +973,21 @@ export const mistralVibeRuntime: ProviderRuntime = {
       };
     }
     const discovery = await fetchMistralModels({ cwd, providerConfig, signal });
-    if (discovery.freshness === "verified" && !signal?.aborted) liveMistralCatalog = discovery;
-    return discovery;
+    const configured = listVibeConfiguredModels({ cwd }).models;
+    const models = [
+      vibeCurrentDefaultModel(),
+      ...mergeMistralVibeModels(configured, discovery.models),
+    ];
+    const activeModel = detectVibeActiveModel({ cwd }).modelId;
+    const activeIndex = models.findIndex(
+      (model) => model.modelId === activeModel || apiAliasMembers(model).includes(activeModel),
+    );
+    if (activeIndex > 0) models.unshift(...models.splice(activeIndex, 1));
+    return {
+      ...discovery,
+      status: discovery.status === "ready" || configured.length > 0 ? "ready" : "not-configured",
+      models,
+    };
   },
   run: (request, handlers) => runMistralVibe(request, handlers),
 };
