@@ -104,6 +104,13 @@ export function loadCachedProviderModels(
   if (!entry || !isValidEntry(entry) || (providerId === "google" && !isAgyCacheEntry(entry))) {
     return null;
   }
+  if (providerId === "mistral")
+    return {
+      ...entry,
+      models: entry.models.filter(
+        (model) => model.source === "config" || model.mistralExecutionClass !== "custom-vibe",
+      ),
+    };
   return entry;
 }
 

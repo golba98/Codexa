@@ -3,7 +3,12 @@ import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runti
 import type { CommandSpec, runCommand } from "../process/commandRunner.js";
 import { parseAgyModelsOutput, runAntigravityWithRunner } from "./antigravity.js";
 import { parseMistralModels } from "./mistralDiscovery.js";
-import { listVibeConfiguredModels, mergeMistralVibeModels, runMistralVibe } from "./mistralVibe.js";
+import {
+  listVibeConfiguredModels,
+  mergeMistralVibeModels,
+  parseVibeEffectiveModels,
+  runMistralVibe,
+} from "./mistralVibe.js";
 import type { ProviderChatRequest } from "./types.js";
 
 const result = {
@@ -521,4 +526,36 @@ test("Claude effort rejection reconciles catalog, footer and actual retry payloa
     providerCatalog.dispose();
     resetAnthropicRouteValidationCacheForTests();
   }
+});
+
+test("effective Vibe GLM selection dispatches its configured request name and native thinking level", async () => {
+  const model = parseVibeEffectiveModels({
+    active_model: "",
+    default_label: "GLM-5.3 (Mistral Hosted)",
+    models: [
+      {
+        alias: "glm-5-3",
+        name: "glm-5.3",
+        provider: "mistral",
+        display_name: "GLM-5.3 (Mistral Hosted)",
+        thinking: "high",
+        thinking_levels: ["off", "medium", "high"],
+      },
+    ],
+  }).models[1];
+  const spec = await captureVibeRequest({
+    route: {
+      providerId: "mistral",
+      backendKind: "mistral-vibe-cli-auth",
+      modelId: "glm-5-3",
+      reasoning: "medium",
+    },
+    modelDescriptor: model,
+  });
+  expect(spec.env?.VIBE_ACTIVE_MODEL).toBe("glm-5-3");
+  const payload = JSON.parse(spec.env!.VIBE_MODELS!)[0];
+  expect(payload.name).toBe("glm-5.3");
+  expect(payload.alias).toBe("glm-5-3");
+  expect(payload.thinking).toBe("medium");
+  expect(payload.thinking_levels).toEqual(["off", "medium", "high"]);
 });

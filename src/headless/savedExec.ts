@@ -1,4 +1,5 @@
 import { closeLocalHarnessSession } from "../core/providerRuntime/localHarness/runtime.js";
+import { refreshProviderModels } from "../core/providerRuntime/registry.js";
 import { resolveUbumeWorkspaceDataDir } from "../core/workspace/appData.js";
 import { assertFileRecoveryReady, CheckpointStore } from "../core/workspace/checkpoints.js";
 import { type ConversationRecord, ConversationStore } from "../core/workspace/conversationStore.js";
@@ -66,6 +67,11 @@ export async function runSavedExec(
       resolveExecutionContext(workspace, options.launchArgs, {
         providerId: options.providerId,
         saved: record,
+      });
+    if (!options.context && context.route.providerId === "mistral")
+      await refreshProviderModels("mistral", {
+        cwd: workspace,
+        providerConfig: context.config.providers?.mistral,
       });
     const secrets = Object.values(context.config.providers ?? {}).flatMap((provider) =>
       provider?.apiKey ? [provider.apiKey] : [],

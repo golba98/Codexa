@@ -7,6 +7,7 @@ import { getHomeDir } from "../../config/settings.js";
 import { formatConversationHistory } from "../../session/conversation.js";
 import { resolveVibeExecutable } from "../executables/executableResolver.js";
 import { vibeSessionDir } from "../externalSessions/vibeSessions.js";
+import { catalogContextKey } from "../models/modelCatalog.js";
 import { resolveCatalogModel } from "../models/modelSelection.js";
 import {
   type CommandResult,
@@ -24,7 +25,7 @@ import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { errorMessage, isRecord } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
-import { fetchMistralModels, resolveMistralConnection } from "./mistralDiscovery.js";
+import { resolveMistralConnection } from "./mistralDiscovery.js";
 import type {
   ProviderChatRequest,
   ProviderModel,
@@ -32,6 +33,7 @@ import type {
   ProviderRouteValidationResult,
   ProviderRuntime,
 } from "./types.js";
+import { probeVibeEffectiveModels } from "./vibeEffectiveModels.js";
 
 const VIBE_RUN_TIMEOUT_MS = 600_000;
 const VIBE_DEFAULT_MODEL_LABEL = "Vibe default";
@@ -339,7 +341,54 @@ export function mergeMistralVibeModels(
   });
 }
 
+const effectiveVibeModels = new Map<string, ProviderModelDiscoveryResult>();
+
+export function parseVibeEffectiveModels(payload: unknown): ProviderModelDiscoveryResult {
+  if (!isRecord(payload) || !Array.isArray(payload.models))
+    throw new Error("Invalid Vibe model configuration.");
+  const entries = parseVibeModelEntries(payload.models);
+  if (entries.length !== payload.models.length) throw new Error("Invalid Vibe model entries.");
+  const models = entries.map((entry) => {
+    const model = vibeEntryToProviderModel(entry);
+    const levels = entry.thinkingLevels?.map((id) => ({ id, label: id, description: null })) ?? [];
+    return {
+      ...model,
+      defaultReasoningLevel: levels.length ? entry.thinking : null,
+      supportedReasoningLevels: levels.length ? levels : null,
+      reasoningControl: levels.length
+        ? {
+            kind: "levels" as const,
+            levels,
+            default: entry.thinking ?? levels[0].id,
+            transport: "parameter" as const,
+          }
+        : { kind: "unknown" as const },
+    };
+  });
+  const defaultModel = {
+    ...vibeCurrentDefaultModel(),
+    label: `Default (currently ${typeof payload.default_label === "string" ? payload.default_label : "Vibe managed"})`,
+  };
+  const active =
+    typeof payload.active_model === "string" && payload.active_model
+      ? payload.active_model
+      : VIBE_DEFAULT_MODEL_LABEL;
+  const all = [defaultModel, ...models];
+  const activeIndex = all.findIndex((model) => model.modelId === active);
+  if (activeIndex > 0) all.unshift(...all.splice(activeIndex, 1));
+  return {
+    status: "ready",
+    providerId: "mistral",
+    backendKind: "mistral-vibe-cli-auth",
+    models: all,
+    freshness: "verified",
+    diagnostics: { modelSource: "vibe-effective-config", selectedModel: active },
+  };
+}
+
 export function discoverMistralVibeModels(cwd = process.cwd()): ProviderModelDiscoveryResult {
+  const effective = effectiveVibeModels.get(catalogContextKey("mistral", { cwd }));
+  if (effective) return effective;
   const detected = detectVibeActiveModel({ cwd });
   const listed = listVibeConfiguredModels({ cwd });
 
@@ -719,11 +768,13 @@ export function runMistralVibe(
             : isRecord(configuredModel) && typeof configuredModel.thinking === "string"
               ? configuredModel.thinking
               : "off";
-        const thinking = discovered.supportedReasoningLevels?.length
-          ? selected === "none"
-            ? "low"
-            : "high"
-          : inheritedThinking;
+        const thinking = vibeConfig
+          ? selected || inheritedThinking
+          : discovered.supportedReasoningLevels?.length
+            ? selected === "none"
+              ? "low"
+              : "high"
+            : inheritedThinking;
         spawnEnv.VIBE_MODELS = JSON.stringify([
           {
             ...(isRecord(vibeConfig?.configuration) ? vibeConfig.configuration : {}),
@@ -731,13 +782,15 @@ export function runMistralVibe(
             alias: modelId,
             provider: modelProvider,
             thinking,
-            thinking_levels: discovered.supportedReasoningLevels?.length
-              ? ["low", "high"]
-              : Array.isArray(vibeConfig?.thinkingLevels)
-                ? vibeConfig.thinkingLevels
-                : vibeConfig
-                  ? undefined
-                  : ["off"],
+            thinking_levels: Array.isArray(vibeConfig?.thinkingLevels)
+              ? vibeConfig.thinkingLevels
+              : discovered.supportedReasoningLevels?.length
+                ? ["low", "high"]
+                : Array.isArray(vibeConfig?.thinkingLevels)
+                  ? vibeConfig.thinkingLevels
+                  : vibeConfig
+                    ? undefined
+                    : ["off"],
             supports_images:
               typeof vibeConfig?.supportsImages === "boolean"
                 ? vibeConfig.supportsImages
@@ -961,7 +1014,7 @@ export const mistralVibeRuntime: ProviderRuntime = {
   launchAvailable: true,
   validateRoute: async ({ workspaceRoot }) => validateMistralVibeRoute({ cwd: workspaceRoot }),
   discoverModels: () => discoverMistralVibeModels(),
-  refreshModels: async ({ cwd, providerConfig, signal }) => {
+  refreshModels: async ({ cwd, signal }) => {
     const executable = await resolveVibeExecutable({ cwd });
     if (!executable) {
       return {
@@ -972,22 +1025,22 @@ export const mistralVibeRuntime: ProviderRuntime = {
         message: MISTRAL_VIBE_MISSING_MESSAGE,
       };
     }
-    const discovery = await fetchMistralModels({ cwd, providerConfig, signal });
-    const configured = listVibeConfiguredModels({ cwd }).models;
-    const models = [
-      vibeCurrentDefaultModel(),
-      ...mergeMistralVibeModels(configured, discovery.models),
-    ];
-    const activeModel = detectVibeActiveModel({ cwd }).modelId;
-    const activeIndex = models.findIndex(
-      (model) => model.modelId === activeModel || apiAliasMembers(model).includes(activeModel),
-    );
-    if (activeIndex > 0) models.unshift(...models.splice(activeIndex, 1));
-    return {
-      ...discovery,
-      status: discovery.status === "ready" || configured.length > 0 ? "ready" : "not-configured",
-      models,
-    };
+    const contextKey = catalogContextKey("mistral", { cwd });
+    try {
+      const payload = await probeVibeEffectiveModels({ executable, cwd, signal });
+      const discovery = parseVibeEffectiveModels(payload);
+      if (!signal?.aborted && contextKey === catalogContextKey("mistral", { cwd }))
+        effectiveVibeModels.set(contextKey, discovery);
+      return discovery;
+    } catch {
+      const fallback = discoverMistralVibeModels(cwd);
+      return {
+        ...fallback,
+        freshness: "unverified",
+        message:
+          "Effective Vibe configuration could not be read. Showing configured models only; refresh after checking your Vibe installation.",
+      };
+    }
   },
   run: (request, handlers) => runMistralVibe(request, handlers),
 };
