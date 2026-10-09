@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import type { ProviderChatRequest } from "../types.js";
 
-export const HARNESS_VERSION = "0.1.1-rc.2";
+export const HARNESS_VERSION = "0.1.2-rc.1";
 
 export const PROFILE_NAME = "ubume-local";
 
