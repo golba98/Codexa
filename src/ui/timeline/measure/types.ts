@@ -29,6 +29,9 @@ export interface TimelineRowSpan {
   text: string;
   tone?: TimelineTone;
   bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
   backgroundTone?: TimelineTone;
 }
 
@@ -78,17 +81,15 @@ export interface NativeTranscriptParts {
 
 // ─── Internal types & constants ──────────────────────────────────────────────
 
-export interface MarkdownInlinePart {
-  kind: "text" | "code" | "bold";
-  text: string;
-}
-
 export interface StyledToken {
   text: string;
   isWhitespace: boolean;
   isNewline: boolean;
   tone?: TimelineTone;
   bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
   backgroundTone?: TimelineTone;
 }
 

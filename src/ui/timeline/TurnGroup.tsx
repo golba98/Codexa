@@ -20,8 +20,6 @@ import {
 } from "../../session/types.js";
 import { getUsableShellWidth, transcriptContentIndent } from "../layout.js";
 import { MemoizedRenderMessage, parseMarkdown } from "../render/Markdown.js";
-import { normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
-import { formatTerminalAnswerInline } from "../render/terminalAnswerFormat.js";
 import { useTheme } from "../theme.js";
 import { ActionRequiredBlock } from "./ActionRequiredBlock.js";
 import { AgentBlock } from "./AgentBlock.js";
@@ -171,7 +169,6 @@ function FileScanCard({ run, cols }: { run: RunEvent; cols: number }) {
 }
 
 const COMPACT_PROCESSING_BODY_LINE_CAP = 4;
-const COMPACT_STREAMING_TAIL_CAP = 6;
 const VISIBLE_THINKING_SOURCES = new Set(["reasoning", "todo"]);
 
 // ─── Unified Event Stream Card ───────────────────────────────────────────────
@@ -448,7 +445,6 @@ function CodexResponseBlock({
   streaming,
   isLast,
   isLiveCursorTarget,
-  verboseMode,
 }: {
   run: RunEvent;
   segment: RunResponseSegment;
@@ -456,21 +452,18 @@ function CodexResponseBlock({
   streaming: boolean;
   isLast: boolean;
   isLiveCursorTarget: boolean;
-  verboseMode: boolean;
 }) {
   const theme = useTheme();
   const contentWidth = Math.max(1, getUsableShellWidth(cols, transcriptContentIndent + 1));
 
   const formatted = useMemo(() => {
-    const raw = formatTerminalAnswerInline(getResponseSegmentText(segment));
-    const sanitized = sanitizeOutput(raw);
-    const normalized = normalizeOutput(sanitized);
-    return parseMarkdown(normalized);
-  }, [segment]);
+    return parseMarkdown(getResponseSegmentText(segment), {
+      streaming: segment.status === "active",
+      cacheKey: `react-${run.id}-${segment.id}`,
+    });
+  }, [segment, run.id]);
 
   const segmentStreaming = segment.status === "active";
-  const showTail =
-    !segmentStreaming && !verboseMode && formatted.length > COMPACT_STREAMING_TAIL_CAP;
 
   return (
     <Box flexDirection="column" width="100%" paddingLeft={transcriptContentIndent} paddingRight={1}>
@@ -488,10 +481,7 @@ function CodexResponseBlock({
           )}
         </Box>
       )}
-      <MemoizedRenderMessage
-        segments={showTail ? formatted.slice(-COMPACT_STREAMING_TAIL_CAP) : formatted}
-        width={contentWidth}
-      />
+      <MemoizedRenderMessage segments={formatted} width={contentWidth} />
       {isLiveCursorTarget && segmentStreaming && <Text color={theme.accent}>▌</Text>}
     </Box>
   );
@@ -557,7 +547,6 @@ const StreamEventList = memo(
                   streaming={streaming}
                   isLast={isLast}
                   isLiveCursorTarget={isLiveCursorTarget}
-                  verboseMode={verboseMode}
                 />
               )}
               {event.kind === "plan" && (

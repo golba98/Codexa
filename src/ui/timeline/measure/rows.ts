@@ -16,36 +16,23 @@ import type {
   TimelineTone,
 } from "./types.js";
 
-// Logo rows for the intro item — selected dynamically from logoVariants.ts so
-// the dead-code intro path stays consistent with the live TopHeader rendering.
-
-// Matches sentence-ending punctuation followed (optionally after whitespace) by
-// a capital letter starting a new word. Requires [A-Z] to be followed by [a-z]
-// OR to be a standalone "I" (I'm / I've / I ) so abbreviations like U.S.A.
-// and Python class names like foo.BarClass are left alone — the lookahead
-// fails when the capital is followed by another uppercase or punctuation.
-const SENTENCE_WALL_SPLIT_RE = /([.!?])\s*(?=(?:I(?:['\u2019]|\s)|[A-Z][a-z]))/g;
-
-export function splitSentenceWall(text: string): string {
-  if (!text) return text;
-  // Preserve code fences: only transform outside ``` regions.
-  const parts = text.split("```");
-  return parts
-    .map((part, index) => (index % 2 === 0 ? part.replace(SENTENCE_WALL_SPLIT_RE, "$1\n\n") : part))
-    .join("```");
-}
-
 // ─── Span & row primitives ────────────────────────────────────────────────────
 
 export function createSpan(
   text: string,
   tone?: TimelineTone,
-  options: Pick<TimelineRowSpan, "bold" | "backgroundTone"> = {},
+  options: Pick<
+    TimelineRowSpan,
+    "bold" | "italic" | "underline" | "strikethrough" | "backgroundTone"
+  > = {},
 ): TimelineRowSpan {
   return {
     text,
     tone,
     bold: options.bold,
+    italic: options.italic,
+    underline: options.underline,
+    strikethrough: options.strikethrough,
     backgroundTone: options.backgroundTone,
   };
 }
@@ -54,6 +41,9 @@ function spansEqual(left: TimelineRowSpan | undefined, right: TimelineRowSpan): 
   return (
     left?.tone === right.tone &&
     left?.bold === right.bold &&
+    left?.italic === right.italic &&
+    left?.underline === right.underline &&
+    left?.strikethrough === right.strikethrough &&
     left?.backgroundTone === right.backgroundTone
   );
 }
@@ -73,6 +63,9 @@ function cloneSpan(span: TimelineRowSpan, text = span.text): TimelineRowSpan {
     text,
     tone: span.tone,
     bold: span.bold,
+    italic: span.italic,
+    underline: span.underline,
+    strikethrough: span.strikethrough,
     backgroundTone: span.backgroundTone,
   };
 }
@@ -123,9 +116,15 @@ export function fitSpansToWidth(spans: TimelineRowSpan[], width: number): Timeli
 }
 
 function spanCacheToken(span: TimelineRowSpan): string {
-  return [span.text, span.tone ?? "", span.backgroundTone ?? "", span.bold ? "1" : "0"].join(
-    "\u001f",
-  );
+  return [
+    span.text,
+    span.tone ?? "",
+    span.backgroundTone ?? "",
+    span.bold ? "1" : "0",
+    span.italic ? "1" : "0",
+    span.underline ? "1" : "0",
+    span.strikethrough ? "1" : "0",
+  ].join("\u001f");
 }
 
 export function createRow(
@@ -134,8 +133,13 @@ export function createRow(
   width: number,
   frame?: TimelineRowFrame,
 ): TimelineRow {
-  const paddedSpans = padSpansToWidth(spans, width);
   const frameToken = frame ? `${frame.id}\u001f${frame.role}` : "";
+  // Markdown layout already fills its rows. Reuse unchanged rows before paying
+  // for display-width measurement and cloning during every streaming flush.
+  const inputKey = `${key}:${width}:${frameToken}:${spans.map(spanCacheToken).join("\u001e")}`;
+  const existing = _rowContentCache.get(inputKey);
+  if (existing) return rememberRow(inputKey, existing);
+  const paddedSpans = padSpansToWidth(spans, width);
   const cacheKey = `${key}:${width}:${frameToken}:${paddedSpans.map(spanCacheToken).join("\u001e")}`;
   const cached = _rowContentCache.get(cacheKey);
   if (cached) {
@@ -174,6 +178,9 @@ function flattenSpansToTokens(spans: TimelineRowSpan[]): StyledToken[] {
         isNewline,
         tone: span.tone,
         bold: span.bold,
+        italic: span.italic,
+        underline: span.underline,
+        strikethrough: span.strikethrough,
         backgroundTone: span.backgroundTone,
       });
     }
@@ -197,10 +204,33 @@ export function wrapStyledSpans(spans: TimelineRowSpan[], width: number): Timeli
     text,
     ...(token.tone !== undefined ? { tone: token.tone } : {}),
     ...(token.bold ? { bold: token.bold } : {}),
+    ...(token.italic ? { italic: token.italic } : {}),
+    ...(token.underline ? { underline: token.underline } : {}),
+    ...(token.strikethrough ? { strikethrough: token.strikethrough } : {}),
     ...(token.backgroundTone !== undefined ? { backgroundTone: token.backgroundTone } : {}),
   });
 
-  for (const token of flattenSpansToTokens(spans)) {
+  const tokens = flattenSpansToTokens(spans);
+  for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex += 1) {
+    const token = tokens[tokenIndex]!;
+    // An inline style boundary is not a word boundary (pre**bold**post).
+    if (
+      !token.isWhitespace &&
+      (tokenIndex === 0 || tokens[tokenIndex - 1]!.isWhitespace) &&
+      tokens[tokenIndex + 1] !== undefined &&
+      !tokens[tokenIndex + 1]!.isWhitespace
+    ) {
+      let wordWidth = 0;
+      for (
+        let lookahead = tokenIndex;
+        lookahead < tokens.length && !tokens[lookahead]!.isWhitespace;
+        lookahead += 1
+      ) {
+        wordWidth += getTextWidth(tokens[lookahead]!.text);
+      }
+      if (wordWidth <= safeWidth && currentWidth > 0 && currentWidth + wordWidth > safeWidth)
+        pushRow();
+    }
     if (token.isNewline) {
       pushRow();
       continue;
@@ -231,11 +261,16 @@ export function wrapStyledSpans(spans: TimelineRowSpan[], width: number): Timeli
       while (remainingWidth > safeWidth - currentWidth) {
         const available = safeWidth - currentWidth;
         const split = splitTextAtColumn(remaining, available);
-        if (split.before) {
-          appendSpan(currentRow, spanFor(token, split.before));
+        if (!split.before && split.current && available > 0) {
+          // A single wide grapheme cannot fit a one-column viewport. Consume it
+          // atomically rather than looping forever or splitting its codepoints.
+          appendSpan(currentRow, spanFor(token, split.current));
+          remaining = split.after;
+        } else {
+          if (split.before) appendSpan(currentRow, spanFor(token, split.before));
+          remaining = split.current + split.after;
         }
         pushRow();
-        remaining = split.current + split.after;
         remainingWidth = getTextWidth(remaining);
       }
       if (remaining) {

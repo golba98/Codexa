@@ -5,7 +5,9 @@ import { render } from "ink";
 import type React from "react";
 import type { AssistantEvent, RunEvent, UserPromptEvent } from "../../session/types.js";
 import { TEST_RUNTIME } from "../../test/runtimeTestUtils.js";
-import { ThemeProvider } from "../theme.js";
+import { MemoizedRenderMessage, parseMarkdown } from "../render/Markdown.js";
+import { THEMES, ThemeProvider } from "../theme.js";
+import { buildMarkdownRows } from "./measure/markdownRows.js";
 import { TurnGroup } from "./TurnGroup.js";
 
 class TestInput extends PassThrough {
@@ -90,9 +92,10 @@ function makeAssistant(turnId: number, content: string): AssistantEvent {
   };
 }
 
-function renderTurnGroup(node: React.ReactElement) {
+function renderTurnGroup(node: React.ReactElement, cols = 120) {
   const stdin = new TestInput();
   const stdout = new TestOutput();
+  stdout.columns = cols;
   let output = "";
   stdout.on("data", (chunk) => {
     output += chunk.toString();
@@ -504,5 +507,67 @@ test("snaps cleanly from streaming cursor view to completion view", async () => 
   assert.match(frame, /final response text/i);
   assert.doesNotMatch(frame, /▌/);
 
+  harness.instance.unmount();
+});
+
+const MARKDOWN_VISUAL =
+  "# Overview\n\n| Section | Description |\n|---|---|\n| Install | Run `bun install` |\n| Setup | **Configure** providers |\n\n- first item\n  - nested item\n- [x] completed\n\n```ts\n  const n = 1;\n```\n\n> note [Docs](https://example.org)";
+
+test("React Markdown matches measured rows in every theme and required terminal width", async () => {
+  for (const theme of Object.keys(THEMES)) {
+    for (const width of [40, 60, 80, 100, 120, 160]) {
+      const segments = parseMarkdown(MARKDOWN_VISUAL);
+      const harness = renderTurnGroup(
+        <ThemeProvider theme={theme}>
+          <MemoizedRenderMessage segments={segments} width={width} />
+        </ThemeProvider>,
+        width,
+      );
+      await sleep(20);
+      const frame = harness
+        .readOutput()
+        .trimEnd()
+        .split("\n")
+        .map((line) => line.trimEnd());
+      const expected = buildMarkdownRows(segments, width).map((row) =>
+        row
+          .map((span) => span.text)
+          .join("")
+          .trimEnd(),
+      );
+      assert.deepEqual(frame, expected, `${theme}, ${width} columns`);
+      harness.instance.unmount();
+    }
+  }
+});
+
+test("completed React responses retain all blocks rather than only the last six", async () => {
+  const turnId = 130;
+  const content = Array.from(
+    { length: 10 },
+    (_, index) => `## Section ${index}\n\nValue ${index}`,
+  ).join("\n\n");
+  const harness = renderTurnGroup(
+    <ThemeProvider>
+      <TurnGroup
+        cols={120}
+        turnIndex={1}
+        user={makeUser(turnId)}
+        run={{ ...makeRunningRun(turnId), status: "completed" }}
+        assistant={makeAssistant(turnId, content)}
+        opacity="active"
+        question={null}
+        runPhase="final"
+        streamPreviewRows={8}
+        streamMode="assistant-first"
+      />
+    </ThemeProvider>,
+  );
+  await sleep();
+  const output = harness.readOutput();
+  for (let index = 0; index < 10; index += 1) {
+    assert.match(output, new RegExp(`Section ${index}`));
+    assert.match(output, new RegExp(`Value ${index}`));
+  }
   harness.instance.unmount();
 });

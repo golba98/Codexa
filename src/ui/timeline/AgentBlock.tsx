@@ -7,7 +7,6 @@ import type { AssistantEvent, RunEvent } from "../../session/types.js";
 import { getAssistantContent } from "../../session/types.js";
 import { getUsableShellWidth } from "../layout.js";
 import { MemoizedRenderMessage, parseMarkdown } from "../render/Markdown.js";
-import { normalizeOutput, sanitizeOutput } from "../render/outputPipeline.js";
 import { useTheme } from "../theme.js";
 import { DashCard } from "./DashCard.js";
 
@@ -62,11 +61,12 @@ export function AgentBlock({
   const contentWidth = Math.max(1, getUsableShellWidth(cols, 4));
 
   const pipelineState = useMemo(() => {
-    const sanitized = sanitizeOutput(renderContent);
-    const normalized = normalizeOutput(sanitized);
-    const formatted = parseMarkdown(normalized);
-    return { length: normalized.length, formatted };
-  }, [renderContent, streaming]);
+    const formatted = parseMarkdown(renderContent, {
+      streaming,
+      cacheKey: `agent-${assistant?.id ?? run?.id ?? 0}`,
+    });
+    return { length: renderContent.length, formatted };
+  }, [renderContent, streaming, assistant?.id, run?.id]);
 
   const failureMessage =
     run?.status === "failed" ? sanitizeTerminalOutput(run.errorMessage ?? run.summary) : null;

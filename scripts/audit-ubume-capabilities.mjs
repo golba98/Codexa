@@ -257,7 +257,8 @@ const checks = {
       && /renderUnifiedDiff/.test(testContent)
       && /ANSI|control/i.test(testContent)
       && /normal text|normal prose/i.test(testContent);
-    const markdownIntegrated = /diffRenderer/.test(markdownContent) && /maybeRenderDiff/.test(markdownContent);
+    const markdownIntegrated = /measure\/markdownRows/.test(markdownContent)
+      && /buildMarkdownRows/.test(markdownContent);
     const timelineIntegrated = /diffRenderer/.test(timelineContent) && /maybeRenderDiff/.test(timelineContent);
     
     return {

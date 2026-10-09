@@ -822,7 +822,7 @@ test("assistant unified diffs render with semantic tones", () => {
   assert.equal(spans.find((span) => span.text.includes('+console.log("new");'))?.tone, "success");
 });
 
-test("completed assistant turn renders local links as compact terminal paths", () => {
+test("completed assistant turn preserves literal paths and link targets", () => {
   const content = [
     "Purpose:",
     "A small app.",
@@ -876,11 +876,15 @@ test("completed assistant turn renders local links as compact terminal paths", (
   const snapshot = buildTimelineSnapshot(renderItems, { totalWidth: 96 });
   const joined = snapshot.rows.map((row) => row.spans.map((span) => span.text).join("")).join("\n");
 
-  assert.match(joined, /src\/App\.tsx:22/);
+  assert.match(joined, /src\/App\.tsx/);
+  assert.match(joined, /#L22/);
   assert.match(joined, /README\.md/);
-  assert.match(joined, /docs\/proof\.md:26/);
-  assert.match(joined, /\[OpenAI\]\(https:\/\/platform\.openai\.com\/docs\)/);
-  assert.doesNotMatch(joined, /C:\/Users|C:\\Users|file:\/\//);
+  assert.match(joined, /proof\.md#L26/);
+  assert.match(joined, /OpenAI/);
+  assert.match(joined, /https:\/\/platform\.openai\.com\/docs/);
+  assert.match(joined, /C:\/Users/);
+  assert.match(joined, /C:\\Users/);
+  assert.match(joined, /file:\/\//);
   assert.doesNotMatch(joined, /\]\(C:/);
 });
 

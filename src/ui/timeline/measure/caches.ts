@@ -1,4 +1,5 @@
 import * as renderDebug from "../../../core/perf/renderDebug.js";
+import { resetMarkdownCaches } from "../../render/markdownCache.js";
 import type { ActionDisplayDescriptor, TimelineRow } from "./types.js";
 
 const ROW_CONTENT_CACHE_LIMIT = 2500;
@@ -110,6 +111,7 @@ export function getCachedFrozenRows(cacheKey: string, build: () => TimelineRow[]
  * otherwise keep rows for turns that no longer exist for the whole process.
  */
 export function resetTimelineMeasureCaches(): void {
+  resetMarkdownCaches();
   _rowContentCache.clear();
   _staticRowCache.clear();
   _blankRowCache.clear();
