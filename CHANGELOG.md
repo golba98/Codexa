@@ -6,6 +6,26 @@ No changes yet.
 
 ---
 
+## [0.1.15] — 2026-10-09 — Terminal Markdown Rendering (prepared)
+
+### Changed
+
+- Assistant Markdown uses one shared terminal renderer across providers. Tables align and wrap within available width, with stacked header/value layouts on narrow terminals. Unicode, escaped pipes, inline formatting and alignment directives are supported. (#294)
+- Headings, nested and task lists, quotes, links, inline code and fenced blocks use consistent theme-aware styling. Code indentation, blank lines and filename-like first lines remain intact; long lines have marked visual continuations. Raw responses remain available to copy/export. (#294)
+- Streaming reuses stable parsed blocks and bounded layout caches. Complete responses are no longer silently truncated by the presentation layer. (#294)
+
+### Security
+
+- Includes the DeepSeek Harness upgrade to `0.1.2-rc.1` for GHSA-8m2g-8cgm-3vcp, merged after the 0.1.14 preparation. (#293)
+
+### Verification
+
+- Rendering PR verification: 401 focused tests passed, TypeScript and Biome passed. Its broader suite passed 1,954 tests; the capability-audit failure was corrected, while the unrelated dependency-symlink path-scan failure remains documented in `docs/TERMINAL_RENDERING_REPORT.md`.
+- Release preparation: 78 version/CLI/package-metadata tests passed; TypeScript, Biome, version consistency, CLI `--version` (0.1.15), and `npm pack --dry-run` passed. The dry run includes 227 files (596,893 bytes).
+- This version is prepared and has not been published to npm.
+
+---
+
 ## [0.1.14] — 2026-10-09 — Model Catalog and Antigravity Removal (prepared)
 
 ### Added
