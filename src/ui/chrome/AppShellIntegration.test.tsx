@@ -80,13 +80,13 @@ const mockProviders = [
     statusLabel: "Ready",
   },
   {
-    id: "antigravity",
-    displayName: "Antigravity",
+    id: "google",
+    displayName: "Google",
     routeMode: "provider-direct",
-    backendType: "antigravity",
+    backendType: "gemini-cli-auth",
     isActiveRoute: false,
     enabled: true,
-    currentModel: "AG-1",
+    currentModel: "gemini-3-flash",
     statusLabel: "Ready",
   },
 ];
@@ -169,12 +169,12 @@ test("AppShell renders ProviderPicker with all 5 providers at normal standard si
   assert.ok(stripped.includes("Anthropic"), "Missing Anthropic");
   assert.ok(stripped.includes("Mistral Vibe"), "Missing Mistral Vibe CLI");
   assert.ok(stripped.includes("Local"), "Missing Local");
-  assert.ok(stripped.includes("Antigravity"), "Missing Antigravity");
+  assert.ok(stripped.includes("Google"), "Missing Google");
 
   // Assert the broken state is impossible:
   const hasOpenAI = stripped.includes("OpenAI");
   const hasAnthropic = stripped.includes("Anthropic");
-  const hasAntigravity = stripped.includes("Antigravity");
+  const hasGoogle = stripped.includes("Google");
   const hasMistral = stripped.includes("Mistral Vibe");
   const hasLocal = stripped.includes("Local");
   const finalRuntimeIndex = stripped.lastIndexOf("gpt-5.4 (medium)");
@@ -192,7 +192,7 @@ test("AppShell renders ProviderPicker with all 5 providers at normal standard si
   );
 
   assert.equal(
-    hasOpenAI && hasAnthropic && hasAntigravity && (!hasMistral || !hasLocal),
+    hasOpenAI && hasAnthropic && hasGoogle && (!hasMistral || !hasLocal),
     false,
     "Broken state (missing Mistral Vibe or Local while rendering others) detected!",
   );

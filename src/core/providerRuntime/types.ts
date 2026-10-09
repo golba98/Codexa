@@ -29,7 +29,6 @@ export type ProviderBackendKind =
   | "gemini-cli-auth"
   | "claude-code-auth"
   | "mistral-vibe-cli-auth"
-  | "antigravity-cli-auth"
   | "openai-api-key"
   | "gemini-api-key"
   | "anthropic-api-key"
@@ -92,7 +91,7 @@ export type ReasoningControl =
       kind: "levels";
       levels: readonly ReasoningEffortCapability[];
       default: string;
-      transport: "parameter" | "variant";
+      transport: "parameter";
     }
   | {
       kind: "budget";
@@ -160,7 +159,6 @@ export interface ProviderRouteValidationRequest {
   workspaceRoot: string;
   geminiCommandPath?: string | null;
   claudeCommandPath?: string | null;
-  antigravityCommandPath?: string | null;
   localConfig?: ProviderWorkspaceOverride | null;
   localBackend?: LocalBackendId;
 }
@@ -190,7 +188,6 @@ export interface ProviderChatRequest {
   localContextCheckpoint?: ConversationContextCheckpoint;
   localHarnessSession?: LocalHarnessSessionMetadata;
   nativeSessions?: readonly NativeSessionReference[];
-  antigravityCommandPath?: string;
   providerConfig?: ProviderWorkspaceOverride;
 }
 

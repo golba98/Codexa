@@ -274,31 +274,6 @@ export function buildGeminiSpawnSpec(
   return { executable, args };
 }
 
-/**
- * Returns the resolved Antigravity CLI executable (full path or bare name).
- *
- * Priority:
- *   1. Configured path override (antigravityCommandPath)
- *   2. AGY_EXECUTABLE env var
- *   3. Windows PATH lookup for real files: agy.exe, agy.cmd, agy.bat, agy
- *   4. Bare name fallback "agy" (Unix PATH resolution)
- */
-export const { resolve: resolveAgyExecutable, reset: resetAgyExecutableCacheForTests } =
-  createCachedExecutableResolver((options) => {
-    return {
-      runCommandImpl: options?.runCommandImpl,
-      cwd: options?.cwd,
-      configuredPath: options?.configuredPath,
-      envOverrides: ["AGY_EXECUTABLE"],
-      commandNames:
-        process.platform === "win32" ? ["agy.exe", "agy.cmd", "agy.bat", "agy"] : ["agy"],
-      knownPathDirectories: [],
-      knownFilePaths: [],
-      label: "antigravity",
-      allowBareFallback: true,
-    };
-  });
-
 export function findExecutable(command: string, cwd: string): string | null {
   try {
     command = normalizeExecutableValue(command, {

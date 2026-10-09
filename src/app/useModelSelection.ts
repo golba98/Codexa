@@ -25,7 +25,6 @@ import type {
   ProviderWorkspaceConfig,
 } from "../core/providerLauncher/types.js";
 
-import { getAgyModelSelector } from "../core/providerRuntime/antigravity.js";
 import { providerModelsToCodexCapabilities } from "../core/providerRuntime/models.js";
 import {
   discoverProviderModels,
@@ -211,13 +210,7 @@ export function useModelSelection(context: UseModelSelectionContext) {
       } else {
         persistActiveRoute(
           activeProviderRoute.providerId,
-          activeProviderRoute.providerId === "antigravity"
-            ? (getAgyModelSelector(
-                modelToPersist,
-                nextReasoningLevel,
-                discoverProviderModels("antigravity").models,
-              ) ?? modelToPersist)
-            : modelToPersist,
+          modelToPersist,
           nextReasoningLevel,
           activeProviderRoute.backendKind,
           activeProviderRoute.modelSelection,

@@ -8,14 +8,7 @@ import { createRoutedProvider, getProviderRuntime } from "./registry.js";
 import type { ProviderModelDiscoveryResult, ProviderRoute } from "./types.js";
 
 const runtime = resolveRuntimeConfig(normalizeRuntimeConfig({}));
-for (const id of [
-  "openai",
-  "anthropic",
-  "antigravity",
-  "google",
-  "mistral",
-  "local",
-] as ProviderId[])
+for (const id of ["openai", "anthropic", "google", "mistral", "local"] as ProviderId[])
   test(`${id} refuses a withdrawn persisted model without substituting another`, async () => {
     const native = getProviderRuntime(id);
     const route: ProviderRoute = {

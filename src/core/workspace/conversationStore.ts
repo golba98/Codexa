@@ -276,7 +276,7 @@ function titleFromMessages(messages: ConversationMessage[]): string {
 function isNativeSessionReference(value: unknown): value is NativeSessionReference {
   return (
     isRecord(value) &&
-    ["claude", "codex", "antigravity", "vibe"].includes(String(value.source)) &&
+    ["claude", "codex", "vibe"].includes(String(value.source)) &&
     !!safeString(value.sessionId) &&
     (value.throughMessageCount === undefined || isNonNegativeInteger(value.throughMessageCount)) &&
     (value.transcriptHash === undefined || !!safeString(value.transcriptHash))
