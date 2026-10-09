@@ -205,6 +205,21 @@ Before each Local turn, Ubume resolves an ephemeral execution connection for the
 
 Ubume conversation metadata stores the opaque Harness session id and a non-secret route/transcript fingerprint. `/resume` reconnects only when those fingerprints match; a legacy or divergent visible transcript is explicitly restored into a fresh Harness session rather than silently mixing two histories. `/clear` cancels active work and starts a new Ubume conversation, while the saved prior conversation remains resumable.
 
+## Provider usage (`/usage`)
+
+`/usage` is a local slash command: it is parsed in `commands/handler.ts`, never enters conversation history, and never reaches a model. `app/useProviderUsage.ts` resolves the active route through `core/usage/registry.ts`, which picks the adapter for the account that route really executes with and a credential-free scope key. `core/usage/usageService.ts` keeps one cache entry per scope, applies a refresh cooldown (default 30 s, `UBUME_USAGE_COOLDOWN_SECONDS`), shares one in-flight request per scope, and keeps the last good snapshot (labelled stale) when a later attempt fails. Results for a scope the user has left are cached but never rendered.
+
+| Route | Source | Reports |
+| --- | --- | --- |
+| OpenAI / Codex | `codex app-server`: `account/read`, `account/rateLimits/read` | Plan, account, primary/secondary windows per metered bucket, reset times, credits; API-key accounts reported as not applicable. |
+| Claude Code | `claude auth status` + `get_usage` control request on a stream-json host with no tools, MCP servers, hooks or session persistence | Plan, 5-hour and weekly windows, per-model weekly buckets, extra-usage state. `get_usage` is marked experimental by Claude Code, so unknown shapes degrade to unavailable. |
+| Anthropic API key | `anthropic-ratelimit-*` headers on responses Ubume already received | Observed request/token limits; spend is not readable with standard keys. |
+| Google (Antigravity) | `agy -p /usage` and `/credits` with `--output-format json` (print-mode local commands; replies that ran a turn are rejected) | Per-model-group weekly and 5-hour quotas, reset times, G1 credits. |
+| Mistral Vibe | None — Vibe exposes only plan metadata through a session-scoped whoami call | Reported as unsupported; never as unlimited. |
+| Local | Ubume's own harness token counts and context metadata | Context use (percentage only with verified/configured context size), per-conversation token totals; quota N/A on loopback, unavailable on remote endpoints. |
+
+Adding a provider means adding one adapter and one registry case; the command, dispatcher and panel do not change.
+
 ## Session and UI state
 
 The session stores timeline events separately from the visual lifecycle state. Static events are completed transcript content; active events contain the currently changing run. `UIState` drives composer availability, activity styling, and action-required presentation.
@@ -301,7 +316,7 @@ Local completion explicitly flushes the Harness session journal before publishin
 
 1. Define or update its runtime and provider types.
 2. Keep discovery, route configuration, route validation, and launch availability separate.
-3. Register it in the runtime and launcher registries only for capabilities it actually supports.
+3. Register it in the runtime and launcher registries only for capabilities it actually supports, and add a `core/usage/` adapter (or let it fall back to unsupported).
 4. Add executable resolution when an external CLI is involved.
 5. Update model, reasoning, context, and capability metadata where applicable.
 6. Test discovery, routing, persisted workspace migration, command arguments, and failure messages.

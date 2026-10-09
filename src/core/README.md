@@ -15,6 +15,7 @@ Core code owns provider integration, processes, filesystem state, and terminal b
 | `terminal/` | Sanitization, raw input, title/control sequences, capability detection, and atomic clear/resize/overlay frame ownership. `clearFrameBoundary.ts` is intentionally protected from simplification. |
 | `workspace/` | Roots/guards, project instructions, attachments, app-data paths, plan storage, conversations, ownership, checkpoints, and file recovery. |
 | `externalSessions/` | Native session listing/readers, shared store I/O, transcript imports, and native resume launch plans. |
+| `usage/` | Provider usage adapters for `/usage`: normalised snapshot contract, route-to-adapter registry, cooldown/in-flight/stale service, and passive Local/API observations. Adapters read usage only through each CLI's supported structured interface. |
 | `version/` | Build channels, package version branding, and update checking/cache compatibility. |
 | `shared/` | Values/record/error guards, text wrapping and width, line normalization, clipboard/image handling, and GitHub diagnostics. |
 | `perf/` | Shared debug log factory, input/model/local stream tracing, render diagnostics, and profiling. |

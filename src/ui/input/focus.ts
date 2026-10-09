@@ -24,6 +24,7 @@ export const FOCUS_IDS = {
   importConfirmationPanel: "import-confirmation",
   toolApprovalPanel: "tool-approval",
   updatePrompt: "update-prompt",
+  usagePanel: "usage-panel",
 } as const;
 
 export type FocusTargetId = (typeof FOCUS_IDS)[keyof typeof FOCUS_IDS];
@@ -73,6 +74,8 @@ export function getFocusTargetForScreen(screen: Screen): FocusTargetId {
       return FOCUS_IDS.toolApprovalPanel;
     case "update-prompt":
       return FOCUS_IDS.updatePrompt;
+    case "usage-panel":
+      return FOCUS_IDS.usagePanel;
     case "main":
     default:
       return FOCUS_IDS.composer;

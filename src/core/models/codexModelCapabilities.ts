@@ -1,12 +1,10 @@
-import type { ChildProcess } from "child_process";
 import {
-  APP_NAME,
-  APP_VERSION,
   DEFAULT_MODEL,
   formatReasoningLabel,
   LEGACY_FALLBACK_MODELS,
 } from "../../config/settings.js";
-import { resolveCodexExecutable, spawnCodexProcess } from "../executables/codexExecutable.js";
+import { withCodexAppServer } from "../codex/codexAppServerClient.js";
+import { resolveCodexExecutable } from "../executables/codexExecutable.js";
 import type { ProviderModel, ReasoningControl } from "../providerRuntime/types.js";
 import { isRecord } from "../shared/values.js";
 import { loadSeededCodexCapabilities, saveCachedProviderModels } from "./modelCache.js";
@@ -65,21 +63,9 @@ interface GetCodexModelCapabilitiesOptions extends DiscoverCodexModelCapabilitie
   persist?: typeof persistCodexModelCapabilities;
 }
 
-interface JsonRpcResponse {
-  id?: string | number | null;
-  result?: unknown;
-  error?: unknown;
-}
-
 interface ModelListResponse {
   data?: unknown;
   nextCursor?: unknown;
-}
-
-interface AppServerRequest {
-  id: number;
-  method: string;
-  params: Record<string, unknown>;
 }
 
 const verifiedCapabilityResults = new WeakSet<CodexModelCapabilities>();
@@ -258,10 +244,6 @@ export function createFallbackModelCapabilities(
   };
 }
 
-function writeJsonLine(proc: ChildProcess, message: AppServerRequest): void {
-  proc.stdin?.write(`${JSON.stringify(message)}\n`);
-}
-
 function asModelListResponse(value: unknown): ModelListResponse {
   if (!isRecord(value)) {
     throw new Error("Codex model/list returned a non-object result.");
@@ -278,185 +260,26 @@ async function requestModelListFromAppServer(
   options: Required<Pick<DiscoverCodexModelCapabilitiesOptions, "includeHidden" | "timeoutMs">> &
     Pick<DiscoverCodexModelCapabilitiesOptions, "signal">,
 ): Promise<ModelListResponse[]> {
-  return new Promise<ModelListResponse[]>((resolve, reject) => {
-    let proc: ReturnType<typeof spawnCodexProcess>;
-    try {
-      proc = spawnCodexProcess(executable, ["app-server", "--listen", "stdio://"], {
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-    } catch (error) {
-      reject(error);
-      return;
-    }
-
-    let stdoutBuffer = "";
-    let stderr = "";
-    let settled = false;
-    let nextRequestId = 1;
-    let activeModelListRequestId: number | null = null;
-    const responses: ModelListResponse[] = [];
-
-    const cleanup = () => {
-      clearTimeout(timer);
-      options.signal?.removeEventListener("abort", abort);
-      proc.stdout?.removeAllListeners();
-      proc.stderr?.removeAllListeners();
-      proc.removeAllListeners();
-      if (!proc.killed) {
-        try {
-          proc.kill();
-        } catch {
-          // Best-effort shutdown.
-        }
-      }
-    };
-
-    const finish = (callback: () => void) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      callback();
-    };
-
-    const fail = (error: unknown) => {
-      finish(() => reject(error));
-    };
-
-    const requestModels = (cursor: string | null = null) => {
-      const id = ++nextRequestId;
-      activeModelListRequestId = id;
-      writeJsonLine(proc, {
-        id,
-        method: "model/list",
-        params: {
-          includeHidden: options.includeHidden,
-          limit: MODEL_LIST_LIMIT,
-          cursor,
-        },
-      });
-    };
-
-    const handleResponse = (message: JsonRpcResponse) => {
-      if (message.error) {
-        fail(new Error(`Codex app-server request failed: ${getErrorMessage(message.error)}`));
-        return;
-      }
-
-      if (message.id === 1) {
-        requestModels();
-        return;
-      }
-
-      if (message.id === activeModelListRequestId) {
-        let response: ModelListResponse;
-        try {
-          response = asModelListResponse(message.result);
-        } catch (error) {
-          fail(error);
-          return;
-        }
-
+  return withCodexAppServer(
+    executable,
+    { timeoutMs: options.timeoutMs, signal: options.signal, operation: "Codex model discovery" },
+    async (client) => {
+      const responses: ModelListResponse[] = [];
+      let cursor: string | null = null;
+      do {
+        const response = asModelListResponse(
+          await client.request("model/list", {
+            includeHidden: options.includeHidden,
+            limit: MODEL_LIST_LIMIT,
+            cursor,
+          }),
+        );
         responses.push(response);
-        const nextCursor = normalizeString(response.nextCursor);
-        if (nextCursor) {
-          requestModels(nextCursor);
-          return;
-        }
-
-        finish(() => resolve(responses));
-      }
-    };
-
-    const processStdout = (flush = false) => {
-      while (true) {
-        const newlineIndex = stdoutBuffer.indexOf("\n");
-        if (newlineIndex < 0) {
-          if (flush && stdoutBuffer.trim()) {
-            const line = stdoutBuffer;
-            stdoutBuffer = "";
-            parseLine(line);
-          }
-          return;
-        }
-
-        const line = stdoutBuffer.slice(0, newlineIndex).replace(/\r$/, "");
-        stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
-        parseLine(line);
-      }
-    };
-
-    const parseLine = (line: string) => {
-      if (!line.trim()) {
-        return;
-      }
-
-      try {
-        handleResponse(JSON.parse(line) as JsonRpcResponse);
-      } catch (error) {
-        fail(new Error(`Unable to parse Codex app-server response: ${getErrorMessage(error)}`));
-      }
-    };
-
-    const timer = setTimeout(() => {
-      fail(new Error(`Timed out waiting for Codex model discovery after ${options.timeoutMs}ms.`));
-    }, options.timeoutMs);
-
-    const abort = () => fail(new Error("Codex model discovery canceled."));
-    options.signal?.addEventListener("abort", abort, { once: true });
-    if (options.signal?.aborted) {
-      abort();
-      return;
-    }
-
-    proc.stdout?.on("data", (chunk: Buffer) => {
-      if (settled) {
-        return;
-      }
-      stdoutBuffer += chunk.toString("utf8");
-      processStdout(false);
-    });
-
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
-
-    proc.on("error", (error) => {
-      fail(error);
-    });
-
-    proc.on("close", (exitCode) => {
-      if (settled) {
-        return;
-      }
-      processStdout(true);
-      if (settled) {
-        return;
-      }
-      const stderrSummary = stderr.trim() ? ` stderr: ${stderr.trim().slice(0, 300)}` : "";
-      fail(
-        new Error(
-          `Codex app-server exited before model discovery completed (code ${exitCode}).${stderrSummary}`,
-        ),
-      );
-    });
-
-    writeJsonLine(proc, {
-      id: 1,
-      method: "initialize",
-      params: {
-        clientInfo: {
-          name: APP_NAME.toLowerCase(),
-          title: APP_NAME,
-          version: APP_VERSION,
-        },
-        capabilities: {
-          experimentalApi: true,
-        },
-      },
-    });
-  });
+        cursor = normalizeString(response.nextCursor);
+      } while (cursor);
+      return responses;
+    },
+  );
 }
 
 async function discoverCodexModelCapabilities(

@@ -79,6 +79,7 @@ interface CommandDispatchContext {
   openThemePicker: () => void;
   openPermissionsPanel: () => void;
   openAuthPanel: () => void;
+  openUsagePanel: () => void;
   setVerboseMode: React.Dispatch<React.SetStateAction<boolean>>;
   verboseMode: boolean;
   handleCopy: () => Promise<void>;
@@ -130,6 +131,7 @@ export function dispatchCommand(context: CommandDispatchContext): void | Promise
     openThemePicker,
     openPermissionsPanel,
     openAuthPanel,
+    openUsagePanel,
     setVerboseMode,
     verboseMode,
     handleCopy,
@@ -404,6 +406,10 @@ export function dispatchCommand(context: CommandDispatchContext): void | Promise
     },
     open_auth_panel: () => {
       openAuthPanel();
+      return;
+    },
+    open_usage_panel: () => {
+      openUsagePanel();
       return;
     },
     verbose_toggle: () => {

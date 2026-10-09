@@ -8,6 +8,11 @@ import { normalizeRuntimeConfig, resolveRuntimeConfig } from "../../config/runti
 import { buildClaudeSpawnSpec } from "../executables/executableResolver.js";
 import type { CommandResult, runCommand } from "../process/commandRunner.js";
 import {
+  getObservedRateLimits,
+  resetObservedRateLimitsForTests,
+} from "../usage/observedRateLimits.js";
+import { resolveUsageTarget } from "../usage/registry.js";
+import {
   anthropicRuntime,
   buildClaudeCodeArgs,
   buildClaudeCodePlainTextArgs,
@@ -182,6 +187,44 @@ test("Anthropic runtime sends prompts through the Messages API", async () => {
       );
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("Anthropic API responses record rate-limit headers for /usage without extra requests", async () => {
+  await withAnthropicEnv({ ANTHROPIC_API_KEY: "test-anthropic-key" }, async () => {
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    resetObservedRateLimitsForTests();
+    try {
+      globalThis.fetch = (async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ error: { type: "rate_limit_error" } }), {
+          status: 429,
+          headers: {
+            "anthropic-ratelimit-requests-limit": "50",
+            "anthropic-ratelimit-requests-remaining": "0",
+            "anthropic-ratelimit-requests-reset": "2026-10-09T12:01:00Z",
+          },
+        });
+      }) as typeof fetch;
+
+      const error = await new Promise<string>((resolve) => {
+        anthropicRuntime.run?.(buildRequest(), { onResponse: () => resolve(""), onError: resolve });
+      });
+      assert.match(error, /HTTP 429/);
+      assert.equal(calls, 1);
+      const target = resolveUsageTarget(buildRequest().route);
+      assert.equal(target.adapter.id, "anthropic-api");
+      const observed = getObservedRateLimits(target.scopeKey);
+      assert.deepEqual(observed?.windows.requests, {
+        limit: 50,
+        remaining: 0,
+        reset: "2026-10-09T12:01:00Z",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+      resetObservedRateLimitsForTests();
     }
   });
 });

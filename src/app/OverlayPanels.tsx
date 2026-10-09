@@ -40,6 +40,7 @@ import type {
   ToolApprovalDecision,
   ToolApprovalRequest,
 } from "../core/providers/types.js";
+import type { UsageViewState } from "../core/usage/usageService.js";
 import type { GlobalPackageManager } from "../core/version/packageManager.js";
 import type { UpdateCheckResult } from "../core/version/updateCheck.js";
 import type {
@@ -74,6 +75,7 @@ import { ModePicker, ReasoningPicker, ThemePicker } from "../ui/panels/SimplePic
 import { TextEntryPanel } from "../ui/panels/TextEntryPanel.js";
 import { ToolApprovalPanel } from "../ui/panels/ToolApprovalPanel.js";
 import { UpdatePromptPanel } from "../ui/panels/UpdatePromptPanel.js";
+import { UsagePanel } from "../ui/panels/UsagePanel.js";
 import {
   type QueueAction,
   type RecoveryMode,
@@ -111,6 +113,7 @@ interface OverlayPanelsProps {
     | "import-confirmation"
     | "tool-approval"
     | "update-prompt"
+    | "usage-panel"
     | "saved-session-viewer";
   workbenchView: WorkbenchView;
   staticEvents: TimelineEvent[];
@@ -234,6 +237,9 @@ interface OverlayPanelsProps {
   handleSkipUpdateForSession: () => void;
   exit: (errorOrResult?: Error | unknown) => void;
   activeTheme: Theme;
+  usageView: UsageViewState;
+  usageRefreshAvailableAt: number;
+  refreshUsage: () => void;
 }
 
 export function OverlayPanels(props: OverlayPanelsProps) {
@@ -334,6 +340,9 @@ export function OverlayPanels(props: OverlayPanelsProps) {
     handleSkipUpdateForSession,
     exit,
     activeTheme,
+    usageView,
+    usageRefreshAvailableAt,
+    refreshUsage,
   } = props;
   return (
     <>
@@ -537,6 +546,16 @@ export function OverlayPanels(props: OverlayPanelsProps) {
           onRefreshAuthStatus={() => {
             void refreshAuthStatus(false);
           }}
+          onClose={() => setScreen("main")}
+        />
+      )}
+
+      {screen === "usage-panel" && (
+        <UsagePanel
+          focusId={FOCUS_IDS.usagePanel}
+          view={usageView}
+          refreshAvailableAt={usageRefreshAvailableAt}
+          onRefresh={refreshUsage}
           onClose={() => setScreen("main")}
         />
       )}

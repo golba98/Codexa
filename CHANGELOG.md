@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- `/usage` shows account usage for the active provider in an overlay panel: Codex 5-hour/weekly windows and credits (via `codex app-server`), Claude Code session/weekly/model limits (via Claude Code's experimental `get_usage` control request), and Google Antigravity per-model-group quotas and G1 credits (via `agy -p /usage` and `/credits`). It never sends a prompt or uses model tokens. Mistral Vibe is reported as unsupported because Vibe exposes no usage interface. Local routes show context and token usage, with account quota marked N/A on loopback. The Anthropic API-key route shows rate limits observed on earlier responses. Press R to refresh (30 s cooldown, `UBUME_USAGE_COOLDOWN_SECONDS`) and Esc to close. Cached and stale data are labelled as such.
+
 ### Fixed
 
+- Selecting Mistral in the provider picker switches to it directly when its saved model is Vibe's "Default" entry, instead of reopening the model picker every time.
 - Match the Mistral picker to the installed Vibe effective model list, including GLM-5.3 (Mistral Hosted), local models and the current Default entry. Preserve native labels, selector aliases and thinking levels.
 - Stop adding API-only model candidates to the Vibe picker and filter stale API-only cache rows without deleting stored data. Read Vibe configuration and cached routing assignments without running configuration migrations.
 - Discover effective Vibe models before headless execution so routed models such as `glm-5-3` work on a fresh process.
