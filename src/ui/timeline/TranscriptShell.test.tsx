@@ -3,6 +3,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { render, Text } from "ink";
 import type { RuntimeSummary } from "../../config/runtimeConfig.js";
+import { getTextWidth } from "../../core/shared/text.js";
 import {
   resetInkOutputForFreshFrame,
   resolveInkRenderInstance,
@@ -245,7 +246,7 @@ function renderTranscript(
     patchConsole: false,
   });
 
-  const getFrame = () => (instance as unknown as { lastFrame?: () => string }).lastFrame?.() ?? "";
+  const getFrame = () => resolveInkRenderInstance(stdout)?.lastOutput ?? "";
   return { instance, stdout, getOutput: () => output, getFrame };
 }
 
@@ -815,3 +816,74 @@ for (const testCase of CLEAR_HOME_SCREEN_CASES) {
     );
   });
 }
+
+test("Markdown streaming and width changes preserve the live composer/footer and screen bounds", async () => {
+  const prompt = "markdown preview";
+  const source =
+    "# Summary\n\n```ts\n  const n = 1;\n```\n\n|First|Second|Third|Fourth|Fifth|\n|---|---|---|---|---|\n" +
+    Array.from(
+      { length: 12 },
+      (_, index) => `|alpha ${index}|beta ${index}|gamma ${index}|fourth ${index}|fifth ${index}|`,
+    ).join("\n");
+  const uiState: UIState = { kind: "RESPONDING", turnId: 150 };
+  const user = userPromptEvent(150, prompt);
+  const composer = "COMPOSER_SENTINEL\nSTATUS_SENTINEL";
+  const { instance, stdout, getOutput, getFrame } = renderTranscript([], {
+    activeEvents: [user, streamingRunEvent(150, prompt, 0, source)],
+    uiState,
+    cols: 80,
+    rows: 32,
+    prompt: composer,
+  });
+  await sleep();
+  const afterInitial = getOutput().length;
+  for (const width of [40, 60, 80, 100, 120, 160, 40]) {
+    stdout.columns = width;
+    instance.rerender(
+      transcriptNode({
+        staticEvents: [],
+        activeEvents: [user, streamingRunEvent(150, prompt, 0, source + "\n")],
+        uiState,
+        cols: width,
+        rows: 32,
+        prompt: composer,
+      }),
+    );
+    await sleep();
+    const frame = stripAnsi(getFrame());
+    assert.equal(countOccurrences(frame, "COMPOSER_SENTINEL"), 1);
+    assert.equal(countOccurrences(frame, "STATUS_SENTINEL"), 1);
+    assert.ok(frame.indexOf("COMPOSER_SENTINEL") < frame.indexOf("STATUS_SENTINEL"));
+    assert.ok(frame.trimEnd().split("\n").length <= 32, `height at ${width}`);
+    assert.doesNotMatch(frame, /\|---|\|First\|/);
+    assert.ok(
+      frame.split("\n").every((line) => getTextWidth(line) <= width),
+      `row overflow at ${width}`,
+    );
+  }
+  assert.doesNotMatch(
+    getOutput().slice(afterInitial),
+    /\u001b\[3J|\u001bc/,
+    "routine resize/streaming must not clear native scrollback",
+  );
+  const completed = streamingRunEvent(150, prompt, 0, source);
+  completed.status = "completed";
+  completed.responseSegments = completed.responseSegments?.map((segment) => ({
+    ...segment,
+    status: "completed",
+  }));
+  instance.rerender(
+    transcriptNode({
+      staticEvents: [user, completed],
+      activeEvents: [],
+      uiState: IDLE,
+      cols: 40,
+      rows: 32,
+      prompt: composer,
+    }),
+  );
+  await sleep();
+  const committed = stripAnsi(getOutput());
+  for (let index = 0; index < 12; index += 1) assert.match(committed, new RegExp(`alpha ${index}`));
+  instance.unmount();
+});

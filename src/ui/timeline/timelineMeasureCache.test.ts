@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { ProviderBackendKind } from "../../core/providerRuntime/types.js";
 import type {
   RunEvent,
   RunProgressEntry,
@@ -21,6 +22,13 @@ import {
   type StreamEvent,
   type TimelineRowSpan,
 } from "./timelineMeasure.js";
+import {
+  createAnchoredViewport,
+  findAnchorItem,
+  reflowTimelineViewport,
+  selectTimelineRows,
+  syncTimelineViewport,
+} from "./timelineViewport.js";
 
 function makeTool(overrides: Partial<RunToolActivity> = {}): RunToolActivity {
   return {
@@ -1438,4 +1446,99 @@ test("resetTimelineMeasureCaches empties the module-level row caches", () => {
 
   assert.equal(__getStreamingBlockRowCacheSizeForTests(), 0);
   assert.equal(__getStaticRowCacheSizeForTests(), 0);
+});
+
+const RENDERING_CONTENT =
+  "# Summary\n\n|First|Second|Third|Fourth|Fifth|\n|---|---|---|---|---|\n|alpha value|beta value|gamma value|fourth value|fifth value|\n\n- [x] task\n\n```ts\nfile.ts\n  literal path = C:/home/file.ts;\n```";
+
+test("normalized response layouts are identical for every supported provider presentation identity", () => {
+  const identities: ProviderBackendKind[] = [
+    "codex-cli-auth",
+    "claude-code-auth",
+    "mistral-vibe-cli-auth",
+    "gemini-cli-auth",
+    "openai-api-key",
+    "gemini-api-key",
+    "anthropic-api-key",
+    "local-openai-compatible",
+    "codexa-native-pytorch",
+    "codexa-cupy",
+  ];
+  let expected: string | undefined;
+  for (const identity of identities) {
+    const item = makeStreamingResponseRenderItem(RENDERING_CONTENT);
+    if (item.type !== "turn" || !item.item.run) throw new Error("expected run");
+    item.item.run = {
+      ...item.item.run,
+      backendLabel: identity,
+      runtime: { ...TEST_RUNTIME, model: identity },
+    };
+    const snapshot = buildTimelineSnapshot([item], { totalWidth: 80 });
+    const output = snapshot.rows
+      .filter((row) => row.key.includes("-codex-response-"))
+      .map((row) => row.spans.map((span) => span.text).join(""))
+      .join("\n");
+    if (expected === undefined) expected = output;
+    else assert.equal(output, expected, identity);
+    assert.equal(item.item.run.responseSegments?.[0]?.chunks.join(""), RENDERING_CONTENT);
+  }
+});
+
+test("streaming native rows retain the whole answer before viewport selection and after completion", () => {
+  const source = Array.from(
+    { length: 15 },
+    (_, index) => `## Part ${index}\n\nValue ${index}`,
+  ).join("\n\n");
+  const item = makeStreamingResponseRenderItem(source);
+  const before = buildNativeTranscriptParts([item], { totalWidth: 80 });
+  const live = snapshotText(before.liveRows);
+  for (let index = 0; index < 15; index += 1) assert.match(live, new RegExp(`Value ${index}`));
+  if (item.type !== "turn" || !item.item.run) throw new Error("expected run");
+  item.item.run = {
+    ...item.item.run,
+    status: "completed",
+    responseSegments: item.item.run.responseSegments?.map((segment) => ({
+      ...segment,
+      status: "completed",
+    })),
+  };
+  item.renderState.runPhase = "final";
+  const after = buildNativeTranscriptParts([item], { totalWidth: 80 });
+  const committed = snapshotText(after.staticItems.flatMap((entry) => entry.rows));
+  for (let index = 0; index < 15; index += 1) assert.match(committed, new RegExp(`Value ${index}`));
+  assert.equal(after.liveRows.length, 0);
+});
+
+test("a frozen Markdown viewport stays anchored through table growth, reflow and completion", () => {
+  const make = (source: string, width: number) =>
+    buildTimelineSnapshot([makeStreamingResponseRenderItem(source)], { totalWidth: width });
+  const before = make(RENDERING_CONTENT, 100);
+  const anchored = createAnchoredViewport(before, Math.floor(before.totalRows / 2));
+  const selected = selectTimelineRows(before, anchored, 5);
+  const growing = make(RENDERING_CONTENT + "\n\nMore arriving", 100);
+  const synchronized = syncTimelineViewport(anchored, growing);
+  assert.equal(synchronized.followTail, false);
+  assert.strictEqual(selectTimelineRows(growing, synchronized, 5).sourceSnapshot, before);
+  assert.deepEqual(selectTimelineRows(growing, synchronized, 5).visibleRows, selected.visibleRows);
+  const narrow = make(RENDERING_CONTENT + "\n\nMore arriving", 40);
+  const resized = reflowTimelineViewport(synchronized, narrow);
+  assert.equal(resized.followTail, false);
+  assert.equal(
+    findAnchorItem(resized.frozenSnapshot!, resized.anchorRow).itemIndex,
+    findAnchorItem(before, anchored.anchorRow).itemIndex,
+  );
+  assert.ok(selectTimelineRows(narrow, resized, 5).visibleRows.length > 0);
+  const item = makeStreamingResponseRenderItem(RENDERING_CONTENT + "\n\nComplete");
+  if (item.type !== "turn" || !item.item.run) throw new Error("expected run");
+  item.item.run = {
+    ...item.item.run,
+    status: "completed",
+    responseSegments: item.item.run.responseSegments?.map((segment) => ({
+      ...segment,
+      status: "completed",
+    })),
+  };
+  item.renderState.runPhase = "final";
+  const finished = buildTimelineSnapshot([item], { totalWidth: 40 });
+  assert.equal(syncTimelineViewport(resized, finished).followTail, false);
 });

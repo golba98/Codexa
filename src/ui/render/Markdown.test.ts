@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { buildTranscriptExport } from "../../session/transcriptExport.js";
+import type { TimelineEvent } from "../../session/types.js";
+import { buildMarkdownRows } from "../timeline/measure/markdownRows.js";
 import type { CodeSegment, ParaSegment, Segment } from "./Markdown.js";
 import { isShellCodeLanguage, parseMarkdown } from "./Markdown.js";
 
@@ -39,6 +42,12 @@ function segmentText(segments: Segment[]): string {
       if (segment.type === "header") return segment.parts.map((part) => part.text);
       if (segment.type === "list")
         return segment.items.flatMap((item) => item.parts.map((part) => part.text));
+      if (segment.type === "table")
+        return [...segment.headers, ...segment.rows.flat()].flatMap((parts) =>
+          parts.map((part) => part.text),
+        );
+      if (segment.type === "quote") return [segmentText(segment.segments)];
+      if (segment.type === "rule") return [];
       return segment.lines.flatMap((line) => line.map((part) => part.text));
     })
     .join("\n");
@@ -98,47 +107,50 @@ test("header immediately followed by text produces two segments", () => {
   assert.equal(segments[1]?.type, "para");
 });
 
-test("cleans local markdown file links into compact terminal paths", () => {
+test("preserves local link targets while displaying their labels", () => {
   const input =
     "The app shell lives in [`src/App.tsx`](C:/Users/Example/Projects/Project/src/App.tsx#L22).";
   const text = segmentText(parseMarkdown(input));
 
-  assert.match(text, /src\/App\.tsx:22/);
-  assert.doesNotMatch(text, /C:\/Users/);
+  assert.match(text, /src\/App\.tsx/);
+  assert.match(text, /C:\/Users/);
   assert.doesNotMatch(text, /\]\(/);
 });
 
-test("cleans Windows absolute paths in prose", () => {
+test("preserves Windows absolute paths in prose", () => {
   const input = "Formal proof: C:\\Users\\Example\\Projects\\Project\\docs\\proof.md#L26";
   const text = segmentText(parseMarkdown(input));
 
-  assert.match(text, /docs\/proof\.md:26/);
-  assert.doesNotMatch(text, /C:\\Users/);
+  assert.match(text, /proof\.md#L26/);
+  assert.match(text, /C:\\Users/);
 });
 
-test("cleans file paths with encoded spaces", () => {
+test("preserves file targets with encoded spaces", () => {
   const input =
     "Overview: [README.md](file:///C:/Users/Example/Projects/5-Date%20Verification/README.md)";
   const text = segmentText(parseMarkdown(input));
 
   assert.match(text, /README\.md/);
-  assert.doesNotMatch(text, /file:\/\//);
-  assert.doesNotMatch(text, /5-Date%20Verification/);
+  assert.match(text, /file:\/\//);
+  assert.match(text, /5-Date%20Verification/);
 });
 
-test("cleans local line ranges", () => {
+test("preserves local line ranges", () => {
   const input = "See [proof](C:/Users/Example/Projects/Project/docs/proof.md#L26-L31).";
   const text = segmentText(parseMarkdown(input));
 
-  assert.match(text, /proof \(docs\/proof\.md:26-31\)/);
-  assert.doesNotMatch(text, /C:\/Users/);
+  assert.match(text, /proof/);
+  assert.match(text, /#L26-L31/);
+  assert.match(text, /C:\/Users/);
 });
 
-test("external web markdown links remain unchanged", () => {
+test("external web links show labels and their complete targets", () => {
   const input = "Docs: [OpenAI](https://platform.openai.com/docs).";
   const text = segmentText(parseMarkdown(input));
 
-  assert.match(text, /\[OpenAI\]\(https:\/\/platform\.openai\.com\/docs\)/);
+  assert.match(text, /OpenAI/);
+  assert.match(text, /https:\/\/platform\.openai\.com\/docs/);
+  assert.doesNotMatch(text, /\[OpenAI\]/);
 });
 
 test("inline-code web links remain unchanged", () => {
@@ -180,4 +192,16 @@ test("recognizes executable shell fence languages without treating ordinary code
     assert.equal(isShellCodeLanguage(language), true);
   }
   assert.equal(isShellCodeLanguage("typescript"), false);
+});
+
+test("rich rendering preserves original Markdown for the existing transcript copy workflow", () => {
+  const raw =
+    "# Summary\n\n| A | B |\n|---|---|\n| **value** | `x|y` |\n\n```ts\n\tC:/Users/Example/src/file.ts#L2  \n\n\nconst n = 1;\n```";
+  const events: TimelineEvent[] = [
+    { id: 1, type: "user", createdAt: 1, prompt: "raw export", turnId: 1 },
+    { id: 2, type: "assistant", createdAt: 2, content: raw, contentChunks: [], turnId: 1 },
+  ];
+  buildMarkdownRows(parseMarkdown(raw), 40);
+  assert.equal(buildTranscriptExport(events)?.transcript, `You: raw export\n\nUbume: ${raw}`);
+  if (events[1]?.type === "assistant") assert.equal(events[1].content, raw);
 });

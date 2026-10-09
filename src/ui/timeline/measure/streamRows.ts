@@ -21,8 +21,6 @@ import {
 } from "../../../session/types.js";
 import { transcriptContentIndent } from "../../layout.js";
 import { parseMarkdown } from "../../render/Markdown.js";
-import { normalizeOutput, sanitizeOutput } from "../../render/outputPipeline.js";
-import { formatTerminalAnswerInline } from "../../render/terminalAnswerFormat.js";
 import { formatProgressBlockBodyLines } from "../progressEntries.js";
 import {
   coalesceConsecutiveThinking,
@@ -42,7 +40,7 @@ import {
 import { buildDashCardRows, buildImpactSummaryRows, buildUserInputRows } from "./cards.js";
 import { buildActionRequiredRows, buildFileScanRows } from "./eventRows.js";
 import { buildMarkdownRows } from "./markdownRows.js";
-import { createBlankRow, createRow, createSpan, splitSentenceWall } from "./rows.js";
+import { createBlankRow, createRow, createSpan } from "./rows.js";
 import type {
   ActionDisplayDescriptor,
   StreamEvent,
@@ -53,8 +51,6 @@ import type {
 } from "./types.js";
 
 const COMPACT_PROCESSING_BODY_LINE_CAP = 4;
-
-const COMPACT_STREAMING_TAIL_CAP = 6;
 
 const VISIBLE_THINKING_SOURCES = new Set(["reasoning", "todo"]);
 
@@ -546,11 +542,10 @@ export function buildCodexResponseRows(params: {
   const buildRows = (): TimelineRow[] => {
     let responseRows: TimelineRowSpan[][] = [];
     const contentWidth = Math.max(1, params.width - transcriptContentIndent);
-    const rawContent = splitSentenceWall(formatTerminalAnswerInline(segmentText));
-
-    const sanitized = sanitizeOutput(rawContent);
-    const normalized = normalizeOutput(sanitized);
-    const segments = parseMarkdown(normalized);
+    const segments = parseMarkdown(segmentText, {
+      streaming: segmentStreaming,
+      cacheKey: `${params.keyPrefix}:${params.event.segment.id}`,
+    });
     responseRows = buildMarkdownRows(segments, contentWidth);
 
     if (!params.streaming && params.run.status === "failed" && params.isLastEvent) {
@@ -563,14 +558,6 @@ export function buildCodexResponseRows(params: {
         ]);
       });
       responseRows = [...failureRows, ...responseRows];
-    }
-
-    if (segmentStreaming && !params.verbose && responseRows.length > COMPACT_STREAMING_TAIL_CAP) {
-      const hiddenRowCount = responseRows.length - COMPACT_STREAMING_TAIL_CAP;
-      responseRows = [
-        [createSpan(`… (${hiddenRowCount} line${hiddenRowCount === 1 ? "" : "s"} above)`, "dim")],
-        ...responseRows.slice(-COMPACT_STREAMING_TAIL_CAP),
-      ];
     }
 
     return buildCodexPlainRows(params.keyPrefix, params.width, responseRows);

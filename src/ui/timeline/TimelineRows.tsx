@@ -86,6 +86,9 @@ export const TimelineRowView = memo(
               color={getToneColor(theme, span.tone)}
               backgroundColor={getToneColor(theme, span.backgroundTone)}
               bold={span.bold}
+              italic={span.italic}
+              underline={span.underline}
+              strikethrough={span.strikethrough}
             >
               {span.text}
             </Text>
