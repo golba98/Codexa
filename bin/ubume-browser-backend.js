@@ -390,7 +390,7 @@ export class BrowserManager {
       case "browser_screenshot": {
         const mask = page.frames().map((frame) => frame.locator('input[type="password"],[autocomplete*="password"],[autocomplete^="cc-"],[autocomplete="one-time-code"],[name*="token" i],[data-ubume-sensitive="true"]'));
         const buffer = await (loc ?? page).screenshot({ ...opts, type: "png", scale: "css", mask, animations: "disabled" });
-        const image = await saveImageFile(join(policy.dshHome, "attachments", "v1"), { data: buffer, mediaType: "image/png", name: "browser-screenshot.png" }, { maxImageBytes: Math.min(DEFAULT_MAX_IMAGE_BYTES, 4 * 1024 * 1024), maxImagesPerMessage: DEFAULT_MAX_IMAGES_PER_MESSAGE, maxMessageImageBytes: DEFAULT_MAX_MESSAGE_IMAGE_BYTES, maxImagePixels: DEFAULT_MAX_IMAGE_PIXELS, maxImageDimension: DEFAULT_MAX_IMAGE_DIMENSION, mediaTypes: ["image/png"] }, { maxDimension: 2048, maxBytes: 4 * 1024 * 1024 });
+        const image = await saveImageFile(join(policy.dshHome, "attachments", "v1"), { data: buffer, mediaType: "image/png", name: "browser-screenshot.png" }, { maxImageBytes: Math.min(DEFAULT_MAX_IMAGE_BYTES, 4 * 1024 * 1024), maxImagesPerMessage: DEFAULT_MAX_IMAGES_PER_MESSAGE, maxMessageImageBytes: DEFAULT_MAX_MESSAGE_IMAGE_BYTES, maxImagePixels: DEFAULT_MAX_IMAGE_PIXELS, maxImageDimension: DEFAULT_MAX_IMAGE_DIMENSION, mediaTypes: ["image/png"] }, { maxPixels: 2048 * 2048, maxDimension: 2048, maxBytes: 4 * 1024 * 1024 });
         const hash = String(image.attachmentId).slice("sha256:".length);
         return { summary: `Screenshot saved (${image.width}×${image.height}); sensitive fields masked.`, image, artifactPath: join(policy.dshHome, "attachments", "v1", "objects", hash.slice(0, 2), hash) };
       }

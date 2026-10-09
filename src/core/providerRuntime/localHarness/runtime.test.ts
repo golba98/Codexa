@@ -63,10 +63,12 @@ describe("Local Harness provider routing", () => {
   test("converts prompt images into Harness content blocks", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "ubume-harness-image-"));
     const imagePath = join(tempDir, "clipboard.png");
+    // 8-bit RGBA with no ancillary chunks, so the Harness stores it unchanged
+    // instead of re-encoding it during normalization.
     writeFileSync(
       imagePath,
       Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
         "base64",
       ),
     );
@@ -76,7 +78,7 @@ describe("Local Harness provider routing", () => {
           path: imagePath,
           mediaType: "image/png",
           name: "clipboard.png",
-          bytes: 68,
+          bytes: 70,
         },
       ]);
       assert.deepEqual(blocks[0], { type: "text", text: "describe this" });

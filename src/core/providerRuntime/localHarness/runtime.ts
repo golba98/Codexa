@@ -12,6 +12,7 @@ import {
   DEFAULT_MAX_MESSAGE_IMAGE_BYTES,
   DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
   DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
+  DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS,
   saveImageFile,
 } from "@deepseek-ai/dsh-attachment-local";
 import type { ContentBlock } from "@deepseek-ai/dsh-llm";
@@ -102,6 +103,7 @@ export async function buildLocalHarnessPromptContentBlocks(
       { data, mediaType: attachment.mediaType, name: attachment.name },
       limits,
       {
+        maxPixels: DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS,
         maxDimension: DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
         maxBytes: DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
       },
