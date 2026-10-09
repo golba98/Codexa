@@ -20,6 +20,7 @@ export const SLASH_COMMANDS = [
   { cmd: "/plan", desc: "Show or toggle session plan mode" },
   { cmd: "/settings", desc: "Open the settings picker", aliases: ["/setting"] },
   { cmd: "/status", desc: "Show effective runtime configuration" },
+  { cmd: "/usage", desc: "Show account usage limits for the active provider" },
   { cmd: "/permissions", desc: "Inspect or update permissions and sandbox controls" },
   { cmd: "/runtime", desc: "Compatibility runtime policy controls" },
   { cmd: "/themes", desc: "Open visual theme picker" },

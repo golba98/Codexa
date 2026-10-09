@@ -101,6 +101,7 @@ type CommandAction =
   | "diagnose_github"
   | "diagnose_providers"
   | "update"
+  | "open_usage_panel"
   | "unknown";
 
 interface CommandResult {
@@ -364,6 +365,7 @@ function buildHelpMessage(context: CommandContext): string {
     "  /setting terminal-title [dir|name|simple] Control the terminal tab title",
     "  /setting busy-loader [true|false] Control the busy footer animation",
     "  /status            Show the effective runtime configuration",
+    "  /usage             Show account usage limits for the active provider",
     "  /config            Show layered config sources and winning values",
     "  /config trust [status|on|off] Manage whether project config is allowed to load",
     "  /permissions       Open or update permissions and sandbox controls",
@@ -848,6 +850,9 @@ const COMMAND_HANDLERS: Record<string, CommandHandler> = {
   },
   update: (__arg, normalizedArg, __context) => {
     return { action: "update", value: normalizedArg || "check" };
+  },
+  usage: (__arg, __normalizedArg, __context) => {
+    return { action: "open_usage_panel" };
   },
 };
 

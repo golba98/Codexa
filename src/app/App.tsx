@@ -80,6 +80,7 @@ import { usePlanFlow } from "./usePlanFlow.js";
 import { usePromptExecution } from "./usePromptExecution.js";
 import { usePromptRun } from "./usePromptRun.js";
 import { useProviderRoute } from "./useProviderRoute.js";
+import { useProviderUsage } from "./useProviderUsage.js";
 import { useRunLifecycle } from "./useRunLifecycle.js";
 import { useRuntimeSettings } from "./useRuntimeSettings.js";
 import { buildSettingsPayload, useSettings } from "./useSettings.js";
@@ -1204,6 +1205,13 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     mode,
     uiState,
   });
+  const providerUsage = useProviderUsage({
+    activeProviderRoute,
+    providerWorkspaceConfig,
+    workspaceRoot,
+    activeContextMetadata,
+    setScreen,
+  });
   const { handleSubmit } = useAppInput({
     ...appState,
     ...runLifecycle,
@@ -1213,6 +1221,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     ...modelSelection,
     ...settings,
     ...overlayRouting,
+    openUsagePanel: providerUsage.openUsagePanel,
     appendEvent,
     busy,
     layeredRuntimeConfig,
@@ -1460,6 +1469,9 @@ export function App({ launchArgs, providerOverride }: AppProps) {
               handleSkipUpdateForSession={handleSkipUpdateForSession}
               exit={exit}
               activeTheme={activeTheme}
+              usageView={providerUsage.usageView}
+              usageRefreshAvailableAt={providerUsage.usageRefreshAvailableAt}
+              refreshUsage={providerUsage.refreshUsage}
             />
           }
           mainPanel={null}

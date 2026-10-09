@@ -5,10 +5,16 @@ import {
 } from "../executables/executableResolver.js";
 import { providerCatalog } from "../models/modelCatalog.js";
 import { type CommandResult, runCommand } from "../process/commandRunner.js";
+import type { ProviderWorkspaceOverride } from "../providerLauncher/types.js";
 import { createRunControl } from "../providers/runControl.js";
 import type { BackendRunHandlers } from "../providers/types.js";
 import { errorMessage } from "../shared/values.js";
 import { sanitizeTerminalOutput } from "../terminal/terminalSanitize.js";
+import { buildUsageScopeKey } from "../usage/normalize.js";
+import {
+  parseAnthropicRateLimitHeaders,
+  recordObservedRateLimits,
+} from "../usage/observedRateLimits.js";
 import { anthropicApiBase, fetchAnthropicModels } from "./anthropicDiscovery.js";
 import {
   type ClaudeCodeCapabilityDiscovery,
@@ -263,6 +269,14 @@ async function runAnthropicApi(
     }),
   });
 
+  // Rate-limit headers arrive on success and on 429s; keep them for /usage.
+  recordObservedRateLimits(
+    buildUsageScopeKey(
+      { providerId: "anthropic", backendKind: "anthropic-api-key" },
+      request.providerConfig,
+    ),
+    parseAnthropicRateLimitHeaders(response.headers, Date.now()),
+  );
   const body = await response.text();
   if (!response.ok) {
     throw new Error(`Anthropic API request failed (HTTP ${response.status}).`);
@@ -625,6 +639,18 @@ export async function validateAnthropicRoute(options: {
 // ---------------------------------------------------------------------------
 // Runtime
 // ---------------------------------------------------------------------------
+
+/** The backend `run()` will actually use for this route, mirroring its branch order. */
+export function resolveAnthropicExecutionBackend(
+  route: { backendKind: ProviderBackendKind },
+  providerConfig?: ProviderWorkspaceOverride,
+): "claude-code-auth" | "anthropic-api-key" {
+  if (claudeCodeValidated && route.backendKind !== "anthropic-api-key" && !providerConfig?.apiKey) {
+    return "claude-code-auth";
+  }
+  if (providerConfig?.apiKey || getAnthropicApiKey()) return "anthropic-api-key";
+  return "claude-code-auth";
+}
 
 function getAnthropicRuntimeBackendKind(): ProviderBackendKind {
   return claudeCodeValidated

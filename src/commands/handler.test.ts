@@ -739,3 +739,13 @@ test("parses /update, /update check, and /update status commands", () => {
   assert.equal(resultStatus?.action, "update");
   assert.equal(resultStatus?.value, "status");
 });
+
+test("/usage opens the usage panel locally and ignores arguments", () => {
+  assert.deepEqual(handleCommand("/usage", baseContext), { action: "open_usage_panel" });
+  assert.deepEqual(handleCommand("/USAGE now", baseContext), { action: "open_usage_panel" });
+});
+
+test("/help lists /usage", () => {
+  const help = handleCommand("/help", baseContext);
+  assert.match(help?.message ?? "", /\/usage\s+Show account usage limits for the active provider/);
+});

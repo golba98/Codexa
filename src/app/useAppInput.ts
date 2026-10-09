@@ -118,6 +118,7 @@ interface UseAppInputContext {
   openThemePicker: () => void;
   openPermissionsPanel: () => void;
   openAuthPanel: () => void;
+  openUsagePanel: () => void;
   setVerboseMode: React.Dispatch<React.SetStateAction<boolean>>;
   verboseMode: boolean;
   handleCopy: () => Promise<void>;
@@ -234,6 +235,7 @@ export function useAppInput(context: UseAppInputContext) {
     openThemePicker,
     openPermissionsPanel,
     openAuthPanel,
+    openUsagePanel,
     setVerboseMode,
     verboseMode,
     handleCopy,
@@ -380,6 +382,7 @@ export function useAppInput(context: UseAppInputContext) {
         openThemePicker,
         openPermissionsPanel,
         openAuthPanel,
+        openUsagePanel,
         setVerboseMode,
         verboseMode,
         handleCopy,
@@ -541,6 +544,7 @@ export function useAppInput(context: UseAppInputContext) {
     modelCapabilities,
     mode,
     openAuthPanel,
+    openUsagePanel,
     openProviderPicker,
     openModePicker,
     openModelPicker,

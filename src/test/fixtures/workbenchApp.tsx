@@ -27,6 +27,7 @@ class Output extends PassThrough {
   rows = 32;
 }
 let cleanupPending = false;
+let cancelCount = 0;
 const runs: {
   prompt: string;
   handlers: BackendRunHandlers;
@@ -64,6 +65,7 @@ const provider: BackendProvider = {
     });
     return () => {
       if (ended) return;
+      cancelCount += 1;
       cleanupPending = true;
       setTimeout(() => {
         cleanupPending = false;
@@ -112,6 +114,13 @@ const store = new ConversationStore(process.cwd());
 const scenario = process.argv[2];
 if (scenario === "cancel-start")
   for (let i = 0; i < 800; i++) writeFileSync(`file-${i}.txt`, "checkpoint fixture");
+if (scenario === "usage-during-run") {
+  // A Codex stand-in that fails fast, so /usage never reaches a real account.
+  writeFileSync("codex-usage-fixture", "#!/bin/sh\necho 'not logged in' >&2\nexit 1\n", {
+    mode: 0o700,
+  });
+  process.env.CODEX_EXECUTABLE = `${process.cwd()}/codex-usage-fixture`;
+}
 const terminal = mount();
 await delay(350);
 if (scenario === "plan-actions") {
@@ -211,6 +220,38 @@ if (scenario === "plan-actions") {
   assert.equal(exited, false, "a press after the window must re-arm, not quit");
   terminal.stdin.write("\x03");
   await until(() => exited, "second press quits");
+  process.exit(0);
+} else if (scenario === "usage-during-run") {
+  terminal.stdin.write("first instruction");
+  await delay();
+  terminal.stdin.write("\r");
+  await until(() => runs.length === 1, "first run");
+  runs[0]!.handlers.onAssistantDelta?.("partial reply");
+  terminal.stdin.write("/usage");
+  await delay();
+  terminal.stdin.write("\r");
+  await until(() => terminal.lastFrame().includes("Provider Usage"), "usage panel open");
+  await until(
+    () => terminal.output().includes("exited before Codex usage check completed"),
+    "usage result rendered",
+  );
+  terminal.stdin.write("\u001b");
+  await until(() => !terminal.lastFrame().includes("Provider Usage"), "usage panel closed");
+  await delay(200);
+  assert.equal(cancelCount, 0, "closing /usage must not cancel the active run");
+  runs[0]!.stopped();
+  runs[0]!.handlers.onResponse("partial reply and the rest");
+  await until(() => terminal.output().includes("partial reply and the rest"), "run completed");
+  await delay(1100);
+  assert.equal(runs.length, 1, "/usage must not start a provider run");
+  assert.ok(runs.every((run) => !run.prompt.includes("/usage")));
+  const entry = store.list()[0];
+  assert(entry);
+  const loaded = store.load(entry.id);
+  assert(loaded);
+  assert.ok(!JSON.stringify(loaded.messages).includes("/usage"), "/usage must stay out of history");
+  terminal.instance.unmount();
+  await delay();
   process.exit(0);
 } else if (scenario === "cancel-start") {
   terminal.stdin.write("cancel during preparation");

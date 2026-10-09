@@ -28,6 +28,8 @@ import {
   sanitizeTerminalInput,
   sanitizeTerminalOutput,
 } from "../core/terminal/terminalSanitize.js";
+import { recordLocalContextUsage } from "../core/usage/localUsageTracker.js";
+import { buildUsageScopeKey } from "../core/usage/normalize.js";
 import type { FileBoundary } from "../core/workspace/checkpoints.js";
 import {
   assertFileRecoveryReady,
@@ -811,6 +813,14 @@ export function usePromptRun(context: UsePromptRunContext) {
             },
             onContextUsage: (usage) => {
               if (!isCurrentRun(activeRunIdRef.current, runId)) return;
+              recordLocalContextUsage(
+                buildUsageScopeKey(
+                  activeProviderRoute,
+                  providerWorkspaceConfig.providers?.[activeProviderRoute.providerId],
+                ),
+                usage,
+                Date.now(),
+              );
               // A failed turn can report zero usage; keep the known conversation size.
               if (usage.contextTokens <= 0) return;
               setConversationChars(Math.max(0, usage.contextTokens * 4));

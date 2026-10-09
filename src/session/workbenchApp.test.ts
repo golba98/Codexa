@@ -102,3 +102,9 @@ test(
   { timeout: 30000 },
   () => scenarios(["plan-actions"]),
 );
+
+test(
+  "actual App opens /usage during a run without cancelling it or sending it to the provider",
+  { timeout: 30000 },
+  () => scenarios(["usage-during-run"]),
+);

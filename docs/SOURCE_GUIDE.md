@@ -55,6 +55,7 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 | `src/app/usePromptExecution.ts` | Executes shell commands and relaunches workspaces with paired cleanup. |
 | `src/app/usePromptRun.ts` | Owns provider startup, streamed updates, checkpoints, and completion callbacks. |
 | `src/app/useProviderRoute.ts` | Checks local backends, routes provider actions, and launches setup commands. |
+| `src/app/useProviderUsage.ts` | Owns `/usage` panel state for the active route: resolves the usage adapter and scope, opens the panel, requests through the shared usage service, and drops results for a scope the user has left. |
 | `src/app/useRunLifecycle.ts` | Finalizes and cancels runs, resets the home screen, quits, and saves plans. |
 | `src/app/useRunRefs.ts` | Owns the stable shared run refs without moving render-time assignments into effects. |
 | `src/app/useRuntimeSettings.ts` | Applies layered runtime overrides and persists provider routes/defaults. |
@@ -87,6 +88,7 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 
 | File | Purpose |
 | --- | --- |
+| `src/core/codex/codexAppServerClient.ts` | Minimal JSON-RPC client for one short-lived `codex app-server --listen stdio://` process: `initialize` handshake, id-correlated requests, ignored notifications, timeout/abort, and guaranteed child shutdown. Used by model discovery and `/usage`. |
 | `src/core/codex/codexAuth.ts` | Probes Codex authentication and converts results into run gating, labels, guidance, and likely-auth-failure classification. |
 | `src/core/codex/codexCapabilities.ts` | Discovers and parses Codex CLI model capabilities from provider output. |
 | `src/core/codex/codexExecArgs.ts` | Builds the exact Codex CLI exec argument vector from effective runtime configuration and launch context. |
@@ -212,6 +214,23 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 | `src/core/terminal/terminalSanitize.ts` | Removes unsafe terminal control characters while preserving explicitly allowed text layout. |
 | `src/core/terminal/terminalTitle.ts` | Tracks intended terminal titles and applies/restores title sequences across lifecycle changes. |
 
+### `src/core/usage/`
+
+| File | Purpose |
+| --- | --- |
+| `src/core/usage/types.ts` | Normalised usage contract: snapshot status, billing mode, limits (unknown ≠ zero), facts, links, adapter and request context. |
+| `src/core/usage/normalize.ts` | Pure helpers: percentage/fraction validation, reset-time parsing (epoch s/ms, ISO), window labels, provider-text sanitising, and credential-free usage scope keys. |
+| `src/core/usage/registry.ts` | Maps the active route to the adapter for the account it actually executes with (Claude Code vs direct API) and its scope key; unsupported fallback. |
+| `src/core/usage/usageService.ts` | Per-scope cache, refresh cooldown (`UBUME_USAGE_COOLDOWN_SECONDS`), single in-flight request, and stale fallback that keeps the last good snapshot. |
+| `src/core/usage/codexUsage.ts` | Codex adapter: `account/read` and `account/rateLimits/read` over the app-server; maps windows, buckets, credits and API-key/signed-out states. |
+| `src/core/usage/claudeCodeUsage.ts` | Claude Code adapter: `claude auth status` plus the experimental `get_usage` SDK control request on a hook-free, tool-free, non-persisted stream-json host. |
+| `src/core/usage/antigravityUsage.ts` | Google (Antigravity) adapter: print-mode `agy -p /usage` and `/credits` JSON with per-model-group quota buckets; rejects replies that ran a turn. |
+| `src/core/usage/anthropicApiUsage.ts` | Direct Anthropic API adapter built only from observed `anthropic-ratelimit-*` headers. |
+| `src/core/usage/observedRateLimits.ts` | Parses and stores rate-limit response headers that runtimes already receive; makes no requests. |
+| `src/core/usage/mistralVibeUsage.ts` | Reports that Mistral Vibe exposes no programmatic usage, budget or rate-limit interface. |
+| `src/core/usage/localUsage.ts` | Local adapter: model, context window (percentage only when verified/configured), harness token counts, and N/A vs remote-endpoint quota. |
+| `src/core/usage/localUsageTracker.ts` | Records exact Local harness token usage per scope for the current conversation; ignores compaction re-emits. |
+
 ### `src/core/version/`
 
 | File | Purpose |
@@ -321,9 +340,11 @@ Tests and shared test fixtures are colocated or under `src/test/` and are intent
 | `src/ui/panels/TextEntryPanel.tsx` | Provides a reusable focused text-entry overlay. |
 | `src/ui/panels/ToolApprovalPanel.tsx` | Displays a tool request and collects allow/deny/cancel decisions. |
 | `src/ui/panels/UpdatePromptPanel.tsx` | Presents detected update information and the install command. |
+| `src/ui/panels/UsagePanel.tsx` | `/usage` overlay: provider usage rows with R refresh (respecting cooldown/in-flight), Esc/q close, and arrow-key scrolling on short terminals. |
 | `src/ui/panels/WorkbenchPanel.tsx` | Displays transcript, queue, diff, and checkpoint recovery views. |
 | `src/ui/panels/responsivePickerViewport.ts` | Calculates picker rows and viewport windows for terminal dimensions. |
 | `src/ui/panels/resumePickerRows.ts` | Pure row/label formatting and section types for the resume picker. |
+| `src/ui/panels/usagePanelRows.ts` | Pure, width-bounded row builder for the usage panel: bars only for reported percentages, extreme-value rounding, local-time resets, and live/cached/stale/observed labels. |
 
 ### `src/ui/render/`
 

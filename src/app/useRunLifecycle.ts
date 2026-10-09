@@ -5,6 +5,7 @@ import * as renderDebug from "../core/perf/renderDebug.js";
 import type { ProviderRoute } from "../core/providerRuntime/types.js";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../core/providers/types.js";
 import { sanitizeTerminalOutput } from "../core/terminal/terminalSanitize.js";
+import { resetLocalUsageRecords } from "../core/usage/localUsageTracker.js";
 import type { ConversationStore } from "../core/workspace/conversationStore.js";
 import { savePlan } from "../core/workspace/planStorage.js";
 import type { SessionAction } from "../session/appSession.js";
@@ -113,6 +114,8 @@ export function useRunLifecycle(context: UseRunLifecycleContext) {
         seedEvents,
       });
       setConversationChars(0);
+      // Local token totals describe one conversation; a new one starts from zero.
+      resetLocalUsageRecords();
       setScreen("main");
       resetComposer();
       intendedFocusTargetRef.current = FOCUS_IDS.composer;
