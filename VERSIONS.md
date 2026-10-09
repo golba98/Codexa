@@ -3,6 +3,18 @@
 This file explains what users get in each release. For exact implementation
 details and test notes, see the [changelog](CHANGELOG.md).
 
+## v0.1.14 — 2026-10-09 (prepared)
+
+Model lists are more reliable for every provider. Ubume fetches them from each provider, caches them, and keeps showing the last good list if a refresh fails. If a model you saved disappears, Ubume asks you to pick one instead of quietly switching to a different model.
+
+Reasoning settings now match what each model supports: levels, a thinking budget, or auto/off. Ubume remembers your choice for each model. Models with fixed reasoning say so.
+
+Gemini is back as a native provider, and Mistral models now come from the Mistral API.
+
+Antigravity is no longer a provider. If you used it, Ubume switches to your default provider. Saved Antigravity chats still open, but ask you to pick a provider before you send.
+
+This version is prepared but has not been published to npm.
+
 ## v0.1.13 — 2026-10-08
 
 Ctrl+O opens the model picker again, as it did before 0.1.3. Alt+P still works too.

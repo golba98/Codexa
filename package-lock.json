@@ -1,12 +1,12 @@
 {
   "name": "ubume",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "ubume",
-      "version": "0.1.13",
+      "version": "0.1.14",
       "license": "MIT",
       "dependencies": {
         "playwright": "1.63.0",
