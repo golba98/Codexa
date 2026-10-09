@@ -36,10 +36,8 @@ import { isLocalDevChannel } from "../core/version/channel.js";
 import type { GlobalPackageManager } from "../core/version/packageManager.js";
 import { getUpdateCommand } from "../core/version/packageManager.js";
 import {
-  checkForUpdates,
   formatLocalDevUpdateStatus,
   formatUpdateInstructions,
-  saveUpdateCheckCache,
   type UpdateCheckResult,
 } from "../core/version/updateCheck.js";
 
@@ -92,7 +90,7 @@ interface CommandDispatchContext {
     announce?: boolean,
   ) => Promise<CodexModelCapabilities>;
   updateCheckResult: UpdateCheckResult | null;
-  setUpdateCheckResult: React.Dispatch<React.SetStateAction<UpdateCheckResult | null>>;
+  requestUpdateCheck: () => Promise<UpdateCheckResult>;
   setScreen: React.Dispatch<React.SetStateAction<Screen>>;
   globalPackageManager: GlobalPackageManager;
 }
@@ -140,7 +138,7 @@ export function dispatchCommand(context: CommandDispatchContext): void | Promise
     modelCapabilities,
     refreshModelCapabilities,
     updateCheckResult,
-    setUpdateCheckResult,
+    requestUpdateCheck,
     setScreen,
     globalPackageManager,
   } = context;
@@ -463,16 +461,9 @@ export function dispatchCommand(context: CommandDispatchContext): void | Promise
         let freshResult = updateCheckResult;
         if (arg === "check" || freshResult === null) {
           try {
-            freshResult = await checkForUpdates({ enabled: true });
-            setUpdateCheckResult(freshResult);
-            if (freshResult.status !== "error") {
-              saveUpdateCheckCache({
-                lastChecked: freshResult.checkedAt,
-                currentVersion: freshResult.currentVersion,
-                latestVersion: freshResult.latestVersion,
-                updateAvailable: freshResult.status === "update-available",
-              });
-            }
+            // Shares the background checker's in-flight request and state rules:
+            // a failed check is reported here but never clears a detected update.
+            freshResult = await requestUpdateCheck();
           } catch {
             freshResult = null;
           }

@@ -3,21 +3,22 @@ import test from "node:test";
 import {
   checkForUpdates,
   compareSemver,
+  fetchNpmDistTags,
   formatUpdateInstructions,
   formatVersionLabel,
   isCacheValid,
   isNewerVersion,
   isValidSemver,
-  type NpmRegistryMetadata,
+  type NpmDistTags,
   normalizeVersion,
   shouldRunStartupUpdateCheck,
-  UBUME_NPM_REGISTRY_URL,
+  UBUME_NPM_DIST_TAGS_URL,
   UBUME_UPDATE_COMMAND,
   type UpdateCheckCache,
 } from "./updateCheck.js";
 
-function metadata(version: string): NpmRegistryMetadata {
-  return { "dist-tags": { latest: version } };
+function metadata(version: string): NpmDistTags {
+  return { latest: version };
 }
 
 test("checkForUpdates returns update-available when installed version is lower than npm latest", async () => {
@@ -26,7 +27,7 @@ test("checkForUpdates returns update-available when installed version is lower t
     {
       currentVersion: "1.0.2",
       fetchNpmMetadataFn: async (url) => {
-        assert.equal(url, UBUME_NPM_REGISTRY_URL);
+        assert.equal(url, UBUME_NPM_DIST_TAGS_URL);
         return metadata("1.0.3");
       },
     },
@@ -144,7 +145,7 @@ test("checkForUpdates returns error when npm latest is missing", async () => {
     {},
     {
       currentVersion: "1.0.1",
-      fetchNpmMetadataFn: async () => ({ "dist-tags": {} }),
+      fetchNpmMetadataFn: async () => ({}),
     },
   );
 
@@ -157,7 +158,7 @@ test("checkForUpdates returns error when npm latest has a malformed type", async
     {},
     {
       currentVersion: "1.0.2",
-      fetchNpmMetadataFn: async () => ({ "dist-tags": { latest: 103 } }),
+      fetchNpmMetadataFn: async () => ({ latest: 103 }),
     },
   );
 
@@ -240,6 +241,156 @@ test("semver comparison handles numeric and prerelease ordering", () => {
   assert.equal(compareSemver("1.0.2", "1.0.2"), 0);
   assert.equal(isNewerVersion("1.0.2", "1.0.2-beta.1"), true);
   assert.equal(isNewerVersion("1.0.2-beta.1", "1.0.2"), false);
+});
+
+test("semver comparison orders 0.1.9, 0.1.10, and 0.1.11 numerically", () => {
+  const sorted = ["0.1.11", "0.1.9", "0.1.10"].sort(compareSemver);
+  assert.deepEqual(sorted, ["0.1.9", "0.1.10", "0.1.11"]);
+  assert.equal(isNewerVersion("0.1.11", "0.1.9"), true);
+  assert.equal(isNewerVersion("0.1.9", "0.1.11"), false);
+  assert.equal(compareSemver("0.1.11", "v0.1.11"), 0);
+});
+
+test("semver comparison orders prerelease identifiers per SemVer precedence", () => {
+  const ordered = [
+    "1.0.0-alpha",
+    "1.0.0-alpha.1",
+    "1.0.0-alpha.beta",
+    "1.0.0-beta",
+    "1.0.0-beta.2",
+    "1.0.0-beta.11",
+    "1.0.0-rc.1",
+    "1.0.0",
+  ];
+  const shuffled = [...ordered].reverse();
+  assert.deepEqual(shuffled.sort(compareSemver), ordered);
+  // Lexical ordering would put rc.10 below rc.9.
+  assert.equal(isNewerVersion("0.1.2-rc.10", "0.1.2-rc.9"), true);
+  assert.equal(compareSemver("1.0.0-rc.1", "1.0.0-rc.1"), 0);
+});
+
+test("checkForUpdates detects 0.1.11 over installed 0.1.9 and passes the abort signal", async () => {
+  const controller = new AbortController();
+  let receivedSignal: AbortSignal | undefined;
+  const result = await checkForUpdates(
+    {},
+    {
+      currentVersion: "0.1.9",
+      signal: controller.signal,
+      fetchNpmMetadataFn: async (_url, signal) => {
+        receivedSignal = signal;
+        return metadata("0.1.11");
+      },
+    },
+  );
+
+  assert.equal(result.status, "update-available");
+  assert.equal(result.latestVersion, "0.1.11");
+  assert.equal(receivedSignal, controller.signal);
+});
+
+test("checkForUpdates treats non-object registry payloads as errors, not updates", async () => {
+  for (const payload of [null, "0.1.11", ["0.1.11"], 42]) {
+    const result = await checkForUpdates(
+      {},
+      {
+        currentVersion: "0.1.9",
+        fetchNpmMetadataFn: async () => payload as unknown as NpmDistTags,
+      },
+    );
+    assert.equal(result.status, "error", `payload ${JSON.stringify(payload)}`);
+    assert.equal(result.latestVersion, null);
+  }
+});
+
+function fakeFetch(
+  handler: (input: string, init: RequestInit | undefined) => Promise<Response>,
+): typeof fetch {
+  return ((input: string | URL | Request, init?: RequestInit) =>
+    handler(String(input), init)) as typeof fetch;
+}
+
+test("fetchNpmDistTags requests the dist-tags endpoint without HTTP caching", async () => {
+  let seenUrl = "";
+  let seenInit: RequestInit | undefined;
+  const tags = await fetchNpmDistTags(UBUME_NPM_DIST_TAGS_URL, {
+    fetchImpl: fakeFetch(async (url, init) => {
+      seenUrl = url;
+      seenInit = init;
+      return new Response(JSON.stringify({ latest: "0.1.16", next: "0.1.17-rc.1" }), {
+        status: 200,
+      });
+    }),
+  });
+
+  assert.equal(seenUrl, "https://registry.npmjs.org/-/package/ubume/dist-tags");
+  assert.equal(seenInit?.cache, "no-store");
+  assert.ok(seenInit?.signal);
+  assert.deepEqual(tags, { latest: "0.1.16", next: "0.1.17-rc.1" });
+});
+
+test("fetchNpmDistTags rejects HTTP error responses", async () => {
+  await assert.rejects(
+    fetchNpmDistTags(UBUME_NPM_DIST_TAGS_URL, {
+      fetchImpl: fakeFetch(async () => new Response("unavailable", { status: 503 })),
+    }),
+    /HTTP 503/,
+  );
+});
+
+test("fetchNpmDistTags rejects malformed JSON bodies", async () => {
+  await assert.rejects(
+    fetchNpmDistTags(UBUME_NPM_DIST_TAGS_URL, {
+      fetchImpl: fakeFetch(async () => new Response("<html>oops</html>", { status: 200 })),
+    }),
+  );
+});
+
+function hangingFetch(): typeof fetch {
+  return fakeFetch(
+    (_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(new Error("The operation was aborted")),
+        );
+      }),
+  );
+}
+
+test("fetchNpmDistTags times out instead of hanging", async () => {
+  const started = Date.now();
+  await assert.rejects(
+    fetchNpmDistTags(UBUME_NPM_DIST_TAGS_URL, { timeoutMs: 20, fetchImpl: hangingFetch() }),
+    /aborted/,
+  );
+  assert.ok(Date.now() - started < 2000);
+});
+
+test("fetchNpmDistTags aborts when the caller's signal aborts", async () => {
+  const controller = new AbortController();
+  const pending = fetchNpmDistTags(UBUME_NPM_DIST_TAGS_URL, {
+    signal: controller.signal,
+    timeoutMs: 60_000,
+    fetchImpl: hangingFetch(),
+  });
+  controller.abort();
+  await assert.rejects(pending, /aborted/);
+});
+
+test("fetchNpmDistTags fails fast when the caller's signal is already aborted", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let called = false;
+  await assert.rejects(
+    fetchNpmDistTags(UBUME_NPM_DIST_TAGS_URL, {
+      signal: controller.signal,
+      fetchImpl: fakeFetch(async () => {
+        called = true;
+        return new Response("{}");
+      }),
+    }),
+  );
+  assert.equal(called, false);
 });
 
 test("normalizeVersion strips leading v", () => {

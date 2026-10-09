@@ -928,7 +928,12 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     markProviderAvailability,
     reasoningLevel,
   });
-  useUpdateCheck({ ...appState, setUpdateCheckResult, returnFromUpdateOverlay });
+  const { requestUpdateCheck } = useUpdateCheck({
+    ...appState,
+    updateCheckResult,
+    setUpdateCheckResult,
+    returnFromUpdateOverlay,
+  });
 
   const repaintCommittedTheme = useCallback(
     (themeName: string) => {
@@ -1226,7 +1231,7 @@ export function App({ launchArgs, providerOverride }: AppProps) {
     handlePasteImage,
     refreshModelCapabilities,
     updateCheckResult,
-    setUpdateCheckResult,
+    requestUpdateCheck,
     globalPackageManager,
     uiState,
     startPromptRun,

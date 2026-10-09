@@ -7,6 +7,9 @@
 - Match the Mistral picker to the installed Vibe effective model list, including GLM-5.3 (Mistral Hosted), local models and the current Default entry. Preserve native labels, selector aliases and thinking levels.
 - Stop adding API-only model candidates to the Vibe picker and filter stale API-only cache rows without deleting stored data. Read Vibe configuration and cached routing assignments without running configuration migrations.
 - Discover effective Vibe models before headless execution so routed models such as `glm-5-3` work on a fresh process.
+- Keep checking for Ubume updates while the interactive app runs: every 15 minutes after a successful check, and with bounded, jittered backoff (30 s up to 15 min) after failures, so a release published mid-session or a failed startup check no longer goes unnoticed until restart. Background results update the existing update state without opening the prompt or moving focus.
+- Never let a failed update check hide an already-detected update or count as "up to date." `/update check` shares the background checker's single in-flight request, and a late startup result no longer closes an overlay opened afterwards.
+- Read the npm `latest` dist-tag from the small, uncached dist-tags endpoint instead of the CDN-cached full package document, and order prerelease versions by SemVer precedence (`rc.10` after `rc.9`).
 
 ---
 

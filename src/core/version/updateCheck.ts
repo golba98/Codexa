@@ -5,13 +5,15 @@ import { errorMessage } from "../shared/values.js";
 import { isLocalDevChannel } from "./channel.js";
 
 export const UBUME_NPM_PACKAGE = "ubume";
-export const UBUME_NPM_REGISTRY_URL = "https://registry.npmjs.org/ubume";
+// The dist-tags document is tiny and served uncached, unlike the full packument (CDN-cached
+// for minutes and growing with every release). `latest` is what `npm install ubume@latest` uses.
+export const UBUME_NPM_DIST_TAGS_URL = `https://registry.npmjs.org/-/package/${UBUME_NPM_PACKAGE}/dist-tags`;
 export const UBUME_UPDATE_COMMAND = `npm install -g ${UBUME_NPM_PACKAGE}@latest --prefer-online --legacy-peer-deps`;
 
 export type UpdateStatus = "up-to-date" | "update-available" | "unknown" | "error";
 
-export interface NpmRegistryMetadata {
-  "dist-tags"?: { latest?: unknown };
+export interface NpmDistTags {
+  latest?: unknown;
 }
 
 export interface UpdateCheckResult {
@@ -49,15 +51,27 @@ export function shouldRunStartupUpdateCheck(
   return enabled && !isLocalDevChannel(env);
 }
 
+// Compares a single dot-separated prerelease identifier per SemVer §11: numeric identifiers
+// compare numerically and always sort below alphanumeric ones.
+function comparePrereleaseIdentifier(a: string, b: string): number {
+  const aNumeric = /^\d+$/.test(a);
+  const bNumeric = /^\d+$/.test(b);
+  if (aNumeric && bNumeric) return Number(a) - Number(b);
+  if (aNumeric) return -1;
+  if (bNumeric) return 1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 // Compares two semver strings numerically. Returns negative if a < b, 0 if equal, positive if a > b.
-// Pre-release versions (e.g. 1.0.2-beta.1) sort below their release counterpart (1.0.2 > 1.0.2-beta.1).
+// Pre-release versions (e.g. 1.0.2-beta.1) sort below their release counterpart (1.0.2 > 1.0.2-beta.1),
+// and prerelease identifiers follow SemVer precedence (rc.9 < rc.10, alpha < alpha.1 < beta).
 // Leading "v" is stripped before comparison.
 export function compareSemver(a: string, b: string): number {
-  const parseParts = (v: string): { numeric: number[]; prerelease: string | null } => {
+  const parseParts = (v: string): { numeric: number[]; prerelease: string[] | null } => {
     const norm = normalizeVersion(v);
     const dashIdx = norm.indexOf("-");
     const base = dashIdx === -1 ? norm : norm.slice(0, dashIdx);
-    const prerelease = dashIdx === -1 ? null : norm.slice(dashIdx + 1);
+    const prerelease = dashIdx === -1 ? null : norm.slice(dashIdx + 1).split(".");
     const numeric = base.split(".").map((p) => parseInt(p, 10) || 0);
     return { numeric, prerelease };
   };
@@ -75,7 +89,16 @@ export function compareSemver(a: string, b: string): number {
   if (pa.prerelease === null && pb.prerelease !== null) return 1;
   if (pa.prerelease !== null && pb.prerelease === null) return -1;
   if (pa.prerelease !== null && pb.prerelease !== null) {
-    return pa.prerelease < pb.prerelease ? -1 : pa.prerelease > pb.prerelease ? 1 : 0;
+    const ids = Math.max(pa.prerelease.length, pb.prerelease.length);
+    for (let i = 0; i < ids; i++) {
+      const left = pa.prerelease[i];
+      const right = pb.prerelease[i];
+      // A shorter identifier list sorts first when every preceding identifier is equal.
+      if (left === undefined) return -1;
+      if (right === undefined) return 1;
+      const diff = comparePrereleaseIdentifier(left, right);
+      if (diff !== 0) return diff;
+    }
   }
   return 0;
 }
@@ -86,21 +109,43 @@ export function isNewerVersion(candidate: string, current: string): boolean {
 
 interface UpdateCheckOverrides {
   currentVersion?: string;
-  fetchNpmMetadataFn?: (url: string) => Promise<NpmRegistryMetadata>;
+  /** Aborts the registry request, e.g. when the app shuts down mid-check. */
+  signal?: AbortSignal;
+  fetchNpmMetadataFn?: (url: string, signal?: AbortSignal) => Promise<NpmDistTags>;
 }
 
-async function defaultFetchNpmMetadata(url: string): Promise<NpmRegistryMetadata> {
+interface FetchDistTagsOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  /** Test seam — defaults to the global fetch. */
+  fetchImpl?: typeof fetch;
+}
+
+/** Fetches npm dist-tags with a hard timeout that also covers reading the body. */
+export async function fetchNpmDistTags(
+  url: string,
+  options: FetchDistTagsOptions = {},
+): Promise<NpmDistTags> {
+  const { signal, timeoutMs = FETCH_TIMEOUT_MS, fetchImpl = fetch } = options;
+  signal?.throwIfAborted();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    const res = await fetchImpl(url, {
       signal: controller.signal,
-      headers: { "User-Agent": `${UBUME_NPM_PACKAGE}-update-checker/1.0` },
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        "User-Agent": `${UBUME_NPM_PACKAGE}-update-checker/1.0`,
+      },
     });
     if (!res.ok) throw new Error(`npm registry returned HTTP ${res.status}`);
-    return (await res.json()) as NpmRegistryMetadata;
+    return (await res.json()) as NpmDistTags;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", abortFromCaller);
   }
 }
 
@@ -121,9 +166,14 @@ export async function checkForUpdates(
   }
 
   try {
-    const fetchFn = overrides?.fetchNpmMetadataFn ?? defaultFetchNpmMetadata;
-    const metadata = await fetchFn(UBUME_NPM_REGISTRY_URL);
-    const rawLatest = metadata["dist-tags"]?.latest;
+    const fetchFn =
+      overrides?.fetchNpmMetadataFn ??
+      ((url: string, signal?: AbortSignal) => fetchNpmDistTags(url, { signal }));
+    const metadata: unknown = await fetchFn(UBUME_NPM_DIST_TAGS_URL, overrides?.signal);
+    const rawLatest =
+      typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)
+        ? (metadata as NpmDistTags).latest
+        : undefined;
 
     if (typeof rawLatest !== "string" || !rawLatest.trim()) {
       return {
