@@ -143,10 +143,10 @@ test("importExternalFile skips non-existent diagnostic paths without throwing", 
 // ─── rewritePromptWithImportedPaths ──────────────────────────────────────────
 
 test("rewritePromptWithImportedPaths rewrites quoted path with spaces", () => {
-  const prompt = '"C:\\Users\\jorda\\OneDrive\\Screenshots\\Screenshot 2026.png" what is this?';
+  const prompt = '"C:\\Users\\Example\\OneDrive\\Screenshots\\Screenshot 2026.png" what is this?';
   const result = rewritePromptWithImportedPaths(prompt, [
     {
-      rawPath: "C:\\Users\\jorda\\OneDrive\\Screenshots\\Screenshot 2026.png",
+      rawPath: "C:\\Users\\Example\\OneDrive\\Screenshots\\Screenshot 2026.png",
       replacementPath: "/home/test/.local/share/ubume/attachments/Screenshot 2026.png",
     },
   ]);
@@ -157,10 +157,10 @@ test("rewritePromptWithImportedPaths rewrites quoted path with spaces", () => {
 });
 
 test("rewritePromptWithImportedPaths rewrites unquoted path without spaces", () => {
-  const prompt = "Look at C:\\Users\\jorda\\file.png please";
+  const prompt = "Look at C:\\Users\\Example\\file.png please";
   const result = rewritePromptWithImportedPaths(prompt, [
     {
-      rawPath: "C:\\Users\\jorda\\file.png",
+      rawPath: "C:\\Users\\Example\\file.png",
       replacementPath: "/home/test/.local/share/ubume/attachments/file.png",
     },
   ]);

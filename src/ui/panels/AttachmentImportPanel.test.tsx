@@ -80,14 +80,14 @@ function createInkHarness(node: React.ReactElement) {
 }
 
 const TEST_FILE: PendingImportFile = {
-  srcPath: "C:\\Users\\jorda\\OneDrive\\Screenshots\\Screenshot 2026-05-18.png",
-  rawPath: "C:\\Users\\jorda\\OneDrive\\Screenshots\\Screenshot 2026-05-18.png",
+  srcPath: "C:\\Users\\Example\\OneDrive\\Screenshots\\Screenshot 2026-05-18.png",
+  rawPath: "C:\\Users\\Example\\OneDrive\\Screenshots\\Screenshot 2026-05-18.png",
   destFilename: "Screenshot 2026-05-18.png",
   isImage: true,
 };
 
 const ATTACHMENTS_DIR =
-  "C:\\Users\\jorda\\AppData\\Local\\Ubume\\workspaces\\example1\\attachments";
+  "C:\\Users\\Example\\AppData\\Local\\Ubume\\workspaces\\example1\\attachments";
 const WORKSPACE_ROOT = "C:\\Development\\1-JavaScript\\13-Custom-CLI-Normal";
 
 test("compactHomePath abbreviates attachment paths below the home directory", () => {
@@ -236,8 +236,8 @@ test("AttachmentImportPanel does NOT show vision warning when modelSupportsVisio
 
 test("AttachmentImportPanel does NOT show vision warning for non-image file even when modelSupportsVision is false", async () => {
   const textFile: PendingImportFile = {
-    srcPath: "C:\\Users\\jorda\\Documents\\notes.txt",
-    rawPath: "C:\\Users\\jorda\\Documents\\notes.txt",
+    srcPath: "C:\\Users\\Example\\Documents\\notes.txt",
+    rawPath: "C:\\Users\\Example\\Documents\\notes.txt",
     destFilename: "notes.txt",
     isImage: false,
   };

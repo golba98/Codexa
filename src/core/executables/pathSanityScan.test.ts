@@ -28,19 +28,15 @@ const SRC_ROOT = join(import.meta.dirname, "../..");
 
 // Guard against personal user-specific paths appearing in source.
 // Patterns are split across array entries to prevent THIS file from matching itself.
-const BANNED_FRAGMENTS: Array<[string, string]> = [
-  ["C", ":\\\\Users\\\\jorda"],
-  ["C", ":/Users/jorda"],
-];
+const BANNED_PATTERNS: RegExp[] = [new RegExp(["C:", "[/\\\\]+Users[/\\\\]+jorda"].join(""), "i")];
 
 test("no source files contain personal hardcoded user paths", { timeout: 30_000 }, () => {
-  const patterns = BANNED_FRAGMENTS.map(([a, b]) => new RegExp(a + b));
   const files = collectTsFiles(SRC_ROOT);
   const violations: string[] = [];
 
   for (const file of files) {
     const content = readFileSync(file, "utf-8");
-    for (const pattern of patterns) {
+    for (const pattern of BANNED_PATTERNS) {
       if (pattern.test(content)) {
         violations.push(`${file}: matches ${pattern}`);
       }
@@ -52,6 +48,17 @@ test("no source files contain personal hardcoded user paths", { timeout: 30_000 
     [],
     `Personal hardcoded user paths found in source:\n${violations.join("\n")}`,
   );
+});
+
+test("hardcoded path pattern detects Windows and Unix personal paths", () => {
+  const name = ["jor", "da"].join("");
+  for (const pattern of BANNED_PATTERNS) {
+    assert.ok(pattern.test(`C:/Users/${name}/file.txt`));
+    assert.ok(pattern.test(`C:\\Users\\${name}\\file.txt`));
+    assert.ok(pattern.test(`const p = "C:\\\\Users\\\\${name}\\\\file.txt";`));
+    assert.ok(!pattern.test("C:/Users/Example/file.txt"));
+    assert.ok(!pattern.test("C:\\Users\\Example\\file.txt"));
+  }
 });
 
 test("source scan stays within src and includes TSX components", () => {
